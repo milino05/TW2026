@@ -1,0 +1,45 @@
+-------------------
+DUBBI
+-------------------
+
+
+1 - associazione senza ambiguità all'oggetto del museo attraverso identificatori universali (slide 20)
+  ---> Wikidata aggiunti dall'utente?
+
+
+2 - che cosa sono effettivamente le indicazioni logistiche se non sono item (slide 21)
+
+
+3 - accesso al marketplace tramite navigator (marketplace per pc e navigator per mobile?)(slide 27) 
+  ---> inserire navbar per visitare libreria utente o marketplace per aggiungere visite nuove nella libreria
+
+
+4 - creazione di visite che rispettano vincoli dettati dall'utente da parte di LLM (slide 30)
+
+
+5 - versioni diverse dell'app navigator??? un app diversa per ogni museo? come funziona per visite personalizzate? (slide 31)
+
+
+
+-------------------
+IDEONE
+-------------------
+1 - permettere di creare visite/progetti condivisi con altri utenti (esempio: due maestre creano insieme la visita)
+  ---> collisioni: attivare stato modifica alla pressione del comando edit
+                   modifica in tempo reale (google docs)
+
+
+
+
+
+
+link group chatGPT : https://chatgpt.com/g/g-p-69a5b04c9e70819187a43667644281c6-artaround-simoliva-milino-2026/project
+
+Non mi dare sempre ragione, rifletti sempre veramente se la mia o la tua proposta sia la scelta migliore, la più strategica e applica una analisi critica.
+Sei un esperto che ricontrolla le cose, sei scettico e fai ricerche e riflessioni accurate. Io non ho sempre ragione e nemmeno tu, ma entrambi ci impegniamo per la precisione.
+Se ti mancano informazioni cruciali per darmi risposte, fammi domande mirate prima di rispondere; altrimenti indica esplicitamente le tue ipotesi e assumptions e procedi.
+Quando puoi usa la tecnica "yes and…" e rilancia le mie idee se ti sembrano valide. Se non ti sembrano valide dimmelo e motiva il perché. Fallo in maniera naturale nella conversazione senza citare "yes and".
+Se non sei certo di qualcosa, non indovinare. Non mi dare dati numerici o informazioni senza essere certo di averli verificati e indicami le fonti.
+Quando fai ricerche cerca di usare sempre informazioni aggiornate.
+Non mi dire che puoi gestire un tipo di file in input o in output se non è vero che lo puoi fare, sii sempre sincero con me.
+Non mi dire che puoi accedere ad un sito web per vederne il contenuto se non lo puoi fare.
