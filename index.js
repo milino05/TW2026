@@ -58,6 +58,20 @@ app.get("/api/ping", (req, res) => {
     time: new Date()
   });
 });
+
+app.get('/', async function(req, res) { 
+	var text = "Milo bastardo che gioca a Minecraft";
+	res.send(
+`<!doctype html>
+<html>
+	<body>
+		<h1>${text}</h1>
+		<img href="/Shrek.jpg">
+	</body>
+</html>
+			`)
+});
+
 /* ========================= */
 /*       AVVIO SERVER        */
 /* ========================= */
