@@ -1,155 +1,69 @@
 ﻿/*
-File: index.js
-Author: Fabio Vitali
-Version: 1.0 
-Last change on: 2 April 2024
-
-
-Copyright (c) 2024 by Fabio Vitali
-
-   Permission to use, copy, modify, and/or distribute this software for any
-   purpose with or without fee is hereby granted, provided that the above
-   copyright notice and this permission notice appear in all copies.
-
-   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-   WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-   MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-   SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-   OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-   CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
+  ArtAround Backend - Minimal API Server
+  Compatibile con deploy dipartimento
 */
 
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
 
+/* ========================= */
+/*        CONFIGURAZIONE     */
+/* ========================= */
 
-/* ========================== */
-/*                            */
-/*           SETUP            */
-/*                            */
-/* ========================== */
+const app = express();
 
-global.rootDir = __dirname ;
-global.startDate = null; 
+// Permette al server di ricevere JSON nel body delle richieste
+app.use(express.json());
 
+// Permette richieste da frontend esterni (es. Vue)
+app.use(cors());
 
+// Necessario quando si è dietro proxy (come nel server del dipartimento)
+app.enable("trust proxy");
 
-const template = require(global.rootDir + '/scripts/tpl.js');
-const mymongo = require(global.rootDir + '/scripts/mongo.js');
-const express = require('express');
-const cors = require('cors')
+/* ========================= */
+/*        CONNESSIONE DB     */
+/* ========================= */
 
-
-
-
-
-
-/* ========================== */
-/*                            */
-/*  EXPRESS CONFIG & ROUTES   */
-/*                            */
-/* ========================== */
-
-let app= express(); 
-app.use('/js'  , express.static(global.rootDir +'/public/js'));
-app.use('/css' , express.static(global.rootDir +'/public/css'));
-app.use('/data', express.static(global.rootDir +'/public/data'));
-app.use('/docs', express.static(global.rootDir +'/public/html'));
-app.use('/img' , express.static(global.rootDir +'/public/media'));
-app.use(express.urlencoded({ extended: true })) 
-app.use(cors())
-
-// https://stackoverflow.com/questions/40459511/in-express-js-req-protocol-is-not-picking-up-https-for-my-secure-link-it-alwa
-app.enable('trust proxy');
-
-
-app.get('/', async function (req, res) { 
-	let sitename = req.hostname.split('.')[0]
-	res.send(await template.generate('index.html', {
-			host: req.hostname,
-			site: sitename
-	}));
-})
-
-app.get('/hw', async function(req, res) { 
-	var text = "Hello world as a Node service";
-	res.send(
-`<!doctype html>
-<html>
-	<body>
-		<h1>${text}</h1>
-		<p><a href="javascript:history.back()">Go back</a></p>
-	</body>
-</html>
-			`)
-});
-
-app.get('/hwhb', async function(req, res) { 
-	res.send(await template.generate('generic.html', {
-		text: "Hello world as a Handlebar service",
-	}));
-});
-
-const info = async function(req, res) {
-	let data = {
-		startDate: global.startDate.toLocaleString(), 
-		requestDate: (new Date()).toLocaleString(), 
-		request: {
-			host: req.hostname,
-			method: req.method,
-			path: req.path,
-			protocol: req.protocol
-		}, 
-		query: req.query,
-		body: req.body
-	}
-	res.send( await template.generate('info.html', data));
-}
-
-app.get('/info', info )
-app.post('/info', info )
-
-
-
-
-
-/* ========================== */
-/*                            */
-/*           MONGODB          */
-/*       using mongoose       */
-/* ========================== */
-
-/* Replace these info with the ones you were given when activating mongoDB */ 
+/*
+  ⚠️ SOSTITUIRE con le credenziali fornite dal dipartimento
+*/
 const mongoCredentials = {
-	user: "site252605",
-	pwd: "Quei6kee",
-	site: "mongo_site252605"
-}  
-/* end */
+  user: "site252605",
+  pwd: "Quei6kee",
+  site: "mongo_site252605"
+};
 
-app.get('/db/create', async function (req, res) {
-	res.send(await mymongo.create(mongoCredentials))
+// Stringa di connessione MongoDB
+const mongoURI = `mongodb://${mongoCredentials.user}:${mongoCredentials.pwd}@localhost:27017/${mongoCredentials.site}?authSource=admin`;
+
+mongoose.connect(mongoURI)
+  .then(() => {
+    console.log("✅ Connessione a MongoDB riuscita");
+  })
+  .catch((err) => {
+    console.error("❌ Errore connessione MongoDB:", err);
+  });
+
+/* ========================= */
+/*         ROUTE TEST        */
+/* ========================= */
+
+// Endpoint base per verificare che il server funzioni
+app.get("/api/ping", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "ArtAround backend attivo",
+    time: new Date()
+  });
 });
-app.get('/db/search', async function (req, res) {
-	res.send(await mymongo.search(req.query, mongoCredentials))
+/* ========================= */
+/*       AVVIO SERVER        */
+/* ========================= */
+
+const PORT = 8000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server avviato su porta ${PORT}`);
 });
-
-
-
-
-
-
-
-/* ========================== */
-/*                            */
-/*    ACTIVATE NODE SERVER    */
-/*                            */
-/* ========================== */
-
-app.listen(8000, function() { 
-	global.startDate = new Date() ; 
-	console.log(`App listening on port 8000 started ${global.startDate.toLocaleString()}` )
-})
-
-
-/*       END OF SCRIPT        */
