@@ -21,6 +21,7 @@ app.use(cors());
 
 // Necessario quando si è dietro proxy (come nel server del dipartimento)
 app.enable("trust proxy");
+app.use(express.static(__dirname));
 
 /* ========================= */
 /*        CONNESSIONE DB     */
@@ -66,7 +67,7 @@ app.get('/', async function(req, res) {
 <html>
 	<body>
 		<h1>${text}</h1>
-		<img href="/Shrek.jpg">
+		<img src="Shrek.jpg" alt="basstardoh">
 	</body>
 </html>
 			`)
