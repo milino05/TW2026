@@ -53,7 +53,7 @@ app.get("/api/ping", (req, res) => {
 });
 
 app.get('/', async function(req, res) { 
-	var text = "Milo bastardo che gioca a Minecraft";
+	var text = "Milo bastardo che gioca a Path of Exile";
 	res.send(
 `<!doctype html>
 <html>
