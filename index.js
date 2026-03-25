@@ -2,7 +2,7 @@
   ArtAround Backend - Minimal API Server
   Compatibile con deploy dipartimento
 */
-
+require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -30,15 +30,9 @@ app.use(express.static(__dirname));
 /*
   ⚠️ SOSTITUIRE con le credenziali fornite dal dipartimento
 */
-const mongoCredentials = {
-  user: "site252605",
-  pwd: "Quei6kee",
-  site: "mongo_site252605"
-};
 
 // Stringa di connessione MongoDB
-const mongoURI = `mongodb://${mongoCredentials.user}:${mongoCredentials.pwd}@localhost:27017/${mongoCredentials.site}?authSource=admin`;
-
+const mongoURI = process.env.MONGO_URI;
 mongoose.connect(mongoURI)
   .then(() => {
     console.log("✅ Connessione a MongoDB riuscita");
