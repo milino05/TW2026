@@ -27,12 +27,10 @@ app.use(express.static(__dirname));
 /*        CONNESSIONE DB     */
 /* ========================= */
 
-/*
-  ⚠️ SOSTITUIRE con le credenziali fornite dal dipartimento
-*/
 
 // Stringa di connessione MongoDB
 const mongoURI = process.env.MONGO_URI;
+
 mongoose.connect(mongoURI)
   .then(() => {
     console.log("✅ Connessione a MongoDB riuscita");
