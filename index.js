@@ -44,7 +44,7 @@ mongoose.connect(mongoURI)
 /* ========================= */
 
 // Endpoint base per verificare che il server funzioni
-app.get("/api/ping", (req, res) => {
+app.get("/ping", (req, res) => {
   res.json({
     status: "ok",
     message: "ArtAround backend attivo",
