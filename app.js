@@ -29,10 +29,10 @@ app.get("/ping", (req, res) => {
   });
 });
 
-app.get('/', async function(req, res) { 
-	var text = "Milo bastardo che gioca a Path of Exile";
-	res.send(
-`<!doctype html>
+app.get('/', async function (req, res) {
+  var text = "Simoncino puzzone che non gioca a Remnant";
+  res.send(
+    `<!doctype html>
 <html>
 	<body>
 		<h1>${text}</h1>

@@ -12,6 +12,6 @@
     "nodemon": "^3.1.14"
   },
   "scripts": {
-  "dev": "nodemon index.js"
-}
+    "dev": "nodemon index.js"
+  }
 }
