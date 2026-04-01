@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const Item = require("../models/items");
+const Item = require("../models/item");
 const Config = require("../models/config");
 
-router.post("/items", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { codice, nome, contenuti, riferimenti, bidirezionale } = req.body;
     const museoId = req.museoId; // supponiamo che tu abbia l'id del museo dal login
@@ -33,7 +33,7 @@ router.post("/items", async (req, res) => {
         item.riferimenti.push(refId);
 
         // se bidirezionale, aggiorna l'altro item
-        if (riferimenti.bidirezionale) {
+        if (bidirezionale) {
           await Item.findByIdAndUpdate(refId, { $addToSet: { riferimenti: item._id } });
         }
       }
@@ -43,9 +43,24 @@ router.post("/items", async (req, res) => {
     res.json({ success: true, item });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Errore server" });
+    res.status(500).json({ error: err.message });
   }
 });
+
+
+
+router.post("/breve", async (req, res) => {
+  try {
+    const item = new Item(req.body);
+    await item.save();
+    res.json(item);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 //GET ALL
 router.get("/", async (req, res) => {
@@ -105,6 +120,7 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ error: "Errore server" });
   }
 });
+
 
 
 module.exports = router;

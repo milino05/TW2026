@@ -44,10 +44,10 @@ app.get('/', async function (req, res) {
 
 // import route
 const itemRoutes = require("./routes/items");
-const configRoutes = require("./routes/config");
+//const configRoutes = require("./routes/config");
 
 // usa le route
 app.use("/items", itemRoutes);
-app.use("/config", configRoutes);
+//app.use("/config", configRoutes);
 
 module.exports = app;
