@@ -25,7 +25,7 @@ const ItemSchema = new Schema(
       type: String,
       trim: true,
       index: true,
-      sparse: true
+      sparse: true,
     },
 
     /**
@@ -37,9 +37,7 @@ const ItemSchema = new Schema(
       required: true,
       trim: true,
       index: true,
-      enum: museumConfig.itemTypes //i tipi di item (opera, periodo storico, ecc..) specificati nel config
     },
-
 
     /**
      * Nome leggibile principale dell'item.
@@ -53,7 +51,7 @@ const ItemSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      index: true
+      index: true,
     },
 
     /**
@@ -61,9 +59,8 @@ const ItemSchema = new Schema(
      */
     recognitionImage: {
       url: { type: String, trim: true },
-      altText: { type: String, trim: true }
+      altText: { type: String, trim: true },
     },
-
 
     /**
      * Tag liberi o semi-controllati.
@@ -72,10 +69,9 @@ const ItemSchema = new Schema(
     tags: [
       {
         type: String,
-        trim: true
-      }
+        trim: true,
+      },
     ],
-
 
     /**
      * Metadati generici.
@@ -98,23 +94,22 @@ const ItemSchema = new Schema(
      * JSON-LD opzionale, come layer semantico/export.
      */
     jsonld: {
-      type: Schema.Types.Mixed
+      type: Schema.Types.Mixed,
     },
 
-
     /**
-    * Stato editoriale dell'item.
-    */
+     * Stato editoriale dell'item.
+     */
     status: {
       type: String,
       enum: ["draft", "published", "archived"],
       default: "draft",
-      index: true
-    }
+      index: true,
+    },
   },
   {
-    timestamps: true
-  }
+    timestamps: true,
+  },
 );
 
 /**
@@ -129,14 +124,14 @@ const ItemSchema = new Schema(
  * Text index per ricerca full-text di base.
  * Utile nel marketplace/editor per cercare item per nome, riassunto o tag.
  */
-ItemSchema.index({ label: "text", summary: "text", tags: "text" });
+ItemSchema.index({ label: "text", tags: "text" });
 
 /**
  * Indice utile quando cerchi item in base a una relazione.
  * Esempio:
  * "dammi tutti gli item che hanno relazione created_by verso X"
  */
-ItemSchema.index({ "relations.type": 1, "relations.target": 1 });
+ItemSchema.index({ "relations.relationType": 1, "relations.target": 1 });
 
 /**
  * Indice utile per selezionare rappresentazioni per lingua e livello.
@@ -144,8 +139,7 @@ ItemSchema.index({ "relations.type": 1, "relations.target": 1 });
  * "cerco la versione in italiano, livello elementare"
  */
 ItemSchema.index({
-  "representations.language": 1,
-  "representations.languageLevel": 1
+  "representations.languageLevel": 1,
 });
 
 /**
@@ -153,6 +147,3 @@ ItemSchema.index({
  */
 ItemSchema.index({ "representations.duration": 1 });
 module.exports = mongoose.model("Item", ItemSchema);
-
-
-

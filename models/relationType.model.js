@@ -11,7 +11,7 @@ const RelationTypeSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true
+      trim: true,
     },
 
     /**
@@ -21,7 +21,7 @@ const RelationTypeSchema = new Schema(
     label: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
 
     /**
@@ -29,7 +29,7 @@ const RelationTypeSchema = new Schema(
      */
     description: {
       type: String,
-      trim: true
+      trim: true,
     },
 
     /**
@@ -39,8 +39,8 @@ const RelationTypeSchema = new Schema(
     domain: [
       {
         type: String,
-        trim: true
-      }
+        trim: true,
+      },
     ],
 
     /**
@@ -50,8 +50,8 @@ const RelationTypeSchema = new Schema(
     range: [
       {
         type: String,
-        trim: true
-      }
+        trim: true,
+      },
     ],
 
     /**
@@ -64,7 +64,7 @@ const RelationTypeSchema = new Schema(
     category: {
       type: String,
       required: true,
-      enum: ["semantic", "logistic", "contextual", "editorial"]
+      enum: ["semantic", "logistic", "contextual", "editorial"],
     },
 
     /**
@@ -74,7 +74,7 @@ const RelationTypeSchema = new Schema(
     strength: {
       type: String,
       enum: ["strong", "medium", "weak"],
-      default: "medium"
+      default: "medium",
     },
 
     /**
@@ -85,8 +85,8 @@ const RelationTypeSchema = new Schema(
     userIntents: [
       {
         type: String,
-        trim: true
-      }
+        trim: true,
+      },
     ],
 
     /**
@@ -96,7 +96,7 @@ const RelationTypeSchema = new Schema(
      */
     inverseKey: {
       type: String,
-      trim: true
+      trim: true,
     },
 
     /**
@@ -112,7 +112,7 @@ const RelationTypeSchema = new Schema(
        */
       allowMultiple: {
         type: Boolean,
-        default: true
+        default: true,
       },
 
       /**
@@ -121,11 +121,11 @@ const RelationTypeSchema = new Schema(
        */
       targetRequired: {
         type: Boolean,
-        default: true
-      }
-    }
+        default: true,
+      },
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("RelationType", RelationTypeSchema);

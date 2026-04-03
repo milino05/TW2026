@@ -1,3 +1,6 @@
+const mongoose = require("mongoose");
+const { Schema } = mongoose;
+
 /**
  * Relazione generica tra item.
  * Esempi:
@@ -20,9 +23,8 @@ const RelationSchema = new Schema(
     relationType: {
       type: Schema.Types.ObjectId,
       ref: "RelationType",
-      required: true
+      required: true,
     },
-
 
     /**
      * Item di destinazione della relazione.
@@ -31,16 +33,10 @@ const RelationSchema = new Schema(
     target: {
       type: Schema.Types.ObjectId,
       ref: "Item",
-      required: true
+      required: true,
     },
 
-    label: {
-      type: String,
-      trim: true
-    },
-
-
-     /**
+    /**
      * Peso opzionale della relazione.
      * Può servire per:
      * - ranking
@@ -54,10 +50,11 @@ const RelationSchema = new Schema(
     weight: {
       type: Number,
       default: 1,
-      min: 0
-    }
+      min: 0,
+      max: 10,
+    },
   },
-  { _id: true }
+  { _id: true },
 );
 
 module.exports = RelationSchema;
