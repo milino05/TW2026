@@ -42,6 +42,8 @@ app.get('/', async function (req, res) {
 			`)
 });
 
+
+
 // import route
 const itemRoutes = require("./routes/items");
 //const configRoutes = require("./routes/config");
@@ -49,5 +51,9 @@ const itemRoutes = require("./routes/items");
 // usa le route
 app.use("/items", itemRoutes);
 //app.use("/config", configRoutes);
+
+
+
+app.use(errorHandler);
 
 module.exports = app;
