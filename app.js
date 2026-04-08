@@ -54,6 +54,6 @@ app.use("/items", itemRoutes);
 
 
 
-app.use(errorHandler);
+app.use(errorHandler); //simoncino puzza
 
 module.exports = app;
