@@ -28,6 +28,13 @@ const ItemSchema = new Schema(
       sparse: true,
     },
 
+    museumId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
+
     /**
      * Tipo generico dell'entità.
      * Non obbligatorio in senso assoluto, ma molto utile.
@@ -106,6 +113,14 @@ const ItemSchema = new Schema(
       default: "draft",
       index: true,
     },
+
+    createdBy: {
+      type: String,
+    },
+
+    updatedBy: {
+      type: String,
+    },
   },
   {
     timestamps: true,
@@ -134,16 +149,15 @@ ItemSchema.index({ label: "text", tags: "text" });
 ItemSchema.index({ "relations.relationType": 1, "relations.target": 1 });
 
 /**
- * Indice utile per selezionare rappresentazioni per lingua e livello.
+ * Indice utile per selezionare rappresentazioni per livello.
  * Esempio:
- * "cerco la versione in italiano, livello elementare"
+ * "cerco la versione livello elementare"
  */
-ItemSchema.index({
-  "representations.languageLevel": 1,
-});
+ItemSchema.index({ "representations.languageLevel": 1 });
 
 /**
  * Indice utile per filtrare o ordinare per durata delle rappresentazioni.
  */
 ItemSchema.index({ "representations.duration": 1 });
+
 module.exports = mongoose.model("Item", ItemSchema);
