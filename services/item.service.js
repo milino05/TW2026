@@ -1,13 +1,10 @@
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
-const { getEditorVocabulary } = require("./museumVocabulary.service");
-const {
-  normalizeItemPayload,
-  validateItemPayload,
-} = require("./validation/item.validation");
+const { getMuseumVocabulary } = require("./museumVocabulary.service");
+const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
 
 async function createItem({ museumId, payload, userId = null }) {
-  const vocabulary = await getEditorVocabulary(museumId);
+  const vocabulary = await getMuseumVocabulary(museumId);
   const normalizedPayload = normalizeItemPayload(payload);
 
   const validationErrors = await validateItemPayload({
@@ -43,7 +40,7 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     throw new AppError("Item non appartenente al museo corrente", 400);
   }
 
-  const vocabulary = await getEditorVocabulary(museumId);
+  const vocabulary = await getMuseumVocabulary(museumId);
   const normalizedPayload = normalizeItemPayload(payload);
 
   const validationErrors = await validateItemPayload({
@@ -66,12 +63,7 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
   return existingItem;
 }
 
-async function getEditorVocabularyForClient(museumId) {
-  return getEditorVocabulary(museumId);
-}
-
 module.exports = {
   createItem,
   updateItem,
-  getEditorVocabularyForClient,
 };

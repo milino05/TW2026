@@ -160,4 +160,11 @@ ItemSchema.index({ "representations.languageLevel": 1 });
  */
 ItemSchema.index({ "representations.duration": 1 });
 
+// 1. Per la dashboard del museo: trova item per tipo e stato
+// Esempio: "Tutti i pittori pubblicati del Museo A"
+ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
+
+// 3. Per la ricerca per ID esterno dentro un museo specifico
+ItemSchema.index({ museumId: 1, externalId: 1 });
+
 module.exports = mongoose.model("Item", ItemSchema);

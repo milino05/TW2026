@@ -1,4 +1,5 @@
 const itemService = require("../services/item.service");
+const vocabularyService = require("../services/museumVocabulary.service");
 
 async function createItem(req, res, next) {
   try {
@@ -31,9 +32,7 @@ async function updateItem(req, res, next) {
 
 async function getEditorVocabulary(req, res, next) {
   try {
-    const vocabulary = await itemService.getEditorVocabularyForClient(
-      req.params.museumId
-    );
+    const vocabulary = await vocabularyService.getMuseumVocabulary(req.params.museumId);
 
     res.status(200).json(vocabulary);
   } catch (err) {

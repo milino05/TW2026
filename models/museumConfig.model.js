@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-const RelationType = require("../models/relationType.model");
+const RelationType = require("./relationType.model");
 
 const configSchema = new Schema({
   museoId: String,
@@ -15,3 +15,5 @@ const configSchema = new Schema({
     },
   ], //es: ["created_by", "has_style", "located_in"]
 });
+
+module.exports = mongoose.model("MuseumConfig", configSchema);
