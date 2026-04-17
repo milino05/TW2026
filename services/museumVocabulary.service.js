@@ -1,4 +1,4 @@
-const MuseumConfig = require("../models/museumConfig.model");
+const MuseumConfig = require("../models/museum.model");
 const RelationType = require("../models/relationType.model");
 const AppError = require("../utils/AppError");
 

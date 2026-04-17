@@ -13,9 +13,10 @@ const museumConfig = require("../config/museum.config");
 
 const RepresentationSchema = new Schema(
   {
-    duration: {
+    durationKey: {
       type: String,
       required: true,
+      trim: true,
     },
 
     languageLevel: {
