@@ -58,7 +58,7 @@ function normalizeItemPayload(payload = {}) {
     ? payload.relations
       .filter(isPlainObject)
       .map((rel) => ({
-        relationType: rel.relationType,
+        relationTypeKey: rel.relationTypeKey,
         target: rel.target,
         weight: rel.weight,
       }))
@@ -143,21 +143,21 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
     const rel = relations[index];
     const basePath = `relations[${index}]`;
 
-    if (!mongoose.isValidObjectId(rel.relationType)) {
-      pushError(errors, `${basePath}.relationType`, "INVALID_OBJECT_ID", "relationType non è un ObjectId valido");
+    if (!mongoose.isValidObjectId(rel.relationTypeKey)) {
+      pushError(errors, `${basePath}.relationTypeKey`, "INVALID_OBJECT_ID", "relationType non è un ObjectId valido");
       continue;
     }
 
-    const relationTypeId = String(rel.relationType);
-    const relationType = relationTypesById.get(relationTypeId);
+    const relationTypeId = String(rel.relationTypeKey);
+    const relationTypeKey = relationTypesById.get(relationTypeId);
 
-    if (!relationType) {
-      pushError(errors, `${basePath}.relationType`, "INVALID_RELATION_TYPE", "Il tipo di relazione non appartiene al vocabolario del museo");
+    if (!relationTypeKey) {
+      pushError(errors, `${basePath}.relationTypeKey`, "INVALID_RELATION_TYPE", "Il tipo di relazione non appartiene al vocabolario del museo");
       continue;
     }
 
-    if (Array.isArray(relationType.domain) && relationType.domain.length > 0 && !relationType.domain.includes(itemType)) {
-      pushError(errors, `${basePath}.relationType`, "INVALID_DOMAIN", `La relazione ${relationType.label} non è applicabile a itemType ${itemType}`);
+    if (Array.isArray(relationTypeKey.domain) && relationTypeKey.domain.length > 0 && !relationTypeKey.domain.includes(itemType)) {
+      pushError(errors, `${basePath}.relationTypeKey`, "INVALID_DOMAIN", `La relazione ${relationType.label} non è applicabile a itemType ${itemType}`);
     }
 
     if (!mongoose.isValidObjectId(rel.target)) {
@@ -181,8 +181,8 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
       pushError(errors, `${basePath}.target`, "CROSS_MUSEUM_TARGET", "Il target appartiene a un museo diverso");
     }
 
-    if (Array.isArray(relationType.range) && relationType.range.length > 0 && !relationType.range.includes(targetItem.itemType)) {
-      pushError(errors, `${basePath}.target`, "INVALID_RANGE", `Il target di tipo ${targetItem.itemType} non è compatibile con la relazione ${relationType.label}`);
+    if (Array.isArray(relationTypeKey.range) && relationTypeKey.range.length > 0 && !relationTypeKey.range.includes(targetItem.itemType)) {
+      pushError(errors, `${basePath}.target`, "INVALID_RANGE", `Il target di tipo ${targetItem.itemType} non è compatibile con la relazione ${relationTypeKey.label}`);
     }
 
     const duplicateKey = `${relationTypeId}::${String(rel.target)}`;
