@@ -10,42 +10,72 @@ function pushError(errors, field, code, message, extra = {}) {
   });
 }
 
+
 function normalizeItemPayload(payload = {}) {
-  return {
-    externalId: typeof payload.externalId === "string" ? payload.externalId.trim() : payload.externalId,
+  const trimIfString = (value) =>
+    typeof value === "string" ? value.trim() : value;
 
-    itemType: typeof payload.itemType === "string" ? payload.itemType.trim() : payload.itemType,
+  const isPlainObject = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
 
-    label: typeof payload.label === "string" ? payload.label.trim() : payload.label,
+  const normalizeBoolean = (value) => {
+    if (typeof value === "boolean") return value;
 
-    tags: Array.isArray(payload.tags) ? payload.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") return true;
+      if (normalized === "false") return false;
+    }
 
-    representations: Array.isArray(payload.representations)
-      ? payload.representations.map((rep) => ({
-          languageLevel: typeof rep.languageLevel === "string" ? rep.languageLevel.trim() : rep.languageLevel,
-          duration: typeof rep.duration === "string" ? rep.duration.trim() : rep.duration,
-          text: typeof rep.text === "string" ? rep.text.trim() : rep.text,
-          isDefault: Boolean(rep.isDefault),
-        }))
-      : [],
-
-    relations: Array.isArray(payload.relations)
-      ? payload.relations.map((rel) => ({
-          relationType: rel.relationType,
-          target: rel.target,
-          weight: rel.weight,
-        }))
-      : [],
+    return Boolean(value);
   };
+
+  const normalized = {};
+
+  ["externalId", "itemType", "label"].forEach((field) => {
+    normalized[field] = trimIfString(payload[field]);
+  });
+
+  normalized.tags = Array.isArray(payload.tags)
+    ? payload.tags
+      .filter((tag) => typeof tag === "string" || typeof tag === "number")
+      .map((tag) => String(tag).trim())
+      .filter(Boolean)
+    : [];
+
+  normalized.representations = Array.isArray(payload.representations)
+    ? payload.representations
+      .filter(isPlainObject)
+      .map((rep) => ({
+        languageLevel: trimIfString(rep.languageLevel),
+        duration: trimIfString(rep.duration),
+        text: trimIfString(rep.text),
+        isDefault: normalizeBoolean(rep.isDefault),
+      }))
+    : [];
+
+  normalized.relations = Array.isArray(payload.relations)
+    ? payload.relations
+      .filter(isPlainObject)
+      .map((rel) => ({
+        relationType: rel.relationType,
+        target: rel.target,
+        weight: rel.weight,
+      }))
+    : [];
+
+  return normalized;
 }
+
+
 
 function validateTopLevelFields(payload, vocabulary, errors) {
   if (!payload.label || typeof payload.label !== "string") {
-    pushError(errors, "label", "REQUIRED", "Il campo label è obbligatorio");
+    pushError(errors, "label", "REQUIRED", "Il campo label è mancante o non è una stringa");
   }
 
   if (!payload.itemType || typeof payload.itemType !== "string") {
-    pushError(errors, "itemType", "REQUIRED", "Il campo itemType è obbligatorio");
+    pushError(errors, "itemType", "REQUIRED", "Il campo itemType è mancante o non è una stringa");
     return;
   }
 
@@ -67,7 +97,7 @@ function validateRepresentations(representations, vocabulary, errors) {
     const basePath = `representations[${index}]`;
 
     if (!rep.languageLevel || typeof rep.languageLevel !== "string") {
-      pushError(errors, `${basePath}.languageLevel`, "REQUIRED", "languageLevel è obbligatorio");
+      pushError(errors, `${basePath}.languageLevel`, "REQUIRED", "languageLevel è mancante o non è una stringa");
     } else if (!vocabulary.languageLevels.includes(rep.languageLevel)) {
       pushError(errors, `${basePath}.languageLevel`, "INVALID_CONTROLLED_VALUE", `languageLevel non valido: ${rep.languageLevel}`, { allowedValues: vocabulary.languageLevels });
     }
@@ -79,7 +109,7 @@ function validateRepresentations(representations, vocabulary, errors) {
     }
 
     if (!rep.text || typeof rep.text !== "string") {
-      pushError(errors, `${basePath}.text`, "REQUIRED", "Il testo della representation è obbligatorio");
+      pushError(errors, `${basePath}.text`, "REQUIRED", "Il testo della representation è mancante o non è una stringa");
     }
 
     const pairKey = `${rep.languageLevel}::${rep.duration}`;
@@ -140,7 +170,7 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
       continue;
     }
 
-    const targetItem = await Item.findById(rel.target).select("_id itemType museumId").lean();
+    const targetItem = await Item.findById(rel.target).select("_id itemType museumId").lean(); //richiesta asincrona per validare gli item target della relation
 
     if (!targetItem) {
       pushError(errors, `${basePath}.target`, "TARGET_NOT_FOUND", "L'item target non esiste");
