@@ -48,7 +48,7 @@ function normalizeItemPayload(payload = {}) {
       .filter(isPlainObject)
       .map((rep) => ({
         languageLevel: trimIfString(rep.languageLevel),
-        duration: trimIfString(rep.duration),
+        durationKey: trimIfString(rep.durationKey),
         text: trimIfString(rep.text),
         isDefault: normalizeBoolean(rep.isDefault),
       }))
@@ -102,18 +102,18 @@ function validateRepresentations(representations, vocabulary, errors) {
       pushError(errors, `${basePath}.languageLevel`, "INVALID_CONTROLLED_VALUE", `languageLevel non valido: ${rep.languageLevel}`, { allowedValues: vocabulary.languageLevels });
     }
 
-    if (!rep.duration || typeof rep.duration !== "string") {
-      pushError(errors, `${basePath}.duration`, "REQUIRED", "duration è obbligatorio");
-    } else if (!vocabulary.durationTypes.includes(rep.duration)) {
-      pushError(errors, `${basePath}.duration`, "INVALID_CONTROLLED_VALUE", `duration non valida: ${rep.duration}`, { allowedValues: vocabulary.durationTypes });
+    if (!rep.durationKey || typeof rep.durationKey !== "string") {
+      pushError(errors, `${basePath}.durationKey`, "REQUIRED", "duration è obbligatorio");
+    } else if (!vocabulary.durationTypes.includes(rep.durationKey)) {
+      pushError(errors, `${basePath}.durationKey`, "INVALID_CONTROLLED_VALUE", `duration non valida: ${rep.durationKey}`, { allowedValues: vocabulary.durationTypes });
     }
 
     if (!rep.text || typeof rep.text !== "string") {
       pushError(errors, `${basePath}.text`, "REQUIRED", "Il testo della representation è mancante o non è una stringa");
     }
 
-    const pairKey = `${rep.languageLevel}::${rep.duration}`;
-    if (rep.languageLevel && rep.duration && seenPairs.has(pairKey)) {
+    const pairKey = `${rep.languageLevel}::${rep.durationKey}`;
+    if (rep.languageLevel && rep.durationKey && seenPairs.has(pairKey)) {
       pushError(errors, basePath, "DUPLICATE_REPRESENTATION", `Coppia languageLevel/duration duplicata: ${pairKey}`);
     } else {
       seenPairs.add(pairKey);
