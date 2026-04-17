@@ -29,9 +29,9 @@ const ItemSchema = new Schema(
     },
 
     museumId: {
-      type: String,
+      type: Schema.Types.ObjectId,
+      ref: "Museum",
       required: true,
-      trim: true,
       index: true,
     },
 
@@ -58,6 +58,21 @@ const ItemSchema = new Schema(
       type: String,
       required: true,
       trim: true,
+    },
+
+    /**
+     * Nome normalizzato dell'item (più stabile).
+     * È il campo usato per le query -> non ho i problemi di maiuscole e spazi.
+     * Esempi:
+     * - "girolamo-mazzola-bedoli"
+     * - "manierismo"
+     * - "ritratto-di-frate-in-veste-di-san-tommaso-d'aquino"
+     */
+    slug: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
       index: true,
     },
 

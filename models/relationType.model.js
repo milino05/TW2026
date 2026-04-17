@@ -3,6 +3,13 @@ const { Schema } = mongoose;
 
 const RelationTypeSchema = new Schema(
   {
+    museumId: {
+      type: Schema.Types.ObjectId,
+      ref: "Museum",
+      required: true,
+      index: true,
+    },
+
     /**
      * Chiave univoca usata nelle singole relations.
      * Esempio: "created_by"
