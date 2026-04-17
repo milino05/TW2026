@@ -20,10 +20,11 @@ const RelationSchema = new Schema(
      * - "has_style"
      * - "located_in"
      */
-    relationType: {
-      type: Schema.Types.ObjectId,
-      ref: "RelationType",
+    relationTypeKey: {
+      type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
 
     /**

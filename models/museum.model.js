@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const DurationTypeSchema = require("../schemas/durationType.schema");
+const RelationTypeSchema = require("../schemas/relationType.schema");
 const { Schema } = mongoose;
 
 const MuseumSchema = new Schema(
@@ -22,12 +23,7 @@ const MuseumSchema = new Schema(
       languageLevels: [{ type: String, trim: true }],
       durationTypes: [DurationTypeSchema],
       itemTypes: [{ type: String, trim: true }],
-      relationTypes: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "RelationType",
-        },
-      ],
+      relationTypes: [RelationTypeSchema],
     },
   },
   {

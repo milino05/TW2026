@@ -3,13 +3,6 @@ const { Schema } = mongoose;
 
 const RelationTypeSchema = new Schema(
   {
-    museumId: {
-      type: Schema.Types.ObjectId,
-      ref: "Museum",
-      required: true,
-      index: true,
-    },
-
     /**
      * Chiave univoca usata nelle singole relations.
      * Esempio: "created_by"
@@ -17,8 +10,8 @@ const RelationTypeSchema = new Schema(
     key: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
+      lowercase: true,
     },
 
     /**
@@ -135,4 +128,4 @@ const RelationTypeSchema = new Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("RelationType", RelationTypeSchema);
+module.exports = RelationTypeSchema;

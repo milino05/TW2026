@@ -1,5 +1,5 @@
 const MuseumConfig = require("../models/museum.model");
-const RelationType = require("../models/relationType.model");
+const RelationType = require("../schemas/relationType.schema");
 const AppError = require("../utils/AppError");
 
 async function getMuseumVocabulary(museumId) {
