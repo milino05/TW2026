@@ -30,6 +30,51 @@ async function updateItem(req, res, next) {
   }
 }
 
+async function listItems(req, res, next) {
+  try {
+    const items = await itemService.listItems({
+      museumId: req.params.museumId,
+      filters: {
+        itemType: req.query.itemType,
+        status: req.query.status,
+      },
+    });
+
+    res.status(200).json(items);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getItem(req, res, next) {
+  try {
+    const item = await itemService.getItemById({
+      museumId: req.params.museumId,
+      itemId: req.params.itemId,
+    });
+
+    res.status(200).json(item);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteItem(req, res, next) {
+  try {
+    const item = await itemService.deleteItem({
+      museumId: req.params.museumId,
+      itemId: req.params.itemId,
+    });
+
+    res.status(200).json({
+      message: "Item eliminato",
+      itemId: item._id,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getEditorVocabulary(req, res, next) {
   try {
     const vocabulary = await vocabularyService.getMuseumVocabulary(req.params.museumId);
@@ -43,5 +88,8 @@ async function getEditorVocabulary(req, res, next) {
 module.exports = {
   createItem,
   updateItem,
+  listItems,
+  getItem,
+  deleteItem,
   getEditorVocabulary,
 };

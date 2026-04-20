@@ -4,6 +4,10 @@
 
 const express = require("express");
 const cors = require("cors");
+// import route
+const itemRoutes = require("./routes/items.routes");
+const errorHandler = require("./middlewares/errorHandler");
+
 const app = express();
 
 // Permette al server di ricevere JSON nel body delle richieste
@@ -25,11 +29,11 @@ app.get("/ping", (req, res) => {
   res.json({
     status: "ok",
     message: "ArtAround backend attivo",
-    time: new Date()
+    time: new Date(),
   });
 });
 
-app.get('/', async function (req, res) {
+app.get("/", async function (req, res) {
   var text = "Simoncino puzzone che non gioca a Remnant";
   res.send(
     `<!doctype html>
@@ -39,20 +43,15 @@ app.get('/', async function (req, res) {
 		<img src="Shrek.jpg" alt="basstardoh">
 	</body>
 </html>
-			`)
+			`,
+  );
 });
 
-
-
-// import route
-const itemRoutes = require("./routes/items.routes");
 //const configRoutes = require("./routes/config");
 
 // usa le route
 app.use("/api", itemRoutes);
 //app.use("/config", configRoutes);
-
-
 
 app.use(errorHandler); //simoncino puzza
 

@@ -3,7 +3,7 @@ const { Schema } = mongoose;
 
 const RelationSchema = require("../schemas/relation.schema");
 const RepresentationSchema = require("../schemas/representation.schema");
-const museumConfig = require("../config/museum.config");
+const museumConfig = require("./museum.model");
 
 /**
  * Metadati generici dell'item.
@@ -72,7 +72,6 @@ const ItemSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
       index: true,
     },
 
@@ -161,7 +160,7 @@ ItemSchema.index({ label: "text", tags: "text" });
  * Esempio:
  * "dammi tutti gli item che hanno relazione created_by verso X"
  */
-ItemSchema.index({ "relations.relationType": 1, "relations.target": 1 });
+ItemSchema.index({ "relations.relationTypeKey": 1, "relations.target": 1 });
 
 /**
  * Indice utile per selezionare rappresentazioni per livello.
@@ -173,7 +172,7 @@ ItemSchema.index({ "representations.languageLevel": 1 });
 /**
  * Indice utile per filtrare o ordinare per durata delle rappresentazioni.
  */
-ItemSchema.index({ "representations.duration": 1 });
+ItemSchema.index({ "representations.durationKey": 1 });
 
 // 1. Per la dashboard del museo: trova item per tipo e stato
 // Esempio: "Tutti i pittori pubblicati del Museo A"
@@ -181,5 +180,7 @@ ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
 
 // 3. Per la ricerca per ID esterno dentro un museo specifico
 ItemSchema.index({ museumId: 1, externalId: 1 });
+
+ItemSchema.index({ museumId: 1, slug: 1 }, { unique: true });
 
 module.exports = mongoose.model("Item", ItemSchema);
