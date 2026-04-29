@@ -49,7 +49,17 @@ function normalizeRelationTypes(relationTypes) {
         allowNumbers: false,
       }),
 
-      inverseKey: normalizeKey(relationType.inverseKey),
+      directionality: trimIfString(relationType.directionality),
+
+      reverse: isPlainObject(relationType.reverse)
+        ? {
+            label: trimIfString(relationType.reverse.label),
+            description: trimIfString(relationType.reverse.description),
+            userIntents: normalizeStringArrayStrict(relationType.reverse.userIntents, {
+              allowNumbers: false,
+            }),
+          }
+        : relationType.reverse,
     };
 
     if (isPlainObject(relationType.validationRules)) {
@@ -168,6 +178,7 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
 
   const allowedCategories = ["semantic", "logistic", "contextual", "editorial"];
   const allowedStrengths = ["strong", "medium", "weak"];
+  const allowedDirectionalities = ["directed", "symmetric"];
 
   const itemTypeSet = new Set(Array.isArray(itemTypes) ? itemTypes : []);
   const relationTypeKeys = new Set();
@@ -198,6 +209,29 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
       });
     }
 
+    const directionality = relationType.directionality || "directed";
+
+    if (!allowedDirectionalities.includes(directionality)) {
+      pushError(errors, `${basePath}.directionality`, "INVALID_ENUM", `directionality non valida: ${relationType.directionality}`, {
+        allowedValues: allowedDirectionalities,
+      });
+    }
+
+    if (typeof relationType.key === "string" && relationType.key.includes(":")) {
+      pushError(errors, `${basePath}.key`, "RESERVED_KEY_FORMAT", "La key della relationType non può contenere ':' perché è riservato alle relationViews generate dal sistema");
+    }
+
+    if (relationType.reverse !== undefined) {
+      if (!isPlainObject(relationType.reverse)) {
+        pushError(errors, `${basePath}.reverse`, "INVALID_TYPE", "reverse deve essere un oggetto");
+      } else {
+        if (relationType.reverse.label !== undefined && typeof relationType.reverse.label !== "string") {
+          pushError(errors, `${basePath}.reverse.label`, "INVALID_TYPE", "reverse.label deve essere una stringa");
+        }
+
+        validateStringArrayValues(relationType.reverse.userIntents, `${basePath}.reverse.userIntents`, errors);
+      }
+    }
     if (relationType.strength !== undefined && !allowedStrengths.includes(relationType.strength)) {
       pushError(errors, `${basePath}.strength`, "INVALID_ENUM", `strength non valida: ${relationType.strength}`, {
         allowedValues: allowedStrengths,
@@ -227,10 +261,6 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
         }
       });
     });
-
-    if (relationType.inverseKey !== undefined && typeof relationType.inverseKey !== "string") {
-      pushError(errors, `${basePath}.inverseKey`, "INVALID_TYPE", "inverseKey deve essere una stringa");
-    }
 
     if (relationType.validationRules !== undefined) {
       if (!isPlainObject(relationType.validationRules)) {

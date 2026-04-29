@@ -165,4 +165,7 @@ ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
 // 3. Per la ricerca per ID esterno dentro un museo specifico
 ItemSchema.index({ museumId: 1, externalId: 1 });
 
+//indice per le richieste di relazioni inverse
+ItemSchema.index({ museumId: 1, "relations.target": 1 });
+
 module.exports = mongoose.model("Item", ItemSchema);

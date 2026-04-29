@@ -1,5 +1,6 @@
 const Museum = require("../models/museum.model");
 const AppError = require("../utils/AppError");
+const { buildRelationViews } = require("./relationView.utils");
 
 function normalizeStringArray(values) {
   return Array.isArray(values)
@@ -32,12 +33,27 @@ function normalizeRelationTypes(relationTypes) {
           key: typeof relationType.key === "string" ? relationType.key.trim().toLowerCase() : "",
           label: typeof relationType.label === "string" ? relationType.label.trim() : "",
           description: typeof relationType.description === "string" ? relationType.description.trim() : undefined,
+
           domain: normalizeStringArray(relationType.domain),
           range: normalizeStringArray(relationType.range),
+
           category: relationType.category,
           strength: relationType.strength,
+
+          directionality: relationType.directionality === "symmetric" ? "symmetric" : "directed",
+
           userIntents: normalizeStringArray(relationType.userIntents),
-          inverseKey: typeof relationType.inverseKey === "string" ? relationType.inverseKey.trim().toLowerCase() : undefined,
+
+          reverse: relationType.reverse
+            ? {
+                label: typeof relationType.reverse.label === "string" ? relationType.reverse.label.trim() : undefined,
+
+                description: typeof relationType.reverse.description === "string" ? relationType.reverse.description.trim() : undefined,
+
+                userIntents: normalizeStringArray(relationType.reverse.userIntents),
+              }
+            : undefined,
+
           validationRules: {
             allowMultiple: relationType.validationRules?.allowMultiple !== false,
             targetRequired: relationType.validationRules?.targetRequired !== false,
@@ -56,12 +72,16 @@ async function getMuseumVocabulary(museumId) {
 
   const config = museum.config || {};
 
+  const relationTypes = normalizeRelationTypes(config.relationTypes);
+  const relationViews = buildRelationViews(relationTypes);
+
   return {
     museumId: museum._id,
     itemTypes: normalizeStringArray(config.itemTypes),
     languageLevels: normalizeStringArray(config.languageLevels),
     durationTypes: normalizeDurationTypes(config.durationTypes),
-    relationTypes: normalizeRelationTypes(config.relationTypes),
+    relationTypes,
+    relationViews,
   };
 }
 

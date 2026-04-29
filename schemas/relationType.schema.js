@@ -77,27 +77,33 @@ const RelationTypeSchema = new Schema(
       default: "medium",
     },
 
-    /**
-     * Intenti utente a cui questa relazione può rispondere.
-     * Esempio:
-     * ["ASK_AUTHOR", "ASK_CREATOR"]
-     */
-    userIntents: [
-      {
+    directionality: {
+      type: String,
+      enum: ["directed", "symmetric"],
+      default: "directed",
+    },
+
+    reverse: {
+      label: {
         type: String,
         trim: true,
       },
-    ],
 
-    /**
-     * Chiave della relazione inversa, se esiste.
-     * Esempio:
-     * created_by <-> creator_of
-     */
-    inverseKey: {
-      type: String,
-      trim: true,
-      lowercase: true,
+      description: {
+        type: String,
+        trim: true,
+      },
+      /**
+       * Intenti utente a cui questa relazione può rispondere.
+       * Esempio:
+       * ["ASK_AUTHOR", "ASK_CREATOR"]
+       */
+      userIntents: [
+        {
+          type: String,
+          trim: true,
+        },
+      ],
     },
 
     /**

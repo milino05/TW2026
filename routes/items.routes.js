@@ -3,8 +3,7 @@ const router = express.Router();
 
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 
-const { createItem, updateItem, listItems, getItem, deleteItem } = require("../controllers/items.controller");
-
+const { createItem, updateItem, listItems, getItem, deleteItem, getItemRelations, addItemRelation, removeItemRelation } = require("../controllers/items.controller");
 const validateMuseumId = validateObjectIdParam("museumId");
 const validateItemId = validateObjectIdParam("itemId");
 

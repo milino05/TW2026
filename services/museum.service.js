@@ -4,8 +4,6 @@ const AppError = require("../utils/AppError");
 
 const { normalizeMuseumPayload, validateMuseumPayload } = require("./validation/museum.validation");
 
-const { synchronizeRelationTypeInverses } = require("./validation/relationTypeInverse.utils");
-
 const { hasOwn, isPlainObject } = require("./validation/validation.utils");
 
 function buildMergedConfig(existingConfig = {}, rawConfig = {}, normalizedConfig = {}) {
@@ -41,13 +39,11 @@ async function findMuseumByIdOrFail({ museumId }) {
 async function createMuseum({ payload }) {
   const normalizedPayload = normalizeMuseumPayload(payload);
 
-  const inverseErrors = synchronizeRelationTypeInverses(normalizedPayload.config?.relationTypes);
-
   const validationErrors = validateMuseumPayload({
     payload: normalizedPayload,
   });
 
-  const errors = [...inverseErrors, ...validationErrors];
+  const errors = validationErrors;
 
   if (errors.length > 0) {
     throw new AppError("Payload non valido", 400, errors);
@@ -67,13 +63,11 @@ async function updateMuseum({ museumId, payload }) {
 
   const mergedPayload = buildMergedPayload(existingMuseum.toObject(), payload, normalizedPayload);
 
-  const inverseErrors = synchronizeRelationTypeInverses(mergedPayload.config?.relationTypes);
-
   const validationErrors = validateMuseumPayload({
     payload: mergedPayload,
   });
 
-  const errors = [...inverseErrors, ...validationErrors];
+  const errors = validationErrors;
 
   if (errors.length > 0) {
     throw new AppError("Payload non valido", 400, errors);
