@@ -103,33 +103,34 @@ async function updateMuseum({ museumId, payload }) {
     museum: existingMuseum,
     audit,
   };
+}
 
-  async function listMuseums() {
-    return Museum.find().sort({ name: 1 });
+async function listMuseums() {
+  return Museum.find().sort({ name: 1 });
+}
+
+async function getMuseumById({ museumId }) {
+  return findMuseumByIdOrFail({ museumId });
+}
+
+async function deleteMuseum({ museumId }) {
+  const museum = await findMuseumByIdOrFail({ museumId });
+
+  const hasItems = await Item.exists({ museumId });
+
+  if (hasItems) {
+    throw new AppError("Impossibile eliminare il museo: esistono item associati", 409);
   }
 
-  async function getMuseumById({ museumId }) {
-    return findMuseumByIdOrFail({ museumId });
-  }
+  await museum.deleteOne();
 
-  async function deleteMuseum({ museumId }) {
-    const museum = await findMuseumByIdOrFail({ museumId });
+  return museum;
+}
 
-    const hasItems = await Item.exists({ museumId });
-
-    if (hasItems) {
-      throw new AppError("Impossibile eliminare il museo: esistono item associati", 409);
-    }
-
-    await museum.deleteOne();
-
-    return museum;
-  }
-
-  module.exports = {
-    createMuseum,
-    updateMuseum,
-    listMuseums,
-    getMuseumById,
-    deleteMuseum,
-  };
+module.exports = {
+  createMuseum,
+  updateMuseum,
+  listMuseums,
+  getMuseumById,
+  deleteMuseum,
+};
