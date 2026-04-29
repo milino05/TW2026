@@ -1,7 +1,7 @@
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
-const { normalizeItemPayload, validateItemPayload, toSlug } = require("./validation/item.validation");
+const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -13,7 +13,6 @@ function buildMergedPayload(existingItem, rawPayload, normalizedPayload) {
     externalId: hasOwn(rawPayload, "externalId") ? normalizedPayload.externalId : existingItem.externalId,
     itemType: hasOwn(rawPayload, "itemType") ? normalizedPayload.itemType : existingItem.itemType,
     label: hasOwn(rawPayload, "label") ? normalizedPayload.label : existingItem.label,
-    slug: hasOwn(rawPayload, "slug") ? normalizedPayload.slug : existingItem.slug,
     tags: hasOwn(rawPayload, "tags") ? normalizedPayload.tags : existingItem.tags,
     status: hasOwn(rawPayload, "status") ? normalizedPayload.status : existingItem.status,
     recognitionImage: hasOwn(rawPayload, "recognitionImage") ? normalizedPayload.recognitionImage : existingItem.recognitionImage,
@@ -26,33 +25,19 @@ function buildMergedPayload(existingItem, rawPayload, normalizedPayload) {
   return mergedPayload;
 }
 
-async function ensureUniqueSlug({ museumId, slug, currentItemId = null }) {
-  const query = { museumId, slug };
+async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
+  const item = await Item.findOne({ _id: itemId, museumId });
 
-  if (currentItemId) {
-    query._id = { $ne: currentItemId };
+  if (!item) {
+    throw new AppError("Item non trovato", 404);
   }
 
-  const conflictingItem = await Item.findOne(query).select("_id slug label museumId").lean();
-
-  if (conflictingItem) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "slug",
-        code: "DUPLICATE_SLUG",
-        message: `Esiste già un item con slug ${slug} in questo museo`,
-      },
-    ]);
-  }
+  return item;
 }
 
 async function createItem({ museumId, payload, userId = null }) {
   const vocabulary = await getMuseumVocabulary(museumId);
   const normalizedPayload = normalizeItemPayload(payload);
-
-  if (!normalizedPayload.slug && normalizedPayload.label) {
-    normalizedPayload.slug = toSlug(normalizedPayload.label);
-  }
 
   const validationErrors = await validateItemPayload({
     museumId,
@@ -64,7 +49,6 @@ async function createItem({ museumId, payload, userId = null }) {
     throw new AppError("Payload non valido", 400, validationErrors);
   }
 
-  await ensureUniqueSlug({ museumId, slug: normalizedPayload.slug });
   const item = new Item({
     ...normalizedPayload,
     museumId,
@@ -78,18 +62,11 @@ async function createItem({ museumId, payload, userId = null }) {
 }
 
 async function updateItem({ museumId, itemId, payload, userId = null }) {
-  const existingItem = await Item.findById(itemId);
-
-  if (!existingItem) {
-    throw new AppError("Item non trovato", 404);
-  }
-
-  if (String(existingItem.museumId) !== String(museumId)) {
-    throw new AppError("Item non appartenente al museo corrente", 400);
-  }
+  const existingItem = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
   const vocabulary = await getMuseumVocabulary(museumId);
   const normalizedPayload = normalizeItemPayload(payload);
+
   const mergedPayload = buildMergedPayload(existingItem.toObject(), payload, normalizedPayload);
 
   const validationErrors = await validateItemPayload({
@@ -103,7 +80,6 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     throw new AppError("Payload non valido", 400, validationErrors);
   }
 
-  await ensureUniqueSlug({ museumId, slug: mergedPayload.slug, currentItemId: itemId });
   Object.assign(existingItem, mergedPayload, {
     updatedBy: userId,
   });
@@ -128,21 +104,11 @@ async function listItems({ museumId, filters = {} }) {
 }
 
 async function getItemById({ museumId, itemId }) {
-  const item = await Item.findOne({ _id: itemId, museumId });
-
-  if (!item) {
-    throw new AppError("Item non trovato", 404);
-  }
-
-  return item;
+  return findItemByIdInMuseumOrFail({ museumId, itemId });
 }
 
 async function deleteItem({ museumId, itemId }) {
-  const item = await Item.findOne({ _id: itemId, museumId });
-
-  if (!item) {
-    throw new AppError("Item non trovato", 404);
-  }
+  const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
   await item.deleteOne();
 

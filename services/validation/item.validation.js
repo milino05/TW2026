@@ -39,30 +39,10 @@ function normalizeBoolean(value) {
   return undefined;
 }
 
-/* FORMA SLUG
-Passaggio,Risultato
-Input,"""  Caffè e Biscotti: 10/10!  """
-Normalizzazione & Accenti,"""  Caffe e Biscotti: 10/10!  """
-Minuscolo,"""  caffe e biscotti: 10/10!  """
-Sostituzione non-alfanumerici,"""--caffe-e-biscotti-10-10--"""
-Rimozione trattini estremi,"""caffe-e-biscotti-10-10"""
-Compressione trattini doppi,"""caffe-e-biscotti-10-10""" */
-function toSlug(value) {
-  if (typeof value !== "string") return "";
-
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
 function normalizeItemPayload(payload = {}) {
   const normalized = {};
 
-  ["externalId", "itemType", "label", "slug", "status"].forEach((field) => {
+  ["externalId", "itemType", "label", "status"].forEach((field) => {
     if (hasOwn(payload, field)) {
       normalized[field] = trimIfString(payload[field]);
     }
@@ -139,13 +119,6 @@ function normalizeItemPayload(payload = {}) {
 function validateTopLevelFields(payload, vocabulary, errors) {
   if (!payload.label || typeof payload.label !== "string") {
     pushError(errors, "label", "REQUIRED", "Il campo label è mancante o non è una stringa");
-  }
-
-  //MEGLIO IMPOSTARE UN INSERIMENTO AUTOMATICO DI SLUG E NON ASPETTARSELO DALL'UTENTE
-  if (!payload.slug || typeof payload.slug !== "string") {
-    pushError(errors, "slug", "REQUIRED", "Il campo slug è obbligatorio");
-  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(payload.slug)) {
-    pushError(errors, "slug", "INVALID_FORMAT", "Lo slug deve contenere solo lettere minuscole, numeri e trattini");
   }
 
   if (!payload.itemType || typeof payload.itemType !== "string") {
@@ -349,5 +322,4 @@ async function validateItemPayload({ museumId, payload, vocabulary, currentItemI
 module.exports = {
   normalizeItemPayload,
   validateItemPayload,
-  toSlug,
 };

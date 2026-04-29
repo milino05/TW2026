@@ -61,21 +61,6 @@ const ItemSchema = new Schema(
     },
 
     /**
-     * Nome normalizzato dell'item (più stabile).
-     * È il campo usato per le query -> non ho i problemi di maiuscole e spazi.
-     * Esempi:
-     * - "girolamo-mazzola-bedoli"
-     * - "manierismo"
-     * - "ritratto-di-frate-in-veste-di-san-tommaso-d'aquino"
-     */
-    slug: {
-      type: String,
-      required: true,
-      trim: true,
-      index: true,
-    },
-
-    /**
      * Immagine di riconoscimento opzionale.
      */
     recognitionImage: {
