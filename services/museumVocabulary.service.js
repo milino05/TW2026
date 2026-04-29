@@ -58,10 +58,10 @@ async function getMuseumVocabulary(museumId) {
 
   return {
     museumId: museum._id,
-    itemTypes: config.itemTypes,
-    languageLevels: config.languageLevels,
-    durationTypes: config.durationTypes,
-    relationTypes: config.relationTypes,
+    itemTypes: normalizeStringArray(config.itemTypes),
+    languageLevels: normalizeStringArray(config.languageLevels),
+    durationTypes: normalizeDurationTypes(config.durationTypes),
+    relationTypes: normalizeRelationTypes(config.relationTypes),
   };
 }
 

@@ -3,7 +3,6 @@ const { Schema } = mongoose;
 
 const RelationSchema = require("../schemas/relation.schema");
 const RepresentationSchema = require("../schemas/representation.schema");
-const museumConfig = require("./museum.model");
 
 /**
  * Metadati generici dell'item.
@@ -165,7 +164,5 @@ ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
 
 // 3. Per la ricerca per ID esterno dentro un museo specifico
 ItemSchema.index({ museumId: 1, externalId: 1 });
-
-ItemSchema.index({ museumId: 1, slug: 1 }, { unique: true });
 
 module.exports = mongoose.model("Item", ItemSchema);

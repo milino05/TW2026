@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
-const museumConfig = require("../models/museum.model");
 
 /**
  * Rappresentazione alternativa dello stesso item.
