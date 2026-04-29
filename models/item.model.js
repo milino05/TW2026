@@ -3,7 +3,7 @@ const { Schema } = mongoose;
 
 const RelationSchema = require("../schemas/relation.schema");
 const RepresentationSchema = require("../schemas/representation.schema");
-
+const IntegrityIssueSchema = require("../schemas/integrityIssue.schema.js");
 /**
  * Metadati generici dell'item.
  * Non mettiamo campi rigidi tipo "author" o "style":
@@ -112,12 +112,22 @@ const ItemSchema = new Schema(
       index: true,
     },
 
-    createdBy: {
-      type: String,
-    },
+    integrity: {
+      status: {
+        type: String,
+        enum: ["valid", "needs_review"],
+        default: "valid",
+        index: true,
+      },
 
-    updatedBy: {
-      type: String,
+      issues: [IntegrityIssueSchema],
+      createdBy: {
+        type: String,
+      },
+
+      updatedBy: {
+        type: String,
+      },
     },
   },
   {
@@ -164,5 +174,7 @@ ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
 
 // 3. Per la ricerca per ID esterno dentro un museo specifico
 ItemSchema.index({ museumId: 1, externalId: 1 });
+
+ItemSchema.index({ museumId: 1, status: 1, "integrity.status": 1 });
 
 module.exports = mongoose.model("Item", ItemSchema);
