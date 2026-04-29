@@ -2,6 +2,9 @@ const Museum = require("../models/museum.model");
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 
+const { getMuseumVocabulary } = require("./museumVocabulary.service");
+const { auditItemsAfterMuseumConfigChange } = require("./itemIntegrity.service");
+
 const { normalizeMuseumPayload, validateMuseumPayload } = require("./validation/museum.validation");
 
 const { synchronizeRelationTypeInverses } = require("./validation/relationTypeInverse.utils");
@@ -79,39 +82,54 @@ async function updateMuseum({ museumId, payload }) {
     throw new AppError("Payload non valido", 400, errors);
   }
 
+  const configChanged = hasOwn(payload, "config");
+
   Object.assign(existingMuseum, mergedPayload);
 
   await existingMuseum.save();
 
-  return existingMuseum;
-}
+  let audit = null;
 
-async function listMuseums() {
-  return Museum.find().sort({ name: 1 });
-}
+  if (configChanged) {
+    const vocabulary = await getMuseumVocabulary(museumId);
 
-async function getMuseumById({ museumId }) {
-  return findMuseumByIdOrFail({ museumId });
-}
-
-async function deleteMuseum({ museumId }) {
-  const museum = await findMuseumByIdOrFail({ museumId });
-
-  const hasItems = await Item.exists({ museumId });
-
-  if (hasItems) {
-    throw new AppError("Impossibile eliminare il museo: esistono item associati", 409);
+    audit = await auditItemsAfterMuseumConfigChange({
+      museumId,
+      vocabulary,
+    });
   }
 
-  await museum.deleteOne();
+  return {
+    museum: existingMuseum,
+    audit,
+  };
 
-  return museum;
-}
+  async function listMuseums() {
+    return Museum.find().sort({ name: 1 });
+  }
 
-module.exports = {
-  createMuseum,
-  updateMuseum,
-  listMuseums,
-  getMuseumById,
-  deleteMuseum,
-};
+  async function getMuseumById({ museumId }) {
+    return findMuseumByIdOrFail({ museumId });
+  }
+
+  async function deleteMuseum({ museumId }) {
+    const museum = await findMuseumByIdOrFail({ museumId });
+
+    const hasItems = await Item.exists({ museumId });
+
+    if (hasItems) {
+      throw new AppError("Impossibile eliminare il museo: esistono item associati", 409);
+    }
+
+    await museum.deleteOne();
+
+    return museum;
+  }
+
+  module.exports = {
+    createMuseum,
+    updateMuseum,
+    listMuseums,
+    getMuseumById,
+    deleteMuseum,
+  };

@@ -28,4 +28,4 @@ const IntegrityIssueSchema = new Schema(
 );
 
 
-module.exports = IntegrityIssueSchema;;
+module.exports = IntegrityIssueSchema;

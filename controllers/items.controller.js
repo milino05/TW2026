@@ -36,6 +36,7 @@ async function listItems(req, res, next) {
       filters: {
         itemType: req.query.itemType,
         status: req.query.status,
+        integrity: req.query.integrity,
       },
     });
 

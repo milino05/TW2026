@@ -84,6 +84,11 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     updatedBy: userId,
   });
 
+  existingItem.integrity = {
+    status: "valid",
+    issues: [],
+  };
+
   await existingItem.save();
 
   return existingItem;
@@ -98,6 +103,10 @@ async function listItems({ museumId, filters = {} }) {
 
   if (filters.status) {
     query.status = filters.status;
+  }
+
+  if (filters.integrity) {
+    query["integrity.status"] = filters.integrity;
   }
 
   return Item.find(query).sort({ updatedAt: -1, label: 1 });
