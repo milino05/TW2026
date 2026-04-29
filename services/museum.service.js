@@ -1,12 +1,12 @@
 const Museum = require("../models/museum.model");
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
+
 const { normalizeMuseumPayload, validateMuseumPayload } = require("./validation/museum.validation");
+
 const { synchronizeRelationTypeInverses } = require("./validation/relationTypeInverse.utils");
 
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key);
-}
+const { hasOwn, isPlainObject } = require("./validation/validation.utils");
 
 function buildMergedConfig(existingConfig = {}, rawConfig = {}, normalizedConfig = {}) {
   return {
@@ -24,7 +24,7 @@ function buildMergedPayload(existingMuseum, rawPayload, normalizedPayload) {
   return {
     name: hasOwn(rawPayload, "name") ? normalizedPayload.name : existingMuseum.name,
 
-    config: hasOwn(rawPayload, "config") ? buildMergedConfig(existingMuseum.config || {}, rawPayload.config || {}, normalizedPayload.config || {}) : existingMuseum.config,
+    config: hasOwn(rawPayload, "config") ? (isPlainObject(rawPayload.config) ? buildMergedConfig(existingMuseum.config || {}, rawPayload.config || {}, normalizedPayload.config || {}) : normalizedPayload.config) : existingMuseum.config,
   };
 }
 

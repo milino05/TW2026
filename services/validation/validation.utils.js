@@ -41,6 +41,11 @@ function normalizeBoolean(value) {
   return value;
 }
 
+/**
+ * Normalizzazione permissiva.
+ * Utile per campi poco critici, ad esempio tags.
+ * Scarta valori non stringa/non numero.
+ */
 function normalizeStringArray(values, options = {}) {
   const { allowNumbers = true, lowercase = false } = options;
 
@@ -59,6 +64,38 @@ function normalizeStringArray(values, options = {}) {
       return lowercase ? normalized.toLowerCase() : normalized;
     })
     .filter(Boolean);
+}
+
+/**
+ * Normalizzazione rigorosa.
+ * Utile per config controllate del museo.
+ *
+ * Non elimina valori invalidi.
+ * Esempio:
+ * ["artwork", true, " artist "] -> ["artwork", true, "artist"]
+ *
+ * Così la validation può segnalare true come valore invalido.
+ */
+function normalizeStringArrayStrict(values, options = {}) {
+  const { allowNumbers = false, lowercase = false } = options;
+
+  if (!Array.isArray(values)) {
+    return values;
+  }
+
+  return values.map((value) => {
+    if (typeof value === "string") {
+      const normalized = value.trim();
+      return lowercase ? normalized.toLowerCase() : normalized;
+    }
+
+    if (allowNumbers && typeof value === "number") {
+      const normalized = String(value).trim();
+      return lowercase ? normalized.toLowerCase() : normalized;
+    }
+
+    return value;
+  });
 }
 
 function toNumberIfPresent(value) {
@@ -102,6 +139,7 @@ module.exports = {
   normalizeKey,
   normalizeBoolean,
   normalizeStringArray,
+  normalizeStringArrayStrict,
   toNumberIfPresent,
   validateUniqueStringArray,
 };

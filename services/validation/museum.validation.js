@@ -1,46 +1,73 @@
-const { pushError, hasOwn, trimIfString, isPlainObject, normalizeKey, normalizeBoolean, normalizeStringArray, toNumberIfPresent, validateUniqueStringArray } = require("./validation.utils");
+const { pushError, hasOwn, trimIfString, isPlainObject, normalizeKey, normalizeBoolean, normalizeStringArrayStrict, toNumberIfPresent, validateUniqueStringArray } = require("./validation.utils");
 
 function normalizeDurationTypes(durationTypes) {
-  return Array.isArray(durationTypes)
-    ? durationTypes.filter(isPlainObject).map((durationType) => ({
-        key: normalizeKey(durationType.key),
-        label: trimIfString(durationType.label),
-        level: durationType.level !== undefined && durationType.level !== null ? Number(durationType.level) : durationType.level,
-        description: trimIfString(durationType.description),
-      }))
-    : durationTypes;
+  if (!Array.isArray(durationTypes)) {
+    return durationTypes;
+  }
+
+  return durationTypes.map((durationType) => {
+    if (!isPlainObject(durationType)) {
+      return durationType;
+    }
+
+    return {
+      key: normalizeKey(durationType.key),
+      label: trimIfString(durationType.label),
+      level: toNumberIfPresent(durationType.level),
+      description: trimIfString(durationType.description),
+    };
+  });
 }
 
 function normalizeRelationTypes(relationTypes) {
-  return Array.isArray(relationTypes)
-    ? relationTypes.filter(isPlainObject).map((relationType) => {
-        const normalized = {
-          key: normalizeKey(relationType.key),
-          label: trimIfString(relationType.label),
-          description: trimIfString(relationType.description),
-          domain: normalizeStringArray(relationType.domain),
-          range: normalizeStringArray(relationType.range),
-          category: trimIfString(relationType.category),
-          strength: trimIfString(relationType.strength),
-          userIntents: normalizeStringArray(relationType.userIntents),
-          inverseKey: normalizeKey(relationType.inverseKey),
-        };
+  if (!Array.isArray(relationTypes)) {
+    return relationTypes;
+  }
 
-        if (isPlainObject(relationType.validationRules)) {
-          normalized.validationRules = {};
+  return relationTypes.map((relationType) => {
+    if (!isPlainObject(relationType)) {
+      return relationType;
+    }
 
-          if (hasOwn(relationType.validationRules, "allowMultiple")) {
-            normalized.validationRules.allowMultiple = normalizeBoolean(relationType.validationRules.allowMultiple);
-          }
+    const normalized = {
+      key: normalizeKey(relationType.key),
+      label: trimIfString(relationType.label),
+      description: trimIfString(relationType.description),
 
-          if (hasOwn(relationType.validationRules, "targetRequired")) {
-            normalized.validationRules.targetRequired = normalizeBoolean(relationType.validationRules.targetRequired);
-          }
-        }
+      domain: normalizeStringArrayStrict(relationType.domain, {
+        allowNumbers: false,
+      }),
 
-        return normalized;
-      })
-    : relationTypes;
+      range: normalizeStringArrayStrict(relationType.range, {
+        allowNumbers: false,
+      }),
+
+      category: trimIfString(relationType.category),
+      strength: trimIfString(relationType.strength),
+
+      userIntents: normalizeStringArrayStrict(relationType.userIntents, {
+        allowNumbers: false,
+      }),
+
+      inverseKey: normalizeKey(relationType.inverseKey),
+    };
+
+    if (isPlainObject(relationType.validationRules)) {
+      normalized.validationRules = {};
+
+      if (hasOwn(relationType.validationRules, "allowMultiple")) {
+        normalized.validationRules.allowMultiple = normalizeBoolean(relationType.validationRules.allowMultiple);
+      }
+
+      if (hasOwn(relationType.validationRules, "targetRequired")) {
+        normalized.validationRules.targetRequired = normalizeBoolean(relationType.validationRules.targetRequired);
+      }
+    } else if (hasOwn(relationType, "validationRules")) {
+      normalized.validationRules = relationType.validationRules;
+    }
+
+    return normalized;
+  });
 }
 
 function normalizeMuseumPayload(payload = {}) {
@@ -53,25 +80,24 @@ function normalizeMuseumPayload(payload = {}) {
   if (hasOwn(payload, "config")) {
     if (!isPlainObject(payload.config)) {
       normalized.config = payload.config;
-      return normalized;
-    }
+    } else {
+      normalized.config = {};
 
-    normalized.config = {};
+      if (hasOwn(payload.config, "languageLevels")) {
+        normalized.config.languageLevels = normalizeStringArrayStrict(payload.config.languageLevels, { allowNumbers: false });
+      }
 
-    if (hasOwn(payload.config, "languageLevels")) {
-      normalized.config.languageLevels = normalizeStringArray(payload.config.languageLevels);
-    }
+      if (hasOwn(payload.config, "itemTypes")) {
+        normalized.config.itemTypes = normalizeStringArrayStrict(payload.config.itemTypes, { allowNumbers: false });
+      }
 
-    if (hasOwn(payload.config, "itemTypes")) {
-      normalized.config.itemTypes = normalizeStringArray(payload.config.itemTypes);
-    }
+      if (hasOwn(payload.config, "durationTypes")) {
+        normalized.config.durationTypes = normalizeDurationTypes(payload.config.durationTypes);
+      }
 
-    if (hasOwn(payload.config, "durationTypes")) {
-      normalized.config.durationTypes = normalizeDurationTypes(payload.config.durationTypes);
-    }
-
-    if (hasOwn(payload.config, "relationTypes")) {
-      normalized.config.relationTypes = normalizeRelationTypes(payload.config.relationTypes);
+      if (hasOwn(payload.config, "relationTypes")) {
+        normalized.config.relationTypes = normalizeRelationTypes(payload.config.relationTypes);
+      }
     }
   }
 
@@ -94,6 +120,11 @@ function validateDurationTypes(durationTypes, errors) {
   durationTypes.forEach((durationType, index) => {
     const basePath = `config.durationTypes[${index}]`;
 
+    if (!isPlainObject(durationType)) {
+      pushError(errors, basePath, "INVALID_TYPE", "Ogni durationType deve essere un oggetto");
+      return;
+    }
+
     if (!durationType.key || typeof durationType.key !== "string") {
       pushError(errors, `${basePath}.key`, "REQUIRED", "key è obbligatoria");
     } else if (seenKeys.has(durationType.key)) {
@@ -112,6 +143,23 @@ function validateDurationTypes(durationTypes, errors) {
   });
 }
 
+function validateStringArrayValues(values, field, errors) {
+  if (values === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(values)) {
+    pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
+    return;
+  }
+
+  values.forEach((value, index) => {
+    if (!value || typeof value !== "string") {
+      pushError(errors, `${field}[${index}]`, "INVALID_VALUE", `${field}[${index}] deve essere una stringa non vuota`);
+    }
+  });
+}
+
 function validateRelationTypes(relationTypes, itemTypes, errors) {
   if (!Array.isArray(relationTypes)) {
     pushError(errors, "config.relationTypes", "INVALID_TYPE", "relationTypes deve essere un array");
@@ -120,11 +168,17 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
 
   const allowedCategories = ["semantic", "logistic", "contextual", "editorial"];
   const allowedStrengths = ["strong", "medium", "weak"];
-  const itemTypeSet = new Set(itemTypes || []);
+
+  const itemTypeSet = new Set(Array.isArray(itemTypes) ? itemTypes : []);
   const relationTypeKeys = new Set();
 
   relationTypes.forEach((relationType, index) => {
     const basePath = `config.relationTypes[${index}]`;
+
+    if (!isPlainObject(relationType)) {
+      pushError(errors, basePath, "INVALID_TYPE", "Ogni relationType deve essere un oggetto");
+      return;
+    }
 
     if (!relationType.key || typeof relationType.key !== "string") {
       pushError(errors, `${basePath}.key`, "REQUIRED", "key è obbligatoria");
@@ -150,19 +204,28 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
       });
     }
 
+    validateStringArrayValues(relationType.domain, `${basePath}.domain`, errors);
+
+    validateStringArrayValues(relationType.range, `${basePath}.range`, errors);
+
+    validateStringArrayValues(relationType.userIntents, `${basePath}.userIntents`, errors);
+
     ["domain", "range"].forEach((field) => {
-      if (relationType[field] !== undefined && !Array.isArray(relationType[field])) {
-        pushError(errors, `${basePath}.${field}`, "INVALID_TYPE", `${field} deve essere un array`);
+      const values = relationType[field];
+
+      if (!Array.isArray(values)) {
         return;
       }
 
-      if (Array.isArray(relationType[field])) {
-        relationType[field].forEach((itemType, itemTypeIndex) => {
-          if (!itemTypeSet.has(itemType)) {
-            pushError(errors, `${basePath}.${field}[${itemTypeIndex}]`, "UNKNOWN_ITEM_TYPE", `itemType non presente in config.itemTypes: ${itemType}`);
-          }
-        });
-      }
+      values.forEach((itemType, itemTypeIndex) => {
+        if (typeof itemType !== "string" || !itemType) {
+          return;
+        }
+
+        if (!itemTypeSet.has(itemType)) {
+          pushError(errors, `${basePath}.${field}[${itemTypeIndex}]`, "UNKNOWN_ITEM_TYPE", `itemType non presente in config.itemTypes: ${itemType}`);
+        }
+      });
     });
 
     if (relationType.inverseKey !== undefined && typeof relationType.inverseKey !== "string") {
@@ -196,6 +259,7 @@ function validateMuseumPayload({ payload }) {
   }
 
   validateUniqueStringArray(payload.config.languageLevels, "config.languageLevels", errors);
+
   validateUniqueStringArray(payload.config.itemTypes, "config.itemTypes", errors);
 
   if (Array.isArray(payload.config.languageLevels) && payload.config.languageLevels.length === 0) {
@@ -207,6 +271,7 @@ function validateMuseumPayload({ payload }) {
   }
 
   validateDurationTypes(payload.config.durationTypes, errors);
+
   validateRelationTypes(payload.config.relationTypes || [], payload.config.itemTypes || [], errors);
 
   return errors;
