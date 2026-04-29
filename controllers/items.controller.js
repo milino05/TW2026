@@ -75,16 +75,6 @@ async function deleteItem(req, res, next) {
   }
 }
 
-async function getEditorVocabulary(req, res, next) {
-  try {
-    const vocabulary = await vocabularyService.getMuseumVocabulary(req.params.museumId);
-
-    res.status(200).json(vocabulary);
-  } catch (err) {
-    next(err);
-  }
-}
-
 module.exports = {
   createItem,
   updateItem,

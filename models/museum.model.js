@@ -11,14 +11,6 @@ const MuseumSchema = new Schema(
       trim: true,
     },
 
-    slug: {
-      type: String,
-      required: true,
-      trim: true,
-      unique: true,
-      index: true,
-    },
-
     config: {
       languageLevels: [{ type: String, trim: true }],
       durationTypes: [DurationTypeSchema],

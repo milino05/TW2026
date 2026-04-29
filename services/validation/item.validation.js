@@ -1,43 +1,7 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
 
-function pushError(errors, field, code, message, extra = {}) {
-  errors.push({
-    field,
-    code,
-    message,
-    ...extra,
-  });
-}
-
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key);
-}
-
-function trimIfString(value) {
-  return typeof value === "string" ? value.trim() : value;
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function normalizeBoolean(value) {
-  if (typeof value === "boolean") return value;
-
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === "true") return true;
-    if (normalized === "false") return false;
-  }
-
-  if (typeof value === "number") {
-    if (value === 1) return true;
-    if (value === 0) return false;
-  }
-
-  return undefined;
-}
+const { pushError, hasOwn, trimIfString, isPlainObject, normalizeBoolean } = require("./validation.utils");
 
 function normalizeItemPayload(payload = {}) {
   const normalized = {};

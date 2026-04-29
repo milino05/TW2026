@@ -97,6 +97,7 @@ const RelationTypeSchema = new Schema(
     inverseKey: {
       type: String,
       trim: true,
+      lowercase: true,
     },
 
     /**

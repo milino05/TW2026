@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 // import route
 const itemRoutes = require("./routes/items.routes");
+const museumRoutes = require("./routes/museums.routes");
 const errorHandler = require("./middlewares/errorHandler");
 
 const app = express();
@@ -50,8 +51,8 @@ app.get("/", async function (req, res) {
 //const configRoutes = require("./routes/config");
 
 // usa le route
+app.use("/api", museumRoutes);
 app.use("/api", itemRoutes);
-//app.use("/config", configRoutes);
 
 app.use(errorHandler); //simoncino puzza
 
