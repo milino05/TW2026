@@ -272,7 +272,9 @@ function validateMuseumPayload({ payload }) {
 
   validateDurationTypes(payload.config.durationTypes, errors);
 
-  validateRelationTypes(payload.config.relationTypes || [], payload.config.itemTypes || [], errors);
+  const relationTypesForValidation = payload.config.relationTypes === undefined ? [] : payload.config.relationTypes;
+
+  validateRelationTypes(relationTypesForValidation, payload.config.itemTypes, errors);
 
   return errors;
 }
