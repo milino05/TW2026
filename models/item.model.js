@@ -121,13 +121,13 @@ const ItemSchema = new Schema(
       },
 
       issues: [IntegrityIssueSchema],
-      createdBy: {
-        type: String,
-      },
+    },
+    createdBy: {
+      type: String,
+    },
 
-      updatedBy: {
-        type: String,
-      },
+    updatedBy: {
+      type: String,
     },
   },
   {

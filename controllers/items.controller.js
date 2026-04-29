@@ -1,5 +1,4 @@
 const itemService = require("../services/item.service");
-const vocabularyService = require("../services/museumVocabulary.service");
 
 async function createItem(req, res, next) {
   try {
@@ -81,5 +80,4 @@ module.exports = {
   listItems,
   getItem,
   deleteItem,
-  getEditorVocabulary,
 };

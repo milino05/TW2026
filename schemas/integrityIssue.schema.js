@@ -1,3 +1,6 @@
+const mongoose = require("mongoose");
+const { Schema } = mongoose;
+
 const IntegrityIssueSchema = new Schema(
   {
     code: {
@@ -23,3 +26,6 @@ const IntegrityIssueSchema = new Schema(
   },
   { _id: false },
 );
+
+
+module.exports = IntegrityIssueSchema;;
