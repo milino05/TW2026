@@ -100,6 +100,8 @@ async function createItem({ museumId, payload, userId = null }) {
     updatedBy: userId,
   });
 
+  //serve prima creare l'item e poi validare le relation
+  //magari ci sono relation inverse che puntano entranti nell'item che ancora non ho creato
   const touchedItems = await applyRelationCommands({
     museumId,
     currentItem: item,
