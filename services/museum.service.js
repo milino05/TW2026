@@ -2,6 +2,9 @@ const Museum = require("../models/museum.model");
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 
+const { getMuseumVocabulary } = require("./museumVocabulary.service");
+const { auditItemsAfterMuseumConfigChange } = require("./itemIntegrity.service");
+
 const { normalizeMuseumPayload, validateMuseumPayload } = require("./validation/museum.validation");
 
 const { hasOwn, isPlainObject } = require("./validation/validation.utils");
@@ -73,11 +76,27 @@ async function updateMuseum({ museumId, payload }) {
     throw new AppError("Payload non valido", 400, errors);
   }
 
+  const configChanged = hasOwn(payload, "config");
+
   Object.assign(existingMuseum, mergedPayload);
 
   await existingMuseum.save();
 
-  return existingMuseum;
+  let audit = null;
+
+  if (configChanged) {
+    const vocabulary = await getMuseumVocabulary(museumId);
+
+    audit = await auditItemsAfterMuseumConfigChange({
+      museumId,
+      vocabulary,
+    });
+  }
+
+  return {
+    museum: existingMuseum,
+    audit,
+  };
 }
 
 async function listMuseums() {

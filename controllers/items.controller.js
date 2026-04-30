@@ -1,5 +1,8 @@
 const itemService = require("../services/item.service");
+<<<<<<< HEAD
 const itemRelationsService = require("../services/itemRelations.service");
+=======
+>>>>>>> patch_itemIntegrity
 
 async function createItem(req, res, next) {
   try {
@@ -37,6 +40,7 @@ async function listItems(req, res, next) {
       filters: {
         itemType: req.query.itemType,
         status: req.query.status,
+        integrity: req.query.integrity,
       },
     });
 

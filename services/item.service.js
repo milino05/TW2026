@@ -2,7 +2,29 @@ const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
+<<<<<<< HEAD
 const { applyRelationCommands } = require("./itemRelations.service");
+=======
+const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
+
+function issueSignature(issue) {
+  return JSON.stringify({
+    code: issue.code,
+    field: issue.field,
+    context: issue.context || {},
+  });
+}
+
+function findNewIssues(beforeIssues, afterIssues) {
+  const beforeIssueSignatures = new Set(
+    beforeIssues.map(issueSignature),
+  );
+
+  return afterIssues.filter((issue) => {
+    return !beforeIssueSignatures.has(issueSignature(issue));
+  });
+}
+>>>>>>> patch_itemIntegrity
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -122,27 +144,61 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
 
   const vocabulary = await getMuseumVocabulary(museumId);
 
+<<<<<<< HEAD
   const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
 
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
   const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
+=======
+  const mergedPayload = buildMergedPayload(
+    existingItem.toObject(),
+    payload,
+    normalizedPayload,
+  );
+>>>>>>> patch_itemIntegrity
 
-  const validationErrors = await validateItemPayload({
+  const itemAfterUpdateForIntegrityCheck = {
+    ...mergedPayload,
+    _id: existingItem._id,
+    museumId: existingItem.museumId,
+  };
+
+  const beforeIssues = Array.isArray(existingItem.integrity?.issues)
+    ? existingItem.integrity.issues
+    : [];
+
+  const afterIssues = await computeItemIntegrityIssues({
+    item: itemAfterUpdateForIntegrityCheck,
     museumId,
-    payload: mergedPayload,
     vocabulary,
-    currentItemId: itemId,
   });
 
-  if (validationErrors.length > 0) {
-    throw new AppError("Payload non valido", 400, validationErrors);
+  const newIssues = findNewIssues(beforeIssues, afterIssues);
+
+  if (newIssues.length > 0) {
+    throw new AppError(
+      "La modifica introduce nuovi problemi di integrità",
+      400,
+      newIssues,
+    );
+  }
+
+  const hasIssuesAfterUpdate = afterIssues.length > 0;
+
+  if (mergedPayload.status === "published" && hasIssuesAfterUpdate) {
+    throw new AppError(
+      "Impossibile pubblicare un item con problemi di integrità",
+      400,
+      afterIssues,
+    );
   }
 
   Object.assign(existingItem, mergedPayload, {
     updatedBy: userId,
   });
 
+<<<<<<< HEAD
   const touchedItems = await applyRelationCommands({
     museumId,
     currentItem: existingItem,
@@ -151,6 +207,18 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
   });
 
   await saveUniqueItems([existingItem, ...touchedItems]);
+=======
+  existingItem.integrity = {
+    status: hasIssuesAfterUpdate ? "needs_review" : "valid",
+    issues: afterIssues,
+  };
+
+  if (hasIssuesAfterUpdate && existingItem.status === "published") {
+    existingItem.status = "draft";
+  }
+
+  await existingItem.save();
+>>>>>>> patch_itemIntegrity
 
   return existingItem;
 }
@@ -164,6 +232,10 @@ async function listItems({ museumId, filters = {} }) {
 
   if (filters.status) {
     query.status = filters.status;
+  }
+
+  if (filters.integrity) {
+    query["integrity.status"] = filters.integrity;
   }
 
   return Item.find(query).sort({ updatedAt: -1, label: 1 });
