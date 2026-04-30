@@ -211,6 +211,10 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
 
     const directionality = relationType.directionality || "directed";
 
+    if (directionality === "symmetric" && relationType.reverse !== undefined) {
+      pushError(errors, `${basePath}.reverse`, "REVERSE_NOT_ALLOWED_FOR_SYMMETRIC_RELATION", "reverse non deve essere definito per relationTypes simmetriche");
+    }
+
     if (!allowedDirectionalities.includes(directionality)) {
       pushError(errors, `${basePath}.directionality`, "INVALID_ENUM", `directionality non valida: ${relationType.directionality}`, {
         allowedValues: allowedDirectionalities,

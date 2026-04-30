@@ -55,6 +55,10 @@ function buildRelationViews(relationTypes = []) {
 }
 
 function getRelationViewByKey(relationViews, viewKey) {
+  if (!Array.isArray(relationViews)) {
+    return null;
+  }
+
   return relationViews.find((view) => view.viewKey === viewKey) || null;
 }
 

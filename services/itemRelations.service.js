@@ -1,7 +1,9 @@
+const mongoose = require("mongoose");
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { getRelationViewByKey } = require("./relationView.utils");
+const { isPlainObject } = require("./validation/validation.utils");
 
 function sameId(a, b) {
   return String(a) === String(b);
@@ -11,8 +13,27 @@ function isAllowedType(allowedTypes = [], itemType) {
   return allowedTypes.length === 0 || allowedTypes.includes(itemType);
 }
 
-//FUNZIONE RIPETUTA
+function ensureRelationsArray(item) {
+  if (!Array.isArray(item.relations)) {
+    item.relations = [];
+  }
+}
+
+function touchItem(touchedItemsById, item) {
+  touchedItemsById.set(String(item._id), item);
+}
+
 async function getItemOrFail({ museumId, itemId }) {
+  if (!mongoose.isValidObjectId(itemId)) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field: "target",
+        code: "INVALID_OBJECT_ID",
+        message: "target non è un ObjectId valido",
+      },
+    ]);
+  }
+
   const item = await Item.findOne({ _id: itemId, museumId });
 
   if (!item) {
@@ -20,6 +41,112 @@ async function getItemOrFail({ museumId, itemId }) {
   }
 
   return item;
+}
+
+async function getCommandTargetItemOrFail({ museumId, target, field }) {
+  if (!mongoose.isValidObjectId(target)) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field,
+        code: "INVALID_OBJECT_ID",
+        message: `${field} non è un ObjectId valido`,
+      },
+    ]);
+  }
+
+  const item = await Item.findOne({ _id: target, museumId });
+
+  if (!item) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field,
+        code: "TARGET_NOT_FOUND",
+        message: "L'item target non esiste nel museo corrente",
+      },
+    ]);
+  }
+
+  return item;
+}
+
+function normalizeRelationCommands(relationCommands) {
+  if (relationCommands === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(relationCommands)) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field: "relationCommands",
+        code: "INVALID_TYPE",
+        message: "relationCommands deve essere un array",
+      },
+    ]);
+  }
+
+  const errors = [];
+  const normalizedCommands = [];
+
+  relationCommands.forEach((command, index) => {
+    const basePath = `relationCommands[${index}]`;
+
+    if (!isPlainObject(command)) {
+      errors.push({
+        field: basePath,
+        code: "INVALID_TYPE",
+        message: "Ogni relationCommand deve essere un oggetto",
+      });
+      return;
+    }
+
+    const op = typeof command.op === "string" ? command.op.trim().toLowerCase() : command.op;
+    const viewKey = typeof command.viewKey === "string" ? command.viewKey.trim().toLowerCase() : command.viewKey;
+
+    if (!["add", "remove"].includes(op)) {
+      errors.push({
+        field: `${basePath}.op`,
+        code: "INVALID_ENUM",
+        message: "op deve essere add oppure remove",
+        allowedValues: ["add", "remove"],
+      });
+    }
+
+    if (!viewKey || typeof viewKey !== "string") {
+      errors.push({
+        field: `${basePath}.viewKey`,
+        code: "REQUIRED",
+        message: "viewKey è obbligatorio",
+      });
+    }
+
+    if (!command.target) {
+      errors.push({
+        field: `${basePath}.target`,
+        code: "REQUIRED",
+        message: "target è obbligatorio",
+      });
+    } else if (!mongoose.isValidObjectId(command.target)) {
+      errors.push({
+        field: `${basePath}.target`,
+        code: "INVALID_OBJECT_ID",
+        message: "target non è un ObjectId valido",
+      });
+    }
+
+    normalizedCommands.push({
+      op,
+      viewKey,
+      target: command.target,
+      weight: command.weight,
+      basePath,
+    });
+  });
+
+  if (errors.length > 0) {
+    throw new AppError("Payload non valido", 400, errors);
+  }
+
+  return normalizedCommands;
 }
 
 function mapOutgoingRelations({ item, vocabulary }) {
@@ -71,21 +198,15 @@ async function mapIncomingRelations({ museumId, itemId, vocabulary }) {
       incoming.push({
         relationId: rel._id,
         viewKey: isSymmetric ? relationType.key : `${relationType.key}:reverse`,
-
         baseRelationTypeKey: relationType.key,
         relationTypeKey: relationType.key,
-
         direction: isSymmetric ? "symmetric" : "reverse",
-
         label: isSymmetric ? relationType.label : relationType.reverse?.label || `Inverso di ${relationType.label}`,
-
         target: sourceItem._id,
         targetLabel: sourceItem.label,
         targetItemType: sourceItem.itemType,
-
         sourceItemId: sourceItem._id,
         sourceRelationId: rel._id,
-
         weight: rel.weight,
         generated: true,
       });
@@ -133,11 +254,11 @@ function canonicalizeRelationWrite({ currentItem, targetItem, relationView }) {
   };
 }
 
-function ensureRelationViewMatchesItemTypes({ relationView, currentItem, targetItem }) {
+function ensureRelationViewMatchesItemTypes({ relationView, currentItem, targetItem, field }) {
   if (!isAllowedType(relationView.domain, currentItem.itemType)) {
     throw new AppError("Payload non valido", 400, [
       {
-        field: "viewKey",
+        field,
         code: "INVALID_RELATION_VIEW_DOMAIN",
         message: `La relationView ${relationView.viewKey} non è applicabile a itemType ${currentItem.itemType}`,
         allowedValues: relationView.domain,
@@ -148,7 +269,7 @@ function ensureRelationViewMatchesItemTypes({ relationView, currentItem, targetI
   if (!isAllowedType(relationView.range, targetItem.itemType)) {
     throw new AppError("Payload non valido", 400, [
       {
-        field: "target",
+        field,
         code: "INVALID_RELATION_VIEW_RANGE",
         message: `Il target di tipo ${targetItem.itemType} non è compatibile con relationView ${relationView.viewKey}`,
         allowedValues: relationView.range,
@@ -157,7 +278,7 @@ function ensureRelationViewMatchesItemTypes({ relationView, currentItem, targetI
   }
 }
 
-function ensureValidWeight(weight) {
+function normalizeWeight(weight, field) {
   if (weight === undefined) {
     return 1;
   }
@@ -167,7 +288,7 @@ function ensureValidWeight(weight) {
   if (!Number.isFinite(normalizedWeight) || normalizedWeight < 0 || normalizedWeight > 10) {
     throw new AppError("Payload non valido", 400, [
       {
-        field: "weight",
+        field,
         code: "INVALID_NUMBER",
         message: "weight deve essere un numero compreso tra 0 e 10",
       },
@@ -177,13 +298,15 @@ function ensureValidWeight(weight) {
   return normalizedWeight;
 }
 
-function ensureRelationCanBeAdded({ sourceItem, targetItem, relationTypeKey, relationView }) {
-  const alreadyExists = (sourceItem.relations || []).some((rel) => rel.relationTypeKey === relationTypeKey && sameId(rel.target, targetItem._id));
+function addCanonicalRelation({ sourceItem, targetItem, relationTypeKey, relationView, weight, field }) {
+  ensureRelationsArray(sourceItem);
+
+  const alreadyExists = sourceItem.relations.some((rel) => rel.relationTypeKey === relationTypeKey && sameId(rel.target, targetItem._id));
 
   if (alreadyExists) {
     throw new AppError("Payload non valido", 400, [
       {
-        field: "relations",
+        field,
         code: "DUPLICATE_RELATION",
         message: "La relazione esiste già",
       },
@@ -191,188 +314,154 @@ function ensureRelationCanBeAdded({ sourceItem, targetItem, relationTypeKey, rel
   }
 
   if (relationView.validationRules?.allowMultiple === false) {
-    const alreadyHasRelationOfType = (sourceItem.relations || []).some((rel) => rel.relationTypeKey === relationTypeKey);
+    const alreadyHasRelationOfType = sourceItem.relations.some((rel) => rel.relationTypeKey === relationTypeKey);
 
     if (alreadyHasRelationOfType) {
       throw new AppError("Payload non valido", 400, [
         {
-          field: "relations",
+          field,
           code: "MULTIPLE_RELATIONS_NOT_ALLOWED",
           message: `La relazione ${relationTypeKey} ammette un solo target`,
         },
       ]);
     }
   }
+
+  if (relationView.direction === "symmetric") {
+    const reciprocalAlreadyExists = (targetItem.relations || []).some((rel) => rel.relationTypeKey === relationTypeKey && sameId(rel.target, sourceItem._id));
+
+    if (reciprocalAlreadyExists) {
+      throw new AppError("Payload non valido", 400, [
+        {
+          field,
+          code: "RECIPROCAL_SYMMETRIC_RELATION_ALREADY_EXISTS",
+          message: "Esiste già la stessa relazione simmetrica nel verso opposto",
+        },
+      ]);
+    }
+  }
+
+  sourceItem.relations.push({
+    relationTypeKey,
+    target: targetItem._id,
+    weight,
+  });
 }
 
-async function ensureNoSymmetricReciprocalDuplicate({ museumId, sourceItem, targetItem, relationTypeKey, relationView }) {
-  if (relationView.direction !== "symmetric") {
-    return;
-  }
+function removeCanonicalRelation({ sourceItem, targetItem, relationTypeKey, field }) {
+  ensureRelationsArray(sourceItem);
 
-  const reciprocal = await Item.findOne({
-    _id: targetItem._id,
-    museumId,
-    relations: {
-      $elemMatch: {
-        relationTypeKey,
-        target: sourceItem._id,
-      },
-    },
-  })
-    .select("_id")
-    .lean();
-  //PERCHÈ DARE ERRORE E NON SEMPLICEMENTE INGORARE LA COSA
-  if (reciprocal) {
+  const beforeCount = sourceItem.relations.length;
+
+  sourceItem.relations = sourceItem.relations.filter((rel) => !(rel.relationTypeKey === relationTypeKey && sameId(rel.target, targetItem._id)));
+
+  if (sourceItem.relations.length === beforeCount) {
     throw new AppError("Payload non valido", 400, [
       {
-        field: "relations",
-        code: "RECIPROCAL_SYMMETRIC_RELATION_ALREADY_EXISTS",
-        message: "Esiste già la stessa relazione simmetrica nel verso opposto",
+        field,
+        code: "RELATION_NOT_FOUND",
+        message: "Relazione non trovata",
       },
     ]);
   }
 }
 
-async function addRelationByView({ museumId, itemId, payload }) {
-  const { viewKey, target, weight } = payload || {};
-  //CHE ROBA È VIEWKEY
-  if (!viewKey || typeof viewKey !== "string") {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "viewKey",
-        code: "REQUIRED",
-        message: "viewKey è obbligatorio",
-      },
-    ]);
+/**
+ * Applica comandi relationCommands sull'item corrente.
+ *
+ * Non salva i documenti.
+ * Modifica in memoria currentItem e/o altri item target.
+ * Ritorna gli item modificati oltre al currentItem.
+ */
+async function applyRelationCommands({ museumId, currentItem, relationCommands, vocabulary }) {
+  const commands = normalizeRelationCommands(relationCommands);
+
+  if (commands.length === 0) {
+    return [];
   }
 
-  const currentItem = await getItemOrFail({ museumId, itemId });
-  const targetItem = await getItemOrFail({ museumId, itemId: target });
+  const touchedItemsById = new Map();
+  const targetItemsById = new Map();
 
-  if (sameId(currentItem._id, targetItem._id)) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "target",
-        code: "SELF_RELATION",
-        message: "Un item non può essere in relazione con sé stesso",
-      },
-    ]);
+  for (const command of commands) {
+    const relationView = getRelationViewByKey(vocabulary.relationViews, command.viewKey);
+
+    if (!relationView) {
+      throw new AppError("Payload non valido", 400, [
+        {
+          field: `${command.basePath}.viewKey`,
+          code: "UNKNOWN_RELATION_VIEW",
+          message: `relationView non valida: ${command.viewKey}`,
+        },
+      ]);
+    }
+
+    let targetItem = targetItemsById.get(String(command.target));
+
+    if (!targetItem) {
+      targetItem = await getCommandTargetItemOrFail({
+        museumId,
+        target: command.target,
+        field: `${command.basePath}.target`,
+      });
+
+      targetItemsById.set(String(command.target), targetItem);
+    }
+
+    if (sameId(currentItem._id, targetItem._id)) {
+      throw new AppError("Payload non valido", 400, [
+        {
+          field: `${command.basePath}.target`,
+          code: "SELF_RELATION",
+          message: "Un item non può essere in relazione con sé stesso",
+        },
+      ]);
+    }
+
+    ensureRelationViewMatchesItemTypes({
+      relationView,
+      currentItem,
+      targetItem,
+      field: `${command.basePath}.viewKey`,
+    });
+
+    const canonical = canonicalizeRelationWrite({
+      currentItem,
+      targetItem,
+      relationView,
+    });
+
+    if (command.op === "add") {
+      const weight = normalizeWeight(command.weight, `${command.basePath}.weight`);
+
+      addCanonicalRelation({
+        sourceItem: canonical.sourceItem,
+        targetItem: canonical.targetItem,
+        relationTypeKey: canonical.relationTypeKey,
+        relationView,
+        weight,
+        field: command.basePath,
+      });
+
+      touchItem(touchedItemsById, canonical.sourceItem);
+    }
+
+    if (command.op === "remove") {
+      removeCanonicalRelation({
+        sourceItem: canonical.sourceItem,
+        targetItem: canonical.targetItem,
+        relationTypeKey: canonical.relationTypeKey,
+        field: command.basePath,
+      });
+
+      touchItem(touchedItemsById, canonical.sourceItem);
+    }
   }
 
-  const vocabulary = await getMuseumVocabulary(museumId);
-  const relationView = getRelationViewByKey(vocabulary.relationViews, viewKey);
-
-  if (!relationView) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "viewKey",
-        code: "UNKNOWN_RELATION_VIEW",
-        message: `relationView non valida: ${viewKey}`,
-      },
-    ]);
-  }
-
-  ensureRelationViewMatchesItemTypes({
-    relationView,
-    currentItem,
-    targetItem,
-  });
-
-  const canonical = canonicalizeRelationWrite({
-    currentItem,
-    targetItem,
-    relationView,
-  });
-
-  const normalizedWeight = ensureValidWeight(weight);
-
-  ensureRelationCanBeAdded({
-    sourceItem: canonical.sourceItem,
-    targetItem: canonical.targetItem,
-    relationTypeKey: canonical.relationTypeKey,
-    relationView,
-  });
-
-  await ensureNoSymmetricReciprocalDuplicate({
-    museumId,
-    sourceItem: canonical.sourceItem,
-    targetItem: canonical.targetItem,
-    relationTypeKey: canonical.relationTypeKey,
-    relationView,
-  });
-
-  canonical.sourceItem.relations.push({
-    relationTypeKey: canonical.relationTypeKey,
-    target: canonical.targetItem._id,
-    weight: normalizedWeight,
-  });
-
-  await canonical.sourceItem.save();
-
-  return {
-    storedOnItemId: canonical.sourceItem._id,
-    relationTypeKey: canonical.relationTypeKey,
-    target: canonical.targetItem._id,
-    relationView,
-  };
-}
-
-async function removeRelationByView({ museumId, itemId, payload }) {
-  const { viewKey, target } = payload || {};
-
-  if (!viewKey || typeof viewKey !== "string") {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "viewKey",
-        code: "REQUIRED",
-        message: "viewKey è obbligatorio",
-      },
-    ]);
-  }
-
-  const currentItem = await getItemOrFail({ museumId, itemId });
-  const targetItem = await getItemOrFail({ museumId, itemId: target });
-
-  const vocabulary = await getMuseumVocabulary(museumId);
-  const relationView = getRelationViewByKey(vocabulary.relationViews, viewKey);
-
-  if (!relationView) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "viewKey",
-        code: "UNKNOWN_RELATION_VIEW",
-        message: `relationView non valida: ${viewKey}`,
-      },
-    ]);
-  }
-
-  const canonical = canonicalizeRelationWrite({
-    currentItem,
-    targetItem,
-    relationView,
-  });
-
-  const beforeCount = canonical.sourceItem.relations.length;
-
-  canonical.sourceItem.relations = canonical.sourceItem.relations.filter((rel) => !(rel.relationTypeKey === canonical.relationTypeKey && sameId(rel.target, canonical.targetItem._id)));
-
-  if (canonical.sourceItem.relations.length === beforeCount) {
-    throw new AppError("Relazione non trovata", 404);
-  }
-
-  await canonical.sourceItem.save();
-
-  return {
-    removed: true,
-    storedOnItemId: canonical.sourceItem._id,
-    relationTypeKey: canonical.relationTypeKey,
-    target: canonical.targetItem._id,
-  };
+  return Array.from(touchedItemsById.values());
 }
 
 module.exports = {
   getItemRelationsView,
-  addRelationByView,
-  removeRelationByView,
+  applyRelationCommands,
 };

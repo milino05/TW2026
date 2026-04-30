@@ -77,6 +77,18 @@ const RelationTypeSchema = new Schema(
       default: "medium",
     },
 
+    /**
+     * Intenti utente a cui questa relazione può rispondere.
+     * Esempio:
+     * ["ASK_AUTHOR", "ASK_CREATOR"]
+     */
+    userIntents: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+
     directionality: {
       type: String,
       enum: ["directed", "symmetric"],
@@ -93,17 +105,6 @@ const RelationTypeSchema = new Schema(
         type: String,
         trim: true,
       },
-      /**
-       * Intenti utente a cui questa relazione può rispondere.
-       * Esempio:
-       * ["ASK_AUTHOR", "ASK_CREATOR"]
-       */
-      userIntents: [
-        {
-          type: String,
-          trim: true,
-        },
-      ],
     },
 
     /**

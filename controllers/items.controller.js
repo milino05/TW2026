@@ -1,5 +1,4 @@
 const itemService = require("../services/item.service");
-const vocabularyService = require("../services/museumVocabulary.service");
 const itemRelationsService = require("../services/itemRelations.service");
 
 async function createItem(req, res, next) {
@@ -47,12 +46,28 @@ async function listItems(req, res, next) {
   }
 }
 
+/**per vedere anche le relazioni:
+ * GET /api/museums/:museumId/items/:itemId?includeRelationsView=true */
 async function getItem(req, res, next) {
   try {
     const item = await itemService.getItemById({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
     });
+
+    const includeRelationsView = req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1";
+
+    if (includeRelationsView) {
+      const relationsView = await itemRelationsService.getItemRelationsView({
+        museumId: req.params.museumId,
+        itemId: req.params.itemId,
+      });
+
+      return res.status(200).json({
+        item,
+        relationsView,
+      });
+    }
 
     res.status(200).json(item);
   } catch (err) {
@@ -76,54 +91,10 @@ async function deleteItem(req, res, next) {
   }
 }
 
-async function getItemRelations(req, res, next) {
-  try {
-    const relationsView = await itemRelationsService.getItemRelationsView({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-    });
-
-    res.status(200).json(relationsView);
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function addItemRelation(req, res, next) {
-  try {
-    const result = await itemRelationsService.addRelationByView({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-      payload: req.body,
-    });
-
-    res.status(201).json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function removeItemRelation(req, res, next) {
-  try {
-    const result = await itemRelationsService.removeRelationByView({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-      payload: req.body,
-    });
-
-    res.status(200).json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
 module.exports = {
   createItem,
   updateItem,
   listItems,
   getItem,
   deleteItem,
-  getItemRelations,
-  addItemRelation,
-  removeItemRelation,
 };

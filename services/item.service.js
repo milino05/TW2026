@@ -2,27 +2,68 @@ const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
+const { applyRelationCommands } = require("./itemRelations.service");
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-//PER ES: DISTINGUE CASO IN CUI NELLA RICHIESTA NON CI SIA UN CAMPO A QUANDO SI VUOLE RESETTARE IL CAMPO
+function splitItemPayloadAndRelationCommands(payload = {}) {
+  const hasRelations = hasOwn(payload, "relations");
+  const hasRelationCommands = hasOwn(payload, "relationCommands");
+
+  if (hasRelations && hasRelationCommands) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field: "relationCommands",
+        code: "AMBIGUOUS_RELATION_UPDATE",
+        message: "Non puoi usare relations e relationCommands nella stessa richiesta",
+      },
+    ]);
+  }
+
+  const { relationCommands, ...itemPayload } = payload;
+
+  return {
+    itemPayload,
+    relationCommands,
+  };
+}
+
 function buildMergedPayload(existingItem, rawPayload, normalizedPayload) {
-  const mergedPayload = {
+  return {
     externalId: hasOwn(rawPayload, "externalId") ? normalizedPayload.externalId : existingItem.externalId,
+
     itemType: hasOwn(rawPayload, "itemType") ? normalizedPayload.itemType : existingItem.itemType,
+
     label: hasOwn(rawPayload, "label") ? normalizedPayload.label : existingItem.label,
+
     tags: hasOwn(rawPayload, "tags") ? normalizedPayload.tags : existingItem.tags,
+
     status: hasOwn(rawPayload, "status") ? normalizedPayload.status : existingItem.status,
+
     recognitionImage: hasOwn(rawPayload, "recognitionImage") ? normalizedPayload.recognitionImage : existingItem.recognitionImage,
+
     metadata: hasOwn(rawPayload, "metadata") ? normalizedPayload.metadata : existingItem.metadata,
+
     jsonld: hasOwn(rawPayload, "jsonld") ? normalizedPayload.jsonld : existingItem.jsonld,
+
     representations: hasOwn(rawPayload, "representations") ? normalizedPayload.representations : existingItem.representations,
+
     relations: hasOwn(rawPayload, "relations") ? normalizedPayload.relations : existingItem.relations,
   };
+}
 
-  return mergedPayload;
+async function saveUniqueItems(items) {
+  const itemsById = new Map();
+
+  items.filter(Boolean).forEach((item) => {
+    itemsById.set(String(item._id), item);
+  });
+
+  for (const item of itemsById.values()) {
+    await item.save();
+  }
 }
 
 async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
@@ -37,7 +78,10 @@ async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
 
 async function createItem({ museumId, payload, userId = null }) {
   const vocabulary = await getMuseumVocabulary(museumId);
-  const normalizedPayload = normalizeItemPayload(payload);
+
+  const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
+
+  const normalizedPayload = normalizeItemPayload(itemPayload);
 
   const validationErrors = await validateItemPayload({
     museumId,
@@ -56,18 +100,31 @@ async function createItem({ museumId, payload, userId = null }) {
     updatedBy: userId,
   });
 
-  await item.save();
+  const touchedItems = await applyRelationCommands({
+    museumId,
+    currentItem: item,
+    relationCommands,
+    vocabulary,
+  });
+
+  await saveUniqueItems([item, ...touchedItems]);
 
   return item;
 }
 
 async function updateItem({ museumId, itemId, payload, userId = null }) {
-  const existingItem = await findItemByIdInMuseumOrFail({ museumId, itemId });
+  const existingItem = await findItemByIdInMuseumOrFail({
+    museumId,
+    itemId,
+  });
 
   const vocabulary = await getMuseumVocabulary(museumId);
-  const normalizedPayload = normalizeItemPayload(payload);
 
-  const mergedPayload = buildMergedPayload(existingItem.toObject(), payload, normalizedPayload);
+  const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
+
+  const normalizedPayload = normalizeItemPayload(itemPayload);
+
+  const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
 
   const validationErrors = await validateItemPayload({
     museumId,
@@ -84,7 +141,14 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     updatedBy: userId,
   });
 
-  await existingItem.save();
+  const touchedItems = await applyRelationCommands({
+    museumId,
+    currentItem: existingItem,
+    relationCommands,
+    vocabulary,
+  });
+
+  await saveUniqueItems([existingItem, ...touchedItems]);
 
   return existingItem;
 }
