@@ -105,6 +105,13 @@ const RelationTypeSchema = new Schema(
         type: String,
         trim: true,
       },
+
+      userIntents: [
+        {
+          type: String,
+          trim: true,
+        },
+      ],
     },
 
     /**

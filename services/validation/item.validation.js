@@ -69,11 +69,17 @@ function normalizeItemPayload(payload = {}) {
 
   if (hasOwn(payload, "relations")) {
     normalized.relations = Array.isArray(payload.relations)
-      ? payload.relations.filter(isPlainObject).map((rel) => ({
-          relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
-          target: rel.target,
-          weight: rel.weight,
-        }))
+      ? payload.relations.map((rel) => {
+          if (!isPlainObject(rel)) {
+            return rel;
+          }
+
+          return {
+            relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
+            target: rel.target,
+            weight: rel.weight,
+          };
+        })
       : payload.relations;
   }
 
@@ -142,6 +148,11 @@ function validateRepresentations(representations, vocabulary, errors) {
   representations.forEach((rep, index) => {
     const basePath = `representations[${index}]`;
 
+    if (!isPlainObject(rep)) {
+      pushError(errors, basePath, "INVALID_TYPE", "Ogni representation deve essere un oggetto");
+      return;
+    }
+
     if (!rep.languageLevel || typeof rep.languageLevel !== "string") {
       pushError(errors, `${basePath}.languageLevel`, "REQUIRED", "languageLevel è obbligatorio");
     } else if (!vocabulary.languageLevels.includes(rep.languageLevel)) {
@@ -200,6 +211,11 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
   for (let index = 0; index < relations.length; index += 1) {
     const rel = relations[index];
     const basePath = `relations[${index}]`;
+
+    if (!isPlainObject(rel)) {
+      pushError(errors, basePath, "INVALID_TYPE", "Ogni relation deve essere un oggetto");
+      continue;
+    }
 
     if (!rel.relationTypeKey || typeof rel.relationTypeKey !== "string") {
       pushError(errors, `${basePath}.relationTypeKey`, "REQUIRED", "relationTypeKey è obbligatorio");
