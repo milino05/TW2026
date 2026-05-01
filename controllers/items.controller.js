@@ -1,8 +1,5 @@
 const itemService = require("../services/item.service");
-<<<<<<< HEAD
 const itemRelationsService = require("../services/itemRelations.service");
-=======
->>>>>>> patch_itemIntegrity
 
 async function createItem(req, res, next) {
   try {
