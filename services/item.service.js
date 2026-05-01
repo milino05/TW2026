@@ -2,9 +2,7 @@ const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
-<<<<<<< HEAD
 const { applyRelationCommands } = require("./itemRelations.service");
-=======
 const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
 
 function issueSignature(issue) {
@@ -24,7 +22,6 @@ function findNewIssues(beforeIssues, afterIssues) {
     return !beforeIssueSignatures.has(issueSignature(issue));
   });
 }
->>>>>>> patch_itemIntegrity
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -144,32 +141,29 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
 
   const vocabulary = await getMuseumVocabulary(museumId);
 
-<<<<<<< HEAD
   const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
 
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
   const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
-=======
-  const mergedPayload = buildMergedPayload(
-    existingItem.toObject(),
-    payload,
-    normalizedPayload,
-  );
->>>>>>> patch_itemIntegrity
-
-  const itemAfterUpdateForIntegrityCheck = {
-    ...mergedPayload,
-    _id: existingItem._id,
-    museumId: existingItem.museumId,
-  };
 
   const beforeIssues = Array.isArray(existingItem.integrity?.issues)
     ? existingItem.integrity.issues
     : [];
 
+  Object.assign(existingItem, mergedPayload, {
+    updatedBy: userId,
+  });
+
+  const touchedItems = await applyRelationCommands({
+    museumId,
+    currentItem: existingItem,
+    relationCommands,
+    vocabulary,
+  });
+
   const afterIssues = await computeItemIntegrityIssues({
-    item: itemAfterUpdateForIntegrityCheck,
+    item: existingItem.toObject(),
     museumId,
     vocabulary,
   });
@@ -194,31 +188,15 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     );
   }
 
-  Object.assign(existingItem, mergedPayload, {
-    updatedBy: userId,
-  });
-
-<<<<<<< HEAD
-  const touchedItems = await applyRelationCommands({
-    museumId,
-    currentItem: existingItem,
-    relationCommands,
-    vocabulary,
-  });
-
-  await saveUniqueItems([existingItem, ...touchedItems]);
-=======
   existingItem.integrity = {
     status: hasIssuesAfterUpdate ? "needs_review" : "valid",
     issues: afterIssues,
   };
-
   if (hasIssuesAfterUpdate && existingItem.status === "published") {
     existingItem.status = "draft";
   }
 
-  await existingItem.save();
->>>>>>> patch_itemIntegrity
+  await saveUniqueItems([existingItem, ...touchedItems]);
 
   return existingItem;
 }
