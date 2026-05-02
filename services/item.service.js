@@ -228,6 +228,40 @@ async function getItemById({ museumId, itemId }) {
 async function deleteItem({ museumId, itemId }) {
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
+  const vocabulary = await getMuseumVocabulary(museumId);
+
+  // 1. trova item collegati
+  const relatedItems = await Item.find({
+    museumId,
+    "relations.target": itemId,
+  });
+
+  const touchedItems = [];
+
+  // 2. per ogni item rimuovi relazioni usando la tua logica
+  for (const relatedItem of relatedItems) {
+    const relationCommands = relatedItem.relations
+      .filter(rel => String(rel.target) === String(itemId))
+      .map(rel => ({
+        action: "remove",
+        relationTypeKey: rel.relationTypeKey,
+        target: itemId,
+      }));
+
+    const updated = await applyRelationCommands({
+      museumId,
+      currentItem: relatedItem,
+      relationCommands,
+      vocabulary,
+    });
+
+    touchedItems.push(relatedItem, ...updated);
+  }
+
+  // 3. salva tutto
+  await saveUniqueItems(touchedItems);
+
+  // 4. elimina item
   await item.deleteOne();
 
   return item;
