@@ -9,7 +9,7 @@ function issueSignature(issue) {
   return JSON.stringify({
     code: issue.code,
     field: issue.field,
-    context: issue.context || {},
+    value: issue.context?.value ?? null,
   });
 }
 
@@ -179,22 +179,24 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
   }
 
   const hasIssuesAfterUpdate = afterIssues.length > 0;
-
-  if (mergedPayload.status === "published" && hasIssuesAfterUpdate) {
+  //controllo alla richiesta dell'utente (dopo la update)
+  //blocca solo se qualcuno prova effettivamente a pubblicare
+  if ("status" in payload && payload.status === "published" && hasIssuesAfterUpdate) {
     throw new AppError(
       "Impossibile pubblicare un item con problemi di integrità",
       400,
       afterIssues,
     );
   }
+  //controllo allo stato attuale del DB (prima della update)
+  if (existingItem.status === "published" && hasIssuesAfterUpdate) {
+    existingItem.status = "draft";
+  }
 
   existingItem.integrity = {
     status: hasIssuesAfterUpdate ? "needs_review" : "valid",
     issues: afterIssues,
   };
-  if (hasIssuesAfterUpdate && existingItem.status === "published") {
-    existingItem.status = "draft";
-  }
 
   await saveUniqueItems([existingItem, ...touchedItems]);
 
