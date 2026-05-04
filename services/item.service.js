@@ -213,7 +213,7 @@ async function getItemById({ museumId, itemId }) {
   return findItemByIdInMuseumOrFail({ museumId, itemId });
 }
 
-/*
+
 async function removeRelationsTargetingItem({ museumId, targetItemId }) {
   return Item.updateMany(
     {
@@ -242,8 +242,8 @@ async function deleteItem({ museumId, itemId }) {
   await item.deleteOne();
 
   return item;
-} */
-
+}
+/*
 async function deleteItem({ museumId, itemId }) {
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
@@ -285,7 +285,7 @@ async function deleteItem({ museumId, itemId }) {
 
   return item;
 }
-
+*/
 module.exports = {
   createItem,
   updateItem,
