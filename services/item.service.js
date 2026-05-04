@@ -14,9 +14,7 @@ function issueSignature(issue) {
 }
 
 function findNewIssues(beforeIssues, afterIssues) {
-  const beforeIssueSignatures = new Set(
-    beforeIssues.map(issueSignature),
-  );
+  const beforeIssueSignatures = new Set(beforeIssues.map(issueSignature));
 
   return afterIssues.filter((issue) => {
     return !beforeIssueSignatures.has(issueSignature(issue));
@@ -147,9 +145,7 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
 
   const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
 
-  const beforeIssues = Array.isArray(existingItem.integrity?.issues)
-    ? existingItem.integrity.issues
-    : [];
+  const beforeIssues = Array.isArray(existingItem.integrity?.issues) ? existingItem.integrity.issues : [];
 
   Object.assign(existingItem, mergedPayload, {
     updatedBy: userId,
@@ -171,22 +167,14 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
   const newIssues = findNewIssues(beforeIssues, afterIssues);
 
   if (newIssues.length > 0) {
-    throw new AppError(
-      "La modifica introduce nuovi problemi di integrità",
-      400,
-      newIssues,
-    );
+    throw new AppError("La modifica introduce nuovi problemi di integrità", 400, newIssues);
   }
 
   const hasIssuesAfterUpdate = afterIssues.length > 0;
   //controllo alla richiesta dell'utente (dopo la update)
   //blocca solo se qualcuno prova effettivamente a pubblicare
   if ("status" in payload && payload.status === "published" && hasIssuesAfterUpdate) {
-    throw new AppError(
-      "Impossibile pubblicare un item con problemi di integrità",
-      400,
-      afterIssues,
-    );
+    throw new AppError("Impossibile pubblicare un item con problemi di integrità", 400, afterIssues);
   }
   //controllo allo stato attuale del DB (prima della update)
   if (existingItem.status === "published" && hasIssuesAfterUpdate) {
@@ -225,6 +213,37 @@ async function getItemById({ museumId, itemId }) {
   return findItemByIdInMuseumOrFail({ museumId, itemId });
 }
 
+/*
+async function removeRelationsTargetingItem({ museumId, targetItemId }) {
+  return Item.updateMany(
+    {
+      museumId,
+      "relations.target": targetItemId,
+    },
+    {
+      $pull: {
+        relations: {
+          target: targetItemId,
+        },
+      },
+    },
+  );
+}
+
+
+async function deleteItem({ museumId, itemId }) {
+  const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
+
+  await removeRelationsTargetingItem({
+    museumId,
+    targetItemId: item._id,
+  });
+
+  await item.deleteOne();
+
+  return item;
+} */
+
 async function deleteItem({ museumId, itemId }) {
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
@@ -241,8 +260,8 @@ async function deleteItem({ museumId, itemId }) {
   // 2. per ogni item rimuovi relazioni usando la tua logica
   for (const relatedItem of relatedItems) {
     const relationCommands = relatedItem.relations
-      .filter(rel => String(rel.target) === String(itemId))
-      .map(rel => ({
+      .filter((rel) => String(rel.target) === String(itemId))
+      .map((rel) => ({
         action: "remove",
         relationTypeKey: rel.relationTypeKey,
         target: itemId,
