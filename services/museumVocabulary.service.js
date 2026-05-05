@@ -33,27 +33,19 @@ function normalizeRelationTypes(relationTypes) {
           key: typeof relationType.key === "string" ? relationType.key.trim().toLowerCase() : "",
           label: typeof relationType.label === "string" ? relationType.label.trim() : "",
           description: typeof relationType.description === "string" ? relationType.description.trim() : undefined,
-
           domain: normalizeStringArray(relationType.domain),
           range: normalizeStringArray(relationType.range),
-
           category: relationType.category,
           strength: relationType.strength,
-
           directionality: relationType.directionality === "symmetric" ? "symmetric" : "directed",
-
           userIntents: normalizeStringArray(relationType.userIntents),
-
           reverse: relationType.reverse
             ? {
                 label: typeof relationType.reverse.label === "string" ? relationType.reverse.label.trim() : undefined,
-
                 description: typeof relationType.reverse.description === "string" ? relationType.reverse.description.trim() : undefined,
-
                 userIntents: normalizeStringArray(relationType.reverse.userIntents),
               }
             : undefined,
-
           validationRules: {
             allowMultiple: relationType.validationRules?.allowMultiple !== false,
             targetRequired: relationType.validationRules?.targetRequired !== false,
@@ -61,6 +53,26 @@ function normalizeRelationTypes(relationTypes) {
         }))
         .filter((relationType) => relationType.key)
     : [];
+}
+
+function isAllowedForItemType(allowedTypes = [], itemType) {
+  return !Array.isArray(allowedTypes) || allowedTypes.length === 0 || allowedTypes.includes(itemType);
+}
+
+function buildItemTypeVocabulary(vocabulary, itemType) {
+  const relationTypes = (vocabulary.relationTypes || []).filter((relationType) => isAllowedForItemType(relationType.domain, itemType));
+  const relationViews = (vocabulary.relationViews || []).filter((relationView) => isAllowedForItemType(relationView.domain, itemType));
+
+  return {
+    museumId: vocabulary.museumId,
+    itemType,
+    isKnownItemType: (vocabulary.itemTypes || []).includes(itemType),
+    itemTypes: vocabulary.itemTypes || [],
+    languageLevels: vocabulary.languageLevels || [],
+    durationTypes: vocabulary.durationTypes || [],
+    relationTypes,
+    relationViews,
+  };
 }
 
 async function getMuseumVocabulary(museumId) {
@@ -85,6 +97,25 @@ async function getMuseumVocabulary(museumId) {
   };
 }
 
+async function getItemTypeVocabulary({ museumId, itemType }) {
+  const vocabulary = await getMuseumVocabulary(museumId);
+
+  if (!vocabulary.itemTypes.includes(itemType)) {
+    throw new AppError("itemType non valido per il museo", 400, [
+      {
+        field: "itemType",
+        code: "INVALID_CONTROLLED_VALUE",
+        message: `itemType non valido: ${itemType}`,
+        allowedValues: vocabulary.itemTypes,
+      },
+    ]);
+  }
+
+  return buildItemTypeVocabulary(vocabulary, itemType);
+}
+
 module.exports = {
   getMuseumVocabulary,
+  buildItemTypeVocabulary,
+  getItemTypeVocabulary,
 };
