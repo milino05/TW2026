@@ -139,6 +139,7 @@ async function createItem({ museumId, payload, userId = null }) {
     vocabulary,
   });
 
+  //PERCHÉ MARCHIARE TUTTI GLI ITEM TOCCATI DALLE RELATION COMMANDS CON NEEDING REVIEW
   touchedItems.forEach((touchedItem) => {
     if (String(touchedItem._id) !== String(item._id)) {
       markAsDraftNeedingReview(touchedItem, userId);
