@@ -87,6 +87,7 @@ async function updateMuseum({ museumId, payload }) {
   if (configChanged) {
     const vocabulary = await getMuseumVocabulary(museumId);
 
+    //controlla tutti gli item che sono incoerenti con il nuovo config
     audit = await auditItemsAfterMuseumConfigChange({
       museumId,
       vocabulary,

@@ -73,6 +73,19 @@ async function getEditorVocabulary(req, res, next) {
   }
 }
 
+async function getItemTypeVocabulary(req, res, next) {
+  try {
+    const vocabulary = await vocabularyService.getItemTypeVocabulary({
+      museumId: req.params.museumId,
+      itemType: req.params.itemType,
+    });
+
+    res.status(200).json(vocabulary);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createMuseum,
   updateMuseum,
@@ -80,4 +93,5 @@ module.exports = {
   getMuseum,
   deleteMuseum,
   getEditorVocabulary,
+  getItemTypeVocabulary,
 };

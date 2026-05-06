@@ -1,5 +1,6 @@
 const itemService = require("../services/item.service");
 const itemRelationsService = require("../services/itemRelations.service");
+const itemIntegrityService = require("../services/itemIntegrity.service");
 
 async function createItem(req, res, next) {
   try {
@@ -76,6 +77,39 @@ async function getItem(req, res, next) {
   }
 }
 
+async function checkItemConsistency(req, res, next) {
+  try {
+    const result = await itemIntegrityService.checkItemConsistency({
+      museumId: req.params.museumId,
+      itemId: req.params.itemId,
+    });
+
+    res.status(200).json({
+      item: result.item,
+      integrity: result.integrity,
+      issues: result.issues,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function publishItem(req, res, next) {
+  try {
+    const item = await itemIntegrityService.publishItem({
+      museumId: req.params.museumId,
+      itemId: req.params.itemId,
+    });
+
+    res.status(200).json({
+      message: "Item pubblicato",
+      item,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteItem(req, res, next) {
   try {
     const item = await itemService.deleteItem({
@@ -97,5 +131,7 @@ module.exports = {
   updateItem,
   listItems,
   getItem,
+  checkItemConsistency,
+  publishItem,
   deleteItem,
 };

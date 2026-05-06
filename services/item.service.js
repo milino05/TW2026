@@ -1,28 +1,38 @@
 const Item = require("../models/item.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
-const { normalizeItemPayload, validateItemPayload } = require("./validation/item.validation");
+const { normalizeItemPayload, validateItemDraftPayload } = require("./validation/item.validation");
 const { applyRelationCommands } = require("./itemRelations.service");
-const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
-
-function issueSignature(issue) {
-  return JSON.stringify({
-    code: issue.code,
-    field: issue.field,
-    value: issue.context?.value ?? null,
-  });
-}
-
-function findNewIssues(beforeIssues, afterIssues) {
-  const beforeIssueSignatures = new Set(beforeIssues.map(issueSignature));
-
-  return afterIssues.filter((issue) => {
-    return !beforeIssueSignatures.has(issueSignature(issue));
-  });
-}
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function rejectStatusInPayload(payload = {}) {
+  if (hasOwn(payload, "status")) {
+    throw new AppError("Payload non valido", 400, [
+      {
+        field: "status",
+        code: "FORBIDDEN_FIELD",
+        message: "Lo stato editoriale non può essere modificato tramite create/update. Usa la route dedicata di pubblicazione.",
+      },
+    ]);
+  }
+}
+
+function markAsDraftNeedingReview(item, userId = null) {
+  if (item.status !== "archived") {
+    item.status = "draft";
+  }
+
+  item.integrity = {
+    status: "needs_review",
+    issues: [],
+  };
+
+  if (userId !== null) {
+    item.updatedBy = userId;
+  }
 }
 
 function splitItemPayloadAndRelationCommands(payload = {}) {
@@ -56,8 +66,6 @@ function buildMergedPayload(existingItem, rawPayload, normalizedPayload) {
     label: hasOwn(rawPayload, "label") ? normalizedPayload.label : existingItem.label,
 
     tags: hasOwn(rawPayload, "tags") ? normalizedPayload.tags : existingItem.tags,
-
-    status: hasOwn(rawPayload, "status") ? normalizedPayload.status : existingItem.status,
 
     recognitionImage: hasOwn(rawPayload, "recognitionImage") ? normalizedPayload.recognitionImage : existingItem.recognitionImage,
 
@@ -94,16 +102,18 @@ async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
 }
 
 async function createItem({ museumId, payload, userId = null }) {
+  rejectStatusInPayload(payload);
+
   const vocabulary = await getMuseumVocabulary(museumId);
 
   const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
 
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
-  const validationErrors = await validateItemPayload({
-    museumId,
+  const validationErrors = await validateItemDraftPayload({
     payload: normalizedPayload,
     vocabulary,
+    mode: "create",
   });
 
   if (validationErrors.length > 0) {
@@ -113,17 +123,27 @@ async function createItem({ museumId, payload, userId = null }) {
   const item = new Item({
     ...normalizedPayload,
     museumId,
+    status: "draft",
+    integrity: {
+      status: "needs_review",
+      issues: [],
+    },
     createdBy: userId,
     updatedBy: userId,
   });
 
-  //serve prima creare l'item e poi validare le relation
-  //magari ci sono relation inverse che puntano entranti nell'item che ancora non ho creato
   const touchedItems = await applyRelationCommands({
     museumId,
     currentItem: item,
     relationCommands,
     vocabulary,
+  });
+
+  //PERCHÉ MARCHIARE TUTTI GLI ITEM TOCCATI DALLE RELATION COMMANDS CON NEEDING REVIEW
+  touchedItems.forEach((touchedItem) => {
+    if (String(touchedItem._id) !== String(item._id)) {
+      markAsDraftNeedingReview(touchedItem, userId);
+    }
   });
 
   await saveUniqueItems([item, ...touchedItems]);
@@ -132,6 +152,8 @@ async function createItem({ museumId, payload, userId = null }) {
 }
 
 async function updateItem({ museumId, itemId, payload, userId = null }) {
+  rejectStatusInPayload(payload);
+
   const existingItem = await findItemByIdInMuseumOrFail({
     museumId,
     itemId,
@@ -143,13 +165,25 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
 
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
-  const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
+  const validationErrors = await validateItemDraftPayload({
+    payload: normalizedPayload,
+    vocabulary,
+    mode: "update",
+    existingItem,
+    currentItemId: itemId,
+  });
 
-  const beforeIssues = Array.isArray(existingItem.integrity?.issues) ? existingItem.integrity.issues : [];
+  if (validationErrors.length > 0) {
+    throw new AppError("Payload non valido", 400, validationErrors);
+  }
+
+  const mergedPayload = buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload);
 
   Object.assign(existingItem, mergedPayload, {
     updatedBy: userId,
   });
+
+  markAsDraftNeedingReview(existingItem, userId);
 
   const touchedItems = await applyRelationCommands({
     museumId,
@@ -158,33 +192,9 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
     vocabulary,
   });
 
-  const afterIssues = await computeItemIntegrityIssues({
-    item: existingItem.toObject(),
-    museumId,
-    vocabulary,
+  touchedItems.forEach((touchedItem) => {
+    markAsDraftNeedingReview(touchedItem, userId);
   });
-
-  const newIssues = findNewIssues(beforeIssues, afterIssues);
-
-  if (newIssues.length > 0) {
-    throw new AppError("La modifica introduce nuovi problemi di integrità", 400, newIssues);
-  }
-
-  const hasIssuesAfterUpdate = afterIssues.length > 0;
-  //controllo alla richiesta dell'utente (dopo la update)
-  //blocca solo se qualcuno prova effettivamente a pubblicare
-  if ("status" in payload && payload.status === "published" && hasIssuesAfterUpdate) {
-    throw new AppError("Impossibile pubblicare un item con problemi di integrità", 400, afterIssues);
-  }
-  //controllo allo stato attuale del DB (prima della update)
-  if (existingItem.status === "published" && hasIssuesAfterUpdate) {
-    existingItem.status = "draft";
-  }
-
-  existingItem.integrity = {
-    status: hasIssuesAfterUpdate ? "needs_review" : "valid",
-    issues: afterIssues,
-  };
 
   await saveUniqueItems([existingItem, ...touchedItems]);
 
@@ -213,7 +223,6 @@ async function getItemById({ museumId, itemId }) {
   return findItemByIdInMuseumOrFail({ museumId, itemId });
 }
 
-
 async function removeRelationsTargetingItem({ museumId, targetItemId }) {
   return Item.updateMany(
     {
@@ -230,7 +239,6 @@ async function removeRelationsTargetingItem({ museumId, targetItemId }) {
   );
 }
 
-
 async function deleteItem({ museumId, itemId }) {
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
@@ -243,49 +251,7 @@ async function deleteItem({ museumId, itemId }) {
 
   return item;
 }
-/*
-async function deleteItem({ museumId, itemId }) {
-  const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
-  const vocabulary = await getMuseumVocabulary(museumId);
-
-  // 1. trova item collegati
-  const relatedItems = await Item.find({
-    museumId,
-    "relations.target": itemId,
-  });
-
-  const touchedItems = [];
-
-  // 2. per ogni item rimuovi relazioni usando la tua logica
-  for (const relatedItem of relatedItems) {
-    const relationCommands = relatedItem.relations
-      .filter((rel) => String(rel.target) === String(itemId))
-      .map((rel) => ({
-        action: "remove",
-        relationTypeKey: rel.relationTypeKey,
-        target: itemId,
-      }));
-
-    const updated = await applyRelationCommands({
-      museumId,
-      currentItem: relatedItem,
-      relationCommands,
-      vocabulary,
-    });
-
-    touchedItems.push(relatedItem, ...updated);
-  }
-
-  // 3. salva tutto
-  await saveUniqueItems(touchedItems);
-
-  // 4. elimina item
-  await item.deleteOne();
-
-  return item;
-}
-*/
 module.exports = {
   createItem,
   updateItem,
