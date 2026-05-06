@@ -78,7 +78,7 @@ async function publishItem({ museumId, itemId }) {
 
 async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
   const items = await Item.find({ museumId })
-    .select("_id museumId status itemType representations relations")
+    .select("_id museumId status label itemType representations relations")
     .lean();
 
   const operations = [];
