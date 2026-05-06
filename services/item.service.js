@@ -21,7 +21,10 @@ function rejectStatusInPayload(payload = {}) {
 }
 
 function markAsDraftNeedingReview(item, userId = null) {
-  item.status = "draft";
+  if (item.status !== "archived") {
+    item.status = "draft";
+  }
+
   item.integrity = {
     status: "needs_review",
     issues: [],
