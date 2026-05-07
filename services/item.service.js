@@ -7,6 +7,9 @@ const { applyRelationCommands } = require("./itemRelations.service");
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
+function sameId(a, b) {
+  return String(a) === String(b);
+}
 
 function rejectStatusInPayload(payload = {}) {
   if (hasOwn(payload, "status")) {
@@ -20,14 +23,14 @@ function rejectStatusInPayload(payload = {}) {
   }
 }
 
-function markAsDraftNeedingReview(item, userId = null) {
+function markAsDraftNeedingReview(item, userId = null, issues = []) {
   if (item.status !== "archived") {
     item.status = "draft";
   }
 
   item.integrity = {
     status: "needs_review",
-    issues: [],
+    issues,
   };
 
   if (userId !== null) {
@@ -223,33 +226,70 @@ async function getItemById({ museumId, itemId }) {
   return findItemByIdInMuseumOrFail({ museumId, itemId });
 }
 
-async function removeRelationsTargetingItem({ museumId, targetItemId }) {
-  return Item.updateMany(
-    {
-      museumId,
-      "relations.target": targetItemId,
-    },
-    {
-      $pull: {
-        relations: {
-          target: targetItemId,
-        },
-      },
-    },
-  );
+async function findItemsTargetingItem({ museumId, targetItemId }) {
+  return Item.find({
+    museumId,
+    "relations.target": targetItemId,
+  });
 }
 
-async function deleteItem({ museumId, itemId }) {
+function buildDeletedTargetIntegrityIssues({ sourceItem, deletedItem }) {
+  const relations = Array.isArray(sourceItem.relations) ? sourceItem.relations : [];
+
+  return relations
+    .map((relation, index) => ({
+      relation,
+      index,
+    }))
+    .filter(({ relation }) => sameId(relation.target, deletedItem._id)) //prende le relation del sourceItem e tiene solo quelle che hanno come target l'item eliminato
+    .map(({ relation, index }) => ({
+      field: `relations[${index}].target`,
+      code: "RELATION_TARGET_DELETED",
+      message: `La relazione punta a un item eliminato: ${deletedItem.label}`,
+      context: {
+        deletedItemId: deletedItem._id,
+        deletedItemLabel: deletedItem.label,
+        deletedItemType: deletedItem.itemType,
+        deletedItemExternalId: deletedItem.externalId || null,
+        relationTypeKey: relation.relationTypeKey,
+        relationId: relation._id,
+        relationWeight: relation.weight,
+      },
+    }));
+}
+
+async function deleteItem({ museumId, itemId, userId = null }) {
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
 
-  await removeRelationsTargetingItem({
+  const affectedItems = await findItemsTargetingItem({
     museumId,
     targetItemId: item._id,
   });
 
+  affectedItems.forEach((affectedItem) => {
+    const deletionIssues = buildDeletedTargetIntegrityIssues({
+      sourceItem: affectedItem,
+      deletedItem: item,
+    });
+
+    const existingIssues = Array.isArray(affectedItem.integrity?.issues)
+      ? affectedItem.integrity.issues
+      : [];
+
+    markAsDraftNeedingReview(affectedItem, userId, [
+      ...existingIssues,
+      ...deletionIssues,
+    ]);
+  });
+
+  await saveUniqueItems(affectedItems);
+
   await item.deleteOne();
 
-  return item;
+  return {
+    item,
+    affectedItemsCount: affectedItems.length,
+  };
 }
 
 module.exports = {
