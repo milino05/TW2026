@@ -1,3 +1,3 @@
-to start mongoDb and then node
-```docker compose up -d```
-```npm run dev```
+to start mongoDb and then node\n
+```docker compose up -d\n```
+```npm run dev\n```
