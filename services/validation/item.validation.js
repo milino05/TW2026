@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Item = require("../../models/item.model");
 
 const { pushError, hasOwn, trimIfString, isPlainObject, normalizeBoolean } = require("./validation.utils");
 
@@ -12,25 +13,23 @@ function normalizeItemPayload(payload = {}) {
   });
 
   if (hasOwn(payload, "tags")) {
-    normalized.tags = Array.isArray(payload.tags)
-      ? payload.tags.map((tag) => (typeof tag === "string" ? tag.trim() : tag))
-      : payload.tags;
+    normalized.tags = Array.isArray(payload.tags) ? payload.tags.map((tag) => (typeof tag === "string" ? tag.trim() : tag)) : payload.tags;
   }
 
   if (hasOwn(payload, "recognitionImage")) {
     normalized.recognitionImage = isPlainObject(payload.recognitionImage)
       ? {
-        url: trimIfString(payload.recognitionImage.url),
-        altText: trimIfString(payload.recognitionImage.altText),
-      }
+          url: trimIfString(payload.recognitionImage.url),
+          altText: trimIfString(payload.recognitionImage.altText),
+        }
       : payload.recognitionImage;
   }
 
   if (hasOwn(payload, "metadata")) {
     normalized.metadata = isPlainObject(payload.metadata)
       ? {
-        license: trimIfString(payload.metadata.license),
-      }
+          license: trimIfString(payload.metadata.license),
+        }
       : payload.metadata;
   }
 
@@ -41,17 +40,17 @@ function normalizeItemPayload(payload = {}) {
   if (hasOwn(payload, "representations")) {
     normalized.representations = Array.isArray(payload.representations)
       ? payload.representations.map((rep) => {
-        if (!isPlainObject(rep)) {
-          return rep;
-        }
+          if (!isPlainObject(rep)) {
+            return rep;
+          }
 
-        return {
-          languageLevel: trimIfString(rep.languageLevel),
-          durationKey: trimIfString(rep.durationKey)?.toLowerCase(),
-          text: trimIfString(rep.text),
-          isDefault: normalizeBoolean(rep.isDefault),
-        };
-      })
+          return {
+            languageLevel: trimIfString(rep.languageLevel),
+            durationKey: trimIfString(rep.durationKey)?.toLowerCase(),
+            text: trimIfString(rep.text),
+            isDefault: normalizeBoolean(rep.isDefault),
+          };
+        })
       : payload.representations;
   }
 
@@ -77,16 +76,16 @@ function normalizeItemPayload(payload = {}) {
   if (hasOwn(payload, "relations")) {
     normalized.relations = Array.isArray(payload.relations)
       ? payload.relations.map((rel) => {
-        if (!isPlainObject(rel)) {
-          return rel;
-        }
+          if (!isPlainObject(rel)) {
+            return rel;
+          }
 
-        return {
-          relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
-          target: rel.target,
-          weight: rel.weight,
-        };
-      })
+          return {
+            relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
+            target: rel.target,
+            weight: rel.weight,
+          };
+        })
       : payload.relations;
   }
 
@@ -228,7 +227,7 @@ function validateRepresentations(representations, vocabulary, errors) {
   }
 }
 
-function validateRelations({ itemType, relations, vocabulary, errors, currentItemId = null }) {
+async function validateRelations({ museumId, itemType, relations, vocabulary, errors, currentItemId = null }) {
   if (relations === undefined) {
     return;
   }
@@ -242,9 +241,9 @@ function validateRelations({ itemType, relations, vocabulary, errors, currentIte
   const seenRelations = new Set();
   const seenRelationTypeOccurrences = new Map();
 
-  relations.forEach((rel, index) => {
+  for (let index = 0; index < relations.length; index += 1) {
+    const rel = relations[index];
     const basePath = `relations[${index}]`;
-
     if (!isPlainObject(rel)) {
       pushError(errors, basePath, "INVALID_TYPE", "Ogni relation deve essere un oggetto");
       return;
@@ -287,6 +286,25 @@ function validateRelations({ itemType, relations, vocabulary, errors, currentIte
       return;
     }
 
+    const targetItem = await Item.findById(rel.target).select("_id itemType museumId").lean();
+
+    if (!targetItem) {
+      pushError(errors, `${basePath}.target`, "TARGET_NOT_FOUND", "L'item target non esiste");
+      continue;
+    }
+
+    if (String(targetItem.museumId) !== String(museumId)) {
+      pushError(errors, `${basePath}.target`, "CROSS_MUSEUM_TARGET", "Il target appartiene a un museo diverso");
+      continue;
+    }
+
+    if (Array.isArray(relationType.range) && relationType.range.length > 0 && !relationType.range.includes(targetItem.itemType)) {
+      pushError(errors, `${basePath}.target`, "INVALID_RANGE", `Il target di tipo ${targetItem.itemType} non è compatibile con la relazione ${relationType.label}`, {
+        allowedValues: relationType.range,
+        targetType: targetItem.itemType,
+      });
+    }
+
     if (rel.weight !== undefined) {
       const weight = Number(rel.weight);
       if (!Number.isFinite(weight) || weight < 0 || weight > 10) {
@@ -300,10 +318,9 @@ function validateRelations({ itemType, relations, vocabulary, errors, currentIte
     } else {
       seenRelations.add(duplicateKey);
     }
-  });
+  }
 }
-
-async function validateItemDraftPayload({ payload, vocabulary, mode, existingItem = null, currentItemId = null }) {
+async function validateItemDraftPayload({ museumId, payload, vocabulary, mode, existingItem = null, currentItemId = null }) {
   const errors = [];
   const effectiveItemType = hasOwn(payload, "itemType") ? payload.itemType : existingItem?.itemType;
 
@@ -317,6 +334,7 @@ async function validateItemDraftPayload({ payload, vocabulary, mode, existingIte
   validateRepresentations(payload.representations, vocabulary, errors);
 
   validateRelations({
+    museumId,
     itemType: effectiveItemType,
     relations: payload.relations,
     vocabulary,

@@ -114,6 +114,7 @@ async function createItem({ museumId, payload, userId = null }) {
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
   const validationErrors = await validateItemDraftPayload({
+    museumId,
     payload: normalizedPayload,
     vocabulary,
     mode: "create",
@@ -169,6 +170,7 @@ async function updateItem({ museumId, itemId, payload, userId = null }) {
   const normalizedPayload = normalizeItemPayload(itemPayload);
 
   const validationErrors = await validateItemDraftPayload({
+    museumId,
     payload: normalizedPayload,
     vocabulary,
     mode: "update",
@@ -272,14 +274,9 @@ async function deleteItem({ museumId, itemId, userId = null }) {
       deletedItem: item,
     });
 
-    const existingIssues = Array.isArray(affectedItem.integrity?.issues)
-      ? affectedItem.integrity.issues
-      : [];
+    const existingIssues = Array.isArray(affectedItem.integrity?.issues) ? affectedItem.integrity.issues : [];
 
-    markAsDraftNeedingReview(affectedItem, userId, [
-      ...existingIssues,
-      ...deletionIssues,
-    ]);
+    markAsDraftNeedingReview(affectedItem, userId, [...existingIssues, ...deletionIssues]);
   });
 
   await saveUniqueItems(affectedItems);
