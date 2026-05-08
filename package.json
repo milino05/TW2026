@@ -12,6 +12,12 @@
     "nodemon": "^3.1.14"
   },
   "scripts": {
-    "dev": "nodemon index.js"
+    "dev": "docker compose up -d",
+    "dev:build": "docker compose up --build",
+    "down": "docker compose down",
+    "down:clean": "docker compose down -v",
+    "logs": "docker compose logs -f backend",
+    "start": "node index.js",
+    "dev:container": "nodemon index.js"
   }
 }
