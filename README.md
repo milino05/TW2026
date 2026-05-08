@@ -9,7 +9,9 @@ comando CMD
 struttura delle dipendenze  
 ```
 Comandi per avviare docker:  
-```  
+```
+npm run <command>
+  
 "dev": "docker compose up -d",  
 "dev:build": "docker compose up --build",  
 "down": "docker compose down",  
