@@ -21,4 +21,11 @@ npm run <command>
 "dev:container": "nodemon index.js"
 ```
 
+Accesso a macchina di laboratorio:  
+```ssh <nome.cognome>@nabucco.cs.unibo.it```  
+
+Percorso per directory:  
+```cd ../../web/site252605/html/```  
+
+
 
