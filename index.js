@@ -15,6 +15,11 @@ const app = require("./app");
 const mongoURI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 8000;
 
+if (!mongoURI) {
+  console.error("❌ MONGO_URI mancante. Controlla il file .env sul server.");
+  process.exit(1);
+}
+
 async function startServer() {
   try {
     await mongoose.connect(mongoURI);
