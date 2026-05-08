@@ -246,19 +246,19 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
     const basePath = `relations[${index}]`;
     if (!isPlainObject(rel)) {
       pushError(errors, basePath, "INVALID_TYPE", "Ogni relation deve essere un oggetto");
-      return;
+      continue;
     }
 
     if (!rel.relationTypeKey || typeof rel.relationTypeKey !== "string") {
       pushError(errors, `${basePath}.relationTypeKey`, "REQUIRED", "relationTypeKey è obbligatorio se la relation è presente");
-      return;
+      continue;
     }
 
     const relationType = relationTypesByKey.get(rel.relationTypeKey);
 
     if (!relationType) {
       pushError(errors, `${basePath}.relationTypeKey`, "INVALID_RELATION_TYPE", `relationTypeKey non presente nel vocabolario del museo: ${rel.relationTypeKey}`);
-      return;
+      continue;
     }
 
     if (Array.isArray(relationType.domain) && relationType.domain.length > 0 && !relationType.domain.includes(itemType)) {
@@ -273,17 +273,17 @@ async function validateRelations({ museumId, itemType, relations, vocabulary, er
 
     if (!rel.target) {
       pushError(errors, `${basePath}.target`, "REQUIRED", "target è obbligatorio se la relation è presente");
-      return;
+      continue;
     }
 
     if (!mongoose.isValidObjectId(rel.target)) {
       pushError(errors, `${basePath}.target`, "INVALID_OBJECT_ID", "target non è un ObjectId valido");
-      return;
+      continue;
     }
 
     if (currentItemId && String(rel.target) === String(currentItemId)) {
       pushError(errors, `${basePath}.target`, "SELF_RELATION", "Un item non può essere in relazione con sé stesso");
-      return;
+      continue;
     }
 
     const targetItem = await Item.findById(rel.target).select("_id itemType museumId").lean();
@@ -333,7 +333,7 @@ async function validateItemDraftPayload({ museumId, payload, vocabulary, mode, e
 
   validateRepresentations(payload.representations, vocabulary, errors);
 
-  validateRelations({
+  await validateRelations({
     museumId,
     itemType: effectiveItemType,
     relations: payload.relations,
