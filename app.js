@@ -35,7 +35,7 @@ app.get("/ping", (req, res) => {
 });
 
 app.get("/", async function (req, res) {
-  var text = "Simoncino puzzone che non gioca a Remnant";
+  var text = "milino gigio che non sa scrivere i prompt";
   res.send(
     `<!doctype html>
 <html>
