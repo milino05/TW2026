@@ -112,14 +112,16 @@ async function publishItem(req, res, next) {
 
 async function deleteItem(req, res, next) {
   try {
-    const item = await itemService.deleteItem({
+    const result = await itemService.deleteItem({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
+      userId: req.user?._id || null,
     });
 
     res.status(200).json({
       message: "Item eliminato",
-      itemId: item._id,
+      itemId: result.item._id,
+      affectedItemsCount: result.affectedItemsCount,
     });
   } catch (err) {
     next(err);

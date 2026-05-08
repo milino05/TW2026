@@ -13,27 +13,24 @@ function normalizeItemPayload(payload = {}) {
 
   if (hasOwn(payload, "tags")) {
     normalized.tags = Array.isArray(payload.tags)
-      ? payload.tags
-          .filter((tag) => typeof tag === "string" || typeof tag === "number")
-          .map((tag) => String(tag).trim())
-          .filter(Boolean)
+      ? payload.tags.map((tag) => (typeof tag === "string" ? tag.trim() : tag))
       : payload.tags;
   }
 
   if (hasOwn(payload, "recognitionImage")) {
     normalized.recognitionImage = isPlainObject(payload.recognitionImage)
       ? {
-          url: trimIfString(payload.recognitionImage.url),
-          altText: trimIfString(payload.recognitionImage.altText),
-        }
+        url: trimIfString(payload.recognitionImage.url),
+        altText: trimIfString(payload.recognitionImage.altText),
+      }
       : payload.recognitionImage;
   }
 
   if (hasOwn(payload, "metadata")) {
     normalized.metadata = isPlainObject(payload.metadata)
       ? {
-          license: trimIfString(payload.metadata.license),
-        }
+        license: trimIfString(payload.metadata.license),
+      }
       : payload.metadata;
   }
 
@@ -44,17 +41,17 @@ function normalizeItemPayload(payload = {}) {
   if (hasOwn(payload, "representations")) {
     normalized.representations = Array.isArray(payload.representations)
       ? payload.representations.map((rep) => {
-          if (!isPlainObject(rep)) {
-            return rep;
-          }
+        if (!isPlainObject(rep)) {
+          return rep;
+        }
 
-          return {
-            languageLevel: trimIfString(rep.languageLevel),
-            durationKey: trimIfString(rep.durationKey)?.toLowerCase(),
-            text: trimIfString(rep.text),
-            isDefault: normalizeBoolean(rep.isDefault),
-          };
-        })
+        return {
+          languageLevel: trimIfString(rep.languageLevel),
+          durationKey: trimIfString(rep.durationKey)?.toLowerCase(),
+          text: trimIfString(rep.text),
+          isDefault: normalizeBoolean(rep.isDefault),
+        };
+      })
       : payload.representations;
   }
 
@@ -80,16 +77,16 @@ function normalizeItemPayload(payload = {}) {
   if (hasOwn(payload, "relations")) {
     normalized.relations = Array.isArray(payload.relations)
       ? payload.relations.map((rel) => {
-          if (!isPlainObject(rel)) {
-            return rel;
-          }
+        if (!isPlainObject(rel)) {
+          return rel;
+        }
 
-          return {
-            relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
-            target: rel.target,
-            weight: rel.weight,
-          };
-        })
+        return {
+          relationTypeKey: trimIfString(rel.relationTypeKey)?.toLowerCase(),
+          target: rel.target,
+          weight: rel.weight,
+        };
+      })
       : payload.relations;
   }
 
@@ -115,16 +112,58 @@ function validateTopLevelFields({ payload, vocabulary, errors, mode }) {
     }
   }
 
-  if (hasOwn(payload, "tags") && !Array.isArray(payload.tags)) {
-    pushError(errors, "tags", "INVALID_TYPE", "tags deve essere un array");
+  if (hasOwn(payload, "tags")) {
+    if (!Array.isArray(payload.tags)) {
+      pushError(errors, "tags", "INVALID_TYPE", "tags deve essere un array");
+    } else {
+      const seenTags = new Set();
+
+      payload.tags.forEach((tag, index) => {
+        const path = `tags[${index}]`;
+
+        if (!tag || typeof tag !== "string") {
+          pushError(errors, path, "INVALID_VALUE", "Ogni tag deve essere una stringa non vuota");
+          return;
+        }
+
+        if (seenTags.has(tag)) {
+          pushError(errors, path, "DUPLICATE_VALUE", `Tag duplicato: ${tag}`);
+          return;
+        }
+
+        seenTags.add(tag);
+      });
+    }
   }
 
-  if (hasOwn(payload, "recognitionImage") && payload.recognitionImage !== null && !isPlainObject(payload.recognitionImage)) {
-    pushError(errors, "recognitionImage", "INVALID_TYPE", "recognitionImage deve essere un oggetto");
+  if (hasOwn(payload, "recognitionImage")) {
+    if (payload.recognitionImage !== null && !isPlainObject(payload.recognitionImage)) {
+      pushError(errors, "recognitionImage", "INVALID_TYPE", "recognitionImage deve essere un oggetto oppure null");
+    }
+
+    if (isPlainObject(payload.recognitionImage)) {
+      if (!payload.recognitionImage.url || typeof payload.recognitionImage.url !== "string") {
+        pushError(errors, "recognitionImage.url", "REQUIRED", "recognitionImage.url è obbligatorio quando recognitionImage è presente");
+      }
+
+      if (!payload.recognitionImage.altText || typeof payload.recognitionImage.altText !== "string") {
+        pushError(errors, "recognitionImage.altText", "REQUIRED", "recognitionImage.altText è obbligatorio quando recognitionImage è presente");
+      }
+    }
   }
 
-  if (hasOwn(payload, "metadata") && payload.metadata !== null && !isPlainObject(payload.metadata)) {
-    pushError(errors, "metadata", "INVALID_TYPE", "metadata deve essere un oggetto");
+  if (hasOwn(payload, "metadata")) {
+    if (payload.metadata !== null && !isPlainObject(payload.metadata)) {
+      pushError(errors, "metadata", "INVALID_TYPE", "metadata deve essere un oggetto oppure null");
+    }
+
+    if (isPlainObject(payload.metadata)) {
+      if (!hasOwn(payload.metadata, "license")) {
+        pushError(errors, "metadata.license", "REQUIRED", "metadata.license è obbligatorio quando metadata è presente");
+      } else if (!payload.metadata.license || typeof payload.metadata.license !== "string") {
+        pushError(errors, "metadata.license", "INVALID_VALUE", "metadata.license deve essere una stringa non vuota");
+      }
+    }
   }
 }
 
