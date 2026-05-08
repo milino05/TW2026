@@ -2,7 +2,16 @@
   ArtAround Backend - Minimal API Server
   Compatibile con deploy dipartimento
 */
-require("dotenv").config();
+const path = require("path");
+const dotenvResult = require("dotenv").config({
+  path: path.join(__dirname, ".env"),
+});
+
+console.log("DEBUG __dirname:", __dirname);
+console.log("DEBUG cwd:", process.cwd());
+console.log("DEBUG dotenv error:", dotenvResult.error);
+console.log("DEBUG MONGO_URI caricata:", Boolean(process.env.MONGO_URI));
+
 const mongoose = require("mongoose");
 const cors = require("cors");
 const app = require("./app");
