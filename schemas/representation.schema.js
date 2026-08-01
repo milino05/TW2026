@@ -12,15 +12,20 @@ const { Schema } = mongoose;
 
 const RepresentationSchema = new Schema(
   {
+    /** Chiave di un durationType configurato nel museo. */
     durationKey: {
       type: String,
       required: true,
       trim: true,
+      lowercase: true,
     },
 
+    /** Chiave di un languageLevel configurato nel museo. */
     languageLevel: {
       type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
 
     text: {
