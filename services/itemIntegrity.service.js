@@ -3,6 +3,7 @@ const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
 const { invalidateVisitsUsingItem } = require("./visitDependency.service");
+const { assertMuseumRole } = require("./museumAuthorization.service");
 
 function buildIntegrityUpdate({ currentStatus, issues }) {
   const hasIssues = issues.length > 0;
@@ -15,7 +16,9 @@ function buildIntegrityUpdate({ currentStatus, issues }) {
   return update;
 }
 
-async function checkItemConsistency({ museumId, itemId }) {
+async function checkItemConsistency({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+
   const item = await Item.findOne({ _id: itemId, museumId });
   if (!item) throw new AppError("Item non trovato", 404);
 
@@ -29,6 +32,7 @@ async function checkItemConsistency({ museumId, itemId }) {
   const update = buildIntegrityUpdate({ currentStatus: item.status, issues });
 
   Object.entries(update).forEach(([path, value]) => item.set(path, value));
+  item.updatedBy = userId;
   await item.save();
 
   if (wasPublished && issues.length > 0) {
@@ -43,20 +47,24 @@ async function checkItemConsistency({ museumId, itemId }) {
   return { item, issues, integrity: item.integrity };
 }
 
-async function publishItem({ museumId, itemId, userId = null }) {
-  const consistency = await checkItemConsistency({ museumId, itemId });
+async function publishItem({ museumId, itemId, userId }) {
+  const consistency = await checkItemConsistency({ museumId, itemId, userId });
 
   if (consistency.item.status === "archived") {
     throw new AppError("Impossibile pubblicare un item archiviato", 400);
   }
 
   if (consistency.issues.length > 0) {
-    throw new AppError("Impossibile pubblicare un item con problemi di integrita", 400, consistency.issues);
+    throw new AppError(
+      "Impossibile pubblicare un item con problemi di integrita",
+      400,
+      consistency.issues,
+    );
   }
 
   consistency.item.status = "published";
   consistency.item.integrity = { status: "valid", issues: [] };
-  if (userId) consistency.item.updatedBy = userId;
+  consistency.item.updatedBy = userId;
 
   await consistency.item.save();
   return consistency.item;
