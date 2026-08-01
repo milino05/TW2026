@@ -9,7 +9,6 @@ async function createItem(req, res, next) {
       payload: req.body,
       userId: req.user?._id || null,
     });
-
     res.status(201).json(item);
   } catch (err) {
     next(err);
@@ -24,7 +23,6 @@ async function updateItem(req, res, next) {
       payload: req.body,
       userId: req.user?._id || null,
     });
-
     res.status(200).json(item);
   } catch (err) {
     next(err);
@@ -41,15 +39,12 @@ async function listItems(req, res, next) {
         integrity: req.query.integrity,
       },
     });
-
     res.status(200).json(items);
   } catch (err) {
     next(err);
   }
 }
 
-/**per vedere anche le relazioni:
- * GET /api/museums/:museumId/items/:itemId?includeRelationsView=true */
 async function getItem(req, res, next) {
   try {
     const item = await itemService.getItemById({
@@ -58,17 +53,12 @@ async function getItem(req, res, next) {
     });
 
     const includeRelationsView = req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1";
-
     if (includeRelationsView) {
       const relationsView = await itemRelationsService.getItemRelationsView({
         museumId: req.params.museumId,
         itemId: req.params.itemId,
       });
-
-      return res.status(200).json({
-        item,
-        relationsView,
-      });
+      return res.status(200).json({ item, relationsView });
     }
 
     res.status(200).json(item);
@@ -83,7 +73,6 @@ async function checkItemConsistency(req, res, next) {
       museumId: req.params.museumId,
       itemId: req.params.itemId,
     });
-
     res.status(200).json({
       item: result.item,
       integrity: result.integrity,
@@ -99,12 +88,9 @@ async function publishItem(req, res, next) {
     const item = await itemIntegrityService.publishItem({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
+      userId: req.user?._id || null,
     });
-
-    res.status(200).json({
-      message: "Item pubblicato",
-      item,
-    });
+    res.status(200).json({ message: "Item pubblicato", item });
   } catch (err) {
     next(err);
   }
@@ -117,7 +103,6 @@ async function deleteItem(req, res, next) {
       itemId: req.params.itemId,
       userId: req.user?._id || null,
     });
-
     res.status(200).json({
       message: "Item eliminato",
       itemId: result.item._id,
