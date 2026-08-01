@@ -62,10 +62,9 @@ async function login(req, res, next) {
 async function logout(req, res, next) {
   try {
     await authService.revokeSession(getSessionToken(req));
-    res.clearCookie(SESSION_COOKIE_NAME, {
-      ...getSessionCookieOptions(),
-      maxAge: undefined,
-    });
+
+    const { maxAge, ...clearCookieOptions } = getSessionCookieOptions();
+    res.clearCookie(SESSION_COOKIE_NAME, clearCookieOptions);
     res.status(204).send();
   } catch (error) {
     next(error);
