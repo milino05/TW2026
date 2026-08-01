@@ -23,14 +23,6 @@ function normalizeOrderedVocabulary(values) {
     : [];
 }
 
-function normalizeDurationTypes(durationTypes) {
-  return normalizeOrderedVocabulary(durationTypes);
-}
-
-function normalizeLanguageLevelTypes(languageLevels) {
-  return normalizeOrderedVocabulary(languageLevels);
-}
-
 function normalizeRelationTypes(relationTypes) {
   return Array.isArray(relationTypes)
     ? relationTypes
@@ -75,7 +67,6 @@ function buildItemTypeVocabulary(vocabulary, itemType) {
     isKnownItemType: (vocabulary.itemTypes || []).includes(itemType),
     itemTypes: vocabulary.itemTypes || [],
     languageLevels: vocabulary.languageLevels || [],
-    languageLevelTypes: vocabulary.languageLevelTypes || [],
     durationTypes: vocabulary.durationTypes || [],
     relationTypes,
     relationViews,
@@ -90,20 +81,15 @@ async function getMuseumVocabulary(museumId) {
   }
 
   const config = museum.config || {};
-  const languageLevelTypes = normalizeLanguageLevelTypes(config.languageLevels);
   const relationTypes = normalizeRelationTypes(config.relationTypes);
-  const relationViews = buildRelationViews(relationTypes);
 
   return {
     museumId: museum._id,
     itemTypes: normalizeStringArray(config.itemTypes),
-    // Compatibilita con i validator degli item: le representations salvano la key.
-    languageLevels: languageLevelTypes.map((level) => level.key),
-    // Metadati ordinati usati dal Navigator per piu/meno semplice.
-    languageLevelTypes,
-    durationTypes: normalizeDurationTypes(config.durationTypes),
+    languageLevels: normalizeOrderedVocabulary(config.languageLevels),
+    durationTypes: normalizeOrderedVocabulary(config.durationTypes),
     relationTypes,
-    relationViews,
+    relationViews: buildRelationViews(relationTypes),
   };
 }
 
