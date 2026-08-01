@@ -1,35 +1,54 @@
 const Visit = require("../models/visit");
-const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { computeVisitIntegrity } = require("./validation/visitIntegrity.validation");
+const {
+  getActiveUserOrFail,
+  assertMuseumRole,
+} = require("./museumAuthorization.service");
 
 function sameId(a, b) {
   return String(a) === String(b);
 }
 
+async function assertCommunityAuthor({ visit, actorUserId }) {
+  await getActiveUserOrFail(actorUserId);
+
+  if (!sameId(visit.createdBy, actorUserId)) {
+    throw new AppError("Solo l'autore puo gestire questa visita community", 403);
+  }
+}
+
+async function assertCanViewVisit({ visit, actorUserId }) {
+  if (!actorUserId) throw new AppError("Autenticazione richiesta", 401);
+
+  if (visit.kind === "community") {
+    return assertCommunityAuthor({ visit, actorUserId });
+  }
+
+  return assertMuseumRole({
+    userId: actorUserId,
+    museumId: visit.ownerMuseumId,
+    minimumRole: "operator",
+  });
+}
+
+/**
+ * Policy conservativa: modifica, controllo e pubblicazione di una visita
+ * ufficiale richiedono un manager finche i privilegi editoriali
+ * dell'operatore non vengono chiariti.
+ */
 async function assertCanManageVisit({ visit, actorUserId }) {
   if (!actorUserId) throw new AppError("Autenticazione richiesta", 401);
 
-  const actor = await User.findOne({ _id: actorUserId, status: "active" })
-    .select("status memberships")
-    .lean();
-
-  if (!actor) throw new AppError("Utente non autorizzato", 403);
-
   if (visit.kind === "community") {
-    if (!sameId(visit.createdBy, actorUserId)) {
-      throw new AppError("Solo l'autore puo gestire questa visita community", 403);
-    }
-    return;
+    return assertCommunityAuthor({ visit, actorUserId });
   }
 
-  const isOperator = (actor.memberships || []).some(
-    (membership) => sameId(membership.museumId, visit.ownerMuseumId) && membership.role === "operator",
-  );
-
-  if (!isOperator) {
-    throw new AppError("E richiesto il ruolo di operatore del museo", 403);
-  }
+  return assertMuseumRole({
+    userId: actorUserId,
+    museumId: visit.ownerMuseumId,
+    minimumRole: "manager",
+  });
 }
 
 async function getVisitOrFail(visitId) {
@@ -75,7 +94,11 @@ async function publishVisit({ visitId, actorUserId }) {
     visit.museumIds = result.museumIds;
     visit.integrity = { status: "needs_review", issues: result.issues };
     await visit.save();
-    throw new AppError("Impossibile pubblicare una visita con problemi di integrita", 400, result.issues);
+    throw new AppError(
+      "Impossibile pubblicare una visita con problemi di integrita",
+      400,
+      result.issues,
+    );
   }
 
   visit.museumIds = result.museumIds;
@@ -88,6 +111,7 @@ async function publishVisit({ visitId, actorUserId }) {
 }
 
 module.exports = {
+  assertCanViewVisit,
   assertCanManageVisit,
   checkVisitConsistency,
   publishVisit,
