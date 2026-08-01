@@ -12,8 +12,7 @@ const MuseumMembershipSchema = new Schema(
 
     role: {
       type: String,
-      enum: ["operator"],
-      default: "operator",
+      enum: ["operator", "manager"],
       required: true,
     },
   },
@@ -70,6 +69,6 @@ UserSchema.pre("validate", function validateUniqueMuseumMemberships(next) {
   next();
 });
 
-UserSchema.index({ "memberships.museumId": 1, status: 1 });
+UserSchema.index({ "memberships.museumId": 1, "memberships.role": 1, status: 1 });
 
 module.exports = mongoose.model("User", UserSchema);
