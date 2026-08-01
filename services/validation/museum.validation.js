@@ -1,22 +1,40 @@
-const { pushError, hasOwn, trimIfString, isPlainObject, normalizeKey, normalizeBoolean, normalizeStringArrayStrict, toNumberIfPresent, validateUniqueStringArray } = require("./validation.utils");
+const {
+  pushError,
+  hasOwn,
+  trimIfString,
+  isPlainObject,
+  normalizeKey,
+  normalizeBoolean,
+  normalizeStringArrayStrict,
+  toNumberIfPresent,
+  validateUniqueStringArray,
+} = require("./validation.utils");
 
-function normalizeDurationTypes(durationTypes) {
-  if (!Array.isArray(durationTypes)) {
-    return durationTypes;
+function normalizeOrderedVocabulary(values) {
+  if (!Array.isArray(values)) {
+    return values;
   }
 
-  return durationTypes.map((durationType) => {
-    if (!isPlainObject(durationType)) {
-      return durationType;
+  return values.map((value) => {
+    if (!isPlainObject(value)) {
+      return value;
     }
 
     return {
-      key: normalizeKey(durationType.key),
-      label: trimIfString(durationType.label),
-      level: toNumberIfPresent(durationType.level),
-      description: trimIfString(durationType.description),
+      key: normalizeKey(value.key),
+      label: trimIfString(value.label),
+      level: toNumberIfPresent(value.level),
+      description: trimIfString(value.description),
     };
   });
+}
+
+function normalizeDurationTypes(durationTypes) {
+  return normalizeOrderedVocabulary(durationTypes);
+}
+
+function normalizeLanguageLevels(languageLevels) {
+  return normalizeOrderedVocabulary(languageLevels);
 }
 
 function normalizeRelationTypes(relationTypes) {
@@ -33,42 +51,26 @@ function normalizeRelationTypes(relationTypes) {
       key: normalizeKey(relationType.key),
       label: trimIfString(relationType.label),
       description: trimIfString(relationType.description),
-
-      domain: normalizeStringArrayStrict(relationType.domain, {
-        allowNumbers: false,
-      }),
-
-      range: normalizeStringArrayStrict(relationType.range, {
-        allowNumbers: false,
-      }),
-
+      domain: normalizeStringArrayStrict(relationType.domain, { allowNumbers: false }),
+      range: normalizeStringArrayStrict(relationType.range, { allowNumbers: false }),
       category: trimIfString(relationType.category),
       strength: trimIfString(relationType.strength),
-
-      userIntents: normalizeStringArrayStrict(relationType.userIntents, {
-        allowNumbers: false,
-      }),
-
+      userIntents: normalizeStringArrayStrict(relationType.userIntents, { allowNumbers: false }),
       directionality: trimIfString(relationType.directionality),
-
       reverse: isPlainObject(relationType.reverse)
         ? {
             label: trimIfString(relationType.reverse.label),
             description: trimIfString(relationType.reverse.description),
-            userIntents: normalizeStringArrayStrict(relationType.reverse.userIntents, {
-              allowNumbers: false,
-            }),
+            userIntents: normalizeStringArrayStrict(relationType.reverse.userIntents, { allowNumbers: false }),
           }
         : relationType.reverse,
     };
 
     if (isPlainObject(relationType.validationRules)) {
       normalized.validationRules = {};
-
       if (hasOwn(relationType.validationRules, "allowMultiple")) {
         normalized.validationRules.allowMultiple = normalizeBoolean(relationType.validationRules.allowMultiple);
       }
-
       if (hasOwn(relationType.validationRules, "targetRequired")) {
         normalized.validationRules.targetRequired = normalizeBoolean(relationType.validationRules.targetRequired);
       }
@@ -94,17 +96,14 @@ function normalizeMuseumPayload(payload = {}) {
       normalized.config = {};
 
       if (hasOwn(payload.config, "languageLevels")) {
-        normalized.config.languageLevels = normalizeStringArrayStrict(payload.config.languageLevels, { allowNumbers: false });
+        normalized.config.languageLevels = normalizeLanguageLevels(payload.config.languageLevels);
       }
-
       if (hasOwn(payload.config, "itemTypes")) {
         normalized.config.itemTypes = normalizeStringArrayStrict(payload.config.itemTypes, { allowNumbers: false });
       }
-
       if (hasOwn(payload.config, "durationTypes")) {
         normalized.config.durationTypes = normalizeDurationTypes(payload.config.durationTypes);
       }
-
       if (hasOwn(payload.config, "relationTypes")) {
         normalized.config.relationTypes = normalizeRelationTypes(payload.config.relationTypes);
       }
@@ -114,55 +113,56 @@ function normalizeMuseumPayload(payload = {}) {
   return normalized;
 }
 
-function validateDurationTypes(durationTypes, errors) {
-  if (!Array.isArray(durationTypes)) {
-    pushError(errors, "config.durationTypes", "INVALID_TYPE", "durationTypes deve essere un array");
-    return;
-  }
-
-  if (durationTypes.length === 0) {
-    pushError(errors, "config.durationTypes", "EMPTY_ARRAY", "Almeno un durationType è obbligatorio");
-    return;
-  }
-
-  const seenKeys = new Set();
-
-  durationTypes.forEach((durationType, index) => {
-    const basePath = `config.durationTypes[${index}]`;
-
-    if (!isPlainObject(durationType)) {
-      pushError(errors, basePath, "INVALID_TYPE", "Ogni durationType deve essere un oggetto");
-      return;
-    }
-
-    if (!durationType.key || typeof durationType.key !== "string") {
-      pushError(errors, `${basePath}.key`, "REQUIRED", "key è obbligatoria");
-    } else if (seenKeys.has(durationType.key)) {
-      pushError(errors, `${basePath}.key`, "DUPLICATE_KEY", `durationType key duplicata: ${durationType.key}`);
-    } else {
-      seenKeys.add(durationType.key);
-    }
-
-    if (!durationType.label || typeof durationType.label !== "string") {
-      pushError(errors, `${basePath}.label`, "REQUIRED", "label è obbligatoria");
-    }
-
-    if (!Number.isFinite(durationType.level) || durationType.level < 1) {
-      pushError(errors, `${basePath}.level`, "INVALID_NUMBER", "level deve essere un numero maggiore o uguale a 1");
-    }
-  });
-}
-
-function validateStringArrayValues(values, field, errors) {
-  if (values === undefined) {
-    return;
-  }
-
+function validateOrderedVocabulary(values, field, errors) {
   if (!Array.isArray(values)) {
     pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
     return;
   }
 
+  if (values.length === 0) {
+    pushError(errors, field, "EMPTY_ARRAY", `Almeno un valore in ${field} e obbligatorio`);
+    return;
+  }
+
+  const seenKeys = new Set();
+  const seenLevels = new Set();
+
+  values.forEach((value, index) => {
+    const basePath = `${field}[${index}]`;
+
+    if (!isPlainObject(value)) {
+      pushError(errors, basePath, "INVALID_TYPE", `Ogni valore di ${field} deve essere un oggetto`);
+      return;
+    }
+
+    if (!value.key || typeof value.key !== "string") {
+      pushError(errors, `${basePath}.key`, "REQUIRED", "key e obbligatoria");
+    } else if (seenKeys.has(value.key)) {
+      pushError(errors, `${basePath}.key`, "DUPLICATE_KEY", `key duplicata: ${value.key}`);
+    } else {
+      seenKeys.add(value.key);
+    }
+
+    if (!value.label || typeof value.label !== "string") {
+      pushError(errors, `${basePath}.label`, "REQUIRED", "label e obbligatoria");
+    }
+
+    if (!Number.isFinite(value.level) || value.level < 1) {
+      pushError(errors, `${basePath}.level`, "INVALID_NUMBER", "level deve essere un numero maggiore o uguale a 1");
+    } else if (seenLevels.has(value.level)) {
+      pushError(errors, `${basePath}.level`, "DUPLICATE_LEVEL", `level duplicato: ${value.level}`);
+    } else {
+      seenLevels.add(value.level);
+    }
+  });
+}
+
+function validateStringArrayValues(values, field, errors) {
+  if (values === undefined) return;
+  if (!Array.isArray(values)) {
+    pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
+    return;
+  }
   values.forEach((value, index) => {
     if (!value || typeof value !== "string") {
       pushError(errors, `${field}[${index}]`, "INVALID_VALUE", `${field}[${index}] deve essere una stringa non vuota`);
@@ -179,20 +179,18 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
   const allowedCategories = ["semantic", "logistic", "contextual", "editorial"];
   const allowedStrengths = ["strong", "medium", "weak"];
   const allowedDirectionalities = ["directed", "symmetric"];
-
   const itemTypeSet = new Set(Array.isArray(itemTypes) ? itemTypes : []);
   const relationTypeKeys = new Set();
 
   relationTypes.forEach((relationType, index) => {
     const basePath = `config.relationTypes[${index}]`;
-
     if (!isPlainObject(relationType)) {
       pushError(errors, basePath, "INVALID_TYPE", "Ogni relationType deve essere un oggetto");
       return;
     }
 
     if (!relationType.key || typeof relationType.key !== "string") {
-      pushError(errors, `${basePath}.key`, "REQUIRED", "key è obbligatoria");
+      pushError(errors, `${basePath}.key`, "REQUIRED", "key e obbligatoria");
     } else if (relationTypeKeys.has(relationType.key)) {
       pushError(errors, `${basePath}.key`, "DUPLICATE_KEY", `relationType key duplicata: ${relationType.key}`);
     } else {
@@ -200,67 +198,42 @@ function validateRelationTypes(relationTypes, itemTypes, errors) {
     }
 
     if (!relationType.label || typeof relationType.label !== "string") {
-      pushError(errors, `${basePath}.label`, "REQUIRED", "label è obbligatoria");
+      pushError(errors, `${basePath}.label`, "REQUIRED", "label e obbligatoria");
     }
-
     if (!allowedCategories.includes(relationType.category)) {
-      pushError(errors, `${basePath}.category`, "INVALID_ENUM", `category non valida: ${relationType.category}`, {
-        allowedValues: allowedCategories,
-      });
+      pushError(errors, `${basePath}.category`, "INVALID_ENUM", `category non valida: ${relationType.category}`, { allowedValues: allowedCategories });
     }
 
     const directionality = relationType.directionality || "directed";
-
+    if (!allowedDirectionalities.includes(directionality)) {
+      pushError(errors, `${basePath}.directionality`, "INVALID_ENUM", `directionality non valida: ${relationType.directionality}`, { allowedValues: allowedDirectionalities });
+    }
     if (directionality === "symmetric" && relationType.reverse !== undefined) {
       pushError(errors, `${basePath}.reverse`, "REVERSE_NOT_ALLOWED_FOR_SYMMETRIC_RELATION", "reverse non deve essere definito per relationTypes simmetriche");
     }
-
-    if (!allowedDirectionalities.includes(directionality)) {
-      pushError(errors, `${basePath}.directionality`, "INVALID_ENUM", `directionality non valida: ${relationType.directionality}`, {
-        allowedValues: allowedDirectionalities,
-      });
-    }
-
     if (typeof relationType.key === "string" && relationType.key.includes(":")) {
-      pushError(errors, `${basePath}.key`, "RESERVED_KEY_FORMAT", "La key della relationType non può contenere ':' perché è riservato alle relationViews generate dal sistema");
+      pushError(errors, `${basePath}.key`, "RESERVED_KEY_FORMAT", "La key della relationType non puo contenere ':'");
     }
+    if (relationType.strength !== undefined && !allowedStrengths.includes(relationType.strength)) {
+      pushError(errors, `${basePath}.strength`, "INVALID_ENUM", `strength non valida: ${relationType.strength}`, { allowedValues: allowedStrengths });
+    }
+
+    validateStringArrayValues(relationType.domain, `${basePath}.domain`, errors);
+    validateStringArrayValues(relationType.range, `${basePath}.range`, errors);
+    validateStringArrayValues(relationType.userIntents, `${basePath}.userIntents`, errors);
 
     if (relationType.reverse !== undefined) {
       if (!isPlainObject(relationType.reverse)) {
         pushError(errors, `${basePath}.reverse`, "INVALID_TYPE", "reverse deve essere un oggetto");
       } else {
-        if (relationType.reverse.label !== undefined && typeof relationType.reverse.label !== "string") {
-          pushError(errors, `${basePath}.reverse.label`, "INVALID_TYPE", "reverse.label deve essere una stringa");
-        }
-
         validateStringArrayValues(relationType.reverse.userIntents, `${basePath}.reverse.userIntents`, errors);
       }
     }
-    if (relationType.strength !== undefined && !allowedStrengths.includes(relationType.strength)) {
-      pushError(errors, `${basePath}.strength`, "INVALID_ENUM", `strength non valida: ${relationType.strength}`, {
-        allowedValues: allowedStrengths,
-      });
-    }
-
-    validateStringArrayValues(relationType.domain, `${basePath}.domain`, errors);
-
-    validateStringArrayValues(relationType.range, `${basePath}.range`, errors);
-
-    validateStringArrayValues(relationType.userIntents, `${basePath}.userIntents`, errors);
 
     ["domain", "range"].forEach((field) => {
-      const values = relationType[field];
-
-      if (!Array.isArray(values)) {
-        return;
-      }
-
-      values.forEach((itemType, itemTypeIndex) => {
-        if (typeof itemType !== "string" || !itemType) {
-          return;
-        }
-
-        if (!itemTypeSet.has(itemType)) {
+      if (!Array.isArray(relationType[field])) return;
+      relationType[field].forEach((itemType, itemTypeIndex) => {
+        if (typeof itemType === "string" && itemType && !itemTypeSet.has(itemType)) {
           pushError(errors, `${basePath}.${field}[${itemTypeIndex}]`, "UNKNOWN_ITEM_TYPE", `itemType non presente in config.itemTypes: ${itemType}`);
         }
       });
@@ -284,32 +257,22 @@ function validateMuseumPayload({ payload }) {
   const errors = [];
 
   if (!payload.name || typeof payload.name !== "string") {
-    pushError(errors, "name", "REQUIRED", "Il campo name è obbligatorio");
+    pushError(errors, "name", "REQUIRED", "Il campo name e obbligatorio");
   }
-
   if (!isPlainObject(payload.config)) {
-    pushError(errors, "config", "REQUIRED", "Il campo config è obbligatorio e deve essere un oggetto");
+    pushError(errors, "config", "REQUIRED", "Il campo config e obbligatorio e deve essere un oggetto");
     return errors;
   }
 
-  validateUniqueStringArray(payload.config.languageLevels, "config.languageLevels", errors);
-
+  validateOrderedVocabulary(payload.config.languageLevels, "config.languageLevels", errors);
+  validateOrderedVocabulary(payload.config.durationTypes, "config.durationTypes", errors);
   validateUniqueStringArray(payload.config.itemTypes, "config.itemTypes", errors);
 
-  if (Array.isArray(payload.config.languageLevels) && payload.config.languageLevels.length === 0) {
-    pushError(errors, "config.languageLevels", "EMPTY_ARRAY", "Almeno un languageLevel è obbligatorio");
-  }
-
   if (Array.isArray(payload.config.itemTypes) && payload.config.itemTypes.length === 0) {
-    pushError(errors, "config.itemTypes", "EMPTY_ARRAY", "Almeno un itemType è obbligatorio");
+    pushError(errors, "config.itemTypes", "EMPTY_ARRAY", "Almeno un itemType e obbligatorio");
   }
 
-  validateDurationTypes(payload.config.durationTypes, errors);
-
-  const relationTypesForValidation = payload.config.relationTypes === undefined ? [] : payload.config.relationTypes;
-
-  validateRelationTypes(relationTypesForValidation, payload.config.itemTypes, errors);
-
+  validateRelationTypes(payload.config.relationTypes === undefined ? [] : payload.config.relationTypes, payload.config.itemTypes, errors);
   return errors;
 }
 
