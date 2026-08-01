@@ -17,6 +17,18 @@ function errorHandler(err, req, res, next) {
     details = mongooseValidationDetails(err);
   }
 
+  if (err.name === "CastError") {
+    status = 400;
+    message = "Identificatore non valido";
+    details = [
+      {
+        field: err.path,
+        code: "INVALID_VALUE",
+        message: `${err.path} non contiene un valore valido`,
+      },
+    ];
+  }
+
   if (err.code === 11000) {
     status = 409;
     message = "Valore gia esistente";
