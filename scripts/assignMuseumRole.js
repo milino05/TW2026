@@ -35,6 +35,17 @@ async function assignMuseumRole() {
     (entry) => String(entry.museumId) === String(museumId),
   );
 
+  if (membership?.role === "manager" && role === "operator") {
+    const managerCount = await User.countDocuments({
+      status: "active",
+      memberships: { $elemMatch: { museumId, role: "manager" } },
+    });
+
+    if (managerCount <= 1) {
+      throw new Error("Il museo deve conservare almeno un manager attivo");
+    }
+  }
+
   if (membership) {
     membership.role = role;
   } else {
