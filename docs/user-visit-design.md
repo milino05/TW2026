@@ -36,7 +36,8 @@ Gerarchia:
 Solo un manager puo:
 
 - modificare nome o configurazione del museo;
-- assegnare o cambiare il ruolo di un utente;
+- assegnare il ruolo operator a un nuovo membro;
+- assegnare il ruolo manager o promuovere un operator;
 - eliminare il museo, se non esistono item o visite associati.
 
 Endpoint:
@@ -48,26 +49,24 @@ PUT /api/museums/:museumId/members/:userId/role
 Payload:
 
 ```json
-{
-  "role": "operator"
-}
+{ "role": "operator" }
 ```
 
 oppure:
 
 ```json
-{
-  "role": "manager"
-}
+{ "role": "manager" }
 ```
 
-Il sistema impedisce di declassare l'ultimo manager attivo del museo.
+La retrocessione `manager -> operator` e la revoca completa della membership non sono state implementate, perche mancano regole concordate sulla tutela dell'ultimo manager e sugli effetti sui contenuti gia creati.
 
 Comando amministrativo equivalente:
 
 ```bash
 npm run assign:museum-role -- <username> <museumId> <operator|manager>
 ```
+
+Anche lo script blocca la retrocessione non definita.
 
 ## Visit
 
@@ -135,7 +134,7 @@ Una modifica riporta sempre la visita in draft. Se un item usato dalla visita vi
 - pubblicazione: manager;
 - cancellazione: manager.
 
-Questa e una policy conservativa. L'utente ha specificato esplicitamente la creazione da parte dell'operator, ma non il resto del ciclo editoriale.
+Questa e una policy conservativa. E stata specificata esplicitamente la creazione da parte dell'operator, ma non il resto del ciclo editoriale.
 
 ## Language level e duration
 
@@ -203,13 +202,19 @@ Occorre decidere se un operator possa anche:
 
 Attualmente queste azioni sono manager-only.
 
-### Rimozione delle membership
+### Retrocessione e revoca delle membership
 
-E possibile assegnare o cambiare un ruolo, ma non rimuovere completamente un utente dal museo. Va definito se il manager possa revocare una membership e con quali garanzie.
+Occorre decidere:
+
+- chi puo retrocedere un manager a operator;
+- se un manager puo retrocedere se stesso;
+- come garantire almeno un manager attivo;
+- se e quando una membership puo essere revocata completamente;
+- cosa accade ai contenuti creati dall'utente rimosso.
 
 ### Ricerca degli utenti
 
-L'endpoint di assegnazione usa `userId`. Va deciso se un manager possa cercare utenti per username, e quali dati possano essere restituiti senza esporre informazioni non necessarie.
+L'endpoint di assegnazione usa `userId`. Va deciso se un manager possa cercare utenti per username e quali dati possano essere restituiti senza esporre informazioni non necessarie.
 
 ### Visibilita dei draft
 
