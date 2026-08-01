@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Visit = require("../models/visit");
 const User = require("../models/user");
 const AppError = require("../utils/AppError");
@@ -25,6 +26,7 @@ async function createVisit({ payload, actorUserId }) {
   const actor = await getActiveUserOrFail(actorUserId);
   const normalizedPayload = normalizeVisitPayload(payload);
   const validation = await validateVisitDraftPayload({
+    rawPayload: payload,
     payload: normalizedPayload,
     mode: "create",
   });
@@ -44,10 +46,7 @@ async function createVisit({ payload, actorUserId }) {
     museumIds: validation.museumIds,
     status: "draft",
     publishedAt: null,
-    integrity: {
-      status: "needs_review",
-      issues: [],
-    },
+    integrity: { status: "needs_review", issues: [] },
   });
 
   await visit.save();
@@ -66,6 +65,7 @@ async function updateVisit({ visitId, payload, actorUserId }) {
 
   const normalizedPayload = normalizeVisitPayload(payload);
   const validation = await validateVisitDraftPayload({
+    rawPayload: payload,
     payload: normalizedPayload,
     mode: "update",
     existingVisit: visit.toObject(),
@@ -76,9 +76,7 @@ async function updateVisit({ visitId, payload, actorUserId }) {
   }
 
   ["title", "description", "defaultPresentationPolicy", "stops"].forEach((field) => {
-    if (hasOwn(normalizedPayload, field)) {
-      visit.set(field, normalizedPayload[field]);
-    }
+    if (hasOwn(normalizedPayload, field)) visit.set(field, normalizedPayload[field]);
   });
 
   if (hasOwn(normalizedPayload, "stops")) {
@@ -87,16 +85,24 @@ async function updateVisit({ visitId, payload, actorUserId }) {
 
   visit.status = "draft";
   visit.publishedAt = null;
-  visit.integrity = {
-    status: "needs_review",
-    issues: [],
-  };
+  visit.integrity = { status: "needs_review", issues: [] };
 
   await visit.save();
   return visit;
 }
 
+function validateOptionalObjectId(value, field) {
+  if (value && !mongoose.isValidObjectId(value)) {
+    throw new AppError("Filtro non valido", 400, [
+      { field, code: "INVALID_OBJECT_ID", message: `${field} non e un ObjectId valido` },
+    ]);
+  }
+}
+
 async function listPublishedVisits(filters = {}) {
+  validateOptionalObjectId(filters.ownerMuseumId, "ownerMuseumId");
+  validateOptionalObjectId(filters.includedMuseumId, "includedMuseumId");
+
   const query = { status: "published" };
 
   if (["official", "community"].includes(filters.kind)) query.kind = filters.kind;
@@ -122,7 +128,6 @@ async function listManageableVisits(actorUserId) {
 
 async function getVisit({ visitId, actorUserId = null }) {
   const visit = await getVisitOrFail(visitId);
-
   if (visit.status === "published") return visit;
 
   await assertCanManageVisit({ visit, actorUserId });
