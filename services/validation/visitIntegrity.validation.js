@@ -18,14 +18,10 @@ function sameId(a, b) {
 async function computeVisitIntegrity({ visit }) {
   const issues = [];
 
-  const creator = visit.createdBy
-    ? await User.findById(visit.createdBy).select("status memberships").lean()
-    : null;
+  const creatorExists = visit.createdBy ? await User.exists({ _id: visit.createdBy }) : false;
 
-  if (!creator) {
+  if (!creatorExists) {
     issues.push(issue("CREATOR_NOT_FOUND", "createdBy", "L'utente creatore non esiste"));
-  } else if (creator.status !== "active") {
-    issues.push(issue("CREATOR_NOT_ACTIVE", "createdBy", "L'utente creatore non e attivo"));
   }
 
   if (visit.kind === "official") {
@@ -35,22 +31,6 @@ async function computeVisitIntegrity({ visit }) {
       const ownerMuseumExists = await Museum.exists({ _id: visit.ownerMuseumId });
       if (!ownerMuseumExists) {
         issues.push(issue("OWNER_MUSEUM_NOT_FOUND", "ownerMuseumId", "Il museo proprietario non esiste"));
-      }
-    }
-
-    if (creator && visit.ownerMuseumId) {
-      const isOperator = (creator.memberships || []).some(
-        (membership) => sameId(membership.museumId, visit.ownerMuseumId) && membership.role === "operator",
-      );
-
-      if (!isOperator) {
-        issues.push(
-          issue(
-            "CREATOR_NOT_MUSEUM_OPERATOR",
-            "createdBy",
-            "Il creatore deve essere operatore del museo proprietario della visita",
-          ),
-        );
       }
     }
   }
