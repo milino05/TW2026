@@ -20,7 +20,7 @@
     "start": "node index.js",
     "dev:container": "nodemon index.js",
     "seed:users": "node scripts/seedRequiredUsers.js",
-    "assign:operator": "node scripts/assignMuseumOperator.js",
+    "assign:museum-role": "node scripts/assignMuseumRole.js",
     "check": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
     "test": "node --test tests/*.test.js"
   }
