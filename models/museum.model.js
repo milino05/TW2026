@@ -12,6 +12,13 @@ const MuseumSchema = new Schema(
       trim: true,
     },
 
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
     config: {
       languageLevels: [LanguageLevelSchema],
       durationTypes: [DurationTypeSchema],
