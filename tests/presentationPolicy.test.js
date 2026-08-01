@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const {
   resolvePresentationPolicy,
   findRepresentationByPolicy,
+  findDefaultRepresentation,
+  resolveInitialRepresentation,
   findAdjacentRepresentation,
 } = require("../services/presentationPolicy.service");
 
@@ -22,13 +24,18 @@ const vocabulary = {
 
 const item = {
   representations: [
-    { durationKey: "short", languageLevelKey: "simple", text: "breve" },
+    {
+      durationKey: "short",
+      languageLevelKey: "simple",
+      text: "breve",
+      isDefault: true,
+    },
     { durationKey: "long", languageLevelKey: "simple", text: "lungo" },
     { durationKey: "short", languageLevelKey: "advanced", text: "avanzato" },
   ],
 };
 
-test("default usa la policy del creatore", () => {
+test("default ufficiale usa la policy del creatore", () => {
   const policy = resolvePresentationPolicy({
     defaultPresentationPolicy: { durationKey: "short", languageLevelKey: "simple" },
     userPreference: { mode: "default" },
@@ -37,13 +44,58 @@ test("default usa la policy del creatore", () => {
   assert.deepEqual(policy, { durationKey: "short", languageLevelKey: "simple" });
 });
 
-test("custom sostituisce entrambi gli assi", () => {
+test("custom ufficiale sostituisce entrambi gli assi", () => {
   const policy = resolvePresentationPolicy({
     defaultPresentationPolicy: { durationKey: "short", languageLevelKey: "simple" },
-    userPreference: { mode: "custom", durationKey: "long", languageLevelKey: "advanced" },
+    userPreference: {
+      mode: "custom",
+      durationKey: "long",
+      languageLevelKey: "advanced",
+    },
   });
 
   assert.deepEqual(policy, { durationKey: "long", languageLevelKey: "advanced" });
+});
+
+test("community usa la representation default locale dell item", () => {
+  const representation = resolveInitialRepresentation({
+    visit: { kind: "community" },
+    item,
+    userPreference: { mode: "default" },
+  });
+
+  assert.equal(representation.text, "breve");
+});
+
+test("community non interpreta una preferenza custom senza mapping cross vocabulary", () => {
+  assert.throws(
+    () =>
+      resolveInitialRepresentation({
+        visit: { kind: "community" },
+        item,
+        userPreference: {
+          mode: "custom",
+          durationKey: "long",
+          languageLevelKey: "advanced",
+        },
+      }),
+    (error) => error.status === 409 && error.details[0].code === "CROSS_VOCABULARY_MAPPING_REQUIRED",
+  );
+});
+
+test("trova una sola representation default locale", () => {
+  assert.equal(findDefaultRepresentation({ item }).text, "breve");
+  assert.equal(
+    findDefaultRepresentation({
+      item: {
+        representations: [
+          { isDefault: true },
+          { isDefault: true },
+        ],
+      },
+    }),
+    null,
+  );
 });
 
 test("dimmi di piu salta livelli non disponibili mantenendo il linguaggio", () => {
