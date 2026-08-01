@@ -1,10 +1,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-/**
- * Associazione tra un utente e i musei per i quali puo operare.
- * L'autorizzazione da operatore e sempre contestuale a uno specifico museo.
- */
+/** Autorizzazione contestuale a uno specifico museo. */
 const MuseumMembershipSchema = new Schema(
   {
     museumId: {
@@ -20,9 +17,7 @@ const MuseumMembershipSchema = new Schema(
       required: true,
     },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
 
 const UserSchema = new Schema(
@@ -33,13 +28,9 @@ const UserSchema = new Schema(
       trim: true,
       lowercase: true,
       unique: true,
-      index: true,
     },
 
-    /**
-     * Il modello memorizza soltanto l'hash. Algoritmo, login e gestione
-     * sessione/token restano responsabilita del futuro livello auth.
-     */
+    /** Hash scrypt; non viene restituito dalle query ordinarie. */
     passwordHash: {
       type: String,
       required: true,
@@ -58,9 +49,7 @@ const UserSchema = new Schema(
       index: true,
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 UserSchema.pre("validate", function validateUniqueMuseumMemberships(next) {
@@ -68,10 +57,7 @@ UserSchema.pre("validate", function validateUniqueMuseumMemberships(next) {
 
   for (const membership of this.memberships || []) {
     const museumId = String(membership.museumId || "");
-
-    if (!museumId) {
-      continue;
-    }
+    if (!museumId) continue;
 
     if (seenMuseumIds.has(museumId)) {
       this.invalidate("memberships", "Uno stesso museo puo comparire una sola volta nelle memberships");
