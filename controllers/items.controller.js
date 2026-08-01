@@ -7,7 +7,7 @@ async function createItem(req, res, next) {
     const item = await itemService.createItem({
       museumId: req.params.museumId,
       payload: req.body,
-      userId: req.user?._id || null,
+      userId: req.user._id,
     });
     res.status(201).json(item);
   } catch (err) {
@@ -21,7 +21,7 @@ async function updateItem(req, res, next) {
       museumId: req.params.museumId,
       itemId: req.params.itemId,
       payload: req.body,
-      userId: req.user?._id || null,
+      userId: req.user._id,
     });
     res.status(200).json(item);
   } catch (err) {
@@ -52,7 +52,8 @@ async function getItem(req, res, next) {
       itemId: req.params.itemId,
     });
 
-    const includeRelationsView = req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1";
+    const includeRelationsView =
+      req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1";
     if (includeRelationsView) {
       const relationsView = await itemRelationsService.getItemRelationsView({
         museumId: req.params.museumId,
@@ -72,6 +73,7 @@ async function checkItemConsistency(req, res, next) {
     const result = await itemIntegrityService.checkItemConsistency({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
+      userId: req.user._id,
     });
     res.status(200).json({
       item: result.item,
@@ -88,7 +90,7 @@ async function publishItem(req, res, next) {
     const item = await itemIntegrityService.publishItem({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
-      userId: req.user?._id || null,
+      userId: req.user._id,
     });
     res.status(200).json({ message: "Item pubblicato", item });
   } catch (err) {
@@ -101,7 +103,7 @@ async function deleteItem(req, res, next) {
     const result = await itemService.deleteItem({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
-      userId: req.user?._id || null,
+      userId: req.user._id,
     });
     res.status(200).json({
       message: "Item eliminato",
