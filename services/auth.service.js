@@ -7,6 +7,10 @@ const AppError = require("../utils/AppError");
 
 const scryptAsync = promisify(crypto.scrypt);
 const PASSWORD_KEY_LENGTH = 64;
+const SCRYPT_N = 16384;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const SESSION_TOKEN_BYTES = 32;
 const DEFAULT_SESSION_HOURS = 168;
 
@@ -21,43 +25,78 @@ function normalizeUsername(username) {
 }
 
 function validatePlainPassword(password) {
-  if (typeof password !== "string" || password.length < 8) {
+  if (typeof password !== "string" || password.length < 8 || password.length > 128) {
     throw new AppError("Password non valida", 400, [
       {
         field: "password",
         code: "INVALID_PASSWORD",
-        message: "La password deve contenere almeno 8 caratteri",
+        message: "La password deve contenere tra 8 e 128 caratteri",
       },
     ]);
   }
+}
+
+function scryptOptions({ N = SCRYPT_N, r = SCRYPT_R, p = SCRYPT_P } = {}) {
+  return { N, r, p, maxmem: SCRYPT_MAX_MEMORY };
 }
 
 async function hashPassword(password) {
   validatePlainPassword(password);
 
   const salt = crypto.randomBytes(16);
-  const derivedKey = await scryptAsync(password, salt, PASSWORD_KEY_LENGTH);
+  const derivedKey = await scryptAsync(
+    password,
+    salt,
+    PASSWORD_KEY_LENGTH,
+    scryptOptions(),
+  );
 
-  return `scrypt$${salt.toString("hex")}$${Buffer.from(derivedKey).toString("hex")}`;
+  return [
+    "scrypt",
+    SCRYPT_N,
+    SCRYPT_R,
+    SCRYPT_P,
+    salt.toString("hex"),
+    Buffer.from(derivedKey).toString("hex"),
+  ].join("$");
 }
 
 async function verifyPassword(password, encodedHash) {
-  if (typeof password !== "string" || typeof encodedHash !== "string") {
+  if (typeof password !== "string" || typeof encodedHash !== "string") return false;
+
+  const [algorithm, nText, rText, pText, saltHex, hashHex] = encodedHash.split("$");
+  const N = Number(nText);
+  const r = Number(rText);
+  const p = Number(pText);
+
+  if (
+    algorithm !== "scrypt" ||
+    !Number.isInteger(N) ||
+    !Number.isInteger(r) ||
+    !Number.isInteger(p) ||
+    !saltHex ||
+    !hashHex
+  ) {
     return false;
   }
 
-  const [algorithm, saltHex, hashHex] = encodedHash.split("$");
+  try {
+    const expectedHash = Buffer.from(hashHex, "hex");
+    if (expectedHash.length === 0) return false;
 
-  if (algorithm !== "scrypt" || !saltHex || !hashHex) {
+    const actualHash = Buffer.from(
+      await scryptAsync(
+        password,
+        Buffer.from(saltHex, "hex"),
+        expectedHash.length,
+        scryptOptions({ N, r, p }),
+      ),
+    );
+
+    return expectedHash.length === actualHash.length && crypto.timingSafeEqual(expectedHash, actualHash);
+  } catch {
     return false;
   }
-
-  const expectedHash = Buffer.from(hashHex, "hex");
-  const actualHash = Buffer.from(
-    await scryptAsync(password, Buffer.from(saltHex, "hex"), expectedHash.length),
-  );
-
-  return expectedHash.length === actualHash.length && crypto.timingSafeEqual(expectedHash, actualHash);
 }
 
 function hashSessionToken(token) {
@@ -75,8 +114,7 @@ async function registerUser({ username, password }) {
 
   validatePlainPassword(password);
 
-  const alreadyExists = await User.exists({ username: normalizedUsername });
-  if (alreadyExists) {
+  if (await User.exists({ username: normalizedUsername })) {
     throw new AppError("Username gia utilizzato", 409, [
       { field: "username", code: "DUPLICATE_USERNAME", message: "username gia utilizzato" },
     ]);
@@ -97,7 +135,9 @@ async function authenticateUser({ username, password }) {
   const normalizedUsername = normalizeUsername(username);
   const user = await User.findOne({ username: normalizedUsername }).select("+passwordHash");
 
-  const isValid = user ? await verifyPassword(password, user.passwordHash) : false;
+  // Anche per username inesistenti viene eseguito scrypt per ridurre differenze temporali evidenti.
+  const hashToVerify = user?.passwordHash || `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${"00".repeat(16)}$${"00".repeat(PASSWORD_KEY_LENGTH)}`;
+  const isValid = await verifyPassword(password, hashToVerify);
 
   if (!user || !isValid || user.status !== "active") {
     throw new AppError("Credenziali non valide", 401);
@@ -123,18 +163,14 @@ async function createSession({ userId, userAgent, ipAddress }) {
 }
 
 async function resolveSession(token) {
-  if (!token || typeof token !== "string") {
-    return null;
-  }
+  if (!token || typeof token !== "string") return null;
 
   const session = await Session.findOne({
     tokenHash: hashSessionToken(token),
     expiresAt: { $gt: new Date() },
   }).lean();
 
-  if (!session) {
-    return null;
-  }
+  if (!session) return null;
 
   const user = await User.findOne({ _id: session.userId, status: "active" }).lean();
   if (!user) {
@@ -151,10 +187,7 @@ async function resolveSession(token) {
 }
 
 async function revokeSession(token) {
-  if (!token || typeof token !== "string") {
-    return;
-  }
-
+  if (!token || typeof token !== "string") return;
   await Session.deleteOne({ tokenHash: hashSessionToken(token) });
 }
 
