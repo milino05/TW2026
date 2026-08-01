@@ -11,10 +11,7 @@ function parseCookies(cookieHeader = "") {
     const key = part.slice(0, separatorIndex).trim();
     const value = part.slice(separatorIndex + 1).trim();
 
-    if (key) {
-      cookies[key] = decodeURIComponent(value);
-    }
-
+    if (key) cookies[key] = value;
     return cookies;
   }, {});
 }
@@ -44,10 +41,7 @@ async function loadCurrentUser(req, res, next) {
 }
 
 function requireAuth(req, res, next) {
-  if (!req.user) {
-    return next(new AppError("Autenticazione richiesta", 401));
-  }
-
+  if (!req.user) return next(new AppError("Autenticazione richiesta", 401));
   return next();
 }
 
