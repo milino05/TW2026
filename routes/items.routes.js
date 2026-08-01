@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const { requireAuth } = require("../middlewares/auth");
 
 const {
   createItem,
@@ -16,18 +17,34 @@ const {
 const validateMuseumId = validateObjectIdParam("museumId");
 const validateItemId = validateObjectIdParam("itemId");
 
-router.route("/museums/:museumId/items").all(validateMuseumId).get(listItems).post(createItem);
+router
+  .route("/museums/:museumId/items")
+  .all(validateMuseumId)
+  .get(listItems)
+  .post(requireAuth, createItem);
+
+router.post(
+  "/museums/:museumId/items/:itemId/check-consistency",
+  requireAuth,
+  validateMuseumId,
+  validateItemId,
+  checkItemConsistency,
+);
+
+router.post(
+  "/museums/:museumId/items/:itemId/publish",
+  requireAuth,
+  validateMuseumId,
+  validateItemId,
+  publishItem,
+);
 
 router
-  .route("/museums/:museumId/items/:itemId/check-consistency")
+  .route("/museums/:museumId/items/:itemId")
   .all(validateMuseumId, validateItemId)
-  .post(checkItemConsistency);
-
-router
-  .route("/museums/:museumId/items/:itemId/publish")
-  .all(validateMuseumId, validateItemId)
-  .post(publishItem);
-
-router.route("/museums/:museumId/items/:itemId").all(validateMuseumId, validateItemId).get(getItem).put(updateItem).patch(updateItem).delete(deleteItem);
+  .get(getItem)
+  .put(requireAuth, updateItem)
+  .patch(requireAuth, updateItem)
+  .delete(requireAuth, deleteItem);
 
 module.exports = router;
