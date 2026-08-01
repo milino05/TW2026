@@ -1,6 +1,14 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
-const { pushError, hasOwn, trimIfString, isPlainObject, normalizeBoolean, normalizeKey } = require("./validation.utils");
+const { getMuseumVocabulary } = require("../museumVocabulary.service");
+const {
+  pushError,
+  hasOwn,
+  trimIfString,
+  isPlainObject,
+  normalizeBoolean,
+  normalizeKey,
+} = require("./validation.utils");
 
 const WRITABLE_FIELDS = new Set([
   "title",
@@ -92,11 +100,28 @@ function validateBaseFields({ payload, errors, mode }) {
   }
 }
 
-function validateDefaultPolicy(policy, errors, required) {
+function validateDefaultPolicyShape({ policy, kind, errors, required }) {
+  if (kind === "community") {
+    if (policy !== undefined && policy !== null) {
+      pushError(
+        errors,
+        "defaultPresentationPolicy",
+        "NOT_ALLOWED",
+        "Le visite community usano la representation di default locale di ciascun item",
+      );
+    }
+    return;
+  }
+
   if (policy === undefined && !required) return;
 
   if (!isPlainObject(policy)) {
-    pushError(errors, "defaultPresentationPolicy", "REQUIRED", "defaultPresentationPolicy deve essere un oggetto");
+    pushError(
+      errors,
+      "defaultPresentationPolicy",
+      "REQUIRED",
+      "defaultPresentationPolicy deve essere un oggetto per una visita ufficiale",
+    );
     return;
   }
 
@@ -105,7 +130,40 @@ function validateDefaultPolicy(policy, errors, required) {
   }
 
   if (!policy.languageLevelKey || typeof policy.languageLevelKey !== "string") {
-    pushError(errors, "defaultPresentationPolicy.languageLevelKey", "REQUIRED", "languageLevelKey e obbligatoria");
+    pushError(
+      errors,
+      "defaultPresentationPolicy.languageLevelKey",
+      "REQUIRED",
+      "languageLevelKey e obbligatoria",
+    );
+  }
+}
+
+async function validateOfficialPolicyVocabulary({ policy, museumId, errors }) {
+  if (!policy?.durationKey || !policy?.languageLevelKey || !museumId) return;
+
+  const vocabulary = await getMuseumVocabulary(museumId);
+  const durationKeys = new Set((vocabulary.durationTypes || []).map((entry) => entry.key));
+  const languageLevelKeys = new Set((vocabulary.languageLevels || []).map((entry) => entry.key));
+
+  if (!durationKeys.has(policy.durationKey)) {
+    pushError(
+      errors,
+      "defaultPresentationPolicy.durationKey",
+      "INVALID_CONTROLLED_VALUE",
+      `durationKey non presente nel vocabolario del museo: ${policy.durationKey}`,
+      { allowedValues: Array.from(durationKeys) },
+    );
+  }
+
+  if (!languageLevelKeys.has(policy.languageLevelKey)) {
+    pushError(
+      errors,
+      "defaultPresentationPolicy.languageLevelKey",
+      "INVALID_CONTROLLED_VALUE",
+      `languageLevelKey non presente nel vocabolario del museo: ${policy.languageLevelKey}`,
+      { allowedValues: Array.from(languageLevelKeys) },
+    );
   }
 }
 
@@ -162,7 +220,12 @@ async function validateStops({ stops, kind, ownerMuseumId, errors }) {
     museumIds.add(String(item.museumId));
 
     if (kind === "official" && ownerMuseumId && String(item.museumId) !== String(ownerMuseumId)) {
-      pushError(errors, `stops[${index}].itemId`, "ITEM_FROM_DIFFERENT_MUSEUM", "Una visita ufficiale puo contenere soltanto item del museo proprietario");
+      pushError(
+        errors,
+        `stops[${index}].itemId`,
+        "ITEM_FROM_DIFFERENT_MUSEUM",
+        "Una visita ufficiale puo contenere soltanto item del museo proprietario",
+      );
     }
   });
 
@@ -174,10 +237,30 @@ async function validateVisitDraftPayload({ rawPayload, payload, mode, existingVi
 
   validateAllowedFields(rawPayload, errors, mode);
   validateBaseFields({ payload, errors, mode });
-  validateDefaultPolicy(payload.defaultPresentationPolicy, errors, mode === "create");
 
   const effectiveKind = mode === "create" ? payload.kind : existingVisit?.kind;
-  const effectiveOwnerMuseumId = mode === "create" ? payload.ownerMuseumId : existingVisit?.ownerMuseumId;
+  const effectiveOwnerMuseumId =
+    mode === "create" ? payload.ownerMuseumId : existingVisit?.ownerMuseumId;
+  const effectivePolicy = hasOwn(payload, "defaultPresentationPolicy")
+    ? payload.defaultPresentationPolicy
+    : existingVisit?.defaultPresentationPolicy;
+
+  validateDefaultPolicyShape({
+    policy: hasOwn(payload, "defaultPresentationPolicy")
+      ? payload.defaultPresentationPolicy
+      : undefined,
+    kind: effectiveKind,
+    errors,
+    required: mode === "create" && effectiveKind === "official",
+  });
+
+  if (effectiveKind === "official") {
+    await validateOfficialPolicyVocabulary({
+      policy: effectivePolicy,
+      museumId: effectiveOwnerMuseumId,
+      errors,
+    });
+  }
 
   const stopResult = await validateStops({
     stops: payload.stops,
