@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const DurationTypeSchema = require("../schemas/durationType.schema");
+const LanguageLevelSchema = require("../schemas/languageLevel.schema");
 const RelationTypeSchema = require("../schemas/relationType.schema");
 const { Schema } = mongoose;
 
@@ -12,7 +13,7 @@ const MuseumSchema = new Schema(
     },
 
     config: {
-      languageLevels: [{ type: String, trim: true }],
+      languageLevels: [LanguageLevelSchema],
       durationTypes: [DurationTypeSchema],
       itemTypes: [{ type: String, trim: true }],
       relationTypes: [RelationTypeSchema],
