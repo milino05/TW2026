@@ -1,29 +1,22 @@
 const mongoose = require("mongoose");
 const Visit = require("../models/visit");
-const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { hasOwn } = require("./validation/validation.utils");
-const { normalizeVisitPayload, validateVisitDraftPayload } = require("./validation/visit.validation");
-const { assertCanManageVisit } = require("./visitIntegrity.service");
-
-function sameId(a, b) {
-  return String(a) === String(b);
-}
-
-async function getActiveUserOrFail(userId) {
-  const user = await User.findOne({ _id: userId, status: "active" }).lean();
-  if (!user) throw new AppError("Utente non autorizzato", 403);
-  return user;
-}
-
-function isMuseumOperator(user, museumId) {
-  return (user.memberships || []).some(
-    (membership) => sameId(membership.museumId, museumId) && membership.role === "operator",
-  );
-}
+const {
+  normalizeVisitPayload,
+  validateVisitDraftPayload,
+} = require("./validation/visit.validation");
+const {
+  assertCanViewVisit,
+  assertCanManageVisit,
+} = require("./visitIntegrity.service");
+const {
+  getActiveUserOrFail,
+  assertMuseumRole,
+} = require("./museumAuthorization.service");
 
 async function createVisit({ payload, actorUserId }) {
-  const actor = await getActiveUserOrFail(actorUserId);
+  await getActiveUserOrFail(actorUserId);
   const normalizedPayload = normalizeVisitPayload(payload);
   const validation = await validateVisitDraftPayload({
     rawPayload: payload,
@@ -35,13 +28,22 @@ async function createVisit({ payload, actorUserId }) {
     throw new AppError("Payload non valido", 400, validation.errors);
   }
 
-  if (normalizedPayload.kind === "official" && !isMuseumOperator(actor, normalizedPayload.ownerMuseumId)) {
-    throw new AppError("E richiesto il ruolo di operatore del museo", 403);
+  if (normalizedPayload.kind === "official") {
+    await assertMuseumRole({
+      userId: actorUserId,
+      museumId: normalizedPayload.ownerMuseumId,
+      minimumRole: "operator",
+    });
   }
 
   const visit = new Visit({
     ...normalizedPayload,
-    ownerMuseumId: normalizedPayload.kind === "official" ? normalizedPayload.ownerMuseumId : null,
+    ownerMuseumId:
+      normalizedPayload.kind === "official" ? normalizedPayload.ownerMuseumId : null,
+    defaultPresentationPolicy:
+      normalizedPayload.kind === "official"
+        ? normalizedPayload.defaultPresentationPolicy
+        : null,
     createdBy: actorUserId,
     museumIds: validation.museumIds,
     status: "draft",
@@ -114,14 +116,14 @@ async function listPublishedVisits(filters = {}) {
 
 async function listManageableVisits(actorUserId) {
   const actor = await getActiveUserOrFail(actorUserId);
-  const operatorMuseumIds = (actor.memberships || [])
-    .filter((membership) => membership.role === "operator")
+  const museumIds = (actor.memberships || [])
+    .filter((membership) => ["operator", "manager"].includes(membership.role))
     .map((membership) => membership.museumId);
 
   return Visit.find({
     $or: [
       { kind: "community", createdBy: actorUserId },
-      { kind: "official", ownerMuseumId: { $in: operatorMuseumIds } },
+      { kind: "official", ownerMuseumId: { $in: museumIds } },
     ],
   }).sort({ updatedAt: -1, title: 1 });
 }
@@ -130,7 +132,7 @@ async function getVisit({ visitId, actorUserId = null }) {
   const visit = await getVisitOrFail(visitId);
   if (visit.status === "published") return visit;
 
-  await assertCanManageVisit({ visit, actorUserId });
+  await assertCanViewVisit({ visit, actorUserId });
   return visit;
 }
 
