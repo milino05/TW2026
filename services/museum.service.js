@@ -126,14 +126,17 @@ async function assignMuseumRole({ museumId, targetUserId, role, actorUserId }) {
   );
 
   if (membership?.role === "manager" && role === "operator") {
-    const managerCount = await User.countDocuments({
-      status: "active",
-      memberships: { $elemMatch: { museumId, role: "manager" } },
-    });
-
-    if (managerCount <= 1) {
-      throw new AppError("Il museo deve conservare almeno un manager attivo", 409);
-    }
+    throw new AppError(
+      "La retrocessione da manager a operator non e stata ancora definita",
+      409,
+      [
+        {
+          field: "role",
+          code: "MANAGER_DEMOTION_NOT_DEFINED",
+          message: "Definire prima regole di retrocessione, revoca e tutela dell'ultimo manager",
+        },
+      ],
+    );
   }
 
   if (membership) {
