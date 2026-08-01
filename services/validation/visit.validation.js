@@ -32,22 +32,22 @@ function normalizeVisitPayload(payload = {}) {
 
   if (hasOwn(payload, "stops")) {
     normalized.stops = Array.isArray(payload.stops)
-      ? payload.stops.map((stop) =>
-          isPlainObject(stop)
-            ? {
-                itemId: stop.itemId,
-                optional: normalizeBoolean(stop.optional) === true,
-              }
-            : stop,
-        )
+      ? payload.stops.map((stop) => {
+          if (!isPlainObject(stop)) return stop;
+
+          return {
+            itemId: stop.itemId,
+            optional: hasOwn(stop, "optional") ? normalizeBoolean(stop.optional) : false,
+          };
+        })
       : payload.stops;
   }
 
   return normalized;
 }
 
-function validateAllowedFields(payload, errors, mode) {
-  Object.keys(payload || {}).forEach((field) => {
+function validateAllowedFields(rawPayload, errors, mode) {
+  Object.keys(rawPayload || {}).forEach((field) => {
     if (!WRITABLE_FIELDS.has(field)) {
       pushError(errors, field, "FORBIDDEN_FIELD", `Il campo ${field} non puo essere modificato direttamente`);
     }
@@ -65,6 +65,10 @@ function validateBaseFields({ payload, errors, mode }) {
     if (!payload.title || typeof payload.title !== "string") {
       pushError(errors, "title", "REQUIRED", "title e obbligatorio");
     }
+  }
+
+  if (hasOwn(payload, "description") && typeof payload.description !== "string") {
+    pushError(errors, "description", "INVALID_TYPE", "description deve essere una stringa");
   }
 
   if (isCreate || hasOwn(payload, "kind")) {
@@ -113,7 +117,7 @@ async function validateStops({ stops, kind, ownerMuseumId, errors }) {
     return { museumIds: [] };
   }
 
-  const itemIds = [];
+  const validEntries = [];
 
   stops.forEach((stop, index) => {
     const basePath = `stops[${index}]`;
@@ -121,6 +125,10 @@ async function validateStops({ stops, kind, ownerMuseumId, errors }) {
     if (!isPlainObject(stop)) {
       pushError(errors, basePath, "INVALID_TYPE", "Ogni tappa deve essere un oggetto");
       return;
+    }
+
+    if (typeof stop.optional !== "boolean") {
+      pushError(errors, `${basePath}.optional`, "INVALID_TYPE", "optional deve essere booleano");
     }
 
     if (!stop.itemId) {
@@ -133,16 +141,18 @@ async function validateStops({ stops, kind, ownerMuseumId, errors }) {
       return;
     }
 
-    itemIds.push(stop.itemId);
+    validEntries.push({ itemId: stop.itemId, index });
   });
 
-  const items = itemIds.length
-    ? await Item.find({ _id: { $in: itemIds } }).select("_id museumId").lean()
+  const items = validEntries.length
+    ? await Item.find({ _id: { $in: validEntries.map((entry) => entry.itemId) } })
+        .select("_id museumId")
+        .lean()
     : [];
   const itemsById = new Map(items.map((item) => [String(item._id), item]));
   const museumIds = new Set();
 
-  itemIds.forEach((itemId, index) => {
+  validEntries.forEach(({ itemId, index }) => {
     const item = itemsById.get(String(itemId));
     if (!item) {
       pushError(errors, `stops[${index}].itemId`, "ITEM_NOT_FOUND", "L'item della tappa non esiste");
@@ -152,22 +162,17 @@ async function validateStops({ stops, kind, ownerMuseumId, errors }) {
     museumIds.add(String(item.museumId));
 
     if (kind === "official" && ownerMuseumId && String(item.museumId) !== String(ownerMuseumId)) {
-      pushError(
-        errors,
-        `stops[${index}].itemId`,
-        "ITEM_FROM_DIFFERENT_MUSEUM",
-        "Una visita ufficiale puo contenere soltanto item del museo proprietario",
-      );
+      pushError(errors, `stops[${index}].itemId`, "ITEM_FROM_DIFFERENT_MUSEUM", "Una visita ufficiale puo contenere soltanto item del museo proprietario");
     }
   });
 
   return { museumIds: Array.from(museumIds) };
 }
 
-async function validateVisitDraftPayload({ payload, mode, existingVisit = null }) {
+async function validateVisitDraftPayload({ rawPayload, payload, mode, existingVisit = null }) {
   const errors = [];
 
-  validateAllowedFields(payload, errors, mode);
+  validateAllowedFields(rawPayload, errors, mode);
   validateBaseFields({ payload, errors, mode });
   validateDefaultPolicy(payload.defaultPresentationPolicy, errors, mode === "create");
 
