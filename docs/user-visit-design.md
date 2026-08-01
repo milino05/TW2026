@@ -1,4 +1,4 @@
-# User, Visit e presentazione adattiva
+# User, Museum, Visit e presentazione adattiva
 
 Questo documento descrive il perimetro implementato nel branch `user-visit` e le decisioni ancora aperte.
 
@@ -9,7 +9,7 @@ Il modello User contiene:
 - `username` univoco e normalizzato;
 - `passwordHash` scrypt, escluso dalle query ordinarie;
 - `memberships` contestuali a un museo;
-- ruolo iniziale `operator`;
+- ruoli `operator` e `manager`;
 - stato `active` o `disabled`.
 
 L'autenticazione usa sessioni server-side in MongoDB e cookie HttpOnly. L'identita dell'attore deriva esclusivamente dalla sessione e non viene mai accettata dal body.
@@ -21,7 +21,53 @@ Endpoint disponibili:
 - `POST /api/auth/logout`;
 - `GET /api/auth/me`.
 
-La registrazione crea un utente community senza membership. Le membership da operatore devono essere assegnate da un flusso amministrativo o seed controllato.
+La registrazione crea un utente senza membership museali.
+
+## Museum e gerarchia dei ruoli
+
+Qualunque utente autenticato puo creare un museo. Il creatore viene aggiunto automaticamente alle membership con ruolo `manager` e il museo memorizza `createdBy`.
+
+Gerarchia:
+
+- utente normale: visite community e future operazioni marketplace;
+- operator: privilegi utente piu creazione di item e visite ufficiali nel proprio museo;
+- manager: eredita i privilegi operator e amministra museo, configurazione e ruoli.
+
+Solo un manager puo:
+
+- modificare nome o configurazione del museo;
+- assegnare o cambiare il ruolo di un utente;
+- eliminare il museo, se non esistono item o visite associati.
+
+Endpoint:
+
+```text
+PUT /api/museums/:museumId/members/:userId/role
+```
+
+Payload:
+
+```json
+{
+  "role": "operator"
+}
+```
+
+oppure:
+
+```json
+{
+  "role": "manager"
+}
+```
+
+Il sistema impedisce di declassare l'ultimo manager attivo del museo.
+
+Comando amministrativo equivalente:
+
+```bash
+npm run assign:museum-role -- <username> <museumId> <operator|manager>
+```
 
 ## Visit
 
@@ -36,9 +82,9 @@ Ogni tappa contiene l'item principale. Le rappresentazioni alternative e gli app
 
 `museumIds` e derivato dagli item delle tappe e consente di cercare visite community che includono uno specifico museo.
 
-### Policy predefinita
+### Default delle visite ufficiali
 
-Il creatore deve specificare:
+Una visita ufficiale contiene una policy globale:
 
 ```json
 {
@@ -49,29 +95,51 @@ Il creatore deve specificare:
 }
 ```
 
-La visita puo essere pubblicata soltanto se ogni item possiede una representation con quella coppia. L'opzione utente `default` riutilizza questa policy; una preferenza `custom` deve specificare entrambe le chiavi.
+La coppia viene validata contro il vocabolario del museo proprietario e deve essere supportata da ogni item della visita.
 
-### Workflow
+Il visitatore puo usare la policy `default` oppure una coppia custom appartenente allo stesso vocabolario del museo.
 
-Le visite community vengono pubblicate direttamente dal proprio autore, senza moderazione intermedia. Le visite ufficiali vengono pubblicate da un operatore del museo proprietario.
+### Default delle visite community
+
+Una visita community non puo contenere una policy globale, perche le chiavi dei musei coinvolti non sono confrontabili.
+
+Ogni tappa parte dalla representation `isDefault` dell'item. Per pubblicare un item e obbligatorio avere esattamente una representation di default.
+
+Le preferenze custom cross-museum non sono ancora implementate. Il backend non associa automaticamente etichette come `semplice` e `facile`.
+
+La proposta di adattamento e documentata in `docs/community-vocabulary-strategy.md`.
+
+### Workflow editoriale
+
+Le visite community vengono pubblicate direttamente dal proprio autore, senza moderazione intermedia.
+
+Le visite ufficiali possono essere create da operator e manager. In attesa di una decisione sui poteri editoriali dell'operator, modifica, controllo e pubblicazione delle visite ufficiali richiedono un manager.
 
 Endpoint disponibili:
 
 - `GET /api/visits`: visite pubblicate;
-- `GET /api/visits/mine`: visite gestibili dall'utente;
+- `GET /api/visits/mine`: visite gestibili o visibili nel proprio ruolo;
 - `POST /api/visits`: creazione in draft;
 - `GET /api/visits/:visitId`;
 - `PUT/PATCH /api/visits/:visitId`;
 - `POST /api/visits/:visitId/check-consistency`;
 - `POST /api/visits/:visitId/publish`.
 
-Una modifica riporta sempre la visita in draft. La pubblicazione verifica autore, museo, item, integrita e disponibilita della policy predefinita.
+Una modifica riporta sempre la visita in draft. Se un item usato dalla visita viene modificato, eliminato o reso incoerente da una modifica del vocabolario, la visita torna in draft e viene marcata `needs_review`.
 
-Se un item usato dalla visita viene modificato, eliminato o reso incoerente da una modifica del vocabolario, la visita torna in draft e viene marcata `needs_review`.
+## Item e permessi applicati
+
+- creazione item: operator o manager del museo;
+- modifica item: manager;
+- controllo di consistenza: manager;
+- pubblicazione: manager;
+- cancellazione: manager.
+
+Questa e una policy conservativa. L'utente ha specificato esplicitamente la creazione da parte dell'operator, ma non il resto del ciclo editoriale.
 
 ## Language level e duration
 
-Sia `languageLevels` sia `durationTypes` sono vocabolari ordinati:
+Ogni museo possiede vocabolari indipendenti. Sia `languageLevels` sia `durationTypes` sono ordinati localmente:
 
 ```json
 {
@@ -82,67 +150,84 @@ Sia `languageLevels` sia `durationTypes` sono vocabolari ordinati:
 }
 ```
 
-Per entrambi devono essere univoci:
+Per ciascun vocabolario devono essere univoci:
 
 - `key`;
 - `level`.
 
-I livelli non devono essere consecutivi. Il Navigator usa l'ordinamento numerico per selezionare la prima representation effettivamente disponibile:
+Il campo `level` ordina soltanto le voci dello stesso museo. Non implica che il livello 2 del museo A sia semanticamente equivalente al livello 2 del museo B.
 
-- durata superiore/inferiore mantenendo il language level;
-- language level superiore/inferiore mantenendo la durata.
+Il Navigator puo usare l'ordinamento locale per:
 
-Le representation usano campi coerenti:
+- durata superiore o inferiore mantenendo il language level locale;
+- language level superiore o inferiore mantenendo la durata locale.
+
+Le representation usano:
 
 ```json
 {
   "durationKey": "medium",
   "languageLevelKey": "simple",
-  "text": "..."
+  "text": "...",
+  "isDefault": true
 }
 ```
 
-Dato che il database e vuoto, non esiste uno strato di compatibilita con il precedente campo `languageLevel` o con array di stringhe.
+Dato che il database e vuoto, non esiste uno strato di compatibilita con i vecchi schemi.
 
 ## Refactoring del codice precedente
 
 Sono state applicate queste modifiche:
 
 - `Item.createdBy` e `updatedBy` sono riferimenti a User;
-- le mutazioni di musei e item richiedono autenticazione;
-- la root di test non contiene piu testo interno;
-- Express espone staticamente soltanto `public/`, non l'intera repository;
+- le mutazioni richiedono identita autenticata;
+- la root di test non contiene testo interno;
+- Express espone staticamente soltanto `public/`;
 - gli errori Mongoose e i duplicati hanno risposte API coerenti;
-- la prima representation non viene piu resa implicitamente default in base all'ordine dell'array;
+- la prima representation non viene resa implicitamente default in base all'ordine dell'array;
 - le modifiche degli item invalidano le visite dipendenti;
-- e disponibile `npm run seed:users` per creare gli account obbligatori con password `12345678`.
+- `Museum.createdBy` identifica il creatore;
+- la creazione del museo assegna automaticamente il ruolo manager;
+- e disponibile `npm run seed:users` per creare gli account obbligatori.
 
-## Punti ancora aperti
+## Decisioni ancora richieste
 
-### Persistenza delle preferenze dopo l'acquisto
+### Poteri editoriali dell'operator
 
-E definita la semantica `default/custom`, ma non dove salvare la preferenza del singolo acquirente. La scelta dipende dal futuro modello marketplace:
+Occorre decidere se un operator possa anche:
 
-1. documento `VisitPurchase` che contiene anche le preferenze;
-2. documento separato `UserVisitPreference` collegato a un diritto di accesso;
-3. preferenze nel profilo utente.
+- modificare item e visite ufficiali;
+- eseguire il controllo di consistenza;
+- pubblicare;
+- eliminare.
 
-La seconda soluzione separa meglio acquisto e configurazione, ma richiede un controllo esplicito del diritto di accesso.
+Attualmente queste azioni sono manager-only.
 
-### Permessi fini su item e musei
+### Rimozione delle membership
 
-Le mutazioni richiedono login, ma non e ancora definito se un item possa essere modificato:
+E possibile assegnare o cambiare un ruolo, ma non rimuovere completamente un utente dal museo. Va definito se il manager possa revocare una membership e con quali garanzie.
 
-- soltanto dal suo autore;
-- dall'autore e dagli operatori del museo;
-- da qualunque autore che abbia adottato il contenuto.
+### Ricerca degli utenti
 
-Non e neppure definito chi possa creare un museo o assegnare membership da operatore.
+L'endpoint di assegnazione usa `userId`. Va deciso se un manager possa cercare utenti per username, e quali dati possano essere restituiti senza esporre informazioni non necessarie.
 
-### Visibilita, ritiro e cancellazione
+### Visibilita dei draft
 
-Non sono stati introdotti `private`, `unlisted`, `archived`, unpublish o cancellazione delle visite pubblicate.
+Le regole non specificano se item e visite in draft debbano essere visibili soltanto ai membri del museo o anche tramite le route pubbliche. La policy va definita prima del frontend editor.
+
+### Preferenze community
+
+Occorre scegliere:
+
+- dove memorizzare la preferenza del compratore;
+- come tradurre una preferenza astratta nei vocabolari locali;
+- quale fallback usare quando la coppia desiderata non esiste;
+- se il creatore community possa impostare un override per ogni tappa.
+
+### Visibilita, ritiro e cancellazione delle visite
+
+Non sono ancora stati introdotti `private`, `unlisted`, `archived`, unpublish o cancellazione delle visite pubblicate.
 
 ### Logistica
 
-Le indicazioni indoor e i trasferimenti tra musei restano separati dagli item. La struttura definitiva verra affrontata nel prossimo dominio.
+Le indicazioni indoor e i trasferimenti tra musei restano separate dagli item. La struttura definitiva verra affrontata nel prossimo dominio.
