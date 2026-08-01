@@ -1,31 +1,41 @@
-/* ========================= */
-/*        CONFIGURAZIONE     */
-/* ========================= */
-
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
-// import route
-const itemRoutes = require("./routes/items.routes");
+
+const authRoutes = require("./routes/auth.routes");
 const museumRoutes = require("./routes/museums.routes");
+const itemRoutes = require("./routes/items.routes");
+const visitRoutes = require("./routes/visits.routes");
+const { loadCurrentUser } = require("./middlewares/auth");
+const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
+const AppError = require("./utils/AppError");
 
 const app = express();
+const allowedOrigins = configuredOrigins();
 
-// Permette al server di ricevere JSON nel body delle richieste
-app.use(express.json());
-
-// Permette richieste da frontend esterni (es. Vue)
-app.use(cors());
-
-// Necessario quando si è dietro proxy (come nel server del dipartimento)
 app.enable("trust proxy");
-app.use(express.static(__dirname));
+app.use(express.json({ limit: "1mb" }));
 
-/* ========================= */
-/*         ROUTE TEST        */
-/* ========================= */
+app.use(
+  cors({
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-// Endpoint base per verificare che il server funzioni
+      // Le richieste same-origin non hanno bisogno di header CORS. Per le altre
+      // origini l'assenza dell'header impedisce al browser di leggere la risposta.
+      return callback(null, false);
+    },
+  }),
+);
+
+app.use(requireTrustedOrigin);
+app.use(loadCurrentUser);
+app.use(express.static(path.join(__dirname, "public")));
+
 app.get("/ping", (req, res) => {
   res.json({
     status: "ok",
@@ -34,26 +44,22 @@ app.get("/ping", (req, res) => {
   });
 });
 
-app.get("/", async function (req, res) {
-  var text = "milino gigio che non sa scrivere i prompt";
-  res.send(
-    `<!doctype html>
-<html>
-	<body>
-		<h1>${text}</h1>
-		<img src="Shrek.jpg" alt="basstardoh">
-	</body>
-</html>
-			`,
-  );
+app.get("/", (req, res) => {
+  res.json({
+    name: "ArtAround API",
+    status: "ok",
+  });
 });
 
-//const configRoutes = require("./routes/config");
-
-// usa le route
+app.use("/api", authRoutes);
 app.use("/api", museumRoutes);
 app.use("/api", itemRoutes);
+app.use("/api", visitRoutes);
 
-app.use(errorHandler); //simoncino puzza
+app.use((req, res, next) => {
+  next(new AppError("Risorsa non trovata", 404));
+});
+
+app.use(errorHandler);
 
 module.exports = app;
