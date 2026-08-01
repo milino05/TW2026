@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const { requireAuth } = require("../middlewares/auth");
 
 const {
   createMuseum,
@@ -15,12 +16,18 @@ const {
 
 const validateMuseumId = validateObjectIdParam("museumId");
 
-router.route("/museums").get(listMuseums).post(createMuseum);
+router.route("/museums").get(listMuseums).post(requireAuth, createMuseum);
 
 router.get("/museums/:museumId/vocabulary", validateMuseumId, getEditorVocabulary);
 router.get("/museums/:museumId/vocabulary/item-types/:itemType", validateMuseumId, getItemTypeVocabulary);
 router.get("/museums/:museumId/editor-vocabulary", validateMuseumId, getEditorVocabulary);
 
-router.route("/museums/:museumId").all(validateMuseumId).get(getMuseum).put(updateMuseum).patch(updateMuseum).delete(deleteMuseum);
+router
+  .route("/museums/:museumId")
+  .all(validateMuseumId)
+  .get(getMuseum)
+  .put(requireAuth, updateMuseum)
+  .patch(requireAuth, updateMuseum)
+  .delete(requireAuth, deleteMuseum);
 
 module.exports = router;
