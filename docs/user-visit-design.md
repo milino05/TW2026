@@ -1,21 +1,29 @@
-# User e Visit: decisioni implementate e punti aperti
+# User, Visit e presentazione adattiva
 
-Questo documento descrive il perimetro del branch `user-visit`.
+Questo documento descrive il perimetro implementato nel branch `user-visit` e le decisioni ancora aperte.
 
-## Implementato
+## User e autenticazione
 
-### User
+Il modello User contiene:
 
-- `username` univoco e normalizzato.
-- `passwordHash` non selezionato nelle query ordinarie.
-- `memberships` contestuali a un museo.
-- ruolo iniziale `operator`.
-- uno stesso museo non puo comparire due volte nelle membership dello stesso utente.
-- stato utente `active` o `disabled`.
+- `username` univoco e normalizzato;
+- `passwordHash` scrypt, escluso dalle query ordinarie;
+- `memberships` contestuali a un museo;
+- ruolo iniziale `operator`;
+- stato `active` o `disabled`.
 
-Qualunque utente attivo puo essere autore di una visita community. Per gestire una visita ufficiale e necessaria una membership `operator` relativa al museo proprietario.
+L'autenticazione usa sessioni server-side in MongoDB e cookie HttpOnly. L'identita dell'attore deriva esclusivamente dalla sessione e non viene mai accettata dal body.
 
-### Visit
+Endpoint disponibili:
+
+- `POST /api/auth/register`;
+- `POST /api/auth/login`;
+- `POST /api/auth/logout`;
+- `GET /api/auth/me`.
+
+La registrazione crea un utente community senza membership. Le membership da operatore devono essere assegnate da un flusso amministrativo o seed controllato.
+
+## Visit
 
 Un'unica collezione gestisce:
 
@@ -26,29 +34,44 @@ Le tappe sono ordinate esclusivamente dalla posizione nell'array `stops`. Non es
 
 Ogni tappa contiene l'item principale. Le rappresentazioni alternative e gli approfondimenti su autore, stile, periodo e altri argomenti restano nel modello Item e nel grafo delle relazioni; non diventano tappe della visita.
 
-`museumIds` e un campo denormalizzato derivato dagli item delle tappe, usato per ricercare le visite community che coinvolgono uno specifico museo.
+`museumIds` e derivato dagli item delle tappe e consente di cercare visite community che includono uno specifico museo.
 
-Il controllo di integrita verifica:
+### Policy predefinita
 
-- esistenza del creatore come riferimento editoriale;
-- esistenza del museo proprietario;
-- esistenza degli item;
-- appartenenza di tutti gli item al museo proprietario per una visita ufficiale;
-- stato `published` e integrita `valid` di tutti gli item;
-- presenza di almeno una tappa.
+Il creatore deve specificare:
 
-L'autorizzazione alla pubblicazione e separata dall'integrita del contenuto:
+```json
+{
+  "defaultPresentationPolicy": {
+    "durationKey": "medium",
+    "languageLevelKey": "simple"
+  }
+}
+```
 
-- una visita community puo essere gestita dal suo autore attivo;
-- una visita ufficiale puo essere gestita da un operatore attivo del museo proprietario.
+La visita puo essere pubblicata soltanto se ogni item possiede una representation con quella coppia. L'opzione utente `default` riutilizza questa policy; una preferenza `custom` deve specificare entrambe le chiavi.
 
-La perdita successiva del ruolo da parte del creatore non rende automaticamente invalida una visita ufficiale gia attribuita al museo.
+### Workflow
 
-Il servizio `visitIntegrity.service.js` richiede esplicitamente `actorUserId`. Il modo in cui tale identita viene ottenuta dalla richiesta HTTP non e stato deciso in questo branch.
+Le visite community vengono pubblicate direttamente dal proprio autore, senza moderazione intermedia. Le visite ufficiali vengono pubblicate da un operatore del museo proprietario.
 
-### Language level e duration
+Endpoint disponibili:
 
-I language level sono ora oggetti ordinati:
+- `GET /api/visits`: visite pubblicate;
+- `GET /api/visits/mine`: visite gestibili dall'utente;
+- `POST /api/visits`: creazione in draft;
+- `GET /api/visits/:visitId`;
+- `PUT/PATCH /api/visits/:visitId`;
+- `POST /api/visits/:visitId/check-consistency`;
+- `POST /api/visits/:visitId/publish`.
+
+Una modifica riporta sempre la visita in draft. La pubblicazione verifica autore, museo, item, integrita e disponibilita della policy predefinita.
+
+Se un item usato dalla visita viene modificato, eliminato o reso incoerente da una modifica del vocabolario, la visita torna in draft e viene marcata `needs_review`.
+
+## Language level e duration
+
+Sia `languageLevels` sia `durationTypes` sono vocabolari ordinati:
 
 ```json
 {
@@ -59,50 +82,67 @@ I language level sono ora oggetti ordinati:
 }
 ```
 
-Sia per `languageLevels` sia per `durationTypes` devono essere univoci:
+Per entrambi devono essere univoci:
 
 - `key`;
 - `level`.
 
-I valori non devono essere consecutivi: e sufficiente che l'ordine numerico sia univoco. Il vocabolario restituisce:
+I livelli non devono essere consecutivi. Il Navigator usa l'ordinamento numerico per selezionare la prima representation effettivamente disponibile:
 
-- `languageLevels`: array delle key, per compatibilita con le representations esistenti;
-- `languageLevelTypes`: array completo e ordinato, per il Navigator.
+- durata superiore/inferiore mantenendo il language level;
+- language level superiore/inferiore mantenendo la durata.
 
-## Punti volutamente non implementati
+Le representation usano campi coerenti:
 
-### Autenticazione HTTP
+```json
+{
+  "durationKey": "medium",
+  "languageLevelKey": "simple",
+  "text": "..."
+}
+```
 
-Non sono stati aggiunti login, sessioni, JWT o middleware di autenticazione. Prima di esporre le API di scrittura delle visite va scelta una strategia.
+Dato che il database e vuoto, non esiste uno strato di compatibilita con il precedente campo `languageLevel` o con array di stringhe.
 
-### CRUD e route delle visite
+## Refactoring del codice precedente
 
-Non sono stati montati controller e route per creare o modificare visite, perche senza autenticazione non e definito in modo affidabile come ottenere `actorUserId` e impedire l'impersonificazione.
+Sono state applicate queste modifiche:
 
-### Presentazione iniziale della tappa
+- `Item.createdBy` e `updatedBy` sono riferimenti a User;
+- le mutazioni di musei e item richiedono autenticazione;
+- la root di test non contiene piu testo interno;
+- Express espone staticamente soltanto `public/`, non l'intera repository;
+- gli errori Mongoose e i duplicati hanno risposte API coerenti;
+- la prima representation non viene piu resa implicitamente default in base all'ordine dell'array;
+- le modifiche degli item invalidano le visite dipendenti;
+- e disponibile `npm run seed:users` per creare gli account obbligatori con password `12345678`.
 
-Non e stato deciso se una tappa debba salvare:
+## Punti ancora aperti
 
-1. una policy (`languageLevelKey` e `durationKey`);
-2. un riferimento rigido a una representation;
-3. nessuna preferenza, usando le preferenze del visitatore.
+### Persistenza delle preferenze dopo l'acquisto
 
-### Moderazione community
+E definita la semantica `default/custom`, ma non dove salvare la preferenza del singolo acquirente. La scelta dipende dal futuro modello marketplace:
 
-Non e stato deciso se la pubblicazione community sia diretta oppure richieda `pending_review`.
+1. documento `VisitPurchase` che contiene anche le preferenze;
+2. documento separato `UserVisitPreference` collegato a un diritto di accesso;
+3. preferenze nel profilo utente.
 
-### Visibilita e ritiro
+La seconda soluzione separa meglio acquisto e configurazione, ma richiede un controllo esplicito del diritto di accesso.
 
-Non sono stati introdotti `private`, `unlisted`, `archived` o un flusso di unpublish.
+### Permessi fini su item e musei
+
+Le mutazioni richiedono login, ma non e ancora definito se un item possa essere modificato:
+
+- soltanto dal suo autore;
+- dall'autore e dagli operatori del museo;
+- da qualunque autore che abbia adottato il contenuto.
+
+Non e neppure definito chi possa creare un museo o assegnare membership da operatore.
+
+### Visibilita, ritiro e cancellazione
+
+Non sono stati introdotti `private`, `unlisted`, `archived`, unpublish o cancellazione delle visite pubblicate.
 
 ### Logistica
 
-Le indicazioni indoor e i trasferimenti tra musei non sono inclusi in questo branch. Il loro modello deve rimanere separato dagli item, ma la struttura definitiva non e stata concordata.
-
-### Migrazione dei language level esistenti
-
-Il vecchio formato era un array di stringhe. Prima del deploy occorre scegliere esplicitamente la mappatura delle stringhe esistenti verso `key`, `label` e soprattutto `level`. Il branch non assume automaticamente che l'ordine corrente dell'array sia quello semantico corretto.
-
-### Migrazione e seed degli utenti
-
-Il modello ora richiede `username`, `passwordHash` e `status`. Prima di usare il branch con dati esistenti occorre definire come creare o migrare gli account obbligatori del progetto e quale algoritmo usare per produrre gli hash delle password.
+Le indicazioni indoor e i trasferimenti tra musei restano separati dagli item. La struttura definitiva verra affrontata nel prossimo dominio.
