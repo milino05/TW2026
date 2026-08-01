@@ -18,6 +18,7 @@
     "down:clean": "docker compose down -v",
     "logs": "docker compose logs -f backend",
     "start": "node index.js",
-    "dev:container": "nodemon index.js"
+    "dev:container": "nodemon index.js",
+    "seed:users": "node scripts/seedRequiredUsers.js"
   }
 }
