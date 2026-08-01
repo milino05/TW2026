@@ -28,15 +28,21 @@ Ogni tappa contiene l'item principale. Le rappresentazioni alternative e gli app
 
 `museumIds` e un campo denormalizzato derivato dagli item delle tappe, usato per ricercare le visite community che coinvolgono uno specifico museo.
 
-La pubblicazione verifica:
+Il controllo di integrita verifica:
 
-- esistenza e stato attivo del creatore;
-- membership dell'operatore per le visite ufficiali;
+- esistenza del creatore come riferimento editoriale;
 - esistenza del museo proprietario;
 - esistenza degli item;
 - appartenenza di tutti gli item al museo proprietario per una visita ufficiale;
 - stato `published` e integrita `valid` di tutti gli item;
 - presenza di almeno una tappa.
+
+L'autorizzazione alla pubblicazione e separata dall'integrita del contenuto:
+
+- una visita community puo essere gestita dal suo autore attivo;
+- una visita ufficiale puo essere gestita da un operatore attivo del museo proprietario.
+
+La perdita successiva del ruolo da parte del creatore non rende automaticamente invalida una visita ufficiale gia attribuita al museo.
 
 Il servizio `visitIntegrity.service.js` richiede esplicitamente `actorUserId`. Il modo in cui tale identita viene ottenuta dalla richiesta HTTP non e stato deciso in questo branch.
 
@@ -96,3 +102,7 @@ Le indicazioni indoor e i trasferimenti tra musei non sono inclusi in questo bra
 ### Migrazione dei language level esistenti
 
 Il vecchio formato era un array di stringhe. Prima del deploy occorre scegliere esplicitamente la mappatura delle stringhe esistenti verso `key`, `label` e soprattutto `level`. Il branch non assume automaticamente che l'ordine corrente dell'array sia quello semantico corretto.
+
+### Migrazione e seed degli utenti
+
+Il modello ora richiede `username`, `passwordHash` e `status`. Prima di usare il branch con dati esistenti occorre definire come creare o migrare gli account obbligatori del progetto e quale algoritmo usare per produrre gli hash delle password.
