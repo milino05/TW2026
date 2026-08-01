@@ -4,6 +4,7 @@ const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { normalizeItemPayload, validateItemDraftPayload } = require("./validation/item.validation");
 const { applyRelationCommands } = require("./itemRelations.service");
 const { invalidateVisitsUsingItem } = require("./visitDependency.service");
+const { assertMuseumRole } = require("./museumAuthorization.service");
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -101,7 +102,8 @@ async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
   return item;
 }
 
-async function createItem({ museumId, payload, userId = null }) {
+async function createItem({ museumId, payload, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
   rejectStatusInPayload(payload);
 
   const vocabulary = await getMuseumVocabulary(museumId);
@@ -141,12 +143,19 @@ async function createItem({ museumId, payload, userId = null }) {
   });
 
   const savedItems = await saveUniqueItems([item, ...touchedItems]);
-  await invalidateVisitsForChangedItems(savedItems.filter((savedItem) => !sameId(savedItem._id, item._id)));
+  await invalidateVisitsForChangedItems(
+    savedItems.filter((savedItem) => !sameId(savedItem._id, item._id)),
+  );
 
   return item;
 }
 
-async function updateItem({ museumId, itemId, payload, userId = null }) {
+/**
+ * Policy conservativa: finche non viene deciso se gli operatori possano
+ * modificare contenuti esistenti, l'update richiede un manager.
+ */
+async function updateItem({ museumId, itemId, payload, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
   rejectStatusInPayload(payload);
 
   const existingItem = await findItemByIdInMuseumOrFail({ museumId, itemId });
@@ -219,16 +228,22 @@ function buildDeletedTargetIntegrityIssues({ sourceItem, deletedItem }) {
     }));
 }
 
-async function deleteItem({ museumId, itemId, userId = null }) {
+async function deleteItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
   const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
   const affectedItems = await findItemsTargetingItem({ museumId, targetItemId: item._id });
 
   affectedItems.forEach((affectedItem) => {
-    const existingIssues = Array.isArray(affectedItem.integrity?.issues) ? affectedItem.integrity.issues : [];
+    const existingIssues = Array.isArray(affectedItem.integrity?.issues)
+      ? affectedItem.integrity.issues
+      : [];
     markAsDraftNeedingReview(
       affectedItem,
       userId,
-      [...existingIssues, ...buildDeletedTargetIntegrityIssues({ sourceItem: affectedItem, deletedItem: item })],
+      [
+        ...existingIssues,
+        ...buildDeletedTargetIntegrityIssues({ sourceItem: affectedItem, deletedItem: item }),
+      ],
     );
   });
 
