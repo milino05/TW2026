@@ -33,11 +33,57 @@ function resolvePresentationPolicy({ defaultPresentationPolicy, userPreference }
 }
 
 function findRepresentationByPolicy({ item, policy }) {
-  return (item.representations || []).find(
-    (representation) =>
-      representation.durationKey === policy.durationKey &&
-      representation.languageLevelKey === policy.languageLevelKey,
-  ) || null;
+  return (
+    (item.representations || []).find(
+      (representation) =>
+        representation.durationKey === policy.durationKey &&
+        representation.languageLevelKey === policy.languageLevelKey,
+    ) || null
+  );
+}
+
+function findDefaultRepresentation({ item }) {
+  const defaults = (item.representations || []).filter(
+    (representation) => representation.isDefault === true,
+  );
+
+  return defaults.length === 1 ? defaults[0] : null;
+}
+
+/**
+ * Risoluzione iniziale esplicita:
+ * - official: policy del museo, eventualmente sovrascritta dall'utente;
+ * - community: default locale dell'item.
+ *
+ * Le preferenze custom cross-museum non vengono interpretate finche non viene
+ * concordato un mapping tra vocabolari locali differenti.
+ */
+function resolveInitialRepresentation({ visit, item, userPreference }) {
+  if (visit.kind === "community") {
+    if (userPreference && userPreference.mode === "custom") {
+      throw new AppError(
+        "Le preferenze adattive per visite community non sono ancora configurate",
+        409,
+        [
+          {
+            field: "presentationPreference",
+            code: "CROSS_VOCABULARY_MAPPING_REQUIRED",
+            message:
+              "Non e possibile confrontare automaticamente chiavi appartenenti a vocabolari di musei diversi",
+          },
+        ],
+      );
+    }
+
+    return findDefaultRepresentation({ item });
+  }
+
+  const policy = resolvePresentationPolicy({
+    defaultPresentationPolicy: visit.defaultPresentationPolicy,
+    userPreference,
+  });
+
+  return findRepresentationByPolicy({ item, policy });
 }
 
 function levelMap(entries = []) {
@@ -60,21 +106,31 @@ function findAdjacentRepresentation({ item, currentRepresentation, vocabulary, a
 
   const entries = axis === "duration" ? vocabulary.durationTypes : vocabulary.languageLevels;
   const levels = levelMap(entries);
-  const currentKey = axis === "duration" ? currentRepresentation.durationKey : currentRepresentation.languageLevelKey;
+  const currentKey =
+    axis === "duration"
+      ? currentRepresentation.durationKey
+      : currentRepresentation.languageLevelKey;
   const currentLevel = levels.get(currentKey);
 
   if (!Number.isFinite(currentLevel)) return null;
 
   const candidates = (item.representations || []).filter((representation) => {
-    if (axis === "duration" && representation.languageLevelKey !== currentRepresentation.languageLevelKey) {
+    if (
+      axis === "duration" &&
+      representation.languageLevelKey !== currentRepresentation.languageLevelKey
+    ) {
       return false;
     }
 
-    if (axis === "language" && representation.durationKey !== currentRepresentation.durationKey) {
+    if (
+      axis === "language" &&
+      representation.durationKey !== currentRepresentation.durationKey
+    ) {
       return false;
     }
 
-    const candidateKey = axis === "duration" ? representation.durationKey : representation.languageLevelKey;
+    const candidateKey =
+      axis === "duration" ? representation.durationKey : representation.languageLevelKey;
     const candidateLevel = levels.get(candidateKey);
 
     if (!Number.isFinite(candidateLevel)) return false;
@@ -95,5 +151,7 @@ function findAdjacentRepresentation({ item, currentRepresentation, vocabulary, a
 module.exports = {
   resolvePresentationPolicy,
   findRepresentationByPolicy,
+  findDefaultRepresentation,
+  resolveInitialRepresentation,
   findAdjacentRepresentation,
 };
