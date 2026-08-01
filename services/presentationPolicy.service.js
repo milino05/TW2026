@@ -40,29 +40,14 @@ function findRepresentationByPolicy({ item, policy }) {
   ) || null;
 }
 
-function getOrderedEntry(vocabularyEntries, key) {
-  return (vocabularyEntries || []).find((entry) => entry.key === key) || null;
-}
-
-function findAdjacentKey({ entries, currentKey, direction }) {
-  const current = getOrderedEntry(entries, currentKey);
-  if (!current) return null;
-
-  const candidates = entries.filter((entry) =>
-    direction === "higher" ? entry.level > current.level : entry.level < current.level,
-  );
-
-  candidates.sort((a, b) =>
-    direction === "higher" ? a.level - b.level : b.level - a.level,
-  );
-
-  return candidates[0]?.key || null;
+function levelMap(entries = []) {
+  return new Map(entries.map((entry) => [entry.key, entry.level]));
 }
 
 /**
- * Cambia un solo asse mantenendo invariato l'altro:
- * - duration: "dimmi di piu/meno";
- * - language: "piu semplice/troppo semplice".
+ * Cambia un solo asse mantenendo invariato l'altro e seleziona la prima
+ * representation effettivamente disponibile nell'item, non soltanto il livello
+ * immediatamente successivo configurato nel museo.
  */
 function findAdjacentRepresentation({ item, currentRepresentation, vocabulary, axis, direction }) {
   if (!["duration", "language"].includes(axis)) {
@@ -73,34 +58,38 @@ function findAdjacentRepresentation({ item, currentRepresentation, vocabulary, a
     throw new AppError("Direzione di presentazione non valida", 400);
   }
 
-  const adjacentKey =
-    axis === "duration"
-      ? findAdjacentKey({
-          entries: vocabulary.durationTypes,
-          currentKey: currentRepresentation.durationKey,
-          direction,
-        })
-      : findAdjacentKey({
-          entries: vocabulary.languageLevels,
-          currentKey: currentRepresentation.languageLevelKey,
-          direction,
-        });
+  const entries = axis === "duration" ? vocabulary.durationTypes : vocabulary.languageLevels;
+  const levels = levelMap(entries);
+  const currentKey = axis === "duration" ? currentRepresentation.durationKey : currentRepresentation.languageLevelKey;
+  const currentLevel = levels.get(currentKey);
 
-  if (!adjacentKey) return null;
+  if (!Number.isFinite(currentLevel)) return null;
 
-  return (item.representations || []).find((representation) => {
-    if (axis === "duration") {
-      return (
-        representation.durationKey === adjacentKey &&
-        representation.languageLevelKey === currentRepresentation.languageLevelKey
-      );
+  const candidates = (item.representations || []).filter((representation) => {
+    if (axis === "duration" && representation.languageLevelKey !== currentRepresentation.languageLevelKey) {
+      return false;
     }
 
-    return (
-      representation.languageLevelKey === adjacentKey &&
-      representation.durationKey === currentRepresentation.durationKey
-    );
-  }) || null;
+    if (axis === "language" && representation.durationKey !== currentRepresentation.durationKey) {
+      return false;
+    }
+
+    const candidateKey = axis === "duration" ? representation.durationKey : representation.languageLevelKey;
+    const candidateLevel = levels.get(candidateKey);
+
+    if (!Number.isFinite(candidateLevel)) return false;
+    return direction === "higher" ? candidateLevel > currentLevel : candidateLevel < currentLevel;
+  });
+
+  candidates.sort((left, right) => {
+    const leftKey = axis === "duration" ? left.durationKey : left.languageLevelKey;
+    const rightKey = axis === "duration" ? right.durationKey : right.languageLevelKey;
+    return direction === "higher"
+      ? levels.get(leftKey) - levels.get(rightKey)
+      : levels.get(rightKey) - levels.get(leftKey);
+  });
+
+  return candidates[0] || null;
 }
 
 module.exports = {
