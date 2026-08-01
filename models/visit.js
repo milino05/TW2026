@@ -23,6 +23,25 @@ const VisitStopSchema = new Schema(
   { _id: true },
 );
 
+const PresentationPolicySchema = new Schema(
+  {
+    durationKey: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+
+    languageLevelKey: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+  },
+  { _id: false },
+);
+
 const VisitSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -48,6 +67,15 @@ const VisitSchema = new Schema(
       ref: "Museum",
       default: null,
       index: true,
+    },
+
+    /**
+     * Policy scelta dal creatore. Viene usata quando il visitatore mantiene
+     * l'opzione "default" e non applica preferenze personali.
+     */
+    defaultPresentationPolicy: {
+      type: PresentationPolicySchema,
+      required: true,
     },
 
     /** L'ordine dell'array e l'unica fonte dell'ordine delle tappe. */
@@ -76,7 +104,7 @@ const VisitSchema = new Schema(
       status: {
         type: String,
         enum: ["valid", "needs_review"],
-        default: "valid",
+        default: "needs_review",
         index: true,
       },
       issues: { type: [IntegrityIssueSchema], default: [] },
