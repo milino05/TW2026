@@ -4,25 +4,31 @@ const { buildRelationViews } = require("./relationView.utils");
 
 function normalizeStringArray(values) {
   return Array.isArray(values)
+    ? values.filter((value) => typeof value === "string").map((value) => value.trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeOrderedVocabulary(values) {
+  return Array.isArray(values)
     ? values
-        .filter((value) => typeof value === "string")
-        .map((value) => value.trim())
         .filter(Boolean)
+        .map((value) => ({
+          key: typeof value.key === "string" ? value.key.trim().toLowerCase() : "",
+          label: typeof value.label === "string" ? value.label.trim() : "",
+          level: value.level,
+          description: typeof value.description === "string" ? value.description.trim() : undefined,
+        }))
+        .filter((value) => value.key)
+        .sort((a, b) => a.level - b.level)
     : [];
 }
 
 function normalizeDurationTypes(durationTypes) {
-  return Array.isArray(durationTypes)
-    ? durationTypes
-        .filter(Boolean)
-        .map((durationType) => ({
-          key: typeof durationType.key === "string" ? durationType.key.trim().toLowerCase() : "",
-          label: typeof durationType.label === "string" ? durationType.label.trim() : "",
-          level: durationType.level,
-          description: typeof durationType.description === "string" ? durationType.description.trim() : undefined,
-        }))
-        .filter((durationType) => durationType.key)
-    : [];
+  return normalizeOrderedVocabulary(durationTypes);
+}
+
+function normalizeLanguageLevels(languageLevels) {
+  return normalizeOrderedVocabulary(languageLevels);
 }
 
 function normalizeRelationTypes(relationTypes) {
@@ -69,6 +75,7 @@ function buildItemTypeVocabulary(vocabulary, itemType) {
     isKnownItemType: (vocabulary.itemTypes || []).includes(itemType),
     itemTypes: vocabulary.itemTypes || [],
     languageLevels: vocabulary.languageLevels || [],
+    languageLevelKeys: vocabulary.languageLevelKeys || [],
     durationTypes: vocabulary.durationTypes || [],
     relationTypes,
     relationViews,
@@ -83,14 +90,15 @@ async function getMuseumVocabulary(museumId) {
   }
 
   const config = museum.config || {};
-
+  const languageLevels = normalizeLanguageLevels(config.languageLevels);
   const relationTypes = normalizeRelationTypes(config.relationTypes);
   const relationViews = buildRelationViews(relationTypes);
 
   return {
     museumId: museum._id,
     itemTypes: normalizeStringArray(config.itemTypes),
-    languageLevels: normalizeStringArray(config.languageLevels),
+    languageLevels,
+    languageLevelKeys: languageLevels.map((level) => level.key),
     durationTypes: normalizeDurationTypes(config.durationTypes),
     relationTypes,
     relationViews,
