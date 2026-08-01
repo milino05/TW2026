@@ -70,12 +70,13 @@ const VisitSchema = new Schema(
     },
 
     /**
-     * Policy scelta dal creatore. Viene usata quando il visitatore mantiene
-     * l'opzione "default" e non applica preferenze personali.
+     * Policy del vocabolario del museo proprietario. E ammessa soltanto per
+     * visite ufficiali, i cui item condividono lo stesso vocabolario.
+     * Le visite community usano la representation isDefault di ciascun item.
      */
     defaultPresentationPolicy: {
       type: PresentationPolicySchema,
-      required: true,
+      default: null,
     },
 
     /** L'ordine dell'array e l'unica fonte dell'ordine delle tappe. */
@@ -120,6 +121,20 @@ VisitSchema.pre("validate", function validateVisitOwnership(next) {
 
   if (this.kind === "community" && this.ownerMuseumId) {
     this.invalidate("ownerMuseumId", "ownerMuseumId deve essere assente per una visita community");
+  }
+
+  if (this.kind === "official" && !this.defaultPresentationPolicy) {
+    this.invalidate(
+      "defaultPresentationPolicy",
+      "defaultPresentationPolicy e obbligatoria per una visita ufficiale",
+    );
+  }
+
+  if (this.kind === "community" && this.defaultPresentationPolicy) {
+    this.invalidate(
+      "defaultPresentationPolicy",
+      "Una visita community usa il default locale di ogni item e non una policy globale",
+    );
   }
 
   if (this.status === "draft") {
