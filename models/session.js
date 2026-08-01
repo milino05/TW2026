@@ -18,13 +18,11 @@ const SessionSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      index: true,
     },
 
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
 
     lastUsedAt: {
