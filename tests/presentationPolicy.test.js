@@ -2,133 +2,106 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-  resolvePresentationPolicy,
-  findRepresentationByPolicy,
   findDefaultRepresentation,
-  resolveInitialRepresentation,
+  findRepresentationByPolicy,
+  resolveCommunityRepresentation,
+  resolveOfficialRepresentation,
   findAdjacentRepresentation,
+  estimateContentSeconds,
 } = require("../services/presentationPolicy.service");
 
-const vocabulary = {
-  durationTypes: [
-    { key: "short", level: 1 },
-    { key: "medium", level: 2 },
-    { key: "long", level: 3 },
-  ],
-  languageLevels: [
-    { key: "simple", level: 1 },
-    { key: "medium", level: 2 },
-    { key: "advanced", level: 3 },
-  ],
-};
+const durationTypes = [
+  { key: "short", targetSeconds: 30 },
+  { key: "medium", targetSeconds: 90 },
+  { key: "long", targetSeconds: 240 },
+  { key: "complete", targetSeconds: 420 },
+];
+const languageLevels = [
+  { key: "simple" },
+  { key: "standard" },
+  { key: "advanced" },
+];
+const representations = [
+  { durationKey: "medium", languageLevelKey: "simple", text: "A", isDefault: true },
+  { durationKey: "complete", languageLevelKey: "simple", text: "B", isDefault: false },
+  { durationKey: "medium", languageLevelKey: "advanced", text: "C", isDefault: false },
+];
 
-const item = {
-  representations: [
-    {
-      durationKey: "short",
-      languageLevelKey: "simple",
-      text: "breve",
-      isDefault: true,
-    },
-    { durationKey: "long", languageLevelKey: "simple", text: "lungo" },
-    { durationKey: "short", languageLevelKey: "advanced", text: "avanzato" },
-  ],
-};
-
-test("default ufficiale usa la policy del creatore", () => {
-  const policy = resolvePresentationPolicy({
-    defaultPresentationPolicy: { durationKey: "short", languageLevelKey: "simple" },
-    userPreference: { mode: "default" },
+test("la visita ufficiale usa la policy custom quando presente", () => {
+  const result = resolveOfficialRepresentation({
+    representations,
+    defaultPolicy: { durationKey: "medium", languageLevelKey: "simple" },
+    preference: { mode: "custom", durationKey: "complete", languageLevelKey: "simple" },
   });
-
-  assert.deepEqual(policy, { durationKey: "short", languageLevelKey: "simple" });
+  assert.equal(result.text, "B");
 });
 
-test("custom ufficiale sostituisce entrambi gli assi", () => {
-  const policy = resolvePresentationPolicy({
-    defaultPresentationPolicy: { durationKey: "short", languageLevelKey: "simple" },
-    userPreference: {
-      mode: "custom",
-      durationKey: "long",
-      languageLevelKey: "advanced",
-    },
-  });
-
-  assert.deepEqual(policy, { durationKey: "long", languageLevelKey: "advanced" });
-});
-
-test("community usa la representation default locale dell item", () => {
-  const representation = resolveInitialRepresentation({
-    visit: { kind: "community" },
-    item,
-    userPreference: { mode: "default" },
-  });
-
-  assert.equal(representation.text, "breve");
-});
-
-test("community non interpreta una preferenza custom senza mapping cross vocabulary", () => {
-  assert.throws(
-    () =>
-      resolveInitialRepresentation({
-        visit: { kind: "community" },
-        item,
-        userPreference: {
-          mode: "custom",
-          durationKey: "long",
-          languageLevelKey: "advanced",
-        },
-      }),
-    (error) => error.status === 409 && error.details[0].code === "CROSS_VOCABULARY_MAPPING_REQUIRED",
-  );
-});
-
-test("trova una sola representation default locale", () => {
-  assert.equal(findDefaultRepresentation({ item }).text, "breve");
+test("la community usa il default locale senza preferenze", () => {
   assert.equal(
-    findDefaultRepresentation({
-      item: {
-        representations: [
-          { isDefault: true },
-          { isDefault: true },
-        ],
-      },
-    }),
-    null,
+    resolveCommunityRepresentation({ representations, durationTypes, languageLevels }).text,
+    "A",
   );
+});
+
+test("la community normalizza rispetto all'intero vocabolario del museo", () => {
+  const result = resolveCommunityRepresentation({
+    representations,
+    durationTypes,
+    languageLevels,
+    preference: { depthPreference: 0.7, languageComplexityPreference: 0.1 },
+  });
+  assert.equal(result.text, "B");
+});
+
+test("a parita di distanza preferisce il linguaggio meno complesso", () => {
+  const result = resolveCommunityRepresentation({
+    representations: [
+      { durationKey: "short", languageLevelKey: "simple", text: "semplice" },
+      { durationKey: "short", languageLevelKey: "advanced", text: "avanzato", isDefault: true },
+    ],
+    durationTypes: [{ key: "short", targetSeconds: 30 }],
+    languageLevels,
+    preference: { depthPreference: 0.5, languageComplexityPreference: 0.5 },
+  });
+  assert.equal(result.text, "semplice");
 });
 
 test("dimmi di piu salta livelli non disponibili mantenendo il linguaggio", () => {
-  const next = findAdjacentRepresentation({
-    item,
-    currentRepresentation: item.representations[0],
-    vocabulary,
+  const current = representations[0];
+  const result = findAdjacentRepresentation({
+    representations,
+    durationTypes,
+    languageLevels,
+    currentRepresentation: current,
     axis: "duration",
-    direction: "higher",
+    direction: "up",
   });
-
-  assert.equal(next.durationKey, "long");
-  assert.equal(next.languageLevelKey, "simple");
+  assert.equal(result.durationKey, "complete");
+  assert.equal(result.languageLevelKey, "simple");
 });
 
-test("cambio linguistico mantiene la durata", () => {
-  const next = findAdjacentRepresentation({
-    item,
-    currentRepresentation: item.representations[0],
-    vocabulary,
-    axis: "language",
-    direction: "higher",
+test("stima la durata usando targetSeconds del museo di ogni tappa", () => {
+  const vocabularies = new Map([
+    ["museum-a", { durationTypes }],
+    ["museum-b", { durationTypes: [{ key: "local", targetSeconds: 75 }] }],
+  ]);
+  const total = estimateContentSeconds({
+    vocabularyByMuseumId: vocabularies,
+    selections: [
+      { museumId: "museum-a", representation: representations[0] },
+      { museumId: "museum-b", representation: { durationKey: "local" } },
+    ],
   });
-
-  assert.equal(next.durationKey, "short");
-  assert.equal(next.languageLevelKey, "advanced");
+  assert.equal(total, 165);
 });
 
-test("seleziona una representation mediante la coppia della policy", () => {
-  const representation = findRepresentationByPolicy({
-    item,
-    policy: { durationKey: "long", languageLevelKey: "simple" },
-  });
-
-  assert.equal(representation.text, "lungo");
+test("helper di policy e default selezionano la representation prevista", () => {
+  assert.equal(findDefaultRepresentation(representations).text, "A");
+  assert.equal(
+    findRepresentationByPolicy(representations, {
+      durationKey: "complete",
+      languageLevelKey: "simple",
+    }).text,
+    "B",
+  );
 });

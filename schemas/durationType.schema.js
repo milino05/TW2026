@@ -1,52 +1,28 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
+/**
+ * Tipo di durata appartenente al vocabolario locale di un museo.
+ * L'ordine e dato esclusivamente dalla posizione nell'array config.durationTypes.
+ */
 const DurationTypeSchema = new Schema(
   {
-    /**
-     * Chiave tecnica stabile.
-     * Non dovrebbe cambiare facilmente.
-     * Esempi: "short", "medium", "long"
-     */
-    key: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-    },
+    key: { type: String, required: true, trim: true, lowercase: true },
+    label: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
 
-    /**
-     * Etichetta leggibile mostrata all'utente o al gestore.
-     * Esempi: "breve", "medio", "lungo"
-     */
-    label: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    /**
-     * Livello di approfondimento/estensione.
-     * Esempi: 1, 2, 3
-     */
-    level: {
+    /** Durata editoriale indicativa della narrazione a velocita standard. */
+    targetSeconds: {
       type: Number,
       required: true,
       min: 1,
-    },
-
-    /**
-     * Descrizione opzionale per spiegare il significato editoriale.
-     * Es: "Lunghezza consigliata: 40 caratteri"
-     */
-    description: {
-      type: String,
-      trim: true,
+      validate: {
+        validator: Number.isInteger,
+        message: "targetSeconds deve essere un numero intero",
+      },
     },
   },
-  {
-    _id: true,
-  },
+  { _id: true },
 );
 
 module.exports = DurationTypeSchema;

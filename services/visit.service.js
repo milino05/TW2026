@@ -1,146 +1,286 @@
-const mongoose = require("mongoose");
 const Visit = require("../models/visit");
+const VisitRevision = require("../models/visitRevision.model");
+const User = require("../models/user");
+const UserVisitPreference = require("../models/userVisitPreference.model");
 const AppError = require("../utils/AppError");
-const { hasOwn } = require("./validation/validation.utils");
-const {
-  normalizeVisitPayload,
-  validateVisitDraftPayload,
-} = require("./validation/visit.validation");
-const {
-  assertCanViewVisit,
-  assertCanManageVisit,
-} = require("./visitIntegrity.service");
-const {
-  getActiveUserOrFail,
-  assertMuseumRole,
-} = require("./museumAuthorization.service");
+const { getActiveUserOrFail, assertMuseumRole, hasMuseumRole } = require("./museumAuthorization.service");
+const { normalizeVisitPayload, validateVisitDraftPayload } = require("./validation/visit.validation");
+const { markRevisionEdited } = require("./revisionWorkflow.service");
 
-async function createVisit({ payload, actorUserId }) {
-  await getActiveUserOrFail(actorUserId);
-  const normalizedPayload = normalizeVisitPayload(payload);
-  const validation = await validateVisitDraftPayload({
-    rawPayload: payload,
-    payload: normalizedPayload,
-    mode: "create",
-  });
+const REVISION_FIELDS = [
+  "title",
+  "description",
+  "defaultPresentationPolicy",
+  "stops",
+];
 
-  if (validation.errors.length > 0) {
-    throw new AppError("Payload non valido", 400, validation.errors);
-  }
-
-  if (normalizedPayload.kind === "official") {
-    await assertMuseumRole({
-      userId: actorUserId,
-      museumId: normalizedPayload.ownerMuseumId,
-      minimumRole: "operator",
-    });
-  }
-
-  const visit = new Visit({
-    ...normalizedPayload,
-    ownerMuseumId:
-      normalizedPayload.kind === "official" ? normalizedPayload.ownerMuseumId : null,
-    defaultPresentationPolicy:
-      normalizedPayload.kind === "official"
-        ? normalizedPayload.defaultPresentationPolicy
-        : null,
-    createdBy: actorUserId,
-    museumIds: validation.museumIds,
-    status: "draft",
-    publishedAt: null,
-    integrity: { status: "needs_review", issues: [] },
-  });
-
-  await visit.save();
-  return visit;
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-async function getVisitOrFail(visitId) {
-  const visit = await Visit.findById(visitId);
+function rejectManagedFields(payload = {}) {
+  const forbidden = [
+    "status",
+    "integrity",
+    "review",
+    "publication",
+    "version",
+    "visitId",
+    "museumIds",
+    "estimatedContentSeconds",
+  ];
+  const errors = forbidden
+    .filter((field) => hasOwn(payload, field))
+    .map((field) => ({ field, code: "FORBIDDEN_FIELD", message: `${field} e gestito dal backend` }));
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
+}
+
+function revisionSnapshot(revision) {
+  const source = revision.toObject ? revision.toObject() : revision;
+  return REVISION_FIELDS.reduce((snapshot, field) => {
+    snapshot[field] = source[field];
+    return snapshot;
+  }, {});
+}
+
+function mergeRevisionPayload(revision, rawPayload, normalizedPayload) {
+  const result = revisionSnapshot(revision);
+  for (const field of REVISION_FIELDS) {
+    if (hasOwn(rawPayload, field)) result[field] = normalizedPayload[field];
+  }
+  return result;
+}
+
+async function findVisitOrFail(visitId, { includeTrashed = false } = {}) {
+  const query = { _id: visitId };
+  if (!includeTrashed) query.lifecycleStatus = "active";
+  const visit = await Visit.findOne(query);
   if (!visit) throw new AppError("Visita non trovata", 404);
   return visit;
 }
 
+async function assertVisitEditor({ visit, actorUserId, managerRequired = false }) {
+  if (visit.kind === "community") {
+    const user = await getActiveUserOrFail(actorUserId);
+    if (String(visit.createdBy) !== String(user._id)) {
+      throw new AppError("Solo l'autore puo gestire questa visita community", 403);
+    }
+    return user;
+  }
+  return assertMuseumRole({
+    userId: actorUserId,
+    museumId: visit.ownerMuseumId,
+    minimumRole: managerRequired ? "manager" : "operator",
+  });
+}
+
+async function nextVersion(visitId) {
+  const latest = await VisitRevision.findOne({ visitId }).sort({ version: -1 }).select("version").lean();
+  return (latest?.version || 0) + 1;
+}
+
+async function createWorkingRevisionFromPublished(visit, actorUserId) {
+  if (!visit.publishedRevisionId) throw new AppError("Nessuna revisione pubblicata da clonare", 409);
+  const published = await VisitRevision.findById(visit.publishedRevisionId);
+  if (!published) throw new AppError("Revisione pubblicata non trovata", 409);
+  const revision = new VisitRevision({
+    visitId: visit._id,
+    version: await nextVersion(visit._id),
+    basedOnRevisionId: published._id,
+    ...revisionSnapshot(published),
+    museumIds: published.museumIds,
+    estimatedContentSeconds: published.estimatedContentSeconds,
+    status: "draft",
+    integrity: { status: "needs_review", issues: [] },
+    createdBy: actorUserId,
+    updatedBy: actorUserId,
+  });
+  await revision.save();
+  visit.workingRevisionId = revision._id;
+  await visit.save();
+  return revision;
+}
+
+async function getWorkingRevision(visit, actorUserId, { createFromPublished = true } = {}) {
+  if (visit.workingRevisionId) {
+    const revision = await VisitRevision.findById(visit.workingRevisionId);
+    if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
+    return revision;
+  }
+  if (createFromPublished && visit.publishedRevisionId) {
+    return createWorkingRevisionFromPublished(visit, actorUserId);
+  }
+  throw new AppError("La visita non ha una revisione di lavoro", 409);
+}
+
+async function createVisit({ payload, actorUserId }) {
+  const actor = await getActiveUserOrFail(actorUserId);
+  rejectManagedFields(payload);
+  const normalized = normalizeVisitPayload(payload);
+  const errors = validateVisitDraftPayload({ payload: normalized, kind: normalized.kind, mode: "create" });
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
+  if (normalized.kind === "official") {
+    await assertMuseumRole({ userId: actor._id, museumId: normalized.ownerMuseumId, minimumRole: "operator" });
+  }
+
+  const visit = new Visit({
+    kind: normalized.kind,
+    createdBy: actor._id,
+    ownerMuseumId: normalized.kind === "official" ? normalized.ownerMuseumId : null,
+  });
+  await visit.save();
+  try {
+    const revision = new VisitRevision({
+      visitId: visit._id,
+      version: 1,
+      title: normalized.title,
+      description: normalized.description,
+      defaultPresentationPolicy: normalized.defaultPresentationPolicy || null,
+      stops: normalized.stops || [],
+      status: "draft",
+      integrity: { status: "needs_review", issues: [] },
+      createdBy: actor._id,
+      updatedBy: actor._id,
+    });
+    await revision.save();
+    visit.workingRevisionId = revision._id;
+    await visit.save();
+    return { visit, revision };
+  } catch (error) {
+    await visit.deleteOne().catch(() => {});
+    throw error;
+  }
+}
+
 async function updateVisit({ visitId, payload, actorUserId }) {
-  const visit = await getVisitOrFail(visitId);
-  await assertCanManageVisit({ visit, actorUserId });
-
-  const normalizedPayload = normalizeVisitPayload(payload);
-  const validation = await validateVisitDraftPayload({
-    rawPayload: payload,
-    payload: normalizedPayload,
-    mode: "update",
-    existingVisit: visit.toObject(),
-  });
-
-  if (validation.errors.length > 0) {
-    throw new AppError("Payload non valido", 400, validation.errors);
+  rejectManagedFields(payload);
+  const visit = await findVisitOrFail(visitId);
+  await assertVisitEditor({ visit, actorUserId });
+  if (hasOwn(payload, "kind") || hasOwn(payload, "ownerMuseumId")) {
+    throw new AppError("kind e ownerMuseumId sono immutabili dopo la creazione", 409);
   }
-
-  ["title", "description", "defaultPresentationPolicy", "stops"].forEach((field) => {
-    if (hasOwn(normalizedPayload, field)) visit.set(field, normalizedPayload[field]);
-  });
-
-  if (hasOwn(normalizedPayload, "stops")) {
-    visit.museumIds = validation.museumIds;
+  const revision = await getWorkingRevision(visit, actorUserId);
+  try {
+    markRevisionEdited(revision, actorUserId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
   }
+  const normalized = normalizeVisitPayload(payload);
+  const merged = mergeRevisionPayload(revision, payload, normalized);
+  const validationPayload = {
+    ...merged,
+    kind: visit.kind,
+    ownerMuseumId: visit.ownerMuseumId,
+  };
+  const errors = validateVisitDraftPayload({ payload: validationPayload, kind: visit.kind, mode: "create" });
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
+  Object.assign(revision, merged);
+  revision.updatedBy = actorUserId;
+  await revision.save();
+  return { visit, revision };
+}
 
-  visit.status = "draft";
-  visit.publishedAt = null;
-  visit.integrity = { status: "needs_review", issues: [] };
+async function actorCanManage(visit, actorUserId) {
+  if (!actorUserId) return false;
+  const user = await User.findOne({ _id: actorUserId, status: "active" }).lean();
+  if (!user) return false;
+  if (visit.kind === "community") return String(visit.createdBy) === String(user._id);
+  return hasMuseumRole(user, visit.ownerMuseumId, "operator");
+}
 
+async function getVisit({ visitId, actorUserId = null, view = "published" }) {
+  const visit = await findVisitOrFail(visitId, { includeTrashed: view === "working" });
+  const canManage = await actorCanManage(visit, actorUserId);
+  if (view === "working" && !canManage) throw new AppError("Accesso alla revisione di lavoro non autorizzato", 403);
+  const revisionId = view === "working" && visit.workingRevisionId
+    ? visit.workingRevisionId
+    : visit.publishedRevisionId;
+  if (!revisionId) throw new AppError("Nessuna revisione disponibile", 404);
+  const revision = await VisitRevision.findById(revisionId);
+  if (!revision) throw new AppError("Revisione non trovata", 404);
+  return { visit, revision };
+}
+
+async function listPublishedVisits({ kind, ownerMuseumId, includedMuseumId }) {
+  const visits = await Visit.find({
+    lifecycleStatus: "active",
+    publishedRevisionId: { $ne: null },
+    ...(kind ? { kind } : {}),
+    ...(ownerMuseumId ? { ownerMuseumId } : {}),
+  }).sort({ updatedAt: -1 }).lean();
+  const results = [];
+  for (const visit of visits) {
+    const revision = await VisitRevision.findById(visit.publishedRevisionId).lean();
+    if (!revision) continue;
+    if (includedMuseumId && !revision.museumIds.some((id) => String(id) === String(includedMuseumId))) continue;
+    results.push({ visit, revision });
+  }
+  return results;
+}
+
+async function listManageableVisits(actorUserId) {
+  const user = await getActiveUserOrFail(actorUserId);
+  const museumIds = (user.memberships || [])
+    .filter((entry) => ["operator", "manager"].includes(entry.role))
+    .map((entry) => entry.museumId);
+  const visits = await Visit.find({
+    $or: [
+      { kind: "community", createdBy: user._id },
+      { kind: "official", ownerMuseumId: { $in: museumIds } },
+    ],
+  }).sort({ updatedAt: -1 }).lean();
+  const results = [];
+  for (const visit of visits) {
+    const revisionId = visit.workingRevisionId || visit.publishedRevisionId;
+    const revision = revisionId ? await VisitRevision.findById(revisionId).lean() : null;
+    results.push({ visit, revision });
+  }
+  return results;
+}
+
+async function trashVisit({ visitId, actorUserId }) {
+  const visit = await findVisitOrFail(visitId);
+  await assertVisitEditor({ visit, actorUserId });
+  visit.lifecycleStatus = "trashed";
+  visit.trashedAt = new Date();
+  visit.trashedBy = actorUserId;
   await visit.save();
   return visit;
 }
 
-function validateOptionalObjectId(value, field) {
-  if (value && !mongoose.isValidObjectId(value)) {
-    throw new AppError("Filtro non valido", 400, [
-      { field, code: "INVALID_OBJECT_ID", message: `${field} non e un ObjectId valido` },
-    ]);
-  }
+async function restoreVisit({ visitId, actorUserId }) {
+  const visit = await findVisitOrFail(visitId, { includeTrashed: true });
+  await assertVisitEditor({ visit, actorUserId, managerRequired: visit.kind === "official" });
+  visit.lifecycleStatus = "active";
+  visit.trashedAt = null;
+  visit.trashedBy = null;
+  await visit.save();
+  return visit;
 }
 
-async function listPublishedVisits(filters = {}) {
-  validateOptionalObjectId(filters.ownerMuseumId, "ownerMuseumId");
-  validateOptionalObjectId(filters.includedMuseumId, "includedMuseumId");
-
-  const query = { status: "published" };
-
-  if (["official", "community"].includes(filters.kind)) query.kind = filters.kind;
-  if (filters.ownerMuseumId) query.ownerMuseumId = filters.ownerMuseumId;
-  if (filters.includedMuseumId) query.museumIds = filters.includedMuseumId;
-
-  return Visit.find(query).sort({ publishedAt: -1, title: 1 });
-}
-
-async function listManageableVisits(actorUserId) {
-  const actor = await getActiveUserOrFail(actorUserId);
-  const museumIds = (actor.memberships || [])
-    .filter((membership) => ["operator", "manager"].includes(membership.role))
-    .map((membership) => membership.museumId);
-
-  return Visit.find({
-    $or: [
-      { kind: "community", createdBy: actorUserId },
-      { kind: "official", ownerMuseumId: { $in: museumIds } },
-    ],
-  }).sort({ updatedAt: -1, title: 1 });
-}
-
-async function getVisit({ visitId, actorUserId = null }) {
-  const visit = await getVisitOrFail(visitId);
-  if (visit.status === "published") return visit;
-
-  await assertCanViewVisit({ visit, actorUserId });
+async function hardDeleteVisit({ visitId, actorUserId }) {
+  const visit = await findVisitOrFail(visitId, { includeTrashed: true });
+  await assertVisitEditor({ visit, actorUserId, managerRequired: visit.kind === "official" });
+  if (visit.lifecycleStatus !== "trashed") throw new AppError("La visita deve essere nel cestino", 409);
+  await Promise.all([
+    VisitRevision.deleteMany({ visitId: visit._id }),
+    UserVisitPreference.deleteMany({ visitId: visit._id }),
+  ]);
+  await visit.deleteOne();
   return visit;
 }
 
 module.exports = {
+  REVISION_FIELDS,
+  findVisitOrFail,
+  assertVisitEditor,
+  getWorkingRevision,
   createVisit,
   updateVisit,
   listPublishedVisits,
   listManageableVisits,
   getVisit,
-  getVisitOrFail,
+  trashVisit,
+  restoreVisit,
+  hardDeleteVisit,
 };

@@ -1,197 +1,89 @@
 const Item = require("../../models/item.model");
-const Museum = require("../../models/museum.model");
-const User = require("../../models/user");
+const ItemRevision = require("../../models/itemRevision.model");
+const { getMuseumVocabulary } = require("../museumVocabulary.service");
 
-function issue(code, field, message, context) {
-  return { code, field, message, ...(context ? { context } : {}) };
+function issue(field, code, message, severity = "error", context = {}) {
+  return { field, code, message, severity, context };
 }
 
-function sameId(a, b) {
-  return String(a) === String(b);
-}
-
-async function computeVisitIntegrity({ visit }) {
+async function computeVisitIntegrity({ visit, revision }) {
   const issues = [];
-  const creatorExists = visit.createdBy ? await User.exists({ _id: visit.createdBy }) : false;
-
-  if (!creatorExists) {
-    issues.push(issue("CREATOR_NOT_FOUND", "createdBy", "L'utente creatore non esiste"));
-  }
-
-  if (visit.kind === "official") {
-    if (!visit.ownerMuseumId) {
-      issues.push(
-        issue(
-          "OWNER_MUSEUM_REQUIRED",
-          "ownerMuseumId",
-          "Una visita ufficiale deve avere un museo proprietario",
-        ),
-      );
-    } else if (!(await Museum.exists({ _id: visit.ownerMuseumId }))) {
-      issues.push(
-        issue(
-          "OWNER_MUSEUM_NOT_FOUND",
-          "ownerMuseumId",
-          "Il museo proprietario non esiste",
-        ),
-      );
-    }
-
-    if (!visit.defaultPresentationPolicy?.durationKey || !visit.defaultPresentationPolicy?.languageLevelKey) {
-      issues.push(
-        issue(
-          "DEFAULT_POLICY_REQUIRED",
-          "defaultPresentationPolicy",
-          "La policy predefinita e obbligatoria per una visita ufficiale",
-        ),
-      );
-    }
-  }
-
-  if (visit.kind === "community") {
-    if (visit.ownerMuseumId) {
-      issues.push(
-        issue(
-          "OWNER_MUSEUM_NOT_ALLOWED",
-          "ownerMuseumId",
-          "Una visita community non puo avere un museo proprietario",
-        ),
-      );
-    }
-
-    if (visit.defaultPresentationPolicy) {
-      issues.push(
-        issue(
-          "GLOBAL_DEFAULT_POLICY_NOT_ALLOWED",
-          "defaultPresentationPolicy",
-          "Una visita community usa il default locale di ogni item",
-        ),
-      );
-    }
-  }
-
-  const stopItemIds = (visit.stops || []).map((stop) => stop.itemId).filter(Boolean);
-  if (stopItemIds.length === 0) {
-    issues.push(issue("EMPTY_VISIT", "stops", "La visita deve contenere almeno una tappa"));
-  }
-
-  const items = stopItemIds.length
-    ? await Item.find({ _id: { $in: stopItemIds } })
-        .select("_id museumId status integrity.status representations")
-        .lean()
-    : [];
-
-  const itemsById = new Map(items.map((item) => [String(item._id), item]));
   const museumIds = new Set();
+  let estimatedContentSeconds = 0;
 
-  stopItemIds.forEach((itemId, index) => {
-    const item = itemsById.get(String(itemId));
+  if (!revision.title) issues.push(issue("title", "REQUIRED", "title e obbligatorio"));
+  if (!Array.isArray(revision.stops) || revision.stops.length === 0) {
+    issues.push(issue("stops", "EMPTY_ARRAY", "La visita deve contenere almeno una tappa"));
+    return { issues, museumIds: [], estimatedContentSeconds };
+  }
 
+  let officialVocabulary = null;
+  if (visit.kind === "official") {
+    officialVocabulary = await getMuseumVocabulary(visit.ownerMuseumId);
+    const durations = new Set(officialVocabulary.durationTypes.map((entry) => entry.key));
+    const languages = new Set(officialVocabulary.languageLevels.map((entry) => entry.key));
+    if (!durations.has(revision.defaultPresentationPolicy?.durationKey)) {
+      issues.push(issue("defaultPresentationPolicy.durationKey", "INVALID_CONTROLLED_VALUE", "durationKey non appartiene al museo"));
+    }
+    if (!languages.has(revision.defaultPresentationPolicy?.languageLevelKey)) {
+      issues.push(issue("defaultPresentationPolicy.languageLevelKey", "INVALID_CONTROLLED_VALUE", "languageLevelKey non appartiene al museo"));
+    }
+  }
+
+  const seenItems = new Set();
+  for (let index = 0; index < revision.stops.length; index += 1) {
+    const stop = revision.stops[index];
+    const item = await Item.findOne({ _id: stop.itemId, lifecycleStatus: "active" }).lean();
     if (!item) {
-      issues.push(
-        issue("ITEM_NOT_FOUND", `stops[${index}].itemId`, "L'item della tappa non esiste", {
-          itemId,
-        }),
-      );
-      return;
+      issues.push(issue(`stops[${index}].itemId`, "ITEM_NOT_AVAILABLE", "L'item non esiste o e nel cestino"));
+      continue;
     }
-
     museumIds.add(String(item.museumId));
+    if (seenItems.has(String(item._id))) {
+      issues.push(issue(`stops[${index}].itemId`, "DUPLICATE_STOP", "Lo stesso item compare piu volte", "warning"));
+    }
+    seenItems.add(String(item._id));
 
-    if (visit.kind === "official" && !sameId(item.museumId, visit.ownerMuseumId)) {
-      issues.push(
-        issue(
-          "ITEM_FROM_DIFFERENT_MUSEUM",
-          `stops[${index}].itemId`,
-          "Una visita ufficiale puo contenere soltanto item del museo proprietario",
-          {
-            itemId: item._id,
-            itemMuseumId: item.museumId,
-          },
-        ),
-      );
+    if (visit.kind === "official" && String(item.museumId) !== String(visit.ownerMuseumId)) {
+      issues.push(issue(`stops[${index}].itemId`, "ITEM_FROM_DIFFERENT_MUSEUM", "Una visita ufficiale puo contenere solo item del proprio museo"));
+    }
+    if (!item.publishedRevisionId) {
+      issues.push(issue(`stops[${index}].itemId`, "ITEM_NOT_PUBLISHED", "L'item non ha una revisione pubblicata"));
+      continue;
+    }
+    const itemRevision = await ItemRevision.findById(item.publishedRevisionId).lean();
+    if (!itemRevision || itemRevision.integrity?.status !== "valid") {
+      issues.push(issue(`stops[${index}].itemId`, "ITEM_NOT_INTEGRAL", "La revisione pubblicata dell'item non e integra"));
+      continue;
     }
 
-    if (item.status !== "published") {
-      issues.push(
-        issue(
-          "ITEM_NOT_PUBLISHED",
-          `stops[${index}].itemId`,
-          "Una visita pubblicata puo contenere soltanto item pubblicati",
-          {
-            itemId: item._id,
-            itemStatus: item.status,
-          },
-        ),
-      );
-    }
-
-    if (item.integrity?.status !== "valid") {
-      issues.push(
-        issue(
-          "ITEM_NEEDS_REVIEW",
-          `stops[${index}].itemId`,
-          "Una visita pubblicata puo contenere soltanto item integri",
-          {
-            itemId: item._id,
-            integrityStatus: item.integrity?.status,
-          },
-        ),
-      );
-    }
-
+    let selected = null;
+    let vocabulary = officialVocabulary;
     if (visit.kind === "official") {
-      const policy = visit.defaultPresentationPolicy;
-      if (policy?.durationKey && policy?.languageLevelKey) {
-        const supportsDefaultPolicy = (item.representations || []).some(
-          (representation) =>
-            representation.durationKey === policy.durationKey &&
-            representation.languageLevelKey === policy.languageLevelKey,
-        );
-
-        if (!supportsDefaultPolicy) {
-          issues.push(
-            issue(
-              "DEFAULT_POLICY_NOT_SUPPORTED",
-              `stops[${index}].itemId`,
-              "L'item non dispone della representation richiesta dalla policy ufficiale",
-              {
-                itemId: item._id,
-                defaultPresentationPolicy: policy,
-              },
-            ),
-          );
-        }
-      }
-    }
-
-    if (visit.kind === "community") {
-      const defaultRepresentations = (item.representations || []).filter(
-        (representation) => representation.isDefault === true,
+      selected = itemRevision.representations?.find(
+        (entry) =>
+          entry.durationKey === revision.defaultPresentationPolicy?.durationKey &&
+          entry.languageLevelKey === revision.defaultPresentationPolicy?.languageLevelKey,
       );
-
-      if (defaultRepresentations.length !== 1) {
-        issues.push(
-          issue(
-            "LOCAL_DEFAULT_REPRESENTATION_REQUIRED",
-            `stops[${index}].itemId`,
-            "Ogni item di una visita community deve avere esattamente una representation di default",
-            {
-              itemId: item._id,
-              defaultRepresentationCount: defaultRepresentations.length,
-            },
-          ),
-        );
+      if (!selected) {
+        issues.push(issue(`stops[${index}]`, "DEFAULT_POLICY_NOT_AVAILABLE", "L'item non supporta la policy ufficiale della visita"));
+        continue;
       }
+    } else {
+      vocabulary = await getMuseumVocabulary(item.museumId);
+      const defaults = (itemRevision.representations || []).filter((entry) => entry.isDefault === true);
+      if (defaults.length !== 1) {
+        issues.push(issue(`stops[${index}]`, "ITEM_DEFAULT_NOT_AVAILABLE", "Un item community deve avere esattamente una representation di default"));
+        continue;
+      }
+      selected = defaults[0];
     }
-  });
 
-  return {
-    issues,
-    museumIds: Array.from(museumIds),
-  };
+    const durationType = vocabulary.durationTypes.find((entry) => entry.key === selected.durationKey);
+    if (durationType?.targetSeconds) estimatedContentSeconds += durationType.targetSeconds;
+  }
+
+  return { issues, museumIds: Array.from(museumIds), estimatedContentSeconds };
 }
 
-module.exports = {
-  computeVisitIntegrity,
-};
+module.exports = { computeVisitIntegrity };

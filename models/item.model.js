@@ -1,97 +1,39 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-const RelationSchema = require("../schemas/relation.schema");
-const RepresentationSchema = require("../schemas/representation.schema");
-const IntegrityIssueSchema = require("../schemas/integrityIssue.schema.js");
-
+/** Identita stabile di un contenuto. I dati editoriali vivono in ItemRevision. */
 const ItemSchema = new Schema(
   {
-    externalId: {
-      type: String,
-      trim: true,
-      index: true,
-      sparse: true,
-    },
+    externalId: { type: String, trim: true, index: true, sparse: true },
+    museumId: { type: Schema.Types.ObjectId, ref: "Museum", required: true, index: true },
+    itemType: { type: String, required: true, trim: true, index: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
 
-    museumId: {
+    publishedRevisionId: {
       type: Schema.Types.ObjectId,
-      ref: "Museum",
-      required: true,
+      ref: "ItemRevision",
+      default: null,
       index: true,
     },
-
-    itemType: {
-      type: String,
-      required: true,
-      trim: true,
-      index: true,
-    },
-
-    label: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    recognitionImage: {
-      url: { type: String, trim: true },
-      altText: { type: String, trim: true },
-    },
-
-    tags: [{ type: String, trim: true }],
-
-    metadata: {
-      license: { type: String, trim: true },
-    },
-
-    relations: [RelationSchema],
-    representations: [RepresentationSchema],
-
-    jsonld: {
-      type: Schema.Types.Mixed,
-    },
-
-    status: {
-      type: String,
-      enum: ["draft", "published", "archived"],
-      default: "draft",
-      index: true,
-    },
-
-    integrity: {
-      status: {
-        type: String,
-        enum: ["valid", "needs_review"],
-        default: "valid",
-        index: true,
-      },
-      issues: [IntegrityIssueSchema],
-    },
-
-    createdBy: {
+    workingRevisionId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: "ItemRevision",
       default: null,
       index: true,
     },
 
-    updatedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
+    lifecycleStatus: {
+      type: String,
+      enum: ["active", "trashed"],
+      default: "active",
+      index: true,
     },
+    trashedAt: { type: Date, default: null },
+    trashedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true },
 );
 
-ItemSchema.index({ label: "text", tags: "text" });
-ItemSchema.index({ "relations.relationTypeKey": 1, "relations.target": 1 });
-ItemSchema.index({ "representations.languageLevelKey": 1 });
-ItemSchema.index({ "representations.durationKey": 1 });
-ItemSchema.index({ museumId: 1, itemType: 1, status: 1 });
 ItemSchema.index({ museumId: 1, externalId: 1 });
-ItemSchema.index({ museumId: 1, "relations.target": 1 });
-ItemSchema.index({ museumId: 1, status: 1, "integrity.status": 1 });
-
+ItemSchema.index({ museumId: 1, itemType: 1, lifecycleStatus: 1 });
 module.exports = mongoose.model("Item", ItemSchema);

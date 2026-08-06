@@ -1,172 +1,101 @@
-# Visite community e vocabolari locali
+# Strategia definitiva per i vocabolari delle visite community
 
-## Problema
+## Principio
 
-Ogni museo controlla il proprio vocabolario. Di conseguenza, chiavi ed etichette come:
+Ogni museo mantiene un vocabolario autonomo. Le chiavi e le etichette di musei diversi non vengono mai confrontate direttamente: `simple`, `facile` e `base` possono avere significati editoriali differenti.
 
-- `simple`;
-- `facile`;
-- `base`;
-- `short`;
-- `rapida`;
+## Ordine e normalizzazione
 
-non sono confrontabili automaticamente tra musei diversi. Anche quando due etichette sembrano sinonimi, il loro significato editoriale puo essere differente.
+L'ordine degli array `config.durationTypes` e `config.languageLevels` e l'unica gerarchia persistita. Il campo `level` non esiste.
 
-Una visita ufficiale non presenta questo problema: tutti gli item appartengono allo stesso museo e la policy della visita usa direttamente le chiavi del suo vocabolario.
+Per un array di `n` elementi, la posizione relativa dell'elemento con indice `i` e:
 
-## Comportamento implementato
+```text
+normalizedPosition = i / (n - 1)
+```
 
-### Visita ufficiale
+Con un solo elemento la posizione convenzionale e `0.5`. Il valore viene calcolato dal vocabulary service e non viene salvato in MongoDB.
 
-La visita contiene una policy globale:
+Esempio con quattro livelli:
+
+```text
+0, 0.333..., 0.666..., 1
+```
+
+La normalizzazione usa sempre l'intero vocabolario del museo. Le representation disponibili in un singolo item non vengono rinormalizzate.
+
+## Durata nominale
+
+Ogni `DurationType` richiede `targetSeconds`, intero positivo e crescente seguendo l'ordine dell'array.
 
 ```json
 {
-  "defaultPresentationPolicy": {
-    "durationKey": "medium",
-    "languageLevelKey": "simple"
-  }
+  "key": "medium",
+  "label": "Media",
+  "description": "Descrizione dei principali aspetti dell'opera",
+  "targetSeconds": 90
 }
 ```
 
-La policy viene validata contro il vocabolario del museo proprietario e deve essere supportata da tutte le tappe.
+`targetSeconds` e una stima editoriale della narrazione a velocita standard. Non include spostamenti, interazioni, pause o approfondimenti richiesti durante la visita.
 
-### Visita community
+## Preferenze astratte
 
-La visita non contiene una policy globale. Ogni tappa parte dalla representation `isDefault` dell'item corrispondente.
-
-Per pubblicare un item e ora obbligatorio avere esattamente una representation di default. Questo garantisce che una visita community sia sempre eseguibile senza confrontare vocabolari diversi.
-
-Le preferenze custom cross-museum non vengono ancora interpretate. Il backend restituisce un errore esplicito invece di applicare equivalenze silenziose.
-
-## Strategie considerate per l'adattamento
-
-### 1. Confronto delle chiavi o delle etichette
-
-Esempio: trattare `simple`, `semplice` e `facile` come equivalenti.
-
-Vantaggi:
-
-- implementazione apparentemente semplice.
-
-Svantaggi:
-
-- dipende dalla lingua e dalla scelta dei nomi;
-- produce falsi equivalenti;
-- non rispetta realmente l'autonomia editoriale del museo;
-- e fragile quando il vocabolario cambia.
-
-Valutazione: sconsigliata.
-
-### 2. Vocabolario globale obbligatorio
-
-Ogni museo deve usare le stesse categorie globali.
-
-Vantaggi:
-
-- confronto diretto;
-- interfaccia semplice.
-
-Svantaggi:
-
-- elimina la liberta richiesta ai musei;
-- rende la configurazione locale quasi nominale.
-
-Valutazione: incompatibile con il requisito.
-
-### 3. Mappatura esplicita verso categorie canoniche
-
-Ogni livello locale dichiara una categoria comune, ad esempio:
+Una visita community usa valori indipendenti dai vocabolari locali:
 
 ```json
 {
-  "key": "facile",
-  "level": 2,
-  "canonicalBand": "simple"
+  "depthPreference": 0.7,
+  "languageComplexityPreference": 0.3
 }
 ```
 
-Vantaggi:
+Per ogni tappa il backend:
 
-- mapping semantico esplicito e controllato dal museo;
-- comportamento deterministico;
-- chiavi ed etichette locali restano libere.
+1. recupera il vocabolario del museo dell'item;
+2. calcola le posizioni relative delle duration e dei language level;
+3. considera soltanto le representation realmente disponibili;
+4. calcola la distanza Manhattan;
+5. seleziona la representation con distanza minima.
 
-Svantaggi:
-
-- introduce comunque una tassonomia condivisa;
-- richiede ai manager del museo di classificare ogni voce;
-- una categoria globale puo non descrivere bene tutti i casi locali.
-
-Valutazione: solida se si accetta un contratto semantico minimo comune.
-
-### 4. Posizione relativa nel vocabolario locale
-
-La preferenza dell'utente non contiene una chiave, ma una posizione astratta tra 0 e 1.
-
-Esempio:
-
-```json
-{
-  "durationPreference": 0.75,
-  "languageComplexityPreference": 0.25
-}
+```text
+distance =
+  abs(durationPosition - depthPreference)
+  + abs(languagePosition - languageComplexityPreference)
 ```
 
-Per ogni museo:
+Tie-break:
 
-1. le voci vengono ordinate mediante `level`;
-2. ogni posizione viene normalizzata rispetto alla dimensione del vocabolario;
-3. viene scelta la voce locale piu vicina;
-4. per l'item viene selezionata la representation disponibile piu vicina.
+1. linguaggio meno complesso;
+2. durata piu vicina alla preferenza;
+3. representation `isDefault`;
+4. ordine originale delle representation.
 
-Vantaggi:
+Se i metadati non consentono il confronto, viene usata la representation `isDefault` dell'item.
 
-- nessun confronto tra etichette;
-- nessuna chiave globale obbligatoria;
-- conserva la liberta del museo;
-- funziona anche con numeri differenti di livelli.
+## Preferenze persistite
 
-Svantaggi:
+`User.defaultPresentationPreference` contiene il default astratto globale.
 
-- assume che la posizione relativa abbia un significato comparabile;
-- il secondo livello di un vocabolario a tre voci non equivale necessariamente al secondo livello di un vocabolario a cinque voci;
-- serve una regola di fallback quando manca la coppia desiderata nell'item.
+`UserVisitPreference` contiene l'override della singola visita:
 
-Valutazione: migliore compromesso per il progetto, ma e un adattamento approssimato, non un'equivalenza semantica.
+- visita ufficiale: `durationKey` e `languageLevelKey` del museo;
+- visita community: `depthPreference` e `languageComplexityPreference`.
 
-### 5. Policy esplicita per ogni tappa
+Precedenza community:
 
-Il creatore community seleziona una representation iniziale specifica per ogni item.
+```text
+preferenza custom della visita
+-> preferenza globale dell'utente
+-> default locale dell'item
+```
 
-Vantaggi:
+## Stima temporale
 
-- risultato editoriale preciso;
-- nessuna equivalenza tra musei.
+Il piano di presentazione somma i `targetSeconds` delle representation selezionate. Il campo restituito e `estimatedContentSeconds`, perche la logistica verra aggiunta separatamente in una fase successiva.
 
-Svantaggi:
+La stessa informazione potra essere riutilizzata dal futuro servizio di generazione automatica delle visite con vincolo di durata.
 
-- non adatta automaticamente la visita al compratore;
-- aumenta il lavoro del creatore;
-- le scelte possono diventare invalide se le representation cambiano.
+## Modifiche al vocabolario
 
-Valutazione: utile come override editoriale, non sufficiente da sola per la personalizzazione.
-
-## Raccomandazione
-
-Adottare un modello ibrido:
-
-1. default garantito: ogni tappa community usa la representation `isDefault` locale;
-2. preferenze utente astratte: durata e complessita sono memorizzate come valori normalizzati indipendenti dalle chiavi dei musei;
-3. risoluzione locale: il Navigator usa l'ordine `level` del museo dell'item corrente;
-4. fallback esplicito: se la combinazione non esiste, si sceglie la representation disponibile con distanza minima oppure si torna al default locale;
-5. nessuna equivalenza per nome: `facile` e `semplice` non vengono mai associate tramite string matching.
-
-## Decisioni ancora richieste
-
-Prima di implementare l'adattamento occorre scegliere:
-
-1. se la preferenza normalizzata e globale per l'utente oppure specifica per la visita acquistata;
-2. se il fallback sceglie la representation piu vicina o torna sempre al default locale;
-3. se il creatore community puo impostare un override per singola tappa;
-4. se aggiungere una `canonicalBand` opzionale per migliorare il mapping relativo quando il museo desidera dichiararla.
+Ogni modifica alla configurazione incrementa `Museum.vocabularyRevision`. Riordinare o cambiare i vocabolari puo modificare la representation scelta e la durata stimata delle visite community. Il backend marca quindi le visite coinvolte per il ricalcolo senza inventare equivalenze tra chiavi locali.

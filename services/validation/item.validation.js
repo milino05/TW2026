@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
-
+const ItemRevision = require("../../models/itemRevision.model");
 const {
   pushError,
   hasOwn,
@@ -12,17 +12,14 @@ const {
 
 function normalizeItemPayload(payload = {}) {
   const normalized = {};
-
   ["externalId", "itemType", "label"].forEach((field) => {
     if (hasOwn(payload, field)) normalized[field] = trimIfString(payload[field]);
   });
-
   if (hasOwn(payload, "tags")) {
     normalized.tags = Array.isArray(payload.tags)
       ? payload.tags.map((tag) => (typeof tag === "string" ? tag.trim() : tag))
       : payload.tags;
   }
-
   if (hasOwn(payload, "recognitionImage")) {
     normalized.recognitionImage = isPlainObject(payload.recognitionImage)
       ? {
@@ -31,262 +28,165 @@ function normalizeItemPayload(payload = {}) {
         }
       : payload.recognitionImage;
   }
-
   if (hasOwn(payload, "metadata")) {
     normalized.metadata = isPlainObject(payload.metadata)
       ? { license: trimIfString(payload.metadata.license) }
       : payload.metadata;
   }
-
   if (hasOwn(payload, "jsonld")) normalized.jsonld = payload.jsonld;
-
   if (hasOwn(payload, "representations")) {
     normalized.representations = Array.isArray(payload.representations)
-      ? payload.representations.map((representation) => {
-          if (!isPlainObject(representation)) return representation;
-
-          return {
-            languageLevelKey: normalizeKey(representation.languageLevelKey),
-            durationKey: normalizeKey(representation.durationKey),
-            text: trimIfString(representation.text),
-            isDefault: normalizeBoolean(representation.isDefault) === true,
-          };
-        })
+      ? payload.representations.map((representation) =>
+          isPlainObject(representation)
+            ? {
+                languageLevelKey: normalizeKey(representation.languageLevelKey),
+                durationKey: normalizeKey(representation.durationKey),
+                text: trimIfString(representation.text),
+                isDefault: normalizeBoolean(representation.isDefault) === true,
+              }
+            : representation,
+        )
       : payload.representations;
   }
-
   if (hasOwn(payload, "relations")) {
     normalized.relations = Array.isArray(payload.relations)
-      ? payload.relations.map((relation) => {
-          if (!isPlainObject(relation)) return relation;
-
-          return {
-            relationTypeKey: normalizeKey(relation.relationTypeKey),
-            target: relation.target,
-            weight: relation.weight,
-          };
-        })
+      ? payload.relations.map((relation) =>
+          isPlainObject(relation)
+            ? {
+                relationTypeKey: normalizeKey(relation.relationTypeKey),
+                target: relation.target,
+                weight: relation.weight === undefined ? 1 : Number(relation.weight),
+              }
+            : relation,
+        )
       : payload.relations;
   }
-
   return normalized;
 }
 
-function validateTopLevelFields({ payload, vocabulary, errors, mode }) {
-  const isCreate = mode === "create";
-
-  if (isCreate || hasOwn(payload, "label")) {
-    if (!payload.label || typeof payload.label !== "string") {
-      pushError(errors, "label", "REQUIRED", "Il campo label e obbligatorio");
-    }
-  }
-
-  if (isCreate || hasOwn(payload, "itemType")) {
-    if (!payload.itemType || typeof payload.itemType !== "string") {
-      pushError(errors, "itemType", "REQUIRED", "Il campo itemType e obbligatorio");
-    } else if (!vocabulary.itemTypes.includes(payload.itemType)) {
-      pushError(errors, "itemType", "INVALID_CONTROLLED_VALUE", `itemType non valido: ${payload.itemType}`, {
-        allowedValues: vocabulary.itemTypes,
-      });
-    }
-  }
-
-  if (hasOwn(payload, "tags")) {
-    if (!Array.isArray(payload.tags)) {
-      pushError(errors, "tags", "INVALID_TYPE", "tags deve essere un array");
-    } else {
-      const seen = new Set();
-      payload.tags.forEach((tag, index) => {
-        if (!tag || typeof tag !== "string") {
-          pushError(errors, `tags[${index}]`, "INVALID_VALUE", "Ogni tag deve essere una stringa non vuota");
-        } else if (seen.has(tag)) {
-          pushError(errors, `tags[${index}]`, "DUPLICATE_VALUE", `Tag duplicato: ${tag}`);
-        } else {
-          seen.add(tag);
-        }
-      });
-    }
-  }
-
-  if (hasOwn(payload, "recognitionImage")) {
-    if (payload.recognitionImage !== null && !isPlainObject(payload.recognitionImage)) {
-      pushError(errors, "recognitionImage", "INVALID_TYPE", "recognitionImage deve essere un oggetto oppure null");
-    } else if (isPlainObject(payload.recognitionImage)) {
-      if (!payload.recognitionImage.url || typeof payload.recognitionImage.url !== "string") {
-        pushError(errors, "recognitionImage.url", "REQUIRED", "recognitionImage.url e obbligatorio");
-      }
-      if (!payload.recognitionImage.altText || typeof payload.recognitionImage.altText !== "string") {
-        pushError(errors, "recognitionImage.altText", "REQUIRED", "recognitionImage.altText e obbligatorio");
-      }
-    }
-  }
-
-  if (hasOwn(payload, "metadata")) {
-    if (payload.metadata !== null && !isPlainObject(payload.metadata)) {
-      pushError(errors, "metadata", "INVALID_TYPE", "metadata deve essere un oggetto oppure null");
-    } else if (isPlainObject(payload.metadata)) {
-      if (!payload.metadata.license || typeof payload.metadata.license !== "string") {
-        pushError(errors, "metadata.license", "REQUIRED", "metadata.license deve essere una stringa non vuota");
-      }
-    }
-  }
-}
-
-function validateRepresentations(representations, vocabulary, errors) {
-  if (representations === undefined) return;
-
+function validateRepresentations(representations, vocabulary, errors, { requireDefault = false } = {}) {
   if (!Array.isArray(representations)) {
     pushError(errors, "representations", "INVALID_TYPE", "representations deve essere un array");
     return;
   }
-
-  const allowedLanguageLevelKeys = new Set(vocabulary.languageLevels.map((level) => level.key));
-  const allowedDurationKeys = new Set(vocabulary.durationTypes.map((duration) => duration.key));
-  const seenPairs = new Set();
+  const languages = new Set(vocabulary.languageLevels.map((entry) => entry.key));
+  const durations = new Set(vocabulary.durationTypes.map((entry) => entry.key));
+  const pairs = new Set();
   let defaultCount = 0;
-
   representations.forEach((representation, index) => {
-    const basePath = `representations[${index}]`;
-
+    const path = `representations[${index}]`;
     if (!isPlainObject(representation)) {
-      pushError(errors, basePath, "INVALID_TYPE", "Ogni representation deve essere un oggetto");
+      pushError(errors, path, "INVALID_TYPE", "Ogni representation deve essere un oggetto");
       return;
     }
-
-    if (!representation.languageLevelKey || typeof representation.languageLevelKey !== "string") {
-      pushError(errors, `${basePath}.languageLevelKey`, "REQUIRED", "languageLevelKey e obbligatoria");
-    } else if (!allowedLanguageLevelKeys.has(representation.languageLevelKey)) {
-      pushError(errors, `${basePath}.languageLevelKey`, "INVALID_CONTROLLED_VALUE", `languageLevelKey non valida: ${representation.languageLevelKey}`, {
-        allowedValues: Array.from(allowedLanguageLevelKeys),
-      });
+    if (!languages.has(representation.languageLevelKey)) {
+      pushError(errors, `${path}.languageLevelKey`, "INVALID_CONTROLLED_VALUE", "languageLevelKey non appartiene al vocabolario", { allowedValues: Array.from(languages) });
     }
-
-    if (!representation.durationKey || typeof representation.durationKey !== "string") {
-      pushError(errors, `${basePath}.durationKey`, "REQUIRED", "durationKey e obbligatoria");
-    } else if (!allowedDurationKeys.has(representation.durationKey)) {
-      pushError(errors, `${basePath}.durationKey`, "INVALID_CONTROLLED_VALUE", `durationKey non valida: ${representation.durationKey}`, {
-        allowedValues: Array.from(allowedDurationKeys),
-      });
+    if (!durations.has(representation.durationKey)) {
+      pushError(errors, `${path}.durationKey`, "INVALID_CONTROLLED_VALUE", "durationKey non appartiene al vocabolario", { allowedValues: Array.from(durations) });
     }
-
     if (!representation.text || typeof representation.text !== "string") {
-      pushError(errors, `${basePath}.text`, "REQUIRED", "Il testo e obbligatorio");
+      pushError(errors, `${path}.text`, "REQUIRED", "Il testo e obbligatorio");
     }
-
-    if (representation.languageLevelKey && representation.durationKey) {
-      const pairKey = `${representation.languageLevelKey}::${representation.durationKey}`;
-      if (seenPairs.has(pairKey)) {
-        pushError(errors, basePath, "DUPLICATE_REPRESENTATION", `Coppia languageLevelKey/durationKey duplicata: ${pairKey}`);
-      } else {
-        seenPairs.add(pairKey);
-      }
-    }
-
-    if (representation.isDefault === true) defaultCount += 1;
+    const pair = `${representation.languageLevelKey}::${representation.durationKey}`;
+    if (pairs.has(pair)) pushError(errors, path, "DUPLICATE_REPRESENTATION", `Coppia duplicata: ${pair}`);
+    pairs.add(pair);
+    if (representation.isDefault) defaultCount += 1;
   });
-
-  if (defaultCount > 1) {
-    pushError(errors, "representations", "MULTIPLE_DEFAULTS", "E consentita una sola representation di default");
-  }
+  if (defaultCount > 1) pushError(errors, "representations", "MULTIPLE_DEFAULTS", "E consentita una sola representation di default");
+  if (requireDefault && defaultCount !== 1) pushError(errors, "representations", "DEFAULT_REQUIRED", "Per pubblicare e richiesta esattamente una representation di default");
 }
 
-async function validateRelations({ museumId, itemType, relations, vocabulary, errors, currentItemId = null }) {
-  if (relations === undefined) return;
-
+async function validateRelations({ museumId, itemType, itemId, relations, vocabulary, errors, requirePublishedTargets = false }) {
   if (!Array.isArray(relations)) {
     pushError(errors, "relations", "INVALID_TYPE", "relations deve essere un array");
     return;
   }
-
-  const relationTypesByKey = new Map(vocabulary.relationTypes.map((type) => [type.key, type]));
-  const seenRelations = new Set();
-  const occurrences = new Map();
-
+  const types = new Map(vocabulary.relationTypes.map((entry) => [entry.key, entry]));
+  const seen = new Set();
+  const counts = new Map();
   for (let index = 0; index < relations.length; index += 1) {
     const relation = relations[index];
-    const basePath = `relations[${index}]`;
-
+    const path = `relations[${index}]`;
     if (!isPlainObject(relation)) {
-      pushError(errors, basePath, "INVALID_TYPE", "Ogni relation deve essere un oggetto");
+      pushError(errors, path, "INVALID_TYPE", "Ogni relation deve essere un oggetto");
       continue;
     }
-
-    const relationType = relationTypesByKey.get(relation.relationTypeKey);
-    if (!relation.relationTypeKey || !relationType) {
-      pushError(errors, `${basePath}.relationTypeKey`, "INVALID_RELATION_TYPE", `relationTypeKey non valida: ${relation.relationTypeKey}`);
+    const type = types.get(relation.relationTypeKey);
+    if (!type) {
+      pushError(errors, `${path}.relationTypeKey`, "INVALID_RELATION_TYPE", "relationTypeKey non valida");
       continue;
     }
-
-    if (relationType.domain?.length && !relationType.domain.includes(itemType)) {
-      pushError(errors, `${basePath}.relationTypeKey`, "INVALID_DOMAIN", `La relazione ${relationType.label} non e applicabile a itemType ${itemType}`);
+    if (type.domain?.length && !type.domain.includes(itemType)) {
+      pushError(errors, `${path}.relationTypeKey`, "INVALID_DOMAIN", `La relazione non e applicabile a ${itemType}`);
     }
-
-    const count = occurrences.get(relation.relationTypeKey) || 0;
-    if (relationType.validationRules?.allowMultiple === false && count >= 1) {
-      pushError(errors, basePath, "MULTIPLE_RELATIONS_NOT_ALLOWED", `La relazione ${relationType.label} ammette un solo target`);
-    }
-    occurrences.set(relation.relationTypeKey, count + 1);
-
-    if (!relation.target || !mongoose.isValidObjectId(relation.target)) {
-      pushError(errors, `${basePath}.target`, "INVALID_OBJECT_ID", "target deve essere un ObjectId valido");
+    if (!mongoose.isValidObjectId(relation.target)) {
+      pushError(errors, `${path}.target`, "INVALID_OBJECT_ID", "target deve essere un ObjectId valido");
       continue;
     }
-
-    if (currentItemId && String(relation.target) === String(currentItemId)) {
-      pushError(errors, `${basePath}.target`, "SELF_RELATION", "Un item non puo essere in relazione con se stesso");
+    if (String(relation.target) === String(itemId)) {
+      pushError(errors, `${path}.target`, "SELF_RELATION", "Un item non puo riferirsi a se stesso");
       continue;
     }
-
-    const targetItem = await Item.findById(relation.target).select("_id itemType museumId").lean();
-    if (!targetItem) {
-      pushError(errors, `${basePath}.target`, "TARGET_NOT_FOUND", "L'item target non esiste");
+    const target = await Item.findOne({ _id: relation.target, lifecycleStatus: "active" }).lean();
+    if (!target) {
+      pushError(errors, `${path}.target`, "TARGET_NOT_FOUND", "L'item target non esiste o e nel cestino");
       continue;
     }
-
-    if (String(targetItem.museumId) !== String(museumId)) {
-      pushError(errors, `${basePath}.target`, "CROSS_MUSEUM_TARGET", "Il target appartiene a un museo diverso");
-      continue;
+    if (String(target.museumId) !== String(museumId)) {
+      pushError(errors, `${path}.target`, "CROSS_MUSEUM_TARGET", "Il target appartiene a un museo diverso");
     }
-
-    if (relationType.range?.length && !relationType.range.includes(targetItem.itemType)) {
-      pushError(errors, `${basePath}.target`, "INVALID_RANGE", `Il target di tipo ${targetItem.itemType} non e compatibile con la relazione ${relationType.label}`);
+    if (type.range?.length && !type.range.includes(target.itemType)) {
+      pushError(errors, `${path}.target`, "INVALID_RANGE", `Il target di tipo ${target.itemType} non e compatibile`);
     }
-
-    if (relation.weight !== undefined) {
-      const weight = Number(relation.weight);
-      if (!Number.isFinite(weight) || weight < 0 || weight > 10) {
-        pushError(errors, `${basePath}.weight`, "INVALID_NUMBER", "weight deve essere compreso tra 0 e 10");
+    if (requirePublishedTargets) {
+      if (!target.publishedRevisionId) {
+        pushError(errors, `${path}.target`, "TARGET_NOT_PUBLISHED", "L'item target non ha una revisione pubblicata");
+      } else {
+        const targetRevision = await ItemRevision.findById(target.publishedRevisionId)
+          .select("_id status integrity.status")
+          .lean();
+        if (!targetRevision || targetRevision.status !== "published" || targetRevision.integrity?.status !== "valid") {
+          pushError(errors, `${path}.target`, "TARGET_NOT_AVAILABLE", "La revisione pubblicata del target non e disponibile o integra");
+        }
       }
     }
-
-    const duplicateKey = `${relation.relationTypeKey}::${String(relation.target)}`;
-    if (seenRelations.has(duplicateKey)) {
-      pushError(errors, basePath, "DUPLICATE_RELATION", "Relazione duplicata verso lo stesso target con lo stesso tipo");
-    } else {
-      seenRelations.add(duplicateKey);
+    const duplicate = `${relation.relationTypeKey}::${String(relation.target)}`;
+    if (seen.has(duplicate)) pushError(errors, path, "DUPLICATE_RELATION", "Relazione duplicata");
+    seen.add(duplicate);
+    const count = counts.get(relation.relationTypeKey) || 0;
+    if (type.validationRules?.allowMultiple === false && count >= 1) {
+      pushError(errors, path, "MULTIPLE_RELATIONS_NOT_ALLOWED", "Il tipo di relazione ammette un solo target");
+    }
+    counts.set(relation.relationTypeKey, count + 1);
+    if (!Number.isFinite(relation.weight) || relation.weight < 0 || relation.weight > 10) {
+      pushError(errors, `${path}.weight`, "INVALID_NUMBER", "weight deve essere compreso tra 0 e 10");
     }
   }
 }
 
-async function validateItemDraftPayload({ museumId, payload, vocabulary, mode, existingItem = null, currentItemId = null }) {
+async function validateItemDraftPayload({ museumId, itemId = null, itemType, payload, vocabulary, mode }) {
   const errors = [];
-  const effectiveItemType = hasOwn(payload, "itemType") ? payload.itemType : existingItem?.itemType;
-
-  validateTopLevelFields({ payload, vocabulary, errors, mode });
-  validateRepresentations(payload.representations, vocabulary, errors);
-  await validateRelations({
-    museumId,
-    itemType: effectiveItemType,
-    relations: payload.relations,
-    vocabulary,
-    errors,
-    currentItemId,
-  });
-
+  if (mode === "create" || hasOwn(payload, "itemType")) {
+    const effectiveType = payload.itemType || itemType;
+    if (!effectiveType || !vocabulary.itemTypes.includes(effectiveType)) {
+      pushError(errors, "itemType", "INVALID_CONTROLLED_VALUE", "itemType non valido", { allowedValues: vocabulary.itemTypes });
+    }
+  }
+  if (mode === "create" || hasOwn(payload, "label")) {
+    if (!payload.label || typeof payload.label !== "string") pushError(errors, "label", "REQUIRED", "label e obbligatoria");
+  }
+  if (hasOwn(payload, "tags") && !Array.isArray(payload.tags)) pushError(errors, "tags", "INVALID_TYPE", "tags deve essere un array");
+  if (hasOwn(payload, "representations")) validateRepresentations(payload.representations, vocabulary, errors);
+  if (hasOwn(payload, "relations")) {
+    await validateRelations({ museumId, itemType: payload.itemType || itemType, itemId, relations: payload.relations, vocabulary, errors });
+  }
   return errors;
 }
 
 module.exports = {
   normalizeItemPayload,
   validateItemDraftPayload,
+  validateRepresentations,
+  validateRelations,
 };

@@ -6,29 +6,28 @@ const { Schema } = mongoose;
 
 const MuseumSchema = new Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    name: { type: String, required: true, trim: true },
 
+    /** Creatore storico, immutabile. */
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      immutable: true,
       index: true,
     },
 
+    /** Incrementata a ogni modifica del vocabolario. */
+    vocabularyRevision: { type: Number, default: 1, min: 1 },
+
     config: {
-      languageLevels: [LanguageLevelSchema],
-      durationTypes: [DurationTypeSchema],
-      itemTypes: [{ type: String, trim: true }],
-      relationTypes: [RelationTypeSchema],
+      languageLevels: { type: [LanguageLevelSchema], default: [] },
+      durationTypes: { type: [DurationTypeSchema], default: [] },
+      itemTypes: { type: [{ type: String, trim: true }], default: [] },
+      relationTypes: { type: [RelationTypeSchema], default: [] },
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Museum", MuseumSchema);

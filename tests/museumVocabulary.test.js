@@ -1,19 +1,28 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { validateMuseumPayload } = require("../services/validation/museum.validation");
+const {
+  normalizeMuseumPayload,
+  validateMuseumPayload,
+} = require("../services/validation/museum.validation");
+const {
+  normalizedPosition,
+  withNormalizedPositions,
+} = require("../services/vocabularyNormalization.service");
 
-function validMuseumConfig() {
+function validMuseum() {
   return {
     name: "Museo test",
     config: {
       languageLevels: [
-        { key: "simple", label: "Semplice", level: 1 },
-        { key: "advanced", label: "Avanzato", level: 2 },
+        { key: "simple", label: "Semplice" },
+        { key: "standard", label: "Standard" },
+        { key: "advanced", label: "Avanzato" },
       ],
       durationTypes: [
-        { key: "short", label: "Breve", level: 1 },
-        { key: "long", label: "Lunga", level: 2 },
+        { key: "short", label: "Breve", targetSeconds: 30 },
+        { key: "medium", label: "Media", targetSeconds: 90 },
+        { key: "long", label: "Approfondita", targetSeconds: 240 },
       ],
       itemTypes: ["artwork", "artist"],
       relationTypes: [],
@@ -21,22 +30,32 @@ function validMuseumConfig() {
   };
 }
 
-test("un vocabolario ordinato valido non produce errori", () => {
-  assert.deepEqual(validateMuseumPayload({ payload: validMuseumConfig() }), []);
+test("un vocabolario ordinato con targetSeconds crescenti e valido", () => {
+  const payload = normalizeMuseumPayload(validMuseum());
+  assert.deepEqual(validateMuseumPayload({ payload }), []);
 });
 
-test("language level con level duplicato viene rifiutato", () => {
-  const payload = validMuseumConfig();
-  payload.config.languageLevels[1].level = 1;
-
-  const errors = validateMuseumPayload({ payload });
-  assert.equal(errors.some((error) => error.code === "DUPLICATE_LEVEL"), true);
+test("level e rifiutato perche l'ordine deriva dall'array", () => {
+  const payload = validMuseum();
+  payload.config.languageLevels[0].level = 1;
+  const errors = validateMuseumPayload({ payload: normalizeMuseumPayload(payload) });
+  assert.equal(errors.some((error) => error.code === "FORBIDDEN_FIELD"), true);
 });
 
-test("duration type con key duplicata viene rifiutato", () => {
-  const payload = validMuseumConfig();
-  payload.config.durationTypes[1].key = "short";
+test("targetSeconds deve crescere seguendo l'ordine editoriale", () => {
+  const payload = validMuseum();
+  payload.config.durationTypes[2].targetSeconds = 60;
+  const errors = validateMuseumPayload({ payload: normalizeMuseumPayload(payload) });
+  assert.equal(errors.some((error) => error.code === "NON_INCREASING_TARGET_SECONDS"), true);
+});
 
-  const errors = validateMuseumPayload({ payload });
-  assert.equal(errors.some((error) => error.code === "DUPLICATE_KEY"), true);
+test("la normalizzazione uniforme usa l'intero vocabolario", () => {
+  assert.equal(normalizedPosition(0, 4), 0);
+  assert.equal(normalizedPosition(1, 4), 1 / 3);
+  assert.equal(normalizedPosition(2, 4), 2 / 3);
+  assert.equal(normalizedPosition(3, 4), 1);
+  assert.equal(normalizedPosition(0, 1), 0.5);
+
+  const normalized = withNormalizedPositions(validMuseum().config.languageLevels);
+  assert.deepEqual(normalized.map((entry) => entry.normalizedPosition), [0, 0.5, 1]);
 });

@@ -1,130 +1,189 @@
 const Item = require("../models/item.model");
+const ItemRevision = require("../models/itemRevision.model");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
-const { invalidateVisitsUsingItem } = require("./visitDependency.service");
 const { assertMuseumRole } = require("./museumAuthorization.service");
+const {
+  requestReview,
+  withdrawReview,
+  requestChanges,
+  markPublished,
+} = require("./revisionWorkflow.service");
+const { auditVisitsUsingPublishedItem, invalidateVisitsUsingItem } = require("./visitDependency.service");
 
-function buildIntegrityUpdate({ currentStatus, issues }) {
-  const hasIssues = issues.length > 0;
-  const update = {
-    "integrity.status": hasIssues ? "needs_review" : "valid",
-    "integrity.issues": issues,
-  };
-
-  if (currentStatus === "published" && hasIssues) update.status = "draft";
-  return update;
+async function loadItemAndWorking({ museumId, itemId }) {
+  const item = await Item.findOne({ _id: itemId, museumId, lifecycleStatus: "active" });
+  if (!item) throw new AppError("Item non trovato", 404);
+  if (!item.workingRevisionId) throw new AppError("L'item non ha una revisione di lavoro", 409);
+  const revision = await ItemRevision.findById(item.workingRevisionId);
+  if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
+  return { item, revision };
 }
 
-async function checkItemConsistency({ museumId, itemId, userId }) {
-  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
-
-  const item = await Item.findOne({ _id: itemId, museumId });
-  if (!item) throw new AppError("Item non trovato", 404);
+async function evaluateItemConsistency({ museumId, itemId, userId, allowInReview = false }) {
+  const { item, revision } = await loadItemAndWorking({ museumId, itemId });
+  if (revision.status === "in_review" && !allowInReview) {
+    throw new AppError("Una revisione in_review e bloccata; ritirare prima la richiesta", 409);
+  }
 
   const vocabulary = await getMuseumVocabulary(museumId);
   const issues = await computeItemIntegrityIssues({
     item: item.toObject(),
+    revision: revision.toObject(),
     museumId,
     vocabulary,
   });
-  const wasPublished = item.status === "published";
-  const update = buildIntegrityUpdate({ currentStatus: item.status, issues });
+  revision.integrity = {
+    status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid",
+    issues,
+    checkedAt: new Date(),
+    checkedBy: userId,
+  };
+  revision.updatedBy = userId;
+  await revision.save();
+  return { item, revision, issues, integrity: revision.integrity };
+}
 
-  Object.entries(update).forEach(([path, value]) => item.set(path, value));
-  item.updatedBy = userId;
-  await item.save();
+async function checkItemConsistency({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
+  return evaluateItemConsistency({ museumId, itemId, userId, allowInReview: false });
+}
 
-  if (wasPublished && issues.length > 0) {
-    await invalidateVisitsUsingItem({
-      itemId: item._id,
-      code: "ITEM_INTEGRITY_CHANGED",
-      message: "Un item pubblicato usato dalla visita non e piu integro",
-      context: { itemLabel: item.label },
-    });
+async function requestItemReview({ museumId, itemId, userId }) {
+  const consistency = await checkItemConsistency({ museumId, itemId, userId });
+  if (consistency.issues.some((issue) => issue.severity !== "warning")) {
+    throw new AppError("Impossibile richiedere la revisione con problemi di integrita", 400, consistency.issues);
   }
+  try {
+    requestReview(consistency.revision, userId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  await consistency.revision.save();
+  return consistency;
+}
 
-  return { item, issues, integrity: item.integrity };
+async function withdrawItemReview({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
+  const { item, revision } = await loadItemAndWorking({ museumId, itemId });
+  try {
+    withdrawReview(revision, userId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  await revision.save();
+  return { item, revision };
+}
+
+async function requestItemChanges({ museumId, itemId, userId, message }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const { item, revision } = await loadItemAndWorking({ museumId, itemId });
+  try {
+    requestChanges(revision, userId, message);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  await revision.save();
+  return { item, revision };
 }
 
 async function publishItem({ museumId, itemId, userId }) {
-  const consistency = await checkItemConsistency({ museumId, itemId, userId });
-
-  if (consistency.item.status === "archived") {
-    throw new AppError("Impossibile pubblicare un item archiviato", 400);
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const consistency = await evaluateItemConsistency({
+    museumId,
+    itemId,
+    userId,
+    allowInReview: true,
+  });
+  if (consistency.issues.some((issue) => issue.severity !== "warning")) {
+    throw new AppError("Impossibile pubblicare un item con problemi di integrita", 400, consistency.issues);
   }
 
-  if (consistency.issues.length > 0) {
-    throw new AppError(
-      "Impossibile pubblicare un item con problemi di integrita",
-      400,
-      consistency.issues,
+  const { item, revision } = consistency;
+  const previousPublishedId = item.publishedRevisionId;
+  const previousRevisionState = {
+    status: revision.status,
+    review: revision.review?.toObject ? revision.review.toObject() : { ...revision.review },
+    publication: revision.publication?.toObject
+      ? revision.publication.toObject()
+      : { ...revision.publication },
+  };
+  try {
+    markPublished(revision, userId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  await revision.save();
+
+  const pointerUpdate = await Item.updateOne(
+    { _id: item._id, workingRevisionId: revision._id, lifecycleStatus: "active" },
+    { $set: { publishedRevisionId: revision._id, workingRevisionId: null } },
+  );
+  if (pointerUpdate.modifiedCount !== 1) {
+    revision.status = previousRevisionState.status;
+    revision.review = previousRevisionState.review;
+    revision.publication = previousRevisionState.publication;
+    await revision.save();
+    throw new AppError("La revisione di lavoro e cambiata durante la pubblicazione", 409);
+  }
+
+  if (previousPublishedId) {
+    await ItemRevision.updateOne(
+      { _id: previousPublishedId, status: "published" },
+      { $set: { status: "superseded" } },
     );
   }
 
-  consistency.item.status = "published";
-  consistency.item.integrity = { status: "valid", issues: [] };
-  consistency.item.updatedBy = userId;
-
-  await consistency.item.save();
-  return consistency.item;
+  item.publishedRevisionId = revision._id;
+  item.workingRevisionId = null;
+  const dependencyAudit = await auditVisitsUsingPublishedItem({ item, revision });
+  return { item, revision, dependencyAudit };
 }
 
 async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
-  const items = await Item.find({ museumId })
-    .select("_id museumId status label itemType representations relations")
-    .lean();
-
-  const operations = [];
-  const invalidatedItems = [];
-  let validCount = 0;
-  let needsReviewCount = 0;
-  let demotedCount = 0;
+  const items = await Item.find({ museumId, lifecycleStatus: "active" });
+  let checkedRevisionCount = 0;
+  let invalidRevisionCount = 0;
+  let affectedVisitCount = 0;
 
   for (const item of items) {
-    const issues = await computeItemIntegrityIssues({ item, museumId, vocabulary });
-    const hasIssues = issues.length > 0;
-    const update = buildIntegrityUpdate({ currentStatus: item.status, issues });
-
-    if (hasIssues) {
-      needsReviewCount += 1;
-      invalidatedItems.push(item);
-    } else {
-      validCount += 1;
+    const revisionIds = [item.publishedRevisionId, item.workingRevisionId].filter(Boolean);
+    for (const revisionId of revisionIds) {
+      const revision = await ItemRevision.findById(revisionId);
+      if (!revision) continue;
+      const issues = await computeItemIntegrityIssues({ item, revision, museumId, vocabulary });
+      const blocking = issues.some((issue) => issue.severity !== "warning");
+      revision.integrity = {
+        status: blocking ? "needs_review" : "valid",
+        issues,
+        checkedAt: new Date(),
+        checkedBy: null,
+      };
+      await revision.save();
+      checkedRevisionCount += 1;
+      if (blocking) invalidRevisionCount += 1;
+      if (blocking && String(item.publishedRevisionId) === String(revision._id)) {
+        const result = await invalidateVisitsUsingItem({
+          itemId: item._id,
+          code: "MUSEUM_VOCABULARY_CHANGED",
+          message: "Il nuovo vocabolario ha reso incompatibile un item della visita",
+          blocking: true,
+          context: { vocabularyRevision: vocabulary.vocabularyRevision },
+        });
+        affectedVisitCount += result.affectedCount;
+      }
     }
-
-    if (item.status === "published" && hasIssues) demotedCount += 1;
-
-    operations.push({
-      updateOne: {
-        filter: { _id: item._id },
-        update: { $set: update },
-      },
-    });
   }
 
-  if (operations.length > 0) await Item.bulkWrite(operations);
-
-  for (const item of invalidatedItems) {
-    await invalidateVisitsUsingItem({
-      itemId: item._id,
-      code: "MUSEUM_VOCABULARY_CHANGED",
-      message: "La configurazione del museo ha reso incoerente un item della visita",
-      context: { itemLabel: item.label },
-    });
-  }
-
-  return {
-    auditedItemsCount: items.length,
-    validCount,
-    needsReviewCount,
-    demotedCount,
-  };
+  return { checkedRevisionCount, invalidRevisionCount, affectedVisitCount };
 }
 
 module.exports = {
-  buildIntegrityUpdate,
   checkItemConsistency,
+  requestItemReview,
+  withdrawItemReview,
+  requestItemChanges,
   publishItem,
   auditItemsAfterMuseumConfigChange,
 };

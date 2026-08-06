@@ -1,270 +1,287 @@
 const Item = require("../models/item.model");
+const ItemRevision = require("../models/itemRevision.model");
+const VisitRevision = require("../models/visitRevision.model");
+const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
+const { assertMuseumRole, hasMuseumRole } = require("./museumAuthorization.service");
 const { normalizeItemPayload, validateItemDraftPayload } = require("./validation/item.validation");
-const { applyRelationCommands } = require("./itemRelations.service");
+const { markRevisionEdited } = require("./revisionWorkflow.service");
 const { invalidateVisitsUsingItem } = require("./visitDependency.service");
-const { assertMuseumRole } = require("./museumAuthorization.service");
 
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key);
+const REVISION_FIELDS = [
+  "label",
+  "recognitionImage",
+  "tags",
+  "metadata",
+  "relations",
+  "representations",
+  "jsonld",
+];
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-function sameId(a, b) {
-  return String(a) === String(b);
-}
-
-function rejectStatusInPayload(payload = {}) {
-  if (hasOwn(payload, "status")) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "status",
-        code: "FORBIDDEN_FIELD",
-        message: "Lo stato editoriale si modifica soltanto tramite le operazioni dedicate",
-      },
-    ]);
+function rejectManagedFields(payload = {}) {
+  const forbidden = ["status", "integrity", "review", "publication", "version", "itemId"];
+  const errors = forbidden
+    .filter((field) => hasOwn(payload, field))
+    .map((field) => ({ field, code: "FORBIDDEN_FIELD", message: `${field} e gestito dal backend` }));
+  if (hasOwn(payload, "relationCommands")) {
+    errors.push({
+      field: "relationCommands",
+      code: "REMOVED_FIELD",
+      message: "Con il versionamento le relazioni si modificano tramite l'array relations della revisione",
+    });
   }
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
 }
 
-function markAsDraftNeedingReview(item, userId = null, issues = []) {
-  if (item.status !== "archived") item.status = "draft";
-
-  item.integrity = {
-    status: "needs_review",
-    issues,
-  };
-
-  if (userId !== null) item.updatedBy = userId;
-}
-
-function splitItemPayloadAndRelationCommands(payload = {}) {
-  const hasRelations = hasOwn(payload, "relations");
-  const hasRelationCommands = hasOwn(payload, "relationCommands");
-
-  if (hasRelations && hasRelationCommands) {
-    throw new AppError("Payload non valido", 400, [
-      {
-        field: "relationCommands",
-        code: "AMBIGUOUS_RELATION_UPDATE",
-        message: "Non puoi usare relations e relationCommands nella stessa richiesta",
-      },
-    ]);
-  }
-
-  const { relationCommands, ...itemPayload } = payload;
-  return { itemPayload, relationCommands };
-}
-
-function buildMergedPayload(existingItem, rawPayload, normalizedPayload) {
-  const fields = [
-    "externalId",
-    "itemType",
-    "label",
-    "tags",
-    "recognitionImage",
-    "metadata",
-    "jsonld",
-    "representations",
-    "relations",
-  ];
-
-  return fields.reduce((merged, field) => {
-    merged[field] = hasOwn(rawPayload, field) ? normalizedPayload[field] : existingItem[field];
-    return merged;
+function revisionSnapshot(revision) {
+  const source = revision.toObject ? revision.toObject() : revision;
+  return REVISION_FIELDS.reduce((snapshot, field) => {
+    snapshot[field] = source[field];
+    return snapshot;
   }, {});
 }
 
-async function saveUniqueItems(items) {
-  const itemsById = new Map();
-  items.filter(Boolean).forEach((item) => itemsById.set(String(item._id), item));
-
-  for (const item of itemsById.values()) {
-    await item.save();
+function mergeRevisionPayload(revision, rawPayload, normalizedPayload) {
+  const source = revisionSnapshot(revision);
+  for (const field of REVISION_FIELDS) {
+    if (hasOwn(rawPayload, field)) source[field] = normalizedPayload[field];
   }
-
-  return Array.from(itemsById.values());
+  return source;
 }
 
-async function invalidateVisitsForChangedItems(items, code = "ITEM_CHANGED") {
-  for (const item of items) {
-    await invalidateVisitsUsingItem({
-      itemId: item._id,
-      code,
-      message: "Un item usato dalla visita e cambiato e deve essere ricontrollato",
-      context: { itemLabel: item.label },
-    });
-  }
-}
-
-async function findItemByIdInMuseumOrFail({ museumId, itemId }) {
-  const item = await Item.findOne({ _id: itemId, museumId });
+async function findItemOrFail({ museumId, itemId, includeTrashed = false }) {
+  const query = { _id: itemId, museumId };
+  if (!includeTrashed) query.lifecycleStatus = "active";
+  const item = await Item.findOne(query);
   if (!item) throw new AppError("Item non trovato", 404);
   return item;
 }
 
+async function nextVersion(itemId) {
+  const latest = await ItemRevision.findOne({ itemId }).sort({ version: -1 }).select("version").lean();
+  return (latest?.version || 0) + 1;
+}
+
+async function createWorkingRevisionFromPublished(item, actorUserId) {
+  if (!item.publishedRevisionId) throw new AppError("Nessuna revisione pubblicata da clonare", 409);
+  const published = await ItemRevision.findById(item.publishedRevisionId);
+  if (!published) throw new AppError("Revisione pubblicata non trovata", 409);
+  const revision = new ItemRevision({
+    itemId: item._id,
+    version: await nextVersion(item._id),
+    basedOnRevisionId: published._id,
+    ...revisionSnapshot(published),
+    status: "draft",
+    integrity: { status: "needs_review", issues: [] },
+    review: {},
+    publication: {},
+    createdBy: actorUserId,
+    updatedBy: actorUserId,
+  });
+  await revision.save();
+  item.workingRevisionId = revision._id;
+  await item.save();
+  return revision;
+}
+
+async function getWorkingRevision(item, actorUserId, { createFromPublished = true } = {}) {
+  if (item.workingRevisionId) {
+    const revision = await ItemRevision.findById(item.workingRevisionId);
+    if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
+    return revision;
+  }
+  if (createFromPublished && item.publishedRevisionId) {
+    return createWorkingRevisionFromPublished(item, actorUserId);
+  }
+  throw new AppError("L'item non ha una revisione di lavoro", 409);
+}
+
 async function createItem({ museumId, payload, userId }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
-  rejectStatusInPayload(payload);
-
+  rejectManagedFields(payload);
   const vocabulary = await getMuseumVocabulary(museumId);
-  const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
-  const normalizedPayload = normalizeItemPayload(itemPayload);
-  const validationErrors = await validateItemDraftPayload({
+  const normalized = normalizeItemPayload(payload);
+  const errors = await validateItemDraftPayload({
     museumId,
-    payload: normalizedPayload,
+    itemType: normalized.itemType,
+    payload: normalized,
     vocabulary,
     mode: "create",
   });
-
-  if (validationErrors.length > 0) {
-    throw new AppError("Payload non valido", 400, validationErrors);
-  }
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
 
   const item = new Item({
-    ...normalizedPayload,
+    externalId: normalized.externalId,
     museumId,
-    status: "draft",
-    integrity: { status: "needs_review", issues: [] },
+    itemType: normalized.itemType,
     createdBy: userId,
-    updatedBy: userId,
   });
+  await item.save();
+  try {
+    const revision = new ItemRevision({
+      itemId: item._id,
+      version: 1,
+      ...REVISION_FIELDS.reduce((data, field) => {
+        data[field] = normalized[field];
+        return data;
+      }, {}),
+      status: "draft",
+      integrity: { status: "needs_review", issues: [] },
+      createdBy: userId,
+      updatedBy: userId,
+    });
+    await revision.save();
+    item.workingRevisionId = revision._id;
+    await item.save();
+    return { item, revision };
+  } catch (error) {
+    await item.deleteOne().catch(() => {});
+    throw error;
+  }
+}
 
-  const touchedItems = await applyRelationCommands({
+async function updateItem({ museumId, itemId, payload, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
+  rejectManagedFields(payload);
+  const item = await findItemOrFail({ museumId, itemId });
+  const revision = await getWorkingRevision(item, userId);
+  try {
+    markRevisionEdited(revision, userId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+
+  const normalized = normalizeItemPayload(payload);
+  if (item.publishedRevisionId && (hasOwn(payload, "externalId") || hasOwn(payload, "itemType"))) {
+    throw new AppError("Payload non valido", 409, [
+      {
+        field: hasOwn(payload, "itemType") ? "itemType" : "externalId",
+        code: "IMMUTABLE_AFTER_PUBLICATION",
+        message: "externalId e itemType non possono cambiare dopo la prima pubblicazione",
+      },
+    ]);
+  }
+  const effectiveItemType = hasOwn(payload, "itemType") ? normalized.itemType : item.itemType;
+  const merged = mergeRevisionPayload(revision, payload, normalized);
+  const validationPayload = { ...merged, itemType: effectiveItemType };
+  const vocabulary = await getMuseumVocabulary(museumId);
+  const errors = await validateItemDraftPayload({
     museumId,
-    currentItem: item,
-    relationCommands,
+    itemId,
+    itemType: effectiveItemType,
+    payload: validationPayload,
     vocabulary,
+    mode: "create",
   });
+  if (errors.length) throw new AppError("Payload non valido", 400, errors);
 
-  touchedItems.forEach((touchedItem) => {
-    if (!sameId(touchedItem._id, item._id)) {
-      markAsDraftNeedingReview(touchedItem, userId);
-    }
+  if (hasOwn(payload, "externalId")) item.externalId = normalized.externalId;
+  if (hasOwn(payload, "itemType")) item.itemType = normalized.itemType;
+  Object.assign(revision, merged);
+  revision.updatedBy = userId;
+  await Promise.all([revision.save(), item.save()]);
+  return { item, revision };
+}
+
+async function actorCanManage(actorUserId, museumId) {
+  if (!actorUserId) return false;
+  const user = await User.findOne({ _id: actorUserId, status: "active" }).lean();
+  return Boolean(user && hasMuseumRole(user, museumId, "operator"));
+}
+
+async function getItemById({ museumId, itemId, actorUserId = null, view = "published" }) {
+  const item = await findItemOrFail({ museumId, itemId, includeTrashed: view === "working" });
+  const canManage = await actorCanManage(actorUserId, museumId);
+  if (view === "working" && !canManage) throw new AppError("Accesso alla revisione di lavoro non autorizzato", 403);
+  const revisionId = view === "working" && item.workingRevisionId
+    ? item.workingRevisionId
+    : item.publishedRevisionId;
+  if (!revisionId) throw new AppError("Nessuna revisione disponibile", 404);
+  const revision = await ItemRevision.findById(revisionId);
+  if (!revision) throw new AppError("Revisione non trovata", 404);
+  if (!canManage && revision.integrity.status !== "valid") throw new AppError("Item non disponibile", 404);
+  return { item, revision };
+}
+
+async function listItems({ museumId, filters = {}, actorUserId = null, view = "published" }) {
+  const canManage = await actorCanManage(actorUserId, museumId);
+  if (view === "working" && !canManage) throw new AppError("Accesso alle bozze non autorizzato", 403);
+  const query = { museumId };
+  if (!canManage || !filters.includeTrashed) query.lifecycleStatus = "active";
+  if (filters.itemType) query.itemType = filters.itemType;
+  const items = await Item.find(query).sort({ updatedAt: -1 }).lean();
+  const results = [];
+  for (const item of items) {
+    const revisionId = view === "working" && item.workingRevisionId
+      ? item.workingRevisionId
+      : item.publishedRevisionId;
+    if (!revisionId) continue;
+    const revision = await ItemRevision.findById(revisionId).lean();
+    if (!revision) continue;
+    if (filters.status && revision.status !== filters.status) continue;
+    if (filters.integrity && revision.integrity?.status !== filters.integrity) continue;
+    if (!canManage && revision.integrity?.status !== "valid") continue;
+    results.push({ item, revision });
+  }
+  return results;
+}
+
+async function trashItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
+  const item = await findItemOrFail({ museumId, itemId });
+  item.lifecycleStatus = "trashed";
+  item.trashedAt = new Date();
+  item.trashedBy = userId;
+  await item.save();
+  await invalidateVisitsUsingItem({
+    itemId: item._id,
+    code: "VISIT_ITEM_TRASHED",
+    message: "Un item della visita e stato spostato nel cestino",
+    blocking: true,
   });
-
-  const savedItems = await saveUniqueItems([item, ...touchedItems]);
-  await invalidateVisitsForChangedItems(
-    savedItems.filter((savedItem) => !sameId(savedItem._id, item._id)),
-  );
-
   return item;
 }
 
-/**
- * Policy conservativa: finche non viene deciso se gli operatori possano
- * modificare contenuti esistenti, l'update richiede un manager.
- */
-async function updateItem({ museumId, itemId, payload, userId }) {
+async function restoreItem({ museumId, itemId, userId }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
-  rejectStatusInPayload(payload);
+  const item = await findItemOrFail({ museumId, itemId, includeTrashed: true });
+  item.lifecycleStatus = "active";
+  item.trashedAt = null;
+  item.trashedBy = null;
+  await item.save();
+  return item;
+}
 
-  const existingItem = await findItemByIdInMuseumOrFail({ museumId, itemId });
-  const vocabulary = await getMuseumVocabulary(museumId);
-  const { itemPayload, relationCommands } = splitItemPayloadAndRelationCommands(payload);
-  const normalizedPayload = normalizeItemPayload(itemPayload);
-  const validationErrors = await validateItemDraftPayload({
-    museumId,
-    payload: normalizedPayload,
-    vocabulary,
-    mode: "update",
-    existingItem,
-    currentItemId: itemId,
-  });
-
-  if (validationErrors.length > 0) {
-    throw new AppError("Payload non valido", 400, validationErrors);
+async function hardDeleteItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const item = await findItemOrFail({ museumId, itemId, includeTrashed: true });
+  if (item.lifecycleStatus !== "trashed") throw new AppError("L'item deve essere nel cestino prima della cancellazione definitiva", 409);
+  const [visitDependency, relationDependency] = await Promise.all([
+    VisitRevision.exists({ "stops.itemId": item._id }),
+    ItemRevision.exists({ "relations.target": item._id }),
+  ]);
+  if (visitDependency || relationDependency) {
+    throw new AppError("Impossibile eliminare definitivamente: esistono dipendenze attive", 409);
   }
-
-  Object.assign(existingItem, buildMergedPayload(existingItem.toObject(), itemPayload, normalizedPayload), {
-    updatedBy: userId,
-  });
-  markAsDraftNeedingReview(existingItem, userId);
-
-  const touchedItems = await applyRelationCommands({
-    museumId,
-    currentItem: existingItem,
-    relationCommands,
-    vocabulary,
-  });
-  touchedItems.forEach((touchedItem) => markAsDraftNeedingReview(touchedItem, userId));
-
-  const savedItems = await saveUniqueItems([existingItem, ...touchedItems]);
-  await invalidateVisitsForChangedItems(savedItems);
-
-  return existingItem;
-}
-
-async function listItems({ museumId, filters = {} }) {
-  const query = { museumId };
-  if (filters.itemType) query.itemType = filters.itemType;
-  if (filters.status) query.status = filters.status;
-  if (filters.integrity) query["integrity.status"] = filters.integrity;
-
-  return Item.find(query).sort({ updatedAt: -1, label: 1 });
-}
-
-async function getItemById({ museumId, itemId }) {
-  return findItemByIdInMuseumOrFail({ museumId, itemId });
-}
-
-async function findItemsTargetingItem({ museumId, targetItemId }) {
-  return Item.find({ museumId, "relations.target": targetItemId });
-}
-
-function buildDeletedTargetIntegrityIssues({ sourceItem, deletedItem }) {
-  return (sourceItem.relations || [])
-    .map((relation, index) => ({ relation, index }))
-    .filter(({ relation }) => sameId(relation.target, deletedItem._id))
-    .map(({ relation, index }) => ({
-      field: `relations[${index}].target`,
-      code: "RELATION_TARGET_DELETED",
-      message: `La relazione punta a un item eliminato: ${deletedItem.label}`,
-      context: {
-        deletedItemId: deletedItem._id,
-        deletedItemLabel: deletedItem.label,
-        relationTypeKey: relation.relationTypeKey,
-        relationId: relation._id,
-      },
-    }));
-}
-
-async function deleteItem({ museumId, itemId, userId }) {
-  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
-  const item = await findItemByIdInMuseumOrFail({ museumId, itemId });
-  const affectedItems = await findItemsTargetingItem({ museumId, targetItemId: item._id });
-
-  affectedItems.forEach((affectedItem) => {
-    const existingIssues = Array.isArray(affectedItem.integrity?.issues)
-      ? affectedItem.integrity.issues
-      : [];
-    markAsDraftNeedingReview(
-      affectedItem,
-      userId,
-      [
-        ...existingIssues,
-        ...buildDeletedTargetIntegrityIssues({ sourceItem: affectedItem, deletedItem: item }),
-      ],
-    );
-  });
-
-  await saveUniqueItems(affectedItems);
-  await invalidateVisitsForChangedItems(affectedItems);
-  await invalidateVisitsUsingItem({
-    itemId: item._id,
-    code: "VISIT_ITEM_DELETED",
-    message: "Un item della visita e stato eliminato",
-    context: { itemLabel: item.label },
-  });
-
+  await ItemRevision.deleteMany({ itemId: item._id });
   await item.deleteOne();
-
-  return { item, affectedItemsCount: affectedItems.length };
+  return item;
 }
 
 module.exports = {
+  REVISION_FIELDS,
+  findItemOrFail,
+  getWorkingRevision,
   createItem,
   updateItem,
   listItems,
   getItemById,
-  deleteItem,
+  trashItem,
+  restoreItem,
+  hardDeleteItem,
 };

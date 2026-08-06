@@ -1,40 +1,21 @@
-const AppError = require("../utils/AppError");
+const {
+  buildPositionMap,
+  buildDurationSecondsMap,
+} = require("./vocabularyNormalization.service");
 
-function resolvePresentationPolicy({ defaultPresentationPolicy, userPreference }) {
-  if (!userPreference || userPreference.mode === "default") {
-    return { ...defaultPresentationPolicy };
+function assertPreferenceValue(value, field) {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`${field} deve essere un numero compreso tra 0 e 1`);
   }
-
-  if (userPreference.mode !== "custom") {
-    throw new AppError("Preferenza di presentazione non valida", 400, [
-      {
-        field: "mode",
-        code: "INVALID_ENUM",
-        message: "mode deve essere default oppure custom",
-        allowedValues: ["default", "custom"],
-      },
-    ]);
-  }
-
-  if (!userPreference.durationKey || !userPreference.languageLevelKey) {
-    throw new AppError("Preferenza di presentazione incompleta", 400, [
-      {
-        field: "presentationPreference",
-        code: "INCOMPLETE_POLICY",
-        message: "Una preferenza custom richiede durationKey e languageLevelKey",
-      },
-    ]);
-  }
-
-  return {
-    durationKey: userPreference.durationKey,
-    languageLevelKey: userPreference.languageLevelKey,
-  };
 }
 
-function findRepresentationByPolicy({ item, policy }) {
+function findDefaultRepresentation(representations = []) {
+  return representations.find((representation) => representation.isDefault === true) || null;
+}
+
+function findRepresentationByPolicy(representations = [], policy = {}) {
   return (
-    (item.representations || []).find(
+    representations.find(
       (representation) =>
         representation.durationKey === policy.durationKey &&
         representation.languageLevelKey === policy.languageLevelKey,
@@ -42,116 +23,124 @@ function findRepresentationByPolicy({ item, policy }) {
   );
 }
 
-function findDefaultRepresentation({ item }) {
-  const defaults = (item.representations || []).filter(
-    (representation) => representation.isDefault === true,
+function resolveOfficialRepresentation({ representations = [], defaultPolicy, preference = null }) {
+  const effectivePolicy =
+    preference?.mode === "custom"
+      ? {
+          durationKey: preference.durationKey,
+          languageLevelKey: preference.languageLevelKey,
+        }
+      : defaultPolicy;
+
+  return findRepresentationByPolicy(representations, effectivePolicy) || findDefaultRepresentation(representations);
+}
+
+function resolveCommunityRepresentation({
+  representations = [],
+  durationTypes = [],
+  languageLevels = [],
+  preference,
+}) {
+  if (!Array.isArray(representations) || representations.length === 0) return null;
+
+  const fallback = findDefaultRepresentation(representations) || representations[0];
+  if (!preference) return fallback;
+
+  assertPreferenceValue(preference.depthPreference, "depthPreference");
+  assertPreferenceValue(
+    preference.languageComplexityPreference,
+    "languageComplexityPreference",
   );
 
-  return defaults.length === 1 ? defaults[0] : null;
-}
+  const durationPositions = buildPositionMap(durationTypes);
+  const languagePositions = buildPositionMap(languageLevels);
 
-/**
- * Risoluzione iniziale esplicita:
- * - official: policy del museo, eventualmente sovrascritta dall'utente;
- * - community: default locale dell'item.
- *
- * Le preferenze custom cross-museum non vengono interpretate finche non viene
- * concordato un mapping tra vocabolari locali differenti.
- */
-function resolveInitialRepresentation({ visit, item, userPreference }) {
-  if (visit.kind === "community") {
-    if (userPreference && userPreference.mode === "custom") {
-      throw new AppError(
-        "Le preferenze adattive per visite community non sono ancora configurate",
-        409,
-        [
-          {
-            field: "presentationPreference",
-            code: "CROSS_VOCABULARY_MAPPING_REQUIRED",
-            message:
-              "Non e possibile confrontare automaticamente chiavi appartenenti a vocabolari di musei diversi",
-          },
-        ],
+  const candidates = representations
+    .map((representation, sourceIndex) => {
+      const depth = durationPositions.get(representation.durationKey);
+      const language = languagePositions.get(representation.languageLevelKey);
+      if (!Number.isFinite(depth) || !Number.isFinite(language)) return null;
+
+      const depthDistance = Math.abs(depth - preference.depthPreference);
+      const languageDistance = Math.abs(
+        language - preference.languageComplexityPreference,
       );
+
+      return {
+        representation,
+        sourceIndex,
+        depth,
+        language,
+        depthDistance,
+        languageDistance,
+        totalDistance: depthDistance + languageDistance,
+      };
+    })
+    .filter(Boolean);
+
+  if (candidates.length === 0) return fallback;
+
+  candidates.sort((a, b) => {
+    if (a.totalDistance !== b.totalDistance) return a.totalDistance - b.totalDistance;
+    if (a.language !== b.language) return a.language - b.language;
+    if (a.depthDistance !== b.depthDistance) return a.depthDistance - b.depthDistance;
+    if (Boolean(a.representation.isDefault) !== Boolean(b.representation.isDefault)) {
+      return a.representation.isDefault ? -1 : 1;
     }
-
-    return findDefaultRepresentation({ item });
-  }
-
-  const policy = resolvePresentationPolicy({
-    defaultPresentationPolicy: visit.defaultPresentationPolicy,
-    userPreference,
+    return a.sourceIndex - b.sourceIndex;
   });
 
-  return findRepresentationByPolicy({ item, policy });
+  return candidates[0].representation;
 }
 
-function levelMap(entries = []) {
-  return new Map(entries.map((entry) => [entry.key, entry.level]));
+function findAdjacentRepresentation({
+  representations = [],
+  durationTypes = [],
+  languageLevels = [],
+  currentRepresentation,
+  axis,
+  direction,
+}) {
+  if (!currentRepresentation || !["duration", "language"].includes(axis)) return null;
+  if (!["up", "down"].includes(direction)) return null;
+
+  const vocabulary = axis === "duration" ? durationTypes : languageLevels;
+  const keyField = axis === "duration" ? "durationKey" : "languageLevelKey";
+  const fixedField = axis === "duration" ? "languageLevelKey" : "durationKey";
+  const currentIndex = vocabulary.findIndex(
+    (entry) => entry.key === currentRepresentation[keyField],
+  );
+  if (currentIndex < 0) return null;
+
+  const step = direction === "up" ? 1 : -1;
+  for (let index = currentIndex + step; index >= 0 && index < vocabulary.length; index += step) {
+    const candidate = representations.find(
+      (representation) =>
+        representation[keyField] === vocabulary[index].key &&
+        representation[fixedField] === currentRepresentation[fixedField],
+    );
+    if (candidate) return candidate;
+  }
+  return null;
 }
 
-/**
- * Cambia un solo asse mantenendo invariato l'altro e seleziona la prima
- * representation effettivamente disponibile nell'item, non soltanto il livello
- * immediatamente successivo configurato nel museo.
- */
-function findAdjacentRepresentation({ item, currentRepresentation, vocabulary, axis, direction }) {
-  if (!["duration", "language"].includes(axis)) {
-    throw new AppError("Asse di presentazione non valido", 400);
-  }
-
-  if (!["higher", "lower"].includes(direction)) {
-    throw new AppError("Direzione di presentazione non valida", 400);
-  }
-
-  const entries = axis === "duration" ? vocabulary.durationTypes : vocabulary.languageLevels;
-  const levels = levelMap(entries);
-  const currentKey =
-    axis === "duration"
-      ? currentRepresentation.durationKey
-      : currentRepresentation.languageLevelKey;
-  const currentLevel = levels.get(currentKey);
-
-  if (!Number.isFinite(currentLevel)) return null;
-
-  const candidates = (item.representations || []).filter((representation) => {
-    if (
-      axis === "duration" &&
-      representation.languageLevelKey !== currentRepresentation.languageLevelKey
-    ) {
-      return false;
-    }
-
-    if (
-      axis === "language" &&
-      representation.durationKey !== currentRepresentation.durationKey
-    ) {
-      return false;
-    }
-
-    const candidateKey =
-      axis === "duration" ? representation.durationKey : representation.languageLevelKey;
-    const candidateLevel = levels.get(candidateKey);
-
-    if (!Number.isFinite(candidateLevel)) return false;
-    return direction === "higher" ? candidateLevel > currentLevel : candidateLevel < currentLevel;
-  });
-
-  candidates.sort((left, right) => {
-    const leftKey = axis === "duration" ? left.durationKey : left.languageLevelKey;
-    const rightKey = axis === "duration" ? right.durationKey : right.languageLevelKey;
-    return direction === "higher"
-      ? levels.get(leftKey) - levels.get(rightKey)
-      : levels.get(rightKey) - levels.get(leftKey);
-  });
-
-  return candidates[0] || null;
+function estimateContentSeconds({ selections = [], vocabularyByMuseumId = new Map() }) {
+  return selections.reduce((total, selection) => {
+    const vocabulary = vocabularyByMuseumId.get(String(selection.museumId));
+    if (!vocabulary) return total;
+    const seconds = buildDurationSecondsMap(vocabulary.durationTypes).get(
+      selection.representation?.durationKey,
+    );
+    return total + (Number.isFinite(seconds) ? seconds : 0);
+  }, 0);
 }
 
 module.exports = {
-  resolvePresentationPolicy,
-  findRepresentationByPolicy,
+  assertPreferenceValue,
   findDefaultRepresentation,
-  resolveInitialRepresentation,
+  findRepresentationByPolicy,
+  resolveOfficialRepresentation,
+  resolveCommunityRepresentation,
   findAdjacentRepresentation,
+  estimateContentSeconds,
 };
