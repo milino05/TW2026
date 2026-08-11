@@ -24,8 +24,8 @@ async function updateItemObservationProfiles({ session, personalObservationBase 
 }
 
 async function updateVisitTimingProfile({ session, summary }) {
-  if (!Number.isFinite(summary.observedTotalSeconds) || !Number.isFinite(session.initialEstimatedTotalSeconds)) return null;
-  const residual = summary.observedTotalSeconds - session.initialEstimatedTotalSeconds;
+  if (!Number.isFinite(summary.observedTotalSeconds) || !Number.isFinite(session.initialBaseEstimatedTotalSeconds)) return null;
+  const residual = summary.observedTotalSeconds - session.initialBaseEstimatedTotalSeconds;
   const residualScope = `visit:${session.visitRevisionId}:residual`;
   const totalScope = `visit:${session.visitRevisionId}:total`;
   const sampleCount = Math.max(1, summary.validTransitionCount + summary.validStopCount);
