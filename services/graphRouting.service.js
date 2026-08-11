@@ -42,6 +42,19 @@ function estimateConnectionSeconds(connection, options = {}) {
   return Math.max(0, (movementSeconds + fixedDelay + learnedResidualSeconds) * userCorrectionFactor);
 }
 
+function edgeView(connection, direction, seconds) {
+  const forward = direction === "forward";
+  return {
+    connectionId: connection._id,
+    direction,
+    fromPlaceId: forward ? String(connection.fromPlaceId) : String(connection.toPlaceId),
+    toPlaceId: forward ? String(connection.toPlaceId) : String(connection.fromPlaceId),
+    instruction: forward ? connection.instructions?.forward || null : connection.instructions?.backward || null,
+    distanceMeters: Number(connection.distanceMeters) || 0,
+    estimatedSeconds: seconds,
+  };
+}
+
 function buildDirectedEdges(connections, options = {}) {
   const edges = [];
   for (const connection of connections || []) {
@@ -55,9 +68,7 @@ function buildDirectedEdges(connections, options = {}) {
     });
     const preferencePenaltySeconds = penalty * (Number(options.preferencePenaltySeconds) || 20);
     edges.push({ connection, from: String(connection.fromPlaceId), to: String(connection.toPlaceId), seconds, cost: seconds + preferencePenaltySeconds, direction: "forward" });
-    if (connection.directionality === "bidirectional") {
-      edges.push({ connection, from: String(connection.toPlaceId), to: String(connection.fromPlaceId), seconds, cost: seconds + preferencePenaltySeconds, direction: "backward" });
-    }
+    if (connection.directionality === "bidirectional") edges.push({ connection, from: String(connection.toPlaceId), to: String(connection.fromPlaceId), seconds, cost: seconds + preferencePenaltySeconds, direction: "backward" });
   }
   return edges;
 }
@@ -99,13 +110,43 @@ function resolveRoute({ connections, fromPlaceId, toPlaceId, requirements = [], 
   }
   return {
     reachable: true,
-    path: path.map((edge) => ({ connectionId: edge.connection._id, direction: edge.direction, fromPlaceId: edge.from, toPlaceId: edge.to, instruction: edge.direction === "forward" ? edge.connection.instructions?.forward || null : edge.connection.instructions?.backward || null, distanceMeters: edge.connection.distanceMeters, estimatedSeconds: edge.seconds })),
+    path: path.map((edge) => edgeView(edge.connection, edge.direction, edge.seconds)),
     estimatedSeconds: path.reduce((sum, edge) => sum + edge.seconds, 0),
     distanceMeters: path.reduce((sum, edge) => sum + (Number(edge.connection.distanceMeters) || 0), 0),
   };
 }
 
-function routeCompatible({ connections, pathConnectionIds, requirements = [] }) {
+function resolvePlannedPath({ connections, pathConnectionIds = [], fromPlaceId, toPlaceId, requirements = [], speedMps = 1, learnedResidualByConnection = {}, userCorrectionFactor = 1 }) {
+  const byId = new Map((connections || []).map((connection) => [String(connection._id), connection]));
+  let cursor = String(fromPlaceId);
+  const target = String(toPlaceId);
+  const path = [];
+  for (const id of pathConnectionIds) {
+    const connection = byId.get(String(id));
+    if (!connection || !edgeCompatible(connection, requirements)) return { reachable: false, path: [], estimatedSeconds: null, distanceMeters: null };
+    let direction = null;
+    if (String(connection.fromPlaceId) === cursor) direction = "forward";
+    else if (connection.directionality === "bidirectional" && String(connection.toPlaceId) === cursor) direction = "backward";
+    else return { reachable: false, path: [], estimatedSeconds: null, distanceMeters: null };
+    const residual = learnedResidualByConnection[String(connection._id)] || 0;
+    const seconds = estimateConnectionSeconds(connection, { speedMps, learnedResidualSeconds: residual, userCorrectionFactor });
+    const view = edgeView(connection, direction, seconds);
+    path.push(view);
+    cursor = view.toPlaceId;
+  }
+  if (cursor !== target) return { reachable: false, path: [], estimatedSeconds: null, distanceMeters: null };
+  return {
+    reachable: true,
+    path,
+    estimatedSeconds: path.reduce((sum, edge) => sum + edge.estimatedSeconds, 0),
+    distanceMeters: path.reduce((sum, edge) => sum + edge.distanceMeters, 0),
+  };
+}
+
+function routeCompatible({ connections, pathConnectionIds, requirements = [], fromPlaceId = null, toPlaceId = null }) {
+  if (fromPlaceId != null && toPlaceId != null) {
+    return resolvePlannedPath({ connections, pathConnectionIds, requirements, fromPlaceId, toPlaceId }).reachable;
+  }
   const byId = new Map((connections || []).map((connection) => [String(connection._id), connection]));
   return (pathConnectionIds || []).every((id) => {
     const connection = byId.get(String(id));
@@ -113,4 +154,4 @@ function routeCompatible({ connections, pathConnectionIds, requirements = [] }) 
   });
 }
 
-module.exports = { evaluateRequirement, edgeCompatible, preferencePenalty, pacePreferenceToSpeed, estimateConnectionSeconds, resolveRoute, routeCompatible };
+module.exports = { evaluateRequirement, edgeCompatible, preferencePenalty, pacePreferenceToSpeed, estimateConnectionSeconds, resolveRoute, resolvePlannedPath, routeCompatible };
