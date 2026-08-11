@@ -1,0 +1,11 @@
+const express = require("express");
+const router = express.Router();
+const { requireAuth } = require("../middlewares/auth");
+const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const controller = require("../controllers/visitSessions.controller");
+const validateSessionId = validateObjectIdParam("sessionId");
+router.post("/visit-sessions", requireAuth, controller.start);
+router.post("/visit-sessions/:sessionId/transitions", requireAuth, validateSessionId, controller.transition);
+router.post("/visit-sessions/:sessionId/stops", requireAuth, validateSessionId, controller.stop);
+router.post("/visit-sessions/:sessionId/complete", requireAuth, validateSessionId, controller.complete);
+module.exports = router;
