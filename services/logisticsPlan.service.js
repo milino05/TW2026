@@ -9,6 +9,7 @@ const UserAdaptiveProfile = require("../models/userAdaptiveProfile.model");
 const ConnectionLearnedProfile = require("../models/connectionLearnedProfile.model");
 const ItemObservationProfile = require("../models/itemObservationProfile.model");
 const AppError = require("../utils/AppError");
+const { buildPresentationPlan } = require("./userPreference.service");
 const { resolveRoute, routeCompatible, pacePreferenceToSpeed, estimateConnectionSeconds } = require("./graphRouting.service");
 
 function mergeNavigationPreference(user, visitPreference) {
@@ -27,7 +28,6 @@ function translateRequirements(layoutRevision, requirements = []) {
   const translated = [];
   const warnings = [];
   const unsupportedRequired = [];
-
   for (const requirement of requirements) {
     const local = byLocal.get(requirement.attributeKey) || byCanonical.get(requirement.attributeKey);
     if (!local) {
@@ -58,10 +58,11 @@ async function buildLogisticsPlan({ userId, visitId }) {
   const visit = await Visit.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
   if (!visit) throw new AppError("Visita pubblicata non trovata", 404);
   const revision = await VisitRevision.findById(visit.publishedRevisionId).lean();
-  const [user, visitPreference, adaptiveProfile] = await Promise.all([
+  const [user, visitPreference, adaptiveProfile, presentationPlan] = await Promise.all([
     User.findById(userId).lean(),
     UserVisitPreference.findOne({ userId, visitId }).lean(),
     UserAdaptiveProfile.findOne({ userId }).lean(),
+    buildPresentationPlan({ userId, visitId }),
   ]);
   const navigation = mergeNavigationPreference(user, visitPreference);
   const declaredSpeed = pacePreferenceToSpeed(navigation.movementPacePreference);
@@ -128,10 +129,11 @@ async function buildLogisticsPlan({ userId, visitId }) {
     transitions.push({ type: "indoor", source, fromStopIndex: index, toStopIndex: index + 1, layoutRevisionId: layoutRevision._id, ...route, instructionOverride: configured?.instructionOverride || null, communityNote: configured?.communityNote || null });
   }
 
-  const contentSeconds = revision.estimatedContentSeconds || 0;
+  const contentSeconds = presentationPlan.estimatedContentSeconds || 0;
   return {
     visitId: visit._id,
     visitRevisionId: revision._id,
+    presentationPlan,
     navigation,
     effectiveMovementSpeedMps: effectiveSpeed,
     estimatedContentSeconds: contentSeconds,
