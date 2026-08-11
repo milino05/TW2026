@@ -3,6 +3,7 @@ const ItemRevision = require("../../models/itemRevision.model");
 const MuseumLayout = require("../../models/museumLayout.model");
 const MuseumLayoutRevision = require("../../models/museumLayoutRevision.model");
 const { getMuseumVocabulary } = require("../museumVocabulary.service");
+const { resolveRoute, resolvePlannedPath } = require("../graphRouting.service");
 
 function issue(field, code, message, severity = "error", context = {}) {
   return { field, code, message, severity, context };
@@ -35,9 +36,7 @@ async function validateLogistics({ revision, stopItems, issues }) {
       issues.push(issue(`${field}.type`, "INDOOR_CROSS_MUSEUM", "Una transizione indoor non puo collegare musei differenti"));
       continue;
     }
-    if (transition.type === "inter_venue" && sameMuseum) {
-      issues.push(issue(`${field}.type`, "INTER_VENUE_SAME_MUSEUM", "Una transizione inter_venue e superflua tra item dello stesso museo", "warning"));
-    }
+    if (transition.type === "inter_venue" && sameMuseum) issues.push(issue(`${field}.type`, "INTER_VENUE_SAME_MUSEUM", "Una transizione inter_venue e superflua tra item dello stesso museo", "warning"));
     if (transition.type === "inter_venue") {
       if (!transition.instructionOverride) issues.push(issue(`${field}.instructionOverride`, "TRANSFER_INSTRUCTION_RECOMMENDED", "E consigliata un'indicazione per il trasferimento tra musei", "warning"));
       continue;
@@ -48,14 +47,20 @@ async function validateLogistics({ revision, stopItems, issues }) {
       continue;
     }
     const placements = new Map((layoutRevision.itemPlacements || []).map((placement) => [String(placement.itemId), placement]));
-    if (!placements.has(String(fromItem._id)) || !placements.has(String(toItem._id))) {
+    const fromPlacement = placements.get(String(fromItem._id));
+    const toPlacement = placements.get(String(toItem._id));
+    if (!fromPlacement || !toPlacement) {
       issues.push(issue(field, "ITEM_PLACEMENT_MISSING", "Una delle tappe non ha una posizione nel layout"));
+      continue;
     }
     if (transition.plannedPath?.length) {
-      const connectionIds = new Set((layoutRevision.connections || []).map((connection) => String(connection._id)));
-      for (const connectionId of transition.plannedPath) {
-        if (!connectionIds.has(String(connectionId))) issues.push(issue(`${field}.plannedPath`, "UNKNOWN_CONNECTION", "Il percorso pianificato riferisce una connection inesistente"));
-      }
+      const planned = resolvePlannedPath({
+        connections: layoutRevision.connections,
+        pathConnectionIds: transition.plannedPath,
+        fromPlaceId: fromPlacement.primaryPlaceId,
+        toPlaceId: toPlacement.primaryPlaceId,
+      });
+      if (!planned.reachable) issues.push(issue(`${field}.plannedPath`, "INVALID_PLANNED_PATH", "Il percorso pianificato non e continuo o non raggiunge la tappa successiva"));
     }
   }
 
@@ -70,9 +75,18 @@ async function validateLogistics({ revision, stopItems, issues }) {
       continue;
     }
     const placements = new Map((layoutRevision.itemPlacements || []).map((placement) => [String(placement.itemId), placement]));
-    if (!placements.has(String(fromItem._id)) || !placements.has(String(toItem._id))) {
+    const fromPlacement = placements.get(String(fromItem._id));
+    const toPlacement = placements.get(String(toItem._id));
+    if (!fromPlacement || !toPlacement) {
       issues.push(issue(`stops[${index}]`, "ITEM_PLACEMENT_MISSING", "Le tappe consecutive devono essere localizzate nel layout"));
+      continue;
     }
+    const route = resolveRoute({
+      connections: layoutRevision.connections,
+      fromPlaceId: fromPlacement.primaryPlaceId,
+      toPlaceId: toPlacement.primaryPlaceId,
+    });
+    if (!route.reachable) issues.push(issue(`stops[${index}]`, "ROUTE_NOT_AVAILABLE", "Non esiste alcun percorso nel grafo tra le due tappe consecutive"));
   }
 }
 
