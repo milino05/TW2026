@@ -1,7 +1,7 @@
 /**
  * Stable algorithmic policy for the adaptive engine.
  * Learned behavioural values live in MongoDB profiles; this file contains only
- * cold-start fallbacks, safety bounds and algorithm rules.
+ * cold-start fallbacks, safety bounds and algorithm rules actually used by v1.
  */
 module.exports = Object.freeze({
   version: 1,
@@ -32,6 +32,5 @@ module.exports = Object.freeze({
   learning: Object.freeze({
     minimumReliability: 0.5,
     maxObservationSeconds: 30 * 60,
-    recencyHalfLifeDays: 180,
   }),
 });
