@@ -6,7 +6,7 @@ const ConnectionLearnedProfile = require("../models/connectionLearnedProfile.mod
 const ItemObservationProfile = require("../models/itemObservationProfile.model");
 const AppError = require("../utils/AppError");
 const { pacePreferenceToSpeed } = require("./graphRouting.service");
-const { updateEstimate, computeTransitionReliability, computeObservationReliability, summarizeSession, confidenceFromSamples } = require("./adaptiveLearning.service");
+const { updateEstimate, computeTransitionReliability, computeObservationReliability, summarizeSession, confidenceFromSamples, robustMedian } = require("./adaptiveLearning.service");
 
 async function startSession({ userId, visitId, movementPacePreference = 0.5 }) {
   const visit = await Visit.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
@@ -56,36 +56,62 @@ async function updateUserProfile(userId, summary) {
   return profile;
 }
 
+function groupBy(values, keyFn) {
+  const grouped = new Map();
+  for (const value of values) {
+    const key = keyFn(value);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(value);
+  }
+  return grouped;
+}
+
 async function updateCollectiveProfiles(session, userProfile) {
-  for (const observation of session.transitionObservations || []) {
-    if ((observation.reliability || 0) < 0.5) continue;
-    const userSpeed = userProfile?.movement?.estimatedSpeedMps?.value || session.sessionMovementSpeedMps || 1;
-    const personalExpected = observation.distanceMeters / Math.max(0.1, userSpeed);
-    const residual = observation.observedSeconds - personalExpected;
-    const profile = await ConnectionLearnedProfile.findOneAndUpdate({ layoutRevisionId: observation.layoutRevisionId, connectionId: observation.connectionId }, { $setOnInsert: { layoutRevisionId: observation.layoutRevisionId, connectionId: observation.connectionId } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-    const previous = profile.sampleCount;
+  const validTransitions = (session.transitionObservations || []).filter((entry) => (entry.reliability || 0) >= 0.5);
+  const transitionGroups = groupBy(validTransitions, (entry) => `${entry.layoutRevisionId}:${entry.connectionId}`);
+  const userSpeed = userProfile?.movement?.estimatedSpeedMps?.value || session.sessionMovementSpeedMps || 1;
+
+  for (const observations of transitionGroups.values()) {
+    const first = observations[0];
+    const residuals = observations.map((observation) => {
+      const personalExpected = observation.distanceMeters / Math.max(0.1, userSpeed);
+      return observation.observedSeconds - personalExpected;
+    });
+    const sessionResidual = robustMedian(residuals);
+    if (!Number.isFinite(sessionResidual)) continue;
+    const profile = await ConnectionLearnedProfile.findOneAndUpdate(
+      { layoutRevisionId: first.layoutRevisionId, connectionId: first.connectionId },
+      { $setOnInsert: { layoutRevisionId: first.layoutRevisionId, connectionId: first.connectionId } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    const previous = profile.contributingSessionCount;
     const alpha = Math.max(0.03, Math.min(0.25, 1 / Math.sqrt(previous + 1)));
-    profile.typicalResidualSeconds = previous === 0 ? residual : profile.typicalResidualSeconds * (1 - alpha) + residual * alpha;
-    profile.sampleCount += 1;
-    profile.distinctUserCount += 1;
-    profile.confidence = confidenceFromSamples(profile.sampleCount, profile.distinctUserCount);
+    profile.typicalResidualSeconds = previous === 0 ? sessionResidual : profile.typicalResidualSeconds * (1 - alpha) + sessionResidual * alpha;
+    profile.sampleCount += observations.length;
+    profile.contributingSessionCount += 1;
+    profile.confidence = confidenceFromSamples(profile.sampleCount, profile.contributingSessionCount);
     profile.updatedAt = new Date();
     await profile.save();
   }
+
+  const validStops = (session.stopObservations || []).filter((entry) => (entry.reliability || 0) >= 0.5);
+  const stopGroups = groupBy(validStops, (entry) => String(entry.itemId));
   const userTypical = userProfile?.observation?.typicalPostContentObservationSeconds?.value;
-  for (const observation of session.stopObservations || []) {
-    if ((observation.reliability || 0) < 0.5) continue;
-    const profile = await ItemObservationProfile.findOneAndUpdate({ itemId: observation.itemId }, { $setOnInsert: { itemId: observation.itemId } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-    const previous = profile.sampleCount;
+  for (const observations of stopGroups.values()) {
+    const first = observations[0];
+    const sessionObservation = robustMedian(observations.map((entry) => entry.postContentObservationSeconds));
+    if (!Number.isFinite(sessionObservation)) continue;
+    const profile = await ItemObservationProfile.findOneAndUpdate({ itemId: first.itemId }, { $setOnInsert: { itemId: first.itemId } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const previous = profile.contributingSessionCount;
     const alpha = Math.max(0.03, Math.min(0.25, 1 / Math.sqrt(previous + 1)));
-    profile.typicalObservationSeconds = previous === 0 ? observation.postContentObservationSeconds : profile.typicalObservationSeconds * (1 - alpha) + observation.postContentObservationSeconds * alpha;
+    profile.typicalObservationSeconds = previous === 0 ? sessionObservation : profile.typicalObservationSeconds * (1 - alpha) + sessionObservation * alpha;
     if (Number.isFinite(userTypical) && userTypical > 0) {
-      const factor = observation.postContentObservationSeconds / userTypical;
+      const factor = sessionObservation / userTypical;
       profile.observationFactor = previous === 0 ? factor : profile.observationFactor * (1 - alpha) + factor * alpha;
     }
-    profile.sampleCount += 1;
-    profile.distinctUserCount += 1;
-    profile.confidence = confidenceFromSamples(profile.sampleCount, profile.distinctUserCount);
+    profile.sampleCount += observations.length;
+    profile.contributingSessionCount += 1;
+    profile.confidence = confidenceFromSamples(profile.sampleCount, profile.contributingSessionCount);
     profile.updatedAt = new Date();
     await profile.save();
   }
