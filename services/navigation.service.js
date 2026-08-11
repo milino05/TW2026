@@ -2,9 +2,9 @@ const MuseumLayout = require("../models/museumLayout.model");
 const MuseumLayoutRevision = require("../models/museumLayoutRevision.model");
 const User = require("../models/user");
 const UserAdaptiveProfile = require("../models/userAdaptiveProfile.model");
-const ConnectionLearnedProfile = require("../models/connectionLearnedProfile.model");
 const AppError = require("../utils/AppError");
 const { translateRequirements } = require("./logisticsPlan.service");
+const { getLearnedResidualByConnection } = require("./routingLearning.service");
 const { pacePreferenceToSpeed, resolveRoute } = require("./graphRouting.service");
 
 async function loadPublishedLayout(museumId) {
@@ -16,10 +16,10 @@ async function loadPublishedLayout(museumId) {
 }
 
 async function resolveUserRoutingContext(userId, layoutRevision, override = {}) {
-  const [user, profile, learnedProfiles] = await Promise.all([
+  const [user, profile, learnedResidualByConnection] = await Promise.all([
     User.findById(userId).lean(),
     UserAdaptiveProfile.findOne({ userId }).lean(),
-    ConnectionLearnedProfile.find({ layoutRevisionId: layoutRevision._id }).lean(),
+    getLearnedResidualByConnection(layoutRevision),
   ]);
   const baseNavigation = user?.defaultNavigationPreference || {};
   const pace = Number.isFinite(Number(override.movementPacePreference))
@@ -34,7 +34,6 @@ async function resolveUserRoutingContext(userId, layoutRevision, override = {}) 
   const learned = profile?.movement?.estimatedSpeedMps;
   const weight = Math.min(0.5, Number(learned?.confidence) || 0);
   const speedMps = Number.isFinite(learned?.value) ? declaredSpeed * (1 - weight) + learned.value * weight : declaredSpeed;
-  const learnedResidualByConnection = Object.fromEntries(learnedProfiles.map((entry) => [String(entry.connectionId), entry.confidence >= 0.2 ? entry.typicalResidualSeconds : 0]));
   return {
     requirements: translated.requirements,
     warnings: translated.warnings,
