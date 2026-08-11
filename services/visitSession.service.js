@@ -17,7 +17,7 @@ async function startSession({ userId, visitId, movementPacePreference }) {
   const visit = await Visit.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
   if (!visit) throw new AppError("Visita pubblicata non trovata", 404);
   const plan = await buildLogisticsPlan({ userId, visitId, navigationOverride: Number.isFinite(Number(movementPacePreference)) ? { movementPacePreference: Number(movementPacePreference) } : {} });
-  return VisitSession.create({ userId, visitId, visitRevisionId: visit.publishedRevisionId, movementPacePreference: plan.navigation.movementPacePreference, initialMovementBaselineMps: plan.movementBaselineMps, initialPaceFactor: plan.paceFactor, sessionMovementSpeedMps: plan.effectiveMovementSpeedMps, initialObservationSeconds: plan.observationBaselineSeconds, initialEstimatedTotalSeconds: plan.estimatedTotalSeconds, adaptivePolicyVersion: policy.version });
+  return VisitSession.create({ userId, visitId, visitRevisionId: visit.publishedRevisionId, movementPacePreference: plan.navigation.movementPacePreference, initialMovementBaselineMps: plan.movementBaselineMps, initialPaceFactor: plan.paceFactor, sessionMovementSpeedMps: plan.effectiveMovementSpeedMps, initialObservationSeconds: plan.observationBaselineSeconds, initialBaseEstimatedTotalSeconds: plan.estimatedBaseTotalSeconds, initialEstimatedTotalSeconds: plan.estimatedTotalSeconds, adaptivePolicyVersion: policy.version });
 }
 
 async function recordTransition({ sessionId, userId, payload }) {
@@ -30,14 +30,15 @@ async function recordTransition({ sessionId, userId, payload }) {
   const connection = (layoutRevision.connections || []).find((entry) => String(entry._id) === String(payload.connectionId));
   if (!connection) throw new AppError("Connection non appartenente al layout indicato", 400);
   const residualMap = await getLearnedResidualByConnection(layoutRevision);
-  const predictedSeconds = estimateConnectionSeconds(connection, { speedMps: session.sessionMovementSpeedMps || session.initialMovementBaselineMps || policy.coldStart.movementSpeedMps, learnedResidualSeconds: residualMap[String(connection._id)] || 0 });
-  const data = { connectionId: connection._id, layoutRevisionId: layoutRevision._id, distanceMeters: Number(connection.distanceMeters), predictedSeconds, observedSeconds };
+  const learnedResidualSeconds = residualMap[String(connection._id)] || 0;
+  const predictedSeconds = estimateConnectionSeconds(connection, { speedMps: session.sessionMovementSpeedMps || session.initialMovementBaselineMps || policy.coldStart.movementSpeedMps, learnedResidualSeconds });
+  const knownNonMovementSeconds = Math.max(0, (Number(connection.additionalDelaySeconds) || 0) + learnedResidualSeconds);
+  const observedMovementSeconds = Math.max(0.1, observedSeconds - knownNonMovementSeconds);
+  const observedMovementSpeedMps = Number(connection.distanceMeters) > 0 ? Number(connection.distanceMeters) / observedMovementSeconds : null;
+  const data = { connectionId: connection._id, layoutRevisionId: layoutRevision._id, distanceMeters: Number(connection.distanceMeters), predictedSeconds, observedSeconds, observedMovementSpeedMps: Number.isFinite(observedMovementSpeedMps) ? observedMovementSpeedMps : null };
   const reliability = computeTransitionReliability(data);
   session.transitionObservations.push({ ...data, reliability });
-  if (reliability >= policy.learning.minimumReliability) {
-    const observedSpeed = data.distanceMeters / data.observedSeconds;
-    if (observedSpeed >= policy.movement.minSpeedMps && observedSpeed <= policy.movement.maxSpeedMps) session.sessionMovementSpeedMps = session.sessionMovementSpeedMps ? session.sessionMovementSpeedMps * 0.75 + observedSpeed * 0.25 : observedSpeed;
-  }
+  if (reliability >= policy.learning.minimumReliability && Number.isFinite(observedMovementSpeedMps) && observedMovementSpeedMps >= policy.movement.minSpeedMps && observedMovementSpeedMps <= policy.movement.maxSpeedMps) session.sessionMovementSpeedMps = session.sessionMovementSpeedMps ? session.sessionMovementSpeedMps * 0.75 + observedMovementSpeedMps * 0.25 : observedMovementSpeedMps;
   await session.save();
   return { session, observation: session.transitionObservations.at(-1) };
 }
@@ -66,9 +67,7 @@ async function updateUserProfile({ userId, session, summary }) {
 async function completeSession({ sessionId, userId }) {
   const session = await VisitSession.findOne({ _id: sessionId, userId, status: "active" });
   if (!session) throw new AppError("Sessione attiva non trovata", 404);
-  session.status = "completed";
-  session.completedAt = new Date();
-  await session.save();
+  session.status = "completed"; session.completedAt = new Date(); await session.save();
   const summary = summarizeSession(session.toObject());
   const user = await User.findById(userId).lean();
   const personalEnabled = user?.learningPreferences?.personalHistory === true;
