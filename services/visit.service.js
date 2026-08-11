@@ -2,6 +2,7 @@ const Visit = require("../models/visit");
 const VisitRevision = require("../models/visitRevision.model");
 const User = require("../models/user");
 const UserVisitPreference = require("../models/userVisitPreference.model");
+const VisitSession = require("../models/visitSession.model");
 const AppError = require("../utils/AppError");
 const { getActiveUserOrFail, assertMuseumRole, hasMuseumRole } = require("./museumAuthorization.service");
 const { normalizeVisitPayload, validateVisitDraftPayload } = require("./validation/visit.validation");
@@ -12,6 +13,7 @@ const REVISION_FIELDS = [
   "description",
   "defaultPresentationPolicy",
   "stops",
+  "logistics",
 ];
 
 function hasOwn(object, key) {
@@ -28,6 +30,9 @@ function rejectManagedFields(payload = {}) {
     "visitId",
     "museumIds",
     "estimatedContentSeconds",
+    "estimatedObservationSeconds",
+    "estimatedLogisticsSeconds",
+    "estimatedTotalSeconds",
   ];
   const errors = forbidden
     .filter((field) => hasOwn(payload, field))
@@ -62,16 +67,10 @@ async function findVisitOrFail(visitId, { includeTrashed = false } = {}) {
 async function assertVisitEditor({ visit, actorUserId, managerRequired = false }) {
   if (visit.kind === "community") {
     const user = await getActiveUserOrFail(actorUserId);
-    if (String(visit.createdBy) !== String(user._id)) {
-      throw new AppError("Solo l'autore puo gestire questa visita community", 403);
-    }
+    if (String(visit.createdBy) !== String(user._id)) throw new AppError("Solo l'autore puo gestire questa visita community", 403);
     return user;
   }
-  return assertMuseumRole({
-    userId: actorUserId,
-    museumId: visit.ownerMuseumId,
-    minimumRole: managerRequired ? "manager" : "operator",
-  });
+  return assertMuseumRole({ userId: actorUserId, museumId: visit.ownerMuseumId, minimumRole: managerRequired ? "manager" : "operator" });
 }
 
 async function nextVersion(visitId) {
@@ -90,6 +89,9 @@ async function createWorkingRevisionFromPublished(visit, actorUserId) {
     ...revisionSnapshot(published),
     museumIds: published.museumIds,
     estimatedContentSeconds: published.estimatedContentSeconds,
+    estimatedObservationSeconds: published.estimatedObservationSeconds,
+    estimatedLogisticsSeconds: published.estimatedLogisticsSeconds,
+    estimatedTotalSeconds: published.estimatedTotalSeconds,
     status: "draft",
     integrity: { status: "needs_review", issues: [] },
     createdBy: actorUserId,
@@ -107,9 +109,7 @@ async function getWorkingRevision(visit, actorUserId, { createFromPublished = tr
     if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
     return revision;
   }
-  if (createFromPublished && visit.publishedRevisionId) {
-    return createWorkingRevisionFromPublished(visit, actorUserId);
-  }
+  if (createFromPublished && visit.publishedRevisionId) return createWorkingRevisionFromPublished(visit, actorUserId);
   throw new AppError("La visita non ha una revisione di lavoro", 409);
 }
 
@@ -119,15 +119,9 @@ async function createVisit({ payload, actorUserId }) {
   const normalized = normalizeVisitPayload(payload);
   const errors = validateVisitDraftPayload({ payload: normalized, kind: normalized.kind, mode: "create" });
   if (errors.length) throw new AppError("Payload non valido", 400, errors);
-  if (normalized.kind === "official") {
-    await assertMuseumRole({ userId: actor._id, museumId: normalized.ownerMuseumId, minimumRole: "operator" });
-  }
+  if (normalized.kind === "official") await assertMuseumRole({ userId: actor._id, museumId: normalized.ownerMuseumId, minimumRole: "operator" });
 
-  const visit = new Visit({
-    kind: normalized.kind,
-    createdBy: actor._id,
-    ownerMuseumId: normalized.kind === "official" ? normalized.ownerMuseumId : null,
-  });
+  const visit = new Visit({ kind: normalized.kind, createdBy: actor._id, ownerMuseumId: normalized.kind === "official" ? normalized.ownerMuseumId : null });
   await visit.save();
   try {
     const revision = new VisitRevision({
@@ -137,6 +131,7 @@ async function createVisit({ payload, actorUserId }) {
       description: normalized.description,
       defaultPresentationPolicy: normalized.defaultPresentationPolicy || null,
       stops: normalized.stops || [],
+      logistics: normalized.logistics || { preVisitNotes: [], transitions: [] },
       status: "draft",
       integrity: { status: "needs_review", issues: [] },
       createdBy: actor._id,
@@ -156,22 +151,12 @@ async function updateVisit({ visitId, payload, actorUserId }) {
   rejectManagedFields(payload);
   const visit = await findVisitOrFail(visitId);
   await assertVisitEditor({ visit, actorUserId });
-  if (hasOwn(payload, "kind") || hasOwn(payload, "ownerMuseumId")) {
-    throw new AppError("kind e ownerMuseumId sono immutabili dopo la creazione", 409);
-  }
+  if (hasOwn(payload, "kind") || hasOwn(payload, "ownerMuseumId")) throw new AppError("kind e ownerMuseumId sono immutabili dopo la creazione", 409);
   const revision = await getWorkingRevision(visit, actorUserId);
-  try {
-    markRevisionEdited(revision, actorUserId);
-  } catch (error) {
-    throw new AppError(error.message, 409, [{ code: error.code }]);
-  }
+  try { markRevisionEdited(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   const normalized = normalizeVisitPayload(payload);
   const merged = mergeRevisionPayload(revision, payload, normalized);
-  const validationPayload = {
-    ...merged,
-    kind: visit.kind,
-    ownerMuseumId: visit.ownerMuseumId,
-  };
+  const validationPayload = { ...merged, kind: visit.kind, ownerMuseumId: visit.ownerMuseumId };
   const errors = validateVisitDraftPayload({ payload: validationPayload, kind: visit.kind, mode: "create" });
   if (errors.length) throw new AppError("Payload non valido", 400, errors);
   Object.assign(revision, merged);
@@ -192,9 +177,7 @@ async function getVisit({ visitId, actorUserId = null, view = "published" }) {
   const visit = await findVisitOrFail(visitId, { includeTrashed: view === "working" });
   const canManage = await actorCanManage(visit, actorUserId);
   if (view === "working" && !canManage) throw new AppError("Accesso alla revisione di lavoro non autorizzato", 403);
-  const revisionId = view === "working" && visit.workingRevisionId
-    ? visit.workingRevisionId
-    : visit.publishedRevisionId;
+  const revisionId = view === "working" && visit.workingRevisionId ? visit.workingRevisionId : visit.publishedRevisionId;
   if (!revisionId) throw new AppError("Nessuna revisione disponibile", 404);
   const revision = await VisitRevision.findById(revisionId);
   if (!revision) throw new AppError("Revisione non trovata", 404);
@@ -202,12 +185,7 @@ async function getVisit({ visitId, actorUserId = null, view = "published" }) {
 }
 
 async function listPublishedVisits({ kind, ownerMuseumId, includedMuseumId }) {
-  const visits = await Visit.find({
-    lifecycleStatus: "active",
-    publishedRevisionId: { $ne: null },
-    ...(kind ? { kind } : {}),
-    ...(ownerMuseumId ? { ownerMuseumId } : {}),
-  }).sort({ updatedAt: -1 }).lean();
+  const visits = await Visit.find({ lifecycleStatus: "active", publishedRevisionId: { $ne: null }, ...(kind ? { kind } : {}), ...(ownerMuseumId ? { ownerMuseumId } : {}) }).sort({ updatedAt: -1 }).lean();
   const results = [];
   for (const visit of visits) {
     const revision = await VisitRevision.findById(visit.publishedRevisionId).lean();
@@ -220,15 +198,8 @@ async function listPublishedVisits({ kind, ownerMuseumId, includedMuseumId }) {
 
 async function listManageableVisits(actorUserId) {
   const user = await getActiveUserOrFail(actorUserId);
-  const museumIds = (user.memberships || [])
-    .filter((entry) => ["operator", "manager"].includes(entry.role))
-    .map((entry) => entry.museumId);
-  const visits = await Visit.find({
-    $or: [
-      { kind: "community", createdBy: user._id },
-      { kind: "official", ownerMuseumId: { $in: museumIds } },
-    ],
-  }).sort({ updatedAt: -1 }).lean();
+  const museumIds = (user.memberships || []).filter((entry) => ["operator", "manager"].includes(entry.role)).map((entry) => entry.museumId);
+  const visits = await Visit.find({ $or: [{ kind: "community", createdBy: user._id }, { kind: "official", ownerMuseumId: { $in: museumIds } }] }).sort({ updatedAt: -1 }).lean();
   const results = [];
   for (const visit of visits) {
     const revisionId = visit.workingRevisionId || visit.publishedRevisionId;
@@ -265,22 +236,10 @@ async function hardDeleteVisit({ visitId, actorUserId }) {
   await Promise.all([
     VisitRevision.deleteMany({ visitId: visit._id }),
     UserVisitPreference.deleteMany({ visitId: visit._id }),
+    VisitSession.deleteMany({ visitId: visit._id }),
   ]);
   await visit.deleteOne();
   return visit;
 }
 
-module.exports = {
-  REVISION_FIELDS,
-  findVisitOrFail,
-  assertVisitEditor,
-  getWorkingRevision,
-  createVisit,
-  updateVisit,
-  listPublishedVisits,
-  listManageableVisits,
-  getVisit,
-  trashVisit,
-  restoreVisit,
-  hardDeleteVisit,
-};
+module.exports = { REVISION_FIELDS, findVisitOrFail, assertVisitEditor, getWorkingRevision, createVisit, updateVisit, listPublishedVisits, listManageableVisits, getVisit, trashVisit, restoreVisit, hardDeleteVisit };
