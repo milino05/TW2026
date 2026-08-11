@@ -2,7 +2,7 @@
 
 ## Separazione tra identita e contenuto
 
-`Item` e `Visit` sono identita stabili. I contenuti modificabili risiedono rispettivamente in `ItemRevision` e `VisitRevision`.
+`Item`, `Visit` e `MuseumLayout` sono identita stabili. I contenuti modificabili risiedono rispettivamente in `ItemRevision`, `VisitRevision` e `MuseumLayoutRevision`.
 
 Le entita stabili mantengono due puntatori:
 
@@ -39,50 +39,48 @@ draft -> in_review -> published
 in_review -> draft (ritiro della richiesta)
 ```
 
-Una revisione `in_review` e bloccata e non puo essere modificata. L'operator deve ritirare la richiesta oppure attendere la decisione del manager.
+Una revisione `in_review` e bloccata. L'operator deve ritirare la richiesta oppure attendere la decisione del manager. Un manager puo pubblicare direttamente un proprio `draft` integro.
 
-Un manager puo pubblicare direttamente un proprio `draft` integro.
-
-Le visite community non usano la revisione manageriale e seguono:
-
-```text
-draft -> published
-```
+Le visite community non usano la revisione manageriale e seguono `draft -> published`.
 
 ## Consistenza e revisione
 
-L'operator puo modificare e lanciare `check-consistency`. Per inviare una revisione al manager non devono esistere errori bloccanti.
+L'operator puo modificare e lanciare `check-consistency`. Per inviare una revisione al manager non devono esistere errori bloccanti. Ogni richiesta, ritiro, richiesta di modifiche e pubblicazione viene conservata in `review.events`.
 
-Il manager puo:
+La pubblicazione sposta `publishedRevisionId` sulla nuova revisione, azzera `workingRevisionId` e marca la precedente revisione pubblicata come `superseded`.
 
-- pubblicare;
-- richiedere modifiche con motivazione obbligatoria.
+## Baseline temporale della visita
 
-Ogni richiesta, ritiro, richiesta di modifiche e pubblicazione viene conservata in `review.events` con attore, data e messaggio, cosi una nuova revisione non cancella la cronologia delle decisioni precedenti.
+Una `VisitRevision` pubblicata conserva `baselineTiming`, calcolata al momento della pubblicazione con la versione corrente di `AdaptivePolicy` e i profili appresi disponibili in quel momento.
 
-La pubblicazione sposta il puntatore `publishedRevisionId` sulla nuova revisione, azzera `workingRevisionId` e marca la precedente revisione pubblicata come `superseded`.
+La baseline e uno **snapshot editoriale immutabile** della revisione. Item, vocabolari o layout che cambiano successivamente possono generare warning o repair draft, ma non riscrivono la baseline storica della VisitRevision gia pubblicata.
+
+Una nuova revisione di lavoro parte invece senza baseline valida e la ricalcola prima della nuova pubblicazione.
+
+Le stime personalizzate mostrate al visitatore non usano la baseline come valore assoluto: vengono calcolate runtime usando i modelli correnti e `VisitTimingProfile`.
 
 ## Cestino
 
-Il cestino appartiene all'entita stabile:
+Il cestino appartiene all'entita stabile con `lifecycleStatus: active | trashed`. Un operator puo spostare nel cestino item e visite ufficiali; un manager puo ripristinare o cancellare definitivamente. L'hard delete controlla le dipendenze e non effettua cancellazioni a cascata.
 
-```text
-lifecycleStatus: active | trashed
-```
+## Dipendenze Item -> Visit
 
-Un operator puo spostare nel cestino item e visite ufficiali. Un manager puo ripristinare o cancellare definitivamente.
+Le visite mantengono riferimenti a `itemId`, non a una bozza. Quando viene pubblicata una nuova revisione Item:
 
-L'hard delete e consentito soltanto dal cestino e viene bloccato quando esistono dipendenze storiche o attive. Non sono previste cancellazioni a cascata.
+- una modifica compatibile genera warning;
+- l'assenza della policy ufficiale, del default community o dell'integrita genera errore bloccante;
+- in caso bloccante viene creato un repair draft e la visita incompatibile non viene piu servita come pubblicata.
 
-## Dipendenze delle visite
+## Dipendenze Layout -> Visit
 
-Le visite mantengono riferimenti a `itemId`, non a una bozza. Durante una modifica continuano quindi a usare la revisione pubblicata corrente.
+Quando viene pubblicata una nuova `MuseumLayoutRevision`, il backend controlla tutte le VisitRevision che coinvolgono quel museo.
 
-Quando viene pubblicata una nuova revisione dell'item:
+- placement e raggiungibilita ancora validi: warning, visita pubblicata mantenuta;
+- placement mancante o grafo disconnesso per tappe consecutive: errore bloccante, repair draft e rimozione della visita incompatibile dalla pubblicazione.
 
-- una semplice modifica compatibile genera un warning e richiede un ricontrollo;
-- l'assenza della policy ufficiale, del default community o dell'integrita genera un errore bloccante;
-- in caso bloccante la visita non viene piu servita come pubblicata e viene creata una revisione di riparazione.
+Il `plannedPath` e una preferenza editoriale e non un vincolo runtime. Il Navigator usa sempre il layout pubblicato corrente: se il planned path e superseded, non continuo o incompatibile con i requirements dell'utente, esegue routing dinamico.
+
+`check-consistency` valida anch'esso contro il layout pubblicato corrente e segnala `STALE_LAYOUT_REVISION` quando una transizione editoriale contiene un riferimento obsoleto.
 
 ## Endpoint principali
 
@@ -103,16 +101,21 @@ DELETE /api/museums/:museumId/items/:itemId/hard-delete
 
 Visite: endpoint equivalenti sotto `/api/visits/:visitId`.
 
-Per leggere una revisione di lavoro autorizzata:
+Layout:
 
 ```text
-GET ...?view=working
+PUT  /api/museums/:museumId/layout
+POST /api/museums/:museumId/layout/check-consistency
+POST /api/museums/:museumId/layout/request-review
+POST /api/museums/:museumId/layout/withdraw-review
+POST /api/museums/:museumId/layout/request-changes
+POST /api/museums/:museumId/layout/publish
 ```
+
+Per leggere una revisione di lavoro autorizzata si usa `?view=working`.
 
 ## Incompatibilita rispetto al modello precedente
 
-I campi revisionabili non sono piu contenuti direttamente in `Item` e `Visit`. Le integrazioni devono usare la coppia `{ item, revision }` o `{ visit, revision }` restituita dai servizi.
+I campi revisionabili non sono piu contenuti direttamente in `Item` e `Visit`. `relationCommands` e stato rimosso e le relazioni logistiche non fanno piu parte del grafo degli Item: orientamento, Place e connection appartengono a `MuseumLayoutRevision`.
 
-`relationCommands` e stato rimosso: le relazioni si modificano nell'array `relations` della revisione di lavoro. Le relazioni pubbliche e inverse vengono calcolate dalle revisioni pubblicate.
-
-La rimozione di una chiave di vocabolario ancora usata da revisioni attive viene bloccata. Riordinamenti e variazioni di `targetSeconds` incrementano `vocabularyRevision` e marcano i contenuti dipendenti per il ricalcolo.
+La rimozione di una chiave di vocabolario ancora usata da revisioni attive viene bloccata. Riordinamenti e variazioni di `targetSeconds` incrementano `vocabularyRevision` e marcano i contenuti dipendenti per il ricontrollo.
