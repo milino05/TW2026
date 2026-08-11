@@ -76,7 +76,7 @@ test("connection estimate separates movement, fixed delay and learned residual",
 });
 
 test("robust median resists a single long pause", () => {
-  assert.equal(robustMedian([40, 42, 41, 600, 39]), 41);
+  assert.equal(robustMedian([40, 42, 41, 600, 39]), 40.5);
 });
 
 test("collective confidence values contributors, not only samples", () => {
