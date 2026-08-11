@@ -2,9 +2,7 @@
 
 ## Utenti e ruoli contestuali
 
-Ogni utente attivo puo acquistare visite, creare visite community e creare un museo.
-
-La creazione di un museo assegna automaticamente al creatore una membership `manager`. Il creatore e registrato in `Museum.createdBy`, campo immutabile.
+Ogni utente attivo puo acquistare visite, creare visite community e creare un museo. La creazione di un museo assegna automaticamente al creatore una membership `manager`; `Museum.createdBy` rimane immutabile.
 
 Le membership sono contestuali:
 
@@ -17,61 +15,23 @@ Le membership sono contestuali:
 }
 ```
 
-Gerarchia:
+- `operator`: modifica Item, visite ufficiali e layout, controlla la consistenza, richiede revisione e usa il cestino;
+- `manager`: eredita i privilegi operator, pubblica, modifica vocabolari, ripristina, esegue hard delete e gestisce i membri;
+- creatore: unico manager che puo retrocedere un altro manager e non puo essere rimosso o retrocesso.
 
-- `operator`: crea e modifica tutti gli item e le visite ufficiali del museo, controlla la consistenza, richiede la pubblicazione e usa il cestino;
-- `manager`: eredita i privilegi operator, pubblica, modifica il vocabolario, ripristina, esegue hard delete e gestisce i membri;
-- creatore: e l'unico manager che puo retrocedere un altro manager a operator e non puo essere rimosso o retrocesso.
-
-Qualunque manager puo aggiungere o rimuovere operator e promuovere un operator a manager. Un manager ordinario non puo retrocedere un manager.
-
-L'assegnazione applicativa puo usare uno username esatto:
-
-```text
-POST /api/museums/:museumId/members
-```
-
-```json
-{
-  "username": "autore2",
-  "role": "operator"
-}
-```
-
-Non viene esposto un elenco pubblico degli utenti.
+L'assegnazione puo usare uno username esatto con `POST /api/museums/:museumId/members`; non viene esposto un elenco pubblico degli utenti.
 
 ## Visite ufficiali e community
 
-Una sola entita stabile `Visit` rappresenta entrambi i casi:
+Una sola entita stabile `Visit` rappresenta entrambi i casi (`official | community`).
 
-```text
-kind: official | community
-```
+Una visita ufficiale possiede `ownerMuseumId`, usa soltanto item del museo, possiede una presentation policy locale e segue workflow operator-manager.
 
-Visita ufficiale:
+Una visita community non possiede `ownerMuseumId`, puo attraversare musei differenti, viene pubblicata direttamente dal proprio autore e usa preferenze astratte cross-museum.
 
-- possiede `ownerMuseumId`;
-- contiene soltanto item di quel museo;
-- usa una `defaultPresentationPolicy` locale;
-- usa il workflow operator-manager.
+L'ordine di `stops` e l'unica fonte dell'ordine delle tappe.
 
-Visita community:
-
-- non possiede `ownerMuseumId`;
-- puo contenere item di musei differenti;
-- viene pubblicata direttamente dal proprio autore;
-- usa default locali e preferenze astratte cross-museum.
-
-L'ordine dell'array `stops` e l'unica fonte dell'ordine delle tappe.
-
-## Visibilita
-
-- pubblico: revisioni pubblicate di item e visite;
-- operator e manager: revisioni di lavoro del proprio museo;
-- autore community: proprie revisioni di lavoro;
-- nessun altro utente vede le bozze.
-
-## Preferenze
+## Preferenze di presentazione
 
 Default globale community:
 
@@ -79,25 +39,84 @@ Default globale community:
 PUT /api/users/me/presentation-preference
 ```
 
-Override per visita e lettura della preferenza corrente:
+Override per visita:
 
 ```text
 GET /api/visits/:visitId/preference
 PUT /api/visits/:visitId/preference
-```
-
-Opzioni selezionabili per quella visita:
-
-```text
 GET /api/visits/:visitId/preference-options
 ```
 
-Piano risolto per l'esecuzione:
+Piano risolto:
 
 ```text
 GET /api/visits/:visitId/presentation-plan
 ```
 
-Il piano restituisce la revisione pubblicata selezionata per ogni item, la representation scelta e `estimatedContentSeconds`.
+Il piano restituisce la representation pubblicata effettivamente scelta per ogni tappa e `estimatedContentSeconds`.
 
-Il controllo del diritto di acquisto non e ancora implementato: verra collegato al futuro modello marketplace/entitlement. Le preferenze sono gia separate dal futuro documento commerciale, perche hanno un ciclo di vita indipendente dall'acquisto.
+## Preferenze di navigazione
+
+Default utente:
+
+```text
+PUT /api/users/me/navigation-preference
+```
+
+Override della visita:
+
+```text
+PUT /api/visits/:visitId/navigation-preference
+```
+
+La preferenza comprende ritmo `0..1` relativo al comportamento tipico personale/popolazione e routing requirements `required | preferred`.
+
+## Learning preferences
+
+L'adattamento della sessione corrente e separato dalla persistenza cross-visita. L'onboarding imposta:
+
+```json
+{
+  "personalHistory": true,
+  "collectiveContribution": true
+}
+```
+
+tramite:
+
+```text
+PUT /api/users/me/adaptive-learning
+```
+
+`personalHistory` controlla il profilo storico individuale; `collectiveContribution` controlla i contributi pseudonimi ai modelli globali/museali/item/arco/visita. Se entrambi sono false, la sessione puo comunque adattarsi live ma i raw observations completati non vengono mantenuti per il learning.
+
+Profilo e reset:
+
+```text
+GET    /api/users/me/adaptive-profile
+DELETE /api/users/me/adaptive-profile
+```
+
+## Timing
+
+La `VisitRevision` pubblicata espone `baselineTiming`, snapshot statico calcolato alla pubblicazione. Il piano personalizzato runtime restituisce invece:
+
+```text
+estimatedContentSeconds
+estimatedObservationSeconds
+estimatedLogisticsSeconds
+estimatedBaseTotalSeconds
+estimatedVisitResidualSeconds
+estimatedTotalSeconds
+```
+
+La stima pre-visita usa storico personale e learned profiles; durante `VisitSession` viene ulteriormente corretta dalle osservazioni reali.
+
+## Visibilita
+
+- pubblico: revisioni pubblicate di Item, visite e layout;
+- operator/manager: revisioni di lavoro del proprio museo;
+- autore community: proprie revisioni di lavoro;
+- nessun altro utente vede le bozze.
+
+Il controllo del diritto di acquisto non e ancora implementato: verra collegato al futuro modello marketplace/entitlement, separato dalle preferenze e dai profili adattivi.
