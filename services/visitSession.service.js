@@ -76,7 +76,7 @@ async function completeSession({ sessionId, userId }) {
   if (personalEnabled) profile = await updateUserProfile({ userId, session, summary });
   if (collectiveEnabled) {
     const personalExpectedSpeedMps = Math.max(policy.movement.minSpeedMps, (session.initialMovementBaselineMps || policy.coldStart.movementSpeedMps) * (session.initialPaceFactor || 1));
-    const personalObservationBase = profile?.observation?.typicalPostContentObservationSeconds?.value || session.initialObservationSeconds || policy.coldStart.observationSeconds;
+    const personalObservationBase = session.initialObservationSeconds || policy.coldStart.observationSeconds;
     await Promise.all([
       updateRoutingProfiles({ session, personalExpectedSpeedMps }),
       updateItemObservationProfiles({ session, personalObservationBase }),
