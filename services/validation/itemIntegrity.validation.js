@@ -1,5 +1,5 @@
 const { pushError } = require("./validation.utils");
-const { validateRepresentations, validatePresentationVariants, validateRelations } = require("./item.validation");
+const { validatePresentationVariants, validateRelations } = require("./item.validation");
 const { validateSemanticRefs } = require("./vocabulary.validation");
 
 async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary }) {
@@ -15,8 +15,9 @@ async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary
   validateSemanticRefs(revision?.semanticRefs || [], "semanticRefs", errors);
 
   const variants = revision?.presentationVariants || [];
-  const legacy = revision?.representations || [];
-  if (Array.isArray(variants) && variants.length) {
+  if (!Array.isArray(variants) || !variants.length) {
+    pushError(errors, "presentationVariants", "EMPTY_ARRAY", "Almeno una PresentationVariant e obbligatoria");
+  } else {
     await validatePresentationVariants({
       museumId,
       variants,
@@ -26,13 +27,17 @@ async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary
       requireDefault: true,
       requirePublishedTargets: true,
     });
-  } else if (Array.isArray(legacy) && legacy.length) {
-    validateRepresentations(legacy, vocabulary, errors, { requireDefault: true });
-  } else {
-    pushError(errors, "presentationVariants", "EMPTY_ARRAY", "Almeno una PresentationVariant e obbligatoria");
   }
 
-  await validateRelations({ museumId, itemType: item.itemType, itemId: item._id, relations: revision?.relations || [], vocabulary, errors, requirePublishedTargets: true });
+  await validateRelations({
+    museumId,
+    itemType: item.itemType,
+    itemId: item._id,
+    relations: revision?.relations || [],
+    vocabulary,
+    errors,
+    requirePublishedTargets: true,
+  });
   return errors;
 }
 

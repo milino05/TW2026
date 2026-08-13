@@ -4,16 +4,26 @@
 
 ArtAround separa quattro livelli:
 
-1. il **knowledge graph locale del museo**, formato da Item generici e relazioni configurabili;
-2. la **presentazione editoriale**, che decide quali parti del grafo approfondire e con quale taglio;
-3. il **modello adattivo dell'utente**, che conserva preferenze esplicite e segnali appresi con confidence/recency;
-4. il **planner deterministico**, che seleziona insieme tappe, presentation variant, representation e percorso.
+1. **knowledge graph locale del museo**: Item generici, ItemType e RelationType configurabili;
+2. **presentazione editoriale**: PresentationVariant, semanticFocus, PresentationAspect, duration e language;
+3. **modello adattivo dell'utente**: preferenze esplicite e segnali appresi con confidence/recency;
+4. **planner deterministico**: selezione congiunta di tappe, variant, representation e percorso.
 
-Nessuna tipologia artistica e codificata nel backend. Un Item puo rappresentare un'opera fisica, una persona, un periodo, un evento, una tecnica o qualunque concetto previsto dal vocabolario locale del museo.
+Nessuna tipologia artistica e codificata nel backend. Un Item puo rappresentare un'opera fisica, una persona, un periodo, un evento, una tecnica o qualunque concetto previsto dal vocabolario locale.
+
+## Un solo modello dati
+
+Il progetto non ha dati reali da preservare. Il backend supporta direttamente e soltanto il modello semantico corrente:
+
+- `Museum` non contiene `config` ne `vocabularyRevision`;
+- gli ItemType sono direttamente oggetti strutturati;
+- `ItemRevision` non contiene un array `representations` diretto;
+- non esistono `representations[].isDefault`;
+- non esiste uno script di conversione del semantic model.
+
+Gli eventuali database usati nelle prove di sviluppo possono essere ricreati/riseminati.
 
 ## Vocabolario revisionato
-
-Il vocabolario semantico non viene piu modificato direttamente come configurazione pubblicata del `Museum`.
 
 ```text
 MuseumVocabulary
@@ -27,18 +37,18 @@ MuseumVocabulary
         └── presentationAspects
 ```
 
-Il workflow e lo stesso degli altri contenuti revisionati:
+Quando viene creato un museo viene creato anche un `MuseumVocabulary` con una revisione `draft`. Il draft puo essere inizialmente incompleto ed essere costruito progressivamente da UI o, in futuro, dal semantic-authoring copilot. La validazione completa e obbligatoria solo per check-consistency, review e publication.
+
+Il workflow e:
 
 ```text
 draft -> in_review -> published
                   -> changes_requested -> draft
 ```
 
-Operator crea/modifica e richiede review; manager pubblica. Il manager puo pubblicare direttamente il proprio draft integro.
+Operator modifica e richiede review; manager pubblica. Un manager puo pubblicare direttamente il proprio draft integro.
 
-`Museum.config` rimane temporaneamente come formato legacy/bootstrap per database precedenti. Se esiste una `MuseumVocabularyRevision` pubblicata, questa e sempre la fonte autorevole.
-
-### ItemType
+## ItemType
 
 Gli ItemType sono oggetti configurabili:
 
@@ -52,17 +62,17 @@ Gli ItemType sono oggetti configurabili:
 }
 ```
 
-Capability macchina supportate inizialmente:
+Capability macchina iniziali:
 
-- `visit_stop`: il tipo puo essere usato come tappa fisica;
-- `spatial_placement`: il tipo puo essere localizzato nel layout;
-- `semantic_context`: il tipo puo essere usato come nodo concettuale.
+- `visit_stop`;
+- `spatial_placement`;
+- `semantic_context`.
 
-Le capability non stabiliscono che cosa sia un Item: descrivono soltanto cosa il runtime puo farci. Un Item con placement esplicito rimane visitabile durante la migrazione dei vocabolari legacy.
+Le capability descrivono cio che il runtime puo fare con un tipo; non definiscono il dominio museale.
 
 ## Semantic references
 
-Una semantic reference collega opzionalmente un concetto locale a un identificatore condiviso:
+Una `semanticRef` collega opzionalmente un concetto locale a un identificatore condiviso:
 
 ```json
 {
@@ -72,9 +82,9 @@ Una semantic reference collega opzionalmente un concetto locale a un identificat
 }
 ```
 
-`matchType` puo essere `exact`, `close`, `broader` o `narrower`.
+`matchType` puo essere `exact`, `close`, `broader`, `narrower`.
 
-Le semantic reference sono supportate almeno su:
+Sono supportate almeno su:
 
 - ItemRevision;
 - ItemType;
@@ -82,11 +92,11 @@ Le semantic reference sono supportate almeno su:
 - PresentationAspect;
 - PlaceType.
 
-Non sono necessarie per il funzionamento locale. Servono soprattutto a trasferire significato e affinità fra musei con vocabolari diversi. Non sostituiscono le semantiche operative interne come i canonical routing attributes o i global place intents.
+Non sono necessarie per il funzionamento locale. Migliorano interoperabilita e trasferimento delle affinita fra musei con vocabolari differenti. Non sostituiscono semantiche operative interne come canonical routing attributes e global place intents.
 
 ## Item knowledge graph
 
-L'Item stabile conserva identita, museo e itemType. Il contenuto semantico revisionabile vive in `ItemRevision`:
+L'Item stabile conserva identita, museo e itemType. La semantica revisionabile vive in `ItemRevision`:
 
 ```text
 ItemRevision
@@ -98,11 +108,7 @@ ItemRevision
 
 Le relazioni puntano a Item dello stesso museo e usano RelationType configurati con domain/range, directionality, strength e semanticRefs.
 
-Il knowledge graph e la fonte primaria per rispondere alla domanda **di che cosa parla o a che cosa e collegato un Item**.
-
 ## PresentationVariant
-
-La vecchia struttura piatta `representations[]` viene sostituita progressivamente da varianti editoriali:
 
 ```text
 PresentationVariant
@@ -116,30 +122,26 @@ PresentationVariant
     └── text
 ```
 
-La `key` identifica soltanto la variante locale. Non e una categoria di interesse cross-museum.
+La `key` identifica solo la variante editoriale locale e non entra direttamente nel profilo cross-museum.
 
-### Semantic focus
+### semanticFocus
 
-`semanticFocus` descrive **che cosa** viene approfondito dalla variante. Puo riferirsi a:
+Descrive **che cosa** viene approfondito dalla variante e puo riferirsi a:
 
 - Item;
 - ItemType;
 - RelationType;
-- semantic reference canonica.
-
-Ogni focus ha un peso editoriale 0..1.
+- semanticRef.
 
 ### PresentationAspect
 
-I PresentationAspect descrivono **come** viene raccontato il contenuto (per esempio taglio aneddotico, tecnico o comparativo), senza trasformare obbligatoriamente ogni taglio editoriale in un nuovo Item.
-
-Se una curiosita e una vera entita autonoma, con propri contenuti e relazioni, deve invece poter essere modellata come Item. Gli aspect sono quindi complementari, non sostitutivi del knowledge graph.
+Descrive **come** viene raccontato il contenuto: per esempio taglio aneddotico, tecnico, biografico o comparativo. Se una curiosita e una vera entita autonoma con propri contenuti e relazioni, puo invece essere modellata come Item.
 
 ### Representation
 
-Dentro una variante resta unica la coppia duration/language. La stessa coppia puo comparire in varianti differenti.
+Dentro una stessa variant la coppia `durationKey + languageLevelKey` e unica. La stessa coppia puo comparire in variant differenti.
 
-Il fallback viene espresso in modo esplicito:
+Il fallback editoriale e esplicito:
 
 ```json
 {
@@ -151,75 +153,49 @@ Il fallback viene espresso in modo esplicito:
 }
 ```
 
-Il vecchio `representations[].isDefault` resta leggibile solo per migrazione/compatibilita.
-
 ## Learning degli interessi
 
-`UserAdaptiveProfile` contiene due famiglie di affinità:
+`UserAdaptiveProfile` distingue:
 
 ```text
 semanticAffinities
 presentationAspectAffinities
 ```
 
-Ogni affinità conserva valore, confidence, sample count e ultimo aggiornamento. Il valore effettivo decade nel tempo per evitare che interessi molto vecchi dominino permanentemente il profilo.
-
-Gli eventi di sessione che possono fornire evidenza includono:
-
-- `more_detail`;
-- `less_detail`;
-- `related_opened`;
-- `stop_completed`;
-- `stop_skipped`;
-- `manual_add`;
-- `manual_remove`.
-
-L'evidenza puo propagarsi di un passo nel knowledge graph, pesata da strength del RelationType e weight della relazione. Le semanticRefs di Item, ItemType e RelationType permettono anche di produrre affinità canoniche riutilizzabili in altri musei.
+Ogni affinita conserva valore, confidence, sample count e recency. L'evidenza puo propagarsi di un passo nel knowledge graph pesata da strength del RelationType e weight della relazione. Le semanticRefs di Item, ItemType e RelationType permettono di produrre affinita riutilizzabili cross-museum.
 
 ## ExperienceContext
 
-Prima della generazione tutte le sorgenti vengono risolte per dimensione:
+Prima della generazione le fonti vengono risolte per dimensione:
 
 ```text
-hard constraint fisico/integrita
+hard constraint
 -> richiesta esplicita corrente
--> default dichiarato dall'utente
--> storico appreso con confidence
+-> default dichiarato
+-> storico appreso con confidence/recency
 -> profilo collettivo
 -> cold-start fallback
 ```
 
-Le dimensioni non vengono fuse in un'unica intensita. Sono almeno:
+Le dimensioni comprendono almeno movement pace, content depth, language complexity, observation emphasis, visit density, discovery preference e time-risk tolerance.
 
-- movement pace;
-- content depth;
-- language complexity;
-- observation emphasis;
-- visit density;
-- discovery preference;
-- time-risk tolerance.
+## GenerationRequest e LLM
 
-La richiesta esplicita sostituisce lo storico soltanto nella dimensione interessata.
+Il planner riceve sempre un `GenerationRequest` strutturato. UI manuale e un futuro interprete LLM devono produrre lo stesso formato.
 
-## GenerationRequest
+```text
+Structured UI --------------------┐
+                                 v
+                          GenerationRequest
+                                 ^
+Natural language -> LLM proposal -┘
+```
 
-Il planner riceve un oggetto strutturato. La UI manuale e un futuro interprete LLM devono produrre lo stesso formato.
-
-L'LLM non e una dipendenza del planner. In futuro potra trasformare linguaggio naturale in una `GenerationRequestProposal`, che deve essere validata e confermata dall'utente prima di diventare richiesta effettiva.
-
-Sono supportati almeno:
-
-- time budget;
-- hard/soft time budget;
-- interessi semantici correnti;
-- must-see/excluded Item;
-- start/end Place;
-- preferenze adattive;
-- routing requirements.
+L'LLM non e una dipendenza del planner e non seleziona direttamente il percorso.
 
 ## GeneratedVisitPlan
 
-Una generazione personale non e una Visit editoriale/community.
+Una generazione personale non e una Visit official/community:
 
 ```text
 GeneratedVisitPlan
@@ -234,45 +210,34 @@ GeneratedVisitPlan
 └── explanation
 ```
 
-Ogni tappa congela ItemRevision, PresentationVariant e representation usate nella proposta, oltre alle ragioni principali della scelta.
-
 ## Ottimizzazione
 
-La prima implementazione usa **beam search con miglioramento locale dell'ordine**.
+La prima implementazione usa beam search + miglioramento locale dell'ordine. Valuta congiuntamente:
 
-L'algoritmo valuta congiuntamente:
-
-- affinità esplicite correnti;
-- affinità apprese e recency;
+- affinita esplicite correnti;
+- affinita apprese;
 - semanticFocus;
 - PresentationAspect;
-- profondita/linguaggio desiderati;
-- discovery;
-- ridondanza/diversita;
-- coerenza del knowledge graph;
-- observation time previsto;
-- logistica adattiva e routing constraints;
-- time budget e riserva prudenziale.
+- profondita e linguaggio;
+- discovery/diversita;
+- observation time;
+- routing e accessibility requirements;
+- learned edge delays;
+- time budget e margine prudenziale.
 
-Le richieste correnti ricevono peso superiore ai segnali storici. I must-see sono constraint: se non sono compatibili con tempo/layout il backend restituisce un conflitto esplicito invece di eliminarli silenziosamente.
-
-Il costo logistico partecipa sia alla fattibilita temporale sia alla utility. Dopo la beam search viene eseguito un miglioramento locale 2-opt/reversal sull'ordine selezionato, mantenendo invariati Item e representation ma cercando un ordine semanticamente/logisticamente migliore.
+I must-see sono constraint: un conflitto viene esposto, non risolto eliminandoli silenziosamente.
 
 ## Pause e replanning
 
-`VisitSession` supporta `active`, `paused`, `completed`, `abandoned`. Gli intervalli di pausa sono esclusi dal tempo effettivo di visita e non alimentano movimento, observation time o deviazione temporale.
+`VisitSession` supporta `active`, `paused`, `completed`, `abandoned`. Gli intervalli di pausa sono esclusi dal tempo effettivo e dal learning di movimento/observation/schedule deviation.
 
-Il sistema puo calcolare un `ReplanProposal` quando il comportamento reale produce un anticipo/ritardo significativo. Il proposal non modifica mai automaticamente il piano:
+Un `ReplanProposal` non modifica mai automaticamente il piano:
 
 ```text
 compute proposal -> mostra all'utente -> accept/reject
 ```
 
-Solo l'accettazione crea un nuovo GeneratedVisitPlan e marca il precedente come superseded.
-
-## Semantic authoring copilot (futuro)
-
-L'architettura e predisposta per:
+## Semantic authoring copilot — futuro
 
 ```text
 linguaggio naturale
@@ -284,28 +249,14 @@ linguaggio naturale
 -> working revision
 ```
 
-L'LLM non scrive direttamente nel database, non aggira i ruoli e non deve inventare identificatori Wikidata o di altri provider. Un futuro semantic-reference resolver dovra interrogare il provider reale e mostrare i candidati all'editor.
+L'LLM non scrive direttamente nel database, non aggira i ruoli e non inventa identificatori esterni. Un semantic-reference resolver dovra interrogare realmente provider come Wikidata e mostrare i candidati.
 
-Ogni operazione proposta dall'LLM deve avere un equivalente nella UI manuale.
+Ogni funzione del copilot deve avere un equivalente nella UI manuale.
 
-## Migrazione
+## Estensioni future gia previste
 
-Lo script:
+Restano intenzionalmente separati dal core attuale:
 
-```text
-npm run migrate:semantic-model
-```
-
-crea in modo idempotente il vocabolario revisionato a partire dal vecchio `Museum.config` e converte le ItemRevision legacy con `representations[]` in una PresentationVariant `standard` con `defaultPresentation`.
-
-La compatibilita di lettura del formato legacy viene mantenuta durante la transizione.
-
-## Estensione futura: runtime layout state
-
-E intenzionalmente fuori da questa implementazione ma resta prevista una struttura separata:
-
-```text
-MuseumLayoutRevision + MuseumLayoutRuntimeState
-```
-
-per chiusure temporanee, ascensori indisponibili, congestione e altre condizioni operative. Dovra essere consumata trasversalmente da routing, visite official/community, generated plans e comandi Navigator.
+1. interprete LLM lato visitatore e semantic-authoring copilot;
+2. semantic-reference resolver reale, ad esempio Wikidata;
+3. `MuseumLayoutRuntimeState` per chiusure temporanee, ascensori indisponibili, congestione e altre condizioni operative, consumato trasversalmente da routing, Visit official/community, GeneratedVisitPlan e Navigator.
