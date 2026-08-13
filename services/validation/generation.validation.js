@@ -17,7 +17,12 @@ function validateGenerationRequest(payload = {}) {
   for (const field of ["movementPacePreference", "depthPreference", "languageComplexityPreference", "observationEmphasis", "visitDensity", "discoveryPreference", "timeRiskTolerance"]) validateUnit(payload[field], field, errors);
   if (payload.interests !== undefined && !Array.isArray(payload.interests)) errors.push(issue("interests", "INVALID_TYPE", "interests deve essere un array"));
   (payload.interests || []).forEach((interest, index) => validateInterest(interest, `interests[${index}]`, errors));
-  for (const field of ["mustSeeItemIds", "excludedItemIds"]) if (payload[field] !== undefined && (!Array.isArray(payload[field]) || payload[field].some((value) => !mongoose.isValidObjectId(value)))) errors.push(issue(field, "INVALID_OBJECT_ID_ARRAY", `${field} deve contenere ObjectId validi`));
+  for (const field of ["mustIncludeItemIds", "mustVisitItemIds", "excludedItemIds"]) {
+    if (payload[field] !== undefined && (!Array.isArray(payload[field]) || payload[field].some((value) => !mongoose.isValidObjectId(value)))) {
+      errors.push(issue(field, "INVALID_OBJECT_ID_ARRAY", `${field} deve contenere ObjectId validi`));
+    }
+  }
+  if (payload.mustSeeItemIds !== undefined) errors.push(issue("mustSeeItemIds", "REMOVED_FIELD", "Usare mustIncludeItemIds oppure mustVisitItemIds"));
   return errors;
 }
 module.exports = { INTEREST_KINDS, validateInterest, validateGenerationRequest };
