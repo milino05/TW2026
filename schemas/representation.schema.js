@@ -2,38 +2,16 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 /**
- * Rappresentazione alternativa dello stesso item, identificata dalla coppia
- * durationKey/languageLevelKey.
+ * Versione testuale di una PresentationVariant per una coppia duration/language.
+ * `isDefault` resta solo per compatibilita con revisioni legacy; il nuovo modello
+ * usa ItemRevision.defaultPresentation.
  */
 const RepresentationSchema = new Schema(
   {
-    /** Chiave di un durationType configurato nel museo. */
-    durationKey: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-    },
-
-    /** Chiave di un languageLevel configurato nel museo. */
-    languageLevelKey: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-    },
-
-    text: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    /** Fallback dell'item quando non esiste una policy di visita applicabile. */
-    isDefault: {
-      type: Boolean,
-      default: false,
-    },
+    durationKey: { type: String, required: true, trim: true, lowercase: true },
+    languageLevelKey: { type: String, required: true, trim: true, lowercase: true },
+    text: { type: String, required: true, trim: true },
+    isDefault: { type: Boolean, default: false },
   },
   { _id: true },
 );

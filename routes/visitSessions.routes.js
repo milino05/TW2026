@@ -7,5 +7,8 @@ const validateSessionId = validateObjectIdParam("sessionId");
 router.post("/visit-sessions", requireAuth, controller.start);
 router.post("/visit-sessions/:sessionId/transitions", requireAuth, validateSessionId, controller.transition);
 router.post("/visit-sessions/:sessionId/stops", requireAuth, validateSessionId, controller.stop);
+router.post("/visit-sessions/:sessionId/interactions", requireAuth, validateSessionId, controller.interaction);
+router.post("/visit-sessions/:sessionId/pause", requireAuth, validateSessionId, controller.pause);
+router.post("/visit-sessions/:sessionId/resume", requireAuth, validateSessionId, controller.resume);
 router.post("/visit-sessions/:sessionId/complete", requireAuth, validateSessionId, controller.complete);
 module.exports = router;

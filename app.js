@@ -10,6 +10,8 @@ const layoutRoutes = require("./routes/layout.routes");
 const adaptiveRoutes = require("./routes/adaptive.routes");
 const visitSessionRoutes = require("./routes/visitSessions.routes");
 const navigationRoutes = require("./routes/navigation.routes");
+const vocabularyRoutes = require("./routes/vocabulary.routes");
+const generatedVisitRoutes = require("./routes/generatedVisits.routes");
 const { loadCurrentUser } = require("./middlewares/auth");
 const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
@@ -19,13 +21,7 @@ const app = express();
 const allowedOrigins = configuredOrigins();
 app.enable("trust proxy");
 app.use(express.json({ limit: "1mb" }));
-app.use(cors({
-  credentials: true,
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(null, false);
-  },
-}));
+app.use(cors({ credentials: true, origin(origin, callback) { if (!origin || allowedOrigins.includes(origin)) return callback(null, true); return callback(null, false); } }));
 app.use(requireTrustedOrigin);
 app.use(loadCurrentUser);
 app.use(express.static(path.join(__dirname, "public")));
@@ -33,6 +29,7 @@ app.get("/ping", (req, res) => res.json({ status: "ok", message: "ArtAround back
 app.get("/", (req, res) => res.json({ name: "ArtAround API", status: "ok" }));
 app.use("/api", authRoutes);
 app.use("/api", museumRoutes);
+app.use("/api", vocabularyRoutes);
 app.use("/api", itemRoutes);
 app.use("/api", visitRoutes);
 app.use("/api", preferenceRoutes);
@@ -40,6 +37,7 @@ app.use("/api", layoutRoutes);
 app.use("/api", adaptiveRoutes);
 app.use("/api", visitSessionRoutes);
 app.use("/api", navigationRoutes);
+app.use("/api", generatedVisitRoutes);
 app.use((req, res, next) => next(new AppError("Risorsa non trovata", 404)));
 app.use(errorHandler);
 module.exports = app;
