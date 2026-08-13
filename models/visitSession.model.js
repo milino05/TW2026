@@ -1,19 +1,60 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-const TransitionObservationSchema = new Schema({ connectionId: { type: Schema.Types.ObjectId, required: true }, layoutRevisionId: { type: Schema.Types.ObjectId, ref: "MuseumLayoutRevision", required: true }, distanceMeters: { type: Number, min: 0, required: true }, predictedSeconds: { type: Number, min: 0, required: true }, observedSeconds: { type: Number, min: 0, required: true }, observedMovementSpeedMps: { type: Number, min: 0.1, default: null }, reliability: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
-const StopObservationSchema = new Schema({ itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true }, variantKey: { type: String, trim: true, lowercase: true, default: null }, contentSeconds: { type: Number, min: 0, required: true }, totalStopSeconds: { type: Number, min: 0, required: true }, postContentObservationSeconds: { type: Number, min: 0, required: true }, reliability: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
+const TransitionObservationSchema = new Schema({
+  connectionId: { type: Schema.Types.ObjectId, required: true },
+  layoutRevisionId: { type: Schema.Types.ObjectId, ref: "MuseumLayoutRevision", required: true },
+  distanceMeters: { type: Number, min: 0, required: true },
+  predictedSeconds: { type: Number, min: 0, required: true },
+  observedSeconds: { type: Number, min: 0, required: true },
+  observedMovementSpeedMps: { type: Number, min: 0.1, default: null },
+  reliability: { type: Number, min: 0, max: 1, default: 1 },
+}, { _id: false });
+
+const ContentEntryExperienceSchema = new Schema({
+  contentEntryId: { type: Schema.Types.ObjectId, required: true },
+  itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true },
+  variantKey: { type: String, trim: true, lowercase: true, default: null },
+  contentSeconds: { type: Number, min: 0, required: true },
+  experiencedSeconds: { type: Number, min: 0, required: true },
+  completionRatio: { type: Number, min: 0, max: 1, default: 1 },
+  reliability: { type: Number, min: 0, max: 1, default: 1 },
+}, { _id: false });
+
+const PhysicalTargetObservationSchema = new Schema({
+  contentEntryId: { type: Schema.Types.ObjectId, required: true },
+  itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true },
+  observedSeconds: { type: Number, min: 0, required: true },
+  reliability: { type: Number, min: 0, max: 1, default: 1 },
+}, { _id: false });
+
 const PauseIntervalSchema = new Schema({ startedAt: { type: Date, required: true }, endedAt: { type: Date, default: null } }, { _id: false });
 const PresentationOverrideSchema = new Schema({
-  stopIndex: { type: Number, min: 0, required: true },
+  contentEntryId: { type: Schema.Types.ObjectId, required: true },
   variantKey: { type: String, trim: true, lowercase: true, required: true },
   durationKey: { type: String, trim: true, lowercase: true, required: true },
   languageLevelKey: { type: String, trim: true, lowercase: true, required: true },
   updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
+
 const InteractionEventSchema = new Schema({
-  type: { type: String, enum: ["presentation_depth_increased", "presentation_depth_decreased", "semantic_drilldown", "visit_refocus_requested", "visit_extension_requested", "stop_skipped", "stop_completed", "manual_add", "manual_remove"], required: true },
+  type: {
+    type: String,
+    enum: [
+      "presentation_depth_increased",
+      "presentation_depth_decreased",
+      "semantic_drilldown",
+      "visit_refocus_requested",
+      "visit_extension_requested",
+      "content_entry_skipped",
+      "content_entry_completed",
+      "manual_add",
+      "manual_remove",
+    ],
+    required: true,
+  },
   itemId: { type: Schema.Types.ObjectId, ref: "Item", default: null },
+  contentEntryId: { type: Schema.Types.ObjectId, default: null },
   variantKey: { type: String, trim: true, lowercase: true, default: null },
   at: { type: Date, default: Date.now },
   metadata: { type: Schema.Types.Mixed, default: null },
@@ -27,7 +68,7 @@ const VisitSessionSchema = new Schema({
   generatedVisitPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlan", default: null, index: true },
   currentPlanRevisionId: { type: Schema.Types.ObjectId, ref: "SessionPlanRevision", default: null, index: true },
   status: { type: String, enum: ["active", "paused", "route_completed", "completed", "abandoned"], default: "active", index: true },
-  currentStopIndex: { type: Number, min: 0, default: 0 },
+  currentEntryIndex: { type: Number, min: 0, default: 0 },
   movementPacePreference: { type: Number, min: 0, max: 1, default: 0.5 },
   initialMovementBaselineMps: { type: Number, min: 0.1, default: null },
   initialPaceFactor: { type: Number, min: 0.1, default: 1 },
@@ -37,7 +78,8 @@ const VisitSessionSchema = new Schema({
   initialEstimatedTotalSeconds: { type: Number, min: 0, default: null },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
   transitionObservations: { type: [TransitionObservationSchema], default: [] },
-  stopObservations: { type: [StopObservationSchema], default: [] },
+  contentEntryExperiences: { type: [ContentEntryExperienceSchema], default: [] },
+  physicalTargetObservations: { type: [PhysicalTargetObservationSchema], default: [] },
   interactionEvents: { type: [InteractionEventSchema], default: [] },
   presentationOverrides: { type: [PresentationOverrideSchema], default: [] },
   pauseIntervals: { type: [PauseIntervalSchema], default: [] },
@@ -47,8 +89,12 @@ const VisitSessionSchema = new Schema({
 }, { timestamps: true });
 
 VisitSessionSchema.pre("validate", function validateSource(next) {
-  if (this.sourceType === "visit" && (!this.visitId || !this.visitRevisionId)) this.invalidate("visitId", "visitId e visitRevisionId sono obbligatori per una sessione visit");
-  if (this.sourceType === "generated_plan" && !this.generatedVisitPlanId) this.invalidate("generatedVisitPlanId", "generatedVisitPlanId e obbligatorio per una sessione generated_plan");
+  if (this.sourceType === "visit" && (!this.visitId || !this.visitRevisionId)) {
+    this.invalidate("visitId", "visitId e visitRevisionId sono obbligatori per una sessione visit");
+  }
+  if (this.sourceType === "generated_plan" && !this.generatedVisitPlanId) {
+    this.invalidate("generatedVisitPlanId", "generatedVisitPlanId e obbligatorio per una sessione generated_plan");
+  }
   next();
 });
 
