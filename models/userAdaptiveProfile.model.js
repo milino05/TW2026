@@ -28,8 +28,14 @@ const UserAdaptiveProfileSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true, index: true },
   movement: { estimatedSpeedMps: { type: EstimateSchema, default: () => ({}) } },
   observation: { typicalPostContentObservationSeconds: { type: EstimateSchema, default: () => ({}) } },
-  presentation: { depthPreference: { type: EstimateSchema, default: () => ({}) }, languageComplexityPreference: { type: EstimateSchema, default: () => ({}) } },
-  behavior: { moreDetailRequestRate: { type: EstimateSchema, default: () => ({}) }, optionalStopSkipRate: { type: EstimateSchema, default: () => ({}) } },
+  presentation: {
+    depthPreference: { type: EstimateSchema, default: () => ({}) },
+    languageComplexityPreference: { type: EstimateSchema, default: () => ({}) },
+  },
+  behavior: {
+    depthIncreaseRequestRate: { type: EstimateSchema, default: () => ({}) },
+    optionalStopSkipRate: { type: EstimateSchema, default: () => ({}) },
+  },
   semanticAffinities: { type: [AffinitySchema], default: [] },
   presentationAspectAffinities: { type: [AspectAffinitySchema], default: [] },
 }, { timestamps: true });
