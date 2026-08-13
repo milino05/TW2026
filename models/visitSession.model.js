@@ -4,6 +4,13 @@ const { Schema } = mongoose;
 const TransitionObservationSchema = new Schema({ connectionId: { type: Schema.Types.ObjectId, required: true }, layoutRevisionId: { type: Schema.Types.ObjectId, ref: "MuseumLayoutRevision", required: true }, distanceMeters: { type: Number, min: 0, required: true }, predictedSeconds: { type: Number, min: 0, required: true }, observedSeconds: { type: Number, min: 0, required: true }, observedMovementSpeedMps: { type: Number, min: 0.1, default: null }, reliability: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
 const StopObservationSchema = new Schema({ itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true }, variantKey: { type: String, trim: true, lowercase: true, default: null }, contentSeconds: { type: Number, min: 0, required: true }, totalStopSeconds: { type: Number, min: 0, required: true }, postContentObservationSeconds: { type: Number, min: 0, required: true }, reliability: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
 const PauseIntervalSchema = new Schema({ startedAt: { type: Date, required: true }, endedAt: { type: Date, default: null } }, { _id: false });
+const PresentationOverrideSchema = new Schema({
+  stopIndex: { type: Number, min: 0, required: true },
+  variantKey: { type: String, trim: true, lowercase: true, required: true },
+  durationKey: { type: String, trim: true, lowercase: true, required: true },
+  languageLevelKey: { type: String, trim: true, lowercase: true, required: true },
+  updatedAt: { type: Date, default: Date.now },
+}, { _id: false });
 const InteractionEventSchema = new Schema({
   type: { type: String, enum: ["presentation_depth_increased", "presentation_depth_decreased", "semantic_drilldown", "visit_refocus_requested", "visit_extension_requested", "stop_skipped", "stop_completed", "manual_add", "manual_remove"], required: true },
   itemId: { type: Schema.Types.ObjectId, ref: "Item", default: null },
@@ -32,6 +39,7 @@ const VisitSessionSchema = new Schema({
   transitionObservations: { type: [TransitionObservationSchema], default: [] },
   stopObservations: { type: [StopObservationSchema], default: [] },
   interactionEvents: { type: [InteractionEventSchema], default: [] },
+  presentationOverrides: { type: [PresentationOverrideSchema], default: [] },
   pauseIntervals: { type: [PauseIntervalSchema], default: [] },
   startedAt: { type: Date, default: Date.now },
   routeCompletedAt: { type: Date, default: null },
