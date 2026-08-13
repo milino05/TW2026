@@ -6,7 +6,7 @@ function normalizeVisitPayload(payload = {}) {
   const n = {}; ["kind", "title", "description"].forEach((field) => { if (hasOwn(payload, field)) n[field] = trimIfString(payload[field]); });
   if (hasOwn(payload, "ownerMuseumId")) n.ownerMuseumId = payload.ownerMuseumId;
   if (hasOwn(payload, "defaultPresentationPolicy")) n.defaultPresentationPolicy = isPlainObject(payload.defaultPresentationPolicy) ? { durationKey: normalizeKey(payload.defaultPresentationPolicy.durationKey), languageLevelKey: normalizeKey(payload.defaultPresentationPolicy.languageLevelKey) } : payload.defaultPresentationPolicy;
-  if (hasOwn(payload, "stops")) n.stops = Array.isArray(payload.stops) ? payload.stops.map((stop) => isPlainObject(stop) ? { itemId: stop.itemId, role: normalizeKey(stop.role || "recommended") } : stop) : payload.stops;
+  if (hasOwn(payload, "stops")) n.stops = Array.isArray(payload.stops) ? payload.stops.map((stop) => { if (!isPlainObject(stop)) return stop; const value = { itemId: stop.itemId, role: normalizeKey(stop.role || "recommended") }; if (hasOwn(stop, "optional")) value.optional = stop.optional; return value; }) : payload.stops;
   if (hasOwn(payload, "logistics")) n.logistics = isPlainObject(payload.logistics) ? { preVisitNotes: Array.isArray(payload.logistics.preVisitNotes) ? payload.logistics.preVisitNotes.map(trimIfString).filter(Boolean) : [], transitions: Array.isArray(payload.logistics.transitions) ? payload.logistics.transitions.map(normalizeTransition) : [] } : payload.logistics;
   return n;
 }
