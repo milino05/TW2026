@@ -37,6 +37,23 @@ Una richiesta puo specificare `remember: true`: soltanto i campi esplicitamente 
 
 Gli eventi sono `presentation_depth_increased`, `presentation_depth_decreased`, `semantic_drilldown`, `visit_refocus_requested`, `visit_extension_requested`, `stop_completed`, `stop_skipped`, `manual_add`, `manual_remove`. Un refocus e fortissimo nella sessione corrente ma diventa storico solo gradualmente tramite learning.
 
-## Roadmap
+## Implementazioni future approvate
 
-Restano future: LLM visitor interpreter, LLM semantic-authoring copilot, resolver reale delle semanticRefs (es. Wikidata), e `MuseumLayoutRuntimeState` per chiusure/congestione/indisponibilita temporanee applicato trasversalmente a official, community, generated e Navigator.
+### Separazione tra itinerario contenutistico e percorso fisico
+
+Il modello runtime deve distinguere esplicitamente la sequenza narrativa/contenutistica della visita dal sottografo delle sole tappe fisicamente localizzate. Item concettuali o non spaziali, per esempio un movimento artistico, una persona, una tecnica o un evento, devono poter comparire adattivamente nell'itinerario della visita senza creare una nuova destinazione di routing. Il percorso fisico deve essere derivato esclusivamente dagli elementi che richiedono movimento e hanno un placement valido. Gli Item non fisici possono essere contestualizzati rispetto alla tappa corrente, a una tappa fisica di riferimento o a un tratto narrativo della visita. Il generatore dovra selezionare congiuntamente contenuti fisici e non fisici in base a richiesta esplicita, profilo adattivo, knowledge graph, tempo e coerenza narrativa.
+
+### Generazione cross-museo
+
+Estendere il planner da intra-museo a cross-museo. La generazione dovra poter selezionare Item e tappe appartenenti a musei differenti, ottimizzare l'ordine fra venue, stimare o acquisire i trasferimenti inter-venue e mantenere separati routing indoor e trasferimento esterno. Il modello deve restare compatibile con official, community, generated e runtime replanning.
+
+### Modalita Sandbox / Explorer
+
+Aggiungere una modalita di visita libera basata su `VisitSession`, senza una `VisitRevision` o un `GeneratedVisitPlan` prefissato come sequenza da seguire. L'utente esplora autonomamente il museo; il Navigator riconosce o riceve l'Item fisico incontrato, ne presenta la representation piu adatta e permette semantic drilldown verso Item collegati anche non fisici. Il sistema puo produrre suggerimenti opzionali e non invasivi su opere, temi o zone coerenti con gli interessi espliciti e appresi. Un suggerimento accettato puo diventare una destinazione fisica temporanea e usare il routing normale, senza trasformare la modalita in una visita obbligata. Gli eventi della sessione devono alimentare lo stesso adaptive learning delle visite strutturate.
+
+### Altre estensioni gia previste
+
+- LLM visitor interpreter per trasformare richieste naturali in request strutturate senza rendere l'LLM dipendenza del planner deterministico.
+- LLM semantic-authoring copilot per assistere la costruzione del knowledge graph e delle presentation variants.
+- Resolver reale delle `semanticRefs` (per esempio Wikidata) per migliorare interoperabilita e trasferimento semantico cross-museo.
+- `MuseumLayoutRuntimeState` per chiusure, congestione, ascensori fuori servizio e indisponibilita temporanee applicato trasversalmente a official, community, generated, Sandbox/Explorer e Navigator.
