@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 const RelationSchema = require("../schemas/relation.schema");
-const RepresentationSchema = require("../schemas/representation.schema");
 const PresentationVariantSchema = require("../schemas/presentationVariant.schema");
 const SemanticRefSchema = require("../schemas/semanticRef.schema");
 const IntegrityIssueSchema = require("../schemas/integrityIssue.schema");
@@ -24,37 +23,24 @@ const ReviewSchema = new Schema({
 }, { _id: false });
 
 const DefaultPresentationSchema = new Schema({
-  variantKey: { type: String, trim: true, lowercase: true, default: null },
-  durationKey: { type: String, trim: true, lowercase: true, default: null },
-  languageLevelKey: { type: String, trim: true, lowercase: true, default: null },
+  variantKey: { type: String, required: true, trim: true, lowercase: true },
+  durationKey: { type: String, required: true, trim: true, lowercase: true },
+  languageLevelKey: { type: String, required: true, trim: true, lowercase: true },
 }, { _id: false });
 
 const ItemRevisionSchema = new Schema({
   itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true, index: true },
   version: { type: Number, required: true, min: 1 },
   basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevision", default: null },
-
   label: { type: String, required: true, trim: true },
   recognitionImage: { url: { type: String, trim: true }, altText: { type: String, trim: true } },
   tags: [{ type: String, trim: true }],
   metadata: { license: { type: String, trim: true } },
   semanticRefs: { type: [SemanticRefSchema], default: [] },
   relations: { type: [RelationSchema], default: [] },
-
-  /**
-   * Nuovo modello: una variante editoriale identifica WHAT/ANGLE; le representation
-   * al suo interno variano soltanto durata e complessita linguistica.
-   */
   presentationVariants: { type: [PresentationVariantSchema], default: [] },
   defaultPresentation: { type: DefaultPresentationSchema, default: null },
-
-  /**
-   * Compatibilita di lettura/migrazione con revisioni precedenti. Nuovi client
-   * devono usare presentationVariants/defaultPresentation.
-   */
-  representations: { type: [RepresentationSchema], default: [] },
   jsonld: { type: Schema.Types.Mixed },
-
   status: { type: String, enum: ["draft", "in_review", "changes_requested", "published", "superseded"], default: "draft", index: true },
   integrity: {
     status: { type: String, enum: ["valid", "needs_review"], default: "needs_review" },
