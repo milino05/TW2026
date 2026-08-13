@@ -4,17 +4,14 @@ const MuseumVocabularyRevision = require("../models/museumVocabularyRevision.mod
 const AppError = require("../utils/AppError");
 const { buildRelationViews } = require("./relationView.utils");
 const { withNormalizedPositions } = require("./vocabularyNormalization.service");
-const { legacyConfigToVocabulary } = require("./validation/vocabulary.validation");
 
 function plain(value) {
   return value && typeof value.toObject === "function" ? value.toObject() : { ...value };
 }
-
 function normalizeRelationTypes(values) {
   return Array.isArray(values) ? values.map(plain).filter((value) => value?.key) : [];
 }
-
-function materializeVocabulary({ museumId, version, revisionId = null, source }) {
+function materializeVocabulary({ museumId, version, revisionId, source }) {
   const itemTypeDefinitions = (source.itemTypes || []).map(plain).filter((entry) => entry?.key);
   const relationTypes = normalizeRelationTypes(source.relationTypes);
   return {
@@ -30,7 +27,6 @@ function materializeVocabulary({ museumId, version, revisionId = null, source })
     presentationAspects: (source.presentationAspects || []).map(plain),
   };
 }
-
 function buildItemTypeVocabulary(vocabulary, itemType) {
   const allowed = (types = []) => !types.length || types.includes(itemType);
   const definition = vocabulary.itemTypeDefinitions.find((entry) => entry.key === itemType) || null;
@@ -51,7 +47,6 @@ function buildItemTypeVocabulary(vocabulary, itemType) {
     presentationAspects: vocabulary.presentationAspects,
   };
 }
-
 async function loadPublishedVocabularyRevision(museumId) {
   const stable = await MuseumVocabulary.findOne({ museumId }).lean();
   if (!stable?.publishedRevisionId) return null;
@@ -59,31 +54,18 @@ async function loadPublishedVocabularyRevision(museumId) {
   if (!revision || revision.status !== "published") return null;
   return { stable, revision };
 }
-
 async function getMuseumVocabulary(museumId) {
-  const museum = await Museum.findById(museumId).lean();
+  const museum = await Museum.findById(museumId).select("_id").lean();
   if (!museum) throw new AppError("Museo non trovato", 404);
-
   const published = await loadPublishedVocabularyRevision(museumId);
-  if (published) {
-    return materializeVocabulary({
-      museumId: museum._id,
-      version: published.revision.version,
-      revisionId: published.revision._id,
-      source: published.revision,
-    });
-  }
-
-  // Compatibilita per database creati prima del vocabolario revisionato.
-  const legacy = legacyConfigToVocabulary(museum.config || {});
+  if (!published) throw new AppError("Il museo non ha ancora un vocabolario semantico pubblicato", 409, [{ code: "VOCABULARY_NOT_PUBLISHED" }]);
   return materializeVocabulary({
     museumId: museum._id,
-    version: museum.vocabularyRevision || 1,
-    revisionId: null,
-    source: legacy,
+    version: published.revision.version,
+    revisionId: published.revision._id,
+    source: published.revision,
   });
 }
-
 async function getItemTypeVocabulary({ museumId, itemType }) {
   const vocabulary = await getMuseumVocabulary(museumId);
   if (!vocabulary.itemTypes.includes(itemType)) {
