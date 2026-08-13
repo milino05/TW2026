@@ -41,15 +41,12 @@ function normalizeOrderedVocabulary(values, withDuration = false) {
 function normalizeItemTypes(values) {
   if (!Array.isArray(values)) return values;
   return values.map((value) => {
-    if (typeof value === "string") {
-      return { key: normalizeKey(value), label: value.trim(), description: "", capabilities: ["semantic_context"], semanticRefs: [] };
-    }
     if (!isPlainObject(value)) return value;
     return {
       key: normalizeKey(value.key),
       label: trimIfString(value.label),
       description: trimIfString(value.description),
-      capabilities: normalizeStringArrayStrict(value.capabilities || ["semantic_context"], { lowercase: true }),
+      capabilities: normalizeStringArrayStrict(value.capabilities || [], { lowercase: true }),
       semanticRefs: normalizeSemanticRefs(value.semanticRefs || []),
     };
   });
@@ -112,17 +109,14 @@ function validateSemanticRefs(values, field, errors) {
     if (!value.scheme || typeof value.scheme !== "string") pushError(errors, `${path}.scheme`, "REQUIRED", "scheme e obbligatorio");
     if (!value.id || typeof value.id !== "string") pushError(errors, `${path}.id`, "REQUIRED", "id e obbligatorio");
     if (!MATCH_TYPES.includes(value.matchType || "exact")) pushError(errors, `${path}.matchType`, "INVALID_ENUM", "matchType non valido", { allowedValues: MATCH_TYPES });
-    const duplicate = `${value.scheme}::${value.id}::${value.matchType || "exact"}`;
-    if (seen.has(duplicate)) pushError(errors, path, "DUPLICATE_SEMANTIC_REF", "semanticRef duplicata");
-    seen.add(duplicate);
+    const key = `${value.scheme}::${value.id}::${value.matchType || "exact"}`;
+    if (seen.has(key)) pushError(errors, path, "DUPLICATE_SEMANTIC_REF", "semanticRef duplicata");
+    seen.add(key);
   });
 }
 
 function validateOrderedVocabulary(values, field, errors) {
-  if (!Array.isArray(values)) {
-    pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
-    return;
-  }
+  if (!Array.isArray(values)) return pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
   if (!values.length) pushError(errors, field, "EMPTY_ARRAY", `Almeno un valore in ${field} e obbligatorio`);
   const seen = new Set();
   values.forEach((value, index) => {
@@ -158,7 +152,7 @@ function validateItemTypes(values, errors) {
   const seen = new Set();
   values.forEach((value, index) => {
     const path = `itemTypes[${index}]`;
-    if (!isPlainObject(value)) return pushError(errors, path, "INVALID_TYPE", "Ogni itemType deve essere un oggetto");
+    if (!isPlainObject(value)) return pushError(errors, path, "INVALID_TYPE", "Ogni itemType deve essere un oggetto strutturato");
     if (!value.key) pushError(errors, `${path}.key`, "REQUIRED", "key e obbligatoria");
     else if (seen.has(value.key)) pushError(errors, `${path}.key`, "DUPLICATE_KEY", `key duplicata: ${value.key}`);
     else seen.add(value.key);
@@ -173,7 +167,7 @@ function validateItemTypes(values, errors) {
 
 function validateRelationTypes(values, itemTypes, errors) {
   if (!Array.isArray(values)) return pushError(errors, "relationTypes", "INVALID_TYPE", "relationTypes deve essere un array");
-  const itemTypeSet = new Set((itemTypes || []).map((entry) => entry.key));
+  const itemTypeSet = new Set((itemTypes || []).filter(isPlainObject).map((entry) => entry.key));
   const seen = new Set();
   values.forEach((value, index) => {
     const path = `relationTypes[${index}]`;
@@ -216,16 +210,6 @@ function validateVocabularyPayload(payload) {
   return errors;
 }
 
-function legacyConfigToVocabulary(config = {}) {
-  return normalizeVocabularyPayload({
-    languageLevels: config.languageLevels || [],
-    durationTypes: config.durationTypes || [],
-    itemTypes: (config.itemTypes || []).map((entry) => typeof entry === "string" ? { key: entry, label: entry, capabilities: ["semantic_context"] } : entry),
-    relationTypes: config.relationTypes || [],
-    presentationAspects: config.presentationAspects || [],
-  });
-}
-
 function semanticRefKey(ref) {
   return `${String(ref?.scheme || "").toLowerCase()}::${String(ref?.id || "")}`;
 }
@@ -239,7 +223,6 @@ module.exports = {
   normalizeVocabularyPayload,
   validateSemanticRefs,
   validateVocabularyPayload,
-  legacyConfigToVocabulary,
   semanticRefKey,
   isObjectId,
 };
