@@ -9,19 +9,10 @@ const AffinitySchema = new Schema({
   key: { type: String, trim: true, lowercase: true, default: null },
   scheme: { type: String, trim: true, lowercase: true, default: null },
   refId: { type: String, trim: true, default: null },
-  value: { type: Number, min: -1, max: 1, default: 0 },
-  confidence: { type: Number, min: 0, max: 1, default: 0 },
-  sampleCount: { type: Number, min: 0, default: 0 },
-  lastObservedAt: { type: Date, default: null },
+  value: { type: Number, min: -1, max: 1, default: 0 }, confidence: { type: Number, min: 0, max: 1, default: 0 }, sampleCount: { type: Number, min: 0, default: 0 }, lastObservedAt: { type: Date, default: null },
 }, { _id: true });
 const AspectAffinitySchema = new Schema({
-  museumId: { type: Schema.Types.ObjectId, ref: "Museum", default: null },
-  key: { type: String, required: true, trim: true, lowercase: true },
-  semanticRefs: { type: [{ scheme: { type: String, trim: true, lowercase: true }, id: { type: String, trim: true } }], default: [] },
-  value: { type: Number, min: -1, max: 1, default: 0 },
-  confidence: { type: Number, min: 0, max: 1, default: 0 },
-  sampleCount: { type: Number, min: 0, default: 0 },
-  lastObservedAt: { type: Date, default: null },
+  museumId: { type: Schema.Types.ObjectId, ref: "Museum", default: null }, key: { type: String, required: true, trim: true, lowercase: true }, semanticRefs: { type: [{ scheme: { type: String, trim: true, lowercase: true }, id: { type: String, trim: true } }], default: [] }, value: { type: Number, min: -1, max: 1, default: 0 }, confidence: { type: Number, min: 0, max: 1, default: 0 }, sampleCount: { type: Number, min: 0, default: 0 }, lastObservedAt: { type: Date, default: null },
 }, { _id: true });
 
 const UserAdaptiveProfileSchema = new Schema({
@@ -29,11 +20,9 @@ const UserAdaptiveProfileSchema = new Schema({
   movement: { estimatedSpeedMps: { type: EstimateSchema, default: () => ({}) } },
   observation: { typicalPostContentObservationSeconds: { type: EstimateSchema, default: () => ({}) } },
   presentation: { depthPreference: { type: EstimateSchema, default: () => ({}) }, languageComplexityPreference: { type: EstimateSchema, default: () => ({}) } },
-  behavior: { moreDetailRequestRate: { type: EstimateSchema, default: () => ({}) }, optionalStopSkipRate: { type: EstimateSchema, default: () => ({}) } },
-  semanticAffinities: { type: [AffinitySchema], default: [] },
-  presentationAspectAffinities: { type: [AspectAffinitySchema], default: [] },
+  behavior: { depthIncreaseRequestRate: { type: EstimateSchema, default: () => ({}) }, optionalContentEntrySkipRate: { type: EstimateSchema, default: () => ({}) } },
+  semanticAffinities: { type: [AffinitySchema], default: [] }, presentationAspectAffinities: { type: [AspectAffinitySchema], default: [] },
 }, { timestamps: true });
-
 UserAdaptiveProfileSchema.index({ "semanticAffinities.itemId": 1 });
 UserAdaptiveProfileSchema.index({ "semanticAffinities.scheme": 1, "semanticAffinities.refId": 1 });
 module.exports = mongoose.model("UserAdaptiveProfile", UserAdaptiveProfileSchema);
