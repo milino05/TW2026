@@ -5,16 +5,11 @@ const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { getPresentationVariants } = require("./presentationModel.service");
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
-function recencyWeight(date, now = new Date()) {
-  if (!date) return 1;
-  const ageDays = Math.max(0, (now.getTime() - new Date(date).getTime()) / 86400000);
-  return Math.pow(0.5, ageDays / policy.interests.recencyHalfLifeDays);
-}
+function recencyWeight(date, now = new Date()) { if (!date) return 1; const ageDays = Math.max(0, (now.getTime() - new Date(date).getTime()) / 86400000); return Math.pow(0.5, ageDays / policy.interests.recencyHalfLifeDays); }
 function effectiveAffinity(record, now = new Date()) { return (Number(record?.value) || 0) * (Number(record?.confidence) || 0) * recencyWeight(record?.lastObservedAt, now); }
 function sameRef(a, b) { return String(a?.scheme || "").toLowerCase() === String(b?.scheme || "").toLowerCase() && String(a?.id || a?.refId || "") === String(b?.id || b?.refId || ""); }
 function semanticAffinityScore(profile, feature, now = new Date()) {
-  const records = profile?.semanticAffinities || [];
-  let best = 0;
+  const records = profile?.semanticAffinities || []; let best = 0;
   for (const record of records) {
     let matches = false;
     if (feature.kind === "item" && record.kind === "item" && String(feature.itemId) === String(record.itemId)) matches = true;
@@ -34,25 +29,14 @@ function aspectAffinityScore(profile, { museumId, key, semanticRefs = [] }, now 
   return best;
 }
 function updateRecord(record, evidence, now = new Date()) {
-  const count = (Number(record.sampleCount) || 0) + 1;
-  const alpha = Math.min(0.5, 1 / Math.sqrt(count + 1));
+  const count = (Number(record.sampleCount) || 0) + 1; const alpha = Math.min(0.5, 1 / Math.sqrt(count + 1));
   record.value = clamp((Number(record.value) || 0) * (1 - alpha) + clamp(evidence, -1, 1) * alpha, -1, 1);
-  record.sampleCount = count;
-  record.confidence = Math.min(policy.confidence.maximum, 1 - Math.exp(-count / 5));
-  record.lastObservedAt = now;
+  record.sampleCount = count; record.confidence = Math.min(policy.confidence.maximum, 1 - Math.exp(-count / 5)); record.lastObservedAt = now;
 }
-function affinityIdentity(feature) {
-  if (feature.kind === "item") return `item:${feature.itemId}`;
-  if (feature.kind === "canonical") return `canonical:${String(feature.scheme).toLowerCase()}:${feature.refId || feature.id}`;
-  return `${feature.kind}:${feature.museumId || "global"}:${feature.key}`;
-}
+function affinityIdentity(feature) { if (feature.kind === "item") return `item:${feature.itemId}`; if (feature.kind === "canonical") return `canonical:${String(feature.scheme).toLowerCase()}:${feature.refId || feature.id}`; return `${feature.kind}:${feature.museumId || "global"}:${feature.key}`; }
 function upsertSemanticAffinity(profile, feature, evidence, now) {
-  const id = affinityIdentity(feature);
-  let record = (profile.semanticAffinities || []).find((entry) => affinityIdentity(entry) === id);
-  if (!record) {
-    profile.semanticAffinities.push({ kind: feature.kind, museumId: feature.museumId || null, itemId: feature.itemId || null, key: feature.key || null, scheme: feature.scheme || null, refId: feature.refId || feature.id || null, value: 0, confidence: 0, sampleCount: 0 });
-    record = profile.semanticAffinities.at(-1);
-  }
+  const identity = affinityIdentity(feature); let record = (profile.semanticAffinities || []).find((entry) => affinityIdentity(entry) === identity);
+  if (!record) { profile.semanticAffinities.push({ kind: feature.kind, museumId: feature.museumId || null, itemId: feature.itemId || null, key: feature.key || null, scheme: feature.scheme || null, refId: feature.refId || feature.id || null, value: 0, confidence: 0, sampleCount: 0 }); record = profile.semanticAffinities.at(-1); }
   updateRecord(record, evidence, now);
 }
 function upsertAspectAffinity(profile, { museumId, key, semanticRefs = [] }, evidence, now) {
@@ -62,11 +46,40 @@ function upsertAspectAffinity(profile, { museumId, key, semanticRefs = [] }, evi
 }
 function relationStrengthFactor(strength) { return strength === "strong" ? 0.75 : strength === "weak" ? 0.3 : 0.5; }
 
+async function applyExplicitInterestEvidence({ profile, interests, museumId, evidence, now, vocabulary }) {
+  for (const interest of interests || []) {
+    const weightedEvidence = evidence * Math.max(-1, Math.min(1, Number(interest.weight) || 1));
+    if (!weightedEvidence) continue;
+    if (interest.kind === "presentation_aspect") {
+      const definition = (vocabulary?.presentationAspects || []).find((entry) => entry.key === interest.key);
+      upsertAspectAffinity(profile, { museumId, key: interest.key, semanticRefs: definition?.semanticRefs || [] }, weightedEvidence, now);
+      continue;
+    }
+    if (["item", "item_type", "relation_type", "canonical"].includes(interest.kind)) {
+      upsertSemanticAffinity(profile, {
+        kind: interest.kind,
+        museumId: ["item_type", "relation_type"].includes(interest.kind) ? museumId : null,
+        itemId: interest.itemId || null,
+        key: interest.key || null,
+        scheme: interest.scheme || null,
+        refId: interest.id || interest.refId || null,
+      }, weightedEvidence, now);
+    }
+  }
+}
+
 async function applyInteractionLearning({ profile, session }) {
-  const events = (session.interactionEvents || []).filter((event) => policy.interests.eventEvidence[event.type] !== undefined && event.itemId);
   const cache = new Map();
-  for (const event of events) {
-    const evidence = policy.interests.eventEvidence[event.type]; const itemId = String(event.itemId);
+  for (const event of session.interactionEvents || []) {
+    const evidence = policy.interests.eventEvidence[event.type];
+    if (evidence === undefined) continue;
+    const metadataMuseumId = event.metadata?.museumId || null;
+    if (event.type === "visit_refocus_requested" && Array.isArray(event.metadata?.interests) && event.metadata.interests.length) {
+      const vocabulary = metadataMuseumId ? await getMuseumVocabulary(metadataMuseumId) : null;
+      await applyExplicitInterestEvidence({ profile, interests: event.metadata.interests, museumId: metadataMuseumId, evidence, now: event.at || new Date(), vocabulary });
+    }
+    if (!event.itemId || evidence === 0) continue;
+    const itemId = String(event.itemId);
     if (!cache.has(itemId)) {
       const item = await Item.findById(itemId).lean();
       const revision = item?.publishedRevisionId ? await ItemRevision.findById(item.publishedRevisionId).lean() : null;
@@ -97,4 +110,4 @@ async function applyInteractionLearning({ profile, session }) {
   return profile;
 }
 
-module.exports = { recencyWeight, effectiveAffinity, semanticAffinityScore, aspectAffinityScore, applyInteractionLearning };
+module.exports = { recencyWeight, effectiveAffinity, semanticAffinityScore, aspectAffinityScore, applyInteractionLearning, applyExplicitInterestEvidence };
