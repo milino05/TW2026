@@ -1,25 +1,10 @@
 function plain(value) { return value?.toObject ? value.toObject() : value; }
 
-function syntheticLegacyVariant(source) {
-  const representations = Array.isArray(source?.representations) ? source.representations.map(plain) : [];
-  if (!representations.length) return null;
-  return {
-    key: "legacy_default",
-    label: "Legacy default",
-    description: "Variante sintetica per revisioni precedenti al modello PresentationVariant",
-    semanticFocus: [],
-    presentationAspects: [],
-    representations,
-    legacy: true,
-  };
-}
-
 function getPresentationVariants(source) {
-  if (Array.isArray(source)) return [{ key: "legacy_default", label: "Legacy default", semanticFocus: [], presentationAspects: [], representations: source.map(plain), legacy: true }];
-  const variants = Array.isArray(source?.presentationVariants) ? source.presentationVariants.map(plain) : [];
-  if (variants.length) return variants;
-  const legacy = syntheticLegacyVariant(source);
-  return legacy ? [legacy] : [];
+  if (!source || Array.isArray(source)) return [];
+  return Array.isArray(source.presentationVariants)
+    ? source.presentationVariants.map(plain)
+    : [];
 }
 
 function listRepresentationCandidates(source) {
@@ -32,7 +17,6 @@ function listRepresentationCandidates(source) {
         semanticFocus: variant.semanticFocus || [],
         presentationAspects: variant.presentationAspects || [],
         representation: plain(representation),
-        legacy: variant.legacy === true,
       });
     }
   }
@@ -42,12 +26,15 @@ function listRepresentationCandidates(source) {
 function getDefaultCandidate(source) {
   const candidates = listRepresentationCandidates(source);
   if (!candidates.length) return null;
-  if (source && !Array.isArray(source) && source.defaultPresentation?.variantKey) {
-    const exact = candidates.find((candidate) => candidate.variantKey === source.defaultPresentation.variantKey && candidate.representation.durationKey === source.defaultPresentation.durationKey && candidate.representation.languageLevelKey === source.defaultPresentation.languageLevelKey);
-    if (exact) return exact;
+  const definition = source?.defaultPresentation;
+  if (definition?.variantKey) {
+    return candidates.find((candidate) =>
+      candidate.variantKey === definition.variantKey &&
+      candidate.representation.durationKey === definition.durationKey &&
+      candidate.representation.languageLevelKey === definition.languageLevelKey,
+    ) || null;
   }
-  const legacyDefault = candidates.find((candidate) => candidate.representation.isDefault === true);
-  return legacyDefault || candidates[0];
+  return null;
 }
 
 function getVariant(source, variantKey) {
