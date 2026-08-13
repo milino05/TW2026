@@ -2,207 +2,132 @@ const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
 const { id, relationCoherence, pruneBeam } = require("./visitGeneratorSemantics.service");
+const { newObjectId } = require("./physicalRoute.service");
 
-function optimizeVisit({ options, context, layoutRevision, requirements, learnedResidualByConnection, startPlaceId }) {
-  const must = new Set(context.mustSeeItemIds.map(id));
-  const availableItems = new Set(options.map((option) => id(option.item._id)));
-  const missingMust = [...must].filter((itemId) => !availableItems.has(itemId));
-  if (missingMust.length) {
-    throw new AppError("Alcuni must-see non sono disponibili come tappe visitabili", 409, missingMust.map((itemId) => ({
-      field: "mustSeeItemIds",
-      code: "MUST_SEE_UNAVAILABLE",
-      message: `Item non disponibile: ${itemId}`,
-    })));
+function optimizeVisit({ options, context, layoutRevision, requirements = [], learnedResidualByConnection = new Map(), startPlaceId = null }) {
+  const mustInclude = new Set((context.mustIncludeItemIds || []).map(id));
+  const mustVisit = new Set((context.mustVisitItemIds || []).map(id));
+  const includeAvailable = new Set(options.map((option) => id(option.item._id)));
+  const visitAvailable = new Set(options.filter((option) => option.spatialMode === "target").map((option) => id(option.item._id)));
+  const missingInclude = [...mustInclude].filter((itemId) => !includeAvailable.has(itemId));
+  const missingVisit = [...mustVisit].filter((itemId) => !visitAvailable.has(itemId));
+  if (missingInclude.length || missingVisit.length) {
+    throw new AppError("Alcuni vincoli di inclusione non sono soddisfacibili", 409, [
+      ...missingInclude.map((itemId) => ({ field: "mustIncludeItemIds", code: "MUST_INCLUDE_UNAVAILABLE", message: `Item non includibile: ${itemId}` })),
+      ...missingVisit.map((itemId) => ({ field: "mustVisitItemIds", code: "MUST_VISIT_UNAVAILABLE", message: `Item non visitabile fisicamente: ${itemId}` })),
+    ]);
   }
-
+  const totalMust = mustInclude.size + mustVisit.size;
   const routeCache = new Map();
   function routeBetween(fromPlaceId, toPlaceId) {
     if (!fromPlaceId) return { reachable: true, path: [], estimatedSeconds: 0, preferencePenalty: 0 };
+    if (!layoutRevision) return { reachable: false };
     const key = `${id(fromPlaceId)}>${id(toPlaceId)}`;
-    if (!routeCache.has(key)) {
-      routeCache.set(key, resolveRoute({
-        connections: layoutRevision.connections,
-        fromPlaceId,
-        toPlaceId,
-        requirements,
-        speedMps: context.effectiveMovementSpeedMps,
-        learnedResidualByConnection,
-      }));
-    }
+    if (!routeCache.has(key)) routeCache.set(key, resolveRoute({ connections: layoutRevision.connections, fromPlaceId, toPlaceId, requirements, speedMps: context.effectiveMovementSpeedMps, learnedResidualByConnection }));
     return routeCache.get(key);
   }
-
   const reserveRatio = policy.generator.conservativeTimeReserveRatio * (1 - context.dimensions.timeRisk.value);
   const reservedSeconds = Math.round(context.timeBudgetSeconds * reserveRatio);
   const usableBudget = Math.max(1, context.timeBudgetSeconds - reservedSeconds);
-  let beam = [{
-    selectedItemIds: new Set(),
-    currentPlaceId: startPlaceId,
-    stops: [],
-    transitions: [],
-    elapsedSeconds: 0,
-    contentSeconds: 0,
-    observationSeconds: 0,
-    logisticsSeconds: 0,
-    utility: 0,
-    mustCovered: 0,
-    itemTypeCounts: new Map(),
-    lastOption: null,
-  }];
-  const maxStops = Math.min(policy.generator.maxStops, Math.max(1, options.length));
 
-  for (let depth = 0; depth < maxStops; depth += 1) {
+  function emptyState() {
+    const startAnchor = startPlaceId ? { _id: newObjectId(), kind: "place", purpose: "start", contentEntryId: null, itemId: null, museumId: context.museumId, placeId: startPlaceId, estimatedObservationSeconds: 0 } : null;
+    return { selectedItemIds: new Set(), currentPlaceId: startPlaceId, currentAnchorId: startAnchor?._id || null, entries: [], anchors: startAnchor ? [startAnchor] : [], legs: [], elapsedSeconds: 0, contentSeconds: 0, observationSeconds: 0, logisticsSeconds: 0, utility: 0, mustCovered: 0, itemTypeCounts: new Map(), coverageCounts: new Map(), lastOption: null };
+  }
+  function gainFor(state, option, routeSeconds) {
+    const sameTypeCount = state.itemTypeCounts.get(option.item.itemType) || 0;
+    const diversityPenalty = Math.max(0, sameTypeCount - 1) * 0.18;
+    const coherence = relationCoherence(state.lastOption, option);
+    const keys = option.coverageKeys || [];
+    const coverageFactor = keys.length ? keys.reduce((sum, key) => sum + 1 / (1 + (state.coverageCounts.get(key) || 0)), 0) / keys.length : 1;
+    const explicit = (Number(option.explicitUtility) || 0) > 0 ? option.explicitUtility * coverageFactor : (Number(option.explicitUtility) || 0);
+    const logisticsPenalty = (routeSeconds / Math.max(usableBudget, 1)) * policy.generator.logisticsUtilityWeight;
+    return (Number(option.nonExplicitUtility) || 0) + explicit + coherence - diversityPenalty - logisticsPenalty;
+  }
+  function appendOption(state, option) {
+    if (state.selectedItemIds.has(id(option.item._id))) return null;
+    let route = { reachable: true, path: [], estimatedSeconds: 0, preferencePenalty: 0 };
+    if (option.spatialMode === "target") {
+      if (!option.placement?.primaryPlaceId) return null;
+      route = routeBetween(state.currentPlaceId, option.placement.primaryPlaceId);
+      if (!route.reachable) return null;
+    }
+    const observation = option.spatialMode === "target" ? (Number(option.observationSeconds) || 0) : 0;
+    const nextElapsed = state.elapsedSeconds + (Number(option.targetSeconds) || 0) + observation + route.estimatedSeconds;
+    if (context.hardTimeBudget && nextElapsed > usableBudget) return null;
+    const entryId = newObjectId();
+    let deliveryAnchorId = state.currentAnchorId, currentPlaceId = state.currentPlaceId, currentAnchorId = state.currentAnchorId;
+    const anchors = [...state.anchors], legs = [...state.legs];
+    if (option.spatialMode === "target") {
+      const anchor = { _id: newObjectId(), kind: "content_target", purpose: "content", contentEntryId: entryId, itemId: option.item._id, museumId: context.museumId, placeId: option.placement.primaryPlaceId, estimatedObservationSeconds: Math.round(observation) };
+      if (state.currentAnchorId) legs.push({ _id: newObjectId(), type: "indoor", fromAnchorId: state.currentAnchorId, toAnchorId: anchor._id, layoutRevisionId: layoutRevision?._id || null, path: (route.path || []).map((entry) => entry.connectionId || entry), estimatedSeconds: Math.round(route.estimatedSeconds), preferencePenalty: route.preferencePenalty || 0, instruction: null, communityNote: null });
+      anchors.push(anchor);
+      deliveryAnchorId = anchor._id;
+      currentPlaceId = anchor.placeId;
+      currentAnchorId = anchor._id;
+    }
+    const selected = new Set(state.selectedItemIds); selected.add(id(option.item._id));
+    const counts = new Map(state.itemTypeCounts); counts.set(option.item.itemType, (counts.get(option.item.itemType) || 0) + 1);
+    const coverage = new Map(state.coverageCounts); for (const key of option.coverageKeys || []) coverage.set(key, (coverage.get(key) || 0) + 1);
+    const itemId = id(option.item._id);
+    const covered = (mustInclude.has(itemId) ? 1 : 0) + (option.spatialMode === "target" && mustVisit.has(itemId) ? 1 : 0);
+    return { selectedItemIds: selected, currentPlaceId, currentAnchorId, entries: [...state.entries, { _id: entryId, option, deliveryAnchorId }], anchors, legs, elapsedSeconds: nextElapsed, contentSeconds: state.contentSeconds + option.targetSeconds, observationSeconds: state.observationSeconds + observation, logisticsSeconds: state.logisticsSeconds + route.estimatedSeconds, utility: state.utility + gainFor(state, option, route.estimatedSeconds), mustCovered: state.mustCovered + covered, itemTypeCounts: counts, coverageCounts: coverage, lastOption: option };
+  }
+  function finalize(state) {
+    if (!context.endPlaceId) return state;
+    const route = routeBetween(state.currentPlaceId, context.endPlaceId);
+    if (!route.reachable) return null;
+    const elapsedSeconds = state.elapsedSeconds + route.estimatedSeconds;
+    if (context.hardTimeBudget && elapsedSeconds > usableBudget) return null;
+    const end = { _id: newObjectId(), kind: "place", purpose: "end", contentEntryId: null, itemId: null, museumId: context.museumId, placeId: context.endPlaceId, estimatedObservationSeconds: 0 };
+    const legs = [...state.legs];
+    if (state.currentAnchorId) legs.push({ _id: newObjectId(), type: "indoor", fromAnchorId: state.currentAnchorId, toAnchorId: end._id, layoutRevisionId: layoutRevision?._id || null, path: (route.path || []).map((entry) => entry.connectionId || entry), estimatedSeconds: Math.round(route.estimatedSeconds), preferencePenalty: route.preferencePenalty || 0, instruction: null, communityNote: null });
+    return { ...state, currentPlaceId: context.endPlaceId, currentAnchorId: end._id, anchors: [...state.anchors, end], legs, elapsedSeconds, logisticsSeconds: state.logisticsSeconds + route.estimatedSeconds, utility: state.utility - (route.estimatedSeconds / Math.max(usableBudget, 1)) * policy.generator.logisticsUtilityWeight };
+  }
+  function evaluateOrder(orderedOptions) {
+    let state = emptyState();
+    for (const option of orderedOptions) { state = appendOption(state, option); if (!state) return null; }
+    if (state.mustCovered !== totalMust) return null;
+    return finalize(state);
+  }
+
+  let beam = [emptyState()];
+  const maxEntries = Math.min(policy.generator.maxContentEntries, Math.max(1, new Set(options.map((option) => id(option.item._id))).size));
+  for (let depth = 0; depth < maxEntries; depth += 1) {
     const expanded = [...beam];
     for (const state of beam) {
-      const remaining = options
-        .filter((option) => !state.selectedItemIds.has(id(option.item._id)))
-        .sort((a, b) => {
-          const aMust = must.has(id(a.item._id)) ? 1 : 0;
-          const bMust = must.has(id(b.item._id)) ? 1 : 0;
-          return bMust - aMust || b.baseUtility - a.baseUtility;
-        })
-        .slice(0, policy.generator.branchCandidates + must.size);
-      for (const option of remaining) {
-        const route = routeBetween(state.currentPlaceId, option.placement.primaryPlaceId);
-        if (!route.reachable) continue;
-        const nextElapsed = state.elapsedSeconds + route.estimatedSeconds + option.targetSeconds + option.observationSeconds;
-        if (context.hardTimeBudget && nextElapsed > usableBudget) continue;
-        const sameTypeCount = state.itemTypeCounts.get(option.item.itemType) || 0;
-        const diversityPenalty = Math.max(0, sameTypeCount - 1) * 0.18;
-        const coherence = relationCoherence(state.lastOption, option);
-        const logisticsPenalty = (route.estimatedSeconds / Math.max(usableBudget, 1)) * policy.generator.logisticsUtilityWeight;
-        const selected = new Set(state.selectedItemIds);
-        selected.add(id(option.item._id));
-        const counts = new Map(state.itemTypeCounts);
-        counts.set(option.item.itemType, sameTypeCount + 1);
-        expanded.push({
-          selectedItemIds: selected,
-          currentPlaceId: option.placement.primaryPlaceId,
-          stops: [...state.stops, option],
-          transitions: [...state.transitions, {
-            fromStopIndex: state.stops.length - 1,
-            toStopIndex: state.stops.length,
-            fromPlaceId: state.currentPlaceId || null,
-            toPlaceId: option.placement.primaryPlaceId,
-            path: (route.path || []).map((entry) => entry.connectionId),
-            estimatedSeconds: Math.round(route.estimatedSeconds),
-            preferencePenalty: route.preferencePenalty || 0,
-          }],
-          elapsedSeconds: nextElapsed,
-          contentSeconds: state.contentSeconds + option.targetSeconds,
-          observationSeconds: state.observationSeconds + option.observationSeconds,
-          logisticsSeconds: state.logisticsSeconds + route.estimatedSeconds,
-          utility: state.utility + option.baseUtility + coherence - diversityPenalty - logisticsPenalty,
-          mustCovered: state.mustCovered + (must.has(id(option.item._id)) ? 1 : 0),
-          itemTypeCounts: counts,
-          lastOption: option,
-        });
-      }
+      const remaining = options.filter((option) => !state.selectedItemIds.has(id(option.item._id))).sort((a, b) => {
+        const priority = (option) => (mustInclude.has(id(option.item._id)) ? 1 : 0) + (option.spatialMode === "target" && mustVisit.has(id(option.item._id)) ? 1 : 0);
+        return priority(b) - priority(a) || b.baseUtility - a.baseUtility;
+      }).slice(0, policy.generator.branchCandidates + totalMust);
+      for (const option of remaining) { const next = appendOption(state, option); if (next) expanded.push(next); }
     }
-    const nextBeam = pruneBeam(expanded, must.size, policy.generator.beamWidth);
-    if (nextBeam.every((state) => state.stops.length <= depth)) break;
+    const nextBeam = pruneBeam(expanded, totalMust, policy.generator.beamWidth);
+    if (nextBeam.every((state) => state.entries.length <= depth)) break;
     beam = nextBeam;
   }
-
-  let finals = beam.filter((state) => state.stops.length > 0 && state.mustCovered === must.size);
-  if (context.endPlaceId) {
-    finals = finals.filter((state) => {
-      const route = routeBetween(state.currentPlaceId, context.endPlaceId);
-      return route.reachable && (!context.hardTimeBudget || state.elapsedSeconds + route.estimatedSeconds <= usableBudget);
-    });
-  }
-  finals.sort((a, b) => b.utility - a.utility || b.stops.length - a.stops.length || a.elapsedSeconds - b.elapsedSeconds);
+  let finals = beam.filter((state) => state.entries.length > 0 && state.mustCovered === totalMust).map(finalize).filter(Boolean);
+  finals.sort((a, b) => b.utility - a.utility || b.entries.length - a.entries.length || a.elapsedSeconds - b.elapsedSeconds);
   let best = finals[0];
-  if (!best) {
-    throw new AppError("I vincoli richiesti non sono compatibili con il tempo disponibile", 409, [{
-      field: "timeBudgetSeconds",
-      code: "GENERATION_CONSTRAINT_CONFLICT",
-      message: "Ridurre i must-see, aumentare il tempo o modificare i constraint",
-    }]);
-  }
+  if (!best) throw new AppError("I vincoli richiesti non sono compatibili con il tempo disponibile", 409, [{ field: "timeBudgetSeconds", code: "GENERATION_CONSTRAINT_CONFLICT", message: "Aumentare il tempo o ridurre i vincoli di inclusione" }]);
 
-  function evaluateOrder(orderedStops) {
-    const transitions = [];
-    const counts = new Map();
-    let currentPlaceId = startPlaceId;
-    let logisticsSeconds = 0;
-    let contentSeconds = 0;
-    let observationSeconds = 0;
-    let utility = 0;
-    let previous = null;
-    for (let index = 0; index < orderedStops.length; index += 1) {
-      const option = orderedStops[index];
-      const route = routeBetween(currentPlaceId, option.placement.primaryPlaceId);
-      if (!route.reachable) return null;
-      const sameTypeCount = counts.get(option.item.itemType) || 0;
-      const diversityPenalty = Math.max(0, sameTypeCount - 1) * 0.18;
-      const coherence = relationCoherence(previous, option);
-      const logisticsPenalty = (route.estimatedSeconds / Math.max(usableBudget, 1)) * policy.generator.logisticsUtilityWeight;
-      utility += option.baseUtility + coherence - diversityPenalty - logisticsPenalty;
-      counts.set(option.item.itemType, sameTypeCount + 1);
-      logisticsSeconds += route.estimatedSeconds;
-      contentSeconds += option.targetSeconds;
-      observationSeconds += option.observationSeconds;
-      transitions.push({
-        fromStopIndex: index - 1,
-        toStopIndex: index,
-        fromPlaceId: currentPlaceId || null,
-        toPlaceId: option.placement.primaryPlaceId,
-        path: (route.path || []).map((entry) => entry.connectionId),
-        estimatedSeconds: Math.round(route.estimatedSeconds),
-        preferencePenalty: route.preferencePenalty || 0,
-      });
-      currentPlaceId = option.placement.primaryPlaceId;
-      previous = option;
+  function blockOrder(entries) {
+    const intro = [], groups = []; let current = null;
+    for (const entry of entries) {
+      const option = entry.option;
+      if (option.spatialMode === "target") { current = [option]; groups.push(current); }
+      else if (current) current.push(option); else intro.push(option);
     }
-    if (context.endPlaceId) {
-      const endRoute = routeBetween(currentPlaceId, context.endPlaceId);
-      if (!endRoute.reachable) return null;
-      logisticsSeconds += endRoute.estimatedSeconds;
-      utility -= (endRoute.estimatedSeconds / Math.max(usableBudget, 1)) * policy.generator.logisticsUtilityWeight;
-      transitions.push({
-        fromStopIndex: orderedStops.length - 1,
-        toStopIndex: orderedStops.length,
-        fromPlaceId: currentPlaceId,
-        toPlaceId: context.endPlaceId,
-        path: (endRoute.path || []).map((entry) => entry.connectionId),
-        estimatedSeconds: Math.round(endRoute.estimatedSeconds),
-        preferencePenalty: endRoute.preferencePenalty || 0,
-      });
-      currentPlaceId = context.endPlaceId;
-    }
-    const elapsedSeconds = contentSeconds + observationSeconds + logisticsSeconds;
-    if (context.hardTimeBudget && elapsedSeconds > usableBudget) return null;
-    return {
-      selectedItemIds: new Set(orderedStops.map((option) => id(option.item._id))),
-      currentPlaceId,
-      stops: orderedStops,
-      transitions,
-      elapsedSeconds,
-      contentSeconds,
-      observationSeconds,
-      logisticsSeconds,
-      utility,
-      mustCovered: orderedStops.filter((option) => must.has(id(option.item._id))).length,
-      itemTypeCounts: counts,
-      lastOption: orderedStops.at(-1) || null,
-    };
+    return { intro, groups };
   }
-
-  const initialOrdered = evaluateOrder(best.stops);
-  if (initialOrdered) best = initialOrdered;
   for (let pass = 0; pass < policy.generator.localImprovementPasses; pass += 1) {
-    let improved = best;
-    for (let left = 0; left < best.stops.length - 1; left += 1) {
-      for (let right = left + 1; right < best.stops.length; right += 1) {
-        const reordered = [...best.stops.slice(0, left), ...best.stops.slice(left, right + 1).reverse(), ...best.stops.slice(right + 1)];
-        const candidate = evaluateOrder(reordered);
-        if (!candidate) continue;
-        if (candidate.utility > improved.utility + 1e-9 || (Math.abs(candidate.utility - improved.utility) < 1e-9 && candidate.elapsedSeconds < improved.elapsedSeconds)) improved = candidate;
-      }
+    const { intro, groups } = blockOrder(best.entries); let improved = best;
+    for (let left = 0; left < groups.length - 1; left += 1) for (let right = left + 1; right < groups.length; right += 1) {
+      const reorderedGroups = [...groups.slice(0, left), ...groups.slice(left, right + 1).reverse(), ...groups.slice(right + 1)];
+      const candidate = evaluateOrder([...intro, ...reorderedGroups.flat()]);
+      if (candidate && (candidate.utility > improved.utility + 1e-9 || (Math.abs(candidate.utility - improved.utility) < 1e-9 && candidate.elapsedSeconds < improved.elapsedSeconds))) improved = candidate;
     }
-    if (improved === best) break;
-    best = improved;
+    if (improved === best) break; best = improved;
   }
   return { best, reservedSeconds };
 }
