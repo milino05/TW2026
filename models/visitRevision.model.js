@@ -2,7 +2,10 @@ const mongoose = require("mongoose");
 const IntegrityIssueSchema = require("../schemas/integrityIssue.schema");
 const { Schema } = mongoose;
 
-const VisitStopSchema = new Schema({ itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true }, optional: { type: Boolean, default: false } }, { _id: true });
+const VisitStopSchema = new Schema({
+  itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true },
+  role: { type: String, enum: ["core", "recommended", "optional"], default: "recommended" },
+}, { _id: true });
 const PresentationPolicySchema = new Schema({ durationKey: { type: String, required: true, trim: true, lowercase: true }, languageLevelKey: { type: String, required: true, trim: true, lowercase: true } }, { _id: false });
 const LogisticsTransitionSchema = new Schema({ fromStopIndex: { type: Number, min: 0, required: true }, toStopIndex: { type: Number, min: 0, required: true }, type: { type: String, enum: ["indoor", "inter_venue"], required: true }, layoutRevisionId: { type: Schema.Types.ObjectId, ref: "MuseumLayoutRevision", default: null }, plannedPath: { type: [Schema.Types.ObjectId], default: [] }, instructionOverride: { type: String, trim: true, default: null }, communityNote: { type: String, trim: true, default: null }, estimatedTransferSeconds: { type: Number, min: 0, default: null } }, { _id: true });
 const ReviewEventSchema = new Schema({ action: { type: String, enum: ["review_requested", "review_withdrawn", "changes_requested", "published"], required: true }, actorUserId: { type: Schema.Types.ObjectId, ref: "User", required: true }, at: { type: Date, required: true }, message: { type: String, trim: true, default: null } }, { _id: false });
