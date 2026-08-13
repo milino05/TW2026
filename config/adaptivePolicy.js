@@ -4,7 +4,7 @@
  * cold-start fallbacks, safety bounds and algorithm rules.
  */
 module.exports = Object.freeze({
-  version: 3,
+  version: 4,
   coldStart: Object.freeze({ movementSpeedMps: 1, observationSeconds: 45, paceFactors: Object.freeze({ calm: 0.8, normal: 1, fast: 1.2 }) }),
   movement: Object.freeze({ minSpeedMps: 0.1, maxSpeedMps: 3, maxHistoricalWeight: 0.7 }),
   pace: Object.freeze({ calmMax: 1 / 3, fastMin: 2 / 3 }),
@@ -20,8 +20,8 @@ module.exports = Object.freeze({
       semantic_drilldown: 0.8,
       visit_refocus_requested: 1,
       visit_extension_requested: 0,
-      stop_completed: 0.2,
-      stop_skipped: -0.7,
+      content_entry_completed: 0.2,
+      content_entry_skipped: -0.7,
       manual_add: 1,
       manual_remove: -1,
     }),
@@ -29,8 +29,8 @@ module.exports = Object.freeze({
   generator: Object.freeze({
     beamWidth: 24,
     branchCandidates: 14,
-    maxStops: 24,
-    minimumStopSeconds: 10,
+    maxContentEntries: 24,
+    minimumContentSeconds: 10,
     conservativeTimeReserveRatio: 0.08,
     replanTriggerRatio: 0.12,
     stabilityPenalty: 0.25,
