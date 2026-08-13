@@ -35,6 +35,8 @@ module.exports = Object.freeze({
     replanTriggerRatio: 0.12,
     stabilityPenalty: 0.25,
     logisticsUtilityWeight: 0.8,
+    inSituUtilityWeight: 0.45,
+    targetDensityUtilityWeight: 0.25,
     localImprovementPasses: 2,
   }),
 });
