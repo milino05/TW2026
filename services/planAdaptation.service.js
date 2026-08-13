@@ -1,353 +1,74 @@
-const VisitSession = require("../models/visitSession.model");
-const SessionPlanRevision = require("../models/sessionPlanRevision.model");
-const PlanChangeProposal = require("../models/plan_change_proposal.model");
-const MuseumLayout = require("../models/museumLayout.model");
-const MuseumLayoutRevision = require("../models/museumLayoutRevision.model");
-const UserGenerationPreference = require("../models/userGenerationPreference.model");
-const AppError = require("../utils/AppError");
-const policy = require("../config/adaptivePolicy");
-const { generateVisitPlan } = require("./visitGenerator.service");
-const { activeElapsedSeconds } = require("./visitSession.service");
-const { getCurrentSessionPlan, nextPlanVersion, timingFromStops, id } = require("./sessionPlan.service");
-
-const FIDELITIES = ["preserve", "adapt", "regenerate"];
-const REASONS = ["ahead_of_schedule", "behind_schedule", "manual_request", "refocus_future", "extend_visit", "parameter_change"];
-const SCALARS = ["movementPacePreference", "depthPreference", "languageComplexityPreference", "observationEmphasis", "visitDensity", "discoveryPreference", "timeRiskTolerance"];
-
-function interestIdentity(interest) {
-  if (!interest) return "";
-  if (interest.kind === "item") return `item:${id(interest.itemId)}`;
-  if (interest.kind === "canonical") return `canonical:${String(interest.scheme || "").toLowerCase()}:${interest.id || interest.refId || ""}`;
-  return `${interest.kind}:${interest.key || ""}`;
-}
-
-function mergeInterests(base = [], additions = [], replace = false) {
-  const map = new Map();
-  if (!replace) for (const interest of base || []) map.set(interestIdentity(interest), interest);
-  for (const interest of additions || []) map.set(interestIdentity(interest), interest);
-  return [...map.values()].filter((interest) => interestIdentity(interest));
-}
-
-function remainingSeconds(plan, currentStopIndex) {
-  const stopSeconds = (plan.stops || []).slice(currentStopIndex + 1).reduce(
-    (sum, stop) => sum + (Number(stop.estimatedContentSeconds) || 0) + (Number(stop.estimatedObservationSeconds) || 0),
-    0,
-  );
-  const transitionSeconds = (plan.transitions || []).filter((transition) => transition.toStopIndex > currentStopIndex).reduce(
-    (sum, transition) => sum + (Number(transition.estimatedSeconds) || 0),
-    0,
-  );
-  return stopSeconds + transitionSeconds;
-}
-
-function segmentEndForMuseum(stops, currentStopIndex) {
-  const museumId = id(stops[currentStopIndex]?.museumId);
-  let end = currentStopIndex;
-  for (let index = currentStopIndex + 1; index < stops.length; index += 1) {
-    if (id(stops[index].museumId) !== museumId) break;
-    end = index;
-  }
-  return end;
-}
-
-function copyTransition(transition) {
-  return transition?.toObject ? transition.toObject() : { ...transition };
-}
-
-function buildLockedSuffix(plan, segmentEnd) {
-  const suffixStops = (plan.stops || []).slice(segmentEnd + 1).map((stop) => stop.toObject ? stop.toObject() : { ...stop });
-  const suffixTransitions = (plan.transitions || []).filter((transition) => transition.fromStopIndex >= segmentEnd + 1).map(copyTransition);
-  const boundary = (plan.transitions || []).find((transition) => transition.fromStopIndex === segmentEnd && transition.toStopIndex === segmentEnd + 1);
-  return { suffixStops, suffixTransitions, boundary: boundary ? copyTransition(boundary) : null };
-}
-
-function fixedSuffixSeconds(plan, segmentEnd) {
-  const stopSeconds = (plan.stops || []).slice(segmentEnd + 1).reduce(
-    (sum, stop) => sum + (Number(stop.estimatedContentSeconds) || 0) + (Number(stop.estimatedObservationSeconds) || 0),
-    0,
-  );
-  const transitionSeconds = (plan.transitions || []).filter((transition) => transition.fromStopIndex >= segmentEnd).reduce(
-    (sum, transition) => sum + (Number(transition.estimatedSeconds) || 0),
-    0,
-  );
-  return stopSeconds + transitionSeconds;
-}
-
-function normalizeReason(payload, session, ratio) {
-  if (payload.reason !== undefined) {
-    if (!REASONS.includes(payload.reason)) throw new AppError("reason non valido", 400);
-    return payload.reason;
-  }
-  if (session.status === "route_completed") return "extend_visit";
-  if (ratio >= 1 + policy.generator.replanTriggerRatio) return "ahead_of_schedule";
-  if (ratio <= 1 - policy.generator.replanTriggerRatio) return "behind_schedule";
-  return "manual_request";
-}
-
-function defaultFidelity(plan, reason) {
-  if (plan.origin?.sourceType !== "visit") return "adapt";
-  if (["behind_schedule", "refocus_future", "parameter_change", "extend_visit"].includes(reason)) return "adapt";
-  return "preserve";
-}
-
-function resolveFidelity(plan, reason, requested) {
-  if (requested !== undefined && !FIDELITIES.includes(requested)) throw new AppError("fidelity non valida", 400);
-  return requested || defaultFidelity(plan, reason);
-}
-
-function messageKey(reason) {
-  if (reason === "ahead_of_schedule") return "SUGGEST_EXTEND_VISIT";
-  if (reason === "behind_schedule") return "SUGGEST_SHORTEN_VISIT";
-  if (reason === "refocus_future") return "SUGGEST_REFOCUS_VISIT";
-  if (reason === "extend_visit") return "SUGGEST_CONTINUE_VISIT";
-  return "SUGGEST_ADAPT_VISIT";
-}
-
-function roleForGeneratedStop(stop, originalRoles, must) {
-  return originalRoles.get(id(stop.itemId)) || (must.has(id(stop.itemId)) ? "core" : "recommended");
-}
-
-async function currentPublishedLayout(museumId) {
-  const stable = await MuseumLayout.findOne({ museumId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
-  if (!stable) throw new AppError("Il museo non ha un layout pubblicato", 409);
-  const revision = await MuseumLayoutRevision.findById(stable.publishedRevisionId).lean();
-  if (!revision || revision.integrity?.status !== "valid") throw new AppError("Il layout pubblicato non e disponibile o integro", 409);
-  return revision;
-}
-
-async function inferCurrentPlace({ museumId, currentStop, explicitPlaceId }) {
-  const layout = await currentPublishedLayout(museumId);
-  if (explicitPlaceId) {
-    if (!(layout.places || []).some((place) => id(place._id) === id(explicitPlaceId))) throw new AppError("currentPlaceId non appartiene al layout pubblicato corrente", 400);
-    return explicitPlaceId;
-  }
-  const placement = (layout.itemPlacements || []).find((entry) => id(entry.itemId) === id(currentStop.itemId));
-  if (!placement?.primaryPlaceId) throw new AppError("La tappa corrente non ha una posizione nel layout pubblicato", 409);
-  return placement.primaryPlaceId;
-}
-
-function resolveRemainingBudget({ payload, session, currentRemainingBudget, reason }) {
-  let requested = Number(payload.remainingTimeBudgetSeconds);
-  if (!Number.isFinite(requested) || requested <= 0) requested = currentRemainingBudget;
-  const additional = Number(payload.additionalTimeSeconds);
-  if (Number.isFinite(additional) && additional > 0) requested = reason === "extend_visit" && session.status === "route_completed" ? additional : requested + additional;
-  if (reason === "extend_visit" && session.status === "route_completed" && (!Number.isFinite(Number(payload.remainingTimeBudgetSeconds)) || Number(payload.remainingTimeBudgetSeconds) <= 0) && (!Number.isFinite(additional) || additional <= 0)) {
-    throw new AppError("Per estendere una visita completata indicare il tempo aggiuntivo disponibile", 400);
-  }
-  return requested;
-}
-
-async function proposePlanChange({ userId, sessionId, payload = {} }) {
-  const { session, plan } = await getCurrentSessionPlan({ sessionId, userId });
-  if (session.status === "paused" && !["manual_request", "refocus_future", "parameter_change"].includes(payload.reason)) {
-    throw new AppError("Riprendere la visita prima del replanning automatico", 409);
-  }
-
-  const maxIndex = Math.max(0, (plan.stops || []).length - 1);
-  const requestedIndex = Number(payload.currentStopIndex);
-  const currentStopIndex = session.status === "route_completed"
-    ? maxIndex
-    : Math.min(maxIndex, Number.isInteger(requestedIndex) ? Math.max(0, requestedIndex) : session.currentStopIndex || 0);
-  const currentStop = plan.stops[currentStopIndex];
-  if (!currentStop) throw new AppError("La sessione non ha una tappa corrente", 409);
-
-  const elapsed = activeElapsedSeconds(session);
-  const originalBudget = Number(plan.requestSnapshot?.timeBudgetSeconds) || Number(plan.estimatedTiming?.totalSeconds) || 1;
-  const currentRemainingBudget = Math.max(1, originalBudget - elapsed);
-  const originalRemaining = remainingSeconds(plan, currentStopIndex);
-  const ratio = originalRemaining > 0 ? currentRemainingBudget / originalRemaining : 1;
-  const reason = normalizeReason(payload, session, ratio);
-  const fidelity = resolveFidelity(plan, reason, payload.fidelity);
-  const requestedRemainingBudget = resolveRemainingBudget({ payload, session, currentRemainingBudget, reason });
-
-  const segmentEnd = segmentEndForMuseum(plan.stops, currentStopIndex);
-  const currentMuseumId = currentStop.museumId;
-  const originalSegmentFuture = (plan.stops || []).slice(currentStopIndex + 1, segmentEnd + 1);
-  const { suffixStops, suffixTransitions, boundary } = buildLockedSuffix(plan, segmentEnd);
-  const suffixSeconds = fixedSuffixSeconds(plan, segmentEnd);
-  if (suffixSeconds >= requestedRemainingBudget && suffixStops.length) {
-    throw new AppError("Il tempo indicato non basta nemmeno per la parte multi-museo che rimane bloccata", 409, [{ code: "LOCKED_SUFFIX_EXCEEDS_TIME_BUDGET", context: { suffixSeconds, requestedRemainingBudget } }]);
-  }
-  const generationBudget = Math.max(1, requestedRemainingBudget - suffixSeconds);
-  const visitedIds = (plan.stops || []).slice(0, currentStopIndex + 1).map((stop) => stop.itemId);
-  const originalRoles = new Map(originalSegmentFuture.map((stop) => [id(stop.itemId), stop.role]));
-  const explicitMust = (plan.requestSnapshot?.mustSeeItemIds || []).filter((itemId) => !visitedIds.some((visited) => id(visited) === id(itemId)));
-  const fidelityMust = fidelity === "preserve"
-    ? originalSegmentFuture.map((stop) => stop.itemId)
-    : fidelity === "adapt"
-      ? originalSegmentFuture.filter((stop) => stop.role === "core").map((stop) => stop.itemId)
-      : [];
-  const mustSeeItemIds = [...new Map([...explicitMust, ...fidelityMust, ...(payload.addMustSeeItemIds || [])].map((value) => [id(value), value])).values()]
-    .filter((value) => !(payload.removeMustSeeItemIds || []).some((removed) => id(removed) === id(value)));
-  const stabilityInterests = fidelity === "regenerate"
-    ? []
-    : originalSegmentFuture
-      .filter((stop) => !mustSeeItemIds.some((itemId) => id(itemId) === id(stop.itemId)))
-      .map((stop) => ({ kind: "item", itemId: stop.itemId, weight: fidelity === "preserve" ? 0.8 : policy.generator.stabilityPenalty }));
-
-  const startPlaceId = await inferCurrentPlace({ museumId: currentMuseumId, currentStop, explicitPlaceId: payload.currentPlaceId });
-  const request = {
-    ...plan.requestSnapshot,
-    timeBudgetSeconds: generationBudget,
-    startPlaceId,
-    hardTimeBudget: payload.hardTimeBudget === undefined ? true : payload.hardTimeBudget !== false,
-    interests: mergeInterests(plan.requestSnapshot?.interests || [], [...(payload.interests || []), ...stabilityInterests], payload.replaceInterests === true),
-    mustSeeItemIds,
-    excludedItemIds: [...new Set([...(plan.requestSnapshot?.excludedItemIds || []).map(id), ...(payload.excludedItemIds || []).map(id), ...visitedIds.map(id)])],
-  };
-  for (const field of SCALARS) if (payload[field] !== undefined) request[field] = payload[field];
-  if (Array.isArray(payload.navigationRequirements)) request.navigationRequirements = payload.navigationRequirements;
-
-  const tail = await generateVisitPlan({ userId, museumId: currentMuseumId, request, persist: false });
-  const mustSet = new Set(mustSeeItemIds.map(id));
-  const generatedStops = (tail.stops || []).map((stop) => ({ ...stop, museumId: currentMuseumId, role: roleForGeneratedStop(stop, originalRoles, mustSet) }));
-  const prefixStops = (plan.stops || []).slice(0, currentStopIndex + 1).map((stop) => stop.toObject ? stop.toObject() : { ...stop });
-  const prefixTransitions = (plan.transitions || []).filter((transition) => transition.toStopIndex <= currentStopIndex).map(copyTransition);
-  const offset = prefixStops.length;
-  const generatedTransitions = (tail.transitions || []).map((transition) => ({
-    ...transition,
-    type: "indoor",
-    fromStopIndex: transition.fromStopIndex < 0 ? offset - 1 : transition.fromStopIndex + offset,
-    toStopIndex: transition.toStopIndex + offset,
-  }));
-  const suffixOffset = offset + generatedStops.length;
-  const combinedTransitions = [...prefixTransitions, ...generatedTransitions];
-  if (suffixStops.length && boundary) combinedTransitions.push({ ...boundary, fromStopIndex: Math.max(0, suffixOffset - 1), toStopIndex: suffixOffset });
-  const oldSuffixStart = segmentEnd + 1;
-  for (const transition of suffixTransitions) {
-    combinedTransitions.push({
-      ...transition,
-      fromStopIndex: suffixOffset + (transition.fromStopIndex - oldSuffixStart),
-      toStopIndex: suffixOffset + (transition.toStopIndex - oldSuffixStart),
-    });
-  }
-  const combinedStops = [...prefixStops, ...generatedStops, ...suffixStops];
-  const totalSessionBudgetSeconds = Math.round(elapsed + requestedRemainingBudget);
-  const proposedRevision = {
-    origin: plan.origin,
-    createdReason: reason,
-    fidelity,
-    executedThroughStopIndex: currentStopIndex,
-    requestSnapshot: { ...request, timeBudgetSeconds: totalSessionBudgetSeconds },
-    contextSnapshot: tail.contextSnapshot || plan.contextSnapshot,
-    sourceVocabularyRevisionIds: [...new Set([...(plan.sourceVocabularyRevisionIds || []).map(id), tail.sourceVocabularyRevisionId ? id(tail.sourceVocabularyRevisionId) : ""].filter(Boolean))],
-    sourceLayoutRevisionIds: [...new Set([...(plan.sourceLayoutRevisionIds || []).map(id), tail.sourceLayoutRevisionId ? id(tail.sourceLayoutRevisionId) : ""].filter(Boolean))],
-    adaptivePolicyVersion: tail.adaptivePolicyVersion || policy.version,
-    stops: combinedStops,
-    transitions: combinedTransitions,
-    estimatedTiming: timingFromStops(combinedStops, combinedTransitions, tail.estimatedTiming?.reservedSeconds || 0),
-    utilityScore: (Number(plan.utilityScore) || 0) + (Number(tail.utilityScore) || 0),
-    explanation: { ...(plan.explanation || {}), adaptationReason: reason, fidelity, generatedMuseumId: currentMuseumId },
-  };
-
-  const proposal = await PlanChangeProposal.create({
-    userId,
-    sessionId: session._id,
-    basePlanRevisionId: plan._id,
-    reason,
-    fidelity,
-    currentStopIndex,
-    adaptationRequest: payload,
-    currentEstimate: {
-      activeElapsedSeconds: Math.round(elapsed),
-      remainingBudgetSeconds: Math.round(currentRemainingBudget),
-      requestedRemainingBudgetSeconds: Math.round(requestedRemainingBudget),
-      proposedTotalSessionBudgetSeconds: totalSessionBudgetSeconds,
-      currentPlanRemainingSeconds: Math.round(originalRemaining),
-      deviationRatio: ratio,
-    },
-    proposedRevision,
-    messageKey: messageKey(reason),
-  });
-
-  if (["refocus_future", "extend_visit"].includes(reason)) {
-    session.interactionEvents.push({
-      type: reason === "refocus_future" ? "visit_refocus_requested" : "visit_extension_requested",
-      itemId: payload.focusItemId || null,
-      variantKey: currentStop.variantKey || null,
-      metadata: { proposalId: proposal._id, museumId: currentMuseumId, interests: payload.interests || [] },
-      at: new Date(),
-    });
-    await session.save();
-  }
-  return proposal;
-}
-
-async function rememberPreference(userId, request) {
-  if (request.remember !== true) return null;
-  const set = {};
-  for (const field of SCALARS) if (request[field] !== undefined) set[field] = Number(request[field]);
-  if (Array.isArray(request.navigationRequirements)) set.navigationRequirements = request.navigationRequirements;
-  if (Array.isArray(request.interests)) {
-    const existing = await UserGenerationPreference.findOne({ userId }).lean();
-    set.interests = mergeInterests(existing?.interests || [], request.interests, request.replaceInterests === true);
-  }
-  if (!Object.keys(set).length) return null;
-  return UserGenerationPreference.findOneAndUpdate(
-    { userId },
-    { $set: set },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-  );
-}
-
-async function resolvePlanChangeProposal({ userId, proposalId, accept }) {
-  const proposal = await PlanChangeProposal.findOne({ _id: proposalId, userId, status: "pending" });
-  if (!proposal) throw new AppError("Proposta di modifica non trovata", 404);
-  const session = await VisitSession.findOne({ _id: proposal.sessionId, userId });
-  if (!session) throw new AppError("Sessione non trovata", 404);
-  if (id(session.currentPlanRevisionId) !== id(proposal.basePlanRevisionId)) {
-    proposal.status = "stale";
-    proposal.resolvedAt = new Date();
-    await proposal.save();
-    throw new AppError("Il piano della sessione e gia cambiato; la proposta non e piu applicabile", 409);
-  }
-
-  proposal.status = accept ? "accepted" : "rejected";
-  proposal.resolvedAt = new Date();
-  await proposal.save();
-  if (!accept) return { proposal, planRevision: null };
-
-  const base = await SessionPlanRevision.findById(proposal.basePlanRevisionId);
-  if (!base) throw new AppError("Piano base non trovato", 409);
-  const data = proposal.proposedRevision || {};
-  const revision = await SessionPlanRevision.create({
-    sessionId: session._id,
-    version: await nextPlanVersion(session._id),
-    basedOnRevisionId: base._id,
-    status: "active",
-    origin: data.origin || base.origin,
-    createdReason: proposal.reason,
-    fidelity: proposal.fidelity,
-    executedThroughStopIndex: proposal.currentStopIndex,
-    requestSnapshot: data.requestSnapshot || {},
-    contextSnapshot: data.contextSnapshot || {},
-    sourceVocabularyRevisionIds: data.sourceVocabularyRevisionIds || [],
-    sourceLayoutRevisionIds: data.sourceLayoutRevisionIds || [],
-    adaptivePolicyVersion: data.adaptivePolicyVersion || policy.version,
-    stops: data.stops || [],
-    transitions: data.transitions || [],
-    estimatedTiming: data.estimatedTiming || {},
-    utilityScore: data.utilityScore || 0,
-    explanation: data.explanation || {},
-  });
-  base.status = "superseded";
-  await base.save();
-  session.currentPlanRevisionId = revision._id;
-  session.status = "active";
-  session.routeCompletedAt = null;
-  await session.save();
-  await PlanChangeProposal.updateMany({ sessionId: session._id, status: "pending", _id: { $ne: proposal._id } }, { $set: { status: "stale", resolvedAt: new Date() } });
-  const rememberedPreference = await rememberPreference(userId, proposal.adaptationRequest || {});
-  return { proposal, planRevision: revision, rememberedPreference };
-}
-
-module.exports = {
-  FIDELITIES,
-  REASONS,
-  mergeInterests,
-  remainingSeconds,
-  segmentEndForMuseum,
-  defaultFidelity,
-  proposePlanChange,
-  resolvePlanChangeProposal,
-};
+const VisitSession=require("../models/visitSession.model"),SessionPlanRevision=require("../models/sessionPlanRevision.model"),PlanChangeProposal=require("../models/plan_change_proposal.model"),UserGenerationPreference=require("../models/userGenerationPreference.model"),UserAdaptiveProfile=require("../models/userAdaptiveProfile.model"),AppError=require("../utils/AppError"),policy=require("../config/adaptivePolicy");
+const{generateVisitPlan}=require("./visitGenerator.service"),materializePhysicalRoute}=require("./visitPhysicalRoute.service"),activeElapsedSeconds}=require("./visitSession.service"),{getCurrentSessionPlan,nextPlanVersion,id}=require("./sessionPlan.service"),anchorMap,timingFromPlan}=require("./physicalRoute.service"),H=require("./planAdaptation.helpers");
+const FIDELITIES=["preserve","adapt","regenerate"],REASOns=["ahead_of_schedule","behind_schedule","manual_request","refocus_future","extend_visit","parameter_change","route_only"],SCALARS=["movementPacePreference","depthPreference","languageComplexityPreference","observationEmphasis","visitDensity","discoveryPreference","timeRiskTolerance"];
+function normalizeReason(payload,session,ratio){if(payload.reason!==undefined){if(!REASONS.includes(payload.reason))throw new AppError("reason non valido",400);return payload.reason}if(session.status==="route_completed")return"extend_visit";if(ratio>=1+policy.generator.replanTriggerRatio)return"ahead_of_schedule";if(ratio<=1-policy.generator.replanTriggerRatio)return"behind_schedule";return"manual_request"}
+function resolveFidelity(plan,reason,requested){if(requested!==undefined&&!FIDELITIES.includes(requested))throw new AppError("fidelity non valida",400);if(requested)return requested;if(plan.origin?.sourceType!=="visit")return"adapt";return["behind_schedule","refocus_future","parameter_change","extend_visit"].includes(reason)?"adapt":"preserve"}
+function messageKey(reason){return reason==="ahead_of_schedule"?"SUGGEST_EXTEND_VISIT":reason==="behind_schedule"?"SUGGEST_SHORTEN_VISIT":reason==="refocus_future"?"SUGGEST_REFOCUS_VISIT":reason==="extend_visit"?"SUGGEST_CONTINUE_VISIT":reason==="route_only"?"SUGGEST_ROUTE_UPDATE":"SUGGEST_ADAPT_VISIT"}
+function resolveRemainingBudget({payload,session,currentRemainingBudget,reason}){let requested=Number(payload.remainingTimeBudgetSeconds);if(!Number.isFinite(requested)||requested<=0)requested=currentRemainingBudget;const additional=Number(payload.additionalTimeSeconds);if(Number.isFinite(additional)&&additional>0)requested=reason==="extend_visit"&&session.status==="route_completed"?additional:requested+additional;if(reason==="extend_visit"&&session.status==="route_completed"&&(!Number.isFinite(Number(payload.remainingTimeBudgetSeconds))||Number(payload.remainingTimeBudgetSeconds)<=0)&&(!Number.isFinite(additional)||additional<=0))throw new AppError("Per estendere una visita completata indicare il tempo aggiuntivo",400);return requested}
+async function rememberGenerationPreferences({userId,payload}){const set={};for(const field of[...SCALARS,"interests","navigationRequirements"])if(payload[field]!==undefined)set[field]=payload[field];if(!Object.keys(set).length)return null;return UserGenerationPreference.findOneAndUpdate({userId},{$set:set},{upsert:true,new:true,yunValidators:true,setDefaultsOnInsert:true})}
+async function proposePlanChange({userId,sessionId,payload={}}){
+ const{session,plan}=await getCurrentSessionPlan("sessionId",userId);if(session.status==="paused"&&!["manual_request","refocus_future","parameter_change","route_only"].includes(payload.reason))throw new AppError("Riprendere la visita prima del replanning automatico",409);
+ const maxIndex=Math.max(0,(plan.contentEntries||[]).length-1),requestedIndex=Number(payload.currentEntryIndex),currentEntryIndex=session.status==="route_completed"?maxIndex:Math.min(maxIndex,Number.isInteger(requestedIndex)?Math.max(0,requestedIndex):session.currentEntryIndex||0),currentEntry=plan.contentEntries[currentEntryIndex];if(!currentEntry)throw new AppError("La sessione non ha un contenuto corrente",409);
+ const elapsed=activeElapsedSeconds(session),originalBudget=Number(plan.requestSnapshot?.timeBudgetSeconds)||Number(plan.estimatedTiming?.totalSeconds)||1,currentRemainingBudget=Math.max(1,originalBudget-elapsed),originalRemaining=H.remainingSeconds(plan,currentEntryIndex),ratio=originalRemaining>0?currentRemainingBudget/originalRemaining:1,reason=normalizeReason(payload,session,ratio),fidelity=resolveFidelity(plan[reason,payload.fidelity),requestedRemainingBudget=resolveRemainingBudget({payload,session,currentRemainingBudget,reason});
+ const segmentEnd=H.segmentEndForMuseum(plan.contentEntries,plan.physicalRoute,currentEntryIndex),currentMuseumId=H.physicalMuseumForEntry(plan,mcurrentEntry),futureSegment=(plan.contentEntries||[]).slice(currentEntryIndex+1,segmentEnd+1),suffixEntries=(plan.contentEntries||[]).slice(segmentEnd+1).map(H.plain),pieces=H.routePieces(plan,currentEntryIndex,segmentEnd),currentAnchor=anchorMap(plan.physicalRoute).get(id(currentEntry.deliveryAnchorId));
+ const suffixTiming=suffixEntries.reduce((s,e)=>s+(Number(e.estimatedContentSeconds)||0),0)+pieces.suffixAnchors.reduce((s,a)=>s+(Number(a.estimatedObservationSeconds)||0),0)+[...(pieces.boundaryLeg?[pieces.boundaryLeg]:[]),...pieces.suffixLegs].reduce((s,l)=>s+(Number(l.estimatedSeconds)||0),0);if(suffixTiming>=requestedRemainingBudget&&suffixEntries.length)throw new AppError("Il tempo indicato non basta per la parte multi-museo bloccata",409);
+ const generationBudget=Math.max(1,requestedRemainingBudget-suffixTiming),visitedIds=new Set((plan.contentEntries||[]).slice(0,currentEntryIndex+1).map(e=>id(e.itemId))),constraints=H.fidelityConstraints({plan,futureSegment,fidelity,visitedIds,payload}),stability=H.stabilityInterests(futureSegment,fidelity,constraints.include),request={...H.plain(plan.requestSnapshot||{}),timeBudgetSeconds:generationBudget,startPlaceId:payload.currentPlaceId||currentAnchor?.placeId||null,endPlaceId:suffixEntries.length?null:(payload.endPlaceId??plan.requestSnapshot?.endPlaceId??null),hardTimeBudget:payload.hardTimeBudget===undefined?true:payload.hardTimeBudget!==false,interests:H.mergeInterests(plan.requestSnapshot?.interests||[],[...(payload.interests||[]),İXš[]WK^[ØYœ™\XÙR[\™\İÏOO]YJK]\İ[˜ÛYR][RYÎ˜ÛÛœİ˜Z[Ëš[˜ÛYK]\İš\Ú]][RYÎ˜ÛÛœİ˜Z[Ëš\Ú]^ÛYY][RYÎ–Ë‹‹›™]ÈÙ]
+Ë‹‹Š[‹œ™\]Y\İÛ˜\ÚİË™^ÛYY][RYß×JK›X\
+Y
+K‹‹Š^[ØY™^ÛYY][RYß×JK›X\
+Y
+K‹‹š\Ú]YY×JW_NÙ›ÜŠÛÛœİšY[ÙˆĞĞST”ÊZYŠ^[ØYÙšY[HOO][™Yš[™Y
+\™\]Y\İÙšY[O\^[ØYÙšY[NÚYŠ\œ˜^Kš\Ğ\œ˜^J^[ØY›˜]šYØ][Û”™\]Z\™[Y[ÊJ\™\]Y\İ›˜]šYØ][Û”™\]Z\™[Y[Ï\^[ØY›˜]šYØ][Û”™\]Z\™[Y[ÎÂˆ]Z[ÚYŠ™X\ÛÛOOHœ›İ]WÛÛ›HŠ^ØÛÛœİ›Ùš[OX]ØZ]\Ù\Y\]™T›Ùš[K™š[™Û™Jİ\Ù\’YJK›X[Š
+K™\İ[X]ØZ]X]\šX[^™T\ÚXØ[›İ]JØÛÛ[[šY\Î™]\™TÙYÛY[›X\
+œZ[ŠKY\]™T›Ùš[Nœ›Ùš[K˜]šYØ][ÛÛ[İ™[Y[XÙT™Y™\™[˜ÙNœ™\]Y\İ›[İ™[Y[XÙT™Y™\™[˜ÙK™\]Z\™[Y[Îœ™\]Y\İ›˜]šYØ][Û”™\]Z\™[Y[ß×Kİ\XÙRYœ™\]Y\İœİ\XÙRYKY˜][[İ™[Y[ÜYY\Îœ[‹˜ÛÛ^Û˜\ÚİË™Y™™Xİ]™S[İ™[Y[ÜYY\ßÛXŞK˜ÛÛİ\›[İ™[Y[ÜYY\ßJNİZ[^ØÛÛ[[šY\Îœ™\İ[˜ÛÛ[[šY\Ë\ÚXØ[›İ]Nœ™\İ[œ\ÚXØ[›İ]KÛÛ^Û˜\Úİœ[‹˜ÛÛ^Û˜\ÚİY\]™TÛXŞU™\œÚ[ÛœÛXŞK™\œÚ[Û‹][]TØÛÜ™NŒÛİ\˜ÙU›ØØX[\T™]š\Ú[Û’Y›[Ûİ\˜ÙS^[İ]™]š\Ú[Û’Yœ™\İ[œÛİ\˜ÙS^[İ]™]š\Ú[Û’YÏË–Ì_[\İ[X]Y[Z[™Î[Z[™Ñœ›ÛT[Š™\İ[˜ÛÛ[[šY\Ë™\İ[œ\ÚXØ[›İ]J__Y[ÙHZ[X]ØZ]Ù[™\˜]Uš\Ú][Š\Ù\’Y‹İ\œ™[]\Ù][RY™\]Y\İ\œÚ\İ™˜[ÙJNÂˆÛÛœİÜšYÚ[˜[›Û\Ï[™]ÈX\
+]\™TÙYÛY[›X\
+OO–ÚY
+Kš][RY
+KKœ›ÛWJJK]\İÛÜ™O[™]ÈÙ]
+Ë‹‹˜ÛÛœİ˜Z[Ëš[˜ÛYK‹‹˜ÛÛœİ˜Z[Ëš\Ú]K›X\
+Y
+JKZ[[šY\ÏJZ[˜ÛÛ[[šY\ß×JK›X\
+OOŠË‹‹’œZ[ŠJK›ÛN›ÜšYÚ[˜[›Û\Ë™Ù]
+Y
+Kš][RY
+J_
+]\İÛÜ™Kš\ÊY
+Kš][RY
+JOÈ˜ÛÜ™Hˆœ™XÛÛ[Y[™YŠ_JJK›Ü›X[^™YZ[R››Ü›X[^™UZ[İ\
+Z[[šY\ËZ[œ\ÚXØ[›İ]_ßKYXÙ\Ë˜İ\œ™[[˜ÚÜ’Y
+K™Yš^[šY\ÏJ[‹˜ÛÛ[[šY\ß×JKœÛXÙJİ\œ™[[R[™^
+ÌJK›X\
+œZ[ŠKÛÛXš[™Y[šY\ÏVË‹‹œ™Yš^[šY\Ë‹‹››Ü›X[^™YZ[™[šY\Ë‹‹œİY™š^[šY\×K\ÚXØ[›İ]OR›Y\™ÙT›İ]JÜ™Yš^Ø[˜ÚÜœÎœYXÙ\Ëœ™Yš^[˜ÚÜœËYÜÎœYXÙ\Ëœ™Yš^YÜËİ\œ™[[˜ÚÜ’YœYXÙ\Ë˜İ\œ™[[˜ÚÜ’YKZ[:normalizedTail,suffix:{anchors:pieces.suffixAnchors,legs:pieces.suffixLegs},boundary:pieces.boundaryLeg}),totalSessionBudgetSeconds=Math.round(elapsed+requestedRemainingBudget),estimatedTiming=timingFromPlan"combinedEntries,physicalRoute,tail.estimatedTiming?.reservedSeconds||0),proposedRevision={origin:H.plain(plan.origin),createdReason:reason,fidelity,executedThroughEntryIndex:currentEntryIndex,requestSnapshot:{...request,timeBudgetSeconds:totalSessionBudgetSeconds},contextSnapshot:tail.contextSnapshot||H.plain(plan.contextSnapshot),sourceVocabularyRevisionIds:H.uniqueIds([...(plan.sourceVocabularyRevisionIds||[]),tail.sourceVocabularyRevisionId]),sourceLayoutRevisionIds:H.uniqueIds([...(plan.sourceLayoutRevisionIds||[]),
+\ÚXØ[›İ]K›YÜß×JK›X\
+O››^[İ]™]š\Ú[Û’Y
+K™š[\Š›ÛÛX[ŠWJKY\]™TÛXŞU™\œÚ[ÛZ[˜Y\]™TÛXŞU™\œÚ[ÛŸÛXŞK™\œÚ[Û‹ÛÛ[[šY\Î˜ÛÛXš[™Y[šY\Ë\ÚXØ[›İ]K\İ[X]Y[Z[™Ë][]TØÛÜ™NŠ[X™\Š[‹][]TØÛÜ™J_
+JÊ[X™\ŠZ[][]TØÛÜ™J_
+K^[˜][ÛË‹‹’œZ[Š[‹™^[˜][ÛŸßJKY\][Û”™X\ÛÛœ™X\ÛÛ‹šY[]KÙ[™\˜]Y]\Ù][RY˜İ\œ™[]\Ù][RY_K›ÜÜØ[X]ØZ][Ú[™ÙT›ÜÜØ[˜Ü™X]Jİ\Ù\’YÙ\ÜÚ[Û’YœÙ\ÜÚ[Û‹—ÚY˜\ÙT[”™]š\Ú[Û’Yœ[‹—ÚY™X\ÛÛ‹šY[]Kİ\œ™[[R[™^Y\][Û”™\]Y\İœ^[ØYİ\œ™[\İ[X]NØXİ]™Q[\ÙYÙXÛÛ™Î“X]œ›İ[™
+[\ÙY
+K™[XZ[š[™ĞYÙ]ÙXÛÛ™Î“X]œ›İ[™
+İ\œ™[™[XZ[š[™ĞYÙ]
+K™\]Y\İY™[XZ[š[™ĞYÙ]ÙXÛÛ™Î“X]œ›İ[™
+™\]Y\İY™[XZ[š[™ĞYÙ]
+K›ÜÜÙYİ[Ù\ÜÚ[ÛYÙ]ÙXÛÛ™Îİ[Ù\ÜÚ[ÛYÙ]ÙXÛÛ™Ëİ\œ™[[”™[XZ[š[™ÔÙXÛÛ™Î“X]œ›İ[™
+ÜšYÚ[˜[™[XZ[š[™ÊK]šX][Û”˜][Îœ˜][ßK›ÜÜÙY™]š\Ú[Û‹Y\ÜØYÙRÙ^N›Y\ÜØYÙRÙ^J™X\ÛÛŠ_JNÚYŠÈœ™Y›Øİ\×Ù]\™H‹™^[™İš\Ú]—Kš[˜ÛY\Ê™X\ÛÛŠJ^ÜÙ\ÜÚ[Û‹š[\˜Xİ[Û‘]™[Ëœ\Ú
+İ\Nœ™X\ÛÛOOHœ™Y›Øİ\×Ù]\™HÈš\Ú]Ü™Y›Øİ\×Ü™\]Y\İYˆš\Ú]Ù^[œÚ[Û—Ü™\]Y\İY‹][RY›[ÛÛ[[RY˜İ\œ™[[K—ÚY˜\šX[Ù^N˜İ\œ™[[K˜\šX[Ù^_[Y]Y]Nœ™X\ÛÛOOHœ™Y›Øİ\×Ù]\™HŞÛ]\Ù][RY˜İ\œ™[]\Ù][RY[\™\İÎœ^[ØYš[\™\İß×_NØY][Û˜[[YTÙXÛÛ™Î“[X™\Š^[ØY˜Y][Û˜[[YTÙXÛÛ™Ê_[K]›™]È]J
+_JNØ]ØZ]Ù\ÜÚ[Û‹œØ]™J
+_ZYŠ^[ØYœ™[Y[X™\OO]YJX]ØZ]™[Y[X™\‘Ù[™\˜][Û”™Y™\™[˜Ù\Êİ\Ù\’Y^[ØYJNÜ™]\›ˆ›ÜÜØ[ßB˜\Ş[˜È[˜İ[Ûˆ™\ÛÛ™T[Ú[™ÙT›ÜÜØ[
+İ\Ù\’Y›ÜÜØ[YXØÙ\J^ØÛÛœİ›ÜÜØ[X]ØZ][Ú[™ÙT›ÜÜØ[™š[™Û™J×ÚYœ›ÜÜØ[Y\Ù\’YJNÚYŠ\›ÜÜØ[
+]›İÈ™]È\\œ›ÜŠ”›ÜÜİH›Ûˆ›İ˜]H‹
+NÚYŠ›ÜÜØ[œİ]\ÈOOHœ[™[™ÈŠ]›İÈ™]È\\œ›ÜŠ”›ÜÜİHÚXHš\ÛÛH‹JNØÛÛœİÙ\ÜÚ[ÛX]ØZ]š\Ú]Ù\ÜÚ[Û‹™š[™Û™J×ÚYœ›ÜÜØ[œÙ\ÜÚ[Û’Y\Ù\’YJNÚYŠ\Ù\ÜÚ[ÛŠ]›İÈ™]È\\œ›ÜŠ”Ù\ÜÚ[Û™H›Ûˆ›İ˜]H‹
+NÚYŠY
+Ù\ÜÚ[Û‹˜İ\œ™[[”™]š\Ú[Û’Y
+HOOZY
+›ÜÜØ[˜˜\ÙT[”™]š\Ú[Û’Y
+J^Ü›ÜÜØ[œİ]\ÏHœİ[HÜ›ÜÜØ[œ™\ÛÛ™Y][™]È]J
+NØ]ØZ]›ÜÜØ[œØ]™J
+Nİ›İÈ™]È\\œ›ÜŠ“H›ÜÜİHHØœÛÛ]H‹J_ZYŠXXØÙ\
+^Ü›ÜÜØ[œİ]\ÏHœ™Z™XİYÜ›ÜÜØ[œ™\ÛÛ™Y][™]È]J
+NØ]ØZ]›ÜÜØ[œØ]™J
+NÜ™]\›Ü›ÜÜØ[Ù\ÜÚ[ÛŸ_XÛÛœİ›ÜÜÙYRœZ[Š›ÜÜØ[œ›ÜÜÙY™]š\Ú[ÛŠK™\œÚ[ÛX]ØZ]™^[•™\œÚ[ÛŠÙ\ÜÚ[Û‹—ÚY
+K™]š\Ú[ÛX]ØZ]Ù\ÜÚ[Û”[”™]š\Ú[Û‹˜Ü™X]JÜÙ\ÜÚ[Û’YœÙ\ÜÚ[Û‹—ÚY™\œÚ[Û‹˜\ÙYÛ”™]š\Ú[Û’Yœ›ÜÜØ[˜˜\ÙT[”™]š\Ú[Û’Yİ]\Îˆ˜Xİ]™H‹‹‹œ›ÜÜÙYJNØ]ØZ]Ù\ÜÚ[Û”[”™]š\Ú[Û‹\]SÛ™J×ÚYœ›ÜÜØ[˜˜\ÙT[”™]š\Ú[Û’YÙ\ÜÚ[Û’YœÙ\ÜÚ[Û‹—ÚYKÉÙ]Üİ]\Îˆœİ\\œÙYYŸ_JNÜÙ\ÜÚ[Û‹˜İ\œ™[[”™]š\Ú[Û’Y\™]š\Ú[Û‹—ÚYÜÙ\ÜÚ[Û‹˜İ\œ™[[R[™^\›ÜÜØ[˜İ\œ™[[R[™^ÚYŠÙ\ÜÚ[Û‹œİ]\ÏOOHœ›İ]WØÛÛ\]Y‰‰œ›ÜÜØ[œ™X\ÛÛOOH™^[™İš\Ú]Š^ÜÙ\ÜÚ[Û‹œİ]\ÏH˜Xİ]™HÜÙ\ÜÚ[Û‹œ›İ]PÛÛ\]Y][[X]ØZ]Ù\ÜÚ[Û‹œØ]™J
+NÜ›ÜÜØ[œİ]\ÏH˜XØÙ\YÜ›ÜÜØ[œ™\ÛÛ™Y][™]È]J
+NØ]ØZ]›ÜÜØ[œØ]™J
+NØ]ØZ][Ú[™ÙT›ÜÜØ[\]SX[JÜÙ\ÜÚ[Û’YœÙ\ÜÚ[Û‹—ÚYİ]\Îˆœ[™[™È‹ÚYÉ™Nœ›ÜÜØ[—ÚY_KÉÙ]Üİ]\Îˆœİ[H‹™\ÛÛ™Y]›™]È]J
+__JNÜ™]\›Ü›ÜÜØ[Ù\ÜÚ[Û‹[”™]š\Ú[Ûœ™]š\Ú[ÛŸ_B›[Ù[K™^ÜÏ^Ñ’QSUQTË‘PTÓÓ”ËY\™ÙR[\™\İÎ’›Y\™ÙR[\™\İË™[XZ[š[™ÔÙXÛÛ™Î’œ™[XZ[š[™ÔÙXÛÛ™ËÙYÛY[[™›Ü“]\Ù][N’œÙYÛY[[™›Ü“]\Ù][K›ÜÜÙT[Ú[™ÙK™\ÛÛ™T[Ú[™ÙT›ÜÜØ[™[Y[X™\‘Ù[™\˜][Û”™Y™\™[˜Ù\ßNÂ
