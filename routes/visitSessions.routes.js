@@ -3,7 +3,8 @@ const validateSessionId=validateObjectIdParam("sessionId"),validateProposalId=va
 router.post("/visit-sessions",requireAuth,controller.start);
 router.get("/visit-sessions/:sessionId/plan",requireAuth,validateSessionId,controller.currentPlan);
 router.post("/visit-sessions/:sessionId/transitions",requireAuth,validateSessionId,controller.transition);
-router.post("/visit-sessions/:sessionId/stops",requireAuth,validateSessionId,controller.stop);
+router.post("/visit-sessions/:sessionId/content-entries/experience",requireAuth,validateSessionId,controller.contentExperience);
+router.post("/visit-sessions/:sessionId/physical-targets/observation",requireAuth,validateSessionId,controller.physicalObservation);
 router.post("/visit-sessions/:sessionId/interactions",requireAuth,validateSessionId,controller.interaction);
 router.post("/visit-sessions/:sessionId/presentation-depth",requireAuth,validateSessionId,controller.presentationDepth);
 router.post("/visit-sessions/:sessionId/pause",requireAuth,validateSessionId,controller.pause);
