@@ -11,7 +11,7 @@ const {
 } = require("./validation.utils");
 
 const MATCH_TYPES = ["exact", "close", "broader", "narrower"];
-const ITEM_CAPABILITIES = ["visit_stop", "spatial_placement", "semantic_context"];
+const ITEM_CAPABILITIES = ["navigation_target", "spatial_placement", "semantic_context"];
 const RELATION_CATEGORIES = ["semantic", "contextual", "editorial"];
 const RELATION_DIRECTIONS = ["directed", "symmetric"];
 
@@ -158,9 +158,14 @@ function validateItemTypes(values, errors) {
     else seen.add(value.key);
     if (!value.label) pushError(errors, `${path}.label`, "REQUIRED", "label e obbligatoria");
     if (!Array.isArray(value.capabilities)) pushError(errors, `${path}.capabilities`, "INVALID_TYPE", "capabilities deve essere un array");
-    else value.capabilities.forEach((capability, capabilityIndex) => {
-      if (!ITEM_CAPABILITIES.includes(capability)) pushError(errors, `${path}.capabilities[${capabilityIndex}]`, "INVALID_ENUM", "capability non valida", { allowedValues: ITEM_CAPABILITIES });
-    });
+    else {
+      value.capabilities.forEach((capability, capabilityIndex) => {
+        if (!ITEM_CAPABILITIES.includes(capability)) pushError(errors, `${path}.capabilities[${capabilityIndex}]`, "INVALID_ENUM", "capability non valida", { allowedValues: ITEM_CAPABILITIES });
+      });
+      if (value.capabilities.includes("navigation_target") && !value.capabilities.includes("spatial_placement")) {
+        pushError(errors, `${path}.capabilities`, "NAVIGATION_TARGET_REQUIRES_PLACEMENT", "navigation_target richiede spatial_placement");
+      }
+    }
     validateSemanticRefs(value.semanticRefs || [], `${path}.semanticRefs`, errors);
   });
 }
@@ -213,7 +218,6 @@ function validateVocabularyPayload(payload) {
 function semanticRefKey(ref) {
   return `${String(ref?.scheme || "").toLowerCase()}::${String(ref?.id || "")}`;
 }
-
 function isObjectId(value) { return mongoose.isValidObjectId(value); }
 
 module.exports = {
