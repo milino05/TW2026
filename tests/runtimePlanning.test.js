@@ -1,32 +1,10 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { mergeInterests, remainingSeconds, segmentEndForMuseum } = require("../services/planAdaptation.service");
-const { normalizeVisitPayload, validateVisitDraftPayload } = require("../services/validation/visit.validation");
-
-const id = (value) => value.toString(16).padStart(24, "0").slice(-24);
-
-test("runtime interests can be added or explicitly replaced", () => {
-  const base = [{ kind: "tag", key: "history", weight: 0.4 }];
-  const added = mergeInterests(base, [{ kind: "tag", key: "history", weight: 1 }, { kind: "tag", key: "technique", weight: 0.7 }]);
-  assert.deepEqual(added, [{ kind: "tag", key: "history", weight: 1 }, { kind: "tag", key: "technique", weight: 0.7 }]);
-  assert.deepEqual(mergeInterests(base, [{ kind: "tag", key: "technique", weight: 1 }], true), [{ kind: "tag", key: "technique", weight: 1 }]);
-});
-
-test("remainingSeconds ignores the immutable executed prefix", () => {
-  const plan = { stops: [{ estimatedContentSeconds: 10, estimatedObservationSeconds: 5 }, { estimatedContentSeconds: 20, estimatedObservationSeconds: 5 }, { estimatedContentSeconds: 30, estimatedObservationSeconds: 5 }], transitions: [{ fromStopIndex: 0, toStopIndex: 1, estimatedSeconds: 4 }, { fromStopIndex: 1, toStopIndex: 2, estimatedSeconds: 6 }] };
-  assert.equal(remainingSeconds(plan, 0), 20 + 5 + 30 + 5 + 4 + 6);
-  assert.equal(remainingSeconds(plan, 1), 30 + 5 + 6);
-});
-
-test("multi museum replanning is scoped to the current museum segment", () => {
-  const a = id(1), b = id(2);
-  assert.equal(segmentEndForMuseum([{ museumId: a }, { museumId: a }, { museumId: b }, { museumId: b }], 0), 1);
-  assert.equal(segmentEndForMuseum([{ museumId: a }, { museumId: a }, { museumId: b }, { museumId: b }], 2), 3);
-});
-
-test("visit stops use core recommended optional and reject the removed optional flag", () => {
-  const payload = normalizeVisitPayload({ kind: "community", title: "Test", stops: [{ itemId: id(1), role: "core" }, { itemId: id(2), optional: true }] });
-  const errors = validateVisitDraftPayload({ payload, kind: "community", mode: "create" });
-  assert.equal(payload.stops[0].role, "core");
-  assert.equal(errors.some((error) => error.code === "REMOVED_FIELD"), true);
-});
+const test=require("node:test"),assert=require("node:assert/strict"),mongoose=require("mongoose");
+const H=require("../services/planAdaptation.helpers");
+const{timingFromPlan,assignDeliveryAnchors}=require("../services/physicalRoute.service");
+const{normalizeVisitPayload,validateVisitDraftPayload}=require("../services/validation/visit.validation");
+const oid=()=>new mongoose.Types.ObjectId();
+test("context entries inherit the latest physical anchor",()=>{const start={_id:oid(),kind:"place",purpose:"start",museumId:oid(),placeId:oid()},a={_id:oid(),kind:"content_target",purpose:"content",contentEntryId:oid(),museumId:start.museumId,placeId:oid()},b={_id:oid(),kind:"content_target",purpose:"content",contentEntryId:oid(),museumId:start.museumId,placeId:oid()};const entries=[{_id:a.contentEntryId,spatialMode:"target"},{_id:oid(),spatialMode:"context"},{_id:b.contentEntryId,spatialMode:"target"},{_id:oid(),spatialMode:"context"}];const result=assignDeliveryAnchors(entries,{anchors:[start,a,b],legs:[]});assert.equal(String(result[1].deliveryAnchorId),String(a._id));assert.equal(String(result[3].deliveryAnchorId),String(b._id))});
+test("timing counts observation only from physical anchors",()=>{const e1=oid(),e2=oid(),a1=oid(),a2=oid();const timing=timingFromPlan([{_id:e1,estimatedContentSeconds:20},{_id:e2,estimatedContentSeconds:30}],{anchors:[{_id:a1,contentEntryId:e1,estimatedObservationSeconds:40},{_id:a2,contentEntryId:null,estimatedObservationSeconds:0}],legs:[{fromAnchorId:a2,toAnchorId:a1,estimatedSeconds:10}]});assert.deepEqual(timing,{contentSeconds:50,observationSeconds:40,logisticsSeconds:10,totalSeconds:100,reservedSeconds:0})});
+test("remaining time uses future content targets and route legs",()=>{const museum=oid(),e1=oid(),e2=oid(),e3=oid(),a1=oid(),a2=oid();const plan={contentEntries:[{_id:e1,estimatedContentSeconds:10,deliveryAnchorId:a1},{_id:e2,estimatedContentSeconds:20,deliveryAnchorId:a1},{_id:e3,estimatedContentSeconds:30,deliveryAnchorId:a2}],physicalRoute:{anchors:[{_id:a1,contentEntryId:e1,museumId:museum,estimatedObservationSeconds:5},{_id:a2,contentEntryId:e3,museumId:museum,estimatedObservationSeconds:7}],legs:[{fromAnchorId:a1,toAnchorId:a2,estimatedSeconds:6}]}};assert.equal(H.remainingSeconds(plan,0),20+30+7+6)});
+test("museum segmentation follows delivery anchors not content item museum",()=>{const m1=oid(),m2=oid(),a=oid(),b=oid();const entries=[{_id:oid(),deliveryAnchorId:a},{_id:oid(),deliveryAnchorId:a},{_id:oid(),deliveryAnchorId:b}];assert.equal(H.segmentEndForMuseum(entries,{anchors:[{_id:a,museumId:m1},{_id:b,museumId:m2}]},0),1)});
+test("visit draft uses contentEntries and rejects removed stops",()=>{const payload=normalizeVisitPayload({kind:"community",title:"Test",contentEntries:[{itemId:oid(),role:"core",spatialMode:"target"}],stops:[{itemId:oid()}]});const errors=validateVisitDraftPayload({payload,kind:"community",mode:"create"});assert.equal(errors.some(error=>error.field==="stops"&&error.code==="REMOVED_FIELD"),true)});
