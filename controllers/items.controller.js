@@ -84,22 +84,22 @@ async function publishItem(req, res, next) {
 
 async function trashItem(req, res, next) {
   try {
-    const item = await itemService.trashItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
-    res.status(200).json({ message: "Item spostato nel cestino", item });
+    const result = await itemService.trashItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item spostato nel cestino", ...result });
   } catch (error) { next(error); }
 }
 
 async function restoreItem(req, res, next) {
   try {
-    const item = await itemService.restoreItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
-    res.status(200).json({ message: "Item ripristinato", item });
+    const result = await itemService.restoreItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item ripristinato", ...result });
   } catch (error) { next(error); }
 }
 
 async function hardDeleteItem(req, res, next) {
   try {
-    const item = await itemService.hardDeleteItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
-    res.status(200).json({ message: "Item eliminato definitivamente", itemId: item._id });
+    const result = await itemService.hardDeleteItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item eliminato definitivamente", itemId: result.item._id, audit: result.audit });
   } catch (error) { next(error); }
 }
 
