@@ -27,6 +27,20 @@ async function requestVisitReview({ visitId, actorUserId }) { const consistency 
 async function withdrawVisitReview({ visitId, actorUserId }) { const { visit, revision } = await loadWorking(visitId); await assertVisitEditor({ visit, actorUserId }); if (visit.kind !== "official") throw new AppError("Operazione non applicabile alle visite community", 409); try { withdrawReview(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { visit, revision }; }
 async function requestVisitChanges({ visitId, actorUserId, message }) { const { visit, revision } = await loadWorking(visitId); if (visit.kind !== "official") throw new AppError("Operazione non applicabile alle visite community", 409); await assertMuseumRole({ userId: actorUserId, museumId: visit.ownerMuseumId, minimumRole: "manager" }); try { requestChanges(revision, actorUserId, message); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { visit, revision }; }
 
+async function compensateVisitPublish({ visit, revision, previousPublishedId, previousRevisionState, previousSuperseded }) {
+  const pointer = await Visit.updateOne(
+    { _id: visit._id, publishedRevisionId: revision._id, workingRevisionId: null },
+    { $set: { publishedRevisionId: previousPublishedId || null, workingRevisionId: revision._id } },
+  );
+  revision.status = previousRevisionState.status;
+  revision.review = previousRevisionState.review;
+  revision.publication = previousRevisionState.publication;
+  await revision.save();
+  let previous = { modifiedCount: 1 };
+  if (previousPublishedId && previousSuperseded) previous = await VisitRevision.updateOne({ _id: previousPublishedId, status: "superseded" }, { $set: { status: "published" } });
+  if (pointer.modifiedCount !== 1 || previous.modifiedCount !== 1) throw new AppError("Rollback pubblicazione Visit incompleto", 500, [{ code: "VISIT_PUBLISH_ROLLBACK_FAILED" }]);
+}
+
 async function publishVisit({ visitId, actorUserId }) {
   const initial = await loadWorking(visitId);
   if (initial.visit.kind === "official") await assertMuseumRole({ userId: actorUserId, museumId: initial.visit.ownerMuseumId, minimumRole: "manager" }); else await assertVisitEditor({ visit: initial.visit, actorUserId });
@@ -39,11 +53,28 @@ async function publishVisit({ visitId, actorUserId }) {
   const previousRevisionState = { status: revision.status, review: revision.review?.toObject ? revision.review.toObject() : { ...revision.review }, publication: revision.publication?.toObject ? revision.publication.toObject() : { ...revision.publication } };
   try { markPublished(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   await revision.save();
-  const update = await Visit.updateOne({ _id: visit._id, workingRevisionId: revision._id, lifecycleStatus: "active" }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
-  if (update.modifiedCount !== 1) { revision.status = previousRevisionState.status; revision.review = previousRevisionState.review; revision.publication = previousRevisionState.publication; await revision.save(); throw new AppError("La revisione di lavoro e cambiata durante la pubblicazione", 409); }
-  if (previousPublishedId) await VisitRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+  let pointerSwitched = false, previousSuperseded = false;
+  try {
+    const update = await Visit.updateOne({ _id: visit._id, workingRevisionId: revision._id, lifecycleStatus: "active" }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
+    if (update.modifiedCount !== 1) throw new AppError("La revisione di lavoro e cambiata durante la pubblicazione", 409);
+    pointerSwitched = true;
+    if (previousPublishedId) {
+      const previous = await VisitRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+      if (previous.modifiedCount !== 1) throw new Error("Impossibile supersedere la precedente VisitRevision");
+      previousSuperseded = true;
+    }
+  } catch (error) {
+    if (pointerSwitched) {
+      try { await compensateVisitPublish({ visit, revision, previousPublishedId, previousRevisionState, previousSuperseded }); }
+      catch (rollbackError) { if (rollbackError instanceof AppError) throw rollbackError; throw new AppError("Rollback pubblicazione Visit incompleto", 500, [{ code: "VISIT_PUBLISH_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
+    } else {
+      revision.status = previousRevisionState.status; revision.review = previousRevisionState.review; revision.publication = previousRevisionState.publication; await revision.save().catch(() => {});
+    }
+    if (error instanceof AppError) throw error;
+    throw new AppError("Pubblicazione Visit annullata per errore di consistenza", 500, [{ code: "VISIT_PUBLISH_FAILED", message: error.message }]);
+  }
   visit.publishedRevisionId = revision._id; visit.workingRevisionId = null;
   return { visit, revision };
 }
 
-module.exports = { checkVisitConsistency, requestVisitReview, withdrawVisitReview, requestVisitChanges, publishVisit };
+module.exports = { checkVisitConsistency, requestVisitReview, withdrawVisitReview, requestVisitChanges, compensateVisitPublish, publishVisit };
