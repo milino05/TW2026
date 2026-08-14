@@ -5,12 +5,8 @@ const AppError = require("../utils/AppError");
 const { buildRelationViews } = require("./relationView.utils");
 const { withNormalizedPositions } = require("./vocabularyNormalization.service");
 
-function plain(value) {
-  return value && typeof value.toObject === "function" ? value.toObject() : { ...value };
-}
-function normalizeRelationTypes(values) {
-  return Array.isArray(values) ? values.map(plain).filter((value) => value?.key) : [];
-}
+function plain(value) { return value && typeof value.toObject === "function" ? value.toObject() : { ...value }; }
+function normalizeRelationTypes(values) { return Array.isArray(values) ? values.map(plain).filter((value) => value?.key) : []; }
 function materializeVocabulary({ museumId, version, revisionId, source }) {
   const itemTypeDefinitions = (source.itemTypes || []).map(plain).filter((entry) => entry?.key);
   const relationTypes = normalizeRelationTypes(source.relationTypes);
@@ -25,6 +21,7 @@ function materializeVocabulary({ museumId, version, revisionId, source }) {
     relationTypes,
     relationViews: buildRelationViews(relationTypes),
     presentationAspects: (source.presentationAspects || []).map(plain),
+    selectionSignals: (source.selectionSignals || []).map(plain),
   };
 }
 function buildItemTypeVocabulary(vocabulary, itemType) {
@@ -45,6 +42,7 @@ function buildItemTypeVocabulary(vocabulary, itemType) {
     relationTypes: vocabulary.relationTypes.filter((type) => allowed(type.domain)),
     relationViews: vocabulary.relationViews.filter((view) => allowed(view.domain)),
     presentationAspects: vocabulary.presentationAspects,
+    selectionSignals: vocabulary.selectionSignals,
   };
 }
 async function loadPublishedVocabularyRevision(museumId) {
@@ -59,30 +57,11 @@ async function getMuseumVocabulary(museumId) {
   if (!museum) throw new AppError("Museo non trovato", 404);
   const published = await loadPublishedVocabularyRevision(museumId);
   if (!published) throw new AppError("Il museo non ha ancora un vocabolario semantico pubblicato", 409, [{ code: "VOCABULARY_NOT_PUBLISHED" }]);
-  return materializeVocabulary({
-    museumId: museum._id,
-    version: published.revision.version,
-    revisionId: published.revision._id,
-    source: published.revision,
-  });
+  return materializeVocabulary({ museumId: museum._id, version: published.revision.version, revisionId: published.revision._id, source: published.revision });
 }
 async function getItemTypeVocabulary({ museumId, itemType }) {
   const vocabulary = await getMuseumVocabulary(museumId);
-  if (!vocabulary.itemTypes.includes(itemType)) {
-    throw new AppError("itemType non valido per il museo", 400, [{
-      field: "itemType",
-      code: "INVALID_CONTROLLED_VALUE",
-      message: `itemType non valido: ${itemType}`,
-      allowedValues: vocabulary.itemTypes,
-    }]);
-  }
+  if (!vocabulary.itemTypes.includes(itemType)) throw new AppError("itemType non valido per il museo", 400, [{ field: "itemType", code: "INVALID_CONTROLLED_VALUE", message: `itemType non valido: ${itemType}`, allowedValues: vocabulary.itemTypes }]);
   return buildItemTypeVocabulary(vocabulary, itemType);
 }
-
-module.exports = {
-  getMuseumVocabulary,
-  buildItemTypeVocabulary,
-  getItemTypeVocabulary,
-  loadPublishedVocabularyRevision,
-  materializeVocabulary,
-};
+module.exports = { getMuseumVocabulary, buildItemTypeVocabulary, getItemTypeVocabulary, loadPublishedVocabularyRevision, materializeVocabulary };
