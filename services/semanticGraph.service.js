@@ -21,49 +21,13 @@ function featureKey(feature = {}) {
   return `${feature.kind || "unknown"}:${normalizeKey(feature.key)}`;
 }
 function edgeWeight(edge, type) { return edgeTraversalWeight(edge, type); }
-function cacheKey(museumId, view) { return `${id(museumId)}::${view}`; }
+function cacheKey(museumId) { return `${id(museumId)}::published`; }
+function touchCache(key, value) { graphCache.delete(key); graphCache.set(key, value); while (graphCache.size > MAX_CACHE_ENTRIES) graphCache.delete(graphCache.keys().next().value); }
+function invalidateMuseumSemanticGraphCache(museumId) { graphCache.delete(cacheKey(museumId)); }
+function selectedRevisionId(item, view) { return view === "working" ? item.workingRevisionId || item.publishedRevisionId || null : item.publishedRevisionId || null; }
+function buildSignature({ vocabulary, items }) { const pointers = items.map((item) => `${id(item._id)}:${id(item.publishedRevisionId)}`).sort().join("|"); return `${id(vocabulary.vocabularyRevisionId)}::published::${pointers}`; }
 
-function touchCache(key, value) {
-  graphCache.delete(key);
-  graphCache.set(key, value);
-  while (graphCache.size > MAX_CACHE_ENTRIES) graphCache.delete(graphCache.keys().next().value);
-}
-
-function invalidateMuseumSemanticGraphCache(museumId, { view = null } = {}) {
-  const prefix = `${id(museumId)}::`;
-  for (const key of [...graphCache.keys()]) {
-    if (key.startsWith(prefix) && (!view || key === cacheKey(museumId, view))) graphCache.delete(key);
-  }
-}
-
-function selectedRevisionId(item, view) {
-  if (view === "working") return item.workingRevisionId || item.publishedRevisionId || null;
-  return item.publishedRevisionId || null;
-}
-
-function buildSignature({ vocabulary, items, view }) {
-  const pointers = items
-    .map((item) => `${id(item._id)}:${id(selectedRevisionId(item, view))}`)
-    .sort()
-    .join("|");
-  return `${id(vocabulary.vocabularyRevisionId)}::${view}::${pointers}`;
-}
-
-async function loadMuseumSemanticGraph(museumId, { view = "published", bypassCache = false } = {}) {
-  if (!["published", "working"].includes(view)) throw new TypeError("view deve essere published o working");
-  const [vocabulary, items] = await Promise.all([
-    getMuseumVocabulary(museumId),
-    Item.find({ museumId, lifecycleStatus: "active", $or: [{ publishedRevisionId: { $ne: null } }, { workingRevisionId: { $ne: null } }] }).lean(),
-  ]);
-  const signature = buildSignature({ vocabulary, items, view });
-  const key = cacheKey(museumId, view);
-  const cached = graphCache.get(key);
-  if (!bypassCache && cached?.signature === signature) {
-    touchCache(key, cached);
-    return cached.graph;
-  }
-
-  const revisionIds = items.map((item) => selectedRevisionId(item, view)).filter(Boolean);
+async function materializeGraph({ museumId, view, vocabulary, items, revisionIds }) {
   const revisionQuery = { _id: { $in: revisionIds } };
   if (view === "published") Object.assign(revisionQuery, { status: "published", "integrity.status": "valid" });
   const [revisions, persistedEdges] = await Promise.all([
@@ -73,61 +37,58 @@ async function loadMuseumSemanticGraph(museumId, { view = "published", bypassCac
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
   const itemTypeByKey = new Map((vocabulary.itemTypeDefinitions || []).map((entry) => [entry.key, entry]));
   const relationTypeByKey = new Map((vocabulary.relationTypes || []).map((entry) => [entry.key, entry]));
-  const nodes = new Map();
-  const canonicalIndex = new Map();
-  const edgesFrom = new Map();
-  const edgesTo = new Map();
-
-  function addCanonical(ref, itemId) {
-    if (!ref?.scheme || !(ref.id || ref.refId)) return;
-    const canonicalKey = semanticRefKey(ref);
-    if (!canonicalIndex.has(canonicalKey)) canonicalIndex.set(canonicalKey, new Set());
-    canonicalIndex.get(canonicalKey).add(id(itemId));
-  }
-  function addEdge(edge) {
-    const from = id(edge.fromItemId), to = id(edge.toItemId);
-    if (!edgesFrom.has(from)) edgesFrom.set(from, []);
-    if (!edgesTo.has(to)) edgesTo.set(to, []);
-    edgesFrom.get(from).push(edge);
-    edgesTo.get(to).push(edge);
-  }
-
+  const nodes = new Map(), canonicalIndex = new Map(), edgesFrom = new Map(), edgesTo = new Map();
+  function addCanonical(ref, itemId) { if (!ref?.scheme || !(ref.id || ref.refId)) return; const canonicalKey = semanticRefKey(ref); if (!canonicalIndex.has(canonicalKey)) canonicalIndex.set(canonicalKey, new Set()); canonicalIndex.get(canonicalKey).add(id(itemId)); }
+  function addEdge(edge) { const from = id(edge.fromItemId), to = id(edge.toItemId); if (!edgesFrom.has(from)) edgesFrom.set(from, []); if (!edgesTo.has(to)) edgesTo.set(to, []); edgesFrom.get(from).push(edge); edgesTo.get(to).push(edge); }
   for (const item of items) {
-    const revisionId = selectedRevisionId(item, view);
-    const revision = revisionById.get(id(revisionId));
+    const revisionId = selectedRevisionId(item, view), revision = revisionById.get(id(revisionId));
     if (!revision) continue;
     const node = { item, revision, itemType: itemTypeByKey.get(item.itemType) || null };
     nodes.set(id(item._id), node);
     for (const ref of revision.semanticRefs || []) addCanonical(ref, item._id);
     for (const ref of node.itemType?.semanticRefs || []) addCanonical(ref, item._id);
   }
-
   const authoritativeEdges = [];
   for (const persisted of persistedEdges) {
-    const sourceId = id(persisted.sourceItemId), targetId = id(persisted.targetItemId);
-    const sourceNode = nodes.get(sourceId);
+    const sourceId = id(persisted.sourceItemId), targetId = id(persisted.targetItemId), sourceNode = nodes.get(sourceId);
     if (!sourceNode || id(sourceNode.revision._id) !== id(persisted.sourceItemRevisionId) || !nodes.has(targetId)) continue;
-    const type = relationTypeByKey.get(persisted.relationTypeKey);
-    if (!type) continue;
-    authoritativeEdges.push(persisted);
-    addEdge(materializeDirectEdge(persisted, type));
-    addEdge(materializeReverseEdge(persisted, type));
+    const type = relationTypeByKey.get(persisted.relationTypeKey); if (!type) continue;
+    authoritativeEdges.push(persisted); addEdge(materializeDirectEdge(persisted, type)); addEdge(materializeReverseEdge(persisted, type));
   }
+  return { museumId, view, vocabulary, nodes, canonicalIndex, edgesFrom, edgesTo, authoritativeEdges, relationTypeByKey };
+}
 
-  const graph = {
-    museumId,
-    view,
-    signature,
-    vocabulary,
-    nodes,
-    canonicalIndex,
-    edgesFrom,
-    edgesTo,
-    authoritativeEdges,
-    relationTypeByKey,
-  };
+async function loadMuseumSemanticGraph(museumId, { view = "published", bypassCache = false } = {}) {
+  if (!["published", "working"].includes(view)) throw new TypeError("view deve essere published o working");
+  const [vocabulary, items] = await Promise.all([
+    getMuseumVocabulary(museumId),
+    Item.find({ museumId, lifecycleStatus: "active", $or: [{ publishedRevisionId: { $ne: null } }, { workingRevisionId: { $ne: null } }] }).lean(),
+  ]);
+  const revisionIds = items.map((item) => selectedRevisionId(item, view)).filter(Boolean);
+  // Le working revision sono mutabili mentre mantengono lo stesso pointer: per
+  // correttezza editoriale non vengono mai cacheate. La cache e riservata ai
+  // published graph, i cui edge set sono immutabili per revision ID.
+  if (view === "working") return materializeGraph({ museumId, view, vocabulary, items, revisionIds });
+  const signature = buildSignature({ vocabulary, items }), key = cacheKey(museumId), cached = graphCache.get(key);
+  if (!bypassCache && cached?.signature === signature) { touchCache(key, cached); return cached.graph; }
+  const graph = await materializeGraph({ museumId, view, vocabulary, items, revisionIds });
+  graph.signature = signature;
   touchCache(key, { signature, graph });
   return graph;
+}
+
+async function loadRevisionSemanticEdges({ museumId, sourceItemId, sourceItemRevisionId }) {
+  const [vocabulary, persistedEdges] = await Promise.all([
+    getMuseumVocabulary(museumId),
+    SemanticEdge.find({ museumId, sourceItemId, sourceItemRevisionId }).lean(),
+  ]);
+  const typeByKey = new Map((vocabulary.relationTypes || []).map((type) => [type.key, type]));
+  const result = [];
+  for (const edge of persistedEdges) {
+    const type = typeByKey.get(edge.relationTypeKey);
+    if (type) result.push(materializeDirectEdge(edge, type));
+  }
+  return result;
 }
 
 function resolveFeatureToItemIds(graph, feature = {}) {
@@ -143,53 +104,29 @@ function resolveFeatureToItemIds(graph, feature = {}) {
   }
   return result;
 }
-
-function neighbors(graph, itemId, { relationTypeKey = null } = {}) {
-  const key = relationTypeKey ? normalizeKey(relationTypeKey) : null;
-  return (graph?.edgesFrom.get(id(itemId)) || []).filter((edge) => !key || edge.viewKey === key || edge.baseRelationTypeKey === key);
-}
+function neighbors(graph, itemId, { relationTypeKey = null } = {}) { const key = relationTypeKey ? normalizeKey(relationTypeKey) : null; return (graph?.edgesFrom.get(id(itemId)) || []).filter((edge) => !key || edge.viewKey === key || edge.baseRelationTypeKey === key); }
 function outgoingEdges(graph, itemId) { return neighbors(graph, itemId).filter((edge) => !edge.generated); }
 function incomingEdges(graph, itemId) { return neighbors(graph, itemId).filter((edge) => edge.generated); }
-
 function shortestSemanticPath(graph, { from, to, relationTypeKey = null, maxDepth = 3 } = {}) {
-  const starts = resolveFeatureToItemIds(graph, from);
-  const goals = new Set(resolveFeatureToItemIds(graph, to));
+  const starts = resolveFeatureToItemIds(graph, from), goals = new Set(resolveFeatureToItemIds(graph, to));
   if (!starts.length || !goals.size) return null;
   for (const start of starts) if (goals.has(start)) return { itemIds: [start], edges: [], depth: 0, strength: 1 };
-  const queue = starts.map((start) => ({ itemId: start, itemIds: [start], edges: [], strength: 1 }));
-  const bestDepth = new Map(starts.map((start) => [start, 0]));
+  const queue = starts.map((start) => ({ itemId: start, itemIds: [start], edges: [], strength: 1 })), bestDepth = new Map(starts.map((start) => [start, 0]));
   while (queue.length) {
     const current = queue.shift();
     if (current.edges.length >= Math.max(1, Math.min(6, Number(maxDepth) || 3))) continue;
     for (const edge of neighbors(graph, current.itemId, { relationTypeKey })) {
-      const nextId = id(edge.toItemId), depth = current.edges.length + 1;
-      const next = { itemId: nextId, itemIds: [...current.itemIds, nextId], edges: [...current.edges, edge], strength: current.strength * Math.max(0.05, edge.traversalWeight || 0.05) };
+      const nextId = id(edge.toItemId), depth = current.edges.length + 1, next = { itemId: nextId, itemIds: [...current.itemIds, nextId], edges: [...current.edges, edge], strength: current.strength * Math.max(0.05, edge.traversalWeight || 0.05) };
       if (goals.has(nextId)) return { itemIds: next.itemIds, edges: next.edges, depth, strength: next.strength };
-      if ((bestDepth.get(nextId) ?? Infinity) <= depth) continue;
-      bestDepth.set(nextId, depth);
-      queue.push(next);
+      if ((bestDepth.get(nextId) ?? Infinity) <= depth) continue; bestDepth.set(nextId, depth); queue.push(next);
     }
   }
   return null;
 }
-
-function featureMatchesNode(graph, feature, node) {
-  if (!node) return false;
-  return resolveFeatureToItemIds(graph, feature).includes(id(node.item._id));
-}
+function featureMatchesNode(graph, feature, node) { return Boolean(node) && resolveFeatureToItemIds(graph, feature).includes(id(node.item._id)); }
 
 module.exports = {
-  id,
-  semanticRefKey,
-  featureKey,
-  relationStrength,
-  edgeWeight,
-  loadMuseumSemanticGraph,
-  invalidateMuseumSemanticGraphCache,
-  resolveFeatureToItemIds,
-  neighbors,
-  outgoingEdges,
-  incomingEdges,
-  shortestSemanticPath,
-  featureMatchesNode,
+  id, semanticRefKey, featureKey, relationStrength, edgeWeight,
+  loadMuseumSemanticGraph, loadRevisionSemanticEdges, invalidateMuseumSemanticGraphCache,
+  resolveFeatureToItemIds, neighbors, outgoingEdges, incomingEdges, shortestSemanticPath, featureMatchesNode,
 };
