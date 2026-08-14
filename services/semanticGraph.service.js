@@ -6,6 +6,7 @@ const { getPublishedGraphEpoch } = require("./semanticGraphState.service");
 const { relationStrength, edgeTraversalWeight, materializeDirectEdge, materializeReverseEdge } = require("./relationSemantics.service");
 
 const MAX_CACHE_ENTRIES = 12;
+const MAX_STABLE_LOAD_ATTEMPTS = 3;
 const graphCache = new Map();
 function id(value) { return String(value?._id || value || ""); }
 function normalizeKey(value) { return String(value || "").trim().toLowerCase(); }
@@ -43,24 +44,44 @@ async function materializeGraph({ museumId, view, vocabulary, items, revisionIds
   return { museumId, view, vocabulary, nodes, canonicalIndex, edgesFrom, edgesTo, authoritativeEdges, relationTypeByKey };
 }
 
-async function loadMuseumSemanticGraph(museumId, { view = "published", bypassCache = false } = {}) {
-  if (!["published", "working"].includes(view)) throw new TypeError("view deve essere published o working");
-  if (view === "published" && !bypassCache) {
-    const epoch = await getPublishedGraphEpoch(museumId), key = cacheKey(museumId), cached = graphCache.get(key);
-    if (cached?.epoch === epoch) { touchCache(key, cached); return cached.graph; }
-  }
+async function readGraphInputs(museumId, view) {
   const [vocabulary, items] = await Promise.all([
     getMuseumVocabulary(museumId),
     Item.find({ museumId, lifecycleStatus: "active", $or: [{ publishedRevisionId: { $ne: null } }, { workingRevisionId: { $ne: null } }] }).lean(),
   ]);
   const revisionIds = items.map((item) => selectedRevisionId(item, view)).filter(Boolean);
-  // Working revisions can mutate without changing their pointer, so they are never cached.
-  const graph = await materializeGraph({ museumId, view, vocabulary, items, revisionIds });
-  if (view === "published") {
-    const epoch = await getPublishedGraphEpoch(museumId), key = cacheKey(museumId);
-    graph.epoch = epoch; touchCache(key, { epoch, graph });
+  return { vocabulary, items, revisionIds };
+}
+
+async function loadMuseumSemanticGraph(museumId, { view = "published", bypassCache = false } = {}) {
+  if (!["published", "working"].includes(view)) throw new TypeError("view deve essere published o working");
+  if (view === "working") {
+    const inputs = await readGraphInputs(museumId, view);
+    // Working revisions can mutate without changing their pointer, so they are never cached.
+    return materializeGraph({ museumId, view, ...inputs });
   }
-  return graph;
+
+  const key = cacheKey(museumId);
+  if (!bypassCache) {
+    const epoch = await getPublishedGraphEpoch(museumId), cached = graphCache.get(key);
+    if (cached?.epoch === epoch) { touchCache(key, cached); return cached.graph; }
+  }
+
+  for (let attempt = 0; attempt < MAX_STABLE_LOAD_ATTEMPTS; attempt += 1) {
+    const epochBefore = await getPublishedGraphEpoch(museumId);
+    const inputs = await readGraphInputs(museumId, view);
+    const graph = await materializeGraph({ museumId, view, ...inputs });
+    const epochAfter = await getPublishedGraphEpoch(museumId);
+    if (epochBefore !== epochAfter) continue;
+    graph.epoch = epochAfter;
+    touchCache(key, { epoch: epochAfter, graph });
+    return graph;
+  }
+
+  // Under sustained concurrent publishing prefer a fresh uncached snapshot over
+  // associating a possibly stale graph with a newer epoch.
+  const inputs = await readGraphInputs(museumId, view);
+  return materializeGraph({ museumId, view, ...inputs });
 }
 
 async function loadRevisionSemanticEdges({ museumId, sourceItemId, sourceItemRevisionId }) {
@@ -82,7 +103,7 @@ function resolveFeatureToItemIds(graph, feature = {}) {
   }
   return result;
 }
-function neighbors(graph, itemId, { relationTypeKey = null } = {}) { const key = relationTypeKey ? normalizeKey(relationTypeKey) : null; return (graph?.edgesFrom.get(id(itemId)) || []).filter((edge) => !key || edge.viewKey === key || edge.baseRelationTypeKey === key); }
+function neighbors(graph, itemId, { relationTypeKey = null } = {}) { const relationKey = relationTypeKey ? normalizeKey(relationTypeKey) : null; return (graph?.edgesFrom.get(id(itemId)) || []).filter((edge) => !relationKey || edge.viewKey === relationKey || edge.baseRelationTypeKey === relationKey); }
 function outgoingEdges(graph, itemId) { return neighbors(graph, itemId).filter((edge) => !edge.generated); }
 function incomingEdges(graph, itemId) { return neighbors(graph, itemId).filter((edge) => edge.generated); }
 function shortestSemanticPath(graph, { from, to, relationTypeKey = null, maxDepth = 3 } = {}) {
