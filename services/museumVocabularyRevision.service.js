@@ -15,11 +15,13 @@ const { bumpPublishedGraphEpoch, deleteSemanticGraphState } = require("./semanti
 const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { materializeVocabulary } = require("./museumVocabulary.service");
 const { normalizeVocabularyPayload, validateVocabularyPayload } = require("./validation/vocabulary.validation");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
 
 const FIELDS = ["languageLevels", "durationTypes", "itemTypes", "relationTypes", "presentationAspects", "selectionSignals"];
 const EMPTY_VOCABULARY = Object.freeze(Object.fromEntries(FIELDS.map((field) => [field, []])));
 function plain(value) { return value?.toObject ? value.toObject() : value; }
 function snapshot(revision) { const source = plain(revision) || {}; return Object.fromEntries(FIELDS.map((field) => [field, source[field] || []])); }
+function workflowSnapshot(revision) { const source = plain(revision) || {}; return { status: source.status, review: source.review, publication: source.publication }; }
 function hasOwn(value, key) { return Object.prototype.hasOwnProperty.call(value || {}, key); }
 function mergePayload(revision, rawPayload, normalizedPayload) { const merged = snapshot(revision); for (const field of FIELDS) if (hasOwn(rawPayload, field)) merged[field] = normalizedPayload[field]; return merged; }
 async function nextVersion(vocabularyId) { const latest = await MuseumVocabularyRevision.findOne({ vocabularyId }).sort({ version: -1 }).select("version").lean(); return (latest?.version || 0) + 1; }
@@ -35,6 +37,49 @@ async function evaluateVocabulary({ museumId, userId, allowInReview = false }) {
 async function requestVocabularyReview({ museumId, userId }) { const result = await evaluateVocabulary({ museumId, userId }); if (result.issues.some((issue) => issue.severity !== "warning")) throw new AppError("Il vocabolario contiene problemi bloccanti", 400, result.issues); try { requestReview(result.revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await result.revision.save(); return result; }
 async function withdrawVocabularyReview({ museumId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "operator" }); const stable = await loadStableOrFail(museumId), revision = await getWorking(stable, userId, false); try { withdrawReview(revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { stable, revision }; }
 async function requestVocabularyChanges({ museumId, userId, message }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const stable = await loadStableOrFail(museumId), revision = await getWorking(stable, userId, false); try { requestChanges(revision, userId, message); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { stable, revision }; }
-async function publishVocabulary({ museumId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const result = await evaluateVocabulary({ museumId, userId, allowInReview: true }); if (result.issues.some((issue) => issue.severity !== "warning")) throw new AppError("Impossibile pubblicare il vocabolario", 400, result.issues); const { stable, revision } = result, previousId = stable.publishedRevisionId; try { markPublished(revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); const pointer = await MuseumVocabulary.updateOne({ _id: stable._id, workingRevisionId: revision._id }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } }); if (pointer.modifiedCount !== 1) throw new AppError("Il vocabolario di lavoro e cambiato durante la pubblicazione", 409); if (previousId) await MuseumVocabularyRevision.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } }); const vocabulary = materializeVocabulary({ museumId, version: revision.version, revisionId: revision._id, source: revision }); await bumpPublishedGraphEpoch(museumId); invalidateMuseumSemanticGraphCache(museumId); const [itemAudit, visitAudit] = await Promise.all([auditItemsAfterMuseumConfigChange({ museumId, vocabulary }), invalidateVisitsUsingMuseumVocabulary({ museumId, vocabularyRevision: revision.version })]); return { stable: await MuseumVocabulary.findById(stable._id), revision, audit: { itemAudit, visitAudit } }; }
+
+async function compensateVocabularyPublish({ stable, revision, previousId, previousRevisionState, previousSuperseded }) {
+  const pointer = await MuseumVocabulary.updateOne({ _id: stable._id, publishedRevisionId: revision._id, workingRevisionId: null }, { $set: { publishedRevisionId: previousId || null, workingRevisionId: revision._id } });
+  let previous = { modifiedCount: 1 };
+  if (previousId && previousSuperseded) previous = await MuseumVocabularyRevision.updateOne({ _id: previousId, status: "superseded" }, { $set: { status: "published" } });
+  await MuseumVocabularyRevision.updateOne({ _id: revision._id }, { $set: previousRevisionState });
+  invalidateMuseumSemanticGraphCache(stable.museumId);
+  if (pointer.modifiedCount !== 1 || previous.modifiedCount !== 1) throw new AppError("Rollback pubblicazione vocabolario incompleto", 500, [{ code: "VOCABULARY_PUBLISH_ROLLBACK_FAILED" }]);
+}
+
+async function publishVocabulary({ museumId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const result = await evaluateVocabulary({ museumId, userId, allowInReview: true });
+  if (result.issues.some((issue) => issue.severity !== "warning")) throw new AppError("Impossibile pubblicare il vocabolario", 400, result.issues);
+  const { stable, revision } = result, previousId = stable.publishedRevisionId, previousRevisionState = workflowSnapshot(revision);
+  const vocabulary = materializeVocabulary({ museumId, version: revision.version, revisionId: revision._id, source: revision });
+  try { markPublished(revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  await revision.save();
+  let pointerSwitched = false, previousSuperseded = false;
+  try {
+    const pointer = await MuseumVocabulary.updateOne({ _id: stable._id, workingRevisionId: revision._id }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
+    if (pointer.modifiedCount !== 1) throw new AppError("Il vocabolario di lavoro e cambiato durante la pubblicazione", 409);
+    pointerSwitched = true;
+    if (previousId) {
+      const previous = await MuseumVocabularyRevision.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } });
+      if (previous.modifiedCount !== 1) throw new Error("Impossibile supersedere il vocabolario precedente");
+      previousSuperseded = true;
+    }
+    await bumpPublishedGraphEpoch(museumId);
+    invalidateMuseumSemanticGraphCache(museumId);
+  } catch (error) {
+    if (pointerSwitched) {
+      try { await compensateVocabularyPublish({ stable, revision, previousId, previousRevisionState, previousSuperseded }); }
+      catch (rollbackError) { if (rollbackError instanceof AppError) throw rollbackError; throw new AppError("Rollback pubblicazione vocabolario incompleto", 500, [{ code: "VOCABULARY_PUBLISH_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
+    } else await MuseumVocabularyRevision.updateOne({ _id: revision._id }, { $set: previousRevisionState }).catch(() => {});
+    if (error instanceof AppError) throw error;
+    throw new AppError("Pubblicazione vocabolario annullata per errore di consistenza", 500, [{ code: "VOCABULARY_PUBLISH_FAILED", message: error.message }]);
+  }
+  const auditResult = await runPostCommitAudit({
+    itemAudit: () => auditItemsAfterMuseumConfigChange({ museumId, vocabulary }),
+    visitAudit: () => invalidateVisitsUsingMuseumVocabulary({ museumId, vocabularyRevision: revision.version }),
+  });
+  return { stable: await MuseumVocabulary.findById(stable._id), revision, audit: { status: auditResult.status, itemAudit: auditResult.results.itemAudit, visitAudit: auditResult.results.visitAudit, failures: auditResult.failures } };
+}
 async function deleteVocabularyForMuseum({ museumId }) { const stable = await MuseumVocabulary.findOne({ museumId }).lean(); if (!stable) return { deletedRevisionCount: 0 }; const result = await MuseumVocabularyRevision.deleteMany({ vocabularyId: stable._id }); await MuseumVocabulary.deleteOne({ _id: stable._id }); invalidateMuseumSemanticGraphCache(museumId); await deleteSemanticGraphState(museumId); return { deletedRevisionCount: result.deletedCount || 0 }; }
-module.exports = { createInitialVocabularyForMuseum, getVocabularyRevision, updateVocabularyDraft, evaluateVocabulary, requestVocabularyReview, withdrawVocabularyReview, requestVocabularyChanges, publishVocabulary, deleteVocabularyForMuseum };
+module.exports = { createInitialVocabularyForMuseum, getVocabularyRevision, updateVocabularyDraft, evaluateVocabulary, requestVocabularyReview, withdrawVocabularyReview, requestVocabularyChanges, compensateVocabularyPublish, publishVocabulary, deleteVocabularyForMuseum };
