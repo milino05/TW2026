@@ -3,12 +3,14 @@ const MuseumVocabulary = require("../models/museumVocabulary.model");
 const MuseumVocabularyRevision = require("../models/museumVocabularyRevision.model");
 const Item = require("../models/item.model");
 const ItemRevision = require("../models/itemRevision.model");
+const SemanticEdge = require("../models/semanticEdge.model");
 const Visit = require("../models/visit");
 const VisitRevision = require("../models/visitRevision.model");
 const AppError = require("../utils/AppError");
 const { assertMuseumRole } = require("./museumAuthorization.service");
 const { auditItemsAfterMuseumConfigChange } = require("./itemIntegrity.service");
 const { invalidateVisitsUsingMuseumVocabulary } = require("./visitDependency.service");
+const { invalidateMuseumSemanticGraphCache } = require("./semanticGraph.service");
 const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { materializeVocabulary } = require("./museumVocabulary.service");
 const { normalizeVocabularyPayload, validateVocabularyPayload } = require("./validation/vocabulary.validation");
@@ -55,16 +57,17 @@ async function updateVocabularyDraft({ museumId, payload, userId }) {
 function removedKeys(previous = [], next = []) { const nextSet = new Set(next.map((entry) => entry.key)); return previous.map((entry) => entry.key).filter((key) => !nextSet.has(key)); }
 async function dependencyIssues({ museumId, published, working }) {
   if (!published) return [];
-  const removed = Object.fromEntries(FIELDS.filter((field) => !["languageLevels", "durationTypes"].includes(field) || true).map((field) => [field, removedKeys(published[field] || [], working[field] || [])]));
+  const removed = Object.fromEntries(FIELDS.map((field) => [field, removedKeys(published[field] || [], working[field] || [])]));
   if (Object.values(removed).every((values) => !values.length)) return [];
   const statuses = ["draft", "in_review", "changes_requested", "published"];
   const [itemIds, visitIds] = await Promise.all([Item.find({ museumId, lifecycleStatus: "active" }).distinct("_id"), Visit.find({ ownerMuseumId: museumId, lifecycleStatus: "active" }).distinct("_id")]);
+  const itemRevisionIds = await ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("_id");
   const [variantLanguages, variantDurations, relationKeys, aspectKeys, signalKeys, itemTypes, visitLanguages, visitDurations] = await Promise.all([
-    ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("presentationVariants.representations.languageLevelKey"),
-    ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("presentationVariants.representations.durationKey"),
-    ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("relations.relationTypeKey"),
-    ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("presentationVariants.presentationAspects.key"),
-    ItemRevision.find({ itemId: { $in: itemIds }, status: { $in: statuses } }).distinct("selectionSignals.key"),
+    ItemRevision.find({ _id: { $in: itemRevisionIds } }).distinct("presentationVariants.representations.languageLevelKey"),
+    ItemRevision.find({ _id: { $in: itemRevisionIds } }).distinct("presentationVariants.representations.durationKey"),
+    SemanticEdge.find({ museumId, sourceItemRevisionId: { $in: itemRevisionIds } }).distinct("relationTypeKey"),
+    ItemRevision.find({ _id: { $in: itemRevisionIds } }).distinct("presentationVariants.presentationAspects.key"),
+    ItemRevision.find({ _id: { $in: itemRevisionIds } }).distinct("selectionSignals.key"),
     Item.find({ museumId, lifecycleStatus: "active" }).distinct("itemType"),
     VisitRevision.find({ visitId: { $in: visitIds }, status: { $in: statuses } }).distinct("defaultPresentationPolicy.languageLevelKey"),
     VisitRevision.find({ visitId: { $in: visitIds }, status: { $in: statuses } }).distinct("defaultPresentationPolicy.durationKey"),
@@ -91,8 +94,9 @@ async function publishVocabulary({ museumId, userId }) {
   const pointer = await MuseumVocabulary.updateOne({ _id: stable._id, workingRevisionId: revision._id }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } }); if (pointer.modifiedCount !== 1) throw new AppError("Il vocabolario di lavoro e cambiato durante la pubblicazione", 409);
   if (previousId) await MuseumVocabularyRevision.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } });
   const vocabulary = materializeVocabulary({ museumId, version: revision.version, revisionId: revision._id, source: revision });
+  invalidateMuseumSemanticGraphCache(museumId);
   const [itemAudit, visitAudit] = await Promise.all([auditItemsAfterMuseumConfigChange({ museumId, vocabulary }), invalidateVisitsUsingMuseumVocabulary({ museumId, vocabularyRevision: revision.version })]);
   return { stable: await MuseumVocabulary.findById(stable._id), revision, audit: { itemAudit, visitAudit } };
 }
-async function deleteVocabularyForMuseum({ museumId }) { const stable = await MuseumVocabulary.findOne({ museumId }).lean(); if (!stable) return { deletedRevisionCount: 0 }; const result = await MuseumVocabularyRevision.deleteMany({ vocabularyId: stable._id }); await MuseumVocabulary.deleteOne({ _id: stable._id }); return { deletedRevisionCount: result.deletedCount || 0 }; }
+async function deleteVocabularyForMuseum({ museumId }) { const stable = await MuseumVocabulary.findOne({ museumId }).lean(); if (!stable) return { deletedRevisionCount: 0 }; const result = await MuseumVocabularyRevision.deleteMany({ vocabularyId: stable._id }); await MuseumVocabulary.deleteOne({ _id: stable._id }); invalidateMuseumSemanticGraphCache(museumId); return { deletedRevisionCount: result.deletedCount || 0 }; }
 module.exports = { createInitialVocabularyForMuseum, getVocabularyRevision, updateVocabularyDraft, evaluateVocabulary, requestVocabularyReview, withdrawVocabularyReview, requestVocabularyChanges, publishVocabulary, deleteVocabularyForMuseum };
