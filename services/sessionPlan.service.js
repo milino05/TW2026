@@ -31,7 +31,15 @@ async function generatedSourceSnapshot({ userId, planId }) {
 }
 async function createInitialSessionPlan({ session, sourceSnapshot }) {
   const revision = await SessionPlanRevision.create({ sessionId: session._id, version: 1, status: "active", origin: sourceSnapshot.origin, createdReason: "initial", fidelity: sourceSnapshot.origin.sourceType === "visit" ? "preserve" : "adapt", executedThroughEntryIndex: -1, requestSnapshot: sourceSnapshot.requestSnapshot, contextSnapshot: sourceSnapshot.contextSnapshot, sourceVocabularyRevisionIds: sourceSnapshot.sourceVocabularyRevisionIds || [], sourceLayoutRevisionIds: sourceSnapshot.sourceLayoutRevisionIds || [], adaptivePolicyVersion: sourceSnapshot.adaptivePolicyVersion || policy.version, contentEntries: sourceSnapshot.contentEntries || [], physicalRoute: sourceSnapshot.physicalRoute || { anchors: [], legs: [] }, estimatedTiming: sourceSnapshot.estimatedTiming || {}, utilityScore: sourceSnapshot.utilityScore || 0, explanation: sourceSnapshot.explanation || {} });
-  session.currentPlanRevisionId = revision._id; await session.save(); return revision;
+  try {
+    const pointer = await VisitSession.updateOne({ _id: session._id, currentPlanRevisionId: null }, { $set: { currentPlanRevisionId: revision._id } });
+    if (pointer.modifiedCount !== 1) throw new Error("La sessione possiede gia un piano corrente");
+    session.currentPlanRevisionId = revision._id;
+    return revision;
+  } catch (error) {
+    await SessionPlanRevision.deleteOne({ _id: revision._id, sessionId: session._id }).catch(() => {});
+    throw new AppError("Impossibile inizializzare coerentemente il piano di sessione", 500, [{ code: "SESSION_PLAN_INITIALIZATION_FAILED", message: error.message }]);
+  }
 }
 async function getCurrentSessionPlan({ sessionId, userId, allowCompleted = false }) { const query = { _id: sessionId, userId }; if (!allowCompleted) query.status = { $in: ["active", "paused", "route_completed"] }; const session = await VisitSession.findOne(query); if (!session) throw new AppError("Sessione non trovata", 404); if (!session.currentPlanRevisionId) throw new AppError("La sessione non ha un piano di esecuzione", 409); const plan = await SessionPlanRevision.findOne({ _id: session.currentPlanRevisionId, sessionId: session._id }); if (!plan) throw new AppError("Piano di sessione non trovato", 409); return { session, plan }; }
 async function nextPlanVersion(sessionId) { const latest = await SessionPlanRevision.findOne({ sessionId }).sort({ version: -1 }).select("version").lean(); return (latest?.version || 0) + 1; }
