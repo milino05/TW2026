@@ -1,61 +1,15 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { explicitFeatureScore, relationCoherence, pruneBeam } = require("../services/visitGenerator.service");
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const{featureMatchScore,relationCoherence,pruneBeam,scoreCurrentGoals}=require("../services/visitGeneratorSemantics.service");
+const{candidateNovelty,skipEvidence}=require("../services/interestProfile.service");
+const{validateGenerationRequest}=require("../services/validation/generation.validation");
 
-test("un interesse esplicito corrente sull Item usa peso normalizzato", () => {
-  const item = { _id: "item-a", itemType: "artwork" };
-  const revision = { semanticRefs: [], relations: [], tags: [] };
-  assert.equal(explicitFeatureScore({
-    interest: { kind: "item", itemId: "item-a", weight: 1 },
-    item,
-    revision,
-    variant: { semanticFocus: [] },
-    vocabulary: {},
-  }), 1);
-});
-
-test("un interesse negativo puo penalizzare una feature", () => {
-  const item = { _id: "item-a", itemType: "artwork" };
-  const revision = { semanticRefs: [], relations: [], tags: ["war"] };
-  assert.ok(explicitFeatureScore({
-    interest: { kind: "tag", key: "war", weight: -1 },
-    item,
-    revision,
-    variant: { semanticFocus: [] },
-    vocabulary: {},
-  }) < 0);
-});
-
-test("semanticRefs di ItemType consentono matching cross museum", () => {
-  const item = { _id: "item-a", itemType: "local_artist" };
-  const revision = { semanticRefs: [], relations: [], tags: [] };
-  const vocabulary = {
-    itemTypeDefinitions: [{
-      key: "local_artist",
-      semanticRefs: [{ scheme: "wikidata", id: "Q5", matchType: "close" }],
-    }],
-    relationTypes: [],
-  };
-  const score = explicitFeatureScore({
-    interest: { kind: "canonical", scheme: "wikidata", id: "Q5", weight: 1 },
-    item,
-    revision,
-    variant: { semanticFocus: [] },
-    vocabulary,
-  });
-  assert.ok(score > 0);
-});
-
-test("una relazione diretta aumenta la coerenza narrativa", () => {
-  const left = { item: { _id: "a" }, revision: { relations: [{ target: "b" }] } };
-  const right = { item: { _id: "b" }, revision: { relations: [] } };
-  assert.ok(relationCoherence(left, right) > 0);
-});
-
-test("la beam mantiene stati con must-see coperti anche con utility ordinaria", () => {
-  const states = [
-    { utility: 100, mustCovered: 0, elapsedSeconds: 10 },
-    { utility: 1, mustCovered: 1, elapsedSeconds: 20 },
-  ];
-  assert.equal(pruneBeam(states, 1, 1)[0].mustCovered, 1);
-});
+test("un goal corrente sull Item ha matching pieno",()=>{assert.equal(featureMatchScore({feature:{kind:"item",itemId:"item-a"},item:{_id:"item-a",itemType:"artwork"},revision:{semanticRefs:[],relations:[],tags:[],selectionSignals:[]},variant:{semanticFocus:[],presentationAspects:[]},vocabulary:{}}),1)});
+test("un goal avoid esclude una feature corrispondente",()=>{const result=scoreCurrentGoals({goals:{semanticGoals:[{key:"g",priority:"avoid",weight:1,feature:{kind:"tag",key:"war"}}],relationGoals:[]},item:{_id:"a",itemType:"artwork"},revision:{tags:["war"],relations:[],selectionSignals:[]},variant:{semanticFocus:[],presentationAspects:[]},vocabulary:{},graph:null});assert.deepEqual(result.avoidHits,["g"])});
+test("semanticRefs di ItemType consentono matching cross museum",()=>{const score=featureMatchScore({feature:{kind:"canonical",scheme:"wikidata",refId:"Q5"},item:{_id:"a",itemType:"local_artist"},revision:{semanticRefs:[],relations:[],tags:[],selectionSignals:[]},variant:{semanticFocus:[],presentationAspects:[]},vocabulary:{itemTypeDefinitions:[{key:"local_artist",semanticRefs:[{scheme:"wikidata",id:"Q5",matchType:"close"}]}],selectionSignals:[]}});assert.ok(score>0)});
+test("SelectionSignal rende risolvibile un criterio editoriale generico",()=>{const score=featureMatchScore({feature:{kind:"selection_signal",key:"highlight"},item:{_id:"a",itemType:"artwork"},revision:{selectionSignals:[{key:"highlight",weight:.8}]},variant:{semanticFocus:[],presentationAspects:[]},vocabulary:{}});assert.equal(score,.8)});
+test("una relazione diretta aumenta la coerenza narrativa",()=>{const left={item:{_id:"a"},revision:{relations:[{target:"b"}]}},right={item:{_id:"b"},revision:{relations:[]}};assert.ok(relationCoherence(left,right)>0)});
+test("la priorita corrente e lessicografica rispetto alla utility storica",()=>{const states=[{hardCovered:1,explicitScore:.1,utility:100,entries:[],elapsedSeconds:10},{hardCovered:1,explicitScore:.8,utility:-10,entries:[],elapsedSeconds:20}];assert.equal(pruneBeam(states,1,1)[0].explicitScore,.8)});
+test("novelty distingue nuova variante da contenuto gia fruito",()=>{const state={exposuresByItem:new Map([["a",[{itemId:"a",variantKey:"standard",semanticFeatureKeys:["item:a"],presentationAspectKeys:[],durationKeys:["short"],languageLevelKeys:["simple"]}] ]])};assert.equal(candidateNovelty(state,{itemId:"a",variantKey:"new",semanticFeatureKeys:[],presentationAspectKeys:[]}).reason,"new_variant");assert.equal(candidateNovelty(state,{itemId:"a",variantKey:"standard",semanticFeatureKeys:["item:a"],presentationAspectKeys:[],durationKey:"short",languageLevelKey:"simple"}).reason,"familiar_content")});
+test("skip contestuale non confonde time pressure con disinteresse",()=>{assert.equal(skipEvidence("time_pressure"),0);assert.ok(skipEvidence("not_interested")<-.5)});
+test("GenerationRequest rifiuta interests legacy e accetta semantic goals e spatial constraints",()=>{const errors=validateGenerationRequest({timeBudgetSeconds:600,semanticGoals:[{priority:"preferred",feature:{kind:"tag",key:"renaissance"},weight:1}],spatialConstraints:[]});assert.deepEqual(errors,[]);assert.equal(validateGenerationRequest({timeBudgetSeconds:600,interests:[]}).some(error=>error.code==="REMOVED_FIELD"),true)});
