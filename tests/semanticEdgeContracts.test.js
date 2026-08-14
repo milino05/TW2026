@@ -35,7 +35,12 @@ test("payload relations legacy viene rifiutato esplicitamente", async () => {
   assert.equal(errors.some((error) => error.field === "relations" && error.code === "REMOVED_FIELD"), true);
 });
 
-test("semanticEdges viene normalizzato come contratto graph-first", () => {
-  const normalized = normalizeItemPayload({ semanticEdges: [{ relationTypeKey: " CREATED_BY ", target: "abc", weight: "4" }] });
+test("semanticEdges normalizza solo il nuovo contratto targetItemId", () => {
+  const normalized = normalizeItemPayload({ semanticEdges: [{ relationTypeKey: " CREATED_BY ", targetItemId: "abc", weight: "4" }] });
   assert.deepEqual(normalized.semanticEdges, [{ relationTypeKey: "created_by", targetItemId: "abc", weight: 4 }]);
+});
+
+test("semanticEdges non converte il vecchio campo target", () => {
+  const normalized = normalizeItemPayload({ semanticEdges: [{ relationTypeKey: "created_by", target: "abc", weight: 1 }] });
+  assert.deepEqual(normalized.semanticEdges, [{ relationTypeKey: "created_by", targetItemId: null, weight: 1 }]);
 });
