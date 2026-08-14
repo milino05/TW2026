@@ -1,5 +1,8 @@
 const express=require("express"),router=express.Router(),{requireAuth}=require("../middlewares/auth"),{validateObjectIdParam}=require("../middlewares/validateObjectIdParam"),controller=require("../controllers/generatedVisits.controller");
 const validateMuseumId=validateObjectIdParam("museumId"),validatePlanId=validateObjectIdParam("planId");
+router.get("/users/me/generation-preferences",requireAuth,controller.getPreferences);
+router.put("/users/me/generation-preferences",requireAuth,controller.setPreferences);
+router.delete("/users/me/generation-preferences",requireAuth,controller.clearPreferences);
 router.post("/museums/:museumId/generated-plans",requireAuth,validateMuseumId,controller.generate);
 router.get("/generated-plans/:planId",requireAuth,validatePlanId,controller.get);
 router.post("/generated-plans/:planId/accept",requireAuth,validatePlanId,controller.accept);

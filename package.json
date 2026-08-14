@@ -8,9 +8,7 @@
     "mongoose": "^7.1.0",
     "npm": "^9.6.6"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
-  },
+  "devDependencies": { "nodemon": "^3.1.14" },
   "scripts": {
     "dev": "docker compose up -d",
     "dev:build": "docker compose up --build",
@@ -21,7 +19,9 @@
     "dev:container": "nodemon index.js",
     "seed:users": "node scripts/seedRequiredUsers.js",
     "assign:museum-role": "node scripts/assignMuseumRole.js",
-    "check": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
+    "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
+    "check:legacy": "node scripts/checkLegacyContracts.js",
+    "check": "npm run check:syntax && npm run check:legacy",
     "test": "node --test tests/*.test.js"
   }
 }

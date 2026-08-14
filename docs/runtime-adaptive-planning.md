@@ -1,59 +1,95 @@
 # Runtime adaptive planning
 
-Il generatore e il planner della parte futura dell'esperienza, non soltanto il generatore iniziale. `VisitRevision` official/community e `GeneratedVisitPlan` restano immutabili; all'avvio vengono materializzati in `VisitSession -> SessionPlanRevision`. Ogni modifica accettata crea una nuova revisione e il prefisso gia eseguito non viene mai riscritto.
+Il generatore pianifica anche la parte futura di una sessione, non soltanto la visita iniziale. `VisitRevision` official/community e `GeneratedVisitPlan` restano immutabili; all'avvio vengono materializzati in `VisitSession -> SessionPlanRevision`. Ogni modifica accettata crea una nuova revisione e il prefisso gia eseguito non viene riscritto.
+
+## Content entry e physical route
+
+La sequenza primaria e `contentEntries`. Ogni entry ha `role: core|recommended|optional` e `spatialMode: target|context`. Soltanto i target producono anchor fisici e observation time; i context vengono fruiti sull'anchor di delivery appropriato. `physicalRoute` e quindi un derivato navigazionale, non la definizione della visita.
 
 ## Comandi distinti
 
-- `PRESENTATION_DEPTH_UP/DOWN`: significato di "Dimmi di piu/meno" delle specifiche. Cambia duration della representation mantenendo Item, PresentationVariant e language level; non cambia itinerario.
-- `SEMANTIC_DRILLDOWN`: esplora un Item del knowledge graph senza cambiare tappa fisica.
-- `REFOCUS_FUTURE`: cambia gli interessi espliciti della coda futura e richiede una PlanChangeProposal.
-- `EXTEND_VISIT`: da `route_completed` aggiunge un nuovo tail usando altro tempo indicato dall'utente.
+- `PRESENTATION_DEPTH_UP/DOWN`: "Dimmi di piu/meno" sullo stesso Item/PresentationVariant; cambia duration senza cambiare itinerario.
+- `SEMANTIC_DRILLDOWN`: esplora un ramo del knowledge graph senza implicare automaticamente una nuova destinazione fisica.
+- `REFOCUS_FUTURE`: modifica i `semanticGoals/relationGoals` della coda futura e crea una PlanChangeProposal.
+- `EXTEND_VISIT`: da `route_completed` genera un nuovo tail con il tempo aggiuntivo dichiarato.
+- `route_only`: rigenera soltanto il percorso fisico mantenendo l'itinerario contenutistico; e il punto di integrazione previsto per il futuro `MuseumLayoutRuntimeState`.
 
-## Stati
+## Stati e pause
 
-`active -> paused -> active`, oppure `active -> route_completed -> active` se l'utente estende la visita, oppure `route_completed -> completed` quando decide di terminare. Le pause non contribuiscono alle stime comportamentali.
-
-## Stop roles
-
-Gli stop editoriali usano `core | recommended | optional`. `core` e preservato nel livello adapt, `recommended` riceve priorita di stabilita, `optional` e il primo candidato a essere rimosso in ritardo o attivato quando rimane tempo. Il precedente booleano `optional` non appartiene al modello.
+`active -> paused -> active`, oppure `active -> route_completed -> active` se l'utente estende la visita, oppure `route_completed -> completed`. Gli intervalli di pausa sono sottratti dal tempo attivo e non vengono interpretati come lentezza, observation o schedule deviation.
 
 ## Fidelity
 
-- `preserve`: conserva tutte le tappe future della sezione museale corrente come must-see;
-- `adapt`: conserva come must-see gli stop core e tratta gli altri come prior di stabilita;
-- `regenerate`: massima liberta sul future tail, preservando prefisso eseguito e must-see espliciti.
+- `preserve`: conserva tutte le content entry future del segmento corrente, incluso il loro `spatialMode`;
+- `adapt`: conserva le entry core e il loro ruolo fisico/contestuale, usando le altre come prior di stabilita;
+- `regenerate`: massima liberta sulla coda, preservando prefisso eseguito e hard constraints espliciti.
 
-Official/community usano `preserve` come default; generated usa `adapt`. Nessuna nuova sequenza viene applicata automaticamente: il backend crea una `PlanChangeProposal`, la UI mostra una preview e solo l'accettazione sposta `VisitSession.currentPlanRevisionId`.
+Nessuna proposta ordinaria viene applicata automaticamente. Il flusso e sempre:
 
-## Adattamento parametrico
+```text
+compute proposal -> preview -> accept/reject
+```
 
-La richiesta runtime puo aggiornare tempo, movement pace, depth, language complexity, observation emphasis, visit density, discovery, routing requirements, interessi, must-see ed esclusioni. I valori correnti vengono fusi col request snapshot, gli Item gia visitati vengono esclusi e il routing parte dalla posizione corrente.
+## Parametri runtime
 
-Per community multi-museo il planner modifica il segmento del museo corrente e mantiene il resto come suffix bloccato: il generatore indoor resta intenzionalmente intra-museo e i trasferimenti inter-venue restano manuali.
+Una richiesta di adattamento puo modificare:
 
-Una richiesta puo specificare `remember: true`: soltanto i campi esplicitamente presenti vengono salvati in `UserGenerationPreference` come default dichiarati. Le normali richieste runtime rimangono specifiche della sessione.
+- tempo residuo o tempo aggiuntivo;
+- `semanticGoals` e `relationGoals`;
+- must-include, must-visit, exclusions e spatial constraints;
+- `coverageGoal`;
+- `audience` e `knowledge`;
+- `historyMode`;
+- movement pace, depth, language complexity, observation emphasis, visit density, discovery, time risk;
+- routing requirements e start/end.
+
+`remember: true` salva soltanto i campi dichiarati come `UserGenerationPreference`. Le normali richieste restano specifiche della sessione.
 
 ## Learning events
 
-Gli eventi sono `presentation_depth_increased`, `presentation_depth_decreased`, `semantic_drilldown`, `visit_refocus_requested`, `visit_extension_requested`, `stop_completed`, `stop_skipped`, `manual_add`, `manual_remove`. Un refocus e fortissimo nella sessione corrente ma diventa storico solo gradualmente tramite learning.
+Il runtime distingue contenuto, osservazione fisica e movimento:
+
+```text
+contentEntryExperiences
+physicalTargetObservations
+a transitionObservations
+interactionEvents
+```
+
+Gli eventi semantici principali sono:
+
+- `semantic_drilldown`;
+- `semantic_relation_followed`;
+- `visit_refocus_requested`;
+- `content_entry_completed/skipped`;
+- `manual_add/remove`;
+- `knowledge_feedback`;
+- `presentation_aspect_selected/rejected`;
+- depth increase/decrease.
+
+Gli skip hanno una reason contestuale. Solo `not_interested` viene trattato come evidenza negativa forte; tempo, accessibilita e interruzioni non diventano dislike. `already_known`, `too_simple` e `too_difficult` alimentano il modello di conoscenza.
+
+## Learning stores
+
+La sessione aggiorna, se il consenso personale lo consente:
+
+- `UserAdaptiveProfile` per movimento, observation, presentation/behavior compatti;
+- `UserSemanticAffinity` per interessi;
+- `UserKnowledgeState` per competenza;
+- `UserContentExposure` per Item/variant/focus/aspetti gia fruiti.
+
+Il reset personale elimina questi store e la telemetria delle sessioni gia concluse/abbandonate; non modifica una sessione ancora attiva, in pausa o estendibile.
+
+## Multi-museo attuale
+
+Le Visit editoriali possono contenere piu musei, ma un trasferimento inter-venue richiede `estimatedTransferSeconds > 0`: un trasferimento sconosciuto non viene mai trattato come istantaneo. Il generatore automatico resta intenzionalmente intra-museo finche non verra implementato il planner cross-museo.
 
 ## Implementazioni future approvate
 
-### Separazione tra itinerario contenutistico e percorso fisico
-
-Il modello runtime deve distinguere esplicitamente la sequenza narrativa/contenutistica della visita dal sottografo delle sole tappe fisicamente localizzate. Item concettuali o non spaziali, per esempio un movimento artistico, una persona, una tecnica o un evento, devono poter comparire adattivamente nell'itinerario della visita senza creare una nuova destinazione di routing. Il percorso fisico deve essere derivato esclusivamente dagli elementi che richiedono movimento e hanno un placement valido. Gli Item non fisici possono essere contestualizzati rispetto alla tappa corrente, a una tappa fisica di riferimento o a un tratto narrativo della visita. Il generatore dovra selezionare congiuntamente contenuti fisici e non fisici in base a richiesta esplicita, profilo adattivo, knowledge graph, tempo e coerenza narrativa.
-
-### Generazione cross-museo
-
-Estendere il planner da intra-museo a cross-museo. La generazione dovra poter selezionare Item e tappe appartenenti a musei differenti, ottimizzare l'ordine fra venue, stimare o acquisire i trasferimenti inter-venue e mantenere separati routing indoor e trasferimento esterno. Il modello deve restare compatibile con official, community, generated e runtime replanning.
-
-### Modalita Sandbox / Explorer
-
-Aggiungere una modalita di visita libera basata su `VisitSession`, senza una `VisitRevision` o un `GeneratedVisitPlan` prefissato come sequenza da seguire. L'utente esplora autonomamente il museo; il Navigator riconosce o riceve l'Item fisico incontrato, ne presenta la representation piu adatta e permette semantic drilldown verso Item collegati anche non fisici. Il sistema puo produrre suggerimenti opzionali e non invasivi su opere, temi o zone coerenti con gli interessi espliciti e appresi. Un suggerimento accettato puo diventare una destinazione fisica temporanea e usare il routing normale, senza trasformare la modalita in una visita obbligata. Gli eventi della sessione devono alimentare lo stesso adaptive learning delle visite strutturate.
-
-### Altre estensioni gia previste
-
-- LLM visitor interpreter per trasformare richieste naturali in request strutturate senza rendere l'LLM dipendenza del planner deterministico.
-- LLM semantic-authoring copilot per assistere la costruzione del knowledge graph e delle presentation variants.
-- Resolver reale delle `semanticRefs` (per esempio Wikidata) per migliorare interoperabilita e trasferimento semantico cross-museo.
-- `MuseumLayoutRuntimeState` per chiusure, congestione, ascensori fuori servizio e indisponibilita temporanee applicato trasversalmente a official, community, generated, Sandbox/Explorer e Navigator.
+- generazione cross-museo con stima/routing inter-venue reale;
+- modalita Sandbox / Explorer basata sulle stesse sessioni, exposure e affinita;
+- LLM visitor interpreter che produce lo stesso GenerationRequest strutturato della UI;
+- LLM semantic-authoring copilot;
+- resolver reale delle `semanticRefs`, per esempio Wikidata;
+- `MuseumLayoutRuntimeState` trasversale a routing, Navigator, official/community/generated/Explorer;
+- funzionalita di presentazione di gruppo, locale/lingue e altre estensioni rinviate al punto 9.
