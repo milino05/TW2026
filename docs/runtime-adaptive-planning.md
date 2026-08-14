@@ -8,11 +8,14 @@ La sequenza primaria e `contentEntries`. Ogni entry ha `role: core|recommended|o
 
 ## Comandi distinti
 
-- `PRESENTATION_DEPTH_UP/DOWN`: "Dimmi di piu/meno" sullo stesso Item/PresentationVariant; cambia duration senza cambiare itinerario.
+- `PRESENTATION_DEPTH_UP/DOWN`: "Dimmi di piu/meno" sullo stesso Item/PresentationVariant; cambia `durationKey` mantenendo invariati `variantKey` e `languageLevelKey`, senza cambiare itinerario.
+- `PRESENTATION_LANGUAGE_UP/DOWN`: rende l'esposizione piu avanzata/piu semplice sullo stesso Item/PresentationVariant; cambia `languageLevelKey` mantenendo invariati `variantKey` e `durationKey`, senza cambiare itinerario.
 - `SEMANTIC_DRILLDOWN`: esplora un ramo del knowledge graph senza implicare automaticamente una nuova destinazione fisica.
 - `REFOCUS_FUTURE`: modifica i `semanticGoals/relationGoals` della coda futura e crea una PlanChangeProposal.
 - `EXTEND_VISIT`: da `route_completed` genera un nuovo tail con il tempo aggiuntivo dichiarato.
 - `route_only`: rigenera soltanto il percorso fisico mantenendo l'itinerario contenutistico; e il punto di integrazione previsto per il futuro `MuseumLayoutRuntimeState`.
+
+Duration e language level sono due assi ortogonali della stessa `PresentationVariant`: il runtime usa lo stesso resolver di representation per muoversi lungo uno dei due assi mantenendo fisso l'altro. Un comando di language adaptation non modifica automaticamente `UserKnowledgeState`: esprime in primo luogo una preferenza di presentazione. `too_difficult`, `too_simple` e feedback equivalenti restano invece segnali di conoscenza/comprensione e possono, a livello UI, essere combinati con un comando `PRESENTATION_LANGUAGE_DOWN/UP` quando l'utente vuole anche cambiare immediatamente representation.
 
 ## Stati e pause
 
@@ -52,11 +55,11 @@ Il runtime distingue contenuto, osservazione fisica e movimento:
 ```text
 contentEntryExperiences
 physicalTargetObservations
-a transitionObservations
+transitionObservations
 interactionEvents
 ```
 
-Gli eventi semantici principali sono:
+Gli eventi semantici/presentation principali sono:
 
 - `semantic_drilldown`;
 - `semantic_relation_followed`;
@@ -65,7 +68,10 @@ Gli eventi semantici principali sono:
 - `manual_add/remove`;
 - `knowledge_feedback`;
 - `presentation_aspect_selected/rejected`;
-- depth increase/decrease.
+- `presentation_depth_increased/decreased`;
+- `presentation_language_increased/decreased`.
+
+Gli eventi depth aggiornano gradualmente `presentation.depthPreference`; gli eventi language aggiornano gradualmente `presentation.languageComplexityPreference`. I due assi sono appresi separatamente.
 
 Gli skip hanno una reason contestuale. Solo `not_interested` viene trattato come evidenza negativa forte; tempo, accessibilita e interruzioni non diventano dislike. `already_known`, `too_simple` e `too_difficult` alimentano il modello di conoscenza.
 
