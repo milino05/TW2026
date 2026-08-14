@@ -6,11 +6,13 @@ const { assertMuseumRole } = require("./museumAuthorization.service");
 const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { getCanonicalAttribute, GLOBAL_PLACE_INTENTS } = require("./routingAttributeCatalog.service");
 const { propagateLayoutPublication } = require("./layoutVisitDependency.service");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
 
 function duplicateKeys(values = []) { const seen = new Set(); const duplicates = new Set(); for (const entry of values) { if (!entry?.key) continue; if (seen.has(entry.key)) duplicates.add(entry.key); seen.add(entry.key); } return [...duplicates]; }
 function valueMatchesDefinition(definition, value) { if (!definition) return false; if (definition.dataType === "boolean") return typeof value === "boolean"; if (definition.dataType === "number") return typeof value === "number" && Number.isFinite(value); if (definition.dataType === "string") return typeof value === "string"; if (definition.dataType === "choice") return typeof value === "string" && (definition.options || []).includes(value); return false; }
 function validateAttributeBag({ values, field, target, attributeByKey, add }) { for (const [key, value] of Object.entries(values || {})) { const definition = attributeByKey.get(key); if (!definition) { add(`${field}.${key}`, "UNKNOWN_ROUTING_ATTRIBUTE", "Routing attribute non definito"); continue; } if (![target, "both"].includes(definition.appliesTo)) add(`${field}.${key}`, "ATTRIBUTE_TARGET_MISMATCH", `L'attributo ${key} non e applicabile a ${target}`); if (!valueMatchesDefinition(definition, value)) add(`${field}.${key}`, "ATTRIBUTE_VALUE_TYPE_MISMATCH", `Valore non compatibile con dataType ${definition.dataType}`); } }
 function validateRequirement({ requirement, field, attributeByKey, add }) { const definition = attributeByKey.get(requirement.attributeKey); if (!definition) { add(`${field}.attributeKey`, "UNKNOWN_ROUTING_ATTRIBUTE", "Preset riferisce un attributo non definito"); return; } const numericOperators = new Set(["gte", "lte", "gt", "lt"]); if (numericOperators.has(requirement.operator) && definition.dataType !== "number") add(`${field}.operator`, "OPERATOR_TYPE_MISMATCH", "Gli operatori numerici richiedono un routingAttribute number"); if (requirement.operator !== "in" && !valueMatchesDefinition(definition, requirement.value)) add(`${field}.value`, "REQUIREMENT_VALUE_TYPE_MISMATCH", `Valore non compatibile con ${definition.dataType}`); if (requirement.operator === "in" && !Array.isArray(requirement.value)) add(`${field}.value`, "IN_REQUIRES_ARRAY", "L'operatore in richiede un array"); }
+function workflowSnapshot(revision) { const source = revision?.toObject ? revision.toObject() : revision || {}; return { status: source.status, review: source.review, publication: source.publication }; }
 
 async function computeLayoutIssues(revision, museumId) {
   const issues = []; const add = (field, code, message, severity = "error", context = {}) => issues.push({ field, code, message, severity, context });
@@ -34,6 +36,47 @@ async function checkConsistency({ museumId, actorUserId }) { await assertMuseumR
 async function submitReview({ museumId, actorUserId }) { await checkConsistency({ museumId, actorUserId }); const layout = await MuseumLayout.findOne({ museumId }); const revision = await MuseumLayoutRevision.findById(layout.workingRevisionId); try { requestReview(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409); } await revision.save(); return { layout, revision }; }
 async function withdraw({ museumId, actorUserId }) { await assertMuseumRole({ userId: actorUserId, museumId, minimumRole: "operator" }); const layout = await MuseumLayout.findOne({ museumId }); const revision = await MuseumLayoutRevision.findById(layout?.workingRevisionId); if (!revision) throw new AppError("Nessuna revisione di lavoro", 404); try { withdrawReview(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409); } await revision.save(); return { layout, revision }; }
 async function changes({ museumId, actorUserId, message }) { await assertMuseumRole({ userId: actorUserId, museumId, minimumRole: "manager" }); const layout = await MuseumLayout.findOne({ museumId }); const revision = await MuseumLayoutRevision.findById(layout?.workingRevisionId); if (!revision) throw new AppError("Nessuna revisione di lavoro", 404); try { requestChanges(revision, actorUserId, message); } catch (error) { throw new AppError(error.message, 409); } await revision.save(); return { layout, revision }; }
-async function publish({ museumId, actorUserId }) { await assertMuseumRole({ userId: actorUserId, museumId, minimumRole: "manager" }); const layout = await MuseumLayout.findOne({ museumId }); if (!layout?.workingRevisionId) throw new AppError("Nessuna revisione da pubblicare", 404); const revision = await MuseumLayoutRevision.findById(layout.workingRevisionId); const issues = await computeLayoutIssues(revision, museumId); revision.integrity = { status: issues.some((entry) => entry.severity !== "warning") ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: actorUserId }; if (revision.integrity.status !== "valid") { await revision.save(); throw new AppError("Layout non consistente", 409, issues); } const oldId = layout.publishedRevisionId; try { markPublished(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409); } await revision.save(); if (oldId) await MuseumLayoutRevision.updateOne({ _id: oldId }, { $set: { status: "superseded" } }); layout.publishedRevisionId = revision._id; layout.workingRevisionId = null; await layout.save(); const dependencyAudit = await propagateLayoutPublication({ museumId, newLayoutRevisionId: revision._id, previousLayoutRevisionId: oldId }); return { layout, revision, dependencyAudit }; }
 
-module.exports = { computeLayoutIssues, getLayout, updateLayout, checkConsistency, submitReview, withdraw, changes, publish };
+async function compensateLayoutPublish({ layout, revision, oldId, previousRevisionState, previousSuperseded }) {
+  const pointer = await MuseumLayout.updateOne({ _id: layout._id, publishedRevisionId: revision._id, workingRevisionId: null }, { $set: { publishedRevisionId: oldId || null, workingRevisionId: revision._id } });
+  let previous = { modifiedCount: 1 };
+  if (oldId && previousSuperseded) previous = await MuseumLayoutRevision.updateOne({ _id: oldId, status: "superseded" }, { $set: { status: "published" } });
+  await MuseumLayoutRevision.updateOne({ _id: revision._id }, { $set: previousRevisionState });
+  if (pointer.modifiedCount !== 1 || previous.modifiedCount !== 1) throw new AppError("Rollback pubblicazione layout incompleto", 500, [{ code: "LAYOUT_PUBLISH_ROLLBACK_FAILED" }]);
+}
+
+async function publish({ museumId, actorUserId }) {
+  await assertMuseumRole({ userId: actorUserId, museumId, minimumRole: "manager" });
+  const layout = await MuseumLayout.findOne({ museumId });
+  if (!layout?.workingRevisionId) throw new AppError("Nessuna revisione da pubblicare", 404);
+  const revision = await MuseumLayoutRevision.findById(layout.workingRevisionId);
+  const issues = await computeLayoutIssues(revision, museumId);
+  revision.integrity = { status: issues.some((entry) => entry.severity !== "warning") ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: actorUserId };
+  if (revision.integrity.status !== "valid") { await revision.save(); throw new AppError("Layout non consistente", 409, issues); }
+  const oldId = layout.publishedRevisionId, previousRevisionState = workflowSnapshot(revision);
+  try { markPublished(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409); }
+  await revision.save();
+  let pointerSwitched = false, previousSuperseded = false;
+  try {
+    const pointer = await MuseumLayout.updateOne({ _id: layout._id, workingRevisionId: revision._id, lifecycleStatus: "active" }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
+    if (pointer.modifiedCount !== 1) throw new AppError("La revisione di layout e cambiata durante la pubblicazione", 409);
+    pointerSwitched = true;
+    if (oldId) {
+      const previous = await MuseumLayoutRevision.updateOne({ _id: oldId, status: "published" }, { $set: { status: "superseded" } });
+      if (previous.modifiedCount !== 1) throw new Error("Impossibile supersedere il layout precedente");
+      previousSuperseded = true;
+    }
+  } catch (error) {
+    if (pointerSwitched) {
+      try { await compensateLayoutPublish({ layout, revision, oldId, previousRevisionState, previousSuperseded }); }
+      catch (rollbackError) { if (rollbackError instanceof AppError) throw rollbackError; throw new AppError("Rollback pubblicazione layout incompleto", 500, [{ code: "LAYOUT_PUBLISH_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
+    } else await MuseumLayoutRevision.updateOne({ _id: revision._id }, { $set: previousRevisionState }).catch(() => {});
+    if (error instanceof AppError) throw error;
+    throw new AppError("Pubblicazione layout annullata per errore di consistenza", 500, [{ code: "LAYOUT_PUBLISH_FAILED", message: error.message }]);
+  }
+  layout.publishedRevisionId = revision._id; layout.workingRevisionId = null;
+  const auditResult = await runPostCommitAudit({ dependencyAudit: () => propagateLayoutPublication({ museumId, newLayoutRevisionId: revision._id, previousLayoutRevisionId: oldId }) });
+  return { layout, revision, dependencyAudit: auditResult.results.dependencyAudit, audit: { status: auditResult.status, failures: auditResult.failures } };
+}
+
+module.exports = { computeLayoutIssues, getLayout, updateLayout, checkConsistency, submitReview, withdraw, changes, compensateLayoutPublish, publish };
