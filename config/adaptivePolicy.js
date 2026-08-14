@@ -1,6 +1,6 @@
 /** Stable algorithmic policy. Behavioural values live in learned profiles. */
 module.exports = Object.freeze({
-  version: 5,
+  version: 6,
   coldStart: Object.freeze({ movementSpeedMps: 1, observationSeconds: 45, paceFactors: Object.freeze({ calm: 0.8, normal: 1, fast: 1.2 }) }),
   movement: Object.freeze({ minSpeedMps: 0.1, maxSpeedMps: 3, maxHistoricalWeight: 0.7 }),
   pace: Object.freeze({ calmMax: 1 / 3, fastMin: 2 / 3 }),
@@ -12,6 +12,8 @@ module.exports = Object.freeze({
     eventEvidence: Object.freeze({
       presentation_depth_increased: 0,
       presentation_depth_decreased: 0,
+      presentation_language_increased: 0,
+      presentation_language_decreased: 0,
       semantic_drilldown: 0.85,
       semantic_relation_followed: 0.9,
       visit_refocus_requested: 1,
