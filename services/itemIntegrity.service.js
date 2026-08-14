@@ -4,6 +4,8 @@ const AppError = require("../utils/AppError");
 const { getMuseumVocabulary } = require("./museumVocabulary.service");
 const { computeItemIntegrityIssues } = require("./validation/itemIntegrity.validation");
 const { assertMuseumRole } = require("./museumAuthorization.service");
+const { getRevisionSemanticEdges } = require("./semanticEdge.service");
+const { invalidateMuseumSemanticGraphCache } = require("./semanticGraph.service");
 const {
   requestReview,
   withdrawReview,
@@ -15,7 +17,7 @@ const { auditVisitsUsingPublishedItem, invalidateVisitsUsingItem } = require("./
 async function loadItemAndWorking({ museumId, itemId }) {
   const item = await Item.findOne({ _id: itemId, museumId, lifecycleStatus: "active" });
   if (!item) throw new AppError("Item non trovato", 404);
-  if (!item.workingRevisionId) throw new AppError("L'item non ha una revisione di lavoro", 409);
+  if (!item.workingRevisionId) throw new AppError("L'Item non ha una revisione di lavoro", 409);
   const revision = await ItemRevision.findById(item.workingRevisionId);
   if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
   return { item, revision };
@@ -27,10 +29,14 @@ async function evaluateItemConsistency({ museumId, itemId, userId, allowInReview
     throw new AppError("Una revisione in_review e bloccata; ritirare prima la richiesta", 409);
   }
 
-  const vocabulary = await getMuseumVocabulary(museumId);
+  const [vocabulary, semanticEdges] = await Promise.all([
+    getMuseumVocabulary(museumId),
+    getRevisionSemanticEdges(revision._id),
+  ]);
   const issues = await computeItemIntegrityIssues({
     item: item.toObject(),
     revision: revision.toObject(),
+    semanticEdges,
     museumId,
     vocabulary,
   });
@@ -42,7 +48,7 @@ async function evaluateItemConsistency({ museumId, itemId, userId, allowInReview
   };
   revision.updatedBy = userId;
   await revision.save();
-  return { item, revision, issues, integrity: revision.integrity };
+  return { item, revision, semanticEdges, issues, integrity: revision.integrity };
 }
 
 async function checkItemConsistency({ museumId, itemId, userId }) {
@@ -55,11 +61,8 @@ async function requestItemReview({ museumId, itemId, userId }) {
   if (consistency.issues.some((issue) => issue.severity !== "warning")) {
     throw new AppError("Impossibile richiedere la revisione con problemi di integrita", 400, consistency.issues);
   }
-  try {
-    requestReview(consistency.revision, userId);
-  } catch (error) {
-    throw new AppError(error.message, 409, [{ code: error.code }]);
-  }
+  try { requestReview(consistency.revision, userId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   await consistency.revision.save();
   return consistency;
 }
@@ -67,53 +70,37 @@ async function requestItemReview({ museumId, itemId, userId }) {
 async function withdrawItemReview({ museumId, itemId, userId }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
   const { item, revision } = await loadItemAndWorking({ museumId, itemId });
-  try {
-    withdrawReview(revision, userId);
-  } catch (error) {
-    throw new AppError(error.message, 409, [{ code: error.code }]);
-  }
+  try { withdrawReview(revision, userId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   await revision.save();
-  return { item, revision };
+  return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) };
 }
 
 async function requestItemChanges({ museumId, itemId, userId, message }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
   const { item, revision } = await loadItemAndWorking({ museumId, itemId });
-  try {
-    requestChanges(revision, userId, message);
-  } catch (error) {
-    throw new AppError(error.message, 409, [{ code: error.code }]);
-  }
+  try { requestChanges(revision, userId, message); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   await revision.save();
-  return { item, revision };
+  return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) };
 }
 
 async function publishItem({ museumId, itemId, userId }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
-  const consistency = await evaluateItemConsistency({
-    museumId,
-    itemId,
-    userId,
-    allowInReview: true,
-  });
+  const consistency = await evaluateItemConsistency({ museumId, itemId, userId, allowInReview: true });
   if (consistency.issues.some((issue) => issue.severity !== "warning")) {
-    throw new AppError("Impossibile pubblicare un item con problemi di integrita", 400, consistency.issues);
+    throw new AppError("Impossibile pubblicare un Item con problemi di integrita", 400, consistency.issues);
   }
 
-  const { item, revision } = consistency;
+  const { item, revision, semanticEdges } = consistency;
   const previousPublishedId = item.publishedRevisionId;
   const previousRevisionState = {
     status: revision.status,
     review: revision.review?.toObject ? revision.review.toObject() : { ...revision.review },
-    publication: revision.publication?.toObject
-      ? revision.publication.toObject()
-      : { ...revision.publication },
+    publication: revision.publication?.toObject ? revision.publication.toObject() : { ...revision.publication },
   };
-  try {
-    markPublished(revision, userId);
-  } catch (error) {
-    throw new AppError(error.message, 409, [{ code: error.code }]);
-  }
+  try { markPublished(revision, userId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   await revision.save();
 
   const pointerUpdate = await Item.updateOne(
@@ -129,16 +116,14 @@ async function publishItem({ museumId, itemId, userId }) {
   }
 
   if (previousPublishedId) {
-    await ItemRevision.updateOne(
-      { _id: previousPublishedId, status: "published" },
-      { $set: { status: "superseded" } },
-    );
+    await ItemRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
   }
 
   item.publishedRevisionId = revision._id;
   item.workingRevisionId = null;
+  invalidateMuseumSemanticGraphCache(museumId);
   const dependencyAudit = await auditVisitsUsingPublishedItem({ item, revision });
-  return { item, revision, dependencyAudit };
+  return { item, revision, semanticEdges, dependencyAudit };
 }
 
 async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
@@ -152,30 +137,20 @@ async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
     for (const revisionId of revisionIds) {
       const revision = await ItemRevision.findById(revisionId);
       if (!revision) continue;
-      const issues = await computeItemIntegrityIssues({ item, revision, museumId, vocabulary });
+      const semanticEdges = await getRevisionSemanticEdges(revisionId);
+      const issues = await computeItemIntegrityIssues({ item, revision, semanticEdges, museumId, vocabulary });
       const blocking = issues.some((issue) => issue.severity !== "warning");
-      revision.integrity = {
-        status: blocking ? "needs_review" : "valid",
-        issues,
-        checkedAt: new Date(),
-        checkedBy: null,
-      };
+      revision.integrity = { status: blocking ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: null };
       await revision.save();
       checkedRevisionCount += 1;
       if (blocking) invalidRevisionCount += 1;
       if (blocking && String(item.publishedRevisionId) === String(revision._id)) {
-        const result = await invalidateVisitsUsingItem({
-          itemId: item._id,
-          code: "MUSEUM_VOCABULARY_CHANGED",
-          message: "Il nuovo vocabolario ha reso incompatibile un item della visita",
-          blocking: true,
-          context: { vocabularyRevision: vocabulary.vocabularyRevision },
-        });
+        const result = await invalidateVisitsUsingItem({ itemId: item._id, code: "MUSEUM_VOCABULARY_CHANGED", message: "Il nuovo vocabolario ha reso incompatibile un Item della visita", blocking: true, context: { vocabularyRevision: vocabulary.vocabularyRevision } });
         affectedVisitCount += result.affectedCount;
       }
     }
   }
-
+  invalidateMuseumSemanticGraphCache(museumId);
   return { checkedRevisionCount, invalidRevisionCount, affectedVisitCount };
 }
 
