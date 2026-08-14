@@ -10,6 +10,11 @@ const forbidden = [
   { pattern: /\bvisit_stop\b/, label: 'visit_stop' },
   { pattern: /requestSnapshot\?\.interests|requestSnapshot\.interests/, label: 'GenerationRequest.interests' },
   { pattern: /profile\?\.semanticAffinities|profile\.semanticAffinities/, label: 'embedded semanticAffinities' },
+  { pattern: /\brevision\.relations\b/, label: 'ItemRevision.relations' },
+  { pattern: /["']relations\.relationTypeKey["']/, label: 'ItemRevision relationType dependency' },
+  { pattern: /["']relations\.target["']/, label: 'ItemRevision relation target dependency' },
+  { pattern: /relationView\.utils/, label: 'obsolete relationView.utils' },
+  { pattern: /schemas\/relation\.schema|schemas\\relation\.schema/, label: 'obsolete embedded RelationSchema' },
 ];
 let failed = false;
 
@@ -43,5 +48,11 @@ function walk(dir) {
 }
 
 roots.forEach(walk);
+for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js']) {
+  if (fs.existsSync(obsolete)) {
+    console.error(`Obsolete semantic graph file still present: ${obsolete}`);
+    failed = true;
+  }
+}
 if (failed) process.exit(1);
-console.log('No operational legacy visit/generator contracts found.');
+console.log('No operational legacy visit/generator/semantic-graph contracts found.');
