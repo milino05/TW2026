@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
 const { pushError } = require("./validation.utils");
-const { validatePresentationVariants, validateRelations } = require("./item.validation");
+const { validatePresentationVariants } = require("./item.validation");
+const { validateSemanticEdges } = require("./semanticEdge.validation");
 const { validateSemanticRefs } = require("./vocabulary.validation");
 
 async function validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors }) {
@@ -33,10 +34,10 @@ async function validateVariantAdaptiveMetadata({ variants, vocabulary, museumId,
   }
 }
 
-async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary }) {
+async function computeItemIntegrityIssues({ item, revision, semanticEdges = [], museumId, vocabulary }) {
   const errors = [];
-  if (!item || String(item.museumId) !== String(museumId)) { pushError(errors, "itemId", "ITEM_MUSEUM_MISMATCH", "L'item non appartiene al museo"); return errors; }
-  if (item.lifecycleStatus === "trashed") pushError(errors, "lifecycleStatus", "ITEM_TRASHED", "Un item nel cestino non puo essere pubblicato");
+  if (!item || String(item.museumId) !== String(museumId)) { pushError(errors, "itemId", "ITEM_MUSEUM_MISMATCH", "L'Item non appartiene al museo"); return errors; }
+  if (item.lifecycleStatus === "trashed") pushError(errors, "lifecycleStatus", "ITEM_TRASHED", "Un Item nel cestino non puo essere pubblicato");
   if (!vocabulary.itemTypes.includes(item.itemType)) pushError(errors, "itemType", "INVALID_CONTROLLED_VALUE", "itemType non presente nel vocabolario", { allowedValues: vocabulary.itemTypes });
   if (!revision?.label) pushError(errors, "label", "REQUIRED", "label e obbligatoria");
   if (!revision?.metadata?.license) pushError(errors, "metadata.license", "REQUIRED", "La licenza e obbligatoria per pubblicare");
@@ -49,7 +50,7 @@ async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary
     await validatePresentationVariants({ museumId, variants, defaultPresentation: revision.defaultPresentation, vocabulary, errors, requireDefault: true, requirePublishedTargets: true });
     await validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors });
   }
-  await validateRelations({ museumId, itemType: item.itemType, itemId: item._id, relations: revision?.relations || [], vocabulary, errors, requirePublishedTargets: true });
+  await validateSemanticEdges({ museumId, sourceItemId: item._id, sourceItemType: item.itemType, semanticEdges, vocabulary, errors, requirePublishedTargets: true });
   return errors;
 }
 module.exports = { computeItemIntegrityIssues, validateVariantAdaptiveMetadata };
