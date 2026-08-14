@@ -17,6 +17,20 @@ async function requestItemReview({ museumId, itemId, userId }) { const consisten
 async function withdrawItemReview({ museumId, itemId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "operator" }); const { item, revision } = await loadItemAndWorking({ museumId, itemId }); try { withdrawReview(revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) }; }
 async function requestItemChanges({ museumId, itemId, userId, message }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const { item, revision } = await loadItemAndWorking({ museumId, itemId }); try { requestChanges(revision, userId, message); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) }; }
 
+async function compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState }) {
+  const pointerRollback = await Item.updateOne(
+    { _id: item._id, publishedRevisionId: revision._id, workingRevisionId: null },
+    { $set: { publishedRevisionId: previousPublishedId || null, workingRevisionId: revision._id } },
+  );
+  if (pointerRollback.modifiedCount !== 1) throw new Error("Impossibile ripristinare i pointer Item dopo il fallimento della pubblicazione");
+  revision.status = previousRevisionState.status;
+  revision.review = previousRevisionState.review;
+  revision.publication = previousRevisionState.publication;
+  await revision.save();
+  if (previousPublishedId) await ItemRevision.updateOne({ _id: previousPublishedId, status: "superseded" }, { $set: { status: "published" } });
+  invalidateMuseumSemanticGraphCache(item.museumId);
+}
+
 async function publishItem({ museumId, itemId, userId }) {
   await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
   const consistency = await evaluateItemConsistency({ museumId, itemId, userId, allowInReview: true });
@@ -27,9 +41,18 @@ async function publishItem({ museumId, itemId, userId }) {
   await revision.save();
   const pointerUpdate = await Item.updateOne({ _id: item._id, workingRevisionId: revision._id, lifecycleStatus: "active" }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
   if (pointerUpdate.modifiedCount !== 1) { revision.status = previousRevisionState.status; revision.review = previousRevisionState.review; revision.publication = previousRevisionState.publication; await revision.save(); throw new AppError("La revisione di lavoro e cambiata durante la pubblicazione", 409); }
-  if (previousPublishedId) await ItemRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+
+  try {
+    if (previousPublishedId) await ItemRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+    await bumpPublishedGraphEpoch(museumId);
+  } catch (error) {
+    try { await compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState }); }
+    catch (rollbackError) { throw new AppError("Pubblicazione Item fallita con rollback incompleto", 500, [{ code: "ITEM_GRAPH_PUBLISH_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
+    throw new AppError("Pubblicazione Item annullata: impossibile aggiornare coerentemente il grafo pubblicato", 500, [{ code: "GRAPH_PUBLICATION_FAILED", message: error.message }]);
+  }
+
+  invalidateMuseumSemanticGraphCache(museumId);
   item.publishedRevisionId = revision._id; item.workingRevisionId = null;
-  await bumpPublishedGraphEpoch(museumId); invalidateMuseumSemanticGraphCache(museumId);
   const dependencyAudit = await auditVisitsUsingPublishedItem({ item, revision });
   return { item, revision, semanticEdges, dependencyAudit };
 }
@@ -45,4 +68,4 @@ async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
   invalidateMuseumSemanticGraphCache(museumId);
   return { checkedRevisionCount, invalidRevisionCount, affectedVisitCount };
 }
-module.exports = { checkItemConsistency, requestItemReview, withdrawItemReview, requestItemChanges, publishItem, auditItemsAfterMuseumConfigChange };
+module.exports = { checkItemConsistency, requestItemReview, withdrawItemReview, requestItemChanges, publishItem, auditItemsAfterMuseumConfigChange, compensateFailedItemPublish };
