@@ -13,6 +13,8 @@ const UserAdaptiveProfileSchema = new Schema({
   behavior: {
     depthIncreaseRequestRate: { type: EstimateSchema, default: () => ({}) },
     depthDecreaseRequestRate: { type: EstimateSchema, default: () => ({}) },
+    languageIncreaseRequestRate: { type: EstimateSchema, default: () => ({}) },
+    languageDecreaseRequestRate: { type: EstimateSchema, default: () => ({}) },
     optionalContentEntrySkipRate: { type: EstimateSchema, default: () => ({}) },
     contentCompletionRatio: { type: EstimateSchema, default: () => ({}) },
   },
