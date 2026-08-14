@@ -2,7 +2,7 @@ const Museum = require("../models/museum.model");
 const MuseumVocabulary = require("../models/museumVocabulary.model");
 const MuseumVocabularyRevision = require("../models/museumVocabularyRevision.model");
 const AppError = require("../utils/AppError");
-const { buildRelationViews } = require("./relationView.utils");
+const { buildRelationViews } = require("./relationSemantics.service");
 const { withNormalizedPositions } = require("./vocabularyNormalization.service");
 
 function plain(value) { return value && typeof value.toObject === "function" ? value.toObject() : { ...value }; }

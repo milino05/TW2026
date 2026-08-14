@@ -1,25 +1,56 @@
 # Revisioni e workflow editoriale
 
-## Separazione tra identita e contenuto
+## Identita, contenuto e topologia semantica
 
 `Item`, `Visit` e `MuseumLayout` sono identita stabili. I contenuti modificabili risiedono rispettivamente in `ItemRevision`, `VisitRevision` e `MuseumLayoutRevision`.
 
-Le entita stabili mantengono due puntatori:
+Per gli Item la topologia del knowledge graph e separata dal payload revisionato:
 
 ```text
-publishedRevisionId
-workingRevisionId
+Item
+├── publishedRevisionId
+└── workingRevisionId
+
+ItemRevision
+└── payload editoriale / presentazione
+
+SemanticEdge
+└── sourceItemRevisionId
 ```
 
-Le API pubbliche leggono esclusivamente `publishedRevisionId`. L'editor usa `workingRevisionId` quando presente.
+`SemanticEdge` e la fonte autorevole delle relazioni tra Item. `ItemRevision` non contiene `relations[]`.
 
-## Creazione e modifica
+## Creazione e modifica Item
 
-La creazione produce l'entita stabile e la revisione `version: 1` in stato `draft`.
+La creazione produce l'Item stabile e `ItemRevision version: 1` in stato `draft`. Gli eventuali `semanticEdges` del payload vengono persistiti come documenti `SemanticEdge` associati alla nuova revisione.
 
-Quando un operator modifica un contenuto gia pubblicato e non esiste una revisione di lavoro, il backend clona la revisione pubblicata in una nuova revisione `draft`. La revisione pubblicata continua a essere servita al Navigator.
+Quando un operator modifica un Item gia pubblicato e non esiste una working revision, il backend:
 
-E ammessa una sola revisione di lavoro per entita.
+1. clona il payload della revisione pubblicata in una nuova ItemRevision draft;
+2. clona gli outgoing SemanticEdge della revisione pubblicata assegnandoli alla nuova `sourceItemRevisionId`;
+3. imposta `workingRevisionId` sulla nuova revisione.
+
+La revisione pubblicata e il suo edge set restano immutati e continuano a essere serviti al Navigator.
+
+Il payload authoring usa `semanticEdges`. I precedenti `relations` embedded e `relationCommands` vengono rifiutati esplicitamente; non esiste un adapter di conversione.
+
+## Published e working graph
+
+Il pointer dell'Item seleziona simultaneamente nodo e outgoing topology:
+
+```text
+published graph
+Item.publishedRevisionId = R7
+→ payload R7
+→ SemanticEdge[sourceItemRevisionId=R7]
+
+working graph
+Item.workingRevisionId = R8
+→ payload R8
+→ SemanticEdge[sourceItemRevisionId=R8]
+```
+
+Se un Item non ha working revision, la vista working usa la revisione pubblicata. La working graph non viene cacheata perche e mutabile a pointer invariato; la published graph puo usare una cache runtime non autorevole.
 
 ## Stati
 
@@ -41,46 +72,60 @@ in_review -> draft (ritiro della richiesta)
 
 Una revisione `in_review` e bloccata. L'operator deve ritirare la richiesta oppure attendere la decisione del manager. Un manager puo pubblicare direttamente un proprio `draft` integro.
 
-Le visite community non usano la revisione manageriale e seguono `draft -> published`.
+Le visite community seguono il workflow previsto per le Visit e non creano workflow separati per gli archi semantici.
 
-## Consistenza e revisione
+## Consistenza e pubblicazione Item
 
-L'operator puo modificare e lanciare `check-consistency`. Per inviare una revisione al manager non devono esistere errori bloccanti. Ogni richiesta, ritiro, richiesta di modifiche e pubblicazione viene conservata in `review.events`.
+`check-consistency` valida insieme:
 
-La pubblicazione sposta `publishedRevisionId` sulla nuova revisione, azzera `workingRevisionId` e marca la precedente revisione pubblicata come `superseded`.
+- payload dell'ItemRevision;
+- PresentationVariant/defaultPresentation;
+- semanticRefs e SelectionSignal;
+- SemanticEdge della revisione;
+- esistenza e stato dei target;
+- RelationType;
+- domain/range;
+- multiplicity e peso degli edge.
+
+Gli archi non hanno un workflow autonomo. Pubblicare l'Item cambia `publishedRevisionId`; quel singolo pointer rende contemporaneamente autorevoli la revisione e gli edge con la corrispondente `sourceItemRevisionId`. La precedente revisione viene marcata `superseded` ma resta uno snapshot storico coerente con il proprio edge set.
+
+## Relazioni inverse e simmetriche
+
+Il database salva un solo SemanticEdge autorevole. Le viste inverse e simmetriche sono materializzate da `relationSemantics.service`/`SemanticGraphService` usando `RelationType`. Non vengono persistiti archi inversi duplicati.
 
 ## Baseline temporale della visita
 
-Una `VisitRevision` pubblicata conserva `baselineTiming`, calcolata al momento della pubblicazione con la versione corrente di `AdaptivePolicy` e i profili appresi disponibili in quel momento.
+Una `VisitRevision` pubblicata conserva `baselineTiming` calcolata al momento della pubblicazione con la policy algoritmica e i valori editoriali/cold-start previsti per una baseline riproducibile. I profili comportamentali personali non vengono incorporati nello snapshot editoriale.
 
-La baseline e uno **snapshot editoriale immutabile** della revisione. Item, vocabolari o layout che cambiano successivamente possono generare warning o repair draft, ma non riscrivono la baseline storica della VisitRevision gia pubblicata.
+Item, vocabolari o layout che cambiano successivamente possono generare warning o repair draft, ma non riscrivono la baseline storica della VisitRevision pubblicata. Le stime personalizzate runtime usano invece i modelli correnti.
 
-Una nuova revisione di lavoro parte invece senza baseline valida e la ricalcola prima della nuova pubblicazione.
+## Cestino e hard delete
 
-Le stime personalizzate mostrate al visitatore non usano la baseline come valore assoluto: vengono calcolate runtime usando i modelli correnti e `VisitTimingProfile`.
+Il cestino appartiene all'entita stabile con `lifecycleStatus: active | trashed`. Un hard delete di Item e bloccato se esistono:
 
-## Cestino
+- content entry di Visit che lo referenziano;
+- SemanticEdge di altri nodi che lo usano come target;
+- semanticFocus che lo referenziano.
 
-Il cestino appartiene all'entita stabile con `lifecycleStatus: active | trashed`. Un operator puo spostare nel cestino item e visite ufficiali; un manager puo ripristinare o cancellare definitivamente. L'hard delete controlla le dipendenze e non effettua cancellazioni a cascata.
+Se l'Item puo essere cancellato, vengono eliminati anche i suoi ItemRevision e gli outgoing SemanticEdge. Non vengono effettuate cancellazioni a cascata di fatti appartenenti ad altri Item.
 
 ## Dipendenze Item -> Visit
 
-Le visite mantengono riferimenti a `itemId`, non a una bozza. Quando viene pubblicata una nuova revisione Item:
+Le visite mantengono riferimenti a `itemId`, non a una bozza. Quando viene pubblicata una nuova ItemRevision:
 
 - una modifica compatibile genera warning;
 - l'assenza della policy ufficiale, del default community o dell'integrita genera errore bloccante;
 - in caso bloccante viene creato un repair draft e la visita incompatibile non viene piu servita come pubblicata.
 
+## Dipendenze vocabolario -> grafo
+
+La rimozione di un RelationType ancora usato da `SemanticEdge` appartenenti a revisioni attive viene bloccata. Il controllo delle dipendenze non legge piu campi embedded di ItemRevision.
+
 ## Dipendenze Layout -> Visit
 
-Quando viene pubblicata una nuova `MuseumLayoutRevision`, il backend controlla tutte le VisitRevision che coinvolgono quel museo.
+Quando viene pubblicata una nuova `MuseumLayoutRevision`, il backend controlla le VisitRevision coinvolte. Solo le content entry `target` dipendono dal layout; le entry `context` restano semantiche e non richiedono placement.
 
-- placement e raggiungibilita ancora validi: warning, visita pubblicata mantenuta;
-- placement mancante o grafo disconnesso per tappe consecutive: errore bloccante, repair draft e rimozione della visita incompatibile dalla pubblicazione.
-
-Il `plannedPath` e una preferenza editoriale e non un vincolo runtime. Il Navigator usa sempre il layout pubblicato corrente: se il planned path e superseded, non continuo o incompatibile con i requirements dell'utente, esegue routing dinamico.
-
-`check-consistency` valida anch'esso contro il layout pubblicato corrente e segnala `STALE_LAYOUT_REVISION` quando una transizione editoriale contiene un riferimento obsoleto.
+Il `plannedPath` e una preferenza editoriale e non un vincolo runtime. Il Navigator usa il layout pubblicato corrente e puo eseguire routing dinamico se il path editoriale non e piu utilizzabile.
 
 ## Endpoint principali
 
@@ -99,23 +144,8 @@ POST   /api/museums/:museumId/items/:itemId/restore
 DELETE /api/museums/:museumId/items/:itemId/hard-delete
 ```
 
-Visite: endpoint equivalenti sotto `/api/visits/:visitId`.
+Le response Item includono `semanticEdges` della revisione selezionata accanto a `item` e `revision`. Per leggere una revisione working autorizzata si usa `?view=working`.
 
-Layout:
+Le viste incoming/outgoing pubbliche usano `SemanticGraphService`; non eseguono piu una scansione delle ItemRevision per ricostruire gli archi inversi.
 
-```text
-PUT  /api/museums/:museumId/layout
-POST /api/museums/:museumId/layout/check-consistency
-POST /api/museums/:museumId/layout/request-review
-POST /api/museums/:museumId/layout/withdraw-review
-POST /api/museums/:museumId/layout/request-changes
-POST /api/museums/:museumId/layout/publish
-```
-
-Per leggere una revisione di lavoro autorizzata si usa `?view=working`.
-
-## Incompatibilita rispetto al modello precedente
-
-I campi revisionabili non sono piu contenuti direttamente in `Item` e `Visit`. `relationCommands` e stato rimosso e le relazioni logistiche non fanno piu parte del grafo degli Item: orientamento, Place e connection appartengono a `MuseumLayoutRevision`.
-
-La rimozione di una chiave di vocabolario ancora usata da revisioni attive viene bloccata. Riordinamenti e variazioni di `targetSeconds` incrementano `vocabularyRevision` e marcano i contenuti dipendenti per il ricontrollo.
+Visite e Layout mantengono i propri endpoint revisionati gia documentati nelle rispettive specifiche.
