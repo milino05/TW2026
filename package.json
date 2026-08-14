@@ -20,7 +20,7 @@
     "seed:users": "node scripts/seedRequiredUsers.js",
     "assign:museum-role": "node scripts/assignMuseumRole.js",
     "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
-    "check:legacy": "node scripts/checkLegacyContracts.js",
+    "check:legacy": "node scripts/checkLegacyContracts.js && node scripts/checkSemanticGraphArchitecture.js",
     "check": "npm run check:syntax && npm run check:legacy",
     "test": "node --test tests/*.test.js"
   }
