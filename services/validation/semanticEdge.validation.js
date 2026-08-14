@@ -7,7 +7,7 @@ function normalizeSemanticEdges(values) {
   if (!Array.isArray(values)) return values;
   return values.map((edge) => isPlainObject(edge) ? {
     relationTypeKey: normalizeKey(edge.relationTypeKey),
-    targetItemId: edge.targetItemId || edge.target || null,
+    targetItemId: edge.targetItemId || null,
     weight: edge.weight === undefined ? 1 : Number(edge.weight),
   } : edge);
 }
@@ -36,6 +36,9 @@ async function validateSemanticEdges({
     if (!isPlainObject(edge)) {
       pushError(errors, path, "INVALID_TYPE", "Ogni SemanticEdge deve essere un oggetto");
       continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(edge, "target")) {
+      pushError(errors, `${path}.target`, "REMOVED_FIELD", "target non e supportato: usare targetItemId");
     }
 
     const type = types.get(edge.relationTypeKey);
