@@ -1,14 +1,15 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
 const { pushError } = require("./validation.utils");
-const { validatePresentationVariants, validateRelations } = require("./item.validation");
+const { validatePresentationVariants } = require("./item.validation");
+const { validateSemanticEdges } = require("./semanticEdge.validation");
+const { getEdgesForRevision } = require("../semanticEdge.service");
 const { validateSemanticRefs } = require("./vocabulary.validation");
 
 async function validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors }) {
   const itemTypes = new Set(vocabulary.itemTypes || []), relationTypes = new Set((vocabulary.relationTypes || []).map((entry) => entry.key)), aspects = new Set((vocabulary.presentationAspects || []).map((entry) => entry.key)), signals = new Set((vocabulary.selectionSignals || []).map((entry) => entry.key));
   for (let index = 0; index < (variants || []).length; index += 1) {
-    const variant = variants[index], path = `presentationVariants[${index}]`;
-    const audience = variant.audienceSuitability;
+    const variant = variants[index], path = `presentationVariants[${index}]`, audience = variant.audienceSuitability;
     if (audience) {
       for (const field of ["minMaturity", "maxMaturity"]) if (audience[field] != null && (!Number.isFinite(audience[field]) || audience[field] < 0 || audience[field] > 1)) pushError(errors, `${path}.audienceSuitability.${field}`, "INVALID_NUMBER", `${field} deve essere tra 0 e 1`);
       for (const field of ["minAgeYears", "maxAgeYears"]) if (audience[field] != null && (!Number.isFinite(audience[field]) || audience[field] < 0 || audience[field] > 130)) pushError(errors, `${path}.audienceSuitability.${field}`, "INVALID_NUMBER", `${field} non valido`);
@@ -45,11 +46,9 @@ async function computeItemIntegrityIssues({ item, revision, museumId, vocabulary
   for (let index = 0; index < (revision?.selectionSignals || []).length; index += 1) { const signal = revision.selectionSignals[index], path = `selectionSignals[${index}]`; if (!signalKeys.has(signal.key)) pushError(errors, `${path}.key`, "UNKNOWN_SELECTION_SIGNAL", `SelectionSignal non presente: ${signal.key}`); if (signalSeen.has(signal.key)) pushError(errors, `${path}.key`, "DUPLICATE_KEY", "SelectionSignal duplicato"); signalSeen.add(signal.key); if (!Number.isFinite(signal.weight) || signal.weight < 0 || signal.weight > 1) pushError(errors, `${path}.weight`, "INVALID_NUMBER", "weight deve essere tra 0 e 1"); }
   const variants = revision?.presentationVariants || [];
   if (!Array.isArray(variants) || !variants.length) pushError(errors, "presentationVariants", "EMPTY_ARRAY", "Almeno una PresentationVariant e obbligatoria");
-  else {
-    await validatePresentationVariants({ museumId, variants, defaultPresentation: revision.defaultPresentation, vocabulary, errors, requireDefault: true, requirePublishedTargets: true });
-    await validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors });
-  }
-  await validateRelations({ museumId, itemType: item.itemType, itemId: item._id, relations: revision?.relations || [], vocabulary, errors, requirePublishedTargets: true });
+  else { await validatePresentationVariants({ museumId, variants, defaultPresentation: revision.defaultPresentation, vocabulary, errors, requireDefault: true, requirePublishedTargets: true }); await validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors }); }
+  const semanticEdges = await getEdgesForRevision(revision?._id);
+  await validateSemanticEdges({ museumId, itemType: item.itemType, itemId: item._id, edges: semanticEdges, vocabulary, errors, requirePublishedTargets: true });
   return errors;
 }
 module.exports = { computeItemIntegrityIssues, validateVariantAdaptiveMetadata };
