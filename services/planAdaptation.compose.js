@@ -6,8 +6,8 @@ const{timingFromPlan}=require("./physicalRoute.service");
 const{id}=require("./sessionPlan.service");
 const H=require("./planAdaptation.helpers");
 async function buildTail({userId,plan,prepared}){
- const{reason,futureSegment,request,museumId}=prepared;
- if(reason!=="route_only")return generateVisitPlan({userId,museumId,request,persist:false});
+ const{reason,futureSegment,request,museumId,plannerConstraints}=prepared;
+ if(reason!=="route_only")return generateVisitPlan({userId,museumId,request,persist:false,plannerConstraints});
  const profile=await UserAdaptiveProfile.findOne({userId}).lean();
  const result=await materializePhysicalRoute({contentEntries:futureSegment.map(H.plain),adaptiveProfile:profile,navigation:{movementPacePreference:request.movementPacePreference,requirements:request.navigationRequirements||[],startPlaceId:request.startPlaceId},defaultMovementSpeedMps:plan.contextSnapshot?.effectiveMovementSpeedMps||policy.coldStart.movementSpeedMps});
  return{contentEntries:result.contentEntries,physicalRoute:result.physicalRoute,contextSnapshot:plan.contextSnapshot,adaptivePolicyVersion:policy.version,utilityScore:0,sourceVocabularyRevisionId:null,sourceLayoutRevisionId:result.sourceLayoutRevisionIds?.[0]||null,estimatedTiming:timingFromPlan(result.contentEntries,result.physicalRoute)};
