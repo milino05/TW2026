@@ -9,6 +9,7 @@ const { assertMuseumRole, hasMuseumRole } = require("./museumAuthorization.servi
 const { normalizeItemPayload, validateItemDraftPayload } = require("./validation/item.validation");
 const { markRevisionEdited } = require("./revisionWorkflow.service");
 const { invalidateVisitsUsingItem } = require("./visitDependency.service");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
 const {
   getRevisionSemanticEdges,
   getRevisionSemanticEdgesMap,
@@ -47,7 +48,60 @@ async function actorCanManage(actorUserId, museumId) { if (!actorUserId) return 
 async function getItemById({ museumId, itemId, actorUserId = null, view = "published" }) { const item = await findItemOrFail({ museumId, itemId, includeTrashed: view === "working" }), canManage = await actorCanManage(actorUserId, museumId); if (view === "working" && !canManage) throw new AppError("Accesso alla revisione di lavoro non autorizzato", 403); const revisionId = view === "working" && item.workingRevisionId ? item.workingRevisionId : item.publishedRevisionId; if (!revisionId) throw new AppError("Nessuna revisione disponibile", 404); const revision = await ItemRevision.findById(revisionId); if (!revision) throw new AppError("Revisione non trovata", 404); if (!canManage && revision.integrity.status !== "valid") throw new AppError("Item non disponibile", 404); const semanticEdges = await getRevisionSemanticEdges(revision._id); return { item, revision, semanticEdges: semanticEdges.map(edgeSnapshot) }; }
 async function listItems({ museumId, filters = {}, actorUserId = null, view = "published" }) { const canManage = await actorCanManage(actorUserId, museumId); if (view === "working" && !canManage) throw new AppError("Accesso alle bozze non autorizzato", 403); const query = { museumId }; if (!canManage || !filters.includeTrashed) query.lifecycleStatus = "active"; if (filters.itemType) query.itemType = filters.itemType; const items = await Item.find(query).sort({ updatedAt: -1 }).lean(); const selected = items.map((item) => ({ item, revisionId: view === "working" && item.workingRevisionId ? item.workingRevisionId : item.publishedRevisionId })).filter((entry) => entry.revisionId); const revisionIds = selected.map((entry) => entry.revisionId), [revisions, edgesByRevision] = await Promise.all([ItemRevision.find({ _id: { $in: revisionIds } }).lean(), getRevisionSemanticEdgesMap(revisionIds)]), revisionById = new Map(revisions.map((revision) => [String(revision._id), revision])), results = []; for (const entry of selected) { const revision = revisionById.get(String(entry.revisionId)); if (!revision) continue; if (filters.status && revision.status !== filters.status) continue; if (filters.integrity && revision.integrity?.status !== filters.integrity) continue; if (!canManage && revision.integrity?.status !== "valid") continue; const semanticEdges = edgesByRevision.get(String(entry.revisionId)) || []; results.push({ item: entry.item, revision, semanticEdges: semanticEdges.map(edgeSnapshot) }); } return results; }
 async function markPublishedGraphChanged(museumId) { await bumpPublishedGraphEpoch(museumId); invalidateMuseumSemanticGraphCache(museumId); }
-async function trashItem({ museumId, itemId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "operator" }); const item = await findItemOrFail({ museumId, itemId }); item.lifecycleStatus = "trashed"; item.trashedAt = new Date(); item.trashedBy = userId; await item.save(); await markPublishedGraphChanged(museumId); await invalidateVisitsUsingItem({ itemId: item._id, code: "VISIT_ITEM_TRASHED", message: "Un Item della visita e stato spostato nel cestino", blocking: true }); return item; }
-async function restoreItem({ museumId, itemId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const item = await findItemOrFail({ museumId, itemId, includeTrashed: true }); item.lifecycleStatus = "active"; item.trashedAt = null; item.trashedBy = null; await item.save(); await markPublishedGraphChanged(museumId); return item; }
-async function hardDeleteItem({ museumId, itemId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const item = await findItemOrFail({ museumId, itemId, includeTrashed: true }); if (item.lifecycleStatus !== "trashed") throw new AppError("L'Item deve essere nel cestino prima della cancellazione definitiva", 409); const [visitDependency, edgeDependency, focusDependency] = await Promise.all([VisitRevision.exists({ "contentEntries.itemId": item._id }), semanticEdgeTargetDependency(item._id), ItemRevision.exists({ "presentationVariants.semanticFocus.itemId": item._id })]); if (visitDependency || edgeDependency || focusDependency) throw new AppError("Impossibile eliminare definitivamente: esistono dipendenze attive", 409); await deleteSemanticEdgesForSourceItem(item._id); await ItemRevision.deleteMany({ itemId: item._id }); await item.deleteOne(); await markPublishedGraphChanged(museumId); return item; }
-module.exports = { REVISION_FIELDS, findItemOrFail, getWorkingRevision, createItem, updateItem, listItems, getItemById, trashItem, restoreItem, hardDeleteItem };
+function lifecycleSnapshot(item) { return { lifecycleStatus: item.lifecycleStatus, trashedAt: item.trashedAt || null, trashedBy: item.trashedBy || null }; }
+async function changeItemLifecycle({ item, expectedStatus, nextState }) {
+  const previous = lifecycleSnapshot(item);
+  const write = await Item.updateOne({ _id: item._id, lifecycleStatus: expectedStatus }, { $set: nextState });
+  if (write.modifiedCount !== 1) throw new AppError("Lo stato dell'Item e cambiato durante l'operazione", 409);
+  try { await markPublishedGraphChanged(item.museumId); }
+  catch (error) {
+    const rollback = await Item.updateOne({ _id: item._id, lifecycleStatus: nextState.lifecycleStatus }, { $set: previous });
+    invalidateMuseumSemanticGraphCache(item.museumId);
+    if (rollback.modifiedCount !== 1) throw new AppError("Cambio lifecycle Item fallito con rollback incompleto", 500, [{ code: "ITEM_LIFECYCLE_ROLLBACK_FAILED", message: error.message }]);
+    throw new AppError("Cambio lifecycle Item annullato: impossibile aggiornare coerentemente il grafo pubblicato", 500, [{ code: "ITEM_GRAPH_EPOCH_FAILED", message: error.message }]);
+  }
+  Object.assign(item, nextState);
+  return item;
+}
+async function trashItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "operator" });
+  const item = await findItemOrFail({ museumId, itemId });
+  await changeItemLifecycle({ item, expectedStatus: "active", nextState: { lifecycleStatus: "trashed", trashedAt: new Date(), trashedBy: userId } });
+  const auditResult = await runPostCommitAudit({ visitInvalidation: () => invalidateVisitsUsingItem({ itemId: item._id, code: "VISIT_ITEM_TRASHED", message: "Un Item della visita e stato spostato nel cestino", blocking: true }) });
+  return { item, audit: { status: auditResult.status, visitInvalidation: auditResult.results.visitInvalidation, failures: auditResult.failures } };
+}
+async function restoreItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const item = await findItemOrFail({ museumId, itemId, includeTrashed: true });
+  if (item.lifecycleStatus !== "trashed") throw new AppError("L'Item non e nel cestino", 409);
+  await changeItemLifecycle({ item, expectedStatus: "trashed", nextState: { lifecycleStatus: "active", trashedAt: null, trashedBy: null } });
+  return { item, audit: { status: "complete", failures: [] } };
+}
+async function restoreHardDeletedItem({ itemSnapshot, revisionSnapshots, edgeSnapshots, museumId }) {
+  await Item.replaceOne({ _id: itemSnapshot._id }, itemSnapshot, { upsert: true });
+  for (const revision of revisionSnapshots) await ItemRevision.replaceOne({ _id: revision._id }, revision, { upsert: true });
+  for (const edge of edgeSnapshots) await SemanticEdge.replaceOne({ _id: edge._id }, edge, { upsert: true });
+  invalidateMuseumSemanticGraphCache(museumId);
+}
+async function hardDeleteItem({ museumId, itemId, userId }) {
+  await assertMuseumRole({ userId, museumId, minimumRole: "manager" });
+  const item = await findItemOrFail({ museumId, itemId, includeTrashed: true });
+  if (item.lifecycleStatus !== "trashed") throw new AppError("L'Item deve essere nel cestino prima della cancellazione definitiva", 409);
+  const [visitDependency, edgeDependency, focusDependency] = await Promise.all([VisitRevision.exists({ "contentEntries.itemId": item._id }), semanticEdgeTargetDependency(item._id), ItemRevision.exists({ "presentationVariants.semanticFocus.itemId": item._id })]);
+  if (visitDependency || edgeDependency || focusDependency) throw new AppError("Impossibile eliminare definitivamente: esistono dipendenze attive", 409);
+  const [revisionSnapshots, edgeSnapshots] = await Promise.all([ItemRevision.find({ itemId: item._id }).lean(), SemanticEdge.find({ sourceItemId: item._id }).lean()]);
+  const itemSnapshot = item.toObject();
+  try {
+    await deleteSemanticEdgesForSourceItem(item._id);
+    await ItemRevision.deleteMany({ itemId: item._id });
+    const deleted = await Item.deleteOne({ _id: item._id, lifecycleStatus: "trashed" });
+    if (deleted.deletedCount !== 1) throw new Error("Item non eliminato: stato concorrente");
+    await markPublishedGraphChanged(museumId);
+  } catch (error) {
+    try { await restoreHardDeletedItem({ itemSnapshot, revisionSnapshots, edgeSnapshots, museumId }); }
+    catch (rollbackError) { throw new AppError("Hard delete Item fallito con rollback incompleto", 500, [{ code: "ITEM_HARD_DELETE_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
+    throw new AppError("Hard delete Item annullato per errore di consistenza", 500, [{ code: "ITEM_HARD_DELETE_FAILED", message: error.message }]);
+  }
+  return { item, audit: { status: "complete", failures: [] } };
+}
+module.exports = { REVISION_FIELDS, findItemOrFail, getWorkingRevision, createItem, updateItem, listItems, getItemById, changeItemLifecycle, trashItem, restoreItem, restoreHardDeletedItem, hardDeleteItem };
