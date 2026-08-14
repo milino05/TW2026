@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const RelationSchema = require("../schemas/relation.schema");
 const PresentationVariantSchema = require("../schemas/presentationVariant.schema");
 const SemanticRefSchema = require("../schemas/semanticRef.schema");
 const IntegrityIssueSchema = require("../schemas/integrityIssue.schema");
@@ -10,6 +9,7 @@ const ReviewEventSchema = new Schema({ action: { type: String, enum: ["review_re
 const ReviewSchema = new Schema({ requestedAt: { type: Date, default: null }, requestedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, reviewedAt: { type: Date, default: null }, reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, decision: { type: String, enum: ["pending", "approved", "changes_requested", null], default: null }, message: { type: String, trim: true, default: null }, events: { type: [ReviewEventSchema], default: [] } }, { _id: false });
 const DefaultPresentationSchema = new Schema({ variantKey: { type: String, required: true, trim: true, lowercase: true }, durationKey: { type: String, required: true, trim: true, lowercase: true }, languageLevelKey: { type: String, required: true, trim: true, lowercase: true } }, { _id: false });
 
+/** Versioned node/content payload. Graph topology is persisted in SemanticEdge. */
 const ItemRevisionSchema = new Schema({
   itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true, index: true },
   version: { type: Number, required: true, min: 1 },
@@ -20,7 +20,6 @@ const ItemRevisionSchema = new Schema({
   metadata: { license: { type: String, trim: true } },
   semanticRefs: { type: [SemanticRefSchema], default: [] },
   selectionSignals: { type: [SelectionSignalUseSchema], default: [] },
-  relations: { type: [RelationSchema], default: [] },
   presentationVariants: { type: [PresentationVariantSchema], default: [] },
   defaultPresentation: { type: DefaultPresentationSchema, default: null },
   jsonld: { type: Schema.Types.Mixed },
@@ -35,7 +34,6 @@ const ItemRevisionSchema = new Schema({
 ItemRevisionSchema.index({ itemId: 1, version: 1 }, { unique: true });
 ItemRevisionSchema.index({ itemId: 1, status: 1, updatedAt: -1 });
 ItemRevisionSchema.index({ label: "text", tags: "text" });
-ItemRevisionSchema.index({ "relations.relationTypeKey": 1, "relations.target": 1 });
 ItemRevisionSchema.index({ "presentationVariants.key": 1 });
 ItemRevisionSchema.index({ "presentationVariants.representations.languageLevelKey": 1, "presentationVariants.representations.durationKey": 1 });
 ItemRevisionSchema.index({ "semanticRefs.scheme": 1, "semanticRefs.id": 1 });
