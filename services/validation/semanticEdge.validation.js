@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
 const ItemRevision = require("../../models/itemRevision.model");
+const SemanticEdge = require("../../models/semanticEdge.model");
 const { pushError, isPlainObject, normalizeKey } = require("./validation.utils");
 
 function normalizeSemanticEdges(values) {
@@ -10,6 +11,13 @@ function normalizeSemanticEdges(values) {
     targetItemId: edge.targetItemId || null,
     weight: edge.weight === undefined ? 1 : Number(edge.weight),
   } : edge);
+}
+
+async function mirroredSymmetricEdgeExists({ target, sourceItemId, relationTypeKey }) {
+  if (!sourceItemId || !target) return false;
+  const targetRevisionId = target.workingRevisionId || target.publishedRevisionId;
+  if (!targetRevisionId) return false;
+  return Boolean(await SemanticEdge.exists({ sourceItemRevisionId: targetRevisionId, targetItemId: sourceItemId, relationTypeKey }));
 }
 
 async function validateSemanticEdges({
@@ -70,6 +78,9 @@ async function validateSemanticEdges({
     if (type.range?.length && !type.range.includes(target.itemType)) {
       pushError(errors, `${path}.targetItemId`, "INVALID_RANGE", `Il target di tipo ${target.itemType} non e compatibile`);
     }
+    if (type.directionality === "symmetric" && await mirroredSymmetricEdgeExists({ target, sourceItemId, relationTypeKey: edge.relationTypeKey })) {
+      pushError(errors, path, "DUPLICATE_SYMMETRIC_EDGE", "La relazione simmetrica e gia persistita dal nodo target; il fatto deve essere salvato una sola volta");
+    }
 
     if (requirePublishedTargets) {
       if (!target.publishedRevisionId) {
@@ -100,4 +111,4 @@ async function validateSemanticEdges({
   return errors;
 }
 
-module.exports = { normalizeSemanticEdges, validateSemanticEdges };
+module.exports = { normalizeSemanticEdges, validateSemanticEdges, mirroredSymmetricEdgeExists };
