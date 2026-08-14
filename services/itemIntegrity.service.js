@@ -9,6 +9,7 @@ const { invalidateMuseumSemanticGraphCache } = require("./semanticGraph.service"
 const { bumpPublishedGraphEpoch } = require("./semanticGraphState.service");
 const { requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { auditVisitsUsingPublishedItem, invalidateVisitsUsingItem } = require("./visitDependency.service");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
 
 async function loadItemAndWorking({ museumId, itemId }) { const item = await Item.findOne({ _id: itemId, museumId, lifecycleStatus: "active" }); if (!item) throw new AppError("Item non trovato", 404); if (!item.workingRevisionId) throw new AppError("L'Item non ha una revisione di lavoro", 409); const revision = await ItemRevision.findById(item.workingRevisionId); if (!revision) throw new AppError("Revisione di lavoro non trovata", 409); return { item, revision }; }
 async function evaluateItemConsistency({ museumId, itemId, userId, allowInReview = false }) { const { item, revision } = await loadItemAndWorking({ museumId, itemId }); if (revision.status === "in_review" && !allowInReview) throw new AppError("Una revisione in_review e bloccata; ritirare prima la richiesta", 409); const [vocabulary, semanticEdges] = await Promise.all([getMuseumVocabulary(museumId), getRevisionSemanticEdges(revision._id)]); const issues = await computeItemIntegrityIssues({ item: item.toObject(), revision: revision.toObject(), semanticEdges, museumId, vocabulary }); revision.integrity = { status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: userId }; revision.updatedBy = userId; await revision.save(); return { item, revision, semanticEdges, issues, integrity: revision.integrity }; }
@@ -17,18 +18,19 @@ async function requestItemReview({ museumId, itemId, userId }) { const consisten
 async function withdrawItemReview({ museumId, itemId, userId }) { await assertMuseumRole({ userId, museumId, minimumRole: "operator" }); const { item, revision } = await loadItemAndWorking({ museumId, itemId }); try { withdrawReview(revision, userId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) }; }
 async function requestItemChanges({ museumId, itemId, userId, message }) { await assertMuseumRole({ userId, museumId, minimumRole: "manager" }); const { item, revision } = await loadItemAndWorking({ museumId, itemId }); try { requestChanges(revision, userId, message); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } await revision.save(); return { item, revision, semanticEdges: await getRevisionSemanticEdges(revision._id) }; }
 
-async function compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState }) {
+async function compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState, previousSuperseded = false }) {
   const pointerRollback = await Item.updateOne(
     { _id: item._id, publishedRevisionId: revision._id, workingRevisionId: null },
     { $set: { publishedRevisionId: previousPublishedId || null, workingRevisionId: revision._id } },
   );
-  if (pointerRollback.modifiedCount !== 1) throw new Error("Impossibile ripristinare i pointer Item dopo il fallimento della pubblicazione");
   revision.status = previousRevisionState.status;
   revision.review = previousRevisionState.review;
   revision.publication = previousRevisionState.publication;
   await revision.save();
-  if (previousPublishedId) await ItemRevision.updateOne({ _id: previousPublishedId, status: "superseded" }, { $set: { status: "published" } });
+  let previous = { modifiedCount: 1 };
+  if (previousPublishedId && previousSuperseded) previous = await ItemRevision.updateOne({ _id: previousPublishedId, status: "superseded" }, { $set: { status: "published" } });
   invalidateMuseumSemanticGraphCache(item.museumId);
+  if (pointerRollback.modifiedCount !== 1 || previous.modifiedCount !== 1) throw new Error("Impossibile ripristinare completamente la pubblicazione Item");
 }
 
 async function publishItem({ museumId, itemId, userId }) {
@@ -42,19 +44,24 @@ async function publishItem({ museumId, itemId, userId }) {
   const pointerUpdate = await Item.updateOne({ _id: item._id, workingRevisionId: revision._id, lifecycleStatus: "active" }, { $set: { publishedRevisionId: revision._id, workingRevisionId: null } });
   if (pointerUpdate.modifiedCount !== 1) { revision.status = previousRevisionState.status; revision.review = previousRevisionState.review; revision.publication = previousRevisionState.publication; await revision.save(); throw new AppError("La revisione di lavoro e cambiata durante la pubblicazione", 409); }
 
+  let previousSuperseded = false;
   try {
-    if (previousPublishedId) await ItemRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+    if (previousPublishedId) {
+      const previous = await ItemRevision.updateOne({ _id: previousPublishedId, status: "published" }, { $set: { status: "superseded" } });
+      if (previous.modifiedCount !== 1) throw new Error("Impossibile supersedere la precedente ItemRevision");
+      previousSuperseded = true;
+    }
     await bumpPublishedGraphEpoch(museumId);
   } catch (error) {
-    try { await compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState }); }
+    try { await compensateFailedItemPublish({ item, revision, previousPublishedId, previousRevisionState, previousSuperseded }); }
     catch (rollbackError) { throw new AppError("Pubblicazione Item fallita con rollback incompleto", 500, [{ code: "ITEM_GRAPH_PUBLISH_ROLLBACK_FAILED", message: rollbackError.message }, { code: "ORIGINAL_ERROR", message: error.message }]); }
     throw new AppError("Pubblicazione Item annullata: impossibile aggiornare coerentemente il grafo pubblicato", 500, [{ code: "GRAPH_PUBLICATION_FAILED", message: error.message }]);
   }
 
   invalidateMuseumSemanticGraphCache(museumId);
   item.publishedRevisionId = revision._id; item.workingRevisionId = null;
-  const dependencyAudit = await auditVisitsUsingPublishedItem({ item, revision });
-  return { item, revision, semanticEdges, dependencyAudit };
+  const auditResult = await runPostCommitAudit({ dependencyAudit: () => auditVisitsUsingPublishedItem({ item, revision }) });
+  return { item, revision, semanticEdges, dependencyAudit: auditResult.results.dependencyAudit, audit: { status: auditResult.status, failures: auditResult.failures } };
 }
 
 async function auditItemsAfterMuseumConfigChange({ museumId, vocabulary }) {
