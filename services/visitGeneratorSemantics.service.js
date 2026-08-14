@@ -1,126 +1,58 @@
-const { semanticAffinityScore, aspectAffinityScore } = require("./interestProfile.service");
-
-function clamp(value, min = 0, max = 1) { return Math.min(max, Math.max(min, value)); }
+const { affinityScore, knowledgeForFeature, clamp } = require("./interestProfile.service");
+const { featureKey, semanticRefKey, resolveFeatureToItemIds, shortestSemanticPath, neighbors } = require("./semanticGraph.service");
 function id(value) { return String(value?._id || value || ""); }
-function semanticKey(ref) { return `${String(ref?.scheme || "").toLowerCase()}::${String(ref?.id || ref?.refId || "")}`; }
-function semanticRefStrength(ref) { return ref?.matchType === "exact" ? 1 : ref?.matchType === "close" ? 0.8 : 0.5; }
-function interestWeight(interest) { const value = Number(interest?.weight); return Number.isFinite(value) ? clamp(value, -1, 1) : 1; }
-function itemTypeRefs(vocabulary, itemType) { return (vocabulary?.itemTypeDefinitions || []).find((entry) => entry.key === itemType)?.semanticRefs || []; }
-function relationTypesByKey(vocabulary) { return new Map((vocabulary?.relationTypes || []).map((entry) => [entry.key, entry])); }
-
-function explicitFeatureScore({ interest, item, revision, variant, vocabulary = {} }) {
-  const weight = interestWeight(interest);
-  if (interest.kind === "item" && id(interest.itemId) === id(item._id)) return weight;
-  if (interest.kind === "item_type" && interest.key === item.itemType) return weight * 0.8;
-  if (interest.kind === "canonical") {
-    const target = semanticKey(interest);
-    const own = (revision.semanticRefs || []).find((ref) => semanticKey(ref) === target);
-    if (own) return weight * semanticRefStrength(own);
-    const typeRef = itemTypeRefs(vocabulary, item.itemType).find((ref) => semanticKey(ref) === target);
-    if (typeRef) return weight * 0.7 * semanticRefStrength(typeRef);
-    if ((variant?.semanticFocus || []).some((focus) => focus.kind === "canonical" && semanticKey(focus) === target)) return weight * 0.8;
-    const relationTypes = relationTypesByKey(vocabulary);
-    for (const relation of revision.relations || []) {
-      const ref = (relationTypes.get(relation.relationTypeKey)?.semanticRefs || []).find((candidate) => semanticKey(candidate) === target);
-      if (ref) return weight * 0.55 * semanticRefStrength(ref);
-    }
+function semanticKey(ref) { return semanticRefKey(ref); }
+function semanticRefStrength(ref) { return ref?.matchType === "exact" ? 1 : ref?.matchType === "close" ? 0.8 : ref?.matchType === "broader" || ref?.matchType === "narrower" ? 0.55 : 0.5; }
+function itemTypeDefinition(vocabulary, itemType) { return (vocabulary?.itemTypeDefinitions || []).find((entry) => entry.key === itemType) || null; }
+function strongest(values = []) { let best = 0; for (const value of values) if (Math.abs(Number(value) || 0) > Math.abs(best)) best = Number(value) || 0; return best; }
+function featureMatchScore({ feature, item, revision, variant, vocabulary = {}, graph = null }) {
+  if (!feature?.kind) return 0;
+  if (feature.kind === "item") return id(feature.itemId) === id(item._id) ? 1 : 0;
+  if (feature.kind === "item_type") return feature.key === item.itemType ? 0.9 : 0;
+  if (feature.kind === "tag") return (revision.tags || []).some((tag) => String(tag).toLowerCase() === String(feature.key || "").toLowerCase()) ? 0.55 : 0;
+  if (feature.kind === "presentation_aspect") { const aspect = (variant.presentationAspects || []).find((entry) => entry.key === feature.key); return aspect ? Number(aspect.weight) || 1 : 0; }
+  if (feature.kind === "selection_signal") { const signal = (revision.selectionSignals || []).find((entry) => entry.key === feature.key); return signal ? Number(signal.weight) || 1 : 0; }
+  if (feature.kind === "relation_type") return graph ? (neighbors(graph, item._id, { relationTypeKey: feature.key }).length ? 0.8 : 0) : ((revision.relations || []).some((relation) => relation.relationTypeKey === feature.key) ? 0.75 : 0);
+  if (feature.kind === "canonical") {
+    const target = semanticKey(feature), own = (revision.semanticRefs || []).find((ref) => semanticKey(ref) === target); if (own) return 0.95 * semanticRefStrength(own);
+    const typeRef = (itemTypeDefinition(vocabulary, item.itemType)?.semanticRefs || []).find((ref) => semanticKey(ref) === target); if (typeRef) return 0.7 * semanticRefStrength(typeRef);
+    const focus = (variant.semanticFocus || []).find((entry) => entry.kind === "canonical" && semanticKey(entry) === target); if (focus) return 0.85 * (Number(focus.weight) || 1);
+    const signalDefs = new Map((vocabulary.selectionSignals || []).map((entry) => [entry.key, entry])); for (const signal of revision.selectionSignals || []) { const ref = (signalDefs.get(signal.key)?.semanticRefs || []).find((entry) => semanticKey(entry) === target); if (ref) return 0.6 * (Number(signal.weight) || 1) * semanticRefStrength(ref); }
   }
-  if (interest.kind === "relation_type") {
-    if ((revision.relations || []).some((relation) => relation.relationTypeKey === interest.key)) return weight * 0.7;
-    if ((variant?.semanticFocus || []).some((focus) => focus.kind === "relation_type" && focus.key === interest.key)) return weight * 0.8;
-  }
-  if (interest.kind === "item") {
-    if ((revision.relations || []).some((relation) => id(relation.target) === id(interest.itemId))) return weight * 0.65;
-    if ((variant?.semanticFocus || []).some((focus) => focus.kind === "item" && id(focus.itemId) === id(interest.itemId))) return weight * 0.85;
-  }
-  if (interest.kind === "tag" && (revision.tags || []).some((tag) => String(tag).toLowerCase() === String(interest.key || "").toLowerCase())) return weight * 0.45;
   return 0;
 }
-
-function learnedSemanticScore({ profile, museumId, item, revision, variant, vocabulary = {} }) {
-  let total = 0;
-  total += semanticAffinityScore(profile, { kind: "item", itemId: item._id });
-  total += semanticAffinityScore(profile, { kind: "item_type", museumId, key: item.itemType }) * 0.7;
-  for (const ref of itemTypeRefs(vocabulary, item.itemType)) {
-    total += semanticAffinityScore(profile, { kind: "canonical", scheme: ref.scheme, refId: ref.id }) * 0.6 * semanticRefStrength(ref);
-  }
-  for (const ref of revision.semanticRefs || []) {
-    total += semanticAffinityScore(profile, { kind: "canonical", scheme: ref.scheme, refId: ref.id }) * 0.8 * semanticRefStrength(ref);
-  }
-  const relationTypes = relationTypesByKey(vocabulary);
-  for (const relation of revision.relations || []) {
-    total += semanticAffinityScore(profile, { kind: "relation_type", museumId, key: relation.relationTypeKey }) * 0.35;
-    for (const ref of relationTypes.get(relation.relationTypeKey)?.semanticRefs || []) {
-      total += semanticAffinityScore(profile, { kind: "canonical", scheme: ref.scheme, refId: ref.id }) * 0.35 * semanticRefStrength(ref);
-    }
-    total += semanticAffinityScore(profile, { kind: "item", itemId: relation.target }) * 0.3;
-  }
-  for (const focus of variant?.semanticFocus || []) {
-    total += semanticAffinityScore(profile, { ...focus, museumId }) * (Number(focus.weight) || 1) * 0.8;
-  }
-  return total;
+function semanticFeatureKeysForCandidate({ item, revision, variant, vocabulary = {} }) {
+  const keys = new Set([featureKey({ kind: "item", itemId: item._id }), featureKey({ kind: "item_type", key: item.itemType })]);
+  for (const ref of revision.semanticRefs || []) keys.add(featureKey({ kind: "canonical", scheme: ref.scheme, refId: ref.id }));
+  for (const ref of itemTypeDefinition(vocabulary, item.itemType)?.semanticRefs || []) keys.add(featureKey({ kind: "canonical", scheme: ref.scheme, refId: ref.id }));
+  for (const relation of revision.relations || []) keys.add(featureKey({ kind: "relation_type", key: relation.relationTypeKey }));
+  for (const focus of variant.semanticFocus || []) keys.add(featureKey(focus));
+  for (const signal of revision.selectionSignals || []) keys.add(featureKey({ kind: "selection_signal", key: signal.key }));
+  for (const tag of revision.tags || []) keys.add(featureKey({ kind: "tag", key: String(tag).toLowerCase() }));
+  return [...keys];
 }
-
-function aspectScores({ context, vocabulary, variant }) {
-  const definitions = new Map((vocabulary.presentationAspects || []).map((entry) => [entry.key, entry]));
-  let explicit = 0;
-  let learned = 0;
-  for (const aspect of variant.presentationAspects || []) {
-    explicit += context.explicitInterests
-      .filter((interest) => interest.kind === "presentation_aspect" && interest.key === aspect.key)
-      .reduce((sum, interest) => sum + interestWeight(interest), 0) * (Number(aspect.weight) || 1);
-    const definition = definitions.get(aspect.key);
-    learned += aspectAffinityScore(
-      context.userProfile,
-      { museumId: context.museumId, key: aspect.key, semanticRefs: definition?.semanticRefs || [] },
-    ) * (Number(aspect.weight) || 1);
-  }
-  return { explicit, learned };
+function goalResolution({ context, graph, vocabulary }) {
+  const warnings = [], errors = [], semanticGoals = [], relationGoals = [], requiredKeys = [];
+  function knownFeature(feature) { if (!feature) return false; if (feature.kind === "presentation_aspect") return (vocabulary.presentationAspects || []).some((entry) => entry.key === feature.key); if (feature.kind === "selection_signal") return (vocabulary.selectionSignals || []).some((entry) => entry.key === feature.key); if (feature.kind === "relation_type") return (vocabulary.relationViews || []).some((entry) => entry.viewKey === feature.key || entry.baseRelationTypeKey === feature.key); if (feature.kind === "item_type") return (vocabulary.itemTypes || []).includes(feature.key); return resolveFeatureToItemIds(graph, feature).length > 0; }
+  (context.semanticGoals || []).forEach((goal, index) => { const resolved = { ...goal, priority: goal.priority || "preferred", weight: Number(goal.weight ?? 1), key: `semantic:${index}` }; if (!knownFeature(goal.feature)) { const target = resolved.priority === "required" ? errors : warnings; target.push({ field: `semanticGoals[${index}]`, code: "SEMANTIC_GOAL_UNRESOLVED", message: "Il museo non contiene dati sufficienti per risolvere il goal semantico", context: { feature: goal.feature } }); return; } semanticGoals.push(resolved); if (resolved.priority === "required") requiredKeys.push(resolved.key); });
+  (context.relationGoals || []).forEach((goal, index) => { const key = `relation:${index}`, priority = goal.priority || "preferred", weight = Number(goal.weight ?? 1), maxDepth = Number(goal.maxDepth) || 3; let path = null, targetIds = []; if (["relationship", "compare"].includes(goal.kind)) path = shortestSemanticPath(graph, { from: goal.from, to: goal.to, relationTypeKey: goal.relationTypeKey || null, maxDepth }); else if (goal.kind === "follow_relation") { const starts = resolveFeatureToItemIds(graph, goal.from), allowedTargets = goal.to ? new Set(resolveFeatureToItemIds(graph, goal.to)) : null, set = new Set(); for (const start of starts) for (const edge of neighbors(graph, start, { relationTypeKey: goal.relationTypeKey })) if (!allowedTargets || allowedTargets.has(id(edge.toItemId))) set.add(id(edge.toItemId)); targetIds = [...set]; } const resolved = { ...goal, key, priority, weight, maxDepth, path, targetIds }, ok = goal.kind === "follow_relation" ? targetIds.length > 0 : Boolean(path); if (!ok) { const target = priority === "required" ? errors : warnings; target.push({ field: `relationGoals[${index}]`, code: "RELATION_GOAL_UNRESOLVED", message: "Il knowledge graph non contiene un percorso compatibile con il relation goal" }); return; } relationGoals.push(resolved); if (priority === "required") { if (goal.kind === "follow_relation") requiredKeys.push(`${key}:target`); else { requiredKeys.push(`${key}:from`); requiredKeys.push(`${key}:to`); } } });
+  return { semanticGoals, relationGoals, requiredKeys, warnings, errors };
 }
-
-function representationPreferenceScore({ representation, context, durationPositions, languagePositions }) {
-  const depth = durationPositions.get(representation.durationKey);
-  const language = languagePositions.get(representation.languageLevelKey);
-  const depthFit = Number.isFinite(depth) ? 1 - Math.abs(depth - context.dimensions.depth.value) : 0;
-  const languageFit = Number.isFinite(language) ? 1 - Math.abs(language - context.dimensions.language.value) : 0;
-  return { depthFit, languageFit, score: depthFit * 0.35 + languageFit * 0.25 };
+function scoreCurrentGoals({ goals, item, revision, variant, vocabulary, graph }) {
+  const requiredCoverageKeys = [], preferenceMatches = [], avoidHits = [];
+  for (const goal of goals.semanticGoals || []) { const match = featureMatchScore({ feature: goal.feature, item, revision, variant, vocabulary, graph }), score = match * Math.max(0, goal.weight); if (goal.priority === "required" && match > 0) requiredCoverageKeys.push(goal.key); if (goal.priority === "preferred") preferenceMatches.push({ key: goal.key, score }); if (goal.priority === "avoid" && match > 0) avoidHits.push(goal.key); }
+  for (const goal of goals.relationGoals || []) { const itemId = id(item._id), pathIds = new Set(goal.path?.itemIds || []), fromIds = new Set(resolveFeatureToItemIds(graph, goal.from)), toIds = new Set(goal.to ? resolveFeatureToItemIds(graph, goal.to) : goal.targetIds || []); if (goal.priority === "required") { if (goal.kind === "follow_relation" && (goal.targetIds || []).includes(itemId)) requiredCoverageKeys.push(`${goal.key}:target`); if (goal.kind !== "follow_relation") { if (fromIds.has(itemId)) requiredCoverageKeys.push(`${goal.key}:from`); if (toIds.has(itemId)) requiredCoverageKeys.push(`${goal.key}:to`); } } const match = goal.kind === "follow_relation" ? ((goal.targetIds || []).includes(itemId) ? 1 : fromIds.has(itemId) ? 0.35 : 0) : pathIds.has(itemId) ? (fromIds.has(itemId) || toIds.has(itemId) ? 1 : 0.65) : 0, score = match * Math.max(0, goal.weight); if (goal.priority === "preferred") preferenceMatches.push({ key: goal.key, score }); if (goal.priority === "avoid" && match > 0) avoidHits.push(goal.key); }
+  const explicitPreference = preferenceMatches.length ? clamp(preferenceMatches.reduce((sum, entry) => sum + entry.score, 0) / preferenceMatches.length) : 0;
+  return { requiredCoverageKeys: [...new Set(requiredCoverageKeys)], preferenceMatches, explicitPreference, avoidHits };
 }
-
-function relationCoherence(fromCandidate, toCandidate) {
-  if (!fromCandidate) return 0;
-  const fromRelations = fromCandidate.revision.relations || [];
-  const toRelations = toCandidate.revision.relations || [];
-  if (fromRelations.some((relation) => id(relation.target) === id(toCandidate.item._id)) || toRelations.some((relation) => id(relation.target) === id(fromCandidate.item._id))) return 0.7;
-  const left = new Set(fromRelations.map((relation) => id(relation.target)));
-  const right = new Set(toRelations.map((relation) => id(relation.target)));
-  const overlap = [...left].filter((entry) => right.has(entry)).length;
-  return overlap ? Math.min(0.4, overlap * 0.12) : 0;
+function learnedSemanticScore({ state, museumId, item, revision, variant, vocabulary = {}, graph = null }) {
+  if (!state) return 0; const families = [affinityScore(state, { kind: "item", itemId: item._id }), affinityScore(state, { kind: "item_type", museumId, key: item.itemType }) * 0.75, strongest((revision.semanticRefs || []).map((ref) => affinityScore(state, { kind: "canonical", scheme: ref.scheme, refId: ref.id }) * 0.9 * semanticRefStrength(ref))), strongest((revision.relations || []).map((relation) => affinityScore(state, { kind: "relation_type", museumId, key: relation.relationTypeKey }) * 0.5)), strongest((variant.semanticFocus || []).map((focus) => affinityScore(state, { ...focus, museumId }) * (Number(focus.weight) || 1) * 0.85)), strongest((revision.selectionSignals || []).map((signal) => affinityScore(state, { kind: "selection_signal", museumId, key: signal.key }) * (Number(signal.weight) || 1) * 0.45)), strongest((variant.presentationAspects || []).map((aspect) => affinityScore(state, { kind: "presentation_aspect", museumId, key: aspect.key }) * (Number(aspect.weight) || 1) * 0.7))]; if (graph) families.push(strongest(neighbors(graph, item._id).map((edge) => affinityScore(state, { kind: "item", itemId: edge.toItemId }) * (edge.traversalWeight || 0) * 0.45))); const usable = families.filter((value) => Number.isFinite(value) && value !== 0); return usable.length ? clamp(usable.reduce((sum, value) => sum + value, 0) / usable.length, -1, 1) : 0;
 }
-
-function statePriority(state, mustCount) { return state.utility + state.mustCovered * 1000 - Math.max(0, mustCount - state.mustCovered) * 2; }
-function pruneBeam(states, mustCount, width) {
-  states.sort((a, b) => statePriority(b, mustCount) - statePriority(a, mustCount) || a.elapsedSeconds - b.elapsedSeconds);
-  return states.slice(0, width);
-}
-
-function buildReasons(option) {
-  const reasons = [];
-  if (option.scoreBreakdown.explicitInterest > 0) reasons.push({ source: "current_request", message: "La tappa corrisponde agli interessi indicati per questa visita", confidence: 1 });
-  if (option.scoreBreakdown.learnedInterest > 0.05) reasons.push({ source: "user_history", message: "La tappa e coerente con preferenze apprese dalle visite precedenti", confidence: clamp(Math.abs(option.scoreBreakdown.learnedInterest)) });
-  if (option.scoreBreakdown.discovery > 0) reasons.push({ source: "discovery", message: "Introduce un elemento nuovo coerente con la preferenza di scoperta", confidence: 1 });
-  return reasons;
-}
-
-module.exports = {
-  id,
-  semanticKey,
-  semanticRefStrength,
-  interestWeight,
-  explicitFeatureScore,
-  learnedSemanticScore,
-  aspectScores,
-  representationPreferenceScore,
-  relationCoherence,
-  pruneBeam,
-  buildReasons,
-};
+function audienceFit(context, variant) { const rule = variant.audienceSuitability, audience = context.audience; if (!rule || !audience) return { fit: 0.5, eligible: true }; const age = Number(audience.ageYears), maturity = Number(audience.maturity); let fit = 1, eligible = true; if (Number.isFinite(age)) { if (rule.minAgeYears != null && age < Number(rule.minAgeYears)) eligible = false; if (rule.maxAgeYears != null && age > Number(rule.maxAgeYears)) fit *= 0.45; } if (Number.isFinite(maturity)) { if (rule.minMaturity != null && maturity < Number(rule.minMaturity)) eligible = false; if (rule.maxMaturity != null && maturity > Number(rule.maxMaturity)) fit *= 0.55; } return { fit, eligible }; }
+function knowledgeFit(context, variant) { const requirements = variant.knowledgeRequirements || []; if (!requirements.length) return { fit: 0.5, eligible: true }; let total = 0, weightTotal = 0, eligible = true; for (const requirement of requirements) { const feature = { ...(requirement.feature || {}), museumId: requirement.feature?.museumId || context.museumId }, knowledge = knowledgeForFeature(context.semanticState, feature, context.explicitKnowledge), weight = Number(requirement.weight) || 1; weightTotal += weight; if (knowledge.level == null) { total += 0.5 * weight; continue; } const min = Number(requirement.minLevel ?? 0), max = Number(requirement.maxLevel ?? 1), inside = knowledge.level >= min && knowledge.level <= max; total += (inside ? 1 : Math.max(0, 1 - Math.min(Math.abs(knowledge.level - min), Math.abs(knowledge.level - max)))) * weight; if (knowledge.source === "current_request" && knowledge.level < min) eligible = false; } return { fit: weightTotal ? total / weightTotal : 0.5, eligible }; }
+function representationPreferenceScore({ representation, context, durationPositions, languagePositions, variant }) { const depth = durationPositions.get(representation.durationKey), language = languagePositions.get(representation.languageLevelKey), depthFit = Number.isFinite(depth) ? 1 - Math.abs(depth - context.dimensions.depth.value) : 0, languageFit = Number.isFinite(language) ? 1 - Math.abs(language - context.dimensions.language.value) : 0, audience = audienceFit(context, variant), knowledge = knowledgeFit(context, variant); return { depthFit, languageFit, audienceFit: audience.fit, knowledgeFit: knowledge.fit, eligible: audience.eligible && knowledge.eligible, score: depthFit * 0.28 + languageFit * 0.22 + audience.fit * 0.15 + knowledge.fit * 0.15 }; }
+function relationCoherence(fromCandidate, toCandidate, graph = null) { if (!fromCandidate) return 0; if (graph) { const direct = neighbors(graph, fromCandidate.item._id).filter((edge) => id(edge.toItemId) === id(toCandidate.item._id)); if (direct.length) return Math.min(0.8, 0.25 + Math.max(...direct.map((edge) => edge.traversalWeight || 0)) * 0.55); const left = new Set(neighbors(graph, fromCandidate.item._id).map((edge) => id(edge.toItemId))), right = new Set(neighbors(graph, toCandidate.item._id).map((edge) => id(edge.toItemId))), overlap = [...left].filter((entry) => right.has(entry)).length; return overlap ? Math.min(0.35, overlap * 0.1) : 0; } const fromRelations = fromCandidate.revision.relations || [], toRelations = toCandidate.revision.relations || []; return fromRelations.some((relation) => id(relation.target) === id(toCandidate.item._id)) || toRelations.some((relation) => id(relation.target) === id(fromCandidate.item._id)) ? 0.7 : 0; }
+function compareStates(a, b) { if (a.hardCovered !== b.hardCovered) return b.hardCovered - a.hardCovered; if (a.explicitScore !== b.explicitScore) return b.explicitScore - a.explicitScore; if (a.utility !== b.utility) return b.utility - a.utility; if (a.entries.length !== b.entries.length) return b.entries.length - a.entries.length; return a.elapsedSeconds - b.elapsedSeconds; }
+function pruneBeam(states, requiredCount, width) { states.sort((a, b) => compareStates(a, b, requiredCount)); return states.slice(0, width); }
+function buildReasons(option) { const reasons = []; if (option.explicitPreference > 0) reasons.push({ source: "current_request", message: "Il contenuto risponde ai goal indicati per questa visita", confidence: 1 }); if (option.requiredCoverageKeys?.length) reasons.push({ source: "current_request", message: "Il contenuto soddisfa un vincolo semantico richiesto", confidence: 1 }); if (option.learnedInterest > 0.05) reasons.push({ source: "user_history", message: "Il contenuto e coerente con preferenze apprese", confidence: clamp(Math.abs(option.learnedInterest)) }); if (option.noveltyScore > 0.45) reasons.push({ source: "discovery", message: "Aggiunge un contenuto o un taglio non ancora fruito", confidence: option.noveltyScore }); return reasons; }
+module.exports = { id, semanticKey, semanticRefStrength, featureMatchScore, semanticFeatureKeysForCandidate, goalResolution, scoreCurrentGoals, learnedSemanticScore, representationPreferenceScore, relationCoherence, compareStates, pruneBeam, buildReasons };
