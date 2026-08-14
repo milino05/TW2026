@@ -72,6 +72,22 @@ test("dimmi di piu aumenta la duration mantenendo variante e linguaggio", () => 
   assert.equal(result.languageLevelKey, "simple");
 });
 
+test("linguaggio piu avanzato mantiene variante e duration", () => {
+  const current = findDefaultRepresentation(source);
+  const result = findAdjacentRepresentation({ source, durationTypes, languageLevels, currentRepresentation: current, axis: "language", direction: "up" });
+  assert.equal(result.variantKey, "standard");
+  assert.equal(result.durationKey, "medium");
+  assert.equal(result.languageLevelKey, "advanced");
+});
+
+test("linguaggio piu semplice mantiene variante e duration", () => {
+  const current = findRepresentationByPolicy(source, { durationKey: "medium", languageLevelKey: "advanced", variantKey: "standard" });
+  const result = findAdjacentRepresentation({ source, durationTypes, languageLevels, currentRepresentation: current, axis: "language", direction: "down" });
+  assert.equal(result.variantKey, "standard");
+  assert.equal(result.durationKey, "medium");
+  assert.equal(result.languageLevelKey, "simple");
+});
+
 test("stima la durata usando targetSeconds del museo di ogni tappa", () => {
   const vocabularies = new Map([
     ["museum-a", { durationTypes }],
