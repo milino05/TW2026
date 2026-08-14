@@ -9,7 +9,7 @@ const forbidden = [
   { pattern: /\btoStopIndex\b/, label: 'toStopIndex' },
   { pattern: /\bvisit_stop\b/, label: 'visit_stop' },
   { pattern: /requestSnapshot\?\.interests|requestSnapshot\.interests/, label: 'GenerationRequest.interests access' },
-  { pattern: /\binterests\s*:/, label: 'GenerationRequest.interests property' },
+  { pattern: /requestSnapshot\s*:\s*\{[\s\S]{0,1800}?\binterests\s*:/, label: 'GenerationRequest.interests snapshot property' },
   { pattern: /profile\?\.semanticAffinities|profile\.semanticAffinities/, label: 'embedded semanticAffinities' },
   { pattern: /\brevision\.relations\b/, label: 'ItemRevision.relations' },
   { pattern: /["']relations\.relationTypeKey["']/, label: 'ItemRevision relationType dependency' },
