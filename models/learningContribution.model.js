@@ -9,6 +9,9 @@ const LearningContributionSchema = new Schema(
       enum: [
         "population_speed",
         "population_observation",
+        "population_depth_preference",
+        "population_language_complexity_preference",
+        "population_visit_density",
         "museum_movement_factor",
         "museum_observation_factor",
         "pace_factor",
