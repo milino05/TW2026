@@ -21,11 +21,19 @@ Duration e language level sono due assi ortogonali della stessa `PresentationVar
 
 `active -> paused -> active`, oppure `active -> route_completed -> active` se l'utente estende la visita, oppure `route_completed -> completed`. Gli intervalli di pausa sono sottratti dal tempo attivo e non vengono interpretati come lentezza, observation o schedule deviation.
 
+## Prefisso eseguito
+
+`VisitSession.currentEntryIndex` e lo stato canonico di avanzamento. Un client puo ripetere `currentEntryIndex` in una richiesta di replanning come controllo ottimistico, ma non puo spostare arbitrariamente il confine tra prefisso eseguito e coda futura: un indice diverso da quello della sessione viene rifiutato con `EXECUTED_PREFIX_MISMATCH`.
+
+L'attivazione di una `PlanChangeProposal` usa un compare-and-set sul pointer `currentPlanRevisionId`. Su Mongo standalone non viene simulata una transaction inesistente: se uno dei write del core fallisce, il servizio compensa pointer, stato della revisione precedente e nuova revisione prima di restituire errore.
+
 ## Fidelity
 
-- `preserve`: conserva tutte le content entry future del segmento corrente, incluso il loro `spatialMode`;
+- `preserve`: conserva tutte le content entry future del segmento corrente, il loro `spatialMode` e il loro ordine editoriale relativo. Nuove entry possono essere inserite solo senza invertire la narrativa preservata;
 - `adapt`: conserva le entry core e il loro ruolo fisico/contestuale, usando le altre come prior di stabilita;
 - `regenerate`: massima liberta sulla coda, preservando prefisso eseguito e hard constraints espliciti.
+
+Il vincolo d'ordine usato da `preserve` e interno al planner e non estende il contratto pubblico `GenerationRequest` della UI/LLM.
 
 Nessuna proposta ordinaria viene applicata automaticamente. Il flusso e sempre:
 
@@ -47,6 +55,22 @@ Una richiesta di adattamento puo modificare:
 - routing requirements e start/end.
 
 `remember: true` salva soltanto i campi dichiarati come `UserGenerationPreference`. Le normali richieste restano specifiche della sessione.
+
+## Gerarchia adattiva e recency
+
+Per le dimensioni scalari supportate il resolver segue questa precedenza:
+
+```text
+current request
+> default dichiarato
+> storico personale utilizzabile, pesato per confidence e recency
+> prior di popolazione disponibile
+> cold start
+```
+
+Gli estimate comportamentali usano un decadimento temporale della confidence definito da `AdaptivePolicy`; la policy corrente e versionata e usa una half-life di 180 giorni. I prior di popolazione vengono mantenuti soltanto per dimensioni che dispongono di segnali osservabili affidabili. Attualmente depth, language complexity e visit density possono ricevere un prior di popolazione; discovery e time-risk non vengono inventati da proxy non giustificati.
+
+`historyMode=current_request_only` esclude default personali e storico personale. I prior anonimi di popolazione restano un cold-start collettivo, non storia personale dell'utente.
 
 ## Learning events
 
