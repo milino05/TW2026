@@ -13,10 +13,8 @@ function normalizeSemanticEdges(values) {
   } : edge);
 }
 
-async function mirroredSymmetricEdgeExists({ target, sourceItemId, relationTypeKey }) {
-  if (!sourceItemId || !target) return false;
-  const targetRevisionId = target.workingRevisionId || target.publishedRevisionId;
-  if (!targetRevisionId) return false;
+async function mirroredSymmetricEdgeExists({ targetRevisionId, sourceItemId, relationTypeKey }) {
+  if (!sourceItemId || !targetRevisionId) return false;
   return Boolean(await SemanticEdge.exists({ sourceItemRevisionId: targetRevisionId, targetItemId: sourceItemId, relationTypeKey }));
 }
 
@@ -78,7 +76,8 @@ async function validateSemanticEdges({
     if (type.range?.length && !type.range.includes(target.itemType)) {
       pushError(errors, `${path}.targetItemId`, "INVALID_RANGE", `Il target di tipo ${target.itemType} non e compatibile`);
     }
-    if (type.directionality === "symmetric" && await mirroredSymmetricEdgeExists({ target, sourceItemId, relationTypeKey: edge.relationTypeKey })) {
+    const mirrorRevisionId = requirePublishedTargets ? target.publishedRevisionId : target.workingRevisionId || target.publishedRevisionId;
+    if (type.directionality === "symmetric" && await mirroredSymmetricEdgeExists({ targetRevisionId: mirrorRevisionId, sourceItemId, relationTypeKey: edge.relationTypeKey })) {
       pushError(errors, path, "DUPLICATE_SYMMETRIC_EDGE", "La relazione simmetrica e gia persistita dal nodo target; il fatto deve essere salvato una sola volta");
     }
 
