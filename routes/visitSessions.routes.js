@@ -7,6 +7,7 @@ router.post("/visit-sessions/:sessionId/content-entries/experience",requireAuth,
 router.post("/visit-sessions/:sessionId/physical-targets/observation",requireAuth,validateSessionId,controller.physicalObservation);
 router.post("/visit-sessions/:sessionId/interactions",requireAuth,validateSessionId,controller.interaction);
 router.post("/visit-sessions/:sessionId/presentation-depth",requireAuth,validateSessionId,controller.presentationDepth);
+router.post("/visit-sessions/:sessionId/presentation-language",requireAuth,validateSessionId,controller.presentationLanguage);
 router.post("/visit-sessions/:sessionId/pause",requireAuth,validateSessionId,controller.pause);
 router.post("/visit-sessions/:sessionId/resume",requireAuth,validateSessionId,controller.resume);
 router.post("/visit-sessions/:sessionId/route-completed",requireAuth,validateSessionId,controller.routeCompleted);
