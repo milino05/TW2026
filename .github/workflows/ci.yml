@@ -45,5 +45,8 @@ jobs:
       - name: Run unit and MongoDB compatibility tests
         run: npm test
 
+      - name: Verify resolved production dependency tree
+        run: npm ls express qs --all
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
