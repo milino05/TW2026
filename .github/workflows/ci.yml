@@ -8,7 +8,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -39,28 +39,22 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Use npm 11.10.1 for lockfile normalization
+      - name: Use npm 11.10.1 for lockfile validation
         run: npm install --global npm@11.10.1
 
-      - name: Normalize package lockfile
+      - name: Generate minimal socks lockfile update
         run: |
-          npm install --package-lock-only --ignore-scripts
+          npm update socks --package-lock-only --ignore-scripts
           git diff -- package-lock.json
 
-      - name: Commit normalized lockfile when needed
-        if: github.event_name == 'push' && github.ref == 'refs/heads/user-visit'
-        run: |
-          if git diff --quiet -- package-lock.json; then
-            echo "package-lock.json already normalized"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "chore: normalize production dependency lockfile"
-          git push
+      - name: Upload candidate lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-socks-package-lock
+          path: package-lock.json
+          if-no-files-found: error
 
-      - name: Install dependencies from normalized lockfile
+      - name: Install dependencies from candidate lockfile
         run: npm ci
 
       - name: Check JavaScript syntax, legacy contracts and repository hygiene
@@ -70,7 +64,7 @@ jobs:
         run: npm test
 
       - name: Verify resolved production dependency tree
-        run: npm ls express qs --all
+        run: npm ls express qs socks --all
 
       - name: Capture production audit report
         run: npm audit --omit=dev --json > npm-audit.json || true
