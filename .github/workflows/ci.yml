@@ -7,6 +7,9 @@ on:
       - user-visit
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -36,15 +39,19 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Refresh dependency lock for review
+      - name: Refresh dependency lock
         run: npm install --package-lock-only --ignore-scripts
 
-      - name: Export refreshed lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: refreshed-package-lock
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit refreshed lockfile
+        if: github.event_name == 'push' && github.ref == 'refs/heads/user-visit' && github.actor != 'github-actions[bot]'
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "chore: refresh dependency lock [skip ci]"
+            git push origin HEAD:user-visit
+          fi
 
       - name: Install dependencies
         run: npm ci
