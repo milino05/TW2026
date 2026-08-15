@@ -36,6 +36,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Use npm 11.10.1 for lockfile normalization
+        run: npm install --global npm@11.10.1
+
+      - name: Generate candidate normalized lockfile
+        run: |
+          cp package-lock.json package-lock.before.json
+          npm install --package-lock-only --ignore-scripts
+          git diff -- package-lock.json
+
+      - name: Upload candidate normalized lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+
+      - name: Restore committed lockfile for validation
+        run: mv package-lock.before.json package-lock.json
+
       - name: Install dependencies from committed lockfile
         run: npm ci
 
