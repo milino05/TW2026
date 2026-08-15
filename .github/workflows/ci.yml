@@ -48,5 +48,8 @@ jobs:
       - name: Verify resolved production dependency tree
         run: npm ls express qs --all
 
+      - name: Diagnose production audit
+        run: npm audit --omit=dev --json || true
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
