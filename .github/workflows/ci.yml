@@ -72,8 +72,15 @@ jobs:
       - name: Verify resolved production dependency tree
         run: npm ls express qs --all
 
-      - name: Diagnose production audit
-        run: npm audit --omit=dev --json || true
+      - name: Capture production audit report
+        run: npm audit --omit=dev --json > npm-audit.json || true
+
+      - name: Upload production audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-audit-report
+          path: npm-audit.json
+          if-no-files-found: error
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
