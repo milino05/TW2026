@@ -8,7 +8,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -39,28 +39,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Use npm 11.10.1 for lockfile update
-        run: npm install --global npm@11.10.1
-
-      - name: Update socks within MongoDB allowed range
-        run: |
-          npm update socks --package-lock-only --ignore-scripts
-          git diff -- package-lock.json
-
-      - name: Commit audited lockfile update when needed
-        if: github.event_name == 'push' && github.ref == 'refs/heads/user-visit'
-        run: |
-          if git diff --quiet -- package-lock.json; then
-            echo "package-lock.json already contains the audited socks update"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "chore: update transitive socks dependency"
-          git push
-
-      - name: Install dependencies from updated lockfile
+      - name: Install dependencies from committed lockfile
         run: npm ci
 
       - name: Check JavaScript syntax, legacy contracts and repository hygiene
@@ -68,9 +47,6 @@ jobs:
 
       - name: Run unit and MongoDB compatibility tests
         run: npm test
-
-      - name: Verify resolved production dependency tree
-        run: npm ls express qs socks --all
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
