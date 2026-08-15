@@ -1,6 +1,10 @@
 const Museum = require("../models/museum.model");
 const Item = require("../models/item.model");
 const Visit = require("../models/visit");
+const MuseumLayout = require("../models/museumLayout.model");
+const MuseumVocabulary = require("../models/museumVocabulary.model");
+const MuseumSemanticGraphState = require("../models/museumSemanticGraphState.model");
+const MuseumAdaptiveProfile = require("../models/museumAdaptiveProfile.model");
 const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { assertMuseumRole, getActiveUserOrFail } = require("./museumAuthorization.service");
@@ -102,11 +106,36 @@ async function getMuseumById({ museumId }) { return findMuseumByIdOrFail({ museu
 async function deleteMuseum({ museumId, actorUserId }) {
   await assertMuseumRole({ userId: actorUserId, museumId, minimumRole: "manager" });
   const museum = await findMuseumByIdOrFail({ museumId });
-  const [hasItems, hasVisits] = await Promise.all([
+
+  const [hasItems, hasVisits, hasLayout, hasVocabulary] = await Promise.all([
     Item.exists({ museumId }),
     Visit.exists({ ownerMuseumId: museumId }),
+    MuseumLayout.exists({ museumId }),
+    MuseumVocabulary.exists({ museumId }),
   ]);
-  if (hasItems || hasVisits) throw new AppError("Impossibile eliminare il museo: esistono item o visite ufficiali associati", 409);
+  if (hasItems || hasVisits || hasLayout || hasVocabulary) {
+    throw new AppError(
+      "Impossibile eliminare il museo: esistono risorse editoriali associate",
+      409,
+      [{
+        code: "MUSEUM_HAS_DEPENDENCIES",
+        dependencies: {
+          items: Boolean(hasItems),
+          officialVisits: Boolean(hasVisits),
+          layout: Boolean(hasLayout),
+          vocabulary: Boolean(hasVocabulary),
+        },
+      }],
+    );
+  }
+
+  // Questi record sono viste/profili tecnici rigenerabili: rimuoverli prima
+  // dell'identita stabile evita di lasciare riferimenti a un museo inesistente.
+  await Promise.all([
+    MuseumSemanticGraphState.deleteMany({ museumId }),
+    MuseumAdaptiveProfile.deleteMany({ museumId }),
+  ]);
+
   await museum.deleteOne();
   await User.updateMany({ "memberships.museumId": museumId }, { $pull: { memberships: { museumId } } });
   return museum;
