@@ -63,9 +63,18 @@ async function createWorkingRevisionFromPublished(visit, actorUserId) {
     updatedBy: actorUserId,
   });
   await revision.save();
-  visit.workingRevisionId = revision._id;
-  await visit.save();
-  return revision;
+  try {
+    const pointer = await Visit.updateOne(
+      { _id: visit._id, workingRevisionId: null, publishedRevisionId: visit.publishedRevisionId, lifecycleStatus: "active" },
+      { $set: { workingRevisionId: revision._id } },
+    );
+    if (pointer.modifiedCount !== 1) throw new AppError("La visita e cambiata durante la creazione della revisione di lavoro", 409);
+    visit.workingRevisionId = revision._id;
+    return revision;
+  } catch (error) {
+    await revision.deleteOne().catch(() => {});
+    throw error;
+  }
 }
 async function getWorkingRevision(visit, actorUserId, { createFromPublished = true } = {}) {
   if (visit.workingRevisionId) {
@@ -86,8 +95,9 @@ async function createVisit({ payload, actorUserId }) {
   if (normalized.kind === "official") await assertMuseumRole({ userId: actor._id, museumId: normalized.ownerMuseumId, minimumRole: "operator" });
   const visit = new Visit({ kind: normalized.kind, createdBy: actor._id, ownerMuseumId: normalized.kind === "official" ? normalized.ownerMuseumId : null });
   await visit.save();
+  let revision = null;
   try {
-    const revision = new VisitRevision({
+    revision = new VisitRevision({
       visitId: visit._id,
       version: 1,
       title: normalized.title,
@@ -102,10 +112,15 @@ async function createVisit({ payload, actorUserId }) {
       updatedBy: actor._id,
     });
     await revision.save();
+    const pointer = await Visit.updateOne(
+      { _id: visit._id, workingRevisionId: null, publishedRevisionId: null, lifecycleStatus: "active" },
+      { $set: { workingRevisionId: revision._id } },
+    );
+    if (pointer.modifiedCount !== 1) throw new AppError("La visita e cambiata durante la creazione", 409);
     visit.workingRevisionId = revision._id;
-    await visit.save();
     return { visit, revision };
   } catch (error) {
+    if (revision?._id) await VisitRevision.deleteOne({ _id: revision._id }).catch(() => {});
     await visit.deleteOne().catch(() => {});
     throw error;
   }

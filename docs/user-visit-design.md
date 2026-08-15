@@ -29,7 +29,7 @@ Una visita ufficiale possiede `ownerMuseumId`, usa soltanto item del museo, poss
 
 Una visita community non possiede `ownerMuseumId`, puo attraversare musei differenti, viene pubblicata direttamente dal proprio autore e usa preferenze astratte cross-museum.
 
-L'ordine di `stops` e l'unica fonte dell'ordine delle tappe.
+L'ordine di `contentEntries` e l'unica fonte autoritativa dell'ordine narrativo. Le entry `target` producono gli anchor fisici; le entry `context` vengono presentate sull'anchor di delivery appropriato. `physicalRoute` e un derivato navigazionale e non ridefinisce la visita.
 
 ## Preferenze di presentazione
 
@@ -53,7 +53,7 @@ Piano risolto:
 GET /api/visits/:visitId/presentation-plan
 ```
 
-Il piano restituisce la representation pubblicata effettivamente scelta per ogni tappa e `estimatedContentSeconds`.
+Il piano restituisce la representation pubblicata effettivamente scelta per ogni content entry e `estimatedContentSeconds`.
 
 ## Preferenze di navigazione
 

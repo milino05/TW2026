@@ -10,6 +10,21 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/artaround_ci
+      NODE_ENV: test
+      ADAPTIVE_CONTRIBUTOR_SECRET: ci-only-stable-secret-for-tests
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -21,11 +36,24 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Refresh dependency lock for review
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Export refreshed lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: refreshed-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Check JavaScript syntax
+      - name: Check JavaScript syntax, legacy contracts and repository hygiene
         run: npm run check
 
-      - name: Run unit tests
+      - name: Run unit and MongoDB compatibility tests
         run: npm test
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

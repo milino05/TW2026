@@ -1,0 +1,39 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: artaround-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: artaround-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/artaround}
+      PORT: ${PORT:-8000}
+      NODE_ENV: ${NODE_ENV:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SESSION_DURATION_HOURS: ${SESSION_DURATION_HOURS:-168}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ADAPTIVE_CONTRIBUTOR_SECRET: ${ADAPTIVE_CONTRIBUTOR_SECRET:-development-only-change-me}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev:container
+
+volumes:
+  mongo-data:
