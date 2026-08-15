@@ -7,6 +7,9 @@ on:
       - user-visit
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -39,23 +42,25 @@ jobs:
       - name: Use npm 11.10.1 for lockfile normalization
         run: npm install --global npm@11.10.1
 
-      - name: Generate candidate normalized lockfile
+      - name: Normalize package lockfile
         run: |
-          cp package-lock.json package-lock.before.json
           npm install --package-lock-only --ignore-scripts
           git diff -- package-lock.json
 
-      - name: Upload candidate normalized lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-package-lock
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit normalized lockfile when needed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/user-visit'
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already normalized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: normalize production dependency lockfile"
+          git push
 
-      - name: Restore committed lockfile for validation
-        run: mv package-lock.before.json package-lock.json
-
-      - name: Install dependencies from committed lockfile
+      - name: Install dependencies from normalized lockfile
         run: npm ci
 
       - name: Check JavaScript syntax, legacy contracts and repository hygiene
