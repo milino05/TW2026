@@ -8,7 +8,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -39,22 +39,28 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Use npm 11.10.1 for lockfile validation
+      - name: Use npm 11.10.1 for lockfile update
         run: npm install --global npm@11.10.1
 
-      - name: Generate minimal socks lockfile update
+      - name: Update socks within MongoDB allowed range
         run: |
           npm update socks --package-lock-only --ignore-scripts
           git diff -- package-lock.json
 
-      - name: Upload candidate lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-socks-package-lock
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit audited lockfile update when needed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/user-visit'
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already contains the audited socks update"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: update transitive socks dependency"
+          git push
 
-      - name: Install dependencies from candidate lockfile
+      - name: Install dependencies from updated lockfile
         run: npm ci
 
       - name: Check JavaScript syntax, legacy contracts and repository hygiene
@@ -65,16 +71,6 @@ jobs:
 
       - name: Verify resolved production dependency tree
         run: npm ls express qs socks --all
-
-      - name: Capture production audit report
-        run: npm audit --omit=dev --json > npm-audit.json || true
-
-      - name: Upload production audit report
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-audit-report
-          path: npm-audit.json
-          if-no-files-found: error
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
