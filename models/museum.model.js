@@ -1,26 +1,18 @@
 const mongoose = require("mongoose");
-const DurationTypeSchema = require("../schemas/durationType.schema");
-const RelationTypeSchema = require("../schemas/relationType.schema");
 const { Schema } = mongoose;
 
 const MuseumSchema = new Schema(
   {
-    name: {
-      type: String,
+    name: { type: String, required: true, trim: true },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
       required: true,
-      trim: true,
-    },
-
-    config: {
-      languageLevels: [{ type: String, trim: true }],
-      durationTypes: [DurationTypeSchema],
-      itemTypes: [{ type: String, trim: true }],
-      relationTypes: [RelationTypeSchema],
+      immutable: true,
+      index: true,
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Museum", MuseumSchema);

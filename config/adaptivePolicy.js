@@ -1,0 +1,31 @@
+/** Stable algorithmic policy. Behavioural values live in learned profiles. */
+module.exports = Object.freeze({
+  version: 7,
+  coldStart: Object.freeze({ movementSpeedMps: 1, observationSeconds: 45, paceFactors: Object.freeze({ calm: 0.8, normal: 1, fast: 1.2 }) }),
+  movement: Object.freeze({ minSpeedMps: 0.1, maxSpeedMps: 3, maxHistoricalWeight: 0.7 }),
+  pace: Object.freeze({ calmMax: 1 / 3, fastMin: 2 / 3 }),
+  confidence: Object.freeze({ usableThreshold: 0.2, minimumSamples: 5, minimumContributors: 3, maximum: 0.98, recencyHalfLifeDays: 180 }),
+  routing: Object.freeze({ maxPreferredDetourRatio: 0.35, preferenceCostMultiplier: 0.4 }),
+  learning: Object.freeze({ minimumReliability: 0.5, maxObservationSeconds: 30 * 60 }),
+  interests: Object.freeze({
+    recencyHalfLifeDays: 180,
+    eventEvidence: Object.freeze({
+      presentation_depth_increased: 0,
+      presentation_depth_decreased: 0,
+      presentation_language_increased: 0,
+      presentation_language_decreased: 0,
+      semantic_drilldown: 0.85,
+      semantic_relation_followed: 0.9,
+      visit_refocus_requested: 1,
+      visit_extension_requested: 0,
+      content_entry_skipped: -0.1,
+      content_entry_completed: 0.15,
+      manual_add: 1,
+      manual_remove: -1,
+      knowledge_feedback: 0,
+      presentation_aspect_selected: 0.7,
+      presentation_aspect_rejected: -0.6,
+    }),
+  }),
+  generator: Object.freeze({ beamWidth: 24, branchCandidates: 14, maxContentEntries: 24, minimumContentSeconds: 10, conservativeTimeReserveRatio: 0.08, replanTriggerRatio: 0.12, stabilityPenalty: 0.25, logisticsUtilityWeight: 0.8, inSituUtilityWeight: 0.45, targetDensityUtilityWeight: 0.25, localImprovementPasses: 2 }),
+});

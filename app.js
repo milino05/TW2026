@@ -1,59 +1,43 @@
-/* ========================= */
-/*        CONFIGURAZIONE     */
-/* ========================= */
-
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
-// import route
-const itemRoutes = require("./routes/items.routes");
+const authRoutes = require("./routes/auth.routes");
 const museumRoutes = require("./routes/museums.routes");
+const itemRoutes = require("./routes/items.routes");
+const visitRoutes = require("./routes/visits.routes");
+const preferenceRoutes = require("./routes/preferences.routes");
+const layoutRoutes = require("./routes/layout.routes");
+const adaptiveRoutes = require("./routes/adaptive.routes");
+const visitSessionRoutes = require("./routes/visitSessions.routes");
+const navigationRoutes = require("./routes/navigation.routes");
+const vocabularyRoutes = require("./routes/vocabulary.routes");
+const generatedVisitRoutes = require("./routes/generatedVisits.routes");
+const { loadCurrentUser } = require("./middlewares/auth");
+const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
+const AppError = require("./utils/AppError");
 
 const app = express();
-
-// Permette al server di ricevere JSON nel body delle richieste
-app.use(express.json());
-
-// Permette richieste da frontend esterni (es. Vue)
-app.use(cors());
-
-// Necessario quando si è dietro proxy (come nel server del dipartimento)
+const allowedOrigins = configuredOrigins();
 app.enable("trust proxy");
-app.use(express.static(__dirname));
-
-/* ========================= */
-/*         ROUTE TEST        */
-/* ========================= */
-
-// Endpoint base per verificare che il server funzioni
-app.get("/ping", (req, res) => {
-  res.json({
-    status: "ok",
-    message: "ArtAround backend attivo",
-    time: new Date(),
-  });
-});
-
-app.get("/", async function (req, res) {
-  var text = "milino gigio che non sa scrivere i prompt";
-  res.send(
-    `<!doctype html>
-<html>
-	<body>
-		<h1>${text}</h1>
-		<img src="Shrek.jpg" alt="basstardoh">
-	</body>
-</html>
-			`,
-  );
-});
-
-//const configRoutes = require("./routes/config");
-
-// usa le route
+app.use(express.json({ limit: "1mb" }));
+app.use(cors({ credentials: true, origin(origin, callback) { if (!origin || allowedOrigins.includes(origin)) return callback(null, true); return callback(null, false); } }));
+app.use(requireTrustedOrigin);
+app.use(loadCurrentUser);
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/ping", (req, res) => res.json({ status: "ok", message: "ArtAround backend attivo", time: new Date() }));
+app.get("/", (req, res) => res.json({ name: "ArtAround API", status: "ok" }));
+app.use("/api", authRoutes);
 app.use("/api", museumRoutes);
+app.use("/api", vocabularyRoutes);
 app.use("/api", itemRoutes);
-
-app.use(errorHandler); //simoncino puzza
-
+app.use("/api", visitRoutes);
+app.use("/api", preferenceRoutes);
+app.use("/api", layoutRoutes);
+app.use("/api", adaptiveRoutes);
+app.use("/api", visitSessionRoutes);
+app.use("/api", navigationRoutes);
+app.use("/api", generatedVisitRoutes);
+app.use((req, res, next) => next(new AppError("Risorsa non trovata", 404)));
+app.use(errorHandler);
 module.exports = app;

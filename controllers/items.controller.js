@@ -4,128 +4,103 @@ const itemIntegrityService = require("../services/itemIntegrity.service");
 
 async function createItem(req, res, next) {
   try {
-    const item = await itemService.createItem({
-      museumId: req.params.museumId,
-      payload: req.body,
-      userId: req.user?._id || null,
-    });
-
-    res.status(201).json(item);
-  } catch (err) {
-    next(err);
-  }
+    res.status(201).json(await itemService.createItem({ museumId: req.params.museumId, payload: req.body, userId: req.user._id }));
+  } catch (error) { next(error); }
 }
 
 async function updateItem(req, res, next) {
   try {
-    const item = await itemService.updateItem({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-      payload: req.body,
-      userId: req.user?._id || null,
-    });
-
-    res.status(200).json(item);
-  } catch (err) {
-    next(err);
-  }
+    res.status(200).json(await itemService.updateItem({ museumId: req.params.museumId, itemId: req.params.itemId, payload: req.body, userId: req.user._id }));
+  } catch (error) { next(error); }
 }
 
 async function listItems(req, res, next) {
   try {
-    const items = await itemService.listItems({
+    res.status(200).json(await itemService.listItems({
       museumId: req.params.museumId,
+      actorUserId: req.user?._id || null,
+      view: req.query.view === "working" ? "working" : "published",
       filters: {
         itemType: req.query.itemType,
         status: req.query.status,
         integrity: req.query.integrity,
+        includeTrashed: req.query.includeTrashed === "true" || req.query.includeTrashed === "1",
       },
-    });
-
-    res.status(200).json(items);
-  } catch (err) {
-    next(err);
-  }
+    }));
+  } catch (error) { next(error); }
 }
 
-/**per vedere anche le relazioni:
- * GET /api/museums/:museumId/items/:itemId?includeRelationsView=true */
 async function getItem(req, res, next) {
   try {
-    const item = await itemService.getItemById({
+    const view = req.query.view === "working" ? "working" : "published";
+    const result = await itemService.getItemById({
       museumId: req.params.museumId,
       itemId: req.params.itemId,
+      actorUserId: req.user?._id || null,
+      view,
     });
-
-    const includeRelationsView = req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1";
-
-    if (includeRelationsView) {
-      const relationsView = await itemRelationsService.getItemRelationsView({
+    if (req.query.includeRelationsView === "true" || req.query.includeRelationsView === "1") {
+      result.relationsView = await itemRelationsService.getItemRelationsView({
         museumId: req.params.museumId,
         itemId: req.params.itemId,
-      });
-
-      return res.status(200).json({
-        item,
-        relationsView,
+        actorUserId: req.user?._id || null,
+        view,
       });
     }
-
-    res.status(200).json(item);
-  } catch (err) {
-    next(err);
-  }
+    res.status(200).json(result);
+  } catch (error) { next(error); }
 }
 
 async function checkItemConsistency(req, res, next) {
   try {
-    const result = await itemIntegrityService.checkItemConsistency({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-    });
+    res.status(200).json(await itemIntegrityService.checkItemConsistency({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id }));
+  } catch (error) { next(error); }
+}
 
-    res.status(200).json({
-      item: result.item,
-      integrity: result.integrity,
-      issues: result.issues,
-    });
-  } catch (err) {
-    next(err);
-  }
+async function requestItemReview(req, res, next) {
+  try {
+    res.status(200).json(await itemIntegrityService.requestItemReview({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id }));
+  } catch (error) { next(error); }
+}
+
+async function withdrawItemReview(req, res, next) {
+  try {
+    res.status(200).json(await itemIntegrityService.withdrawItemReview({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id }));
+  } catch (error) { next(error); }
+}
+
+async function requestItemChanges(req, res, next) {
+  try {
+    res.status(200).json(await itemIntegrityService.requestItemChanges({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id, message: req.body?.message }));
+  } catch (error) { next(error); }
 }
 
 async function publishItem(req, res, next) {
   try {
-    const item = await itemIntegrityService.publishItem({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-    });
-
-    res.status(200).json({
-      message: "Item pubblicato",
-      item,
-    });
-  } catch (err) {
-    next(err);
-  }
+    const result = await itemIntegrityService.publishItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Revisione dell'item pubblicata", ...result });
+  } catch (error) { next(error); }
 }
 
-async function deleteItem(req, res, next) {
+async function trashItem(req, res, next) {
   try {
-    const result = await itemService.deleteItem({
-      museumId: req.params.museumId,
-      itemId: req.params.itemId,
-      userId: req.user?._id || null,
-    });
+    const result = await itemService.trashItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item spostato nel cestino", ...result });
+  } catch (error) { next(error); }
+}
 
-    res.status(200).json({
-      message: "Item eliminato",
-      itemId: result.item._id,
-      affectedItemsCount: result.affectedItemsCount,
-    });
-  } catch (err) {
-    next(err);
-  }
+async function restoreItem(req, res, next) {
+  try {
+    const result = await itemService.restoreItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item ripristinato", ...result });
+  } catch (error) { next(error); }
+}
+
+async function hardDeleteItem(req, res, next) {
+  try {
+    const result = await itemService.hardDeleteItem({ museumId: req.params.museumId, itemId: req.params.itemId, userId: req.user._id });
+    res.status(200).json({ message: "Item eliminato definitivamente", itemId: result.item._id, audit: result.audit });
+  } catch (error) { next(error); }
 }
 
 module.exports = {
@@ -134,6 +109,11 @@ module.exports = {
   listItems,
   getItem,
   checkItemConsistency,
+  requestItemReview,
+  withdrawItemReview,
+  requestItemChanges,
   publishItem,
-  deleteItem,
+  trashItem,
+  restoreItem,
+  hardDeleteItem,
 };

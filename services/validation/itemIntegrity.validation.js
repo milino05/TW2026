@@ -1,278 +1,56 @@
 const mongoose = require("mongoose");
 const Item = require("../../models/item.model");
-const { isPlainObject } = require("./validation.utils");
+const { pushError } = require("./validation.utils");
+const { validatePresentationVariants } = require("./item.validation");
+const { validateSemanticEdges } = require("./semanticEdge.validation");
+const { validateSemanticRefs } = require("./vocabulary.validation");
 
-function pushIssue(issues, field, code, message, context = {}) {
-  issues.push({
-    field,
-    code,
-    message,
-    context,
-  });
-}
-
-function validateRepresentationIntegrity({ representation, index, vocabulary, allowedLanguageLevels, allowedDurationKeys, issues }) {
-  const basePath = `representations[${index}]`;
-
-  if (!isPlainObject(representation)) {
-    pushIssue(issues, basePath, "INVALID_REPRESENTATION", "Ogni representation deve essere un oggetto");
-    return;
-  }
-
-  if (!representation.languageLevel || typeof representation.languageLevel !== "string") {
-    pushIssue(issues, `${basePath}.languageLevel`, "MISSING_LANGUAGE_LEVEL", "languageLevel è obbligatorio per pubblicare", {
-      allowedValues: vocabulary.languageLevels || [],
-    });
-  } else if (!allowedLanguageLevels.has(representation.languageLevel)) {
-    pushIssue(
-      issues,
-      `${basePath}.languageLevel`,
-      "INVALID_LANGUAGE_LEVEL",
-      `languageLevel non più valido: ${representation.languageLevel}`,
-      { value: representation.languageLevel },
-    );
-  }
-
-  if (!representation.durationKey || typeof representation.durationKey !== "string") {
-    pushIssue(issues, `${basePath}.durationKey`, "MISSING_DURATION_KEY", "durationKey è obbligatoria per pubblicare", {
-      allowedValues: (vocabulary.durationTypes || []).map((durationType) => durationType.key),
-    });
-  } else if (!allowedDurationKeys.has(representation.durationKey)) {
-    pushIssue(
-      issues,
-      `${basePath}.durationKey`,
-      "INVALID_DURATION_KEY",
-      `durationKey non più valida: ${representation.durationKey}`,
-      { value: representation.durationKey },
-    );
-  }
-
-  if (!representation.text || typeof representation.text !== "string") {
-    pushIssue(issues, `${basePath}.text`, "MISSING_TEXT", "Il testo della representation è obbligatorio per pubblicare");
+async function validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors }) {
+  const itemTypes = new Set(vocabulary.itemTypes || []), relationTypes = new Set((vocabulary.relationTypes || []).map((entry) => entry.key)), aspects = new Set((vocabulary.presentationAspects || []).map((entry) => entry.key)), signals = new Set((vocabulary.selectionSignals || []).map((entry) => entry.key));
+  for (let index = 0; index < (variants || []).length; index += 1) {
+    const variant = variants[index], path = `presentationVariants[${index}]`;
+    const audience = variant.audienceSuitability;
+    if (audience) {
+      for (const field of ["minMaturity", "maxMaturity"]) if (audience[field] != null && (!Number.isFinite(audience[field]) || audience[field] < 0 || audience[field] > 1)) pushError(errors, `${path}.audienceSuitability.${field}`, "INVALID_NUMBER", `${field} deve essere tra 0 e 1`);
+      for (const field of ["minAgeYears", "maxAgeYears"]) if (audience[field] != null && (!Number.isFinite(audience[field]) || audience[field] < 0 || audience[field] > 130)) pushError(errors, `${path}.audienceSuitability.${field}`, "INVALID_NUMBER", `${field} non valido`);
+      if (audience.minAgeYears != null && audience.maxAgeYears != null && audience.minAgeYears > audience.maxAgeYears) pushError(errors, `${path}.audienceSuitability`, "INVALID_RANGE", "minAgeYears non puo superare maxAgeYears");
+      if (audience.minMaturity != null && audience.maxMaturity != null && audience.minMaturity > audience.maxMaturity) pushError(errors, `${path}.audienceSuitability`, "INVALID_RANGE", "minMaturity non puo superare maxMaturity");
+    }
+    for (let r = 0; r < (variant.knowledgeRequirements || []).length; r += 1) {
+      const requirement = variant.knowledgeRequirements[r], feature = requirement?.feature || {}, rp = `${path}.knowledgeRequirements[${r}]`;
+      if (!feature.kind) { pushError(errors, `${rp}.feature.kind`, "REQUIRED", "kind e obbligatorio"); continue; }
+      if (!Number.isFinite(requirement.minLevel) || !Number.isFinite(requirement.maxLevel) || requirement.minLevel < 0 || requirement.maxLevel > 1 || requirement.minLevel > requirement.maxLevel) pushError(errors, rp, "INVALID_KNOWLEDGE_RANGE", "Intervallo di competenza non valido");
+      if (!Number.isFinite(requirement.weight) || requirement.weight < 0 || requirement.weight > 1) pushError(errors, `${rp}.weight`, "INVALID_NUMBER", "weight deve essere tra 0 e 1");
+      if (feature.kind === "item_type" && !itemTypes.has(feature.key)) pushError(errors, `${rp}.feature.key`, "UNKNOWN_ITEM_TYPE", `itemType non presente: ${feature.key}`);
+      if (feature.kind === "relation_type" && !relationTypes.has(feature.key)) pushError(errors, `${rp}.feature.key`, "UNKNOWN_RELATION_TYPE", `relationType non presente: ${feature.key}`);
+      if (feature.kind === "presentation_aspect" && !aspects.has(feature.key)) pushError(errors, `${rp}.feature.key`, "UNKNOWN_PRESENTATION_ASPECT", `PresentationAspect non presente: ${feature.key}`);
+      if (feature.kind === "selection_signal" && !signals.has(feature.key)) pushError(errors, `${rp}.feature.key`, "UNKNOWN_SELECTION_SIGNAL", `SelectionSignal non presente: ${feature.key}`);
+      if (feature.kind === "canonical" && (!feature.scheme || !feature.refId)) pushError(errors, `${rp}.feature`, "SEMANTIC_REF_REQUIRED", "feature canonical richiede scheme e refId");
+      if (feature.kind === "item") {
+        if (!mongoose.isValidObjectId(feature.itemId)) pushError(errors, `${rp}.feature.itemId`, "INVALID_OBJECT_ID", "itemId non valido");
+        else if (!(await Item.exists({ _id: feature.itemId, museumId, lifecycleStatus: "active" }))) pushError(errors, `${rp}.feature.itemId`, "TARGET_NOT_FOUND", "Item di competenza non presente nel museo");
+      }
+    }
   }
 }
 
-async function computeItemIntegrityIssues({ item, museumId, vocabulary }) {
-  const issues = [];
-
-  const allowedItemTypes = new Set(vocabulary.itemTypes || []);
-  const allowedLanguageLevels = new Set(vocabulary.languageLevels || []);
-  const allowedDurationKeys = new Set(
-    (vocabulary.durationTypes || []).map((durationType) => durationType.key),
-  );
-
-  const relationTypesByKey = new Map(
-    (vocabulary.relationTypes || []).map((relationType) => [
-      relationType.key,
-      relationType,
-    ]),
-  );
-
-  if (!item.label || typeof item.label !== "string") {
-    pushIssue(issues, "label", "MISSING_LABEL", "label è obbligatoria per pubblicare");
+async function computeItemIntegrityIssues({ item, revision, semanticEdges = [], museumId, vocabulary }) {
+  const errors = [];
+  if (!item || String(item.museumId) !== String(museumId)) { pushError(errors, "itemId", "ITEM_MUSEUM_MISMATCH", "L'Item non appartiene al museo"); return errors; }
+  if (item.lifecycleStatus === "trashed") pushError(errors, "lifecycleStatus", "ITEM_TRASHED", "Un Item nel cestino non puo essere pubblicato");
+  if (!vocabulary.itemTypes.includes(item.itemType)) pushError(errors, "itemType", "INVALID_CONTROLLED_VALUE", "itemType non presente nel vocabolario", { allowedValues: vocabulary.itemTypes });
+  if (!revision?.label) pushError(errors, "label", "REQUIRED", "label e obbligatoria");
+  if (!revision?.metadata?.license) pushError(errors, "metadata.license", "REQUIRED", "La licenza e obbligatoria per pubblicare");
+  validateSemanticRefs(revision?.semanticRefs || [], "semanticRefs", errors);
+  const signalKeys = new Set((vocabulary.selectionSignals || []).map((entry) => entry.key)), signalSeen = new Set();
+  for (let index = 0; index < (revision?.selectionSignals || []).length; index += 1) { const signal = revision.selectionSignals[index], path = `selectionSignals[${index}]`; if (!signalKeys.has(signal.key)) pushError(errors, `${path}.key`, "UNKNOWN_SELECTION_SIGNAL", `SelectionSignal non presente: ${signal.key}`); if (signalSeen.has(signal.key)) pushError(errors, `${path}.key`, "DUPLICATE_KEY", "SelectionSignal duplicato"); signalSeen.add(signal.key); if (!Number.isFinite(signal.weight) || signal.weight < 0 || signal.weight > 1) pushError(errors, `${path}.weight`, "INVALID_NUMBER", "weight deve essere tra 0 e 1"); }
+  const variants = revision?.presentationVariants || [];
+  if (!Array.isArray(variants) || !variants.length) pushError(errors, "presentationVariants", "EMPTY_ARRAY", "Almeno una PresentationVariant e obbligatoria");
+  else {
+    await validatePresentationVariants({ museumId, variants, defaultPresentation: revision.defaultPresentation, vocabulary, errors, requireDefault: true, requirePublishedTargets: true });
+    await validateVariantAdaptiveMetadata({ variants, vocabulary, museumId, errors });
   }
-
-  if (!item.itemType || typeof item.itemType !== "string") {
-    pushIssue(issues, "itemType", "MISSING_ITEM_TYPE", "itemType è obbligatorio per pubblicare");
-  } else if (!allowedItemTypes.has(item.itemType)) {
-    pushIssue(
-      issues,
-      "itemType",
-      "INVALID_ITEM_TYPE",
-      `itemType non più presente nel config: ${item.itemType}`,
-      { value: item.itemType },
-    );
-  }
-
-  if (!Array.isArray(item.representations) || item.representations.length === 0) {
-    pushIssue(issues, "representations", "MISSING_REPRESENTATIONS", "Almeno una representation completa è obbligatoria per pubblicare");
-  } else {
-    const seenPairs = new Set();
-    let defaultCount = 0;
-
-    item.representations.forEach((rep, index) => {
-      validateRepresentationIntegrity({
-        representation: rep,
-        index,
-        vocabulary,
-        allowedLanguageLevels,
-        allowedDurationKeys,
-        issues,
-      });
-
-      if (!isPlainObject(rep)) {
-        return;
-      }
-
-      if (rep.isDefault === true) {
-        defaultCount += 1;
-      }
-
-      if (rep.languageLevel && rep.durationKey) {
-        const pairKey = `${rep.languageLevel}::${rep.durationKey}`;
-        if (seenPairs.has(pairKey)) {
-          pushIssue(issues, `representations[${index}]`, "DUPLICATE_REPRESENTATION", `Coppia languageLevel/durationKey duplicata: ${pairKey}`);
-        } else {
-          seenPairs.add(pairKey);
-        }
-      }
-    });
-
-    if (defaultCount > 1) {
-      pushIssue(issues, "representations", "MULTIPLE_DEFAULTS", "È consentita una sola representation di default");
-    }
-  }
-
-  const relations = Array.isArray(item.relations) ? item.relations : [];
-  const targetIds = [
-    ...new Set(
-      relations
-        .map((rel) => (isPlainObject(rel) ? rel.target : null))
-        .filter((target) => mongoose.isValidObjectId(target))
-        .map(String),
-    ),
-  ];
-
-  const targetItems = await Item.find({ _id: { $in: targetIds } })
-    .select("_id museumId itemType")
-    .lean();
-
-  const targetItemsById = new Map(
-    targetItems.map((targetItem) => [String(targetItem._id), targetItem]),
-  );
-
-  const seenRelations = new Set();
-  const seenRelationTypeOccurrences = new Map();
-
-  for (let index = 0; index < relations.length; index += 1) {
-    const rel = relations[index];
-    const basePath = `relations[${index}]`;
-
-    if (!isPlainObject(rel)) {
-      pushIssue(issues, basePath, "INVALID_RELATION", "Ogni relation deve essere un oggetto");
-      continue;
-    }
-
-    if (!rel.relationTypeKey || typeof rel.relationTypeKey !== "string") {
-      pushIssue(issues, `${basePath}.relationTypeKey`, "MISSING_RELATION_TYPE", "relationTypeKey è obbligatorio se la relation è presente");
-      continue;
-    }
-
-    const relationType = relationTypesByKey.get(rel.relationTypeKey);
-
-    if (!relationType) {
-      pushIssue(
-        issues,
-        `${basePath}.relationTypeKey`,
-        "INVALID_RELATION_TYPE",
-        `relationTypeKey non più valida: ${rel.relationTypeKey}`,
-        { value: rel.relationTypeKey },
-      );
-
-      continue;
-    }
-
-    if (
-      Array.isArray(relationType.domain) &&
-      relationType.domain.length > 0 &&
-      !relationType.domain.includes(item.itemType)
-    ) {
-      pushIssue(
-        issues,
-        `${basePath}.relationTypeKey`,
-        "INVALID_RELATION_DOMAIN",
-        `La relazione ${rel.relationTypeKey} non è compatibile con itemType ${item.itemType}`,
-        {
-          relationTypeKey: rel.relationTypeKey,
-          itemType: item.itemType,
-          allowedDomain: relationType.domain,
-        },
-      );
-    }
-
-    const alreadySeenForType = seenRelationTypeOccurrences.get(rel.relationTypeKey) || 0;
-    if (relationType.validationRules?.allowMultiple === false && alreadySeenForType >= 1) {
-      pushIssue(issues, basePath, "MULTIPLE_RELATIONS_NOT_ALLOWED", `La relazione ${rel.relationTypeKey} ammette un solo target`);
-    }
-    seenRelationTypeOccurrences.set(rel.relationTypeKey, alreadySeenForType + 1);
-
-    if (!rel.target) {
-      pushIssue(issues, `${basePath}.target`, "MISSING_TARGET", "target è obbligatorio se la relation è presente");
-      continue;
-    }
-
-    if (!mongoose.isValidObjectId(rel.target)) {
-      pushIssue(issues, `${basePath}.target`, "INVALID_OBJECT_ID", "target non è un ObjectId valido", { target: rel.target });
-      continue;
-    }
-
-    if (String(rel.target) === String(item._id)) {
-      pushIssue(issues, `${basePath}.target`, "SELF_RELATION", "Un item non può essere in relazione con sé stesso", { target: rel.target });
-      continue;
-    }
-
-    const targetItem = targetItemsById.get(String(rel.target));
-
-    if (!targetItem) {
-      pushIssue(
-        issues,
-        `${basePath}.target`,
-        "TARGET_NOT_FOUND",
-        "L'item target non esiste più",
-        { target: rel.target },
-      );
-
-      continue;
-    }
-
-    if (String(targetItem.museumId) !== String(museumId)) {
-      pushIssue(
-        issues,
-        `${basePath}.target`,
-        "CROSS_MUSEUM_TARGET",
-        "Il target appartiene a un museo diverso",
-        { target: rel.target },
-      );
-
-      continue;
-    }
-
-    if (
-      Array.isArray(relationType.range) &&
-      relationType.range.length > 0 &&
-      !relationType.range.includes(targetItem.itemType)
-    ) {
-      pushIssue(
-        issues,
-        `${basePath}.target`,
-        "INVALID_RELATION_RANGE",
-        `Il target di tipo ${targetItem.itemType} non è compatibile con la relazione ${rel.relationTypeKey}`,
-        {
-          relationTypeKey: rel.relationTypeKey,
-          targetType: targetItem.itemType,
-          allowedRange: relationType.range,
-        },
-      );
-    }
-
-    if (rel.weight !== undefined) {
-      const weight = Number(rel.weight);
-      if (!Number.isFinite(weight) || weight < 0 || weight > 10) {
-        pushIssue(issues, `${basePath}.weight`, "INVALID_WEIGHT", "weight deve essere un numero compreso tra 0 e 10", { value: rel.weight });
-      }
-    }
-
-    const duplicateKey = `${rel.relationTypeKey}::${String(rel.target)}`;
-    if (seenRelations.has(duplicateKey)) {
-      pushIssue(issues, basePath, "DUPLICATE_RELATION", "Relazione duplicata verso lo stesso target con lo stesso tipo");
-    } else {
-      seenRelations.add(duplicateKey);
-    }
-  }
-
-  return issues;
+  await validateSemanticEdges({ museumId, sourceItemId: item._id, sourceItemType: item.itemType, semanticEdges, vocabulary, errors, requirePublishedTargets: true });
+  return errors;
 }
-
-module.exports = {
-  computeItemIntegrityIssues,
-};
+module.exports = { computeItemIntegrityIssues, validateVariantAdaptiveMetadata };

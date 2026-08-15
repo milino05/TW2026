@@ -1,0 +1,8 @@
+.git
+.github
+.env
+node_modules
+coverage
+npm-debug.log*
+25 Progetto 2526_removed.pdf
+Come attivare i docker di dipartimento.pdf
