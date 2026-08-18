@@ -550,7 +550,7 @@ Una eventuale route:
 /visits/:visitId/start
 ```
 
-non è approvata automaticamente. Verrà introdotta soltanto se la futura progettazione UX dimostrerà l'esistenza di una fase di preparazione realmente distinta dal dettaglio visita.
+non è approvata automaticamente. La preparazione 18–24 approvata rimane leggera e integrata nel dettaglio visita; una route separata verrà introdotta soltanto se una futura necessità UX reale lo richiederà.
 
 ## Catalogo mobile
 
@@ -586,17 +586,148 @@ Il `runtimeStore` non deve avere una semantica diversa a seconda che l'update pr
 
 Questo permette al 18–27 di aggiungere sincronizzazione senza introdurre una seconda architettura dello stato.
 
+# Flusso Navigator 18–24 approvato
+
+## Configurazione del museo
+
+Il Navigator è una singola applicazione generica specializzata per un museo tramite **file di configurazione statico**.
+
+La configurazione contiene almeno il riferimento autorevole al museo (`museumId`) e gli elementi di branding/configurazione visuale realmente necessari, come titoli e immagini.
+
+Il file di configurazione non duplica dominio, layout, vocabulary, visits o contents: questi continuano a provenire dal backend. Non viene introdotta nel Navigator una schermata generica di scelta del museo.
+
+## Catalogo pubblico e autenticazione progressiva
+
+Il catalogo mobile usa le visite pubblicate del backend e viene filtrato principalmente rispetto al museo configurato tramite `includedMuseumId`, così da rispettare anche le visite multi-museo.
+
+L'esplorazione del catalogo e del dettaglio visita può restare pubblica quando il backend lo consente. Login/register viene richiesto quando l'utente deve creare una sessione o usare capacità personalizzate/autenticate.
+
+Il flusso di autenticazione deve poter riportare l'utente al contesto/visit detail da cui proveniva.
+
+## Preparazione leggera della visita
+
+Prima dello start non viene introdotto un wizard tecnico obbligatorio. La Visit Details presenta una preparazione leggera che sfrutta i servizi backend esistenti:
+
+- presentation preference e preference options;
+- navigation/accessibility preference;
+- adaptive learning consent quando richiesto;
+- logistics plan personalizzato.
+
+La configurazione avanzata rimane accessibile senza rendere obbligatoria una lunga sequenza di schermate.
+
+## Logistics plan autorevole
+
+Il `logistics-plan` backend è la fonte autorevole per preview di percorso, tempi, warning, movimento e osservazione.
+
+Il frontend non replica né approssima i calcoli di routing, timing o adattamento già disponibili nel backend.
+
+Le informazioni formalizzate del backend devono essere adattate in label e controlli comprensibili per l'utente, senza esporre direttamente dettagli tecnici come operatori dei routing requirements.
+
+## Navigator Runtime Projection service
+
+È approvata l'introduzione nel backend di un servizio dedicato alla costruzione del `NavigatorRuntimeState` e di un endpoint concettuale:
+
+```text
+GET /visit-sessions/:sessionId/runtime
+```
+
+Start e resume devono convergere sullo stesso modello runtime. La creazione di una sessione può restituire direttamente il runtime iniziale e le projection necessarie, evitando che Vue ricostruisca il runtime combinando autonomamente più DTO backend.
+
+Il runtime projector deve riusare servizi e dati autorevoli già esistenti invece di duplicare logica di dominio.
+
+## Cursor corrente vs progresso eseguito
+
+È approvato un refactoring backend della semantica di avanzamento della sessione.
+
+Devono essere concettualmente distinti:
+
+```text
+currentEntryIndex
+= entry attualmente selezionata/presentata
+
+executedThroughEntryIndex
+= massimo prefisso della visita già eseguito
+```
+
+Questa separazione è necessaria per supportare correttamente il comando obbligatorio `Precedente` senza far retrocedere artificialmente il prefisso già eseguito usato dal planner adattivo.
+
+Il planner e la validazione del prefisso eseguito devono usare `executedThroughEntryIndex`; il runtime/UI usa `currentEntryIndex` come cursore corrente.
+
+## visit.move
+
+La action family strutturale `visit.move` supporta almeno i binding `next` e `previous`.
+
+Il relativo handler backend verifica stato sessione, piano, bounds, control mode e availability e modifica il cursore corrente mantenendo coerente il progresso eseguito.
+
+Nel futuro 18–27 la stessa family rimane valida; la limitazione dello studente deriva dall'assenza della relativa AvailableAction, non da codice speciale nella UI.
+
+## Riuso dei servizi runtime esistenti
+
+Presentation adjustment, relation query, facility/place navigation e pause/resume vengono esposti tramite Action Handler che riusano i servizi backend già disponibili.
+
+In particolare non devono essere riscritti lato client o duplicati nel gateway:
+
+- selection/adjustment delle representation;
+- semantic graph e relations;
+- routing fra places e routing verso intent/place types;
+- gestione persistente di pause e resume.
+
+L'Action Gateway uniforma il protocollo runtime ma non sostituisce i servizi di dominio.
+
+## Telemetria affidabile
+
+Il Navigator deve sfruttare i servizi di learning/telemetria del backend soltanto quando il segnale è realmente osservabile e affidabile.
+
+Nel 18–24 sono appropriati, quando misurabili, content experience e interaction events. Non devono essere inventati movement/transition observations in assenza di positioning o di un segnale manuale progettato in modo affidabile.
+
+Sfruttare pienamente il backend non significa alimentarlo con misure fittizie che degraderebbero il learning.
+
+## PlanChangeProposal nel runtime
+
+Il runtime adaptive planning esistente viene integrato nella VisitShell.
+
+Le modifiche ordinarie del piano rispettano il workflow backend:
+
+```text
+proposal
+  -> preview
+  -> accept / reject
+```
+
+La UI non applica silenziosamente una proposta. `route_completed` rimane uno stato runtime che può offrire almeno conclusione della visita oppure estensione tramite il meccanismo di plan adaptation esistente.
+
+## Completion summary persistente
+
+È approvata un'evoluzione backend affinché il risultato aggregato della completion rimanga recuperabile anche dopo refresh o riapertura.
+
+La sessione deve conservare un `completionSummary` minimo necessario alla UX, separato dalla telemetria raw, e deve essere disponibile una read API per la summary della sessione completata.
+
+Questo è particolarmente importante quando le preferenze di privacy/learning comportano la pulizia della telemetria raw dopo il completamento.
+
+## Discovery delle sessioni riprendibili
+
+È approvata una read API backend per ritrovare le sessioni dell'utente ancora riprendibili, ad esempio active, paused o route_completed.
+
+Il Navigator non usa `localStorage` come fonte autorevole per scoprire se esiste una visita in corso. Il catalogo/home può proporre `Riprendi` sulla base dello stato server.
+
+## Hard time budget
+
+`timeBudgetSeconds` deve essere esposto come vincolo configurabile dal Navigator soltanto quando il backend garantisce che un hard budget influenzi realmente il piano iniziale, preservando i contenuti core e adattando in modo coerente recommended/optional content.
+
+Fino a quel refactoring il frontend non deve promettere all'utente una durata hard che l'initial planner non garantisce realmente.
+
 # Decisioni volutamente ancora aperte
 
 Non sono ancora fissati in modo definitivo:
 
 - schema TypeScript finale di `ActionDefinition`, `AvailableAction`, `ActionRequest`, `ActionResult` e `InteractionEvent`;
-- nomi definitivi di tutte le action family strutturali;
+- nomi definitivi di tutte le action family strutturali oltre a quelle già approvate concettualmente;
 - forma esatta degli status della navigation;
 - comportamento UX preciso delle relation query rispetto a `currentPresentation`;
-- eventuale presenza della route `/visits/:visitId/start`;
 - struttura finale delle schermate e dei componenti Vue;
 - routing e flussi dettagliati del Marketplace/Editor;
-- forma esatta dei DTO/API introdotti dall'Action Gateway e dal NavigatorRuntimeState.
+- forma esatta dei DTO/API introdotti dall'Action Gateway, dal NavigatorRuntimeState, dal completion summary e dalla session discovery;
+- schema esatto del file di configurazione museo e della relativa validazione/bootstrap;
+- dettagli di implementazione del refactoring `currentEntryIndex` / `executedThroughEntryIndex`.
 
 Questi punti devono essere progettati e approvati prima dell'implementazione corrispondente.
