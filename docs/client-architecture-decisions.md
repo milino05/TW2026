@@ -2,83 +2,100 @@
 
 Questo documento raccoglie le decisioni architetturali e strutturali **approvate** per le due applicazioni client di ArtAround: Navigator e Marketplace/Editor.
 
-L'obiettivo è costruire correttamente la fascia 18–24 senza introdurre scelte che costringano a riscrivere l'architettura quando verranno affrontate le estensioni 18–27 e 18–33.
+L'obiettivo è completare correttamente la fascia 18–24 predisponendo il sistema per 18–27 e 18–33 senza implementare prematuramente le estensioni e senza introdurre scelte che richiedano una riscrittura futura.
 
 ## Regola di manutenzione
 
-Questo file è un registro architetturale vivo. Ogni nuova decisione approvata relativa ai due client, ai loro contratti con il backend o alle predisposizioni 18–27/18–33 deve essere aggiunta qui. Le proposte non ancora approvate non vanno presentate come decisioni definitive; possono comparire solo in una sezione esplicitamente marcata come aperta.
+Questo file è un registro architetturale vivo. Ogni nuova decisione approvata relativa ai due client, ai loro contratti con il backend o alle predisposizioni 18–27/18–33 deve essere aggiunta qui.
+
+Le proposte non ancora approvate non devono essere presentate come decisioni definitive. Possono comparire soltanto in una sezione esplicitamente indicata come aperta.
+
+## Principio fondamentale: integrazione con il backend
+
+Ogni nuova soluzione frontend o decisione architetturale deve essere verificata rispetto al **backend reale già presente nel repository** prima di essere approvata.
+
+Sono vincolanti i seguenti principi:
+
+- una proposta frontend deve integrarsi con i modelli, servizi, revisioni, autorizzazioni e workflow già implementati nel backend;
+- quando il backend offre già una capacità utile, il client deve sfruttarla invece di duplicarne la logica;
+- il progetto deve sfruttare pienamente i servizi backend rilevanti disponibili, evitando implementazioni parallele lato client;
+- la business logic autorevole deve rimanere nel backend quando appartiene al dominio ArtAround;
+- se l'architettura frontend ideale mette in evidenza un limite reale del backend, va valutata esplicitamente una modifica del backend;
+- se una modifica backend produce una soluzione complessivamente più semplice, coerente, riutilizzabile o predisposta alle estensioni future, deve essere proposta invece di introdurre workaround nel frontend;
+- ogni nuova progettazione deve quindi includere una verifica di compatibilità backend e, quando necessario, l'indicazione dei cambiamenti backend richiesti.
+
+Questo principio vale sia per Navigator sia per Marketplace/Editor.
 
 ## Principi generali approvati
 
 - Un solo repository per il progetto.
 - Un solo backend Node/Express condiviso da Navigator e Marketplace/Editor.
 - Nessun backend separato per ciascun client.
-- Lo scheletro 18–24 deve essere progettato conoscendo già i requisiti 18–27 e 18–33, senza implementare prematuramente quelle estensioni.
-- Le estensioni future devono entrare principalmente come nuove capability, nuovi provider, nuove action family o nuovi trasporti, non come riscritture del nucleo del Navigator.
-- La generalità del sistema è prioritaria: il frontend non deve hardcodare semantiche specifiche di un museo.
-- Non viene considerata un problema architetturale da risolvere la differenza terminologica tra la definizione di Item nelle specifiche e il modello Item attuale del progetto.
+- Lo scheletro 18–24 deve essere progettato conoscendo già i requisiti 18–27 e 18–33, senza implementarli prematuramente.
+- Le estensioni future devono entrare principalmente come nuove capability, provider, action family o trasporti, non come riscritture del nucleo del Navigator.
+- La generalità di ArtAround è prioritaria: il frontend non deve hardcodare semantiche specifiche di un museo.
+- Non viene trattata come problema architetturale da risolvere la differenza terminologica tra la definizione di Item nelle specifiche e il modello Item attuale del progetto.
 
-## Tecnologie dei due client
+# Tecnologie dei due client
 
-### Navigator
+## Navigator
 
 Decisioni approvate:
 
-- Vue come framework.
-- Vite come build tool.
-- TypeScript.
-- Vue Router.
+- Vue;
+- Vite;
+- TypeScript;
+- Vue Router;
 - Pinia per lo stato applicativo condiviso.
 
 Pinia deve rimanere principalmente uno state container. La business logic e l'orchestrazione non devono essere concentrate negli store.
 
-### Marketplace/Editor
+## Marketplace/Editor
 
 Decisioni approvate:
 
-- Vanilla JavaScript con ES Modules.
-- Web Components per i componenti riutilizzabili.
-- Nessun framework UI come Vue, React o Svelte.
+- Vanilla JavaScript con ES Modules;
+- Web Components per componenti riutilizzabili;
+- nessun framework UI come Vue, React o Svelte.
 
 Marketplace/Editor deve rimanere tecnologicamente indipendente dal Navigator.
 
-## Codice condiviso
+# Codice condiviso
 
-È ammesso un livello shared tra i due client, ma con vincoli rigidi:
+È ammesso un livello `shared/` tra i due client con vincoli rigidi:
 
 - nessuna dipendenza da Vue;
 - nessuna dipendenza dai Web Components specifici del Marketplace;
 - nessun componente UI condiviso;
 - solo codice framework-agnostic, contratti, primitive HTTP, schemi di configurazione e concetti realmente comuni.
 
-I due client non devono essere obbligati ad avere lo stesso modello interno solo perché usano lo stesso backend.
+I due client non devono essere obbligati ad avere lo stesso modello interno soltanto perché utilizzano lo stesso backend.
 
-## Organizzazione logica del Navigator
+Quando opportuno il backend DTO può essere adattato separatamente:
 
-È approvata una separazione concettuale leggera ispirata a domain/application/capabilities/infrastructure/UI, senza imporre una Clean Architecture pesante.
+```text
+backend DTO
+  -> Navigator adapter -> Navigator model
+  -> Marketplace adapter -> Marketplace model
+```
 
-### Domain
+# Organizzazione logica del Navigator
 
-Contiene concetti puri del Navigator e non deve dipendere da:
+È approvata una separazione concettuale leggera ispirata a `domain / application / capabilities / infrastructure / UI`, senza imporre una Clean Architecture pesante.
 
-- Vue;
-- Pinia;
-- fetch;
-- WebSocket;
-- Speech API;
-- QR scanner;
-- geolocation;
-- LLM.
+## Domain
 
-### Application
+Contiene concetti puri del Navigator e non deve dipendere da Vue, Pinia, fetch, WebSocket, Web Speech API, QR scanner, geolocation o LLM.
 
-Contiene gli use case e l'orchestrazione applicativa.
+## Application
 
-La UI invia intenzioni all'application layer; l'application layer coordina domain, repository, capability e adapter.
+Contiene use case e orchestrazione applicativa.
 
-### Capabilities
+La UI esprime intenzioni all'application layer; l'application layer coordina domain, repository, capability, adapter e aggiornamento degli store.
 
-Descrivono cosa il Navigator sa fare, indipendentemente dalla tecnologia concreta usata per farlo.
+## Capabilities
+
+Descrivono cosa il Navigator sa fare indipendentemente dalla tecnologia concreta.
 
 Esempi concettuali:
 
@@ -90,53 +107,22 @@ Esempi concettuali:
 - content resolution;
 - translation/generation future.
 
-### Infrastructure
+## Infrastructure
 
-Contiene le implementazioni concrete verso il mondo esterno, ad esempio:
+Contiene implementazioni concrete verso il mondo esterno, ad esempio HTTP, browser storage, Web Speech API, camera, QR, geolocation e futuro trasporto realtime.
 
-- HTTP;
-- browser storage;
-- Web Speech API;
-- camera;
-- QR;
-- geolocation;
-- WebSocket o altro trasporto realtime futuro.
+## UI
 
-### UI
+Views e components devono occuparsi principalmente di rendering e interazione. Non devono contenere business logic di dominio né dipendere direttamente dalla forma grezza delle risposte backend.
 
-Views e components devono occuparsi principalmente di rendering e interazione. Non devono contenere direttamente la business logic né dipendere dalla forma grezza delle risposte backend.
+# API adapter layer client-side
 
-## Visit control predisposto per 18–27
-
-È approvato il concetto di una capability di controllo della visita.
-
-Nel 18–24 la modalità è individuale. Nel 18–27 potrà essere introdotta una modalità sincronizzata in cui la disponibilità delle azioni dipende dal ruolo e dal controllo docente.
-
-La UI non deve hardcodare condizioni come `if synchronized student then disable next`; la possibilità concreta di eseguire un'azione deve derivare dalle AvailableAction autorevoli.
-
-## Location predisposta per 18–33
-
-È approvato un modello a provider intercambiabili.
-
-Possibili implementazioni future:
-
-- manual location per 18–24;
-- QR location;
-- geolocation;
-- teleport/demo provider.
-
-I provider producono osservazioni che vengono normalizzate in una posizione logica del dominio. QR, GPS e dati sensore grezzi non devono diventare il modello centrale del Navigator.
-
-## API adapter layer client-side
-
-È approvato un livello di adapter tra application layer e API HTTP.
-
-Schema concettuale:
+È approvato un livello di adapter tra application layer e API HTTP:
 
 ```text
 UI
   -> Application
-  -> Port/Repository
+  -> Port / Repository
   -> API Adapter
   -> HTTP Client
   -> Express API
@@ -144,30 +130,36 @@ UI
 
 Obiettivi:
 
-- isolare il frontend da cambiamenti tecnici nelle API;
-- evitare che components o stores conoscano URL, shape HTTP o DTO backend grezzi;
-- permettere al Navigator e al Marketplace di avere projection/modelli interni differenti;
-- assorbire cambi di endpoint, nomi campi, paginazione, error format o DTO quando il significato funzionale non cambia.
+- isolare il frontend dai cambiamenti tecnici nelle API;
+- evitare che components e stores conoscano URL, shape HTTP e DTO grezzi;
+- permettere ai due client di avere projection differenti;
+- assorbire cambi di endpoint, nomi campo, paginazione, error format o DTO quando il significato funzionale rimane invariato.
 
-Questo layer non è un nuovo server intermedio.
+Questo layer è client-side e non introduce un nuovo server intermedio.
 
-## Sistema Action: principio generale
+Non deve esistere un unico gigantesco `ApiService` chiamato direttamente dalle view. Sono preferibili repository/port specifici per responsabilità.
 
-È stata scartata l'idea di un enum globale di canonical commands come `AUTHOR`, `STYLE`, `TOILET`, ecc.
+# Sistema Action
 
-Motivazione: ArtAround è museum-defined. Ogni museo può definire relation types, presentation aspects, place types e vocabolari propri. Una lista semantica globale ridurrebbe la generalità del sistema.
+## Principio generale
 
-La soluzione approvata usa invece un protocollo generico basato su:
+È scartata l'idea di un enum globale di canonical commands come `AUTHOR`, `STYLE`, `TOILET`, ecc.
 
-- `ActionDefinition`;
-- `AvailableAction`;
-- `ActionRequest`;
-- `ActionResult`;
-- `InteractionEvent`.
+ArtAround è museum-defined: relation types, presentation aspects, place types e vocabolari possono essere definiti dal singolo museo.
 
-## Action families e semantica dinamica
+Il protocollo approvato è basato su:
 
-Sono approvate action family strutturali relativamente stabili, con binding e parametri dinamici.
+```text
+ActionDefinition
+  -> AvailableAction
+  -> ActionRequest
+  -> ActionResult
+  -> InteractionEvent
+```
+
+## Action families
+
+Le action family descrivono meccanismi strutturali relativamente stabili, mentre la semantica concreta rimane dinamica.
 
 Esempi concettuali:
 
@@ -178,50 +170,28 @@ visit.move
 presentation.adjust
 ```
 
-Una nuova relation definita dal museo non richiede una nuova action family.
-
-Esempio:
+Esempio di binding dinamico:
 
 ```text
 family = relation.query
 relationTypeKey = historical_context
 ```
 
-oppure:
+Una nuova relation museum-defined non richiede nuovo codice nel Navigator. Una nuova classe fondamentale di comportamento ArtAround può invece introdurre una nuova family e il relativo handler.
 
-```text
-family = relation.query
-relationTypeKey = dominant_color
-```
-
-La family descrive il meccanismo; la semantica concreta rimane definita dal museo.
-
-Le nuove classi fondamentali di comportamento, ad esempio future capacità di generazione o traduzione, possono introdurre nuove action family e relativi handler.
-
-Le family devono avere contratti tipizzati. Non è approvato un modello generico `parameters: any` privo di struttura.
+Le family devono avere contratti tipizzati. Non è approvato un modello indiscriminato `parameters: any`.
 
 ## ActionDefinition
 
 `ActionDefinition` descrive una capacità esistente nel dominio.
 
-Può essere derivata da:
+Può essere derivata da vocabolario, relation types, place types/layout, runtime della visita, capability della piattaforma e future estensioni.
 
-- vocabolario del museo;
-- relation types;
-- place types e layout;
-- runtime della visita;
-- capability della piattaforma;
-- future estensioni.
-
-Le ActionDefinition di dominio sono autorevoli nel backend e non devono necessariamente essere persistite in una collection Mongo dedicata. Possono essere derivate dinamicamente.
-
-Il Navigator non deve dipendere direttamente dalle ActionDefinition complete del backend.
+Le Domain ActionDefinition sono autorevoli nel backend e non devono necessariamente essere persistite in una collection Mongo dedicata: possono essere derivate dinamicamente dai dati già autorevoli.
 
 ## AvailableAction
 
 `AvailableAction` è la projection client di una capacità concretamente disponibile per un determinato utente nel contesto corrente.
-
-La distinzione approvata è:
 
 ```text
 ActionDefinition
@@ -231,22 +201,13 @@ AvailableAction
 = la capacità è disponibile qui e ora
 ```
 
-La availability può dipendere da:
+La availability può dipendere da utente, sessione, entry corrente, presentation, posizione, modalità di controllo, dati del museo e future condizioni sincronizzate.
 
-- utente;
-- sessione;
-- item/entry corrente;
-- presentation corrente;
-- posizione;
-- modalità di controllo;
-- stato sincronizzato futuro;
-- dati realmente disponibili nel museo.
+Il Navigator riceve principalmente `AvailableAction[]`, non il catalogo completo delle ActionDefinition.
 
-Il Navigator riceve principalmente `AvailableAction[]`, non l'intero catalogo teorico delle ActionDefinition.
+`AvailableAction[]` è parte integrante e versionata del `NavigatorRuntimeState`.
 
-`AvailableAction[]` deve essere parte del `NavigatorRuntimeState`.
-
-Non va duplicato con un generico blocco `permissions` contenente booleani equivalenti.
+Non deve essere duplicata da un generico blocco `permissions` con booleani equivalenti.
 
 ## Identità delle azioni
 
@@ -257,56 +218,46 @@ Non va duplicato con un generico blocco `permissions` contenente booleani equiva
 
 L'`ActionRequest` usa principalmente `availableActionId`.
 
-Il client non deve poter definire arbitrariamente family e binding fidandosi che il backend li esegua. Il backend deve ricostruire/verificare la definizione autorevole, availability, autorizzazione e contesto.
+Il backend non si fida della semantica rimandata dal client: deve ricostruire o verificare definizione autorevole, availability, autorizzazione e contesto.
 
 ## ActionRequest
 
-È approvato che contenga almeno concettualmente:
+Contiene concettualmente almeno:
 
 - `availableActionId`;
 - `expectedRuntimeVersion`;
 - eventuali input realmente necessari e non già ricavabili dalla sessione.
 
-Il client deve inviare meno contesto duplicato possibile. Se il backend conosce già user, museum, current entry, current place o current presentation dalla sessione, questi dati non devono essere rimandati inutilmente dal client.
+Il client deve inviare meno contesto duplicato possibile. Se user, museum, entry, posizione o presentation sono già noti al backend tramite sessione, non devono essere rimandati inutilmente.
 
-`expectedRuntimeVersion` permette di riconoscere richieste generate su uno stato ormai stale.
+`expectedRuntimeVersion` consente al backend di riconoscere richieste generate su uno stato stale.
 
-## ActionResult
+## ActionResult e RuntimeUpdate
 
-`ActionResult` rappresenta il risultato semantico dell'azione.
+`ActionResult` rappresenta il risultato semantico dell'azione ed è distinto dal `RuntimeUpdate`.
 
-È distinto dal `RuntimeUpdate`.
+Le family possono avere result tipizzati differenti.
 
-Le diverse family possono avere result tipizzati differenti, ad esempio relation result, navigation result o presentation adjustment result.
-
-Non ogni ActionRequest deve necessariamente incrementare la runtime version: la versione cambia solo quando cambia lo stato runtime autorevole.
+La runtime version cambia soltanto quando cambia lo stato runtime autorevole; non ogni ActionRequest deve necessariamente incrementarla.
 
 ## InteractionEvent
 
-Sono stati scartati eventi semanticamente hardcoded come `AUTHOR_REQUESTED` o `STYLE_REQUESTED`.
+Sono scartati eventi semanticamente hardcoded come `AUTHOR_REQUESTED` o `STYLE_REQUESTED`.
 
-È approvata la distinzione tra:
+È approvata la distinzione fra:
 
 - platform events strutturali e relativamente stabili;
-- interaction events generici che referenziano l'azione eseguita e i suoi binding dinamici.
+- interaction events generici che referenziano azione e binding dinamici.
 
-Questo deve permettere al futuro pannello docente 18–27 di osservare interazioni di qualsiasi museo senza conoscere in anticipo le sue relations.
+Questo deve consentire al futuro monitoraggio docente di osservare qualsiasi museo senza conoscerne in anticipo l'ontologia.
 
-## Action, Client Action e UIIntent
+## Domain Action, Client Action e UIIntent
 
-Sono approvate tre categorie concettuali:
+Sono approvate tre categorie:
 
-### Domain Action
-
-Azione applicativa/domain autorevole lato backend.
-
-### Client Action
-
-Azione significativa per l'esperienza ma eseguita localmente sul device quando appropriato.
-
-### UIIntent
-
-Interazione puramente grafica, ad esempio aprire un menu, chiudere una modale o cambiare tab.
+- **Domain Action**: azione applicativa/domain autorevole lato backend;
+- **Client Action**: azione significativa per l'esperienza ma realmente locale al dispositivo quando appropriato;
+- **UIIntent**: comportamento puramente grafico come aprire un pannello, chiudere una modale o cambiare tab.
 
 Gli UIIntent non devono essere trasformati artificiosamente in ActionDefinition.
 
@@ -315,13 +266,13 @@ Gli UIIntent non devono essere trasformati artificiosamente in ActionDefinition.
 È approvato un modello ibrido:
 
 - backend autorevole per Domain ActionDefinition;
-- Navigator può avere Client ActionDefinition per capability realmente locali;
+- Navigator può possedere Client ActionDefinition per capability realmente locali;
 - l'application layer unifica le azioni disponibili per la UI;
-- la UI non deve sapere se una AvailableAction deriva dal backend, dal museo o da una capability locale.
+- la UI non deve conoscere l'origine concreta di ogni AvailableAction.
 
-## Action Gateway del Navigator
+# Action Gateway del Navigator
 
-È approvato un Action Gateway **limitato al runtime delle visit-session**, non un mega-endpoint globale per tutto ArtAround.
+È approvato un Action Gateway limitato al runtime delle `visit-session`, non un mega-endpoint globale per ArtAround.
 
 Forma concettuale:
 
@@ -329,11 +280,9 @@ Forma concettuale:
 POST /api/visit-sessions/:sessionId/actions
 ```
 
-Il Marketplace continua a utilizzare endpoint specifici per CRUD/editor/amministrazione.
+Il Marketplace/Editor continua a utilizzare endpoint specifici per CRUD, editing e amministrazione.
 
-Internamente il gateway deve delegare a dispatcher e handler tipizzati, che riusano i servizi di dominio esistenti. Il gateway non deve diventare un God service contenente la business logic.
-
-Esempio concettuale:
+Internamente il gateway delega a dispatcher e handler tipizzati che **riusano i servizi di dominio backend esistenti**.
 
 ```text
 Action Gateway
@@ -342,17 +291,40 @@ Action Gateway
      -> PlaceNavigationHandler
      -> PresentationAdjustmentHandler
      -> VisitMoveHandler
+     -> ...
 ```
 
-Questo modello deve consentire in futuro di trasportare gli stessi ActionRequest anche attraverso un canale realtime senza introdurre una seconda semantica applicativa.
+Il gateway non deve diventare un God service e non deve duplicare la business logic già presente nei servizi backend.
 
-## NavigatorRuntimeState
+Gli endpoint runtime specifici esistenti possono essere utilizzati durante una migrazione, ma l'architettura finale approvata prevede il gateway come interfaccia uniforme del runtime quando questo porta vantaggio e gli handler come ponte verso i servizi esistenti.
+
+Questo modello deve permettere in futuro di trasportare gli stessi ActionRequest anche via realtime senza introdurre una seconda semantica applicativa.
+
+# Pausa e resume
+
+La pausa rimane un **vero stato persistente di dominio della VisitSession**, non uno stato puramente grafico.
+
+Il backend già mantiene semanticamente:
+
+```text
+active -> paused -> active
+```
+
+insieme agli intervalli di pausa e al calcolo del tempo attivo della visita.
+
+La progettazione frontend deve valorizzare questo modello, non sostituirlo.
+
+Pause/resume devono quindi essere trattati come Domain Action strutturali del runtime e, nell'architettura Action finale, i relativi handler devono riusare i servizi backend di pausa e resume esistenti.
+
+La decisione di non creare `/sessions/:id/paused` riguarda esclusivamente Vue Router e non elimina né modifica il significato delle API/backend operations di pausa e resume.
+
+# NavigatorRuntimeState
 
 È approvato come projection autonoma, minima e autorevole del runtime del Navigator.
 
-Non è la serializzazione di `VisitSession` e non deve diventare una copia dell'intero dominio backend.
+Non è la serializzazione di `VisitSession` e non deve diventare una copia completa del dominio backend.
 
-Struttura concettuale approvata:
+Struttura concettuale:
 
 ```text
 NavigatorRuntimeState
@@ -367,74 +339,66 @@ NavigatorRuntimeState
   availableActions[]
 ```
 
-### runtimeVersion
+## runtimeVersion
 
-Versione dello stato runtime della sessione. È distinta dalla versione del piano, del vocabolario, del layout e delle altre revisioni di dominio.
+È distinta dalle versioni di piano, vocabolario, layout e altre revisioni.
 
-Serve per:
+Serve per ordinamento update, rilevazione di update vecchi, rilevazione di gap, resync e futura sincronizzazione realtime.
 
-- applicare aggiornamenti in ordine;
-- riconoscere update vecchi;
-- riconoscere gap di versione;
-- effettuare resync;
-- predisporre il realtime 18–27.
+## session
 
-### session
+Projection minima, ad esempio identità, status e source type. Non include tutto lo storico di observation, interaction events o learning.
 
-Projection minima della sessione, ad esempio identità, status e source type. Non deve includere tutto lo storico di osservazioni, interaction events o dati di learning.
+## control
 
-### control
+Esiste già concettualmente nel 18–24 con modalità `individual` ed è predisposto per il futuro controllo sincronizzato 18–27.
 
-Deve esistere già nel 18–24 con modalità `individual`.
+Non deve duplicare le AvailableAction con liste di `canX`.
 
-È predisposto per future modalità sincronizzate 18–27. Non deve duplicare le AvailableAction con una lunga lista di `canX`.
+## plan
 
-### plan
+Nel runtime rimangono solo riferimenti e posizione essenziale rispetto al piano, ad esempio revision id, version e current entry index.
 
-Nel runtime devono stare solo riferimenti e posizione essenziale rispetto al piano, ad esempio revision id/version/current entry index.
+## currentEntry
 
-Il piano completo rimane separato.
+Rappresenta dove si trova logicamente la sessione nella sequenza e non incorpora l'intero Item.
 
-### currentEntry
-
-Rappresenta dove si trova logicamente la sessione nella sequenza. Non deve incorporare l'intero Item.
-
-### currentPresentation
+## currentPresentation
 
 Contiene la presentation effettivamente scelta dal server, compreso il testo necessario al Navigator.
 
-UI e TTS devono usare la stessa fonte `currentPresentation`, evitando divergenze tra testo mostrato e testo pronunciato.
+UI e TTS usano la stessa `currentPresentation` per evitare divergenze tra testo mostrato e pronunciato.
 
-### location
+## location
 
 Posizione logica normalizzata, ad esempio `placeId`, source e status.
 
-Dati grezzi GPS, QR o sensore restano fuori dal runtime e appartengono ai provider/device layer.
+Dati grezzi GPS, QR o sensori rimangono fuori dal runtime e appartengono ai provider/device layer.
 
-### availableActions
+L'osservazione può nascere sul client, ma la posizione logica accettata è parte dello stato autorevole del runtime/backend.
 
-Parte integrante e versionata del runtime.
+## availableActions
 
-## VisitPlanProjection
+Sono parte integrante e versionata del runtime.
 
-È approvata come risorsa separata dal runtime.
+# VisitPlanProjection
 
-Il backend possiede già un piano di sessione revisionato; il Navigator deve consumarne una projection specifica invece di incorporare tutto il piano nel RuntimeState.
+Il piano completo rimane separato dal RuntimeState.
 
-Concettualmente contiene:
+`VisitPlanProjection` rappresenta ciò che il Navigator necessita della revisione corrente del piano, ad esempio:
 
 - plan revision id;
 - version;
 - entries necessarie al Navigator;
 - route/timing summary utili.
 
-Se il RuntimeState passa da una plan revision a un'altra, il client invalida/aggiorna la projection del piano.
+Se il RuntimeState passa a una nuova plan revision, il client invalida o aggiorna la projection del piano.
 
-## Navigation
+# Navigation
 
-È approvato che la navigazione sia vero stato runtime persistente minimo e non solo un ActionResult effimero.
+La navigazione è approvata come vero stato runtime persistente minimo, non soltanto come ActionResult effimero.
 
-Nel `NavigatorRuntimeState` deve stare una projection minima, concettualmente:
+Nel `NavigatorRuntimeState` rimane una projection minima:
 
 ```text
 navigation
@@ -445,13 +409,11 @@ navigation
   currentLegIndex
 ```
 
-La forma esatta degli status non è ancora fissata.
+La route completa rimane separata.
 
 ## NavigationProjection
 
-La route completa deve stare in una risorsa separata, analoga alla `VisitPlanProjection`.
-
-Concettualmente può contenere:
+Può contenere concettualmente:
 
 - route id;
 - version;
@@ -462,59 +424,11 @@ Concettualmente può contenere:
 - instructions;
 - warnings.
 
-Se una route viene ricalcolata mantenendo la stessa destinazione, è approvato mantenere lo stesso `routeId` e incrementare `routeVersion`.
+Se una route viene ricalcolata mantenendo la stessa destinazione, è approvato mantenere lo stesso `routeId` incrementando `routeVersion`.
 
-Questo modello deve consentire future location observation via QR/geolocation senza cambiare il consumatore della navigazione.
+Il modello deve consentire a futuri LocationProvider QR/geolocation di aggiornare progressivamente posizione e navigazione senza cambiare il contratto consumato dalla UI.
 
-## Snapshot e RuntimeUpdate
-
-È approvato un modello versionato con:
-
-- snapshot completo per bootstrap/resync;
-- `RuntimeUpdate` incrementali durante la visita.
-
-Esempio concettuale:
-
-```text
-fromVersion = 21
-toVersion = 22
-changes = ...
-```
-
-Il modello deve poter essere usato sia dalle normali risposte HTTP 18–24 sia dal futuro transport realtime 18–27.
-
-In caso di gap di versione il client deve considerare il runtime non affidabile e richiedere un nuovo snapshot.
-
-## Stato che NON appartiene al NavigatorRuntimeState
-
-Non devono essere inseriti nel runtime solo perché il Navigator li conosce:
-
-- user completo;
-- profilo adattivo completo;
-- museum completo;
-- vocabulary revision completa;
-- layout revision completa;
-- ItemRevision complete;
-- intero SessionPlanRevision;
-- storico completo InteractionEvent;
-- osservazioni di movimento e learning;
-- configurazione grafica completa del museo;
-- GPS/QR grezzi;
-- stato del microfono;
-- stato TTS;
-- menu, modali e tab;
-- loading/error temporanei;
-- cache generiche API.
-
-## Stato locale del client
-
-Stati come listening, transcript, speaking, map expanded, dialog aperti, loading o reconnecting sono client-local e non incrementano la runtime version.
-
-Speech e device state non devono avere store Pinia dedicati finché non emerge una reale necessità di condivisione persistente tra più view.
-
-Composable/capability come `useSpeechInput`, `useSpeechOutput` o provider di localizzazione sono preferibili all'introduzione preventiva di molti store.
-
-## Store Pinia approvati
+# Stato Pinia
 
 Sono approvati sei store concettuali principali:
 
@@ -525,103 +439,164 @@ Sono approvati sei store concettuali principali:
 - `museumStore`;
 - `uiStore`.
 
-I nomi esatti possono essere affinati in implementazione, ma la separazione di responsabilità è approvata.
+Non si creano preventivamente store separati per speech, TTS, camera, GPS o altre capability device. Si parte da composable/capability locali e si promuove lo stato a store soltanto quando esiste un reale bisogno di condivisione/persistenza client.
 
-### authStore
+## runtimeStore
 
-Stato dell'utente autenticato e del login.
+Mantiene il `NavigatorRuntimeState` e sa installare snapshot e applicare `RuntimeUpdate` versionati.
 
-### runtimeStore
+Deve rilevare gap o incoerenze di versione e segnalare la necessità di resync.
 
-Conserva il `NavigatorRuntimeState` e applica snapshot/update versionati.
+Non implementa la business logic delle Action.
 
-Responsabilità concettuali:
+## planStore
 
-- install snapshot;
-- apply runtime update;
-- invalidate;
-- rilevare necessità di resync.
+Mantiene la `VisitPlanProjection` corrente ed eventualmente una piccola cache per revisione.
 
-Non contiene la business logic delle Action.
+## navigationStore
 
-### planStore
+Mantiene la `NavigationProjection` corrente, separata dallo stato minimo di navigazione contenuto nel runtime.
 
-Conserva la `VisitPlanProjection` corrente e, se utile, una cache limitata per revision.
+## museumStore
 
-### navigationStore
+Rappresenta il contesto relativamente statico necessario al Navigator senza diventare una copia indiscriminata di Museum, Vocabulary, Layout e Items completi.
 
-Conserva la `NavigationProjection` corrente e, se utile, una cache limitata per route/version.
+## uiStore
 
-### museumStore
+Contiene esclusivamente stato grafico condiviso e non autorevole, ad esempio pannelli/modalità visuali.
 
-Contesto relativamente statico del museo e riferimenti alle risorse necessarie al Navigator. Non deve diventare una copia integrale di Museum + Vocabulary + Layout + Items.
+Non deve duplicare current entry, current presentation, location o AvailableAction.
 
-### uiStore
+## Orchestrazione degli store
 
-Solo stato grafico condiviso e non autorevole.
+Gli store non devono orchestrarsi direttamente fra loro in modo nascosto.
 
-## Regola sulle dipendenze tra store
-
-Gli store non devono orchestrarsi reciprocamente in modo nascosto.
-
-Se un RuntimeUpdate cambia plan revision o route version, è l'application layer a coordinare aggiornamento/invalidation di `planStore` o `navigationStore`.
-
-## Esecuzione delle Action nel frontend
-
-L'esecuzione rimane nell'application layer.
-
-Schema approvato:
+L'orchestrazione passa dall'application layer.
 
 ```text
 UI
-  -> ExecuteAction use case
-  -> Action repository/adapter
-  -> backend Action Gateway
-  -> ActionResult + RuntimeUpdate
-  -> runtimeStore.applyRuntimeUpdate()
+  -> use case/application service
+  -> repository/capability
+  -> backend
+  -> result/runtime update
+  -> store
 ```
 
-Pinia conserva e rende reattivo lo stato risultante; non implementa la business logic.
+Pinia conserva e rende reattivo lo stato; non implementa la business logic.
+
+# Routing del Navigator
+
+È approvato il modello **routing per lifecycle + VisitShellView per il runtime attivo**.
+
+Regola generale:
+
+> Una route rappresenta un cambio di lifecycle, identità primaria o workflow dell'utente; non ogni variazione visiva o capability della stessa visita.
+
+## Identità Visit vs VisitSession
+
+Sono concetti e route distinte:
+
+```text
+/visits/:visitId
+```
+
+rappresenta la visita prima dell'esecuzione, mentre:
+
+```text
+/sessions/:sessionId
+```
+
+rappresenta la sessione runtime concreta dell'utente.
+
+Durante la visita l'identità primaria è la `VisitSession`, non la Visit astratta.
+
+## VisitShellView
+
+`/sessions/:sessionId` è la shell del runtime attivo.
+
+Mappa, presentation, navigation UI, speech, AvailableAction, pausa e variazioni della presentation non diventano route separate. Sono aspetti dello stesso runtime o UI state interno alla VisitShell.
+
+La VisitShell è un composition root UI, non un componente monolitico. Deve essere composta da regioni/componenti specializzati.
+
+## Pausa
+
+La pausa non crea una route Vue `/paused`.
+
+La URL rimane:
+
+```text
+/sessions/:sessionId
+```
+
+mentre `NavigatorRuntimeState.session.status` passa da `active` a `paused` e la UI reagisce allo stato autorevole ricevuto dal backend.
+
+Questo evita di duplicare lo stesso stato in URL e runtime e si integra con il modello persistente di pausa già presente nel backend.
+
+## Summary
+
+La conclusione definitiva della visita rappresenta invece un cambio di lifecycle e può utilizzare:
+
+```text
+/sessions/:sessionId/summary
+```
+
+`route_completed` non implica automaticamente una route separata; può rimanere uno stato della VisitShell finché la sessione non è realmente completata.
+
+## Preparazione visita
+
+Una eventuale route:
+
+```text
+/visits/:visitId/start
+```
+
+non è approvata automaticamente. Verrà introdotta soltanto se la futura progettazione UX dimostrerà l'esistenza di una fase di preparazione realmente distinta dal dettaglio visita.
+
+## Catalogo mobile
+
+Il catalogo/marketplace visibile nel Navigator è una UI Vue propria, ottimizzata per smartphone e selezione/acquisto/esecuzione delle visite.
+
+Non riusa il client Marketplace/Editor desktop, pur utilizzando gli stessi servizi backend rilevanti.
+
+## Bootstrap e resume
+
+Il bootstrap di `/sessions/:sessionId` passa da un application use case concettuale come `ResumeVisitSession`, non da business logic o `fetch()` inseriti nei router guard.
+
+Lo use case recupera il runtime snapshot e coordina le projection necessarie tramite repository/adapters.
+
+Un refresh della pagina deve poter ricostruire l'esperienza dal backend autorevole usando il `sessionId`.
+
+Se la sessione è già completata, l'applicazione può normalizzare la navigazione verso la summary.
 
 ## Predisposizione 18–27
 
-L'architettura deve consentire di aggiungere in seguito:
+Il normale participant/student runtime continua a usare `/sessions/:sessionId`; la modalità sincronizzata deriva dal runtime (`control` e AvailableAction), non da una nuova variante della route.
 
-- modalità di visita sincronizzata;
-- ruoli docente/partecipante;
-- controllo centralizzato dell'avanzamento;
-- monitoraggio delle interazioni;
-- quiz;
-- transport realtime.
-
-HTTP e realtime devono poter trasportare lo stesso modello di RuntimeUpdate, evitando una seconda architettura parallela.
+Nuovi workflow realmente distinti possono aggiungere in futuro route dedicate, ad esempio join o teacher control.
 
 ## Predisposizione 18–33
 
-L'architettura deve consentire di aggiungere in seguito:
+LLM, QR, geolocation e translation/generation non ottengono automaticamente nuove route. Sono capability/provider che operano dentro il runtime esistente.
 
-- QR location provider;
-- geolocation provider;
-- eventuale teleport/demo provider;
-- LLM intent resolver;
-- traduzione;
-- generazione di contenuti;
-- generazione di visite.
+# Realtime futuro
 
-Il futuro LLM deve operare come resolver/selector delle `AvailableAction` offerte dal sistema, non come componente libero di inventare endpoint o operazioni backend.
+HTTP e futuro realtime devono trasportare lo stesso modello applicativo di `RuntimeUpdate`.
 
-## Decisioni ancora aperte
+Il `runtimeStore` non deve avere una semantica diversa a seconda che l'update provenga da risposta HTTP o trasporto realtime.
 
-Al momento non sono ancora fissati definitivamente:
+Questo permette al 18–27 di aggiungere sincronizzazione senza introdurre una seconda architettura dello stato.
 
-- albero fisico finale delle directory dei due client;
-- schema TypeScript esatto di ActionDefinition, AvailableAction, ActionRequest, ActionResult e RuntimeUpdate;
+# Decisioni volutamente ancora aperte
+
+Non sono ancora fissati in modo definitivo:
+
+- schema TypeScript finale di `ActionDefinition`, `AvailableAction`, `ActionRequest`, `ActionResult` e `InteractionEvent`;
+- nomi definitivi di tutte le action family strutturali;
 - forma esatta degli status della navigation;
-- forma finale delle projection di museum/layout/vocabulary lato Navigator;
-- comportamento UX preciso delle relation query e dei semantic drill-down rispetto a `currentPresentation`;
-- routing e flusso utente delle view Vue;
-- struttura definitiva delle schermate e dei componenti;
-- dettagli del futuro transport realtime;
-- schema definitivo di configurazione del Navigator per museo.
+- comportamento UX preciso delle relation query rispetto a `currentPresentation`;
+- eventuale presenza della route `/visits/:visitId/start`;
+- struttura finale delle schermate e dei componenti Vue;
+- routing e flussi dettagliati del Marketplace/Editor;
+- forma esatta dei DTO/API introdotti dall'Action Gateway e dal NavigatorRuntimeState.
 
-Questi punti devono essere progettati e approvati prima di essere registrati come definitivi.
+Questi punti devono essere progettati e approvati prima dell'implementazione corrispondente.
