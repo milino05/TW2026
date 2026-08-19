@@ -419,18 +419,236 @@ così una failure di una sezione non deve necessariamente bloccare l'altra.
 
 `VisitDetailView` è operativamente accessibile per Visit che il backend riconosce come eseguibili dall'utente.
 
-Il Navigator non deve dipendere direttamente dal DTO editoriale/pubblico grezzo `GET /visits/:visitId`. È approvata una futura **Navigator Visit Detail Projection autorizzata**, che riusa lo stesso VisitExecutionAccessService della Library e di `startSession()`.
+Il Navigator non dipende dal DTO editoriale/pubblico grezzo `GET /visits/:visitId`. È approvata una **Navigator Visit Detail Projection dedicata, autenticata, composita e autorizzata**, costruita rispetto alla published revision corrente e distinta sia da `VisitRevision` sia dal `logistics-plan` completo.
 
-La preparazione rimane leggera e usa progressive disclosure; non esiste per ora `/start` separato.
+API concettuale:
 
-Riusa servizi backend per:
+```text
+GET /navigator/visits/:visitId
+```
 
-- presentation preferences e options;
-- navigation/accessibility preferences;
-- adaptive learning consent;
-- logistics plan personalizzato.
+Il nome esatto della route può essere raffinato; il boundary dedicato e la sua semantica sono approvati.
 
-Il `logistics-plan` è fonte autorevole per percorso, tempi, warning, movimento e osservazione. Il frontend non replica questi calcoli.
+Flusso concettuale:
+
+```text
+request
+  -> authentication
+  -> VisitExecutionAccessService
+  -> published VisitRevision fissata
+  -> preference/preparation services
+  -> logistics service
+  -> NavigatorVisitDetailProjection
+```
+
+L'accesso viene verificato **prima** di costruire o restituire dati personali, preferenze, preparation state o logistics personalizzato.
+
+## Struttura semantica approvata
+
+```text
+NavigatorVisitDetailProjection
+  visit
+  access
+  preVisitInformation
+  preparation
+    presentation
+    navigation
+    adaptiveLearning
+  logistics
+```
+
+I nomi TypeScript/JSON esatti rimangono aperti; la separazione di responsabilità è definitiva.
+
+### `visit`
+
+Contiene soltanto identità e summary della published revision necessarie al Navigator, almeno concettualmente:
+
+```text
+id
+revisionId
+title
+description
+kind
+visibility
+museums[]
+baselineSummary?
+```
+
+Per i musei la projection restituisce dati leggibili, almeno `id` e `name`, invece di obbligare il client a risolvere autonomamente tutti i `museumIds`.
+
+Non espone nel Visit Detail:
+
+- `contentEntries[]` completi;
+- route hints grezzi;
+- working revision;
+- review/integrity internals;
+- altri dettagli editoriali non necessari alla preparazione.
+
+### `access`
+
+La projection include il risultato già risolto del `VisitExecutionAccessService`, senza serializzare l'intero `VisitEntitlement`.
+
+Concettualmente:
+
+```text
+access
+  basis: ownership | entitlement
+  acquisitionType?: purchase | free_acquisition | grant
+```
+
+In caso di accesso negato il boundary produce normalmente `403`; `startSession()` rivalida comunque sempre l'execution access al momento dello start.
+
+## Presentation preparation
+
+La preparation di presentazione riusa i servizi backend esistenti e preserva la distinzione semantica fra Visit official e community.
+
+La projection fornisce direttamente **effective preference + opzioni**, così Vue non deve comporre più endpoint o ricostruire la precedence logic.
+
+Concettualmente:
+
+```text
+preparation.presentation
+  kind
+  effective
+  options
+```
+
+Per le official l'effective preference continua a usare concetti come `durationKey` e `languageLevelKey`; per le community usa preferenze astratte come `depthPreference` e `languageComplexityPreference`. Quando utile, il backend può indicare anche la provenienza dell'effective preference (`visit_custom`, `user_default`, `visit_default`, `item_default` o naming equivalente).
+
+Il `presentation-plan` completo viene riusato backend-side quando necessario, ma **non viene riversato nella Visit Detail**: la UI di preparazione non necessita della representation materializzata di ogni entry.
+
+## Navigation preparation
+
+È approvato un `NavigationPreparationResolver` o servizio equivalente lato backend.
+
+Il client non carica `MuseumLayoutRevision` grezzo per interpretare `routingAttributes`, `routingPresets`, operatori e requirement. Il backend proietta opzioni user-facing basate sul layout autorevole.
+
+Concettualmente:
+
+```text
+preparation.navigation
+  effectivePreference
+  availableOptions
+```
+
+La prima UX privilegia preset configurati dal museo:
+
+```text
+presets[]
+  key
+  label
+  description
+```
+
+Quando serve una configurazione più fine, possono essere esposti attributi con metadati UI leggibili (`key`, `label`, `description`, input type, unit, options). Operatori grezzi, `priority`, `weight` e strutture routing interne restano contratti application/backend e non diventano la normale interfaccia utente.
+
+### Navigation multi-museo
+
+Per Visit multi-museo non viene costruita una semplice unione indiscriminata degli attributi locali dei layout.
+
+Le preferenze che devono attraversare più musei privilegiano semanticamente `canonicalKey` e requirement canonici. Opzioni puramente locali vengono esposte solo quando hanno un significato non ambiguo nel contesto della Visit corrente.
+
+## Pre-visit information
+
+Il Navigator riusa entrambe le fonti esistenti:
+
+- `MuseumLayoutRevision.preVisitInformation` per informazioni strutturali del museo;
+- `VisitRevision.logistics.preVisitNotes` per note specifiche della Visit.
+
+La provenienza viene preservata. Per Visit multi-museo le informazioni del museo vengono associate al rispettivo museo, invece di concatenare tutti i testi in un array anonimo.
+
+## Adaptive learning nella Visit Detail
+
+La projection espone soltanto ciò che serve alla decisione UX, concettualmente:
+
+```text
+preparation.adaptiveLearning
+  decisionRequired
+  preferences
+    personalHistory
+    collectiveContribution
+```
+
+Non include nella Visit Detail l'intero adaptive profile, semantic affinities, knowledge state o content exposure. Questi dati restano backend-side e possono continuare a essere usati dal planner.
+
+## LogisticsPreview
+
+Il `logistics-plan` esistente rimane la fonte autorevole per percorso, tempi, warning, movimento, osservazione e integrazione con presentation/adaptive planning.
+
+La Visit Detail riceve però soltanto una **LogisticsPreview** ridotta, non il piano tecnico completo.
+
+Concettualmente può contenere:
+
+```text
+logistics
+  estimated
+    contentSeconds
+    observationSeconds
+    movementSeconds
+    totalSeconds
+  typicalRange?
+    lowerSeconds
+    upperSeconds
+    confidence?
+  routeSummary
+    targetCount
+    legCount
+    museumCount
+    hasInterVenueTransfers
+  warnings[]
+```
+
+Non vengono inclusi nel dettaglio pre-visita `physicalRoute.anchors[]`, path completi delle legs, source layout revision IDs, presentation plan completo, movement baseline, pace factor o altri dettagli runtime/tecnici che appartengono allo start/session plan o alla mappa.
+
+I warning vengono proiettati in forma user-facing mantenendo un `code` stabile per il comportamento client; il componente Vue non deve contenere uno switch esaustivo che traduce internamente tutta la semantica dei warning di routing.
+
+## Read iniziale e command endpoint
+
+L'ingresso in `/visits/:visitId` usa una singola GET della Navigator Visit Detail Projection per costruire lo stato iniziale della view.
+
+Gli update rimangono command endpoint specifici per responsabilità, per esempio presentation preference, navigation preference e adaptive-learning consent. Non viene introdotto un `PUT` generico della Visit Detail.
+
+Quando una preferenza che influenza il piano cambia:
+
+```text
+update preference
+  -> backend success
+  -> reload NavigatorVisitDetailProjection
+  -> nuova LogisticsPreview
+```
+
+Le stime e il routing vengono ricalcolati backend-side; Vue non modifica localmente i tempi per simulare il nuovo piano.
+
+## Consistency snapshot della published revision
+
+Il projector deve fissare all'inizio una singola `publishedRevisionId` e costruire tutte le sotto-projection rispetto a quella stessa revisione.
+
+```text
+published revision R7
+  -> presentation preparation on R7
+  -> navigation preparation for R7
+  -> logistics preview for R7
+  -> response revisionId = R7
+```
+
+Non è accettabile comporre, per esempio, metadata da R7 e logistics da R8 a causa di risoluzioni indipendenti della latest published revision durante la stessa request.
+
+Per supportare questo in modo pulito è approvato il refactoring dei servizi interni di presentation/logistics affinché possano ricevere una source revision/context già risolta, invece di ricaricare sempre autonomamente `Visit.publishedRevisionId`. Il refactoring deve essere riusabile anche da `startSession()` e non introdurre adapter artificiosi.
+
+## Authorization dei boundary di preparazione
+
+Con l'introduzione dell'execution access, la protezione non si limita a Library, Visit Detail e `startSession()`.
+
+Anche i boundary Navigator-specifici che leggono o modificano dati di preparazione legati a una Visit devono riusare `VisitExecutionAccessService`, inclusi almeno concettualmente:
+
+- GET/PUT presentation preference della Visit;
+- GET/PUT navigation preference della Visit;
+- logistics plan/preview;
+- altri futuri endpoint Navigator che espongono preparazione personalizzata della Visit.
+
+Conoscere un `visitId` non deve permettere a un utente privo di entitlement/ownership di interrogare dati personalizzati o preparare indirettamente una Visit non eseguibile.
+
+`startSession()` non si fida di una precedente Visit Detail autorizzata: rivalida sempre lifecycle, published revision valida ed execution access al momento dell'operazione.
 
 # Runtime backend necessario
 
@@ -703,7 +921,8 @@ Non sono ancora fissati definitivamente:
 - dettagli di implementazione del refactoring `currentEntryIndex` / `executedThroughEntryIndex`;
 - schema Mongo/API definitivo di `VisitEntitlement` e dettagli operativi di grant/revoke;
 - dominio commerciale Marketplace (pricing/licensing, Offer/Acquisition/Purchase/Sale o equivalenti);
-- forma TypeScript/JSON definitiva di `VisitLibraryProjection` e Navigator Visit Detail Projection;
+- forma TypeScript/JSON definitiva di `VisitLibraryProjection`;
+- nomi finali dei campi e schema TypeScript/JSON definitivo della `NavigatorVisitDetailProjection`, senza riaprire la semantica e i boundary approvati;
 - schema esatto di `GenerationOptionsProjection`;
 - forma esatta del servizio/API di materializzazione `GeneratedVisitPlan -> Visit/VisitRevision`;
 - forma esatta di `VisitShareLink`, share token e relativa API;
