@@ -195,6 +195,8 @@ Non si creano preventivamente store per speech/TTS/camera/GPS. Si parte da capab
 
 `runtimeStore` installa snapshot e applica RuntimeUpdate versionati, rilevando gap/resync; non contiene business logic delle Action. Gli store non si orchestrano direttamente: l'orchestrazione passa dall'application layer.
 
+Non viene introdotto inizialmente un `libraryStore`: la Library può vivere nello stato route/application finché non emerge un reale bisogno di condivisione o caching globale.
+
 # Routing del Navigator
 
 Modello approvato: **routing per lifecycle + VisitShellView per runtime attivo**.
@@ -237,18 +239,14 @@ La landing operativa è `LibraryView`, non una copia del Marketplace.
 La Library mostra per il museo configurato:
 
 - sessioni riprendibili;
-- Visit realmente eseguibili dall'utente tramite ownership/entitlement/accesso;
+- Visit realmente eseguibili dall'utente;
 - visite personali utilizzabili;
 - accesso alla generazione;
 - azione per aprire il Marketplace.
 
 La Library è personale, quindi autenticazione è un gate normale.
 
-Il backend deve introdurre un contratto autorevole di entitlement/accesso e una Library projection/read API dedicata. `GET /visits/mine` rimane un contratto editoriale per visite gestibili e non viene riusato impropriamente come Library commerciale.
-
 Un `GeneratedVisitPlan` non entra nella Library finché non viene materializzato come Visit. Una sua sessione attiva può invece comparire fra le sessioni riprendibili.
-
-Il Navigator non determina localmente cosa è acquistato. Library visibility è UX; l'autorizzazione backend resta obbligatoria anche su accesso diretto a `/visits/:visitId`.
 
 ## Marketplace separato
 
@@ -264,9 +262,164 @@ Marketplace/Editor
 
 I link di condivisione `unlisted` vengono risolti dal Marketplace: lì l'utente scopre la visita e, se necessario, acquisisce l'entitlement; solo dopo la Visit entra nella Library.
 
+# Visit entitlement e diritto di esecuzione
+
+È approvato un modello backend separato per il diritto corrente di esecuzione di una Visit.
+
+## VisitEntitlement
+
+`VisitEntitlement` è un'entità distinta da `User`, `Visit` e dal futuro storico commerciale.
+
+Non viene inizialmente generalizzata in un'entità polimorfica Item/Visit: il dominio commerciale degli Item verrà progettato separatamente prima di decidere se una generalizzazione sia realmente corretta.
+
+Struttura concettuale minima:
+
+```text
+VisitEntitlement
+  userId
+  visitId
+
+  acquisitionType
+    purchase
+    free_acquisition
+    grant
+
+  status
+    active
+    revoked
+
+  acquiredAt
+  revokedAt?
+  revokedBy?
+```
+
+La relazione `userId + visitId` è unica dal punto di vista del diritto corrente: non devono esistere più entitlement concorrenti attivi per la stessa coppia.
+
+`VisitEntitlement` rappresenta **il diritto corrente**, non la transazione economica. Non contiene prezzo, currency, license snapshot, payment data, statistiche di vendita o storico economico.
+
+Il futuro dominio Marketplace potrà avere Offer/Acquisition/Purchase/Sale o equivalenti; una acquisizione riuscita concede o aggiorna il relativo VisitEntitlement.
+
+Anche una Visit gratuita entra nella Library tramite acquisizione esplicita (`free_acquisition`): essere gratuita non significa comparire automaticamente nella Library di tutti.
+
+## Ownership vs entitlement
+
+Una community Visit creata dall'utente, comprese le visite generate e materializzate, è eseguibile per **ownership** tramite `Visit.createdBy`; non viene creato un entitlement artificiale al proprietario.
+
+I permessi editoriali museali su Visit official non producono automaticamente un diritto personale di esecuzione e non riempiono la Library dell'operatore. Un eventuale preview editoriale nel Navigator sarà un workflow distinto da progettare se necessario.
+
+Quindi almeno due basi normali di accesso sono:
+
+```text
+ownership
+entitlement
+```
+
+## VisitExecutionAccessService
+
+È approvato un unico servizio backend autorevole, concettualmente `VisitExecutionAccessService` / `resolveVisitExecutionAccess({ userId, visitId })`, che determina se una Visit può essere eseguita e su quale base.
+
+Questo servizio deve essere riusato da:
+
+- Library projection;
+- Navigator Visit Detail;
+- `startSession()`;
+- futuri boundary che richiedono il diritto di esecuzione.
+
+La Library non è un controllo di sicurezza sufficiente: conoscere un `visitId` non deve consentire di bypassare l'acquisto o l'accesso.
+
+`startSession()` deve quindi verificare almeno:
+
+```text
+Visit active?
+publishedRevisionId presente?
+execution access consentito?
+```
+
+prima di costruire snapshot/piano/sessione.
+
+## Visibility e entitlement
+
+Visibility e diritto di esecuzione cooperano ma rimangono concetti distinti.
+
+- Il creatore di una community Visit può eseguire la propria Visit `public`, `unlisted` o `private`.
+- Un entitlement attivo permette l'esecuzione di Visit `public` o `unlisted`.
+- Un entitlement non aggira `private`: una Visit private rimane eseguibile solo dal proprietario/gestori autorizzati dal dominio.
+
+È vietato il normale passaggio di una Visit a `private` quando esistono entitlement esterni attivi, perché ciò revocherebbe implicitamente diritti acquisiti. Il backend deve rifiutare questo cambio, per esempio con `409`; un eventuale ritiro commerciale con revoche/rimborsi richiederà un workflow esplicito futuro.
+
+Il passaggio `public -> unlisted` è invece compatibile con entitlement esistenti: gli utenti autorizzati continuano a eseguire la Visit, che semplicemente non compare più nei listing pubblici.
+
+Il passaggio `unlisted -> private` revoca atomicamente gli share link attivi. Gli share link non sono entitlement economici e possono quindi essere invalidati insieme al cambio di visibility.
+
+## Entitlement e revisioni
+
+L'entitlement è associato alla **Visit stabile** (`visitId`), non a una specifica `VisitRevision`.
+
+Una nuova published revision della stessa Visit non richiede un nuovo acquisto. Gli utenti autorizzati continuano a ricevere la published revision corrente, mentre eventuali working draft restano invisibili all'esecuzione.
+
+## Lifecycle e hard delete
+
+Solo Visit `active` con una published revision valida sono eseguibili e possono entrare nella Library.
+
+Una Visit `trashed` non è eseguibile anche se esiste un entitlement attivo. Se viene ripristinata, lo stesso entitlement può tornare applicabile.
+
+L'hard delete della Visit deve eliminare gli entitlement correnti collegati alla Visit. Un futuro storico commerciale non deve essere confuso con l'entitlement corrente e potrà avere regole di conservazione differenti.
+
+# VisitLibraryProjection
+
+Il Navigator non riceve `Visit + VisitRevision + VisitEntitlement` grezzi. Il backend espone una projection minima per il museo configurato.
+
+Forma concettuale:
+
+```text
+VisitLibraryProjection
+  museumId
+  visits[]
+
+VisitLibraryEntry
+  visitId
+  revisionId
+  title
+  description?
+  kind
+  visibility
+  museumIds[]
+  estimatedTotalSeconds?
+  access
+    basis: ownership | entitlement
+    acquisitionType?: purchase | free_acquisition | grant
+```
+
+I nomi esatti dei DTO rimangono da fissare, ma la semantica è approvata.
+
+La projection non contiene content entries complete, VisitRevision grezza, physical route, vocabulary, layout, preferenze utente, logistics plan personalizzato, prezzo, transaction history, entitlement document completo, working revision o draft.
+
+La Library risponde a “quali Visit posso aprire/eseguire e quale riepilogo devo mostrarne?”, non restituisce l'intero dominio.
+
+Il filtro del museo usa la published revision e deve supportare Visit multi-museo; non si basa semplicemente su `ownerMuseumId`.
+
+API concettuale approvata:
+
+```text
+GET /users/me/visit-library?museumId=:museumId
+```
+
+`GET /visits/mine` rimane invece il contratto Marketplace/Editor per le Visit **editorialmente gestibili** e non viene riusato per il Navigator.
+
+Le sessioni riprendibili rimangono un contratto separato dalla VisitLibraryProjection. L'application layer della Library coordina in parallelo:
+
+```text
+VisitLibraryRepository
+SessionRepository.listResumable()
+```
+
+così una failure di una sezione non deve necessariamente bloccare l'altra.
+
 # VisitDetail e preparazione
 
 `VisitDetailView` è operativamente accessibile per Visit che il backend riconosce come eseguibili dall'utente.
+
+Il Navigator non deve dipendere direttamente dal DTO editoriale/pubblico grezzo `GET /visits/:visitId`. È approvata una futura **Navigator Visit Detail Projection autorizzata**, che riusa lo stesso VisitExecutionAccessService della Library e di `startSession()`.
 
 La preparazione rimane leggera e usa progressive disclosure; non esiste per ora `/start` separato.
 
@@ -548,10 +701,13 @@ Non sono ancora fissati definitivamente:
 - DTO/API esatti dell'Action Gateway, NavigatorRuntimeState, completion summary e session discovery;
 - schema esatto del file di configurazione museo e della relativa validazione/bootstrap;
 - dettagli di implementazione del refactoring `currentEntryIndex` / `executedThroughEntryIndex`;
-- schema definitivo di entitlement/acquisto, pricing/licensing e relativa Library API;
+- schema Mongo/API definitivo di `VisitEntitlement` e dettagli operativi di grant/revoke;
+- dominio commerciale Marketplace (pricing/licensing, Offer/Acquisition/Purchase/Sale o equivalenti);
+- forma TypeScript/JSON definitiva di `VisitLibraryProjection` e Navigator Visit Detail Projection;
 - schema esatto di `GenerationOptionsProjection`;
 - forma esatta del servizio/API di materializzazione `GeneratedVisitPlan -> Visit/VisitRevision`;
 - forma esatta di `VisitShareLink`, share token e relativa API;
-- eventuale futura ACL nominativa per le Visit unlisted.
+- eventuale futura ACL nominativa per le Visit unlisted;
+- workflow esplicito futuro per ritiro commerciale/revoca/rimborso quando una Visit possiede entitlement esterni.
 
 Questi punti devono essere progettati e approvati prima dell'implementazione corrispondente.
