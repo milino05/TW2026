@@ -51,14 +51,15 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     ]);
 
     const venue = await createVenue({ payload: { name: "Venue test", ownerOrganizationId: organization._id }, actorUserId: user._id });
-    const targetA = await createVenueTarget({ venueId: venue._id, payload: { subjectId: subjectA._id, label: "Opera A in sala" }, actorUserId: user._id });
-    const targetB = await createVenueTarget({ venueId: venue._id, payload: { subjectId: subjectB._id, label: "Opera B in sala" }, actorUserId: user._id });
+    const venueId = venue.id;
+    const targetA = await createVenueTarget({ venueId, payload: { subjectId: subjectA._id, label: "Opera A in sala" }, actorUserId: user._id });
+    const targetB = await createVenueTarget({ venueId, payload: { subjectId: subjectB._id, label: "Opera B in sala" }, actorUserId: user._id });
 
     const placeA = new mongoose.Types.ObjectId();
     const placeB = new mongoose.Types.ObjectId();
-    await ensureWorkingVenueRelease({ venueId: venue._id, actorUserId: user._id });
+    await ensureWorkingVenueRelease({ venueId, actorUserId: user._id });
     await updateWorkingVenueRelease({
-      venueId: venue._id,
+      venueId,
       actorUserId: user._id,
       payload: {
         targetBindings: [
@@ -84,34 +85,35 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
       },
     });
 
-    const checked = await checkVenueReleaseConsistency({ venueId: venue._id, actorUserId: user._id });
+    const checked = await checkVenueReleaseConsistency({ venueId, actorUserId: user._id });
     assert.equal(checked.release.integrity.status, "valid");
-    const published = await publishVenueRelease({ venueId: venue._id, actorUserId: user._id });
+    const published = await publishVenueRelease({ venueId, actorUserId: user._id });
     assert.equal(published.release.status, "published");
     assert.equal(published.layout.status, "published");
 
-    const publicState = await getVenuePhysicalState({ venueId: venue._id, view: "published" });
+    const publicState = await getVenuePhysicalState({ venueId, view: "published" });
+    assert.equal(publicState.venue.workingReleaseId, undefined);
     assert.equal(publicState.release.targetBindings.length, 2);
     assert.equal(publicState.release.targetBindings[0].recognitionMedia[0].url, "https://example.test/a.jpg");
-    const publicTargets = await listVenueTargets({ venueId: venue._id });
+    const publicTargets = await listVenueTargets({ venueId });
     assert.equal(publicTargets.length, 2);
 
     const route = routeBetweenVenueTargets({ layoutRevision: publicState.layout, fromVenueTargetId: targetA._id, toVenueTargetId: targetB._id });
     assert.equal(route.reachable, true);
     assert.equal(route.distanceMeters, 12);
 
-    const nextWorking = await ensureWorkingVenueRelease({ venueId: venue._id, actorUserId: user._id });
+    const nextWorking = await ensureWorkingVenueRelease({ venueId, actorUserId: user._id });
     assert.equal(nextWorking.release.version, 2);
     const movedPlaces = nextWorking.layout.places.map((place) => ({
       ...(place.toObject ? place.toObject() : place),
       position: String(place._id) === String(placeA) ? { x: 0.45, y: 0.45 } : place.position,
     }));
-    await updateWorkingVenueRelease({ venueId: venue._id, actorUserId: user._id, payload: { layout: { places: movedPlaces } } });
+    await updateWorkingVenueRelease({ venueId, actorUserId: user._id, payload: { layout: { places: movedPlaces } } });
 
-    const stillPublished = await getVenuePhysicalState({ venueId: venue._id, view: "published" });
+    const stillPublished = await getVenuePhysicalState({ venueId, view: "published" });
     const publishedPlaceA = stillPublished.layout.places.find((place) => String(place._id) === String(placeA));
     assert.equal(publishedPlaceA.position.x, 0.1);
-    const workingState = await getVenuePhysicalState({ venueId: venue._id, view: "working", actorUserId: user._id });
+    const workingState = await getVenuePhysicalState({ venueId, view: "working", actorUserId: user._id });
     const workingPlaceA = workingState.layout.places.find((place) => String(place._id) === String(placeA));
     assert.equal(workingPlaceA.position.x, 0.45);
   });
