@@ -100,5 +100,11 @@ rejectFields('models/venueTargetObservationProfile.model.js', ['museumId', 'item
 rejectFields('models/generatedVisitPlanV2.model.js', [
   'museumId', 'sourceVocabularyRevisionId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey',
 ], 'GeneratedVisitPlan v2');
+rejectFields('models/visitSessionV2.model.js', [
+  'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision',
+], 'VisitSession v2');
+rejectFields('models/sessionPlanRevisionV2.model.js', [
+  'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision', 'sourceVocabularyRevisionIds',
+], 'SessionPlanRevision v2');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
