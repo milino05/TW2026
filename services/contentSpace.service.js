@@ -4,6 +4,7 @@ const ContentSpaceMembership = require("../models/contentSpaceMembership.model")
 const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
+const { getActiveUserOrFail } = require("./userAuthorization.service");
 const { normalizeContentSpacePayload, validateContentSpacePayload } = require("./validation/contentSpace.validation");
 
 async function findContentSpaceOrFail({ contentSpaceId, includeTrashed = false }) {
@@ -57,17 +58,32 @@ async function updateContentSpace({ contentSpaceId, payload, actorUserId }) {
   return contentSpace;
 }
 
-async function listContentSpaces({ ownerType = null, ownerId = null } = {}) {
-  if (ownerType && !["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400);
-  if (ownerId && !mongoose.isValidObjectId(ownerId)) throw new AppError("ownerId non valido", 400);
+async function listContentSpaces({ actorUserId, ownerType = null, ownerId = null } = {}) {
+  const user = await getActiveUserOrFail(actorUserId);
+  if ((ownerType && !ownerId) || (!ownerType && ownerId)) {
+    throw new AppError("ownerType e ownerId devono essere specificati insieme", 400);
+  }
   const query = { lifecycleStatus: "active" };
-  if (ownerType) query.ownerType = ownerType;
-  if (ownerId) query.ownerId = ownerId;
+  if (ownerType && ownerId) {
+    if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400);
+    if (!mongoose.isValidObjectId(ownerId)) throw new AppError("ownerId non valido", 400);
+    await assertCanActForOwner({ actorUserId, ownerType, ownerId, minimumOrganizationRole: "operator" });
+    query.ownerType = ownerType;
+    query.ownerId = ownerId;
+  } else {
+    const organizationIds = (user.organizationMemberships || []).map((membership) => membership.organizationId);
+    query.$or = [
+      { ownerType: "user", ownerId: user._id },
+      { ownerType: "organization", ownerId: { $in: organizationIds } },
+    ];
+  }
   return ContentSpace.find(query).sort({ name: 1, createdAt: 1 });
 }
 
-async function getContentSpace({ contentSpaceId }) {
-  return findContentSpaceOrFail({ contentSpaceId });
+async function getContentSpace({ contentSpaceId, actorUserId }) {
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId);
+  return contentSpace;
 }
 
 async function addItemMembership({ contentSpaceId, itemId, actorUserId }) {
@@ -92,6 +108,7 @@ async function removeItemMembership({ contentSpaceId, itemId, actorUserId }) {
 }
 
 async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId, actorUserId }) {
+  if (!mongoose.isValidObjectId(toContentSpaceId)) throw new AppError("targetContentSpaceId non valido", 400);
   if (String(fromContentSpaceId) === String(toContentSpaceId)) {
     throw new AppError("ContentSpace sorgente e destinazione devono essere diversi", 400);
   }
@@ -118,8 +135,9 @@ async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId
   return targetMembership;
 }
 
-async function listItemMemberships({ contentSpaceId, page = 1, limit = 50 }) {
-  await findContentSpaceOrFail({ contentSpaceId });
+async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limit = 50 }) {
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId);
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const query = { contentSpaceId };
