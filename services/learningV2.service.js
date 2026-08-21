@@ -173,16 +173,17 @@ async function recordVenueTargetObservation({ userId, venueTargetId, observedSec
   if (effectiveReliability < policy.learning.minimumReliability) {
     return { accepted: false, profile: await VenueTargetObservationProfile.findOne({ venueTargetId }) };
   }
+  const metricType = "venue_target_observation_seconds";
   const scopeKey = `venue_target:${String(venueTargetId)}`;
   await updateContributor({
     userId,
-    metricType: "venue_target_observation_seconds_v2",
+    metricType,
     scopeKey,
     value: Number(observedSeconds),
     sampleCount: 1,
     reliability: effectiveReliability,
   });
-  const summary = await aggregate("venue_target_observation_seconds_v2", scopeKey);
+  const summary = await aggregate(metricType, scopeKey);
   if (!Number.isFinite(summary.value)) return { accepted: false, profile: null };
   const observationFactor = clamp(summary.value / policy.coldStart.observationSeconds, 0.1, 10);
   const profile = await VenueTargetObservationProfile.findOneAndUpdate(
