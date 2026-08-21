@@ -14,6 +14,7 @@ const PresentationOverrideSchema = new Schema({
   durationTypeDefinitionId: { type: String, required: true, trim: true },
   languageLevelDefinitionId: { type: String, required: true, trim: true },
   locale: { type: String, required: true, trim: true },
+  estimatedContentSeconds: { type: Number, min: 0, required: true },
   updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
