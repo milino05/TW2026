@@ -87,5 +87,15 @@ rejectFields('models/visitRevisionV2.model.js', [
   'museumId', 'museumIds', 'spatialMode', 'defaultPresentationPolicy', 'durationKey', 'languageLevelKey',
   'fromTargetEntryId', 'toTargetEntryId', 'layoutRevisionId', 'plannedPath', 'communityNote',
 ], 'VisitRevision v2 scaffold');
+rejectFields('models/userSubjectAffinity.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserSubjectAffinity v2');
+rejectFields('models/userSubjectKnowledge.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserSubjectKnowledge v2');
+rejectFields('models/userItemEditionAffinity.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserItemEditionAffinity v2');
+rejectFields('models/userContentExposureV2.model.js', [
+  'museumId', 'itemId', 'variantKey', 'durationKey', 'languageLevelKey', 'semanticFeatureKeys', 'presentationAspectKeys',
+], 'UserContentExposure v2');
+rejectFields('models/userNamespaceFeatureAffinity.model.js', [
+  'museumId', 'itemId', 'itemType', 'featureKey', 'relationTypeKey', 'key',
+], 'UserNamespaceFeatureAffinity v2');
+rejectFields('models/venueTargetObservationProfile.model.js', ['museumId', 'itemId', 'itemType'], 'VenueTargetObservationProfile v2');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
