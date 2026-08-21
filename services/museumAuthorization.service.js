@@ -1,5 +1,5 @@
-const User = require("../models/user");
 const AppError = require("../utils/AppError");
+const { getActiveUserOrFail } = require("./userAuthorization.service");
 
 const ROLE_RANK = {
   operator: 1,
@@ -8,16 +8,6 @@ const ROLE_RANK = {
 
 function sameId(a, b) {
   return String(a) === String(b);
-}
-
-async function getActiveUserOrFail(userId) {
-  const user = await User.findOne({ _id: userId, status: "active" });
-
-  if (!user) {
-    throw new AppError("Utente non autorizzato", 403);
-  }
-
-  return user;
 }
 
 function getMuseumMembership(user, museumId) {
