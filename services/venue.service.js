@@ -7,6 +7,21 @@ const { assertOrganizationRole } = require("./organizationAuthorization.service"
 const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
 const { normalizeVenuePayload, validateVenuePayload } = require("./validation/venue.validation");
 
+function projectVenue(venue, { includeWorking = false } = {}) {
+  const source = venue?.toObject ? venue.toObject() : venue || {};
+  const projected = {
+    id: source._id,
+    name: source.name,
+    description: source.description || "",
+    ownerOrganizationId: source.ownerOrganizationId,
+    primaryEditorialContextId: source.primaryEditorialContextId || null,
+    publishedReleaseId: source.publishedReleaseId || null,
+    lifecycleStatus: source.lifecycleStatus,
+  };
+  if (includeWorking) projected.workingReleaseId = source.workingReleaseId || null;
+  return projected;
+}
+
 function validatedVenuePayload(rawPayload, { creating }) {
   const normalized = normalizeVenuePayload(rawPayload || {});
   const issues = validateVenuePayload({ payload: normalized, rawPayload: rawPayload || {}, creating });
@@ -26,13 +41,14 @@ async function createVenue({ payload, actorUserId }) {
   if (!organization) throw new AppError("Organization non trovata", 404);
   await assertOrganizationRole({ userId: actorUserId, organizationId: organization._id, minimumRole: "operator" });
   await assertEditorialContextExists(normalized.primaryEditorialContextId);
-  return Venue.create({
+  const venue = await Venue.create({
     name: normalized.name,
     description: normalized.description || "",
     ownerOrganizationId: organization._id,
     primaryEditorialContextId: normalized.primaryEditorialContextId || null,
     createdBy: actorUserId,
   });
+  return projectVenue(venue, { includeWorking: true });
 }
 
 async function updateVenue({ venueId, payload, actorUserId }) {
@@ -43,18 +59,20 @@ async function updateVenue({ venueId, payload, actorUserId }) {
   if (Object.prototype.hasOwnProperty.call(normalized, "description")) venue.description = normalized.description || "";
   if (Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")) venue.primaryEditorialContextId = normalized.primaryEditorialContextId || null;
   await venue.save();
-  return venue;
+  return projectVenue(venue, { includeWorking: true });
 }
 
 async function listVenues({ ownerOrganizationId = null } = {}) {
   if (ownerOrganizationId && !mongoose.isValidObjectId(ownerOrganizationId)) throw new AppError("ownerOrganizationId non valido", 400);
   const query = { lifecycleStatus: "active" };
   if (ownerOrganizationId) query.ownerOrganizationId = ownerOrganizationId;
-  return Venue.find(query).sort({ name: 1, createdAt: 1 }).lean();
+  const venues = await Venue.find(query).sort({ name: 1, createdAt: 1 }).lean();
+  return venues.map((venue) => projectVenue(venue));
 }
 
 async function getVenue({ venueId }) {
-  return findVenueOrFail({ venueId });
+  const venue = await findVenueOrFail({ venueId });
+  return projectVenue(venue);
 }
 
-module.exports = { createVenue, updateVenue, listVenues, getVenue };
+module.exports = { projectVenue, createVenue, updateVenue, listVenues, getVenue };
