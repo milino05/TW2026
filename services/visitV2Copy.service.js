@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-function plain(value) { return value?.toObject ? value.toObject() : structuredClone(value || {}); }
+function plain(value) { return value?.toObject ? value.toObject() : (value || {}); }
 function oid() { return new mongoose.Types.ObjectId(); }
 function id(value) { return String(value?._id || value || ""); }
 
