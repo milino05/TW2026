@@ -67,7 +67,7 @@ for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.sche
   }
 }
 for (const v2File of ['models/itemV2.model.js', 'models/itemEdition.model.js', 'models/itemRevisionV2.model.js']) {
-  rejectFields(v2File, ['museumId', 'itemType'], 'Item v2 scaffold');
+  rejectFields(v2File, ['museumId', 'itemType', 'recognitionImage'], 'Item v2 scaffold');
 }
 rejectFields('models/contentSpace.model.js', ['namespaceId', 'venueId', 'parentContentSpaceId'], 'ContentSpace');
 rejectFields('models/contentSpaceMembership.model.js', ['namespaceId', 'ownerType', 'ownerId'], 'ContentSpaceMembership');
@@ -78,5 +78,9 @@ rejectFields('models/semanticGraphRevision.model.js', ['museumId', 'itemId', 'so
 rejectFields('models/graphSubjectBinding.model.js', ['itemId', 'itemType', 'museumId'], 'GraphSubjectBinding');
 rejectFields('models/semanticEdgeV2.model.js', ['museumId', 'sourceItemId', 'sourceItemRevisionId', 'targetItemId', 'relationTypeKey'], 'SemanticEdge v2');
 rejectFields('models/editorialRelease.model.js', ['ownerType', 'ownerId', 'venueId', 'visibility', 'discoverability'], 'EditorialRelease');
+rejectFields('models/venue.model.js', ['museumId', 'contentSpaceId', 'namespaceId', 'itemId'], 'Venue');
+rejectFields('models/venueTarget.model.js', ['museumId', 'itemId', 'itemRevisionId', 'contentSpaceId'], 'VenueTarget');
+rejectFields('models/layoutRevision.model.js', ['museumId', 'itemPlacements', 'itemId'], 'LayoutRevision v2');
+rejectFields('models/venueRelease.model.js', ['museumId', 'itemId', 'itemRevisionId', 'namespaceId', 'contentSpaceId'], 'VenueRelease');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
