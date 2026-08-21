@@ -6,24 +6,282 @@ const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
+const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
+const { assertCanForkItemEdition } = require("./itemUsageAuthorization.service");
 const { markRevisionEdited, markPublished } = require("./revisionWorkflow.service");
 const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
-const { normalizeRevisionPayload, validateCreateItemPayload, validateCreateEditionPayload, validateRevisionPayloadShape } = require("./validation/itemV2.validation");
+const {
+  normalizeRevisionPayload,
+  validateCreateItemPayload,
+  validateCreateEditionPayload,
+  validateRevisionPayloadShape,
+} = require("./validation/itemV2.validation");
+
 function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
-function revisionPayload(revision) { const source = revision?.toObject ? revision.toObject() : revision || {}; const fields = ["label", "relatedSubjectIds", "tags", "authorCredits", "metadata", "illustrativeMedia", "selectionSignals", "presentationVariants", "defaultPresentation", "provenance"]; return Object.fromEntries(fields.map((field) => [field, source[field]])); }
-async function findItemOrFail(itemId, { includeTrashed = false } = {}) { const query = { _id: itemId }; if (!includeTrashed) query.lifecycleStatus = "active"; const item = await ItemV2.findOne(query); if (!item) throw new AppError("Item non trovato", 404); return item; }
-async function assertCanManageItem(item, actorUserId, minimumOrganizationRole = "operator") { return assertCanActForOwner({ actorUserId, ownerType: item.ownerType, ownerId: item.ownerId, minimumOrganizationRole }); }
-async function createItem({ payload, actorUserId }) { const issues = validateCreateItemPayload(payload || {}); if (issues.length) throw new AppError("Payload non valido", 400, issues); await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId }); if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404); return ItemV2.create({ primarySubjectId: payload.primarySubjectId, ownerType: payload.ownerType, ownerId: payload.ownerId, provenance: payload.provenance || { origin: "human" }, createdBy: actorUserId }); }
-async function listItems({ ownerType, ownerId, primarySubjectId, includeTrashed = false } = {}) { const query = {}; if (ownerType) query.ownerType = ownerType; if (ownerId) query.ownerId = ownerId; if (primarySubjectId) query.primarySubjectId = primarySubjectId; if (!includeTrashed) query.lifecycleStatus = "active"; return ItemV2.find(query).sort({ updatedAt: -1 }); }
-async function getItem({ itemId }) { const item = await findItemOrFail(itemId); const editions = await ItemEdition.find({ itemId: item._id }).sort({ createdAt: 1 }); return { item, editions }; }
-async function resolveNamespaceRevision(namespace, requestedRevisionId = null) { const revisionId = requestedRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId; if (!revisionId) throw new AppError("Il Namespace non ha una revisione disponibile", 409); const revision = await NamespaceRevision.findOne({ _id: revisionId, namespaceId: namespace._id }); if (!revision) throw new AppError("NamespaceRevision non trovata", 404); return revision; }
-async function nextVersion(itemEditionId) { const latest = await ItemRevisionV2.findOne({ itemEditionId }).sort({ version: -1 }).select("version").lean(); return (latest?.version || 0) + 1; }
-async function createEdition({ itemId, payload, actorUserId }) { const issues = validateCreateEditionPayload(payload || {}); if (issues.length) throw new AppError("Payload non valido", 400, issues); const item = await findItemOrFail(itemId); await assertCanManageItem(item, actorUserId); const namespace = await Namespace.findOne({ _id: payload.namespaceId, lifecycleStatus: "active" }); if (!namespace) throw new AppError("Namespace non trovato", 404); const namespaceRevision = await resolveNamespaceRevision(namespace, payload.authoredAgainstNamespaceRevisionId); const shapeIssues = validateRevisionPayloadShape(payload.revision || {}, { partial: false }); if (shapeIssues.length) throw new AppError("Payload revisione non valido", 400, shapeIssues); let edition; try { edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: actorUserId }); const revision = await ItemRevisionV2.create({ itemEditionId: edition._id, version: 1, authoredAgainstNamespaceRevisionId: namespaceRevision._id, ...normalizeRevisionPayload(payload.revision), createdBy: actorUserId, updatedBy: actorUserId }); edition.workingRevisionId = revision._id; await edition.save(); return { item, edition, revision }; } catch (error) { if (edition) await edition.deleteOne().catch(() => {}); if (error?.code === 11000) throw new AppError("Esiste gia una ItemEdition per questo Item e Namespace", 409); throw error; } }
-async function getEditionContext(editionId) { const edition = await ItemEdition.findById(editionId); if (!edition) throw new AppError("ItemEdition non trovata", 404); const item = await findItemOrFail(edition.itemId); const namespace = await Namespace.findOne({ _id: edition.namespaceId, lifecycleStatus: "active" }); if (!namespace) throw new AppError("Namespace non disponibile", 409); return { edition, item, namespace }; }
-async function createWorkingFromPublished({ edition, actorUserId }) { if (!edition.publishedRevisionId) throw new AppError("Nessuna revisione pubblicata da clonare", 409); const published = await ItemRevisionV2.findById(edition.publishedRevisionId); if (!published) throw new AppError("Revisione pubblicata non trovata", 409); const presentation = clonePresentationForFork(published); const payload = revisionPayload(published); const revision = await ItemRevisionV2.create({ itemEditionId: edition._id, version: await nextVersion(edition._id), basedOnRevisionId: published._id, authoredAgainstNamespaceRevisionId: published.authoredAgainstNamespaceRevisionId, ...payload, ...presentation, status: "draft", integrity: { status: "needs_review", issues: [] }, review: {}, publication: {}, createdBy: actorUserId, updatedBy: actorUserId }); edition.workingRevisionId = revision._id; await edition.save(); return revision; }
-async function getWorkingRevision(edition, actorUserId) { if (edition.workingRevisionId) { const revision = await ItemRevisionV2.findById(edition.workingRevisionId); if (!revision) throw new AppError("Revisione di lavoro non trovata", 409); return revision; } return createWorkingFromPublished({ edition, actorUserId }); }
-async function updateEdition({ editionId, payload, actorUserId }) { const { edition, item } = await getEditionContext(editionId); await assertCanManageItem(item, actorUserId); const issues = validateRevisionPayloadShape(payload || {}, { partial: true }); if (issues.length) throw new AppError("Payload revisione non valido", 400, issues); const revision = await getWorkingRevision(edition, actorUserId); try { markRevisionEdited(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } const normalized = normalizeRevisionPayload(payload || {}); for (const [key, value] of Object.entries(normalized)) if (hasOwn(payload, key)) revision[key] = value; revision.updatedBy = actorUserId; await revision.save(); return { item, edition, revision }; }
-async function checkEditionConsistency({ editionId, actorUserId }) { const { edition, item } = await getEditionContext(editionId); await assertCanManageItem(item, actorUserId); const revision = await getWorkingRevision(edition, actorUserId); const namespaceRevision = await NamespaceRevision.findOne({ _id: revision.authoredAgainstNamespaceRevisionId, namespaceId: edition.namespaceId }); if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non valida", 409); const issues = validatePresentationAgainstNamespace(revision, namespaceRevision); revision.integrity = { status: issues.length ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: actorUserId }; await revision.save(); return { revision, issues }; }
-async function publishEdition({ editionId, actorUserId }) { const { edition, item } = await getEditionContext(editionId); await assertCanManageItem(item, actorUserId, "manager"); const revision = await getWorkingRevision(edition, actorUserId); if (revision.integrity?.status !== "valid") throw new AppError("La revisione deve superare il controllo di consistenza", 409); try { markPublished(revision, actorUserId); } catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); } const previousId = edition.publishedRevisionId; await revision.save(); if (previousId && String(previousId) !== String(revision._id)) await ItemRevisionV2.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } }); edition.publishedRevisionId = revision._id; edition.workingRevisionId = null; await edition.save(); return { item, edition, revision }; }
-async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, actorUserId }) { await assertCanActForOwner({ actorUserId, ownerType, ownerId }); const sourceItem = await findItemOrFail(sourceItemId); const sourceEdition = await ItemEdition.findOne({ _id: sourceEditionId, itemId: sourceItem._id }); if (!sourceEdition || !sourceEdition.publishedRevisionId) throw new AppError("La Edition sorgente deve avere una revisione pubblicata", 409); const sourceRevision = await ItemRevisionV2.findById(sourceEdition.publishedRevisionId); if (!sourceRevision) throw new AppError("Revisione sorgente non trovata", 409); const forkedItem = await ItemV2.create({ primarySubjectId: sourceItem.primarySubjectId, ownerType, ownerId, provenance: { origin: "forked", sourceItemId: sourceItem._id }, createdBy: actorUserId }); let forkedEdition; try { forkedEdition = await ItemEdition.create({ itemId: forkedItem._id, namespaceId: sourceEdition.namespaceId, createdBy: actorUserId }); const presentation = clonePresentationForFork(sourceRevision); const payload = revisionPayload(sourceRevision); const forkedRevision = await ItemRevisionV2.create({ itemEditionId: forkedEdition._id, version: 1, authoredAgainstNamespaceRevisionId: sourceRevision.authoredAgainstNamespaceRevisionId, ...payload, ...presentation, provenance: { origin: "forked", sourceRevisionId: sourceRevision._id }, status: "draft", integrity: { status: "needs_review", issues: [] }, review: {}, publication: {}, createdBy: actorUserId, updatedBy: actorUserId }); forkedEdition.workingRevisionId = forkedRevision._id; await forkedEdition.save(); return { item: forkedItem, edition: forkedEdition, revision: forkedRevision }; } catch (error) { if (forkedEdition) await forkedEdition.deleteOne().catch(() => {}); await forkedItem.deleteOne().catch(() => {}); throw error; } }
-module.exports = { createItem, listItems, getItem, createEdition, updateEdition, checkEditionConsistency, publishEdition, forkItem };
+function revisionPayload(revision) {
+  const source = revision?.toObject ? revision.toObject() : revision || {};
+  const fields = [
+    "label", "relatedSubjectIds", "tags", "authorCredits", "metadata", "illustrativeMedia",
+    "selectionSignals", "presentationVariants", "defaultPresentation", "provenance",
+  ];
+  return Object.fromEntries(fields.map((field) => [field, source[field]]));
+}
+
+async function findItemOrFail(itemId, { includeTrashed = false } = {}) {
+  const query = { _id: itemId };
+  if (!includeTrashed) query.lifecycleStatus = "active";
+  const item = await ItemV2.findOne(query);
+  if (!item) throw new AppError("Item non trovato", 404);
+  return item;
+}
+
+async function assertCanManageItem(item, actorUserId, minimumOrganizationRole = "operator") {
+  return assertCanActForOwner({
+    actorUserId,
+    ownerType: item.ownerType,
+    ownerId: item.ownerId,
+    minimumOrganizationRole,
+  });
+}
+
+async function createItem({ payload, actorUserId }) {
+  const issues = validateCreateItemPayload(payload || {});
+  if (issues.length) throw new AppError("Payload non valido", 400, issues);
+  await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId });
+  if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404);
+  return ItemV2.create({
+    primarySubjectId: payload.primarySubjectId,
+    ownerType: payload.ownerType,
+    ownerId: payload.ownerId,
+    provenance: payload.provenance || { origin: "human" },
+    createdBy: actorUserId,
+  });
+}
+
+async function listItems({ ownerType, ownerId, primarySubjectId, includeTrashed = false } = {}) {
+  const query = {};
+  if (ownerType) query.ownerType = ownerType;
+  if (ownerId) query.ownerId = ownerId;
+  if (primarySubjectId) query.primarySubjectId = primarySubjectId;
+  if (!includeTrashed) query.lifecycleStatus = "active";
+  return ItemV2.find(query).sort({ updatedAt: -1 });
+}
+
+async function getItem({ itemId }) {
+  const item = await findItemOrFail(itemId);
+  const editions = await ItemEdition.find({ itemId: item._id }).sort({ createdAt: 1 });
+  return { item, editions };
+}
+
+async function resolveNamespaceRevision(namespace, requestedRevisionId = null) {
+  const revisionId = requestedRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
+  if (!revisionId) throw new AppError("Il Namespace non ha una revisione disponibile", 409);
+  const revision = await NamespaceRevision.findOne({ _id: revisionId, namespaceId: namespace._id });
+  if (!revision) throw new AppError("NamespaceRevision non trovata", 404);
+  return revision;
+}
+
+async function nextVersion(itemEditionId) {
+  const latest = await ItemRevisionV2.findOne({ itemEditionId }).sort({ version: -1 }).select("version").lean();
+  return (latest?.version || 0) + 1;
+}
+
+async function createEdition({ itemId, payload, actorUserId }) {
+  const issues = validateCreateEditionPayload(payload || {});
+  if (issues.length) throw new AppError("Payload non valido", 400, issues);
+  const item = await findItemOrFail(itemId);
+  await assertCanManageItem(item, actorUserId);
+  const namespace = await Namespace.findOne({ _id: payload.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace non trovato", 404);
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceRevision = await resolveNamespaceRevision(namespace, payload.authoredAgainstNamespaceRevisionId);
+  const shapeIssues = validateRevisionPayloadShape(payload.revision || {}, { partial: false });
+  if (shapeIssues.length) throw new AppError("Payload revisione non valido", 400, shapeIssues);
+  let edition;
+  try {
+    edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: actorUserId });
+    const revision = await ItemRevisionV2.create({
+      itemEditionId: edition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      ...normalizeRevisionPayload(payload.revision),
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    });
+    edition.workingRevisionId = revision._id;
+    await edition.save();
+    return { item, edition, revision };
+  } catch (error) {
+    if (edition) await edition.deleteOne().catch(() => {});
+    if (error?.code === 11000) throw new AppError("Esiste gia una ItemEdition per questo Item e Namespace", 409);
+    throw error;
+  }
+}
+
+async function getEditionContext(editionId) {
+  const edition = await ItemEdition.findById(editionId);
+  if (!edition) throw new AppError("ItemEdition non trovata", 404);
+  const item = await findItemOrFail(edition.itemId);
+  const namespace = await Namespace.findOne({ _id: edition.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace non disponibile", 409);
+  return { edition, item, namespace };
+}
+
+async function createWorkingFromPublished({ edition, actorUserId }) {
+  if (!edition.publishedRevisionId) throw new AppError("Nessuna revisione pubblicata da clonare", 409);
+  const published = await ItemRevisionV2.findById(edition.publishedRevisionId);
+  if (!published) throw new AppError("Revisione pubblicata non trovata", 409);
+  const presentation = clonePresentationForFork(published);
+  const payload = revisionPayload(published);
+  const revision = await ItemRevisionV2.create({
+    itemEditionId: edition._id,
+    version: await nextVersion(edition._id),
+    basedOnRevisionId: published._id,
+    authoredAgainstNamespaceRevisionId: published.authoredAgainstNamespaceRevisionId,
+    ...payload,
+    ...presentation,
+    status: "draft",
+    integrity: { status: "needs_review", issues: [] },
+    review: {},
+    publication: {},
+    createdBy: actorUserId,
+    updatedBy: actorUserId,
+  });
+  edition.workingRevisionId = revision._id;
+  await edition.save();
+  return revision;
+}
+
+async function getWorkingRevision(edition, actorUserId) {
+  if (edition.workingRevisionId) {
+    const revision = await ItemRevisionV2.findById(edition.workingRevisionId);
+    if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
+    return revision;
+  }
+  return createWorkingFromPublished({ edition, actorUserId });
+}
+
+async function updateEdition({ editionId, payload, actorUserId }) {
+  const { edition, item, namespace } = await getEditionContext(editionId);
+  await assertCanManageItem(item, actorUserId);
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const issues = validateRevisionPayloadShape(payload || {}, { partial: true });
+  if (issues.length) throw new AppError("Payload revisione non valido", 400, issues);
+  const revision = await getWorkingRevision(edition, actorUserId);
+  try { markRevisionEdited(revision, actorUserId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  const normalized = normalizeRevisionPayload(payload || {});
+  for (const [key, value] of Object.entries(normalized)) if (hasOwn(payload, key)) revision[key] = value;
+  revision.updatedBy = actorUserId;
+  await revision.save();
+  return { item, edition, revision };
+}
+
+async function checkEditionConsistency({ editionId, actorUserId }) {
+  const { edition, item, namespace } = await getEditionContext(editionId);
+  await assertCanManageItem(item, actorUserId);
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const revision = await getWorkingRevision(edition, actorUserId);
+  const namespaceRevision = await NamespaceRevision.findOne({
+    _id: revision.authoredAgainstNamespaceRevisionId,
+    namespaceId: edition.namespaceId,
+  });
+  if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non valida", 409);
+  const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);
+  revision.integrity = {
+    status: issues.length ? "needs_review" : "valid",
+    issues,
+    checkedAt: new Date(),
+    checkedBy: actorUserId,
+  };
+  await revision.save();
+  return { revision, issues };
+}
+
+async function publishEdition({ editionId, actorUserId }) {
+  const { edition, item, namespace } = await getEditionContext(editionId);
+  await assertCanManageItem(item, actorUserId, "manager");
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const revision = await getWorkingRevision(edition, actorUserId);
+  if (revision.integrity?.status !== "valid") {
+    throw new AppError("La revisione deve superare il controllo di consistenza", 409);
+  }
+  try { markPublished(revision, actorUserId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  const previousId = edition.publishedRevisionId;
+  await revision.save();
+  if (previousId && String(previousId) !== String(revision._id)) {
+    await ItemRevisionV2.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } });
+  }
+  edition.publishedRevisionId = revision._id;
+  edition.workingRevisionId = null;
+  await edition.save();
+  return { item, edition, revision };
+}
+
+async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, actorUserId }) {
+  await assertCanActForOwner({ actorUserId, ownerType, ownerId });
+  const sourceItem = await findItemOrFail(sourceItemId);
+  const sourceEdition = await ItemEdition.findOne({ _id: sourceEditionId, itemId: sourceItem._id });
+  if (!sourceEdition || !sourceEdition.publishedRevisionId) {
+    throw new AppError("La Edition sorgente deve avere una revisione pubblicata", 409);
+  }
+  await assertCanForkItemEdition({ itemEditionId: sourceEdition._id, actorUserId });
+  const namespace = await Namespace.findOne({ _id: sourceEdition.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace della Edition sorgente non disponibile", 409);
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const sourceRevision = await ItemRevisionV2.findById(sourceEdition.publishedRevisionId);
+  if (!sourceRevision) throw new AppError("Revisione sorgente non trovata", 409);
+
+  const forkedItem = await ItemV2.create({
+    primarySubjectId: sourceItem.primarySubjectId,
+    ownerType,
+    ownerId,
+    provenance: { origin: "forked", sourceItemId: sourceItem._id },
+    createdBy: actorUserId,
+  });
+  let forkedEdition;
+  try {
+    forkedEdition = await ItemEdition.create({
+      itemId: forkedItem._id,
+      namespaceId: sourceEdition.namespaceId,
+      createdBy: actorUserId,
+    });
+    const presentation = clonePresentationForFork(sourceRevision);
+    const payload = revisionPayload(sourceRevision);
+    const forkedRevision = await ItemRevisionV2.create({
+      itemEditionId: forkedEdition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: sourceRevision.authoredAgainstNamespaceRevisionId,
+      ...payload,
+      ...presentation,
+      provenance: { origin: "forked", sourceRevisionId: sourceRevision._id },
+      status: "draft",
+      integrity: { status: "needs_review", issues: [] },
+      review: {},
+      publication: {},
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    });
+    forkedEdition.workingRevisionId = forkedRevision._id;
+    await forkedEdition.save();
+    return { item: forkedItem, edition: forkedEdition, revision: forkedRevision };
+  } catch (error) {
+    if (forkedEdition) await forkedEdition.deleteOne().catch(() => {});
+    await forkedItem.deleteOne().catch(() => {});
+    throw error;
+  }
+}
+
+module.exports = {
+  findItemOrFail,
+  assertCanManageItem,
+  createItem,
+  listItems,
+  getItem,
+  createEdition,
+  updateEdition,
+  checkEditionConsistency,
+  publishEdition,
+  forkItem,
+};
