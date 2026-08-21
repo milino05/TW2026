@@ -82,5 +82,10 @@ rejectFields('models/venue.model.js', ['museumId', 'contentSpaceId', 'namespaceI
 rejectFields('models/venueTarget.model.js', ['museumId', 'itemId', 'itemRevisionId', 'contentSpaceId'], 'VenueTarget');
 rejectFields('models/layoutRevision.model.js', ['museumId', 'itemPlacements', 'itemId'], 'LayoutRevision v2');
 rejectFields('models/venueRelease.model.js', ['museumId', 'itemId', 'itemRevisionId', 'namespaceId', 'contentSpaceId'], 'VenueRelease');
+rejectFields('models/visitV2.model.js', ['kind', 'ownerMuseumId', 'museumId', 'visibility', 'discoverability'], 'Visit v2 scaffold');
+rejectFields('models/visitRevisionV2.model.js', [
+  'museumId', 'museumIds', 'spatialMode', 'defaultPresentationPolicy', 'durationKey', 'languageLevelKey',
+  'fromTargetEntryId', 'toTargetEntryId', 'layoutRevisionId', 'plannedPath', 'communityNote',
+], 'VisitRevision v2 scaffold');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
