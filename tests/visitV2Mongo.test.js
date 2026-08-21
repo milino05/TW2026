@@ -1,0 +1,142 @@
+const fs = require("fs");
+const path = require("path");
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const mongoose = require("mongoose");
+
+const baseMongoUri = process.env.MONGO_URI;
+function isolatedMongoUri(uri) {
+  if (!uri) return null;
+  const parsed = new URL(uri);
+  const dbName = parsed.pathname.replace(/^\/+/, "") || "artaround_test";
+  parsed.pathname = `/${dbName}_visit_v2`;
+  return parsed.toString();
+}
+const mongoUri = isolatedMongoUri(baseMongoUri);
+
+function loadAllModels() {
+  const modelsDir = path.join(__dirname, "..", "models");
+  for (const file of fs.readdirSync(modelsDir)) if (file.endsWith(".js")) require(path.join(modelsDir, file));
+}
+
+async function withFreshDatabase(callback) {
+  await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+  try {
+    await mongoose.connection.dropDatabase();
+    return await callback();
+  } finally {
+    await mongoose.connection.dropDatabase().catch(() => {});
+    await mongoose.disconnect();
+  }
+}
+
+test("Visit v2 pins editorial content, references VenueTarget and copies detached", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    loadAllModels();
+    const User = require("../models/user");
+    const Organization = require("../models/organization.model");
+    const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const ItemEdition = require("../models/itemEdition.model");
+    const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const EditorialRelease = require("../models/editorialRelease.model");
+    const Venue = require("../models/venue.model");
+    const VenueTarget = require("../models/venueTarget.model");
+    const LayoutRevision = require("../models/layoutRevision.model");
+    const VenueRelease = require("../models/venueRelease.model");
+    const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const { createVisitV2, updateVisitV2, copyVisitV2 } = require("../services/visitV2.service");
+    const { evaluateVisitV2Consistency, publishVisitV2 } = require("../services/visitV2Publication.service");
+
+    const user = await User.create({ username: "visit-v2-test", passwordHash: "test-hash" });
+    const organization = await Organization.create({ name: "Venue owner", createdBy: user._id });
+    const subject = await Subject.create({ preferredLabel: "Opera", createdBy: user._id });
+
+    const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
+    const edition = await ItemEdition.create({ itemId: item._id, namespaceId: new mongoose.Types.ObjectId(), createdBy: user._id });
+    const itemRevision = await ItemRevisionV2.create({
+      itemEditionId: edition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: new mongoose.Types.ObjectId(),
+      label: "Descrizione pubblicata",
+      authorCredits: ["Autore"],
+      metadata: { license: "CC BY" },
+      presentationVariants: [],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
+      publication: { publishedAt: new Date(), publishedBy: user._id },
+      createdBy: user._id,
+      updatedBy: user._id,
+    });
+    edition.publishedRevisionId = itemRevision._id;
+    await edition.save();
+
+    const editorialRelease = await EditorialRelease.create({
+      editorialContextId: new mongoose.Types.ObjectId(),
+      version: 1,
+      namespaceRevisionId: new mongoose.Types.ObjectId(),
+      graphRevisionId: new mongoose.Types.ObjectId(),
+      itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
+      releasedAt: new Date(),
+      releasedBy: user._id,
+    });
+
+    const venue = await Venue.create({ name: "Venue", ownerOrganizationId: organization._id, createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: user._id });
+    const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
+    const venueRelease = await VenueRelease.create({
+      venueId: venue._id,
+      version: 1,
+      layoutRevisionId: layout._id,
+      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
+      publication: { publishedAt: new Date(), publishedBy: user._id },
+      createdBy: user._id,
+      updatedBy: user._id,
+    });
+    venue.publishedReleaseId = venueRelease._id;
+    await venue.save();
+
+    const editorialSourceId = new mongoose.Types.ObjectId();
+    const anchorId = new mongoose.Types.ObjectId();
+    const created = await createVisitV2({
+      actorUserId: user._id,
+      payload: {
+        ownerType: "user",
+        ownerId: user._id,
+        title: "Visita originale",
+        editorialSources: [{ _id: editorialSourceId, editorialReleaseId: editorialRelease._id }],
+        visitAnchors: [{ _id: anchorId, venueTargetId: target._id }],
+        contentEntries: [{ editorialSourceId, itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, deliveryAnchorId: anchorId, role: "core" }],
+        presentationBaseline: { depthPreference: 0.5, languageComplexityPreference: 0.5, locale: "it-IT" },
+        logistics: { preVisitNotes: ["Ingresso principale"], routeHints: [] },
+      },
+    });
+
+    const checked = await evaluateVisitV2Consistency({ visitId: created.visit._id, actorUserId: user._id });
+    assert.equal(checked.revision.integrity.status, "valid");
+    const published = await publishVisitV2({ visitId: created.visit._id, actorUserId: user._id });
+    assert.equal(published.revision.status, "published");
+
+    const copied = await copyVisitV2({
+      sourceVisitId: created.visit._id,
+      ownerType: "user",
+      ownerId: user._id,
+      title: "Copia indipendente",
+      actorUserId: user._id,
+    });
+    assert.equal(String(copied.visit.copiedFromVisitId), String(created.visit._id));
+    assert.equal(String(copied.visit.copiedFromVisitRevisionId), String(published.revision._id));
+    assert.equal(String(copied.revision.editorialSources[0].editorialReleaseId), String(editorialRelease._id));
+    assert.equal(String(copied.revision.visitAnchors[0].venueTargetId), String(target._id));
+    assert.notEqual(String(copied.revision.editorialSources[0]._id), String(published.revision.editorialSources[0]._id));
+    assert.notEqual(String(copied.revision.visitAnchors[0]._id), String(published.revision.visitAnchors[0]._id));
+
+    await updateVisitV2({ visitId: created.visit._id, payload: { title: "Originale modificata dopo la copia" }, actorUserId: user._id });
+    const refreshedCopy = await VisitRevisionV2.findById(copied.visit.workingRevisionId).lean();
+    assert.equal(refreshedCopy.title, "Copia indipendente");
+    assert.equal(String(refreshedCopy.contentEntries[0].itemRevisionId), String(itemRevision._id));
+  });
+});
