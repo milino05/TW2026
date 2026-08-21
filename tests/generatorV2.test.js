@@ -55,12 +55,19 @@ test("federation merges the same Subject while preserving namespaced relation pr
   const subjectA = oid(), subjectB = oid(), release1 = oid(), release2 = oid(), namespace1 = oid(), namespace2 = oid();
   const graph1 = {
     revision: { _id: oid() },
-    nodes: new Map([[String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-a"] } }], [String(subjectB), { subject: { _id: subjectB, externalRefs: [] }, binding: null }]]),
-    edgesFrom: new Map([[String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, relationTypeDefinitionId: "rel-1", traversalWeight: 0.8 }]]),
+    nodes: new Map([
+      [String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-a"] } }],
+      [String(subjectB), { subject: { _id: subjectB, externalRefs: [] }, binding: null }],
+    ]),
+    edgesFrom: new Map([
+      [String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, relationTypeDefinitionId: "rel-1", traversalWeight: 0.8 }]],
+    ]),
   };
   const graph2 = {
     revision: { _id: oid() },
-    nodes: new Map([[String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-b"] } }]]),
+    nodes: new Map([
+      [String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-b"] } }],
+    ]),
     edgesFrom: new Map(),
   };
   const federated = buildFederatedSemanticGraph([
@@ -80,7 +87,9 @@ test("physical association never creates a target: it only scores an already sup
   const graph = {
     nodes: new Map([[String(subjectA), {}], [String(subjectB), {}]]),
     canonicalIndex: new Map(), bindingsByNamespaceSubject: new Map(),
-    edgesFrom: new Map([[String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, namespaceId, relationTypeDefinitionId: "rel", traversalWeight: 1 }]]),
+    edgesFrom: new Map([
+      [String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, namespaceId, relationTypeDefinitionId: "rel", traversalWeight: 1 }]],
+    ]),
   };
   const candidate = { item: { primarySubjectId: subjectA }, variant: { semanticFocus: [] } };
   assert.ok(physicalAssociationScore({ candidate, target, graph }) > 0);
