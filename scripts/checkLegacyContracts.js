@@ -97,5 +97,8 @@ rejectFields('models/userNamespaceFeatureAffinity.model.js', [
   'museumId', 'itemId', 'itemType', 'featureKey', 'relationTypeKey', 'key',
 ], 'UserNamespaceFeatureAffinity v2');
 rejectFields('models/venueTargetObservationProfile.model.js', ['museumId', 'itemId', 'itemType'], 'VenueTargetObservationProfile v2');
+rejectFields('models/generatedVisitPlanV2.model.js', [
+  'museumId', 'sourceVocabularyRevisionId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey',
+], 'GeneratedVisitPlan v2');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
