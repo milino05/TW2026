@@ -47,6 +47,7 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const { createVisitV2, updateVisitV2, copyVisitV2 } = require("../services/visitV2.service");
     const { evaluateVisitV2Consistency, publishVisitV2 } = require("../services/visitV2Publication.service");
+    const { auditVisitsAgainstVenueRelease } = require("../services/visitV2Dependency.service");
 
     const user = await User.create({ username: "visit-v2-test", passwordHash: "test-hash" });
     const organization = await Organization.create({ name: "Venue owner", createdBy: user._id });
@@ -138,5 +139,24 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     const refreshedCopy = await VisitRevisionV2.findById(copied.visit.workingRevisionId).lean();
     assert.equal(refreshedCopy.title, "Copia indipendente");
     assert.equal(String(refreshedCopy.contentEntries[0].itemRevisionId), String(itemRevision._id));
+
+    const unavailableRelease = await VenueRelease.create({
+      venueId: venue._id,
+      version: 2,
+      basedOnReleaseId: venueRelease._id,
+      layoutRevisionId: layout._id,
+      targetBindings: [{ venueTargetId: target._id, availability: "unavailable", recognitionMedia: [] }],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
+      publication: { publishedAt: new Date(), publishedBy: user._id },
+      createdBy: user._id,
+      updatedBy: user._id,
+    });
+    const audit = await auditVisitsAgainstVenueRelease({ venueId: venue._id, venueReleaseId: unavailableRelease._id });
+    assert.equal(audit.affectedVisits.length, 1);
+    assert.equal(String(audit.affectedVisits[0].visitId), String(created.visit._id));
+    assert.deepEqual(audit.affectedVisits[0].unavailableVenueTargetIds, [String(target._id)]);
+    const sourcePublishedAfterAudit = await VisitRevisionV2.findById(published.revision._id).lean();
+    assert.equal(sourcePublishedAfterAudit.status, "published");
   });
 });
