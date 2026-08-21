@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
-const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { projectEditorialContext } = require("./editorialContextProjection.service");
 const { normalizeEditorialContextPayload, validateEditorialContextPayload } = require("./validation/editorialContext.validation");
@@ -69,17 +69,25 @@ async function updateEditorialContext({ editorialContextId, payload, actorUserId
   return projectEditorialContext({ editorialContext, contentSpace, namespace });
 }
 
-async function getEditorialContext({ editorialContextId }) {
+async function getEditorialContext({ editorialContextId, actorUserId }) {
   const editorialContext = await findEditorialContextOrFail({ editorialContextId });
   const { contentSpace, namespace } = await loadContextDependencies(editorialContext);
+  await assertCanManageContentSpace(contentSpace, actorUserId);
   return projectEditorialContext({ editorialContext, contentSpace, namespace });
 }
 
-async function listEditorialContexts({ contentSpaceId = null, namespaceId = null } = {}) {
+async function listEditorialContexts({ actorUserId, contentSpaceId = null, namespaceId = null } = {}) {
   if (contentSpaceId && !mongoose.isValidObjectId(contentSpaceId)) throw new AppError("contentSpaceId non valido", 400);
   if (namespaceId && !mongoose.isValidObjectId(namespaceId)) throw new AppError("namespaceId non valido", 400);
   const query = { lifecycleStatus: "active" };
-  if (contentSpaceId) query.contentSpaceId = contentSpaceId;
+  if (contentSpaceId) {
+    const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
+    await assertCanManageContentSpace(contentSpace, actorUserId);
+    query.contentSpaceId = contentSpace._id;
+  } else {
+    const accessibleSpaces = await listContentSpaces({ actorUserId });
+    query.contentSpaceId = { $in: accessibleSpaces.map((space) => space._id) };
+  }
   if (namespaceId) query.namespaceId = namespaceId;
   const contexts = await EditorialContext.find(query).sort({ displayName: 1, createdAt: 1 });
   const results = [];
