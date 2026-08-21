@@ -19,6 +19,7 @@ const LearningContributionSchema = new Schema(
         "routing_attribute_residual",
         "item_observation_factor",
         "item_observation_seconds",
+        "venue_target_observation_seconds",
         "visit_timing_residual",
         "visit_total_seconds",
       ],
