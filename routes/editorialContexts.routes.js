@@ -15,4 +15,12 @@ router.route("/editorial-contexts/:editorialContextId")
   .get(controller.get)
   .patch(controller.update);
 
+router.post("/editorial-contexts/:editorialContextId/graph-revisions", editorialContextId, controller.createGraph);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph", editorialContextId, controller.getGraph);
+router.route("/editorial-contexts/:editorialContextId/releases")
+  .all(editorialContextId)
+  .get(controller.listReleases)
+  .post(controller.createRelease);
+router.get("/editorial-contexts/:editorialContextId/releases/current", editorialContextId, controller.getCurrentRelease);
+
 module.exports = router;
