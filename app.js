@@ -58,6 +58,6 @@ app.use("/api", adaptiveRoutes);
 app.use("/api", visitSessionRoutes);
 app.use("/api", navigationRoutes);
 app.use("/api", generatedVisitRoutes);
-app.use((req, res, next) => next(new AppError("Risorsa non trovata", 404));
+app.use((req, res, next) => next(new AppError("Risorsa non trovata", 404)));
 app.use(errorHandler);
 module.exports = app;
