@@ -55,5 +55,15 @@ for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.sche
     failed = true;
   }
 }
+for (const v2File of ['models/itemV2.model.js', 'models/itemEdition.model.js', 'models/itemRevisionV2.model.js']) {
+  if (!fs.existsSync(v2File)) continue;
+  const text = fs.readFileSync(v2File, 'utf8');
+  for (const legacyField of ['museumId', 'itemType']) {
+    if (new RegExp(`\\b${legacyField}\\b`).test(text)) {
+      console.error(`Item v2 scaffold contains forbidden legacy field ${legacyField} in ${v2File}`);
+      failed = true;
+    }
+  }
+}
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
