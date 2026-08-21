@@ -44,11 +44,20 @@ async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId 
   return target;
 }
 
-async function listVenueTargets({ venueId, includeTrashed = false } = {}) {
-  await findVenueOrFail({ venueId });
-  const query = { venueId };
-  if (!includeTrashed) query.lifecycleStatus = "active";
-  return VenueTarget.find(query).sort({ label: 1, createdAt: 1 }).lean();
+async function listVenueTargets({ venueId, view = "published", actorUserId = null } = {}) {
+  const venue = await findVenueOrFail({ venueId });
+  if (view === "all") {
+    await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+    return VenueTarget.find({ venueId, lifecycleStatus: "active" }).sort({ label: 1, createdAt: 1 }).lean();
+  }
+  if (view !== "published") throw new AppError("view deve essere published o all", 400);
+  if (!venue.publishedReleaseId) return [];
+  const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
+  if (!release) return [];
+  const activeIds = (release.targetBindings || []).filter((binding) => binding.availability === "active").map((binding) => binding.venueTargetId);
+  const targets = await VenueTarget.find({ _id: { $in: activeIds }, venueId }).lean();
+  const byId = new Map(targets.map((target) => [String(target._id), target]));
+  return activeIds.map((targetId) => byId.get(String(targetId))).filter(Boolean);
 }
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
