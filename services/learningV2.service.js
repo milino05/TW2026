@@ -5,6 +5,7 @@ const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
+const LearningContribution = require("../models/learningContribution.model");
 const UserSubjectAffinity = require("../models/userSubjectAffinity.model");
 const UserSubjectKnowledge = require("../models/userSubjectKnowledge.model");
 const UserItemEditionAffinity = require("../models/userItemEditionAffinity.model");
@@ -14,7 +15,8 @@ const VenueTargetObservationProfile = require("../models/venueTargetObservationP
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { clamp, computePhysicalObservationReliability } = require("./adaptiveLearning.service");
-const { updateContributor, aggregate, removeContributor } = require("./collectiveLearning.service");
+const { updateContributor, aggregate } = require("./collectiveLearning.service");
+const { contributorHash } = require("./contributorIdentity.service");
 
 const NAMESPACE_FEATURE_GROUPS = Object.freeze({
   subject_class: "subjectClasses",
@@ -22,6 +24,7 @@ const NAMESPACE_FEATURE_GROUPS = Object.freeze({
   presentation_aspect: "presentationAspects",
   selection_signal: "selectionSignals",
 });
+const VENUE_TARGET_OBSERVATION_METRIC = "venue_target_observation_seconds";
 
 function confidenceForCount(count) {
   return Math.min(policy.confidence.maximum, 1 - Math.exp(-Math.max(0, count) / 5));
@@ -97,9 +100,11 @@ async function upsertSubjectKnowledge({ userId, subjectId, level, confidence = 1
   const previous = Number.isFinite(Number(current?.level)) ? Number(current.level) : Number(level);
   const alpha = source === "explicit" ? 1 : Math.min(0.4, 1 / Math.sqrt(count + 1));
   const next = clamp(previous * (1 - alpha) + clamp(Number(level), 0, 1) * alpha, 0, 1);
+  const sourceConfidence = clamp(Number(confidence) || 0, 0, 1);
+  const storedConfidence = source === "explicit" ? sourceConfidence : Math.min(sourceConfidence, confidenceForCount(count));
   return UserSubjectKnowledge.findOneAndUpdate(
     { userId, subjectId },
-    { $set: { userId, subjectId, level: next, confidence: clamp(Number(confidence) || 0, 0, 1), sampleCount: count, lastObservedAt: now, source } },
+    { $set: { userId, subjectId, level: next, confidence: storedConfidence, sampleCount: count, lastObservedAt: now, source } },
     { upsert: true, new: true, runValidators: true },
   );
 }
@@ -173,17 +178,16 @@ async function recordVenueTargetObservation({ userId, venueTargetId, observedSec
   if (effectiveReliability < policy.learning.minimumReliability) {
     return { accepted: false, profile: await VenueTargetObservationProfile.findOne({ venueTargetId }) };
   }
-  const metricType = "venue_target_observation_seconds";
   const scopeKey = `venue_target:${String(venueTargetId)}`;
   await updateContributor({
     userId,
-    metricType,
+    metricType: VENUE_TARGET_OBSERVATION_METRIC,
     scopeKey,
     value: Number(observedSeconds),
     sampleCount: 1,
     reliability: effectiveReliability,
   });
-  const summary = await aggregate(metricType, scopeKey);
+  const summary = await aggregate(VENUE_TARGET_OBSERVATION_METRIC, scopeKey);
   if (!Number.isFinite(summary.value)) return { accepted: false, profile: null };
   const observationFactor = clamp(summary.value / policy.coldStart.observationSeconds, 0.1, 10);
   const profile = await VenueTargetObservationProfile.findOneAndUpdate(
@@ -231,19 +235,21 @@ async function loadUserLearningState({ userId, subjectIds = [], itemEditionIds =
 }
 
 async function removeUserLearningV2(userId) {
-  const [subjectAffinities, subjectKnowledge, editionAffinities, exposures, namespaceFeatures] = await Promise.all([
+  const hash = contributorHash(userId);
+  const [subjectAffinities, subjectKnowledge, editionAffinities, exposures, namespaceFeatures, physicalContributions] = await Promise.all([
     UserSubjectAffinity.deleteMany({ userId }),
     UserSubjectKnowledge.deleteMany({ userId }),
     UserItemEditionAffinity.deleteMany({ userId }),
     UserContentExposureV2.deleteMany({ userId }),
     UserNamespaceFeatureAffinity.deleteMany({ userId }),
+    LearningContribution.deleteMany({ contributorHash: hash, metricType: VENUE_TARGET_OBSERVATION_METRIC }),
   ]);
-  await removeContributor(userId);
-  return { subjectAffinities, subjectKnowledge, editionAffinities, exposures, namespaceFeatures };
+  return { subjectAffinities, subjectKnowledge, editionAffinities, exposures, namespaceFeatures, physicalContributions };
 }
 
 module.exports = {
   NAMESPACE_FEATURE_GROUPS,
+  VENUE_TARGET_OBSERVATION_METRIC,
   confidenceForCount,
   recencyWeight,
   effectiveAffinity,
