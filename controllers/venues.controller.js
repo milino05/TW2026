@@ -7,7 +7,7 @@ async function get(req, res, next) { try { res.status(200).json(await venueServi
 async function create(req, res, next) { try { res.status(201).json(await venueService.createVenue({ payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function update(req, res, next) { try { res.status(200).json(await venueService.updateVenue({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
-async function listTargets(req, res, next) { try { res.status(200).json(await venueTargetService.listVenueTargets({ venueId: req.params.venueId })); } catch (error) { next(error); } }
+async function listTargets(req, res, next) { try { res.status(200).json(await venueTargetService.listVenueTargets({ venueId: req.params.venueId, view: req.query?.view || "published", actorUserId: req.user?._id || null })); } catch (error) { next(error); } }
 async function createTarget(req, res, next) { try { res.status(201).json(await venueTargetService.createVenueTarget({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function updateTarget(req, res, next) { try { res.status(200).json(await venueTargetService.updateVenueTarget({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function trashTarget(req, res, next) { try { res.status(200).json(await venueTargetService.trashVenueTarget({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); } catch (error) { next(error); } }
