@@ -48,6 +48,17 @@ function walk(dir) {
   }
 }
 
+function rejectFields(file, fields, boundary) {
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, 'utf8');
+  for (const field of fields) {
+    if (new RegExp(`\\b${field}\\b`).test(text)) {
+      console.error(`${boundary} contains forbidden field ${field} in ${file}`);
+      failed = true;
+    }
+  }
+}
+
 roots.forEach(walk);
 for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js']) {
   if (fs.existsSync(obsolete)) {
@@ -56,14 +67,18 @@ for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.sche
   }
 }
 for (const v2File of ['models/itemV2.model.js', 'models/itemEdition.model.js', 'models/itemRevisionV2.model.js']) {
-  if (!fs.existsSync(v2File)) continue;
-  const text = fs.readFileSync(v2File, 'utf8');
-  for (const legacyField of ['museumId', 'itemType']) {
-    if (new RegExp(`\\b${legacyField}\\b`).test(text)) {
-      console.error(`Item v2 scaffold contains forbidden legacy field ${legacyField} in ${v2File}`);
-      failed = true;
-    }
-  }
+  rejectFields(v2File, ['museumId', 'itemType'], 'Item v2 scaffold');
 }
+rejectFields('models/contentSpace.model.js', ['namespaceId', 'venueId', 'parentContentSpaceId'], 'ContentSpace');
+rejectFields('models/contentSpaceMembership.model.js', ['namespaceId', 'ownerType', 'ownerId'], 'ContentSpaceMembership');
+rejectFields('models/editorialContext.model.js', [
+  'ownerType',
+  'ownerId',
+  'venueId',
+  'durationKey',
+  'languageLevelKey',
+  'durationTypeDefinitionId',
+  'languageLevelDefinitionId',
+], 'EditorialContext');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
