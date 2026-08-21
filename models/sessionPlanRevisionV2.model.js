@@ -6,6 +6,7 @@ const SessionContentEntrySchema = new Schema({
   itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
   itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
+  namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
   sourceEditorialReleaseIds: [{ type: Schema.Types.ObjectId, ref: "EditorialRelease", required: true }],
   role: { type: String, enum: ["core", "recommended", "optional"], default: "recommended" },
   deliveryAnchorId: { type: Schema.Types.ObjectId, default: null },
