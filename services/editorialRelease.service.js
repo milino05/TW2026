@@ -1,7 +1,10 @@
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
+const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
+const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { validateEditorialReleaseCoherence } = require("./editorialReleaseIntegrity.service");
 const { normalizeEditorialReleasePayload, validateEditorialReleasePayload } = require("./validation/editorialRelease.validation");
 
@@ -17,6 +20,16 @@ async function assertCanManageContext(context, actorUserId, minimumOrganizationR
   return contentSpace;
 }
 
+async function assertReleaseDependenciesAuthorized({ context, itemBindings, actorUserId }) {
+  const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
+  await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
+  const editionIds = [...new Set((itemBindings || []).map((binding) => String(binding.itemEditionId || "")).filter(Boolean))];
+  for (const itemEditionId of editionIds) {
+    await assertCanUseItemEditionForEditorialRelease({ itemEditionId, actorUserId });
+  }
+}
+
 async function nextVersion(editorialContextId) {
   const latest = await EditorialRelease.findOne({ editorialContextId }).sort({ version: -1 }).select("version").lean();
   return (latest?.version || 0) + 1;
@@ -29,6 +42,7 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
   const normalized = normalizeEditorialReleasePayload(rawPayload);
   const context = await findContextOrFail(editorialContextId);
   await assertCanManageContext(context, actorUserId, "manager");
+  await assertReleaseDependenciesAuthorized({ context, itemBindings: normalized.itemBindings, actorUserId });
   const graphRevisionId = normalized.graphRevisionId || context.workingGraphRevisionId;
   if (!graphRevisionId) throw new AppError("EditorialContext privo di GraphRevision", 409);
 
@@ -81,6 +95,9 @@ async function listEditorialReleases({ editorialContextId, actorUserId }) {
 }
 
 module.exports = {
+  findContextOrFail,
+  assertCanManageContext,
+  assertReleaseDependenciesAuthorized,
   createEditorialRelease,
   getCurrentEditorialRelease,
   listEditorialReleases,
