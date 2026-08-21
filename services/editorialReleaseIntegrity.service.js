@@ -44,6 +44,9 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     ContentSpaceMembership.find({ contentSpaceId: context.contentSpaceId, itemId: { $in: itemIds } }).select("itemId").lean(),
     ItemRevisionV2.find({ _id: { $in: itemBindings.map((binding) => binding.itemRevisionId) } }).lean(),
   ]);
+  const authoredRevisionIds = [...new Set(revisions.map((revision) => String(revision.authoredAgainstNamespaceRevisionId || "")).filter(Boolean))];
+  const compatibleAuthoredRevisions = await NamespaceRevision.find({ _id: { $in: authoredRevisionIds }, namespaceId: context.namespaceId }).select("_id").lean();
+  const compatibleAuthoredRevisionIds = new Set(compatibleAuthoredRevisions.map((revision) => String(revision._id)));
   const activeItemIds = new Set(items.map((item) => String(item._id)));
   const memberItemIds = new Set(memberships.map((membership) => String(membership.itemId)));
   const revisionById = new Map(revisions.map((revision) => [String(revision._id), revision]));
@@ -65,8 +68,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
       return;
     }
     if (!["published", "superseded"].includes(revision.status)) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_REVISION_NOT_RELEASE_READY", message: "ItemRevision deve essere immutabile/pubblicata prima della Release" });
-    const authoredNamespaceRevision = revision.authoredAgainstNamespaceRevisionId;
-    if (!authoredNamespaceRevision) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_NAMESPACE_REVISION_MISSING", message: "ItemRevision priva della NamespaceRevision di authoring" });
+    if (!compatibleAuthoredRevisionIds.has(String(revision.authoredAgainstNamespaceRevisionId || ""))) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_NAMESPACE_LINEAGE_MISMATCH", message: "ItemRevision authored contro un Namespace incompatibile" });
     issues.push(...validatePresentationAgainstNamespace(revision, namespaceRevision).map((issue) => ({ ...issue, field: `${base}.${issue.field || "itemRevisionId"}` })));
 
     (binding.curationSignals || []).forEach((signal, signalIndex) => {
