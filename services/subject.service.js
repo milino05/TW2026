@@ -22,8 +22,9 @@ async function exactExternalRefCollision(externalRefs = []) {
 
 async function createSubject({ payload, actorUserId }) {
   const actor = await getActiveUserOrFail(actorUserId);
-  const normalized = normalizeSubjectPayload(payload || {});
-  const issues = validateSubjectPayload({ payload: normalized, mode: "create" });
+  const rawPayload = payload || {};
+  const normalized = normalizeSubjectPayload(rawPayload);
+  const issues = validateSubjectPayload({ payload: normalized, rawPayload, mode: "create" });
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
 
   const collision = await exactExternalRefCollision(normalized.externalRefs || []);
@@ -48,9 +49,7 @@ async function getSubjectById({ subjectId }) {
 async function listSubjects({ search = "", limit = 50 } = {}) {
   const numericLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const query = {};
-  if (typeof search === "string" && search.trim()) {
-    query.$text = { $search: search.trim() };
-  }
+  if (typeof search === "string" && search.trim()) query.$text = { $search: search.trim() };
   return Subject.find(query).sort({ preferredLabel: 1 }).limit(numericLimit);
 }
 

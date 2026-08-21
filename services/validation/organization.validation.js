@@ -9,7 +9,7 @@ function normalizeOrganizationPayload(payload = {}) {
   };
 }
 
-function validateOrganizationPayload({ payload, mode = "create" }) {
+function validateOrganizationPayload({ payload, rawPayload = payload, mode = "create" }) {
   const issues = [];
   const add = (field, code, message) => issues.push({ field, code, message });
   if (mode === "create" && !payload.name) add("name", "REQUIRED", "name e obbligatorio");
@@ -19,7 +19,7 @@ function validateOrganizationPayload({ payload, mode = "create" }) {
   if (hasOwn(payload, "description") && typeof payload.description !== "string") {
     add("description", "INVALID_STRING", "description deve essere una stringa");
   }
-  const unknown = Object.keys(payload || {}).filter((key) => !["name", "description"].includes(key));
+  const unknown = Object.keys(rawPayload || {}).filter((key) => !["name", "description"].includes(key));
   for (const field of unknown) add(field, "UNKNOWN_FIELD", `Campo non supportato: ${field}`);
   return issues;
 }

@@ -18,8 +18,9 @@ async function findOrganizationOrFail({ organizationId, includeTrashed = false }
 
 async function createOrganization({ payload, actorUserId }) {
   const creator = await getActiveUserOrFail(actorUserId);
-  const normalized = normalizeOrganizationPayload(payload || {});
-  const issues = validateOrganizationPayload({ payload: normalized, mode: "create" });
+  const rawPayload = payload || {};
+  const normalized = normalizeOrganizationPayload(rawPayload);
+  const issues = validateOrganizationPayload({ payload: normalized, rawPayload, mode: "create" });
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
 
   const organization = await Organization.create({
@@ -46,8 +47,9 @@ async function createOrganization({ payload, actorUserId }) {
 async function updateOrganization({ organizationId, payload, actorUserId }) {
   await assertOrganizationRole({ userId: actorUserId, organizationId, minimumRole: "manager" });
   const organization = await findOrganizationOrFail({ organizationId });
-  const normalized = normalizeOrganizationPayload(payload || {});
-  const issues = validateOrganizationPayload({ payload: normalized, mode: "update" });
+  const rawPayload = payload || {};
+  const normalized = normalizeOrganizationPayload(rawPayload);
+  const issues = validateOrganizationPayload({ payload: normalized, rawPayload, mode: "update" });
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
   if (Object.prototype.hasOwnProperty.call(normalized, "name")) organization.name = normalized.name;
   if (Object.prototype.hasOwnProperty.call(normalized, "description")) organization.description = normalized.description;

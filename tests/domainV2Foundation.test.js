@@ -44,21 +44,28 @@ test("generic ownership distinguishes personal and organization authority", () =
 });
 
 test("organization payload normalization is strict and predictable", () => {
-  const normalized = normalizeOrganizationPayload({ name: "  Universita  ", description: "  Ricerca  " });
+  const raw = { name: "  Universita  ", description: "  Ricerca  " };
+  const normalized = normalizeOrganizationPayload(raw);
   assert.deepEqual(normalized, { name: "Universita", description: "Ricerca" });
-  assert.deepEqual(validateOrganizationPayload({ payload: normalized, mode: "create" }), []);
-  assert.ok(validateOrganizationPayload({ payload: {}, mode: "create" }).some((issue) => issue.code === "REQUIRED"));
+  assert.deepEqual(validateOrganizationPayload({ payload: normalized, rawPayload: raw, mode: "create" }), []);
+  assert.ok(validateOrganizationPayload({ payload: {}, rawPayload: {}, mode: "create" }).some((issue) => issue.code === "REQUIRED"));
+  assert.ok(validateOrganizationPayload({
+    payload: normalizeOrganizationPayload({ name: "Org", ownerId: "forbidden" }),
+    rawPayload: { name: "Org", ownerId: "forbidden" },
+    mode: "create",
+  }).some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "ownerId"));
 });
 
 test("Subject external identities are normalized without fuzzy label merging", () => {
-  const normalized = normalizeSubjectPayload({
+  const raw = {
     preferredLabel: "  Parmigianino  ",
     externalRefs: [{ scheme: " WIKIDATA ", id: " Q123 ", matchType: "EXACT" }],
-  });
+  };
+  const normalized = normalizeSubjectPayload(raw);
 
   assert.equal(normalized.preferredLabel, "Parmigianino");
   assert.deepEqual(normalized.externalRefs, [{ scheme: "wikidata", id: "Q123", matchType: "exact" }]);
-  assert.deepEqual(validateSubjectPayload({ payload: normalized, mode: "create" }), []);
+  assert.deepEqual(validateSubjectPayload({ payload: normalized, rawPayload: raw, mode: "create" }), []);
 
   const duplicate = validateSubjectPayload({
     payload: {
@@ -68,9 +75,23 @@ test("Subject external identities are normalized without fuzzy label merging", (
         { scheme: "wikidata", id: "Q1", matchType: "close" },
       ],
     },
+    rawPayload: {
+      preferredLabel: "X",
+      externalRefs: [
+        { scheme: "wikidata", id: "Q1", matchType: "exact" },
+        { scheme: "wikidata", id: "Q1", matchType: "close" },
+      ],
+    },
     mode: "create",
   });
   assert.ok(duplicate.some((issue) => issue.code === "DUPLICATE_EXTERNAL_REF"));
+
+  const unknown = validateSubjectPayload({
+    payload: normalizeSubjectPayload({ preferredLabel: "X", venueId: "forbidden" }),
+    rawPayload: { preferredLabel: "X", venueId: "forbidden" },
+    mode: "create",
+  });
+  assert.ok(unknown.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "venueId"));
 });
 
 test("User rejects duplicate Organization memberships independently from legacy museum memberships", async () => {

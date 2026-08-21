@@ -18,7 +18,7 @@ function normalizeSubjectPayload(payload = {}) {
   };
 }
 
-function validateSubjectPayload({ payload, mode = "create" }) {
+function validateSubjectPayload({ payload, rawPayload = payload, mode = "create" }) {
   const issues = [];
   const add = (field, code, message) => issues.push({ field, code, message });
   if (mode === "create" && !payload.preferredLabel) add("preferredLabel", "REQUIRED", "preferredLabel e obbligatorio");
@@ -44,7 +44,7 @@ function validateSubjectPayload({ payload, mode = "create" }) {
       });
     }
   }
-  const unknown = Object.keys(payload || {}).filter((key) => !["preferredLabel", "description", "externalRefs"].includes(key));
+  const unknown = Object.keys(rawPayload || {}).filter((key) => !["preferredLabel", "description", "externalRefs"].includes(key));
   for (const field of unknown) add(field, "UNKNOWN_FIELD", `Campo non supportato: ${field}`);
   return issues;
 }
