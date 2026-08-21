@@ -7,6 +7,8 @@ const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.servi
 const { projectVenue } = require("./venue.service");
 const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
+const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
 const { LAYOUT_FIELDS, normalizeWorkingVenueReleasePayload, validateWorkingVenueReleasePayload } = require("./validation/venueRelease.validation");
 
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
@@ -206,7 +208,16 @@ async function publishVenueRelease({ venueId, actorUserId }) {
   }
   venue.publishedReleaseId = release._id;
   venue.workingReleaseId = null;
-  return { venue, release, layout };
+  const auditResult = await runPostCommitAudit({
+    visitV2DependencyAudit: () => auditVisitsAgainstVenueRelease({ venueId: venue._id, venueReleaseId: release._id }),
+  });
+  return {
+    venue,
+    release,
+    layout,
+    dependencyAudit: auditResult.results.visitV2DependencyAudit,
+    audit: { status: auditResult.status, failures: auditResult.failures },
+  };
 }
 
 module.exports = {
