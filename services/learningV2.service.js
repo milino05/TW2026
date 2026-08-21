@@ -46,15 +46,15 @@ async function assertSubject(subjectId) {
 async function assertEdition(itemEditionId) {
   const edition = await ItemEdition.findById(itemEditionId).lean();
   if (!edition) throw new AppError("ItemEdition non trovata", 404);
-  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).lean();
-  if (!item) throw new AppError("Item della Edition non disponibile", 409);
+  const item = await ItemV2.findById(edition.itemId).lean();
+  if (!item) throw new AppError("Item della Edition non trovato", 409);
   return { edition, item };
 }
 
 async function resolveNamespaceFeature({ namespaceId, namespaceRevisionId = null, kind, definitionId }) {
   const group = NAMESPACE_FEATURE_GROUPS[kind];
   if (!group) throw new AppError("Namespace feature kind non valido", 400, [{ field: "kind", code: "INVALID_ENUM", allowedValues: Object.keys(NAMESPACE_FEATURE_GROUPS) }]);
-  const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" }).lean();
+  const namespace = await Namespace.findById(namespaceId).lean();
   if (!namespace) throw new AppError("Namespace non trovato", 404);
   const revisionId = namespaceRevisionId || namespace.publishedRevisionId || namespace.workingRevisionId;
   if (!revisionId) throw new AppError("Namespace senza revisione utilizzabile", 409);
@@ -165,7 +165,7 @@ function candidateNovelty(state, { itemEditionId, variantId, representationId })
 }
 
 async function recordVenueTargetObservation({ userId, venueTargetId, observedSeconds, reliability = null }) {
-  const target = await VenueTarget.findOne({ _id: venueTargetId, lifecycleStatus: "active" }).lean();
+  const target = await VenueTarget.findById(venueTargetId).lean();
   if (!target) throw new AppError("VenueTarget non trovato", 404);
   const effectiveReliability = reliability == null
     ? computePhysicalObservationReliability({ observedSeconds: Number(observedSeconds) })
