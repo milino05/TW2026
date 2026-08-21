@@ -72,13 +72,11 @@ for (const v2File of ['models/itemV2.model.js', 'models/itemEdition.model.js', '
 rejectFields('models/contentSpace.model.js', ['namespaceId', 'venueId', 'parentContentSpaceId'], 'ContentSpace');
 rejectFields('models/contentSpaceMembership.model.js', ['namespaceId', 'ownerType', 'ownerId'], 'ContentSpaceMembership');
 rejectFields('models/editorialContext.model.js', [
-  'ownerType',
-  'ownerId',
-  'venueId',
-  'durationKey',
-  'languageLevelKey',
-  'durationTypeDefinitionId',
-  'languageLevelDefinitionId',
+  'ownerType', 'ownerId', 'venueId', 'durationKey', 'languageLevelKey', 'durationTypeDefinitionId', 'languageLevelDefinitionId',
 ], 'EditorialContext');
+rejectFields('models/semanticGraphRevision.model.js', ['museumId', 'itemId', 'sourceItemRevisionId'], 'SemanticGraphRevision');
+rejectFields('models/graphSubjectBinding.model.js', ['itemId', 'itemType', 'museumId'], 'GraphSubjectBinding');
+rejectFields('models/semanticEdgeV2.model.js', ['museumId', 'sourceItemId', 'sourceItemRevisionId', 'targetItemId', 'relationTypeKey'], 'SemanticEdge v2');
+rejectFields('models/editorialRelease.model.js', ['ownerType', 'ownerId', 'venueId', 'visibility', 'discoverability'], 'EditorialRelease');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
