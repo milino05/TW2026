@@ -4,6 +4,7 @@ const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
 const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
+const { projectVenue } = require("./venue.service");
 const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
 const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
 const { LAYOUT_FIELDS, normalizeWorkingVenueReleasePayload, validateWorkingVenueReleasePayload } = require("./validation/venueRelease.validation");
@@ -101,7 +102,7 @@ async function getVenuePhysicalState({ venueId, view = "published", actorUserId 
   const { release, layout } = await loadReleaseSnapshot(releaseId);
   const targetIds = (release.targetBindings || []).map((binding) => binding.venueTargetId);
   const targets = await VenueTarget.find({ _id: { $in: targetIds } }).lean();
-  return { venue, release, layout, targets };
+  return { venue: projectVenue(venue, { includeWorking: view === "working" }), release, layout, targets };
 }
 
 async function updateWorkingVenueRelease({ venueId, payload, actorUserId }) {
