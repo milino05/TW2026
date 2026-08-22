@@ -14,16 +14,10 @@ export const authoringRepository = {
     return apiClient.request(`/subjects${query ? `?${query}` : ""}`);
   },
   createSubject(payload) {
-    return apiClient.request("/subjects", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return apiClient.request("/subjects", { method: "POST", body: JSON.stringify(payload) });
   },
   createItem({ primarySubjectId, ownerType, ownerId }) {
-    return apiClient.request("/items", {
-      method: "POST",
-      body: JSON.stringify({ primarySubjectId, ownerType, ownerId }),
-    });
+    return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
   },
   projection(itemId, { editionId = null } = {}) {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
@@ -33,20 +27,17 @@ export const authoringRepository = {
     const query = queryString({ principalType: principal?.type || "user", principalId: principal?.id || null });
     return apiClient.request(`/v2/marketplace/namespace-authoring/${encodeURIComponent(namespaceId)}?${query}`);
   },
+  venueTargets(venueId) {
+    return apiClient.request(`/v2/marketplace/venues/${encodeURIComponent(venueId)}/authoring-targets`);
+  },
   venueTargetContext(venueTargetId) {
     return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
   },
   createEdition(itemId, payload) {
-    return apiClient.request(`/items/${encodeURIComponent(itemId)}/editions`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return apiClient.request(`/items/${encodeURIComponent(itemId)}/editions`, { method: "POST", body: JSON.stringify(payload) });
   },
   updateEdition(editionId, payload) {
-    return apiClient.request(`/item-editions/${encodeURIComponent(editionId)}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+    return apiClient.request(`/item-editions/${encodeURIComponent(editionId)}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
   checkEdition(editionId) {
     return apiClient.request(`/item-editions/${encodeURIComponent(editionId)}/check-consistency`, { method: "POST" });
@@ -55,8 +46,6 @@ export const authoringRepository = {
     return apiClient.request(`/item-editions/${encodeURIComponent(editionId)}/publish`, { method: "POST" });
   },
   setContentSpaceMembership({ contentSpaceId, itemId, member }) {
-    return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}/items/${encodeURIComponent(itemId)}`, {
-      method: member ? "PUT" : "DELETE",
-    });
+    return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}/items/${encodeURIComponent(itemId)}`, { method: member ? "PUT" : "DELETE" });
   },
 };
