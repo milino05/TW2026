@@ -2,7 +2,12 @@ const Entitlement = require("../models/entitlement.model");
 const AppError = require("../utils/AppError");
 const { capabilitySupportsResource } = require("../config/marketplaceCapabilities");
 const { resolveActorPrincipals } = require("./principalResolution.service");
-const { resolveResourceAuthority } = require("./marketplaceResourceV2.service");
+const {
+  LIVE_RESOURCE_TYPES,
+  resolveResourceAuthority,
+  resolveCurrentSnapshotRef,
+  listPublishedSnapshotRefsForLive,
+} = require("./marketplaceResourceV2.service");
 
 function sameId(a, b) {
   return String(a || "") === String(b || "");
@@ -21,7 +26,7 @@ function chooseEffectiveEntitlement(entitlements, now = new Date()) {
   return valid.find((entry) => entry.versionPolicy === "pinned") || null;
 }
 
-async function listValidCapabilityEntitlements({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+function assertSupported(capability, resourceType) {
   if (!capabilitySupportsResource(capability, resourceType)) {
     throw new AppError("Capability non compatibile con la risorsa", 400, [{
       code: "INVALID_CAPABILITY_RESOURCE",
@@ -29,6 +34,10 @@ async function listValidCapabilityEntitlements({ actorUserId, capability, resour
       resourceType,
     }]);
   }
+}
+
+async function listValidCapabilityEntitlements({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+  assertSupported(capability, resourceType);
   const { principals } = await resolveActorPrincipals(actorUserId);
   const principalClauses = principals.map((principal) => ({
     beneficiaryType: principal.type,
@@ -49,13 +58,7 @@ async function listValidCapabilityEntitlements({ actorUserId, capability, resour
 }
 
 async function resolveCapabilityAccess({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
-  if (!capabilitySupportsResource(capability, resourceType)) {
-    throw new AppError("Capability non compatibile con la risorsa", 400, [{
-      code: "INVALID_CAPABILITY_RESOURCE",
-      capability,
-      resourceType,
-    }]);
-  }
+  assertSupported(capability, resourceType);
 
   const { principals, entitlements } = await listValidCapabilityEntitlements({
     actorUserId,
@@ -90,8 +93,85 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
   return { allowed: false, basis: null, principal: null, entitlement: null };
 }
 
+async function resolveCapabilitySource({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+  assertSupported(capability, resourceType);
+  const requestedResourceRef = { resourceType, resourceId };
+  const exact = await resolveCapabilityAccess({ actorUserId, capability, resourceType, resourceId, now });
+  const authority = await resolveResourceAuthority(resourceType, resourceId);
+
+  if (exact.allowed) {
+    let resolvedSnapshotRef = null;
+    if (LIVE_RESOURCE_TYPES.has(resourceType)) {
+      if (exact.entitlement?.versionPolicy === "pinned" && exact.entitlement.baselineSnapshotRef) {
+        resolvedSnapshotRef = exact.entitlement.baselineSnapshotRef;
+      } else {
+        resolvedSnapshotRef = await resolveCurrentSnapshotRef(resourceType, authority);
+      }
+    } else if (authority) {
+      resolvedSnapshotRef = { resourceType, resourceId: authority.resource._id };
+    }
+    if (!resolvedSnapshotRef) {
+      throw new AppError("Snapshot autorizzata non disponibile", 409, [{ code: "AUTHORIZED_SNAPSHOT_UNAVAILABLE" }]);
+    }
+    return { ...exact, requestedResourceRef, resolvedSnapshotRef };
+  }
+
+  if (!LIVE_RESOURCE_TYPES.has(resourceType)) {
+    return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
+  }
+
+  const snapshots = await listPublishedSnapshotRefsForLive(resourceType, resourceId);
+  if (!snapshots.length) return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
+  const snapshotType = snapshots[0].resourceType;
+  if (!capabilitySupportsResource(capability, snapshotType)) {
+    return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
+  }
+
+  const { principals } = await resolveActorPrincipals(actorUserId);
+  const principalClauses = principals.map((principal) => ({
+    beneficiaryType: principal.type,
+    beneficiaryId: principal.id,
+  }));
+  if (!principalClauses.length) return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
+  const candidates = await Entitlement.find({
+    $or: principalClauses,
+    resourceType: snapshotType,
+    resourceId: { $in: snapshots.map((snapshot) => snapshot.resourceId) },
+    capability,
+    versionPolicy: "pinned",
+    status: "active",
+  }).lean();
+  const validByResourceId = new Map(
+    candidates.filter((entry) => nowWithin(entry, now)).map((entry) => [sameId(entry.resourceId, entry.resourceId) ? String(entry.resourceId) : "", entry]),
+  );
+  const selectedSnapshot = snapshots.find((snapshot) => validByResourceId.has(String(snapshot.resourceId)));
+  if (!selectedSnapshot) return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
+  const entitlement = validByResourceId.get(String(selectedSnapshot.resourceId));
+  return {
+    allowed: true,
+    basis: "entitlement",
+    principal: { type: entitlement.beneficiaryType, id: entitlement.beneficiaryId },
+    entitlement,
+    requestedResourceRef,
+    resolvedSnapshotRef: selectedSnapshot,
+  };
+}
+
 async function assertCapability(args) {
   const result = await resolveCapabilityAccess(args);
+  if (!result.allowed) {
+    throw new AppError("Capability richiesta non disponibile", 403, [{
+      code: "CAPABILITY_REQUIRED",
+      capability: args.capability,
+      resourceType: args.resourceType,
+      resourceId: args.resourceId,
+    }]);
+  }
+  return result;
+}
+
+async function assertCapabilitySource(args) {
+  const result = await resolveCapabilitySource(args);
   if (!result.allowed) {
     throw new AppError("Capability richiesta non disponibile", 403, [{
       code: "CAPABILITY_REQUIRED",
@@ -108,5 +188,7 @@ module.exports = {
   chooseEffectiveEntitlement,
   listValidCapabilityEntitlements,
   resolveCapabilityAccess,
+  resolveCapabilitySource,
   assertCapability,
+  assertCapabilitySource,
 };
