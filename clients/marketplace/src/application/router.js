@@ -1,4 +1,12 @@
-const ROUTES = new Set(["/", "/catalog", "/workspace", "/workspace/resource", "/workspace/item-authoring"]);
+const ROUTES = new Set([
+  "/",
+  "/catalog",
+  "/workspace",
+  "/workspace/resource",
+  "/workspace/item-authoring",
+  "/workspace/venue-targets",
+  "/workspace/context-compose",
+]);
 
 function routePath(path) {
   try { return new URL(path, window.location.origin).pathname; }
