@@ -157,6 +157,20 @@ Gli intenti logistici vengono normalmente risolti nella Venue corrente. Comandi 
 
 Le API runtime non espongono raw Place, path/connection ID, VenueRelease/LayoutRevision ID o preference penalty come contratto Navigator. Tali dati vengono trasformati in una `NavigationProjection` user-facing; la composizione mappa viene definita al Punto 21. QR/geolocation 18–33 cambiano il modo in cui viene determinata l'origine della navigazione, non la tipologia delle destinazioni.
 
+# Punto 20/30 — Runtime location v2
+
+Il runtime distingue rigorosamente execution progress e physical user location. `currentEntryIndex` e il relativo `logicalVisitAnchor` rappresentano la posizione logica nella sequenza della Session e non costituiscono prova della posizione fisica dell'utente.
+
+Nel 18–24 non esiste una physical location observation automatica. Il routing può usare il logical VisitAnchor come origine di fallback, ma questa viene qualificata come `logical_anchor` e non viene presentata come “you are here”. L'API Navigator non accetta normalmente `fromPlaceId`/`venueId` grezzi: un `NavigationOriginResolver` backend determina l'origine da reference tipizzate e dallo stato runtime.
+
+Le future localizzazioni 18–33 entrano tramite `LocationProvider`. QR, georeferenziazione/orientamento e teletrasporto sono provider differenti che convergono su una `LocationObservation`, preferibilmente `VenueTarget`-centric quando viene identificato un oggetto fisico. Coordinate e dettagli provider-specific non contaminano il core runtime.
+
+Una location observation ha provenance, timestamp ed eventuale confidence; non modifica automaticamente `currentEntryIndex` o il SessionPlan. Discrepanze fra logical Anchor e observed VenueTarget vengono trattate esplicitamente dall'application/action layer.
+
+L'origine della navigazione segue concettualmente `explicit one-shot origin > fresh physical observation > logical Anchor fallback`. Un eventuale Place usato dal routing resta un dettaglio della LayoutRevision pinzata e non diventa una pseudo-posizione persistente dell'utente.
+
+`venueTargetObservations[]` esistenti restano dati di learning sui tempi di osservazione e non vengono riutilizzati come location state. La mappa 18–24 può mostrare tappa corrente, prossima destination e route, ma non un marker automatico della posizione utente.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -189,11 +203,11 @@ Non devono più essere usati come contratto definitivo:
 - logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance;
 - durata della Visit trattata come proprietà statica/autorevole della VisitRevision;
 - start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata;
-- destination runtime appiattita su un ID ambiguo o su un generico aggregate Location.
+- destination runtime appiattita su un ID ambiguo o su un generico aggregate Location;
+- `currentEntryIndex`, `VisitAnchor.placeId` o un `fromPlaceId` client-supplied trattati come posizione fisica certa dell'utente.
 
-# Punti 20–30 ancora da riesaminare
+# Punti 21–30 ancora da riesaminare
 
-20. runtime location VenueTarget/anchor-centric;
 21. mappe basate su VenueTarget placement;
 22. Action derivation completa dai source v2;
 23. `GenerationOptionsProjection` scope/authorization-aware;
