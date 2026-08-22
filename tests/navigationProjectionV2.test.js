@@ -53,7 +53,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
         key: "stairs_here",
         label: "Scale sul percorso",
         dataType: "boolean",
-        canonicalKey: "stairs_present",
+        canonicalKey: "stairs",
         appliesTo: "connection",
       }],
       floors: [{
@@ -220,7 +220,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     });
     assert.equal(result.effect.type, "obstacle_check");
     assert.equal(result.effect.obstacleCheck.verified, true);
-    assert.deepEqual(result.effect.obstacleCheck.obstacles.map((entry) => entry.code), ["stairs_present"]);
+    assert.deepEqual(result.effect.obstacleCheck.obstacles.map((entry) => entry.code), ["stairs"]);
     assert.match(result.effect.obstacleCheck.message, /ostacoli dichiarati/);
     assert.equal(result.runtime.session.runtimeVersion, 2);
 
