@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Slice corrente
 
-**Slice 7 — Generator v2 UX + GeneratedPlan materialization**
+**Slice 9 — Dataset d’esame, compliance e deploy**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -130,7 +130,7 @@ Test Slice 5 aggiunti:
 - Offer `follow_current` ricontrollata quando una nuova snapshot introduce dipendenze esterne;
 - creator rights pinned usano la ItemRevision/NamespaceRevision acquisita anche dopo nuove publication;
 - fork e altri utilizzi reali generano Adoption, mentre la sola Acquisition no;
-- Context import detached riusa Subject e Item esterni senza trasferire ownership e senza fabbricare una EditorialRelease del buyer;
+- Context import detached riusa Subject e Item esterni senza trasferirne ownership e senza fabbricare una EditorialRelease del buyer;
 - Workspace distingue asset licensed e owned prima/dopo l'import;
 - un Entitlement personale non può produrre un fork Organization-owned; dopo Acquisition a beneficio dell'Organization lo stesso workflow è autorizzato e le Adoption sono Organization-scoped.
 
@@ -178,19 +178,69 @@ Test Slice 6 aggiunti:
 - EditorialRelease composer esclude Item non-member e Item member privi di capability per il principal del Context;
 - NamespaceRevision pinned viene rispettata dal composer anche dopo la pubblicazione di una nuova revision live.
 
+## Slice 7 — Generator v2 UX + GeneratedPlan materialization
+
+**Stato: implementato nel codice; test automatici e guardrail aggiunti; verifica CI push non osservabile tramite il connector corrente.**
+
+Completato su `main`:
+
+- `GenerationOptionsProjection` authorization/scope-aware con PhysicalScope e EditorialScope indipendenti;
+- source editoriali tipizzate: `editorial_context` live/follow-current oppure `editorial_release` pinned, senza sostituzione silenziosa della snapshot autorizzata;
+- `Venue.primaryEditorialContextId` usato soltanto come default autorizzato, mai come bypass di `context.generate`;
+- selezione Navigator di più Venue fisiche e sorgenti ContentSpace/Context indipendenti, con transfer inter-Venue espliciti;
+- ricerca Subject source-scoped tramite `generationSemanticOptionsV2.service.js` e `POST /v2/navigator/generation-subjects/search`;
+- gli interessi selezionati diventano `semanticGoals[]` della structured generation request; i canonical navigation requirements diventano `navigationRequirements[]` senza esporre Layout/routing internals al client;
+- presentation controls per tempo, profondità, complessità linguistica, locale e ritmo di movimento;
+- `GeneratedPlanProjection` user-facing con contenuti, source/version mode, PhysicalScope, stima, warnings e operations senza planner internals;
+- preview, accept e direct start tramite `ExecutionPreparation` già esistente;
+- “Modifica criteri” apre una nuova generazione e non muta il GeneratedPlan precedente;
+- materializzazione idempotente `GeneratedPlan -> user-owned Visit`, con provenance e snapshot editoriali preservati;
+- la Visit materializzata non congela Representation, Place/path indoor, VenueRelease/LayoutRevision o timing runtime; conserva soltanto durable inter-Venue route hints quando necessari;
+- la Visit salvata rientra nella Library personale e usa lo stesso boundary di ExecutionPreparation delle altre Visit;
+- `checkSlice7Contracts.js` protegge source tipizzate, projection/materialization, semantic search, navigation criteria e nuova generazione da criteri modificati.
+
+Test Slice 7 versionati coprono generation source live/pinned, options/default authorization, adoption, generator, materialization e lifecycle GeneratedPlan. Il connettore non espone l'esito CI push degli ultimi commit.
+
+## Slice 8 — Workflow editoriali e hardening commerciale
+
+**Stato: implementato nel codice; test automatici e guardrail aggiunti; verifica CI push/Mongo completa non osservabile tramite il connector/runtime corrente.**
+
+Completato su `main`:
+
+- il workflow condiviso non usa più un ambiguo `markPublished`: publication diretta e approvazione manageriale sono operazioni distinte (`publishWithoutReview` e `approveReviewAndPublish`);
+- la publication diretta richiede `draft + integrity valid` e non scrive `review.decision=approved`, `reviewedAt`, `reviewedBy` o review event fittizi;
+- l'approvazione manageriale richiede esattamente `in_review + integrity valid` e materializza review approval + publication;
+- Visit user-owned: publish diretto dopo integrity; `requestReview`/`requestChanges` non sono applicabili;
+- Visit organization-owned: operator può inviare/ritirare la review; manager può richiedere modifiche o pubblicare soltanto da `in_review`; il bypass `draft -> published` è eliminato;
+- la stessa distinzione è applicata agli aggregate che condividono il workflow: ItemEdition/ItemRevision, Namespace/NamespaceRevision e VenueRelease; VenueRelease resta organization-managed e richiede review prima del publish;
+- introdotto `EditorialWorkflowOperationsV2`: `availableOperations[]` è proiettato backend-side in base a owner, authority, status e integrity;
+- `CreatorWorkspaceProjection` include `editorialWorkflow` e operazioni `workflow.check`, `workflow.request_review`, `workflow.withdraw_review`, `workflow.request_changes`, `workflow.publish` soltanto quando realmente disponibili;
+- il command boundary `POST /v2/marketplace/workspace/operations` esegue anche le operazioni editoriali per ItemEdition, Namespace e Visit, riusando i domain service esistenti;
+- Item authoring projection espone operation object user-facing anziché stringhe di authorization; l'editor blocca il form quando la revisione è `in_review`;
+- Marketplace Workspace e Item Editor eseguono genericamente le operazioni proiettate e richiedono un messaggio solo quando `requiresMessage` è fornito dal backend; non deducono authorization da `ownerType` o role;
+- publication editoriale e Listing commerciale restano lifecycle separati: `create_listing` continua a comparire soltanto sopra snapshot già pubblicate;
+- aggiunti endpoint Item review request/withdraw/changes per mantenere completo anche il boundary API specifico;
+- aggiunto `checkSlice8Contracts.js`, eseguito da `npm run check:legacy`, contro ritorno di `markPublished`, fake review personale, bypass organization, vecchi bottoni hardcoded e authorization workflow ricostruita nel client.
+
+Test Slice 8 aggiunti:
+
+- state machine: direct publish personale senza review fittizia, approval solo da `in_review`, direct publish non consentito durante review;
+- operation projection: User draft valido espone publish diretto; Organization draft espone request-review ma non publish anche per manager; solo manager `in_review` riceve decisione/publish;
+- test Mongo Visit: publication personale senza `review.approved`; manager Organization respinto su draft; operator respinto al publish manageriale; publish manageriale riuscito dopo request-review;
+- verifica locale isolata della logica pura del nuovo state machine/projector: 11 test passati; MongoDB non è disponibile nel runtime locale della chat e la suite repository completa resta demandata alla CI configurata.
+
 ## Stato della verifica automatica
 
-La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il connector GitHub sui commit correnti non espone workflow run o status check di push; per questo codice, test e guardrail sono versionati ma l'esito CI non viene dichiarato green senza evidenza osservabile.
+La repository configura GitHub Actions su ogni push a `main` per backend checks, guardrail Slice 6/7/8, check/build dei due client, test Node/Mongo e audit dipendenze. Il connector GitHub sui commit correnti non espone workflow run o status check di push; per questo codice, test e guardrail sono versionati ma l'esito CI non viene dichiarato green senza evidenza osservabile. Il runtime locale della chat non dispone di MongoDB e non riesce a risolvere `github.com`, quindi non può sostituire la CI con un clone/test completo.
 
 ## Prossimo incremento
 
-Slice 7 espone il generator esistente tramite contratti client-v2 e chiude il ciclo “genera -> esegui o salva”:
+Slice 9 trasforma il prodotto tecnicamente implementato in una consegna d’esame verificabile:
 
-1. implementare `GenerationOptionsProjection` authorization/scope-aware;
-2. introdurre source editoriali tipizzate: live `EditorialContext` oppure `EditorialRelease` pinned, con source resolution/version policy coerente;
-3. usare `Venue.primaryEditorialContextId` soltanto come default se realmente autorizzato, mai come authorization implicita;
-4. proiettare semantic goals, presentation e navigation controls in forma user-facing;
-5. completare nel Navigator selezione Venue fisiche e selezione ContentSpace/Context editoriali indipendenti, GeneratedPlan preview, accept e direct start;
-6. materializzare idempotentemente `GeneratedPlan -> user-owned Visit`, preservando snapshot editoriali e provenance ma senza congelare Representation, path, Layout o timing runtime;
-7. fare apparire la Visit salvata nella normale Library personale ed eseguirla tramite lo stesso ExecutionPreparation boundary;
-8. mantenere la structured generation request riusabile dalla futura natural-language generation 18–33.
+1. creare un seed completo e ripetibile con i quattro account obbligatori, Organization, Venue demo reale, Layout/VenueRelease, almeno dieci opere/target e contenuti editoriali coerenti;
+2. creare almeno tre Visit pubblicate, ciascuna con almeno dieci opere e interamente sulla stessa Venue demo richiesta per il livello base;
+3. popolare Listing/Offer/acquisizioni sufficienti a dimostrare Marketplace, licenze, gratuità/pagamento simulato e adozioni;
+4. verificare end-to-end i requisiti 18–24: selezione Venue/config, Marketplace, selezione/esecuzione Visit, mappa oggetti/facility, TTS, controlled voice e bottoni equivalenti;
+5. riscrivere README e documentazione legacy ancora incompatibile con Domain v2/workflow attuale;
+6. verificare Docker/deploy e artifact di consegna secondo le specifiche ufficiali;
+7. eseguire la suite CI completa e correggere eventuali regressioni prima del freeze finale.
