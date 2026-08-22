@@ -270,6 +270,55 @@ La normale response non contiene `access.basis`, acquisition type o dettagli Ent
 
 L’ingresso nella Detail usa una singola GET composita. Il read model non è un write model generico: gli update della preparation passano da command/use case specifici o dal preparation draft definito successivamente. I contenuti completi della Visit non vengono riversati nella fase pre-visita. Per 18–27 la Detail rimane il workflow di chi avvia la Session; gli studenti possono entrare direttamente nel lifecycle della Session tramite il futuro join flow.
 
+# Punto 12/30 — Presentation preparation unificata
+
+Navigator e backend non distinguono presentation logic in base a `Visit.kind`, `ownerType` o provenienza della Visit. Tutte le Visit usano lo stesso presentation domain.
+
+La preference iniziale è namespace-neutral e usa gli assi astratti:
+
+```text
+depthPreference: 0..1
+languageComplexityPreference: 0..1
+locale?
+```
+
+La precedence viene applicata campo per campo:
+
+```text
+ItemRevision.defaultPresentation
+  < VisitRevision.presentationBaseline
+  < User.defaultPresentationPreference
+  < preparation override
+```
+
+`ItemRevision.defaultPresentation` rimane il fallback concreto del singolo contenuto. `VisitRevision.presentationBaseline`, default utente e override di preparation esprimono invece preferenze astratte.
+
+Il backend traduce tali preferenze nelle `Representation` concrete usando la `NamespaceRevision` pertinente a ciascuna ContentEntry. Il client non utilizza `durationKey`, `languageLevelKey` o una tassonomia Namespace globale: una Visit può combinare contenuti provenienti da Namespace differenti, con proprie definizioni di durata e livello linguistico.
+
+`PresentationVariant` e `Representation` restano distinti. La selezione della Variant appartiene alla logica semantica/adaptive/planning; depth, language complexity e locale adattano la Representation all’interno della Variant risolta. Il normale Navigator non espone `variantId`, `representationId`, `durationTypeDefinitionId` o `languageLevelDefinitionId` nella preparation.
+
+`NavigatorVisitDetailProjection.preparation.presentation` espone la preference astratta effettiva e i controlli user-facing realmente supportati dal backend, concettualmente:
+
+```text
+preparation.presentation
+  effectivePreference
+    depthPreference?
+    languageComplexityPreference?
+    locale?
+  availableControls
+    depth
+    languageComplexity
+    locale
+```
+
+I nomi JSON esatti possono essere raffinati. Un campo può restare assente quando nessun layer globale lo specifica; non si inventa automaticamente un valore neutro se il singolo Item dispone già del proprio default concreto.
+
+Le locale realmente utilizzabili vengono risolte backend-side; Vue non analizza tutte le Representation per calcolarle. Il futuro translation provider 18–33 potrà ampliare le opzioni senza cambiare il contratto concettuale.
+
+La Visit Detail non riceve il presentation plan completo per tutte le ContentEntry. Preparation e runtime usano lo stesso resolver: le Action runtime `presentation.adjust` modificano la concrete presentation senza introdurre una pipeline parallela. `currentPresentation.text` rimane l’unica fonte sia per il testo visualizzato sia per il TTS.
+
+Il servizio v2 esistente di presentation resolution è il nucleo da riusare/rifattorizzare, non da duplicare in resolver separati per Visit user-owned/organization-owned o per vecchie categorie official/community.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -297,11 +346,12 @@ Non devono più essere usati come contratto definitivo:
 - `VisitShareLink` come meccanismo corrente;
 - `museumIds[]` come filtro fisico della Library;
 - `access.basis` / `acquisitionType` nella Library o Visit Detail Navigator;
-- uso del DTO editoriale grezzo `GET /visits/:visitId` come read model principale del Navigator.
+- uso del DTO editoriale grezzo `GET /visits/:visitId` come read model principale del Navigator;
+- presentation pipeline separate `official/community`;
+- preference globali basate su `durationKey` / `languageLevelKey` di un singolo Namespace.
 
-# Punti 12–30 ancora da riesaminare
+# Punti 13–30 ancora da riesaminare
 
-12. presentation preparation unificata;
 13. preparation override non persistente;
 14. `NavigationPreparationResolver` su VenueRelease/LayoutRevision;
 15. navigation multi-Venue e `canonicalKey`;
