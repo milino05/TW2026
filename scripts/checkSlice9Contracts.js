@@ -36,7 +36,7 @@ requirePattern("Dockerfile", /build:clients/, "Production client build");
 
 rejectPattern("docs/revision-workflow.md", /MuseumLayout|MuseumVocabulary|\/api\/museums\//, "Legacy museum workflow terminology");
 rejectPattern("README.md", /seed completo[\s\S]{0,120}(?:ancora|deve essere completato)/i, "Stale seed TODO");
-requirePattern("docs/deployment.md", /start mongodb[\s\S]*start node-22/, "Department gocker procedure");
+requirePattern("docs/deployment.md", /start mongo[\s\S]*start node-22/, "Department gocker procedure");
 
 if (failed) process.exit(1);
 console.log("Slice 9 dataset, static hosting and deployment guardrails are intact.");
