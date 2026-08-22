@@ -9,9 +9,10 @@ const offerId = validateObjectIdParam("offerId");
 
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
-router.post("/v2/marketplace/listings", controller.createVisitListing);
+router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
+router.post("/v2/marketplace/listings", controller.createListing);
 router.get("/v2/marketplace/listings/:listingId", listingId, controller.detail);
-router.post("/v2/marketplace/listings/:listingId/offers", listingId, controller.createVisitOffer);
+router.post("/v2/marketplace/listings/:listingId/offers", listingId, controller.createOffer);
 router.post("/v2/marketplace/offers/:offerId/acquire", offerId, controller.acquire);
 
 module.exports = router;
