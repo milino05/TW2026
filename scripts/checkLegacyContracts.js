@@ -117,6 +117,25 @@ rejectFields('models/sessionPlanRevisionV2.model.js', [
   'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision', 'sourceVocabularyRevisionIds',
 ], 'SessionPlanRevision v2');
 
+rejectPattern('models/marketplaceListing.model.js', /enum\s*:\s*\[[^\]]*["']active["']/, 'MarketplaceListing must use draft/published/withdrawn lifecycle');
+for (const authFile of [
+  'services/itemUsageAuthorization.service.js',
+  'services/namespaceUsageAuthorization.service.js',
+  'services/editorialContextUsageAuthorization.service.js',
+]) {
+  rejectPattern(authFile, /Temporary pre-Marketplace|assertCanActForOwner|assertCanManageContentSpace/, 'Marketplace capability boundary regressed to owner-only authorization');
+}
+rejectPattern(
+  'services/generationAccess.service.js',
+  /venuePrimaryContextIds|primaryEditorialContextId/,
+  'Venue primary EditorialContext must not authorize generation',
+);
+rejectPattern(
+  'clients/marketplace/src/infrastructure/http/marketplace-repository.js',
+  /\/items\/.*\/fork|\/namespaces\/.*\/fork|\/visits\/.*\/copy|import-snapshot/,
+  'Marketplace client creator operations must go through the Workspace dispatcher',
+);
+
 rejectPattern(
   'routes/visitSessionsV2.routes.js',
   /router\.post\(\s*["']\/v2\/visit-sessions["']\s*,/,
@@ -156,4 +175,4 @@ rejectPattern(
 );
 
 if (failed) process.exit(1);
-console.log('No operational legacy visit/generator/semantic-graph/session-start/action contracts found.');
+console.log('No operational legacy visit/generator/semantic-graph/session-start/action/marketplace contracts found.');
