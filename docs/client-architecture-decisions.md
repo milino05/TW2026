@@ -217,8 +217,12 @@ Sei store concettuali:
 - `runtimeStore`;
 - `planStore`;
 - `navigationStore`;
-- `museumStore`;
+- `configuredVenueStore`;
 - `uiStore`.
+
+`configuredVenueStore` rappresenta esclusivamente la Venue primaria determinata dal file statico di configurazione e conserva una projection minima dell'identità e dei dati user-facing realmente necessari globalmente. Non è un aggregate frontend del dominio e non contiene `EditorialContext`, `EditorialRelease`, `Namespace`, `SemanticGraph`, `Item`, `Visit`, `VenueRelease` / `LayoutRevision` completi o le altre Venue coinvolte da una VisitSession.
+
+Il branding statico appartiene alla configurazione dell'applicazione, non al `configuredVenueStore`. Le Venue aggiuntive di una Visit o Session multi-Venue appartengono a plan/runtime/navigation. Non vengono introdotti preventivamente `organizationStore`, `editorialContextStore` o altri store globali: nuovi store vengono creati soltanto quando emerge uno stato condiviso con lifecycle applicativo proprio.
 
 Non si creano preventivamente store per speech/TTS/camera/GPS. Si parte da capability/composable locali.
 
@@ -257,15 +261,38 @@ Il bootstrap di una sessione passa da un application use case come `ResumeVisitS
 
 18–27: participant/student continua a usare la stessa session route; controllo e availability derivano dal runtime. 18–33: LLM, QR, geolocation e translation restano capability/provider; la generazione visita è invece un workflow pre-visita autonomo e ha route dedicate.
 
-# Configurazione museo
+# Configurazione Venue del Navigator
 
-Navigator è una singola applicazione generica specializzata tramite **file di configurazione statico** con almeno `museumId` e branding necessario. Il file non duplica dominio, vocabulary, layout, Visit o Item. Non esiste una schermata generica di scelta museo nel Navigator.
+Navigator è una singola applicazione generica specializzata tramite **file di configurazione statico**. Nel Domain Model v2 l'identificatore canonico di specializzazione è `venueId`, non un generico `museumId`.
+
+Forma concettuale approvata:
+
+```text
+NavigatorStaticConfig
+  schemaVersion
+  venueId
+  branding
+    title
+    shortTitle?
+    logo?
+      src
+      alt
+    hero?
+      src
+      alt
+```
+
+Il file contiene soltanto l'identità della Venue configurata e presentation branding statico. Non contiene `Organization`, `EditorialContext`, `ContentSpace`, `Namespace`, `VenueRelease`, `LayoutRevision`, `Item` o `Visit`: tali informazioni vengono risolte dal backend dalle rispettive fonti autorevoli. In particolare `Venue.primaryEditorialContextId` rimane dominio backend e non viene duplicato nel file di configurazione.
+
+Il `venueId` configurato identifica la Venue primaria dell'istanza Navigator per bootstrap, Library e contesto iniziale, ma non limita una Visit o Session a quella sola Venue: eventuali ulteriori Venue vengono determinate esplicitamente dalla Visit e dal suo PhysicalScope. Non esiste una schermata generica di selezione Venue nel Navigator.
+
+Configurazione di deployment come API URL o URL del Marketplace rimane separata dal file di specializzazione Venue. Il bootstrap valida il file, risolve la Venue dal backend e tratta configurazione invalida, Venue inesistente o non disponibile come configuration/bootstrap error, non come normale stato di navigazione.
 
 # Library del Navigator
 
 La landing operativa è `LibraryView`, non una copia del Marketplace.
 
-La Library mostra per il museo configurato:
+La Library usa la Venue configurata come contesto iniziale e mostra:
 
 - sessioni riprendibili;
 - Visit realmente eseguibili dall'utente;
@@ -917,7 +944,7 @@ View principali:
 - `SessionSummaryView`;
 - `NotFoundView`.
 
-Il bootstrap config museo + auth avviene a livello app, non tramite view dedicata.
+Il bootstrap config Venue + auth avviene a livello app, non tramite view dedicata.
 
 `PresentationRegion` usa esclusivamente `currentPresentation`; testo a schermo e TTS derivano dalla stessa fonte.
 
@@ -946,7 +973,7 @@ Non sono ancora fissati definitivamente:
 - struttura finale dei componenti Vue all'interno delle view approvate;
 - routing e flussi dettagliati del Marketplace/Editor;
 - DTO/API esatti dell'Action Gateway, NavigatorRuntimeState, completion summary e session discovery;
-- schema esatto del file di configurazione museo e della relativa validazione/bootstrap;
+- dettagli implementativi dello schema `NavigatorStaticConfig` e della relativa validazione/bootstrap;
 - dettagli di implementazione del refactoring `currentEntryIndex` / `executedThroughEntryIndex`;
 - schema Mongo/API definitivo di `VisitEntitlement` e dettagli operativi di grant/revoke;
 - dominio commerciale Marketplace (pricing/licensing, Offer/Acquisition/Purchase/Sale o equivalenti);
