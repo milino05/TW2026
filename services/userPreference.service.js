@@ -10,6 +10,7 @@ const policy = require("../config/adaptivePolicy");
 const { contributorHash } = require("./contributorIdentity.service");
 const { removeUserLearningV2 } = require("./learningV2.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
+const { normalizeCanonicalRoutingRequirements } = require("./routingPreferenceV2.service");
 
 function unit(value, field) {
   const number = Number(value);
@@ -31,10 +32,10 @@ function normalizeNavigationPreference(payload = {}) {
   const movementPacePreference = payload.movementPacePreference === undefined
     ? 0.5
     : unit(payload.movementPacePreference, "movementPacePreference");
-  if (payload.requirements !== undefined && !Array.isArray(payload.requirements)) {
-    throw new AppError("requirements deve essere un array", 400, [{ field: "requirements", code: "INVALID_TYPE" }]);
-  }
-  return { movementPacePreference, requirements: payload.requirements || [] };
+  return {
+    movementPacePreference,
+    requirements: normalizeCanonicalRoutingRequirements(payload.requirements, { field: "requirements" }),
+  };
 }
 
 async function setDefaultPresentationPreference({ userId, payload }) {
