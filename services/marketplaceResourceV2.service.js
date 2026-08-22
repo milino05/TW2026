@@ -12,6 +12,12 @@ const AppError = require("../utils/AppError");
 
 const LIVE_RESOURCE_TYPES = new Set(["item_edition", "editorial_context", "namespace", "visit"]);
 const SNAPSHOT_RESOURCE_TYPES = new Set(["item_revision", "editorial_release", "namespace_revision", "visit_revision"]);
+const LIVE_TO_SNAPSHOT_RESOURCE_TYPE = Object.freeze({
+  item_edition: "item_revision",
+  editorial_context: "editorial_release",
+  namespace: "namespace_revision",
+  visit: "visit_revision",
+});
 
 function id(value) { return String(value?._id || value || ""); }
 function owner(ownerType, ownerId) { return { ownerType, ownerId }; }
@@ -122,6 +128,38 @@ async function resolveCurrentSnapshotRef(resourceType, authority) {
     : null;
 }
 
+async function listPublishedSnapshotRefsForLive(resourceType, resourceId) {
+  if (!LIVE_RESOURCE_TYPES.has(resourceType)) {
+    throw new AppError("La risorsa non e una lineage live", 400, [{ code: "LIVE_RESOURCE_REQUIRED", resourceType }]);
+  }
+  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  if (!authority) throw new AppError("Risorsa Marketplace non disponibile", 404, [{ code: "MARKETPLACE_RESOURCE_NOT_FOUND" }]);
+  const snapshotType = LIVE_TO_SNAPSHOT_RESOURCE_TYPE[resourceType];
+  let snapshots = [];
+  if (resourceType === "item_edition") {
+    snapshots = await ItemRevisionV2.find({
+      itemEditionId: authority.resource._id,
+      status: { $in: ["published", "superseded"] },
+    }).sort({ version: -1 }).select("_id").lean();
+  } else if (resourceType === "editorial_context") {
+    snapshots = await EditorialRelease.find({
+      editorialContextId: authority.resource._id,
+      "integrity.status": "valid",
+    }).sort({ version: -1 }).select("_id").lean();
+  } else if (resourceType === "namespace") {
+    snapshots = await NamespaceRevision.find({
+      namespaceId: authority.resource._id,
+      status: { $in: ["published", "superseded"] },
+    }).sort({ version: -1 }).select("_id").lean();
+  } else if (resourceType === "visit") {
+    snapshots = await VisitRevisionV2.find({
+      visitId: authority.resource._id,
+      status: { $in: ["published", "superseded"] },
+    }).sort({ version: -1 }).select("_id").lean();
+  }
+  return snapshots.map((snapshot) => ({ resourceType: snapshotType, resourceId: snapshot._id }));
+}
+
 async function loadSnapshotProjection(resourceType, snapshotRef, authority) {
   if (!snapshotRef) return null;
   if (resourceType === "item_edition") return ItemRevisionV2.findById(snapshotRef.resourceId).lean();
@@ -161,7 +199,7 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
     throw new AppError("La risorsa live non possiede uno snapshot pubblicato", 409, [{ code: "PUBLISHED_SNAPSHOT_REQUIRED" }]);
   }
   if (!live && !publishedSnapshotStatus(resourceType, authority)) {
-    throw new AppError("Lo snapshot non è pubblicato o valido", 409, [{ code: "PUBLISHED_SNAPSHOT_REQUIRED" }]);
+    throw new AppError("Lo snapshot non e pubblicato o valido", 409, [{ code: "PUBLISHED_SNAPSHOT_REQUIRED" }]);
   }
   const snapshot = await loadSnapshotProjection(resourceType, snapshotRef, authority);
   if (!snapshot) throw new AppError("Snapshot pubblicato non disponibile", 409, [{ code: "PUBLISHED_SNAPSHOT_REQUIRED" }]);
@@ -190,7 +228,9 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
 module.exports = {
   LIVE_RESOURCE_TYPES,
   SNAPSHOT_RESOURCE_TYPES,
+  LIVE_TO_SNAPSHOT_RESOURCE_TYPE,
   resolveResourceAuthority,
   resolveCurrentSnapshotRef,
+  listPublishedSnapshotRefsForLive,
   resolveMarketableResource,
 };
