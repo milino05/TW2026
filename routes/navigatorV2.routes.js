@@ -9,6 +9,7 @@ const visitId = validateObjectIdParam("visitId");
 router.use(requireAuth);
 router.get("/v2/navigator/library", controller.library);
 router.get("/v2/navigator/sessions", controller.resumableSessions);
+router.get("/v2/navigator/generation-options", controller.generationOptionsProjection);
 router.get("/v2/navigator/visits/:visitId", visitId, controller.visitDetail);
 
 module.exports = router;
