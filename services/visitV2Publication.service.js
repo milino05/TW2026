@@ -3,7 +3,13 @@ const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
 const { findVisitV2OrFail, assertCanManageVisitV2, getWorkingVisitRevisionV2 } = require("./visitV2.service");
 const { computeVisitV2Integrity } = require("./visitV2Integrity.service");
-const { requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
+const {
+  requestReview,
+  withdrawReview,
+  requestChanges,
+  publishWithoutReview,
+  approveReviewAndPublish,
+} = require("./revisionWorkflow.service");
 
 async function loadWorking({ visitId, actorUserId, minimumOrganizationRole = "operator" }) {
   const visit = await findVisitV2OrFail(visitId);
@@ -69,19 +75,27 @@ async function compensatePublish({ visit, revision, previousPublishedId, previou
 
 async function publishVisitV2({ visitId, actorUserId }) {
   const initialVisit = await findVisitV2OrFail(visitId);
-  await assertCanManageVisitV2({ visit: initialVisit, actorUserId, minimumOrganizationRole: initialVisit.ownerType === "organization" ? "manager" : "operator" });
+  await assertCanManageVisitV2({
+    visit: initialVisit,
+    actorUserId,
+    minimumOrganizationRole: initialVisit.ownerType === "organization" ? "manager" : "operator",
+  });
   const consistency = await evaluateVisitV2Consistency({ visitId, actorUserId, allowInReview: true });
   const { visit, revision, issues } = consistency;
   if (issues.some((entry) => entry.severity !== "warning")) throw new AppError("Impossibile pubblicare una Visit con problemi di integrita", 409, issues);
-  if (visit.ownerType === "organization" && !["in_review", "draft"].includes(revision.status)) throw new AppError("Stato VisitRevision non pubblicabile", 409);
+
   const previousPublishedId = visit.publishedRevisionId;
   const previousRevisionState = {
     status: revision.status,
     review: revision.review?.toObject ? revision.review.toObject() : revision.review,
     publication: revision.publication?.toObject ? revision.publication.toObject() : revision.publication,
   };
-  try { markPublished(revision, actorUserId); }
-  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  try {
+    if (visit.ownerType === "organization") approveReviewAndPublish(revision, actorUserId);
+    else publishWithoutReview(revision, actorUserId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
   await revision.save();
   let pointerSwitched = false;
   let previousSuperseded = false;
