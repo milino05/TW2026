@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Slice corrente
 
-**Slice 5 — Marketplace Catalog e Creator Workspace**
+**Slice 6 — Item authoring e Venue catalog relevance**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -97,17 +97,54 @@ Test Slice 4:
 - obstacle Action via controlled voice usa metadata canonici, incrementa `runtimeVersion` e registra l'InteractionEvent;
 - NavigationOriginResolver verifica fallback logico e precedenza futura explicit/physical senza cambiare `currentEntryIndex`.
 
+## Slice 5 — Marketplace Catalog e Creator Workspace
+
+**Stato: implementato nel codice; test automatici aggiunti; verifica CI push non osservabile tramite il connector corrente.**
+
+Completato su `main`:
+
+- capability matrix Marketplace per ItemEdition/ItemRevision, EditorialContext/EditorialRelease, Namespace/NamespaceRevision e Visit/VisitRevision;
+- Catalog multi-asset con search, pagination, Asset Detail projection, Offer selection e Acquisition;
+- lifecycle Listing corretto `draft | published | withdrawn` e guardrail contro il precedente stato `active`;
+- `MarketplaceOfferIntegrity` risolve la dependency closure commerciale delle snapshot e rifiuta Offer non self-contained nel primo incremento;
+- l'integrità delle Offer `follow_current` viene ricontrollata anche alla nuova Acquisition, così nuove dipendenze esterne non ereditano redistribuzione implicita;
+- `CreatorWorkspaceProjection` principal-scoped con User/Organization, ContentSpace, asset owned e licensed distinti e `availableOperations[]` backend-authoritative;
+- le risorse licensed espongono `sourceRef` e `snapshotRef` risolti backend-side, senza richiedere al client di inferire lineage o documenti Mongo;
+- Workspace resource routing e unico command boundary `POST /v2/marketplace/workspace/operations` per le operazioni autonome;
+- Distribution Dashboard derivato da Listing/Offer/Acquisition/Adoption con vendite, acquisizioni gratuite, buyer, adopter e ricavi simulati per valuta;
+- `Adoption` è registrata solo quando una capability esterna viene realmente utilizzata; Acquisition e Adoption restano eventi distinti;
+- `content.use_in_editorial_release` verifica la ItemRevision realmente autorizzata e registra `content_link`;
+- `context.compose_visit` verifica la EditorialRelease realmente autorizzata e registra `context_reference`;
+- `content.fork`, `namespace.fork` e `visit.copy_detached` rispettano le snapshot pinned autorizzate e producono aggregate detached con provenance;
+- `context.import_snapshot` materializza un nuovo ContentSpace/EditorialContext del beneficiary, clona il working SemanticGraph riusando i Subject globali e mantiene gli Item esterni come membership/reference senza trasferirne ownership;
+- `context.use_as_venue_primary` è capability-based e una release pinned non viene trasformata in primary Context live;
+- `context.generate` è capability-based; le source pinned restano intenzionalmente bloccate fino al typed source contract dello Slice 7 invece di essere sostituite con la release corrente;
+- tutti i creator workflow che incorporano o producono asset owned sono principal-scoped: il beneficiary della capability deve coincidere con il principal proprietario del risultato;
+- una licenza personale non può quindi essere usata implicitamente per creare Item/Namespace/EditorialContext/EditorialRelease/Visit o configurazioni Venue dell'Organization, e viceversa;
+- Marketplace client vanilla/Web Components consuma Catalog, Workspace, resource route, operazioni autonome e Distribution Dashboard senza ricostruire authorization client-side;
+- checker legacy protegge lifecycle Listing, capability boundary, generator authorization e Workspace dispatcher.
+
+Test Slice 5 aggiunti:
+
+- Offer self-contained accettata e dependency esterna rifiutata;
+- Offer `follow_current` ricontrollata quando una nuova snapshot introduce dipendenze esterne;
+- creator rights pinned usano la ItemRevision/NamespaceRevision acquisita anche dopo nuove publication;
+- fork e altri utilizzi reali generano Adoption, mentre la sola Acquisition no;
+- Context import detached riusa Subject e Item esterni senza trasferire ownership e senza fabbricare una EditorialRelease del buyer;
+- Workspace distingue asset licensed e owned prima/dopo l'import;
+- un Entitlement personale non può produrre un fork Organization-owned; dopo Acquisition a beneficio dell'Organization lo stesso workflow è autorizzato e le Adoption sono Organization-scoped.
+
 ## Stato della verifica automatica
 
 La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il container dell'assistente continua a non risolvere `github.com`, quindi non può clonare `main` per eseguire localmente la suite completa. Il connector GitHub sui commit correnti non espone i workflow push; per questo codice e test sono versionati, ma l'esito CI non viene dichiarato green senza evidenza osservabile.
 
 ## Prossimo incremento
 
-Slice 5 porta Marketplace da Catalog Visit minimo a Marketplace+Editor multi-asset:
+Slice 6 completa Item authoring e la semantica di rilevanza Venue del Catalog:
 
-1. completare la capability matrix per ItemEdition/Revision, EditorialContext/Release, Namespace/Revision e Visit/Revision;
-2. Catalog search/pagination e Asset Detail projection multi-asset;
-3. Creator Workspace principal-scoped e `availableOperations` backend-authoritative;
-4. acquisition history, Distribution dashboard e Adoption;
-5. migrare gli authorization boundary creator alle capability approvate;
-6. implementare nel client Marketplace Catalog multi-asset, Workspace User/Organization e resource editor routing.
+1. implementare `ItemAuthoringProjection` senza esporre raw aggregate;
+2. Subject search/create con exact external refs e integrity dei Subject referenziati;
+3. Venue selector projection Organization → Venues e filtro Catalog `selectedVenueIds[]` con semantica union/OR;
+4. implementare `VenueCatalogRelevanceResolver` senza introdurre `museumId`, ownership-by-Venue o dipendenza editoriale dal Venue;
+5. completare nel Marketplace il wizard Subject → Item → Edition → Revision, editor delle Representation e ContentSpace/Context composition;
+6. mantenere indipendenti selezione fisica Venue, ownership, ContentSpace membership ed EditorialScope.
