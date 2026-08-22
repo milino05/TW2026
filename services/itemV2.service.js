@@ -133,7 +133,12 @@ async function createEdition({ itemId, payload, actorUserId }) {
   await assertCanManageItem(item, actorUserId);
   const namespace = await Namespace.findOne({ _id: payload.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace non trovato", 404);
-  const namespaceAccess = await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: item.ownerType,
+    principalId: item.ownerId,
+  });
   const namespaceRevision = await resolveNamespaceRevisionForAuthoring({
     namespace,
     requestedRevisionId: payload.authoredAgainstNamespaceRevisionId,
@@ -216,7 +221,12 @@ async function getWorkingRevision(edition, actorUserId) {
 async function updateEdition({ editionId, payload, actorUserId }) {
   const { edition, item, namespace } = await getEditionContext(editionId);
   await assertCanManageItem(item, actorUserId);
-  const namespaceAccess = await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: item.ownerType,
+    principalId: item.ownerId,
+  });
   const issues = validateRevisionPayloadShape(payload || {}, { partial: true });
   if (issues.length) throw new AppError("Payload revisione non valido", 400, issues);
   const revision = await getWorkingRevision(edition, actorUserId);
@@ -233,7 +243,12 @@ async function updateEdition({ editionId, payload, actorUserId }) {
 async function checkEditionConsistency({ editionId, actorUserId }) {
   const { edition, item, namespace } = await getEditionContext(editionId);
   await assertCanManageItem(item, actorUserId);
-  const namespaceAccess = await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: item.ownerType,
+    principalId: item.ownerId,
+  });
   const revision = await getWorkingRevision(edition, actorUserId);
   assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
   const namespaceRevision = await NamespaceRevision.findOne({
@@ -255,7 +270,12 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
 async function publishEdition({ editionId, actorUserId }) {
   const { edition, item, namespace } = await getEditionContext(editionId);
   await assertCanManageItem(item, actorUserId, "manager");
-  const namespaceAccess = await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: item.ownerType,
+    principalId: item.ownerId,
+  });
   const revision = await getWorkingRevision(edition, actorUserId);
   assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
   if (revision.integrity?.status !== "valid") {
@@ -279,7 +299,12 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
   const sourceItem = await findItemOrFail(sourceItemId);
   const sourceEdition = await ItemEdition.findOne({ _id: sourceEditionId, itemId: sourceItem._id });
   if (!sourceEdition) throw new AppError("ItemEdition sorgente non disponibile", 404);
-  const { access: contentAccess } = await assertCanForkItemEdition({ itemEditionId: sourceEdition._id, actorUserId });
+  const { access: contentAccess } = await assertCanForkItemEdition({
+    itemEditionId: sourceEdition._id,
+    actorUserId,
+    principalType: ownerType,
+    principalId: ownerId,
+  });
   if (contentAccess.resolvedSnapshotRef?.resourceType !== "item_revision") {
     throw new AppError("Content fork senza ItemRevision autorizzata", 409, [{ code: "AUTHORIZED_ITEM_REVISION_REQUIRED" }]);
   }
@@ -292,7 +317,12 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
 
   const namespace = await Namespace.findOne({ _id: sourceEdition.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace della Edition sorgente non disponibile", 409);
-  const namespaceAccess = await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: ownerType,
+    principalId: ownerId,
+  });
   const targetNamespaceRevision = namespaceAccess.basis === "entitlement"
     ? await resolveNamespaceRevisionForAuthoring({ namespace, access: namespaceAccess })
     : await resolveNamespaceRevision(namespace, sourceRevision.authoredAgainstNamespaceRevisionId);
