@@ -127,6 +127,22 @@ La preview non espone route path, connection ID, VisitAnchor/VenueTarget/Place g
 
 La `LogisticsPreview` è una stima relativa alla preparation corrente e non un attributo immutabile della VisitRevision. Non viene introdotto un `VisitRevision.estimatedDuration` autorevole: presentation, movement pace, routing requirements, stato fisico corrente e profili di osservazione possono modificare la stima.
 
+# Punto 18/30 — Execution Preparation Context
+
+La fase fra Navigator Visit Detail e `VisitSession` viene modellata tramite un `ExecutionPreparation` transitorio backend, identificato al client da un handle opaco e una `version`. Non è Visit state, User preference, Marketplace resource o Session ed è eliminabile tramite TTL.
+
+La preparation fissa una specifica execution source (`VisitRevision` oppure `GeneratedVisitPlan`), il `PreparationDraft`, le preference effettive, l'adaptive policy version, lo snapshot fisico atteso (`VenueRelease/LayoutRevision` per Venue) e il `preparedPlanCandidate` che ha prodotto la `LogisticsPreview`.
+
+Una nuova `VisitRevision` pubblicata non sostituisce la revision già risolta dalla preparation. L'authorization non viene invece congelata: `startSession()` rivalida sempre il diritto di esecuzione sulla stessa source.
+
+Lo snapshot fisico della preparation è un optimistic consistency boundary, non il pin definitivo della Session. Allo start Venue, target e current `publishedReleaseId` vengono rivalidati. Se lo stato fisico è cambiato, lo start non usa né la vecchia release né quella nuova silenziosamente: restituisce un outcome `PREPARATION_PHYSICAL_STATE_CHANGED` e richiede una nuova preparation.
+
+Gli update della preparation usano optimistic concurrency (`preparationId + expectedVersion`) e ricalcolano backend-side presentation, navigation, logistics e readiness. Default utente modificati successivamente non cambiano una preparation già costruita.
+
+Uno start valido persiste direttamente il `preparedPlanCandidate` come SessionPlan iniziale, anziché ricalcolarlo. `VisitSession` diventa il vero snapshot runtime definitivo con VisitRevision, VenueRelease/LayoutRevision, navigation snapshot, movement speed, adaptive policy e piano concreto pinzati. Dopo uno start riuscito la preparation può essere marcata `consumed` con riferimento alla Session, permettendo comportamento idempotente su richieste duplicate.
+
+Visit e GeneratedVisitPlan utilizzano lo stesso execution-preparation boundary. La normale richiesta di start è quindi preparation-centric (`preparationId`, `expectedPreparationVersion`) e non ricostruisce source/preference da un nuovo payload `visitId + preferences`.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -157,11 +173,11 @@ Non devono più essere usati come contratto definitivo:
 - routing graph/requirements tecnici interpretati direttamente da Vue;
 - default globali basati su local routing attribute o preset Venue-specific;
 - logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance;
-- durata della Visit trattata come proprietà statica/autorevole della VisitRevision.
+- durata della Visit trattata come proprietà statica/autorevole della VisitRevision;
+- start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata.
 
-# Punti 18–30 ancora da riesaminare
+# Punti 19–30 ancora da riesaminare
 
-18. execution/preparation context e pin dipendenze;
 19. navigation destination tipizzata;
 20. runtime location VenueTarget/anchor-centric;
 21. mappe basate su VenueTarget placement;
