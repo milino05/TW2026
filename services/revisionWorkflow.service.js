@@ -1,14 +1,24 @@
 const EDITABLE_STATUSES = new Set(["draft", "changes_requested"]);
 
+function workflowError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function isEditableRevision(revision) {
   return Boolean(revision && EDITABLE_STATUSES.has(revision.status));
 }
 
+function assertIntegrityValid(revision) {
+  if (revision.integrity?.status !== "valid") {
+    throw workflowError("La revisione deve essere integra prima della pubblicazione", "INTEGRITY_REQUIRED");
+  }
+}
+
 function markRevisionEdited(revision, actorUserId) {
   if (!isEditableRevision(revision)) {
-    const error = new Error("La revisione non e modificabile nello stato corrente");
-    error.code = "REVISION_NOT_EDITABLE";
-    throw error;
+    throw workflowError("La revisione non e modificabile nello stato corrente", "REVISION_NOT_EDITABLE");
   }
   if (revision.status === "changes_requested") revision.status = "draft";
   revision.updatedBy = actorUserId;
@@ -29,15 +39,9 @@ function appendReviewEvent(revision, action, actorUserId, now, message = null) {
 
 function requestReview(revision, actorUserId, now = new Date()) {
   if (revision.status !== "draft") {
-    const error = new Error("Solo una revisione draft puo essere inviata in revisione");
-    error.code = "INVALID_REVIEW_TRANSITION";
-    throw error;
+    throw workflowError("Solo una revisione draft puo essere inviata in revisione", "INVALID_REVIEW_TRANSITION");
   }
-  if (revision.integrity?.status !== "valid") {
-    const error = new Error("La revisione deve superare il controllo di consistenza");
-    error.code = "INTEGRITY_REQUIRED";
-    throw error;
-  }
+  assertIntegrityValid(revision);
   revision.status = "in_review";
   const events = Array.isArray(revision.review?.events) ? revision.review.events : [];
   revision.review = {
@@ -53,30 +57,24 @@ function requestReview(revision, actorUserId, now = new Date()) {
   return revision;
 }
 
-function withdrawReview(revision, actorUserId) {
+function withdrawReview(revision, actorUserId, now = new Date()) {
   if (revision.status !== "in_review") {
-    const error = new Error("La revisione non e attualmente in revisione");
-    error.code = "INVALID_REVIEW_TRANSITION";
-    throw error;
+    throw workflowError("La revisione non e attualmente in revisione", "INVALID_REVIEW_TRANSITION");
   }
   revision.status = "draft";
   revision.updatedBy = actorUserId;
   revision.review.decision = null;
   revision.review.message = null;
-  appendReviewEvent(revision, "review_withdrawn", actorUserId, new Date());
+  appendReviewEvent(revision, "review_withdrawn", actorUserId, now);
   return revision;
 }
 
 function requestChanges(revision, managerUserId, message, now = new Date()) {
   if (revision.status !== "in_review") {
-    const error = new Error("Solo una revisione in_review puo ricevere una decisione");
-    error.code = "INVALID_REVIEW_TRANSITION";
-    throw error;
+    throw workflowError("Solo una revisione in_review puo ricevere una decisione", "INVALID_REVIEW_TRANSITION");
   }
   if (!message || typeof message !== "string" || !message.trim()) {
-    const error = new Error("La motivazione delle modifiche richieste e obbligatoria");
-    error.code = "REVIEW_MESSAGE_REQUIRED";
-    throw error;
+    throw workflowError("La motivazione delle modifiche richieste e obbligatoria", "REVIEW_MESSAGE_REQUIRED");
   }
   revision.status = "changes_requested";
   revision.review.reviewedAt = now;
@@ -87,18 +85,23 @@ function requestChanges(revision, managerUserId, message, now = new Date()) {
   return revision;
 }
 
-function markPublished(revision, managerUserId, now = new Date()) {
-  if (!["in_review", "draft"].includes(revision.status)) {
-    const error = new Error("La revisione non puo essere pubblicata nello stato corrente");
-    error.code = "INVALID_PUBLISH_TRANSITION";
-    throw error;
+function publishWithoutReview(revision, actorUserId, now = new Date()) {
+  if (revision.status !== "draft") {
+    throw workflowError("La pubblicazione diretta richiede una revisione draft", "INVALID_DIRECT_PUBLISH_TRANSITION");
   }
-  if (revision.integrity?.status !== "valid") {
-    const error = new Error("La revisione deve essere integra prima della pubblicazione");
-    error.code = "INTEGRITY_REQUIRED";
-    throw error;
-  }
+  assertIntegrityValid(revision);
   revision.status = "published";
+  revision.publication = { publishedAt: now, publishedBy: actorUserId };
+  return revision;
+}
+
+function approveReviewAndPublish(revision, managerUserId, now = new Date()) {
+  if (revision.status !== "in_review") {
+    throw workflowError("La pubblicazione manageriale richiede una revisione in_review", "INVALID_APPROVAL_PUBLISH_TRANSITION");
+  }
+  assertIntegrityValid(revision);
+  revision.status = "published";
+  if (!revision.review) revision.review = {};
   revision.review.reviewedAt = now;
   revision.review.reviewedBy = managerUserId;
   revision.review.decision = "approved";
@@ -115,5 +118,6 @@ module.exports = {
   requestReview,
   withdrawReview,
   requestChanges,
-  markPublished,
+  publishWithoutReview,
+  approveReviewAndPublish,
 };
