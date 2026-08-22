@@ -1,4 +1,5 @@
 const service = require("../services/navigatorVisitV2.service");
+const generationOptions = require("../services/generationOptionsV2.service");
 
 async function library(req, res, next) {
   try {
@@ -25,4 +26,13 @@ async function resumableSessions(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { library, visitDetail, resumableSessions };
+async function generationOptionsProjection(req, res, next) {
+  try {
+    res.status(200).json(await generationOptions.getGenerationOptionsProjection({
+      actorUserId: req.user._id,
+      selectedVenueIds: req.query?.selectedVenueIds || [],
+    }));
+  } catch (error) { next(error); }
+}
+
+module.exports = { library, visitDetail, resumableSessions, generationOptionsProjection };
