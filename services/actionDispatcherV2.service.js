@@ -6,6 +6,8 @@ const {
   advanceSession,
   changePresentationDepthV2,
   changePresentationComplexityV2,
+  openSemanticPresentationV2,
+  returnFromSemanticPresentationV2,
   routeToIntentV2,
   pauseSessionV2,
   resumeSessionV2,
@@ -104,6 +106,17 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
     case "PRESENTATION_COMPLEXITY_DECREASE":
       await changePresentationComplexityV2({ sessionId, userId, direction: "down" });
       return null;
+    case "EXPLORE_SEMANTIC_CONTENT":
+      await openSemanticPresentationV2({
+        sessionId,
+        userId,
+        serverInput: descriptor.serverInput,
+        sourceActionId: descriptor.actionId,
+      });
+      return { type: "semantic_presentation" };
+    case "SEMANTIC_RETURN":
+      await returnFromSemanticPresentationV2({ sessionId, userId });
+      return { type: "semantic_return" };
     case "PAUSE":
       await pauseSessionV2({ sessionId, userId });
       return null;
