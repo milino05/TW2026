@@ -24,11 +24,38 @@ Ogni proposta frontend o architetturale deve essere verificata rispetto al **bac
 - Un solo repository e un solo backend Node/Express condiviso.
 - Nessun backend separato per i due client.
 - Architettura 18–24 predisposta per 18–27 e 18–33.
-- ArtAround rimane generico rispetto ai musei; il frontend non hardcoda ontologie museali.
+- ArtAround rimane generico rispetto a musei, gallerie ed esposizioni; i client non hardcodano ontologie, contenuti o capacità specifiche di una struttura e rispettano la separazione del Domain Model v2 fra authority, dominio editoriale/semantico e dominio fisico.
 - Navigator: Vue, Vite, TypeScript, Vue Router, Pinia.
 - Marketplace/Editor: vanilla JavaScript con ES Modules e Web Components; nessun framework UI come Vue/React/Svelte.
 - `shared/` può contenere solo codice framework-agnostic, contratti, primitive HTTP e schemi realmente comuni; nessuna UI condivisa fra Vue e Web Components.
 - Lo stesso backend DTO può essere adattato separatamente nei due client.
+
+## Separazione dei contesti di dominio (v2)
+
+Il Navigator e il Marketplace non assumono che una singola entità “museo” possieda contemporaneamente contenuti, semantica e infrastruttura fisica. I client rispettano la separazione backend fra ownership/authority, EditorialScope e PhysicalScope.
+
+```text
+Ownership / authority
+  User | Organization
+
+Editorial scope
+  EditorialRelease[]
+    -> EditorialContext
+    -> NamespaceRevision
+    -> SemanticGraph
+    -> Subject
+    -> ItemEdition / ItemRevision
+
+Physical scope
+  Venue / VenueRelease[]
+    -> VenueTarget
+    -> LayoutRevision
+    -> Place / routing
+```
+
+Un `Venue` non è il proprietario implicito della semantica/editorialità e un `EditorialContext` non implica disponibilità fisica in una Venue. I backend projection/service compongono questi assi quando serve; i client non ne ricostruiscono autonomamente le relazioni.
+
+La parola “museo” può naturalmente rimanere nella UX quando è il termine comprensibile per l'utente; non deve però tornare a essere un aggregate tecnico universale che contiene implicitamente ownership, contenuti, graph, layout, permission e Marketplace.
 
 # Organizzazione logica del Navigator
 
@@ -59,7 +86,7 @@ Non deve esistere un unico gigantesco `ApiService`. Sono preferibili repository/
 
 # Sistema Action
 
-È scartato un enum globale di comandi semanticamente hardcoded (`AUTHOR`, `STYLE`, `TOILET`, ecc.). ArtAround è museum-defined.
+È scartato un enum globale di comandi semanticamente hardcoded (`AUTHOR`, `STYLE`, `TOILET`, ecc.). ArtAround deriva le capacità dal dominio e dai dati autorevoli pertinenti, non da un catalogo di comandi specifico del museo hardcoded nel client.
 
 Protocollo:
 
@@ -73,7 +100,7 @@ ActionDefinition
 
 ## Action family
 
-Le family descrivono meccanismi strutturali relativamente stabili; i valori museali rimangono dinamici.
+Le family descrivono meccanismi strutturali relativamente stabili; binding e valori editoriali, semantici e fisici rimangono dinamici.
 
 Esempi approvati concettualmente:
 
@@ -88,7 +115,9 @@ Le family hanno contratti tipizzati; non è approvato un generico `parameters: a
 
 ## ActionDefinition e AvailableAction
 
-`ActionDefinition` = capacità esistente nel dominio. Può essere derivata da vocabulary, relation types, place types/layout, visita, sessione e capability della piattaforma. Le Domain ActionDefinition sono autorevoli nel backend e non richiedono necessariamente una collection Mongo dedicata.
+`ActionDefinition` = capacità esistente nel dominio. Le fonti autorevoli dipendono dalla family: semantica/editorialità da `EditorialRelease` / `NamespaceRevision` / `SemanticGraph` / `Subject`; presentazione da `ItemRevision` / `NamespaceRevision`; capacità fisiche da `VenueRelease` / `LayoutRevision` / `VenueTarget`; controllo della visita da `VisitSession` / `SessionPlan`. Le Domain ActionDefinition sono autorevoli nel backend e non richiedono necessariamente una collection Mongo dedicata.
+
+Il client non carica questi aggregate per dedurre autonomamente quali azioni siano disponibili: il backend compone il contesto rilevante e produce le `AvailableAction[]`.
 
 `AvailableAction` = capacità concretamente disponibile per quell'utente e quel contesto. Il Navigator riceve principalmente `AvailableAction[]`, che è parte versionata del `NavigatorRuntimeState`.
 
@@ -103,7 +132,7 @@ L'ActionRequest contiene almeno `availableActionId`, `expectedRuntimeVersion` ed
 
 ## Eventi
 
-Sono scartati eventi museum-specific hardcoded come `AUTHOR_REQUESTED`. Si distinguono platform event strutturali e `InteractionEvent` generici che referenziano action e binding dinamici.
+Sono scartati eventi domain-specific hardcoded come `AUTHOR_REQUESTED`. Si distinguono platform event strutturali e `InteractionEvent` generici che referenziano action e binding dinamici.
 
 ## Domain Action, Client Action e UIIntent
 
