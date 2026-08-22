@@ -143,6 +143,20 @@ Uno start valido persiste direttamente il `preparedPlanCandidate` come SessionPl
 
 Visit e GeneratedVisitPlan utilizzano lo stesso execution-preparation boundary. La normale richiesta di start è quindi preparation-centric (`preparationId`, `expectedPreparationVersion`) e non ricostruisce source/preference da un nuovo payload `visitId + preferences`.
 
+# Punto 19/30 — NavigationDestination v2
+
+Il runtime non usa un `destinationId` generico né un aggregate Location universale. Le destinazioni sono una union tipizzata almeno fra `VisitAnchorDestination` e `VenuePlaceDestination`.
+
+Una tappa pianificata della Visit è identificata dal `visitAnchorId`, con `venueTargetId` e `venueId` associati. `VisitAnchor` identifica l'occorrenza nell'itinerario e non può essere sostituito dal solo VenueTarget, perché lo stesso target può comparire più volte nella Visit. Il `Place` materializzato dalla Session serve al routing ma non sostituisce l'identità semantica dell'Anchor/Target.
+
+I luoghi logistici indipendenti dalla Visit sono `Place` della `LayoutRevision` e vengono proiettati come `VenuePlaceDestination { venueId, placeId, label, resolvedForIntent }`. Gli intenti `FIND_*` sono globali e distinti dalla destination concreta; `PlaceType` e relative key restano Venue-local.
+
+`NEXT/PREVIOUS` operano sulla sequenza di contenuti e non implicano necessariamente uno spostamento: una nuova destination fisica esiste solo quando cambia il VisitAnchor effettivo. Le leg inter-Venue sono route legs, non destination type.
+
+Gli intenti logistici vengono normalmente risolti nella Venue corrente. Comandi come “ci sono ostacoli?” non rappresentano destination request e restano query/action di accessibility/navigation separate.
+
+Le API runtime non espongono raw Place, path/connection ID, VenueRelease/LayoutRevision ID o preference penalty come contratto Navigator. Tali dati vengono trasformati in una `NavigationProjection` user-facing; la composizione mappa viene definita al Punto 21. QR/geolocation 18–33 cambiano il modo in cui viene determinata l'origine della navigazione, non la tipologia delle destinazioni.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -174,11 +188,11 @@ Non devono più essere usati come contratto definitivo:
 - default globali basati su local routing attribute o preset Venue-specific;
 - logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance;
 - durata della Visit trattata come proprietà statica/autorevole della VisitRevision;
-- start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata.
+- start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata;
+- destination runtime appiattita su un ID ambiguo o su un generico aggregate Location.
 
-# Punti 19–30 ancora da riesaminare
+# Punti 20–30 ancora da riesaminare
 
-19. navigation destination tipizzata;
 20. runtime location VenueTarget/anchor-centric;
 21. mappe basate su VenueTarget placement;
 22. Action derivation completa dai source v2;
