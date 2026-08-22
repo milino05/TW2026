@@ -110,7 +110,7 @@ async function resolveCapabilitySource({ actorUserId, capability, resourceType, 
     } else if (authority) {
       resolvedSnapshotRef = { resourceType, resourceId: authority.resource._id };
     }
-    if (!resolvedSnapshotRef) {
+    if (!resolvedSnapshotRef && exact.basis === "entitlement") {
       throw new AppError("Snapshot autorizzata non disponibile", 409, [{ code: "AUTHORIZED_SNAPSHOT_UNAVAILABLE" }]);
     }
     return { ...exact, requestedResourceRef, resolvedSnapshotRef };
