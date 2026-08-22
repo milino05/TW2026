@@ -4,6 +4,7 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import "./workspace-view.js";
 import "./item-authoring-view.js";
 import "./visit-authoring-view.js";
+import "./visit-logistics-editor.js";
 import "./venue-target-chooser.js";
 import "./context-release-composer.js";
 
@@ -239,7 +240,7 @@ export class MarketplaceAppShell extends HTMLElement {
     const content = !this.authChecked ? "<main><p>Caricamento…</p></main>"
       : !this.user ? this.renderLogin()
       : route === "/workspace/item-authoring" ? "<artaround-item-authoring-view></artaround-item-authoring-view>"
-      : route === "/workspace/visit-authoring" ? "<artaround-visit-authoring-view></artaround-visit-authoring-view>"
+      : route === "/workspace/visit-authoring" ? "<artaround-visit-authoring-view></artaround-visit-authoring-view><artaround-visit-logistics-editor></artaround-visit-logistics-editor>"
       : route === "/workspace/venue-targets" ? "<artaround-venue-target-chooser></artaround-venue-target-chooser>"
       : route === "/workspace/context-compose" ? "<artaround-context-release-composer></artaround-context-release-composer>"
       : ["/workspace", "/workspace/resource"].includes(route) ? "<artaround-workspace-view></artaround-workspace-view>"
