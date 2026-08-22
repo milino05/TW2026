@@ -11,6 +11,7 @@ const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { findAdjacentPresentation, resolvePresentationText, id } = require("./presentationRuntimeV2.service");
 const { loadPinnedBundle, routeToIntentInSession } = require("./physicalExecutionV2.service");
 const { nextPhysicalLeg } = require("./navigationProjectionV2.service");
+const { resolveNavigationOrigin } = require("./navigationOriginV2.service");
 const {
   deriveSemanticExplorationActions,
   materializeSemanticPresentation,
@@ -392,11 +393,8 @@ async function recordTransitionV2({ sessionId, userId, payload = {} }) {
 
 async function routeToIntentV2({ sessionId, userId, intent }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId });
-  const currentAnchor = effectiveAnchorForIndex(plan, session.currentEntryIndex);
-  if (!currentAnchor?.venueId || !currentAnchor?.placeId) {
-    throw new AppError("La Session non possiede un'origine logica per la navigazione", 409, [{ code: "LOGICAL_NAVIGATION_ORIGIN_REQUIRED" }]);
-  }
-  return routeToIntentInSession({ session, venueId: currentAnchor.venueId, fromPlaceId: currentAnchor.placeId, intent });
+  const origin = resolveNavigationOrigin({ session, plan });
+  return routeToIntentInSession({ session, venueId: origin.venueId, fromPlaceId: origin.placeId, intent });
 }
 
 async function pauseSessionV2({ sessionId, userId }) {
