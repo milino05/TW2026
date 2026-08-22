@@ -255,6 +255,24 @@ Vendite e adozioni hanno projection/dashboard dedicate, con statistiche aggregat
 
 La selezione UX del museo è un filtro/contesto del catalogo unico e non crea Marketplace separati; il mapping preciso verso Venue viene definito al Punto 29.
 
+# Punto 27/30 — Reference, import snapshot, copy detached e fork
+
+Reference, import snapshot, copy detached e fork sono operazioni distinte e non vengono rappresentate da una generica “copy”. Una reference incorpora una risorsa/snapshot esterna in un proprio aggregate senza crearne una nuova lineage o trasferirne ownership. Le revision/release persistenti pinano sempre snapshot immutabili, anche quando il diritto sorgente è `follow_current`.
+
+`content.use_in_editorial_release` e `context.compose_visit` sono reference capabilities. `ContentSpaceMembership` non modifica ownership e non costituisce prova del diritto commerciale; l'uso effettivo di una risorsa esterna viene rivalidato tramite `CapabilityAuthorizationService`.
+
+Un fork crea una nuova lineage indipendente dello stesso dominio editoriale e registra provenance verso la snapshot sorgente. Item fork mantiene normalmente gli stessi Subject globali ma crea un nuovo Item/Edition/Revision e non copia VenueTarget. Namespace fork crea una nuova Namespace lineage, rigenera le definition identity e non copia automaticamente Subject, Item o SemanticGraph.
+
+`visit.copy_detached` crea una nuova Visit lineage e nuovi ID strutturali, mantenendo riferimenti alle stesse immutable editorial dependencies e agli stessi VenueTarget. “Detached” indica indipendenza dalla futura evoluzione della Visit sorgente, non deep-copy delle dependency; non concede implicitamente diritti di fork/import/resale sulle dipendenze.
+
+`context.import_snapshot` materializza da una precisa EditorialRelease una nuova EditorialContext lineage owned dal destination principal, normalmente in un proprio ContentSpace. L'import preserva la snapshot editoriale/semantica e la provenance, ma non duplica automaticamente Subject, Item o Namespace e non trasforma le dependency esterne in asset owned. Nuove operazioni sulle dependency continuano a richiedere le relative capability (`namespace.author`, `content.fork`, ecc.).
+
+Subject rimane identità globale condivisa attraverso reference, import e fork e non viene duplicato per creare ownership locale. Analogamente le operazioni editoriali non creano o duplicano VenueTarget.
+
+Acquisition non crea Adoption. Adoption viene registrata quando una risorsa esterna viene effettivamente incorporata in un processo creator (`content_link`, `content_fork`, `namespace_use`, `namespace_fork`, `context_reference`, `context_import`, `context_venue_primary`, `visit_copy`). Fruizione pura come `visit.execute`, `content.consume` o una generazione temporanea non è automaticamente Adoption. Provenance dell'asset e Adoption restano concetti separati.
+
+Gli attuali Item fork, Namespace fork e Visit detached copy vengono mantenuti come base strutturale; i loro authorization boundary owner-only temporanei vengono sostituiti dal sistema capability-based. Non viene introdotto un universal provenance aggregate soltanto per uniformare asset differenti; le projection possono fornire un `provenanceSummary` comune sopra provenance tipizzate per dominio.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -299,11 +317,12 @@ Non devono più essere usati come contratto definitivo:
 - publication di una Visit organization-owned direttamente da `draft` senza passare per managerial review;
 - publication personale che scrive review/approval metadata fittizi;
 - Catalog Marketplace costruito da liste raw di Item/Context/Visit o dal dump di documenti commerciali;
-- acquisition che importa/copia/adotta automaticamente un asset o account type globali `visitor/author` usati come authorization.
+- acquisition che importa/copia/adotta automaticamente un asset o account type globali `visitor/author` usati come authorization;
+- operazione generica “copy” che confonde reference, import snapshot, Visit detached copy e fork;
+- fork/import che duplica Subject o VenueTarget per creare ownership locale.
 
-# Punti 27–30 ancora da riesaminare
+# Punti 28–30 ancora da riesaminare
 
-27. reference/import/copy/fork;
 28. Item authoring Subject/Edition/Revision/VenueTarget;
 29. mapping UX “museo” -> Venue selection;
 30. pulizia finale residui legacy e decisioni aperte.
