@@ -211,6 +211,20 @@ Le opzioni semantiche vengono derivate dai Namespace/SemanticGraph delle source 
 
 La stessa structured generation request è usata dal form e dalle future capability 18–33; eventuale LLM non introduce un secondo contratto di generazione né un'interfaccia a prompt.
 
+# Punto 24/30 — Materializzazione GeneratedPlan -> Visit v2
+
+`accept` e `materialize as Visit` sono use case distinti. Un `GeneratedVisitPlan` accettato può essere eseguito direttamente oppure materializzato, tramite un comando idempotente separato, come una nuova Visit `ownerType=user` del current User. Il GeneratedPlan resta come artifact di provenance/generazione e mantiene un riferimento alla Visit materializzata.
+
+La materializzazione crea una normale VisitRevision usando gli stessi snapshot editoriali del piano: preserva EditorialRelease, Item, ItemEdition, ItemRevision, role, ordine delle ContentEntry e VenueTarget degli Anchor. Nuovi VisitAnchor vengono creati e i `deliveryAnchorId` vengono rimappati. In presenza di provenance multipla su una generated ContentEntry viene scelta deterministicamente una EditorialSource canonica compatibile con la Edition/Revision, senza cambiare il modello Visit a source multiple; il GeneratedPlan conserva la provenance completa.
+
+Le Representation concrete, i Place, VenueRelease/LayoutRevision fisiche, route indoor/path, timing, observation estimate, movement/navigation snapshot, adaptive policy, score e generation diagnostics non vengono copiati nella Visit. Le eventuali preference astratte `depthPreference`, `languageComplexityPreference` e `locale` possono diventare `presentationBaseline`.
+
+Le sole informazioni del piano fisico convertibili in logistica persistente sono quelle semanticamente necessarie per trasferimenti inter-Venue, in particolare `estimatedTransferSeconds`, rimappate come RouteHint fra i nuovi Anchor. I percorsi indoor vengono sempre ricalcolati contro la VenueRelease/LayoutRevision corrente nelle future preparation/Session.
+
+La nuova Visit personale viene sottoposta al normale integrity check e pubblicata come VisitRevision eseguibile; questo non crea un MarketplaceListing e quindi non la rende pubblicamente discoverable. Successive modifiche passano dal normale workflow revisionale Visit. La materializzazione è applicativamente atomica/idempotente: richieste duplicate restituiscono la Visit già creata invece di duplicarla.
+
+La materializzazione non copia o trasferisce ownership di Item, EditorialContext, Namespace o graph: conserva riferimenti a dipendenze immutabili legittimamente usate dal GeneratedPlan. Provenance commerciale/Adoption resta responsabilità del Marketplace domain. Il legame persistente GeneratedPlan -> Visit è obbligatorio; l'eventuale generalizzazione futura in un modello unico di Visit provenance viene valutata insieme a reference/import/copy/fork.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -249,11 +263,12 @@ Non devono più essere usati come contratto definitivo:
 - `availableActions` come mere stringhe con business logic duplicata fra endpoint, bottoni e voce;
 - relazioni semantiche museali come `author/style` imposte come catalogo platform-level obbligatorio;
 - `Venue.primaryEditorialContextId` usato come bypass implicito di `context.generate`;
-- client che costruisce l'universo delle source del generator leggendo direttamente modelli editoriali/commerciali.
+- client che costruisce l'universo delle source del generator leggendo direttamente modelli editoriali/commerciali;
+- `acceptGeneratedPlan` usato implicitamente come creazione di una Visit;
+- materializzazione di un GeneratedPlan che congela VenueRelease/LayoutRevision, Place, path indoor, timing o Representation concrete dentro la VisitRevision.
 
-# Punti 24–30 ancora da riesaminare
+# Punti 25–30 ancora da riesaminare
 
-24. materializzazione GeneratedPlan -> user-owned Visit v2;
 25. workflow Visit user/organization-owned;
 26. consumer/creator Marketplace projections;
 27. reference/import/copy/fork;
