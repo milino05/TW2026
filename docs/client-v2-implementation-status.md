@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Slice corrente
 
-**Slice 2 — Execution source, Preparation e projections Navigator**
+**Slice 3 — Action protocol v2 e runtime cleanup**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -20,14 +20,7 @@ Completato su `main`:
 - rimosso lo script npm morto `assign:museum-role`;
 - README riallineato all'architettura client-v2;
 - corretto il seed utenti per `organizationMemberships`;
-- aggiunto ignore dei build output client;
-- toolchain Navigator aggiornata alle release stabili verificate al momento dell'implementazione.
-
-Verifiche eseguite durante lo Slice 0:
-
-- Marketplace: check sintattico e build superati nel workspace disponibile;
-- Navigator: sorgenti TypeScript verificate sintatticamente; la build Vue completa richiede le dipendenze npm;
-- seed utenti modificato: controllo sintattico superato.
+- aggiunto ignore dei build output client.
 
 ## Slice 1 — Capability core + primo flusso end-to-end
 
@@ -35,49 +28,64 @@ Verifiche eseguite durante lo Slice 0:
 
 Completato su `main`:
 
-- introdotto il capability registry generico per gli asset marketable approvati;
-- aggiunti `MarketplaceListing`, `MarketplaceOffer`, `MarketplaceAcquisition` ed `Entitlement` con principal User/Organization e version policy;
-- aggiunti `PrincipalResolutionService` e `CapabilityAuthorizationService`;
-- migrato `visit.execute` da owner/membership-only a ownership personale, Organization principal authority oppure Entitlement valido;
-- la risoluzione dei principal Organization considera soltanto Organization attive;
-- aggiunto Catalog Visit Listing-centric, paginato e opzionalmente filtrato per Venue tramite PhysicalScope derivato dagli Anchor;
-- aggiunta acquisizione gratuita idempotente: ogni acquisizione crea un evento `MarketplaceAcquisition` e gli Entitlement corrispondenti, con compensazione applicativa in caso di failure;
-- l'API di acquisizione proietta `grantedUses` e non espone documenti Entitlement grezzi;
-- aggiunte Navigator Library e Visit Detail projection dedicate;
-- la Library personale contiene Visit user-owned e direct User Entitlement, ma non viene popolata automaticamente dalla Organization authority;
-- `/auth/me` espone `organizationMemberships`, coerentemente con il modello corrente;
-- Navigator implementa login, Library, Detail, start Session e runtime NEXT/PREVIOUS backend-authoritative;
-- Marketplace vanilla implementa login, Catalog Visit, stato `alreadyUsable`, acquisizione gratuita e filtro Venue iniziale ricevuto dal Navigator;
-- il Catalog distingue correttamente “già utilizzabile” dalla presenza nella Library personale;
-- Marketplace e Navigator usano repository HTTP specifici per use case, non un God API service.
+- capability registry generico e principal resolution User/Organization;
+- `MarketplaceListing`, `MarketplaceOffer`, `MarketplaceAcquisition`, `Entitlement`;
+- `CapabilityAuthorizationService` e migrazione di `visit.execute` a ownership/principal authority/Entitlement;
+- Catalog Visit Listing-centric e acquisizione gratuita idempotente;
+- Navigator Library/Detail e Marketplace Catalog come projection dedicate;
+- distinzione `can execute != appears in personal Library`;
+- client login/Catalog/acquire/Library/Detail/Session/NEXT/PREVIOUS;
+- test capability e API end-to-end.
 
-Contratto deliberatamente limitato nello Slice 1:
+## Slice 2 — Execution source, Preparation e projections Navigator
 
-- le Offer `visit.execute` esposte dall'API sono gratuite e `follow_current`;
-- `pin_at_acquisition`/execution pinned non viene simulata sul vecchio start e passa allo Slice 2 con `ResolvedVisitExecutionSource` e `ExecutionPreparation`;
-- paid acquisition resta non implementata e viene rifiutata esplicitamente;
-- gli endpoint runtime specifici `advance` rimangono temporaneamente il consumer di NEXT/PREVIOUS e verranno sostituiti dal protocollo Action nello Slice 3.
+**Stato: implementato nel codice; test automatici aggiunti; verifica CI push non osservabile tramite il connector corrente.**
 
-Test aggiunti:
+Completato su `main`:
 
-- test Mongo del capability core: assenza iniziale del diritto, free acquisition, Entitlement, idempotenza, ownership invariata, Organization principal authority separata dalla Library personale;
-- test API end-to-end: `login -> Catalog -> acquire -> Library -> Detail -> start Session -> NEXT -> PREVIOUS` usando una Visit editoriale content-only, caso supportato dal planner corrente senza inventare una Venue/layout fittizia;
-- il test di compatibilità Mongo esistente carica automaticamente tutti i modelli e quindi include anche i nuovi schema/index Marketplace.
+- `ResolvedVisitExecutionSource` effettivo tramite `resolveExecutableVisitRevisionV2` per owner/principal authority, Entitlement `follow_current` e Entitlement pinned;
+- `pin_at_acquisition` risolve e conserva la `VisitRevision` acquisita; una nuova publication non sostituisce la source pinned;
+- `ExecutionPreparation` transitoria con TTL, source esatta, `version`, optimistic concurrency, `PreparationDraft`, preference effettive, snapshot navigation, physical pins, candidate plan, readiness, `LogisticsPreview`, preVisit e consumption idempotente;
+- lo start rivalida l'authorization sulla stessa VisitRevision preparata; revoca/cambio diritto incompatibile produce `PREPARATION_SOURCE_AUTHORIZATION_CHANGED`;
+- `follow_current` non consente a un diritto acquisito dopo la preparation di autorizzare retroattivamente una vecchia source congelata;
+- cambio del `Venue.publishedReleaseId` dopo la preparation produce `PREPARATION_PHYSICAL_STATE_CHANGED`;
+- lo start persiste esattamente il `preparedPlanCandidate` e non invoca un secondo planner;
+- errori di planning noti vengono proiettati come `readiness.status=blocked` con blocker stabili; una preparation blocked non può essere avviata;
+- `preVisit.visitNotes` deriva dalla VisitRevision esatta e `preVisit.venues[].information` dalle stesse VenueRelease pinzate dalla preparation;
+- Library e Detail usano la stessa execution-source resolution della preparation e quindi rispettano anche Entitlement pinned;
+- Library verifica la coerenza fisica dei candidate e Detail applica anche la configured Venue come contesto fisico;
+- session discovery/resume minimale via `GET /v2/navigator/sessions` e consumer nella Library;
+- rimosso `POST /v2/visit-sessions` come creation endpoint;
+- rimossi dal `VisitSessionService` anche gli helper interni `startVisitSessionV2`, `startGeneratedPlanSessionV2` e `startFromSource`: la creazione di Session passa soltanto da `ExecutionPreparation`;
+- il Navigator Detail crea/aggiorna la preparation, mostra preVisit/readiness/logistics e modifica depth/complexity/movement pace con `expectedVersion` prima dello start;
+- `checkLegacyContracts.js` impedisce il ritorno dello start diretto in route, client e service.
 
-Limiti della verifica dell'assistente:
+Test Slice 2:
 
-- il workspace locale non riesce a risolvere GitHub via DNS e non può clonare `main` per eseguire la suite completa;
-- il connector GitHub corrente non espone uno status check osservabile per i push eseguiti (`statuses: []`);
-- di conseguenza la presenza dei test e della CI configurata è verificata, ma il loro esito sul commit corrente non viene dichiarato come positivo senza evidenza.
+- una preparation mantiene la VisitRevision iniziale dopo una nuova publication;
+- una acquisition pinned continua a risolvere la revision acquisita;
+- `expectedVersion` errata produce `PREPARATION_VERSION_CONFLICT`;
+- start ripetuto restituisce la stessa Session e `alreadyStarted=true`;
+- revoca del diritto sulla source preparata blocca lo start;
+- planning fisico incoerente produce una preparation blocked;
+- una preparation su VenueRelease R1 viene invalidata se la Venue passa a R2 prima dello start;
+- una Session già avviata resta pinzata a R1, mentre una nuova preparation risolve R2;
+- il test API percorre `login -> Catalog -> acquire -> Library -> Detail -> preparation/update -> start -> discovery -> NEXT -> PREVIOUS`;
+- il test API verifica anche che `POST /v2/visit-sessions` non esista più.
+
+## Stato della verifica automatica
+
+La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il connector disponibile continua però a non esporre i workflow `push`: la ricerca dei run associati ai commit restituisce soltanto run PR e per i commit correnti non produce risultati. Per questo il codice e i test sono versionati, ma l'esito CI del commit corrente non viene dichiarato green senza evidenza osservabile.
 
 ## Prossimo incremento
 
-Avviare Slice 2 sostituendo definitivamente lo start `visitId -> publishedRevisionId` con il boundary approvato:
+Slice 3 sostituisce il runtime endpoint-specific con il protocollo Action approvato:
 
-1. `ResolvedVisitExecutionSource` per ownership/principal authority/Entitlement `follow_current | pinned`;
-2. `ExecutionPreparation` transitoria e versionata;
-3. effective presentation/navigation preference e expected physical snapshot;
-4. `preparedPlanCandidate`, readiness e `LogisticsPreview` dalla stessa computation;
-5. start preparation-centric e idempotente;
-6. Library/Detail allineate alla stessa source resolution;
-7. rimozione del fallback implicito alla latest VisitRevision durante lo start.
+1. Action registry/definitions per famiglie generiche;
+2. `AvailableAction` concrete e server-side, non semplici stringhe;
+3. `POST /v2/visit-sessions/:sessionId/actions` con `ActionRequest` e re-derivation della disponibilità;
+4. dispatcher verso use case runtime specializzati;
+5. `InteractionEvent` generico con actor/action/channel/context/result/timestamp;
+6. rename pubblico `PRESENTATION_LANGUAGE_* -> complexity` mantenendo locale/traduzione separati;
+7. Navigator consumer unico per NEXT/PREVIOUS/presentation/lifecycle;
+8. rimozione degli endpoint runtime specifici dal contratto client.
