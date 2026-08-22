@@ -147,7 +147,7 @@ Visit e GeneratedVisitPlan utilizzano lo stesso execution-preparation boundary. 
 
 Il runtime non usa un `destinationId` generico né un aggregate Location universale. Le destinazioni sono una union tipizzata almeno fra `VisitAnchorDestination` e `VenuePlaceDestination`.
 
-Una tappa pianificata della Visit è identificata dal `visitAnchorId`, con `venueTargetId` e `venueId` associati. `VisitAnchor` identifica l'occorrenza nell'itinerario e non può essere sostituito dal solo VenueTarget, perché lo stesso target può comparire più volte nella Visit. Il `Place` materializzato dalla Session serve al routing ma non sostituisce l'identità semantica dell'Anchor/Target.
+Una tappa pianificata della Visit è identificata dal `visitAnchorId`, con `venueTargetId` e `venueId` associati. `VisitAnchor` identifica l'occorrenza nell’itinerario e non può essere sostituito dal solo VenueTarget, perché lo stesso target può comparire più volte nella Visit. Il `Place` materializzato dalla Session serve al routing ma non sostituisce l'identità semantica dell'Anchor/Target.
 
 I luoghi logistici indipendenti dalla Visit sono `Place` della `LayoutRevision` e vengono proiettati come `VenuePlaceDestination { venueId, placeId, label, resolvedForIntent }`. Gli intenti `FIND_*` sono globali e distinti dalla destination concreta; `PlaceType` e relative key restano Venue-local.
 
@@ -273,6 +273,24 @@ Acquisition non crea Adoption. Adoption viene registrata quando una risorsa este
 
 Gli attuali Item fork, Namespace fork e Visit detached copy vengono mantenuti come base strutturale; i loro authorization boundary owner-only temporanei vengono sostituiti dal sistema capability-based. Non viene introdotto un universal provenance aggregate soltanto per uniformare asset differenti; le projection possono fornire un `provenanceSummary` comune sopra provenance tipizzate per dominio.
 
+# Punto 28/30 — Item authoring v2
+
+L'authoring editoriale parte dal `Subject` e non dalla Venue. L'autore cerca e riusa un Subject esistente oppure ne crea uno nuovo; gli exact external reference identificano senza ambiguità entità già note e non vengono duplicati. Subject è identità semantica globale e non possiede owner editoriale, ContentSpace o Venue.
+
+Un `Item` è una lineage editoriale owned da User/Organization su un `primarySubjectId`; più Item indipendenti possono riferirsi allo stesso Subject. `ItemEdition` lega la lineage a un Namespace e resta unica per coppia Item/Namespace. `ItemRevision` contiene metadati e presentation content versionato; `PresentationVariant` rappresenta alternative semantico/editoriali mentre `Representation` concretizza durata, livello linguistico, locale e testo. Author e license restano requisiti di publish integrity.
+
+La terminologia interna non viene deformata per replicare letteralmente l'“Item = testo” della specifica. Catalog ed Editor forniscono però projection user-facing in cui i testi/Representation mostrano chiaramente durata, linguaggio, autore, licenza e contenuto, rendendo esplicita la conformità funzionale.
+
+`ContentSpaceMembership` organizza e autorizza l'inclusione dell'Item in un workspace ma non modifica ownership. Una EditorialRelease può includere soltanto Item member del ContentSpace del Context, Edition appartenenti allo stesso Namespace e ItemRevision immutabili/coerenti. Item publication, Context release e Marketplace listing restano lifecycle distinti.
+
+`VenueTarget` appartiene esclusivamente al Physical Domain ed è una occorrenza `Venue + Subject`. Item/Edition/Revision non contengono `venueTargetId`, `venueId`, coordinate o placement. Un Item relativo a un Subject non fisico non richiede alcun VenueTarget; una Visit può consegnarlo presso l'Anchor di un altro Subject fisico.
+
+Recognition media della specifica viene separata da media editoriale: `ItemRevision.illustrativeMedia` accompagna il contenuto, mentre `VenueRelease.targetBindings.recognitionMedia` serve a riconoscere l'occorrenza fisica. Un wizard può orchestrare Subject, Item e VenueTarget per comodità UX ma non li fonde nel dominio e rispetta authority separate.
+
+`relatedSubjectIds` e semantic focus non generano automaticamente SemanticGraph edge. Le relazioni del graph restano curate esplicitamente. Il consistency check Item deve inoltre verificare l'esistenza dei Subject referenziati prima della publication.
+
+Il Marketplace/Editor usa una `ItemAuthoringProjection` con Subject, lineage, Namespace/Edition, revision/presentation controls, workspace membership, publication state e `availableOperations[]`; non espone al Web Component una composizione di documenti Mongo grezzi da interpretare.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -319,11 +337,12 @@ Non devono più essere usati come contratto definitivo:
 - Catalog Marketplace costruito da liste raw di Item/Context/Visit o dal dump di documenti commerciali;
 - acquisition che importa/copia/adotta automaticamente un asset o account type globali `visitor/author` usati come authorization;
 - operazione generica “copy” che confonde reference, import snapshot, Visit detached copy e fork;
-- fork/import che duplica Subject o VenueTarget per creare ownership locale.
+- fork/import che duplica Subject o VenueTarget per creare ownership locale;
+- Item/Edition/Revision che incorporano `venueId`, `venueTargetId`, coordinate o placement fisico;
+- creazione contenuto che richiede sempre una Venue/occurrence fisica o che trasforma automaticamente `relatedSubjectIds` in graph edge.
 
-# Punti 28–30 ancora da riesaminare
+# Punti 29–30 ancora da riesaminare
 
-28. Item authoring Subject/Edition/Revision/VenueTarget;
 29. mapping UX “museo” -> Venue selection;
 30. pulizia finale residui legacy e decisioni aperte.
 
