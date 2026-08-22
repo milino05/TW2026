@@ -207,10 +207,12 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       const library = await jsonFetch(`${baseUrl}/api/v2/navigator/library`, { cookie });
       assert.equal(library.response.status, 200);
       assert.deepEqual(library.body.visits.map((entry) => entry.title), ["Catalog API Visit"]);
+      assert.equal(String(library.body.visits[0].resolvedRevisionId), String(revision._id));
 
       const detail = await jsonFetch(`${baseUrl}/api/v2/navigator/visits/${visit._id}`, { cookie });
       assert.equal(detail.response.status, 200);
       assert.equal(detail.body.visit.title, "Catalog API Visit");
+      assert.equal(String(detail.body.visit.resolvedRevisionId), String(revision._id));
       assert.equal(detail.body.preparation.available, true);
 
       const preparation = await jsonFetch(`${baseUrl}/api/v2/execution-preparations`, {
@@ -231,6 +233,21 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       });
       assert.equal(versionConflict.response.status, 409);
       assert.equal(versionConflict.body.errors[0].code, "PREPARATION_VERSION_CONFLICT");
+
+      const updatedPreparation = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${preparation.body.preparation.id}`, {
+        cookie,
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedVersion: preparation.body.preparation.version,
+          movementPacePreference: 0.7,
+          presentationPreference: { depthPreference: 0.8, languageComplexityPreference: 0.2 },
+        }),
+      });
+      assert.equal(updatedPreparation.response.status, 200);
+      assert.equal(updatedPreparation.body.preparation.version, 2);
+      assert.equal(updatedPreparation.body.preparation.navigation.movementPacePreference, 0.7);
+      assert.equal(updatedPreparation.body.preparation.effectivePresentationPreference.depthPreference, 0.8);
+      assert.equal(String(updatedPreparation.body.preparation.source.visitRevisionId), String(revision._id));
 
       const revision2 = await VisitRevisionV2.create({
         visitId: visit._id,
@@ -257,10 +274,11 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       });
       assert.equal(directStart.response.status, 404, "direct Session creation must be unavailable");
 
-      const start = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${preparation.body.preparation.id}/start`, {
+      const activePreparation = updatedPreparation.body.preparation;
+      const start = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${activePreparation.id}/start`, {
         cookie,
         method: "POST",
-        body: JSON.stringify({ expectedVersion: preparation.body.preparation.version }),
+        body: JSON.stringify({ expectedVersion: activePreparation.version }),
       });
       assert.equal(start.response.status, 201);
       assert.equal(start.body.alreadyStarted, false);
@@ -269,10 +287,16 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       assert.equal(start.body.current.availableActions.includes("NEXT"), true);
       const sessionId = start.body.session._id;
 
-      const repeatedStart = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${preparation.body.preparation.id}/start`, {
+      const discovery = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
+      assert.equal(discovery.response.status, 200);
+      assert.equal(String(discovery.body.sessions[0].id), String(sessionId));
+      assert.equal(discovery.body.sessions[0].title, "Catalog API Visit");
+      assert.equal(discovery.body.sessions[0].status, "active");
+
+      const repeatedStart = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${activePreparation.id}/start`, {
         cookie,
         method: "POST",
-        body: JSON.stringify({ expectedVersion: preparation.body.preparation.version }),
+        body: JSON.stringify({ expectedVersion: activePreparation.version }),
       });
       assert.equal(repeatedStart.response.status, 200);
       assert.equal(repeatedStart.body.alreadyStarted, true);
