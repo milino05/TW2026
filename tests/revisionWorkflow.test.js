@@ -7,7 +7,8 @@ const {
   requestReview,
   withdrawReview,
   requestChanges,
-  markPublished,
+  publishWithoutReview,
+  approveReviewAndPublish,
 } = require("../services/revisionWorkflow.service");
 
 function draft() {
@@ -50,17 +51,40 @@ test("la richiesta puo essere ritirata dall'editor", () => {
   assert.equal(revision.status, "draft");
 });
 
-test("una revisione in_review integra puo essere pubblicata", () => {
+test("una revisione in_review integra puo essere approvata e pubblicata", () => {
   const revision = draft();
   requestReview(revision, "operator");
-  markPublished(revision, "manager", new Date("2026-08-01T12:00:00Z"));
+  approveReviewAndPublish(revision, "manager", new Date("2026-08-01T12:00:00Z"));
   assert.equal(revision.status, "published");
   assert.equal(revision.review.decision, "approved");
   assert.equal(revision.publication.publishedBy, "manager");
 });
 
-test("un manager puo pubblicare direttamente un proprio draft integro", () => {
+test("la pubblicazione diretta di un draft personale non crea una review fittizia", () => {
   const revision = draft();
-  markPublished(revision, "manager");
+  publishWithoutReview(revision, "author", new Date("2026-08-01T12:00:00Z"));
   assert.equal(revision.status, "published");
+  assert.equal(revision.review.decision, undefined);
+  assert.equal(revision.review.reviewedAt, undefined);
+  assert.equal(revision.review.events, undefined);
+  assert.equal(revision.publication.publishedBy, "author");
+});
+
+test("approvazione manageriale non puo saltare draft -> in_review", () => {
+  const revision = draft();
+  assert.throws(
+    () => approveReviewAndPublish(revision, "manager"),
+    (error) => error?.code === "INVALID_APPROVAL_PUBLISH_TRANSITION",
+  );
+  assert.equal(revision.status, "draft");
+});
+
+test("la pubblicazione diretta non puo aggirare una review gia avviata", () => {
+  const revision = draft();
+  requestReview(revision, "operator");
+  assert.throws(
+    () => publishWithoutReview(revision, "author"),
+    (error) => error?.code === "INVALID_DIRECT_PUBLISH_TRANSITION",
+  );
+  assert.equal(revision.status, "in_review");
 });
