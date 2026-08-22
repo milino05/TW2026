@@ -17,11 +17,17 @@
     "start": "node index.js",
     "dev:container": "nodemon index.js",
     "seed:users": "node scripts/seedRequiredUsers.js",
-    "assign:museum-role": "node scripts/assignMuseumRole.js",
-    "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
+    "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -not -path './clients/*/node_modules/*' -not -path './clients/*/dist/*' -print0 | xargs -0 -n1 node --check",
     "check:legacy": "node scripts/checkLegacyContracts.js",
     "check:hygiene": "node scripts/checkRepositoryHygiene.js",
-    "check": "npm run check:syntax && npm run check:legacy && npm run check:hygiene",
+    "check:backend": "npm run check:syntax && npm run check:legacy && npm run check:hygiene",
+    "check:navigator": "npm --prefix clients/navigator run check",
+    "check:marketplace": "npm --prefix clients/marketplace run check",
+    "check:clients": "npm run check:navigator && npm run check:marketplace",
+    "check": "npm run check:backend",
+    "build:navigator": "npm --prefix clients/navigator run build",
+    "build:marketplace": "npm --prefix clients/marketplace run build",
+    "build:clients": "npm run build:navigator && npm run build:marketplace",
     "test": "node --test tests/*.test.js"
   }
 }
