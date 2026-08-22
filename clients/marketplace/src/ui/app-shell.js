@@ -9,6 +9,20 @@ const TITLES = {
   "/404": "Pagina non trovata",
 };
 
+const RESOURCE_TYPES = [
+  ["", "Tutti gli asset"],
+  ["visit", "Visite"],
+  ["visit_revision", "Revisioni visita"],
+  ["item_edition", "Contenuti"],
+  ["item_revision", "Revisioni contenuto"],
+  ["editorial_context", "Contesti editoriali"],
+  ["editorial_release", "Release editoriali"],
+  ["namespace", "Namespace"],
+  ["namespace_revision", "Revisioni Namespace"],
+];
+
+const RESOURCE_LABELS = Object.fromEntries(RESOURCE_TYPES.filter(([key]) => key));
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -24,6 +38,16 @@ function initialVenueId() {
   return selected?.split(",").map((value) => value.trim()).find(Boolean) || params.get("venueId") || null;
 }
 
+function formatPrice(pricing) {
+  if (!pricing || pricing.type === "free") return "Gratis";
+  const amount = Number(pricing.amountMinor) / 100;
+  try {
+    return new Intl.NumberFormat("it-IT", { style: "currency", currency: pricing.currency || "EUR" }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${pricing.currency || ""}`.trim();
+  }
+}
+
 export class MarketplaceAppShell extends HTMLElement {
   user = null;
   authChecked = false;
@@ -31,6 +55,9 @@ export class MarketplaceAppShell extends HTMLElement {
   busy = false;
   error = null;
   venueId = initialVenueId();
+  catalogQuery = "";
+  catalogResourceType = "";
+  catalogPage = 1;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -66,26 +93,52 @@ export class MarketplaceAppShell extends HTMLElement {
   async loadCatalogIfNeeded() {
     const route = currentRoute();
     if (!this.user || !["/", "/catalog"].includes(route)) return;
-    this.catalog = await marketplaceRepository.catalog({ venueId: this.venueId });
+    this.catalog = await marketplaceRepository.catalog({
+      venueId: this.venueId,
+      page: this.catalogPage,
+      q: this.catalogQuery,
+      resourceTypes: this.catalogResourceType ? [this.catalogResourceType] : null,
+    });
   }
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form?.matches("form[data-login]")) return;
-    event.preventDefault();
-    const data = new FormData(form);
-    this.busy = true;
-    this.error = null;
-    this.render();
-    try {
-      const response = await authRepository.login(String(data.get("username") || ""), String(data.get("password") || ""));
-      this.user = response.user;
-      await this.loadCatalogIfNeeded();
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Accesso non riuscito";
-    } finally {
-      this.busy = false;
+    if (!form) return;
+    if (form.matches("form[data-login]")) {
+      event.preventDefault();
+      const data = new FormData(form);
+      this.busy = true;
+      this.error = null;
       this.render();
+      try {
+        const response = await authRepository.login(String(data.get("username") || ""), String(data.get("password") || ""));
+        this.user = response.user;
+        await this.loadCatalogIfNeeded();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Accesso non riuscito";
+      } finally {
+        this.busy = false;
+        this.render();
+      }
+      return;
+    }
+    if (form.matches("form[data-catalog-filter]")) {
+      event.preventDefault();
+      const data = new FormData(form);
+      this.catalogQuery = String(data.get("q") || "").trim();
+      this.catalogResourceType = String(data.get("resourceType") || "").trim();
+      this.catalogPage = 1;
+      this.busy = true;
+      this.error = null;
+      this.render();
+      try {
+        await this.loadCatalogIfNeeded();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Impossibile aggiornare il catalogo";
+      } finally {
+        this.busy = false;
+        this.render();
+      }
     }
   };
 
@@ -95,6 +148,22 @@ export class MarketplaceAppShell extends HTMLElement {
     if (routeLink) {
       event.preventDefault();
       navigate(routeLink.getAttribute("href"));
+      return;
+    }
+    const pageButton = target?.closest("button[data-page]");
+    if (pageButton) {
+      this.catalogPage = Math.max(1, Number(pageButton.dataset.page) || 1);
+      this.busy = true;
+      this.error = null;
+      this.render();
+      try {
+        await this.loadCatalogIfNeeded();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Impossibile cambiare pagina";
+      } finally {
+        this.busy = false;
+        this.render();
+      }
       return;
     }
     const acquireButton = target?.closest("button[data-acquire]");
@@ -135,31 +204,69 @@ export class MarketplaceAppShell extends HTMLElement {
       </main>`;
   }
 
+  renderCatalogFilters() {
+    const options = RESOURCE_TYPES.map(([value, label]) => `<option value="${escapeHtml(value)}" ${this.catalogResourceType === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+    return `
+      <form data-catalog-filter class="catalog-filter" role="search">
+        <label>Cerca nel catalogo
+          <input name="q" value="${escapeHtml(this.catalogQuery)}" placeholder="Titolo o descrizione">
+        </label>
+        <label>Tipo di asset
+          <select name="resourceType">${options}</select>
+        </label>
+        <button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button>
+      </form>`;
+  }
+
+  renderOffer(offer, availableCapabilities) {
+    const capabilities = (offer.uses || []).map((use) => use.capability);
+    const alreadyAvailable = capabilities.length > 0 && capabilities.every((capability) => availableCapabilities.has(capability));
+    const uses = (offer.uses || []).map((use) => escapeHtml(use.label)).join(" · ");
+    const price = formatPrice(offer.pricing);
+    if (alreadyAvailable) {
+      return `<div class="offer"><p>${uses || "Uso disponibile"} · ${escapeHtml(price)}</p><p><strong>Già disponibile</strong></p></div>`;
+    }
+    const action = offer.pricing?.type === "paid" ? "Acquisisci (vendita simulata)" : "Acquisisci";
+    return `<div class="offer"><p>${uses || "Uso"} · ${escapeHtml(price)}</p><button type="button" data-acquire="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${escapeHtml(action)}</button></div>`;
+  }
+
   renderCatalog() {
     const results = this.catalog?.results || [];
     const cards = results.map((entry) => {
       const venues = (entry.asset.physicalScope || []).map((venue) => venue.name).join(" · ");
-      const offer = entry.offers?.[0];
-      const price = offer?.pricing?.type === "free" ? "Gratis" : `${offer?.pricing?.amountMinor ?? ""} ${offer?.pricing?.currency ?? ""}`;
+      const availableCapabilities = new Set(entry.viewerState?.availableCapabilities || []);
+      const offers = (entry.offers || []).map((offer) => this.renderOffer(offer, availableCapabilities)).join("");
+      const visitInfo = Number.isFinite(Number(entry.asset.stopCount))
+        ? `<p>${Number(entry.asset.stopCount)} tappe${venues ? ` · ${escapeHtml(venues)}` : ""}</p>`
+        : "";
       return `
         <article class="card">
+          <p class="asset-type">${escapeHtml(RESOURCE_LABELS[entry.asset.type] || entry.asset.type)}</p>
           <h2>${escapeHtml(entry.asset.title)}</h2>
           <p>${escapeHtml(entry.asset.summary)}</p>
-          <p>${entry.asset.stopCount} tappe${venues ? ` · ${escapeHtml(venues)}` : ""}</p>
-          <p>Pubblicato da ${escapeHtml(entry.asset.publisher?.name || "")}</p>
-          ${entry.viewerState?.alreadyUsable
-            ? "<p><strong>Già utilizzabile</strong></p>"
-            : offer
-              ? `<button type="button" data-acquire="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${escapeHtml(offer.label)} · ${escapeHtml(price)}</button>`
-              : "<p>Nessuna offerta disponibile.</p>"}
+          ${visitInfo}
+          <p>Pubblicato da ${escapeHtml(entry.asset.publisher?.name || "")}${entry.asset.version ? ` · versione ${escapeHtml(entry.asset.version)}` : ""}</p>
+          ${offers || "<p>Nessuna offerta disponibile.</p>"}
         </article>`;
     }).join("");
+    const page = Number(this.catalog?.page) || 1;
+    const pageSize = Number(this.catalog?.pageSize) || 20;
+    const total = Number(this.catalog?.total) || 0;
+    const hasPrevious = page > 1;
+    const hasNext = page * pageSize < total;
     return `
       <main>
         <h1>Catalogo</h1>
-        ${this.venueId ? `<p>Filtro sede iniziale: <code>${escapeHtml(this.venueId)}</code></p>` : ""}
+        ${this.venueId ? `<p>Sede iniziale dal Navigator: <code>${escapeHtml(this.venueId)}</code>. La selezione non modifica ownership o scope editoriale.</p>` : ""}
+        ${this.renderCatalogFilters()}
         ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
-        ${cards || "<p>Nessuna visita disponibile nel catalogo corrente.</p>"}
+        <p>${total} asset trovati</p>
+        ${cards || "<p>Nessun asset disponibile nel catalogo corrente.</p>"}
+        <nav class="pagination" aria-label="Pagine catalogo">
+          <button type="button" data-page="${page - 1}" ${!hasPrevious || this.busy ? "disabled" : ""}>Precedente</button>
+          <span>Pagina ${page}</span>
+          <button type="button" data-page="${page + 1}" ${!hasNext || this.busy ? "disabled" : ""}>Successiva</button>
+        </nav>
       </main>`;
   }
 
@@ -170,7 +277,7 @@ export class MarketplaceAppShell extends HTMLElement {
       : !this.user
         ? this.renderLogin()
         : route === "/workspace"
-          ? "<main><h1>Workspace</h1><p>Le funzioni creator entrano nei vertical slice successivi.</p></main>"
+          ? "<main><h1>Workspace</h1><p>Il Catalog multi-asset è attivo. Le operazioni creator capability-based vengono completate nello Slice 5.</p></main>"
           : route === "/404"
             ? "<main><h1>Pagina non trovata</h1></main>"
             : this.renderCatalog();
@@ -180,11 +287,16 @@ export class MarketplaceAppShell extends HTMLElement {
         :host { display: block; font-family: system-ui, sans-serif; }
         header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem; border-bottom: 1px solid currentColor; }
         nav { display: flex; gap: 1rem; align-items: center; }
-        main { max-width: 60rem; margin: 0 auto; padding: 2rem 1rem; }
-        form { display: grid; gap: 1rem; max-width: 24rem; }
+        main { max-width: 64rem; margin: 0 auto; padding: 2rem 1rem; }
+        form { display: grid; gap: 1rem; max-width: 32rem; }
         label { display: grid; gap: .35rem; }
-        .card { padding: 1rem 0; border-bottom: 1px solid currentColor; }
-        button { font: inherit; padding: .6rem .9rem; }
+        .catalog-filter { grid-template-columns: minmax(14rem, 1fr) minmax(12rem, .7fr) auto; align-items: end; max-width: none; margin-block: 1rem 2rem; }
+        .card { padding: 1.25rem 0; border-bottom: 1px solid currentColor; }
+        .asset-type { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+        .offer { padding: .75rem 0; }
+        .pagination { justify-content: space-between; margin-top: 2rem; }
+        button, input, select { font: inherit; padding: .6rem .75rem; }
+        @media (max-width: 44rem) { .catalog-filter { grid-template-columns: 1fr; } header { align-items: flex-start; } nav { flex-wrap: wrap; } }
       </style>
       <header>
         <strong>ArtAround Marketplace</strong>
