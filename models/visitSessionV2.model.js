@@ -48,16 +48,26 @@ const VenueTargetObservationSchema = new Schema({
   reliability: { type: Number, min: 0, max: 1, default: 1 },
 }, { _id: false });
 
-const InteractionEventSchema = new Schema({
-  type: { type: String, enum: [
-    "presentation_depth_increased", "presentation_depth_decreased",
-    "presentation_language_increased", "presentation_language_decreased",
-    "content_entry_completed", "content_entry_skipped", "knowledge_feedback",
-  ], required: true },
+const InteractionContextSchema = new Schema({
   contentEntryId: { type: Schema.Types.ObjectId, default: null },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", default: null },
-  variantId: { type: Schema.Types.ObjectId, default: null },
-  representationId: { type: Schema.Types.ObjectId, default: null },
+  visitAnchorId: { type: Schema.Types.ObjectId, default: null },
+}, { _id: false });
+
+const InteractionResultSchema = new Schema({
+  status: { type: String, enum: ["applied", "rejected", "recorded"], required: true },
+  code: { type: String, trim: true, default: null },
+}, { _id: false });
+
+const InteractionEventSchema = new Schema({
+  category: { type: String, enum: ["action", "telemetry", "feedback"], required: true },
+  actorUserId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  actionId: { type: String, trim: true, default: null },
+  actionType: { type: String, trim: true, default: null },
+  actionFamily: { type: String, trim: true, default: null },
+  interactionChannel: { type: String, enum: ["button", "controlled_voice", "natural_language", "system", null], default: null },
+  context: { type: InteractionContextSchema, default: () => ({}) },
+  result: { type: InteractionResultSchema, required: true },
   metadata: { type: Schema.Types.Mixed, default: null },
   at: { type: Date, default: Date.now },
 }, { _id: true });
@@ -77,6 +87,7 @@ const VisitSessionV2Schema = new Schema({
   venuePins: { type: [VenuePinSchema], default: [] },
   status: { type: String, enum: ["active", "paused", "route_completed", "completed", "abandoned"], default: "active", index: true },
   currentEntryIndex: { type: Number, min: 0, default: 0 },
+  runtimeVersion: { type: Number, min: 1, default: 1, required: true },
   navigationSnapshot: {
     movementPacePreference: { type: Number, min: 0, max: 1, default: 0.5 },
     requirements: { type: [Schema.Types.Mixed], default: [] },
