@@ -126,6 +126,11 @@ rejectPattern(
   /startVisit\s*\(|["']\/v2\/visit-sessions["']/,
   'Navigator must start only through ExecutionPreparation',
 );
+rejectPattern(
+  'services/visitSessionV2.service.js',
+  /startVisitSessionV2|startGeneratedPlanSessionV2|startFromSource/,
+  'VisitSession service must not bypass ExecutionPreparation',
+);
 
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph/session-start contracts found.');
