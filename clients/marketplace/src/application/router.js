@@ -5,6 +5,7 @@ const ROUTES = new Set([
   "/workspace",
   "/workspace/resource",
   "/workspace/item-authoring",
+  "/workspace/visit-authoring",
   "/workspace/venue-targets",
   "/workspace/context-compose",
 ]);
