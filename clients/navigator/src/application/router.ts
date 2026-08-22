@@ -9,7 +9,7 @@ import SessionView from "../ui/SessionView.vue";
 import PlaceholderView from "../ui/PlaceholderView.vue";
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: "/", name: "home", component: LoginView },
     { path: "/library", name: "library", component: LibraryView, meta: { requiresAuth: true } },
