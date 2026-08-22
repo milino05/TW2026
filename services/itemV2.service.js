@@ -9,7 +9,14 @@ const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const { assertCanForkItemEdition } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
-const { markRevisionEdited, markPublished } = require("./revisionWorkflow.service");
+const {
+  markRevisionEdited,
+  requestReview,
+  withdrawReview,
+  requestChanges,
+  publishWithoutReview,
+  approveReviewAndPublish,
+} = require("./revisionWorkflow.service");
 const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
 const {
   normalizeRevisionPayload,
@@ -218,6 +225,13 @@ async function getWorkingRevision(edition, actorUserId) {
   return createWorkingFromPublished({ edition, actorUserId });
 }
 
+async function getExistingWorkingRevision(edition) {
+  if (!edition.workingRevisionId) throw new AppError("La ItemEdition non ha una revisione di lavoro", 409);
+  const revision = await ItemRevisionV2.findById(edition.workingRevisionId);
+  if (!revision) throw new AppError("Revisione di lavoro non trovata", 409);
+  return revision;
+}
+
 async function updateEdition({ editionId, payload, actorUserId }) {
   const { edition, item, namespace } = await getEditionContext(editionId);
   await assertCanManageItem(item, actorUserId);
@@ -267,22 +281,63 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
   return { revision, issues };
 }
 
+async function requestEditionReview({ editionId, actorUserId }) {
+  const { edition, item } = await getEditionContext(editionId);
+  if (item.ownerType !== "organization") throw new AppError("I contenuti personali non richiedono review manageriale", 409);
+  await assertCanManageItem(item, actorUserId, "operator");
+  const revision = await getExistingWorkingRevision(edition);
+  try { requestReview(revision, actorUserId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  await revision.save();
+  return { item, edition, revision };
+}
+
+async function withdrawEditionReview({ editionId, actorUserId }) {
+  const { edition, item } = await getEditionContext(editionId);
+  if (item.ownerType !== "organization") throw new AppError("Operazione non applicabile a un contenuto personale", 409);
+  await assertCanManageItem(item, actorUserId, "operator");
+  const revision = await getExistingWorkingRevision(edition);
+  try { withdrawReview(revision, actorUserId); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  await revision.save();
+  return { item, edition, revision };
+}
+
+async function requestEditionChanges({ editionId, actorUserId, message }) {
+  const { edition, item } = await getEditionContext(editionId);
+  if (item.ownerType !== "organization") throw new AppError("Operazione non applicabile a un contenuto personale", 409);
+  await assertCanManageItem(item, actorUserId, "manager");
+  const revision = await getExistingWorkingRevision(edition);
+  try { requestChanges(revision, actorUserId, message); }
+  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  await revision.save();
+  return { item, edition, revision };
+}
+
 async function publishEdition({ editionId, actorUserId }) {
   const { edition, item, namespace } = await getEditionContext(editionId);
-  await assertCanManageItem(item, actorUserId, "manager");
+  await assertCanManageItem(
+    item,
+    actorUserId,
+    item.ownerType === "organization" ? "manager" : "operator",
+  );
   const namespaceAccess = await assertCanUseNamespaceForAuthoring({
     namespace,
     actorUserId,
     principalType: item.ownerType,
     principalId: item.ownerId,
   });
-  const revision = await getWorkingRevision(edition, actorUserId);
+  const revision = await getExistingWorkingRevision(edition);
   assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
   if (revision.integrity?.status !== "valid") {
     throw new AppError("La revisione deve superare il controllo di consistenza", 409);
   }
-  try { markPublished(revision, actorUserId); }
-  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  try {
+    if (item.ownerType === "organization") approveReviewAndPublish(revision, actorUserId);
+    else publishWithoutReview(revision, actorUserId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
   const previousId = edition.publishedRevisionId;
   await revision.save();
   if (previousId && String(previousId) !== String(revision._id)) {
@@ -404,6 +459,9 @@ module.exports = {
   createEdition,
   updateEdition,
   checkEditionConsistency,
+  requestEditionReview,
+  withdrawEditionReview,
+  requestEditionChanges,
   publishEdition,
   forkItem,
 };
