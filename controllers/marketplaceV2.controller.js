@@ -1,7 +1,7 @@
 const marketplace = require("../services/marketplaceV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
-const { importEditorialContextSnapshot } = require("../services/marketplaceContextImportV2.service");
+const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 
 function projectAcquisitionResult(result) {
   return {
@@ -137,15 +137,14 @@ async function distributionDashboard(req, res, next) {
   } catch (error) { next(error); }
 }
 
-async function importContextSnapshot(req, res, next) {
+async function workspaceOperation(req, res, next) {
   try {
-    res.status(201).json(await importEditorialContextSnapshot({
-      sourceEditorialContextId: req.params.editorialContextId,
-      ownerType: req.body?.ownerType || "user",
-      ownerId: req.body?.ownerId || req.user._id,
+    res.status(201).json(await executeWorkspaceOperation({
+      operationCode: req.body?.operationCode,
+      sourceRef: req.body?.sourceRef,
+      targetPrincipal: req.body?.targetPrincipal || { type: "user", id: req.user._id },
+      payload: req.body?.payload || {},
       actorUserId: req.user._id,
-      contentSpaceName: req.body?.contentSpaceName || null,
-      displayName: req.body?.displayName || null,
     }));
   } catch (error) { next(error); }
 }
@@ -160,5 +159,5 @@ module.exports = {
   acquisitionHistory,
   creatorWorkspace,
   distributionDashboard,
-  importContextSnapshot,
+  workspaceOperation,
 };
