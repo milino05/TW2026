@@ -1,8 +1,26 @@
 import { defineStore } from "pinia";
 import type { NavigatorStaticConfig } from "../domain/navigatorStaticConfig";
+import type { AuthUser } from "../infrastructure/http/authRepository";
+import type { SessionProjection } from "../infrastructure/http/sessionRepository";
 
 export const useAuthStore = defineStore("auth", {
-  state: () => ({ authenticated: false }),
+  state: () => ({
+    authenticated: false,
+    initialized: false,
+    user: null as AuthUser | null,
+  }),
+  actions: {
+    setUser(user: AuthUser) {
+      this.user = user;
+      this.authenticated = true;
+      this.initialized = true;
+    },
+    clear() {
+      this.user = null;
+      this.authenticated = false;
+      this.initialized = true;
+    },
+  },
 });
 
 export const useConfiguredVenueStore = defineStore("configuredVenue", {
@@ -15,7 +33,15 @@ export const useConfiguredVenueStore = defineStore("configuredVenue", {
 });
 
 export const useRuntimeStore = defineStore("runtime", {
-  state: () => ({ snapshot: null as unknown }),
+  state: () => ({ snapshot: null as SessionProjection | null }),
+  actions: {
+    applySnapshot(snapshot: SessionProjection) {
+      this.snapshot = snapshot;
+    },
+    clear() {
+      this.snapshot = null;
+    },
+  },
 });
 
 export const usePlanStore = defineStore("plan", {
