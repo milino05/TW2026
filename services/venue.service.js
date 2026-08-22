@@ -5,7 +5,10 @@ const AppError = require("../utils/AppError");
 const { assertOrganizationRole } = require("./organizationAuthorization.service");
 const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
 const { assertCanUseEditorialContextAsVenuePrimary } = require("./editorialContextUsageAuthorization.service");
+const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { normalizeVenuePayload, validateVenuePayload } = require("./validation/venue.validation");
+
+function sameId(a, b) { return String(a || "") === String(b || ""); }
 
 function projectVenue(venue, { includeWorking = false } = {}) {
   const source = venue?.toObject ? venue.toObject() : venue || {};
@@ -29,12 +32,27 @@ function validatedVenuePayload(rawPayload, { creating }) {
   return normalized;
 }
 
+async function recordPrimaryContextAdoption({ usage, venue, actorUserId }) {
+  if (!usage?.editorialContext || !usage?.access) return null;
+  return recordAdoptionFromAccess({
+    access: usage.access,
+    actorUserId,
+    action: "context_venue_primary",
+    sourceResourceRef: { resourceType: "editorial_context", resourceId: usage.editorialContext._id },
+    sourceSnapshotRef: usage.access.resolvedSnapshotRef,
+    resultResourceRef: { resourceType: "venue", resourceId: venue._id },
+  });
+}
+
 async function createVenue({ payload, actorUserId }) {
   const normalized = validatedVenuePayload(payload, { creating: true });
   const organization = await Organization.findOne({ _id: normalized.ownerOrganizationId, lifecycleStatus: "active" }).lean();
   if (!organization) throw new AppError("Organization non trovata", 404);
   await assertOrganizationRole({ userId: actorUserId, organizationId: organization._id, minimumRole: "operator" });
-  await assertCanUseEditorialContextAsVenuePrimary({ editorialContextId: normalized.primaryEditorialContextId, actorUserId });
+  const primaryUsage = await assertCanUseEditorialContextAsVenuePrimary({
+    editorialContextId: normalized.primaryEditorialContextId,
+    actorUserId,
+  });
   const venue = await Venue.create({
     name: normalized.name,
     description: normalized.description || "",
@@ -42,20 +60,39 @@ async function createVenue({ payload, actorUserId }) {
     primaryEditorialContextId: normalized.primaryEditorialContextId || null,
     createdBy: actorUserId,
   });
-  return projectVenue(venue, { includeWorking: true });
+  try {
+    await recordPrimaryContextAdoption({ usage: primaryUsage, venue, actorUserId });
+    return projectVenue(venue, { includeWorking: true });
+  } catch (error) {
+    await venue.deleteOne().catch(() => {});
+    throw error;
+  }
 }
 
 async function updateVenue({ venueId, payload, actorUserId }) {
   const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
   const normalized = validatedVenuePayload(payload, { creating: false });
-  if (Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")) {
-    await assertCanUseEditorialContextAsVenuePrimary({ editorialContextId: normalized.primaryEditorialContextId, actorUserId });
+  const previousPrimaryId = venue.primaryEditorialContextId || null;
+  const changesPrimary = Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")
+    && !sameId(previousPrimaryId, normalized.primaryEditorialContextId || null);
+  const primaryUsage = changesPrimary
+    ? await assertCanUseEditorialContextAsVenuePrimary({ editorialContextId: normalized.primaryEditorialContextId, actorUserId })
+    : null;
+
+  let adoption = null;
+  if (changesPrimary && normalized.primaryEditorialContextId) {
+    adoption = await recordPrimaryContextAdoption({ usage: primaryUsage, venue, actorUserId });
   }
-  if (Object.prototype.hasOwnProperty.call(normalized, "name")) venue.name = normalized.name;
-  if (Object.prototype.hasOwnProperty.call(normalized, "description")) venue.description = normalized.description || "";
-  if (Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")) venue.primaryEditorialContextId = normalized.primaryEditorialContextId || null;
-  await venue.save();
-  return projectVenue(venue, { includeWorking: true });
+  try {
+    if (Object.prototype.hasOwnProperty.call(normalized, "name")) venue.name = normalized.name;
+    if (Object.prototype.hasOwnProperty.call(normalized, "description")) venue.description = normalized.description || "";
+    if (Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")) venue.primaryEditorialContextId = normalized.primaryEditorialContextId || null;
+    await venue.save();
+    return projectVenue(venue, { includeWorking: true });
+  } catch (error) {
+    if (adoption) await adoption.deleteOne().catch(() => {});
+    throw error;
+  }
 }
 
 async function listVenues({ ownerOrganizationId = null } = {}) {
