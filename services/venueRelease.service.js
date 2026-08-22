@@ -5,7 +5,13 @@ const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
 const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
 const { projectVenue } = require("./venue.service");
-const { markRevisionEdited, requestReview, withdrawReview, requestChanges, markPublished } = require("./revisionWorkflow.service");
+const {
+  markRevisionEdited,
+  requestReview,
+  withdrawReview,
+  requestChanges,
+  approveReviewAndPublish,
+} = require("./revisionWorkflow.service");
 const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
 const { runPostCommitAudit } = require("./postCommitAudit.service");
 const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
@@ -178,7 +184,7 @@ async function publishVenueRelease({ venueId, actorUserId }) {
   release.integrity = { status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: actorUserId };
   if (release.integrity.status !== "valid") { await release.save(); throw new AppError("VenueRelease non consistente", 409, issues); }
   const previousReleaseState = workflowSnapshot(release);
-  try { markPublished(release, actorUserId); }
+  try { approveReviewAndPublish(release, actorUserId); }
   catch (error) { throw new AppError(error.message, 409); }
   await release.save();
   layout.status = "published";
