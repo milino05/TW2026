@@ -118,3 +118,73 @@ test("un errore fisico noto produce readiness blocked e impedisce lo start", { s
     );
   });
 });
+
+test("una preparation Navigator e blocked se una floor usata non ha asset cartografico", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Organization = require("../models/organization.model");
+    const Subject = require("../models/subject.model");
+    const Venue = require("../models/venue.model");
+    const VenueTarget = require("../models/venueTarget.model");
+    const LayoutRevision = require("../models/layoutRevision.model");
+    const VenueRelease = require("../models/venueRelease.model");
+    const VisitV2 = require("../models/visitV2.model");
+    const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
+
+    const owner = await User.create({ username: "prep-map-owner", passwordHash: "test-hash" });
+    const organization = await Organization.create({ name: "Map readiness org", createdBy: owner._id });
+    const subject = await Subject.create({ preferredLabel: "Map subject", createdBy: owner._id });
+    const venue = await Venue.create({ name: "Map readiness Venue", ownerOrganizationId: organization._id, createdBy: owner._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Map target", createdBy: owner._id });
+    const placeId = new mongoose.Types.ObjectId();
+    const layout = await LayoutRevision.create({
+      venueId: venue._id,
+      version: 1,
+      placeTypes: [{ key: "gallery", label: "Sala", userIntents: [] }],
+      floors: [{ key: "ground", label: "Piano terra" }],
+      places: [{ _id: placeId, typeKey: "gallery", label: "Sala mappa", floorKey: "ground", position: { x: 0.5, y: 0.5 } }],
+      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [placeId] }],
+      connections: [],
+      status: "published",
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    const release = await VenueRelease.create({
+      venueId: venue._id,
+      version: 1,
+      layoutRevisionId: layout._id,
+      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
+      publication: { publishedAt: new Date(), publishedBy: owner._id },
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    venue.publishedReleaseId = release._id;
+    await venue.save();
+
+    const visit = await VisitV2.create({ ownerType: "user", ownerId: owner._id, createdBy: owner._id });
+    const revision = await VisitRevisionV2.create({
+      visitId: visit._id,
+      version: 1,
+      title: "Visit senza asset mappa",
+      editorialSources: [],
+      contentEntries: [],
+      visitAnchors: [{ venueTargetId: target._id }],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
+      publication: { publishedAt: new Date(), publishedBy: owner._id },
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    visit.publishedRevisionId = revision._id;
+    await visit.save();
+
+    const preparation = await createExecutionPreparation({ userId: owner._id, payload: { visitId: visit._id } });
+    assert.equal(preparation.readiness.status, "blocked");
+    assert.equal(preparation.readiness.blockers[0].code, "NAVIGATOR_MAP_ASSET_MISSING");
+    assert.match(preparation.readiness.blockers[0].message, /Piano terra/);
+    assert.equal(preparation.logisticsPreview.routeSummary.stopCount, 1);
+  });
+});
