@@ -1,20 +1,19 @@
 # ArtAround — Decisioni architetturali dei client
 
-Questo documento raccoglie le decisioni architetturali e strutturali **approvate** per Navigator e Marketplace/Editor. Le decisioni più recenti sostituiscono formulazioni precedenti incompatibili. I temi non ancora riesaminati rispetto al Domain Model v2 sono esplicitamente **pending** e non costituiscono contratto definitivo.
+Questo documento raccoglie le decisioni architetturali **approvate** per Navigator e Marketplace/Editor. Le decisioni più recenti sostituiscono formulazioni precedenti incompatibili. I temi non ancora riesaminati rispetto al Domain Model v2 sono **pending** e non costituiscono contratto definitivo.
 
 # Principi generali confermati
 
-- Un solo repository e un solo backend Node/Express condiviso.
+- Un solo backend Node/Express condiviso.
 - Navigator: Vue, Vite, TypeScript, Vue Router, Pinia.
-- Marketplace/Editor: vanilla JavaScript con ES Modules e Web Components.
+- Marketplace/Editor: vanilla JavaScript, ES Modules, Web Components.
 - Navigator organizzato in `domain / application / capabilities / infrastructure / UI`.
 - Repository/adapter specifici; nessun God `ApiService`.
-- Business logic e authorization autorevoli nel backend.
-- Protocollo Action confermato: `ActionDefinition -> AvailableAction -> ActionRequest -> ActionResult -> InteractionEvent`.
-- `AvailableAction[]` condivise fra voce e bottoni; `currentPresentation` è unica fonte per testo a schermo e TTS.
+- Business logic, authorization, routing e timing autorevoli nel backend.
+- Protocollo Action: `ActionDefinition -> AvailableAction -> ActionRequest -> ActionResult -> InteractionEvent`.
+- `AvailableAction[]` condivise fra voce e bottoni; `currentPresentation` è unica fonte per UI e TTS.
 - Routing per lifecycle con `VisitShellView`; pause/resume sulla stessa session route.
-- Runtime autorevole server-side, separato da `VisitPlanProjection` e `NavigationProjection`.
-- Nessun routing/timing autorevole ricalcolato nel client.
+- Runtime server-side separato da `VisitPlanProjection` e `NavigationProjection`.
 - Visit e GeneratedVisitPlan convergono sulla stessa VisitSession/VisitShell.
 - 18–27/18–33 devono entrare come capability/provider senza riscrivere il core client.
 
@@ -41,30 +40,22 @@ Physical scope
     -> Place / routing
 ```
 
-Un `Venue` non possiede implicitamente la semantica/editorialità e un `EditorialContext` non implica disponibilità fisica in una Venue. Il backend compone gli assi; i client non ricostruiscono autonomamente tali relazioni. Le Domain Action derivano dalle rispettive fonti autorevoli editoriali, fisiche e runtime.
+Il backend compone gli assi; i client non ricostruiscono autonomamente tali relazioni. Le Domain Action derivano dalle rispettive fonti autorevoli editoriali, fisiche e runtime.
 
 # Punto 2/30 — Configurazione statica del Navigator
-
-Il Navigator è una singola applicazione generica specializzata tramite file statico:
 
 ```text
 NavigatorStaticConfig
   schemaVersion
   venueId
   branding
-    title
-    shortTitle?
-    logo?
-    hero?
 ```
 
-Il file non contiene Organization, EditorialContext, ContentSpace, Namespace, VenueRelease, LayoutRevision, Item o Visit. `Venue.primaryEditorialContextId` resta dominio backend. `venueId` identifica la Venue primaria per bootstrap e contesto iniziale, ma non limita Visit/Session multi-Venue. API URL e Marketplace URL appartengono alla configurazione di deployment.
+Il file non contiene Organization, EditorialContext, ContentSpace, Namespace, VenueRelease, LayoutRevision, Item o Visit. `Venue.primaryEditorialContextId` resta backend. `venueId` identifica la Venue primaria di bootstrap/contesto iniziale ma non limita Visit/Session multi-Venue. API URL e Marketplace URL appartengono alla configurazione di deployment.
 
 # Punto 3/30 — Configured Venue state
 
 `museumStore` è sostituito da `configuredVenueStore`.
-
-Store concettuali:
 
 ```text
 authStore
@@ -85,7 +76,7 @@ Il Navigator apre l’unica applicazione Marketplace tramite link resolver appli
 selectedVenueIds = [configuredVenueId]
 ```
 
-La selezione è modificabile, non è authorization, non limita permanentemente il catalogo e non determina implicitamente Organization, ContentSpace, EditorialContext o Namespace. Nessun Marketplace specifico per Venue. Nessun token/credenziale nel launch context; si riusa l’autenticazione backend condivisa.
+La selezione è modificabile, non è authorization, non limita permanentemente il catalogo e non determina implicitamente Organization, ContentSpace, EditorialContext o Namespace. Nessun Marketplace specifico per Venue. Nessun token/credenziale nel launch context.
 
 # Punto 5/30 — Ownership delle Visit
 
@@ -96,7 +87,7 @@ ownerType = user | organization
 ownerId
 ```
 
-Ownership, provenance, authorization e workflow restano distinti. Library e Visit Detail non fanno branch su `kind`. Marketplace/Editor crea Visit rispetto a un owner principal autorizzato. Review/publication/editing vengono esposte tramite operazioni/capability backend, non dedotte dal solo `ownerType`. Generated Visit, copie e fork mantengono provenance separata dall’ownership.
+Ownership, provenance, authorization e workflow restano distinti. Library e Visit Detail non fanno branch su `kind`. Marketplace/Editor crea Visit rispetto a un owner principal autorizzato. Review/publication/editing vengono esposte tramite operazioni/capability backend, non dedotte dal solo `ownerType`.
 
 # Punto 6/30 — Entitlement Marketplace v2
 
@@ -117,41 +108,28 @@ Entitlement
   status: active | expired | revoked
 ```
 
-Per Visit almeno:
-
-```text
-visit.execute
-visit.copy_detached
-```
-
-Le due capability sono distinte. `MarketplaceAcquisition` è evento commerciale immutabile; `Entitlement` è diritto applicativo. Navigator non interpreta documenti Acquisition/Entitlement grezzi e non introduce un `entitlementStore`. Anche un Offer gratuito richiede Acquisition esplicita per produrre i grant previsti. L’accesso tecnico alle dipendenze non concede capability autonome sulle dipendenze.
+Per Visit almeno `visit.execute` e `visit.copy_detached`, distinti fra loro. `MarketplaceAcquisition` è evento commerciale immutabile; `Entitlement` è diritto applicativo. Navigator non interpreta documenti Acquisition/Entitlement grezzi e non introduce un `entitlementStore`. Anche un Offer gratuito richiede Acquisition esplicita per produrre i grant previsti.
 
 # Punto 7/30 — Visit execution access v2
 
 Il diritto di avviare una VisitSession viene risolto backend-side sulla capability `visit.execute`.
-
-Basi:
 
 ```text
 A. resource owner authority
 B. Entitlement visit.execute valido
 ```
 
-L’actor autenticato viene risolto nei principal per cui può agire: User e, se autorizzato, Organization. Per Visit user-owned il proprietario ha owner authority senza Entitlement artificiale. Per Visit organization-owned, nel modello iniziale `operator` e `manager` possono agire come Organization owner per l’esecuzione. La membership serve alla principal resolution e non è un entitlement commerciale.
+L’actor viene risolto nei principal per cui può agire: User e, se autorizzato, Organization. Per Visit user-owned il proprietario ha owner authority senza Entitlement artificiale. Per Visit organization-owned, nel modello iniziale `operator` e `manager` possono agire come Organization owner per l’esecuzione. La membership serve alla principal resolution e non è un entitlement commerciale.
 
-Gli Entitlement Organization-scoped non vengono copiati sui membri: vengono esercitati da utenti autorizzati ad agire come quel principal.
+Gli Entitlement Organization-scoped non vengono copiati sui membri. Principal resolution, ownership, Entitlement, capability, version scope e status vanno centralizzati in un `CapabilityAuthorizationService` o equivalente. `VisitExecutionAccessService` resta boundary application-specific per `visit.execute`.
 
-La logica comune di principal resolution, ownership, Entitlement, capability, version scope e status va centralizzata in un `CapabilityAuthorizationService` o equivalente. `VisitExecutionAccessService` resta boundary application-specific per `visit.execute`.
-
-Navigator non riceve dettagli interni come entitlementId, role o sourceAcquisitionId solo per sapere se può iniziare. `startSession()` rivalida sempre l’authorization. `can execute != must appear in Library`.
-
-Per 18–27, `visit.execute` autorizza l’avvio della Session, non la partecipazione dello studente a una sessione sincronizzata.
+Navigator non riceve dettagli interni come entitlementId, role o sourceAcquisitionId solo per sapere se può iniziare. `startSession()` rivalida sempre l’authorization. `can execute != must appear in Library`. Per 18–27, `visit.execute` autorizza l’avvio della Session, non la partecipazione dello studente.
 
 # Punto 8/30 — Version policy dell’esecuzione
 
-`visit.execute` può autorizzare una lineage `Visit` con `follow_current` oppure una snapshot `VisitRevision` pinned. Un grant `pin_at_acquisition` su una Visit live viene risolto all’acquisizione nella `VisitRevision` corrente e produce un diritto pinned sulla snapshot.
+`visit.execute` può autorizzare una lineage `Visit` con `follow_current` oppure una snapshot `VisitRevision` pinned. Un grant `pin_at_acquisition` su Visit live viene risolto all’acquisizione nella VisitRevision corrente e produce un diritto pinned.
 
-Prima di Library Detail/preparation/start il backend risolve sempre una specifica revisione eseguibile, concettualmente:
+Prima di Library Detail/preparation/start il backend risolve sempre una specifica revisione eseguibile:
 
 ```text
 ResolvedVisitExecutionSource
@@ -161,15 +139,38 @@ ResolvedVisitExecutionSource
   versionResolution
 ```
 
-Il Navigator non deduce la revisione da `Visit.publishedRevisionId`.
+Il Navigator non deduce la revisione da `Visit.publishedRevisionId`. Per owner authority e `follow_current`, una nuova preparation risolve normalmente la published revision corrente. Una volta iniziata la preparation, la revisione resta stabile; `startSession()` rivalida la stessa revisione attesa e non la sostituisce silenziosamente.
 
-Per owner authority e per `follow_current`, una **nuova preparation** risolve normalmente la published revision corrente. Una volta iniziata la preparation, la revisione risolta rimane stabile per tutte le relative projection e preview. `startSession()` rivalida l’authorization sulla stessa revisione attesa e non la sostituisce silenziosamente con una nuova publication.
+Una Session avviata pinna definitivamente la VisitRevision e le dipendenze editoriali necessarie. La VisitRevision pinned non congela implicitamente un vecchio stato fisico: VenueRelease/LayoutRevision coerenti vengono risolte allo start e poi pinzate nella Session.
 
-Una Session avviata pinna definitivamente la `VisitRevision` e le dipendenze editoriali necessarie. Pubblicare una nuova revisione non modifica Session già create.
+# Punto 9/30 — Discoverability e distribuzione delle Visit
 
-La VisitRevision pinned non congela invece implicitamente un vecchio stato fisico: VenueRelease/LayoutRevision coerenti vengono risolte allo start e poi pinzate nella Session.
+`Visit.visibility = public | unlisted | private` e `VisitShareLink` sono rimossi dall’architettura approvata e non vengono sostituiti da un nuovo asse di visibility.
 
-La version policy e i dettagli Entitlement restano backend/commercial domain; il normale Navigator riceve la revisione risolta, non interpreta `follow_current`, `pinned` o `baselineSnapshotRef`.
+Una Visit può avere una VisitRevision published ed essere eseguibile dal proprio owner senza essere pubblicamente distribuita. Gli assi restano separati:
+
+```text
+EDITORIAL
+VisitRevision.status
+
+LIFECYCLE
+Visit.lifecycleStatus
+
+DISCOVERY / DISTRIBUTION
+MarketplaceListing.status
+
+COMMERCIAL AVAILABILITY
+MarketplaceOffer.status
+
+ACCESS
+owner authority | Entitlement | future explicit grant | session participation
+```
+
+La discoverability nel Marketplace è determinata da `MarketplaceListing`; le condizioni di acquisizione da `MarketplaceOffer`; il diritto applicativo da ownership/authority o `Entitlement`. L’assenza di Listing rappresenta naturalmente una Visit non pubblicata nel catalogo. Il withdrawal di un Listing non modifica lifecycle/publication editoriale e non revoca automaticamente Entitlement validi.
+
+Non viene implementato nel percorso corrente un meccanismo `unlisted` basato su share token. Eventuali future condivisioni dirette devono essere modellate come access grant/invitation coerenti con il `CapabilityAuthorizationService`, oppure come session participation nei flussi 18–27.
+
+Le Visit/contenuti privati richiesti dal 18–27 possono essere owned e published per l’esecuzione senza MarketplaceListing; gli studenti accedono alla Session sincronizzata tramite il relativo meccanismo di partecipazione.
 
 # Runtime/UX confermati
 
@@ -201,11 +202,12 @@ Non devono più essere usati come contratto definitivo:
 - Organization membership trattata direttamente come entitlement commerciale;
 - Marketplace specifico per museo/Venue;
 - `Venue.primaryEditorialContextId` duplicato nella config Navigator;
-- assunzione `visitId -> latest published revision` valida per ogni accesso.
+- assunzione `visitId -> latest published revision` valida per ogni accesso;
+- `Visit.visibility = public | unlisted | private`;
+- `VisitShareLink` come meccanismo corrente.
 
-# Punti 9–30 ancora da riesaminare
+# Punti 10–30 ancora da riesaminare
 
-9. rimozione della vecchia `Visit.visibility` e degli share link dal percorso corrente;
 10. `VisitLibraryProjection` Venue-aware e capability-aware;
 11. `NavigatorVisitDetailProjection` v2;
 12. presentation preparation unificata;
