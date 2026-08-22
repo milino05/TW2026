@@ -10,7 +10,7 @@ Questo documento raccoglie le decisioni architetturali **approvate** per Navigat
 - Navigator organizzato in `domain / application / capabilities / infrastructure / UI`.
 - Repository/adapter specifici; nessun God `ApiService`.
 - Business logic, authorization, routing e timing autorevoli nel backend.
-- Protocollo Action: `ActionDefinition -> AvailableAction -> ActionRequest -> ActionResult -> InteractionEvent`.
+- Protocollo Action: `ActionDefinition -> AvailableAction -> ActionRequest -> ActionDispatcher -> ActionResult -> InteractionEvent`.
 - `AvailableAction[]` condivise fra voce e bottoni; `currentPresentation` è unica fonte per UI e TTS.
 - Routing per lifecycle con `VisitShellView`; pause/resume sulla stessa session route.
 - Runtime server-side separato da `VisitPlanProjection` e `NavigationProjection`.
@@ -185,6 +185,18 @@ Le floor map appartengono al Physical Domain e non alla `NavigatorStaticConfig`.
 
 Nel 18–24 la tappa logica corrente può essere evidenziata, ma non viene mostrato un marker automatico “you are here”. Le future `LocationObservation` 18–33 aggiungono overlay di localizzazione senza modificare la struttura fondamentale della `MapProjection`.
 
+# Punto 22/30 — Action protocol v2
+
+Le interazioni applicative runtime del Navigator convergono sul protocollo `ActionDefinition -> AvailableAction -> ActionRequest -> ActionDispatcher -> ActionResult -> InteractionEvent`. Bottoni accessibili, vocabolario vocale controllato e futuro natural-language adapter sono adapter differenti dello stesso protocollo e non chiamano business logic parallela. Il contratto pubblico può convergere su un endpoint runtime Action unico, mentre gli use case interni restano servizi specializzati; preparation/start e telemetry/observation non vengono forzati dentro il protocollo Action.
+
+`AvailableAction` è una capability runtime concreta derivata backend-side da Session status, actor/participant authority, SessionPlan, current presentation, snapshot editoriali e fisici pinzati, location e capability/provider disponibili. Le Action parametrizzate vengono materializzate in opzioni concrete user-facing invece di lasciare al client la costruzione di intent o ID tecnici. Nel 18–27 uno studente non riceve `NEXT/PREVIOUS`, mentre può ricevere le Action di approfondimento consentite; il client non implementa questa policy con branch sul ruolo.
+
+Le Action di presentation distinguono profondità da complessità linguistica: gli attuali `PRESENTATION_LANGUAGE_UP/DOWN` vengono semanticamente sostituiti da complexity increase/decrease, lasciando locale/traduzione a una capability distinta. Destination request logistiche come toilette/uscita/bar/shop vengono materializzate soltanto quando l'intento è risolvibile; query di accessibility come “ci sono ostacoli?” restano Action differenti dalle destination request.
+
+L'esplorazione semantica non introduce un catalogo globale obbligatorio di relazioni come autore, stile, periodo o tecnica. I tipi di relazione appartengono ai Namespace e il backend deriva dinamicamente gli approfondimenti dal SemanticGraph e dagli Item utilizzabili nello snapshot editoriale della Session. Label o voice alias come “Chi è l'autore?” o “Qual è lo stile?” possono essere esposti quando il Namespace/graph corrente rende disponibile quella semantica, ma non diventano invarianti del core ArtAround. Un approfondimento può anche derivare da un altro Item sullo stesso Subject senza richiedere una SemanticEdge; curiosità/aneddoti/approcci editoriali non vengono forzati a diventare relation type o nuovi Subject se non rappresentano davvero concetti semanticamente autonomi.
+
+`ActionRequest` riferisce una `AvailableAction` corrente e il backend ne rivalida disponibilità e authorization prima dell'esecuzione; il canale `button | controlled_voice | natural_language` è provenance/telemetry, non authorization. Ogni Action produce projection/backend update autorevoli e un `InteractionEvent` semantico. Le risposte testuali mostrate e pronunciate attraversano lo stesso presentation channel. Nel 18–33 la LLM può esclusivamente selezionare/mappare una delle `AvailableAction` correnti e non può bypassare authorization, action policy o domain services.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -219,11 +231,12 @@ Non devono più essere usati come contratto definitivo:
 - start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata;
 - destination runtime appiattita su un ID ambiguo o su un generico aggregate Location;
 - `currentEntryIndex`, `VisitAnchor.placeId` o un `fromPlaceId` client-supplied trattati come posizione fisica certa dell'utente;
-- `LayoutRevision`, routing graph o `connectionId[]` esposti al Navigator come contratto cartografico da interpretare client-side.
+- `LayoutRevision`, routing graph o `connectionId[]` esposti al Navigator come contratto cartografico da interpretare client-side;
+- `availableActions` come mere stringhe con business logic duplicata fra endpoint, bottoni e voce;
+- relazioni semantiche museali come `author/style` imposte come catalogo platform-level obbligatorio.
 
-# Punti 22–30 ancora da riesaminare
+# Punti 23–30 ancora da riesaminare
 
-22. Action derivation completa dai source v2;
 23. `GenerationOptionsProjection` scope/authorization-aware;
 24. materializzazione GeneratedPlan -> user-owned Visit v2;
 25. workflow Visit user/organization-owned;
