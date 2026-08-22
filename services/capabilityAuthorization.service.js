@@ -36,6 +36,33 @@ async function resolveOwnedResource(resourceType, resourceId) {
   return null;
 }
 
+async function listValidCapabilityEntitlements({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+  if (!capabilitySupportsResource(capability, resourceType)) {
+    throw new AppError("Capability non compatibile con la risorsa", 400, [{
+      code: "INVALID_CAPABILITY_RESOURCE",
+      capability,
+      resourceType,
+    }]);
+  }
+  const { principals } = await resolveActorPrincipals(actorUserId);
+  const principalClauses = principals.map((principal) => ({
+    beneficiaryType: principal.type,
+    beneficiaryId: principal.id,
+  }));
+  if (!principalClauses.length) return { principals, entitlements: [] };
+  const candidates = await Entitlement.find({
+    $or: principalClauses,
+    resourceType,
+    resourceId,
+    capability,
+    status: "active",
+  }).sort({ createdAt: -1 }).lean();
+  return {
+    principals,
+    entitlements: candidates.filter((entry) => nowWithin(entry, now)),
+  };
+}
+
 async function resolveCapabilityAccess({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
   if (!capabilitySupportsResource(capability, resourceType)) {
     throw new AppError("Capability non compatibile con la risorsa", 400, [{
@@ -45,7 +72,13 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
     }]);
   }
 
-  const { principals } = await resolveActorPrincipals(actorUserId);
+  const { principals, entitlements } = await listValidCapabilityEntitlements({
+    actorUserId,
+    capability,
+    resourceType,
+    resourceId,
+    now,
+  });
   const owned = await resolveOwnedResource(resourceType, resourceId);
   const ownerPrincipal = owned
     ? principals.find((principal) => principal.type === owned.ownerType && sameId(principal.id, owned.ownerId))
@@ -59,19 +92,6 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
     };
   }
 
-  const principalClauses = principals.map((principal) => ({
-    beneficiaryType: principal.type,
-    beneficiaryId: principal.id,
-  }));
-  const entitlements = principalClauses.length
-    ? await Entitlement.find({
-      $or: principalClauses,
-      resourceType,
-      resourceId,
-      capability,
-      status: "active",
-    }).sort({ createdAt: -1 }).lean()
-    : [];
   const entitlement = chooseEffectiveEntitlement(entitlements, now);
   if (entitlement) {
     return {
@@ -101,6 +121,7 @@ async function assertCapability(args) {
 module.exports = {
   nowWithin,
   chooseEffectiveEntitlement,
+  listValidCapabilityEntitlements,
   resolveCapabilityAccess,
   assertCapability,
 };
