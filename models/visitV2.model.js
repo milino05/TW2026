@@ -6,7 +6,7 @@ const VisitV2Schema = new Schema({
   ownerId: { type: Schema.Types.ObjectId, required: true, index: true },
   copiedFromVisitId: { type: Schema.Types.ObjectId, ref: "VisitV2", default: null, index: true },
   copiedFromVisitRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null },
-  materializedFromGeneratedPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlanV2", default: null, index: true },
+  materializedFromGeneratedPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlanV2", default: null },
   publishedRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null, index: true },
   workingRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null, index: true },
   lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
@@ -17,6 +17,9 @@ const VisitV2Schema = new Schema({
 
 VisitV2Schema.index({ ownerType: 1, ownerId: 1, lifecycleStatus: 1, updatedAt: -1 });
 VisitV2Schema.index({ copiedFromVisitId: 1, createdAt: -1 });
-VisitV2Schema.index({ materializedFromGeneratedPlanId: 1 }, { unique: true, sparse: true });
+VisitV2Schema.index(
+  { materializedFromGeneratedPlanId: 1 },
+  { unique: true, partialFilterExpression: { materializedFromGeneratedPlanId: { $type: "objectId" } } },
+);
 
 module.exports = mongoose.model("VisitV2", VisitV2Schema);
