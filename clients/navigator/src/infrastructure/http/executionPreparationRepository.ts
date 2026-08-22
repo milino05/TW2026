@@ -18,8 +18,16 @@ export interface ExecutionPreparationProjection {
     locale: string | null;
   };
   navigation: { movementPacePreference: number };
+  preVisit: {
+    visitNotes: string[];
+    venues: Array<{
+      id: string;
+      name: string;
+      information: string[];
+    }>;
+  };
   readiness: {
-    status: string;
+    status: "ready" | "blocked";
     blockers: Array<{ code: string; message: string }>;
     warnings: Array<{ code: string; message: string }>;
   };
@@ -43,6 +51,15 @@ export interface ExecutionPreparationProjection {
   sessionId: string | null;
 }
 
+export interface PreparationUpdate {
+  presentationPreference?: {
+    depthPreference?: number;
+    languageComplexityPreference?: number;
+    locale?: string;
+  };
+  movementPacePreference?: number;
+}
+
 interface StartPreparationResponse {
   session: { _id: string };
   current: SessionProjection;
@@ -60,6 +77,13 @@ export const executionPreparationRepository = {
   },
   async get(preparationId: string) {
     const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>(`/v2/execution-preparations/${encodeURIComponent(preparationId)}`);
+    return response.preparation;
+  },
+  async update(preparation: Pick<ExecutionPreparationProjection, "id" | "version">, patch: PreparationUpdate) {
+    const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>(`/v2/execution-preparations/${encodeURIComponent(preparation.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ expectedVersion: preparation.version, ...patch }),
+    });
     return response.preparation;
   },
   async start(preparation: Pick<ExecutionPreparationProjection, "id" | "version">) {
