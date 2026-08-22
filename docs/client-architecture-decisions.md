@@ -150,27 +150,16 @@ Una Session avviata pinna definitivamente la VisitRevision e le dipendenze edito
 Una Visit può avere una VisitRevision published ed essere eseguibile dal proprio owner senza essere pubblicamente distribuita. Gli assi restano separati:
 
 ```text
-EDITORIAL
-VisitRevision.status
-
-LIFECYCLE
-Visit.lifecycleStatus
-
-DISCOVERY / DISTRIBUTION
-MarketplaceListing.status
-
-COMMERCIAL AVAILABILITY
-MarketplaceOffer.status
-
-ACCESS
-owner authority | Entitlement | future explicit grant | session participation
+EDITORIAL             VisitRevision.status
+LIFECYCLE             Visit.lifecycleStatus
+DISCOVERY             MarketplaceListing.status
+COMMERCIAL AVAILABILITY MarketplaceOffer.status
+ACCESS                owner authority | Entitlement | future explicit grant | session participation
 ```
 
 La discoverability nel Marketplace è determinata da `MarketplaceListing`; le condizioni di acquisizione da `MarketplaceOffer`; il diritto applicativo da ownership/authority o `Entitlement`. L’assenza di Listing rappresenta naturalmente una Visit non pubblicata nel catalogo. Il withdrawal di un Listing non modifica lifecycle/publication editoriale e non revoca automaticamente Entitlement validi.
 
 Non viene implementato nel percorso corrente un meccanismo `unlisted` basato su share token. Eventuali future condivisioni dirette devono essere modellate come access grant/invitation coerenti con il `CapabilityAuthorizationService`, oppure come session participation nei flussi 18–27.
-
-Le Visit/contenuti privati richiesti dal 18–27 possono essere owned e published per l’esecuzione senza MarketplaceListing; gli studenti accedono alla Session sincronizzata tramite il relativo meccanismo di partecipazione.
 
 # Punto 10/30 — Navigator Visit Library v2
 
@@ -191,45 +180,95 @@ La Library personale include normalmente:
 
 L’authority derivata da Organization membership o da Entitlement Organization-scoped può autorizzare l’esecuzione ma non popola automaticamente la Library personale. Authorization e Library membership restano distinti; non viene introdotto un `LibraryMembership` persistente.
 
-Per ogni candidate il backend risolve prima una specifica `ResolvedVisitExecutionSource`, quindi deriva il PhysicalScope dalla relazione:
+Per ogni candidate il backend risolve prima una specifica `ResolvedVisitExecutionSource`, quindi deriva il PhysicalScope da `VisitAnchor -> VenueTarget -> Venue`. Una Visit è applicabile alla Library se la configured Venue appartiene al PhysicalScope della revisione risolta. Visit multi-Venue rimangono supportate.
 
-```text
-VisitAnchor -> VenueTarget -> Venue
-```
-
-Una Visit è applicabile alla Library se la configured Venue appartiene al PhysicalScope della revisione risolta. Visit multi-Venue rimangono supportate e la configured Venue non restringe la Session a una singola Venue.
-
-La normale Library mostra soltanto Visit il cui intero PhysicalScope è attualmente coerente per la preparazione. La logica `VisitAnchor -> VenueTarget -> VenueRelease` deve essere centralizzata in un resolver fisico riusabile da integrity, Library, Visit Detail e `startSession()` invece di essere duplicata.
+La normale Library mostra soltanto Visit il cui intero PhysicalScope è attualmente coerente per la preparazione. La logica `VisitAnchor -> VenueTarget -> VenueRelease` deve essere centralizzata in un resolver fisico riusabile da integrity, Library, Visit Detail e `startSession()`.
 
 Forma concettuale minima:
 
 ```text
 NavigatorVisitLibraryProjection
-  context
-    venue
-      id
-      name
+  context.venue { id, name }
   visits[]
     visitId
     resolvedRevisionId
     title
     description?
-    owner?
-      type
-      id
-      displayName
+    owner? { type, id, displayName }
     physicalScope
-      venues[]
-        id
-        name
+      venues[] { id, name }
       isMultiVenue
 ```
 
-I nomi esatti dei DTO possono essere raffinati. La projection non espone `kind`, `visibility`, `museumIds`, acquisition type, documenti Entitlement/Marketplace, VisitRevision grezza, VisitAnchor[], VenueTarget[] o VenueRelease complete.
+La projection non espone `kind`, `visibility`, `museumIds`, acquisition type, documenti Entitlement/Marketplace, VisitRevision grezza o strutture fisiche complete. `resolvedRevisionId` garantisce consistenza della singola risposta Library ma non prenota quella revisione per la successiva Detail. Le sessioni riprendibili restano un contratto separato.
 
-`resolvedRevisionId` garantisce consistenza della singola risposta Library ma non prenota quella revisione per una futura Visit Detail: l’apertura della Detail è una nuova preparation e può risolvere una revisione più recente in caso di `follow_current`.
+# Punto 11/30 — Navigator Visit Detail v2
 
-La Library non calcola inizialmente una durata personalizzata per ogni card. Stime dipendenti da presentation/navigation/adaptive state appartengono alla Visit Detail / LogisticsPreview. Le sessioni riprendibili restano un contratto separato dalla Visit Library e vengono composte dall’application layer della `LibraryView`.
+Il Navigator usa una read API dedicata, autenticata e composita, concettualmente:
+
+```text
+GET /navigator/visits/:visitId?venueId=:configuredVenueId
+```
+
+La configured Venue è contesto fisico di preparazione, non limite del PhysicalScope. Il backend autentica l’actor, risolve una specifica `ResolvedVisitExecutionSource`, verifica l’applicabilità fisica alla Venue configurata e costruisce tutte le sotto-projection rispetto alla stessa `VisitRevision`.
+
+Pipeline concettuale:
+
+```text
+request
+  -> authentication
+  -> configured Venue context
+  -> resolveVisitExecutionSource()
+  -> specific VisitRevision R
+  -> physical applicability
+  -> preparation composition
+  -> NavigatorVisitDetailProjection
+```
+
+La response è strutturata nei boundary:
+
+```text
+NavigatorVisitDetailProjection
+  context
+    venue
+    source
+      visitId
+      visitRevisionId
+    preparationHandle?       # forma pending Punto 18
+
+  visit
+    id
+    revisionId
+    title
+    description?
+    owner?
+    physicalScope
+      venues[]
+      isMultiVenue
+
+  preVisit
+    venues[]
+    visitNotes[]
+
+  preparation
+    presentation             # Punto 12–13
+    navigation               # Punto 14–15
+    adaptiveLearning
+
+  logistics                  # Punto 17
+
+  readiness
+    canStart
+    blockers[]
+```
+
+`visit` espone summary della revisione risolta, owner user-facing e PhysicalScope in forma di Venue leggibili. Non espone `kind`, `visibility`, review/integrity internals, `editorialSources`, `contentEntries`, `VisitAnchor`, `VenueTarget`, `VenueRelease` o `LayoutRevision` grezzi.
+
+`preVisit` preserva la provenienza distinguendo le informazioni strutturali delle `VenueRelease` dalle note specifiche della `VisitRevision`; la semantica dettagliata viene definita al Punto 16.
+
+La normale response non contiene `access.basis`, acquisition type o dettagli Entitlement: l’authorization avviene prima della projection. `readiness` rappresenta invece la possibilità applicativa di iniziare nel contesto corrente e può esporre blocker user-facing. Unauthorized normalmente produce `403`; una Visit non applicabile alla configured Venue produce un domain outcome dedicato; una Visit autorizzata/applicabile ma temporaneamente non startable può restituire la Detail con `readiness.canStart = false` quando una projection coerente è comunque producibile.
+
+L’ingresso nella Detail usa una singola GET composita. Il read model non è un write model generico: gli update della preparation passano da command/use case specifici o dal preparation draft definito successivamente. I contenuti completi della Visit non vengono riversati nella fase pre-visita. Per 18–27 la Detail rimane il workflow di chi avvia la Session; gli studenti possono entrare direttamente nel lifecycle della Session tramite il futuro join flow.
 
 # Runtime/UX confermati
 
@@ -240,11 +279,6 @@ La Library non calcola inizialmente una durata personalizzata per ogni card. Sti
 - `currentEntryIndex` e `executedThroughEntryIndex` restano distinti.
 - GeneratedPlan deve essere `accepted` prima dello start.
 - LLM futuro produce lo stesso request model strutturato del form di generazione.
-
-# Boundary già approvati ma con schema v2 pending
-
-## Navigator Visit Detail
-Projection dedicata, autenticata, access-first e composita. Authorization prima di preparation/logistics; backend recomputation; una singola revisione eseguibile coerente per request; `startSession()` boundary finale. Forma definitiva pending Punti 11–18.
 
 # Legacy esplicitamente superseded
 
@@ -262,11 +296,11 @@ Non devono più essere usati come contratto definitivo:
 - `Visit.visibility = public | unlisted | private`;
 - `VisitShareLink` come meccanismo corrente;
 - `museumIds[]` come filtro fisico della Library;
-- `access.basis` / `acquisitionType` nella Library Navigator.
+- `access.basis` / `acquisitionType` nella Library o Visit Detail Navigator;
+- uso del DTO editoriale grezzo `GET /visits/:visitId` come read model principale del Navigator.
 
-# Punti 11–30 ancora da riesaminare
+# Punti 12–30 ancora da riesaminare
 
-11. `NavigatorVisitDetailProjection` v2;
 12. presentation preparation unificata;
 13. preparation override non persistente;
 14. `NavigationPreparationResolver` su VenueRelease/LayoutRevision;
