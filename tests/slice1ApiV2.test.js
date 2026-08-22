@@ -23,7 +23,114 @@ async function jsonFetch(url, { cookie = null, ...init } = {}) {
   return { response, body };
 }
 
-test("Slice 1 API: login, catalog, free acquisition, Library e Detail", { skip: !mongoUri }, async () => {
+async function createEditorialFixture({ seller }) {
+  const Subject = require("../models/subject.model");
+  const Namespace = require("../models/namespace.model");
+  const NamespaceRevision = require("../models/namespaceRevision.model");
+  const ContentSpace = require("../models/contentSpace.model");
+  const EditorialContext = require("../models/editorialContext.model");
+  const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+  const EditorialRelease = require("../models/editorialRelease.model");
+  const ItemV2 = require("../models/itemV2.model");
+  const ItemEdition = require("../models/itemEdition.model");
+  const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+
+  const namespace = await Namespace.create({
+    name: "Slice 1 namespace",
+    ownerType: "user",
+    ownerId: seller._id,
+    createdBy: seller._id,
+  });
+  const namespaceRevision = await NamespaceRevision.create({
+    namespaceId: namespace._id,
+    version: 1,
+    durationTypes: [{ definitionId: "dur-short", key: "short", label: "Breve", targetSeconds: 15 }],
+    languageLevels: [{ definitionId: "lang-simple", key: "simple", label: "Semplice" }],
+    status: "published",
+    integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+    publication: { publishedAt: new Date(), publishedBy: seller._id },
+    createdBy: seller._id,
+    updatedBy: seller._id,
+  });
+  namespace.publishedRevisionId = namespaceRevision._id;
+  await namespace.save();
+
+  const contentSpace = await ContentSpace.create({
+    name: "Slice 1 content space",
+    ownerType: "user",
+    ownerId: seller._id,
+    createdBy: seller._id,
+  });
+  const context = await EditorialContext.create({
+    contentSpaceId: contentSpace._id,
+    namespaceId: namespace._id,
+    displayName: "Slice 1 context",
+    createdBy: seller._id,
+  });
+  const graphRevision = await SemanticGraphRevision.create({
+    editorialContextId: context._id,
+    version: 1,
+    authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+    createdBy: seller._id,
+  });
+
+  const bindings = [];
+  const entries = [];
+  for (const [index, label] of ["Primo contenuto", "Secondo contenuto"].entries()) {
+    const subject = await Subject.create({ preferredLabel: `Subject ${index + 1}`, createdBy: seller._id });
+    const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: seller._id, createdBy: seller._id });
+    const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: seller._id });
+    const itemRevision = new ItemRevisionV2({
+      itemEditionId: edition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      label,
+      authorCredits: ["Autore Slice 1"],
+      metadata: { license: "CC BY" },
+      presentationVariants: [{
+        key: "standard",
+        label: "Standard",
+        semanticFocus: [{ subjectId: subject._id, weight: 1 }],
+        representations: [{
+          durationTypeDefinitionId: "dur-short",
+          languageLevelDefinitionId: "lang-simple",
+          locale: "it-IT",
+          text: `${label}: testo mostrato dal Navigator`,
+        }],
+      }],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+      publication: { publishedAt: new Date(), publishedBy: seller._id },
+      createdBy: seller._id,
+      updatedBy: seller._id,
+    });
+    itemRevision.defaultPresentation = {
+      variantId: itemRevision.presentationVariants[0]._id,
+      representationId: itemRevision.presentationVariants[0].representations[0]._id,
+    };
+    await itemRevision.save();
+    edition.publishedRevisionId = itemRevision._id;
+    await edition.save();
+    bindings.push({ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] });
+    entries.push({ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id });
+  }
+
+  const release = await EditorialRelease.create({
+    editorialContextId: context._id,
+    version: 1,
+    namespaceRevisionId: namespaceRevision._id,
+    graphRevisionId: graphRevision._id,
+    itemBindings: bindings,
+    integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+    releasedAt: new Date(),
+    releasedBy: seller._id,
+  });
+  context.publishedReleaseId = release._id;
+  await context.save();
+  return { release, entries };
+}
+
+test("Slice 1 API: login, Catalog, acquisition, Library, Detail e NEXT/PREVIOUS", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const app = require("../app");
     const User = require("../models/user");
@@ -34,14 +141,21 @@ test("Slice 1 API: login, catalog, free acquisition, Library e Detail", { skip: 
 
     const seller = await User.create({ username: "slice1-seller", passwordHash: await hashPassword("12345678") });
     const buyer = await User.create({ username: "slice1-buyer", passwordHash: await hashPassword("12345678") });
+    const editorial = await createEditorialFixture({ seller });
+    const sourceId = new mongoose.Types.ObjectId();
     const visit = await VisitV2.create({ ownerType: "user", ownerId: seller._id, createdBy: seller._id });
     const revision = await VisitRevisionV2.create({
       visitId: visit._id,
       version: 1,
       title: "Catalog API Visit",
       description: "Visit per il test del primo vertical slice",
-      editorialSources: [],
-      contentEntries: [],
+      editorialSources: [{ _id: sourceId, editorialReleaseId: editorial.release._id }],
+      contentEntries: editorial.entries.map((entry) => ({
+        editorialSourceId: sourceId,
+        ...entry,
+        deliveryAnchorId: null,
+        role: "core",
+      })),
       visitAnchors: [],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
@@ -98,6 +212,33 @@ test("Slice 1 API: login, catalog, free acquisition, Library e Detail", { skip: 
       assert.equal(detail.response.status, 200);
       assert.equal(detail.body.visit.title, "Catalog API Visit");
       assert.equal(detail.body.preparation.available, true);
+
+      const start = await jsonFetch(`${baseUrl}/api/v2/visit-sessions`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({ visitId: visit._id }),
+      });
+      assert.equal(start.response.status, 201);
+      assert.equal(start.body.current.current.label, "Primo contenuto");
+      assert.equal(start.body.current.availableActions.includes("NEXT"), true);
+      const sessionId = start.body.session._id;
+
+      const next = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/advance`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({ direction: "next" }),
+      });
+      assert.equal(next.response.status, 200);
+      assert.equal(next.body.current.label, "Secondo contenuto");
+      assert.equal(next.body.availableActions.includes("PREVIOUS"), true);
+
+      const previous = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/advance`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({ direction: "previous" }),
+      });
+      assert.equal(previous.response.status, 200);
+      assert.equal(previous.body.current.label, "Primo contenuto");
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
