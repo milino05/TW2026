@@ -11,30 +11,36 @@ async function loadItemEditionAuthority({ itemEditionId }) {
   return { edition, item };
 }
 
-async function assertCanUseItemEdition({ itemEditionId, actorUserId, capability = "content.consume" }) {
+async function assertCanUseItemEdition({ itemEditionId, actorUserId, capability = "content.consume", principalType = null, principalId = null }) {
   const { edition, item } = await loadItemEditionAuthority({ itemEditionId });
   const access = await assertCapabilitySource({
     actorUserId,
     capability,
     resourceType: "item_edition",
     resourceId: edition._id,
+    principalType,
+    principalId,
   });
   return { edition, item, access };
 }
 
-async function assertCanUseItemEditionForEditorialRelease({ itemEditionId, actorUserId }) {
+async function assertCanUseItemEditionForEditorialRelease({ itemEditionId, actorUserId, principalType = null, principalId = null }) {
   return assertCanUseItemEdition({
     itemEditionId,
     actorUserId,
     capability: "content.use_in_editorial_release",
+    principalType,
+    principalId,
   });
 }
 
-async function assertCanForkItemEdition({ itemEditionId, actorUserId }) {
+async function assertCanForkItemEdition({ itemEditionId, actorUserId, principalType = null, principalId = null }) {
   return assertCanUseItemEdition({
     itemEditionId,
     actorUserId,
     capability: "content.fork",
+    principalType,
+    principalId,
   });
 }
 
