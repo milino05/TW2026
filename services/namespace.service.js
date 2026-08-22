@@ -98,18 +98,6 @@ async function forkNamespace({ namespaceId, payload, actorUserId }) {
     throw new AppError("La revisione del fork deriva dal Namespace sorgente", 400, [{ field: "revision", code: "FORBIDDEN_FIELD" }]);
   }
   const source = await findNamespaceOrFail({ namespaceId });
-  const access = await assertCanUseNamespaceForFork({ namespace: source, actorUserId });
-  const sourceRef = access.resolvedSnapshotRef;
-  if (sourceRef?.resourceType !== "namespace_revision") {
-    throw new AppError("Namespace fork senza NamespaceRevision autorizzata", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
-  }
-  const sourceRevision = await NamespaceRevision.findOne({
-    _id: sourceRef.resourceId,
-    namespaceId: source._id,
-    status: { $in: ["published", "superseded"] },
-  });
-  if (!sourceRevision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_UNAVAILABLE" }]);
-
   const rawPayload = {
     ...(payload || {}),
     name: payload?.name || `${source.name} (fork)`,
@@ -121,6 +109,22 @@ async function forkNamespace({ namespaceId, payload, actorUserId }) {
     ownerId: normalized.ownerId,
     minimumOrganizationRole: "operator",
   });
+  const access = await assertCanUseNamespaceForFork({
+    namespace: source,
+    actorUserId,
+    principalType: normalized.ownerType,
+    principalId: normalized.ownerId,
+  });
+  const sourceRef = access.resolvedSnapshotRef;
+  if (sourceRef?.resourceType !== "namespace_revision") {
+    throw new AppError("Namespace fork senza NamespaceRevision autorizzata", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
+  }
+  const sourceRevision = await NamespaceRevision.findOne({
+    _id: sourceRef.resourceId,
+    namespaceId: source._id,
+    status: { $in: ["published", "superseded"] },
+  });
+  if (!sourceRevision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_UNAVAILABLE" }]);
 
   const { snapshot: forkedDefinitions } = regenerateDefinitionIdsForFork(snapshot(sourceRevision));
   const namespace = await Namespace.create({
