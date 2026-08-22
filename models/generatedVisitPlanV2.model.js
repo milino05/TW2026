@@ -66,10 +66,12 @@ const GeneratedVisitPlanV2Schema = new Schema({
   utilityScore: { type: Number, default: 0 },
   explanation: { type: Schema.Types.Mixed, default: {} },
   acceptedAt: { type: Date, default: null },
+  materializedVisitId: { type: Schema.Types.ObjectId, ref: "VisitV2", default: null, index: true },
 }, { timestamps: true, collection: "generated_visit_plans_v2" });
 
 GeneratedVisitPlanV2Schema.index({ userId: 1, createdAt: -1 });
 GeneratedVisitPlanV2Schema.index({ sourceEditorialReleaseIds: 1, createdAt: -1 });
 GeneratedVisitPlanV2Schema.index({ sourceVenueReleaseIds: 1, createdAt: -1 });
+GeneratedVisitPlanV2Schema.index({ materializedVisitId: 1 });
 
 module.exports = mongoose.model("GeneratedVisitPlanV2", GeneratedVisitPlanV2Schema);
