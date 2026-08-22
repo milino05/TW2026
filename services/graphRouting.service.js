@@ -1,5 +1,17 @@
 const policy = require("../config/adaptivePolicy");
-const { fallbackPaceFactor } = require("./adaptiveEstimation.service");
+
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function fallbackPaceFactor(preference = 0.5) {
+  const value = clamp(Number(preference), 0, 1);
+  if (value <= 0.5) {
+    const ratio = value / 0.5;
+    return policy.coldStart.paceFactors.calm
+      + ratio * (policy.coldStart.paceFactors.normal - policy.coldStart.paceFactors.calm);
+  }
+  const ratio = (value - 0.5) / 0.5;
+  return policy.coldStart.paceFactors.normal
+    + ratio * (policy.coldStart.paceFactors.fast - policy.coldStart.paceFactors.normal);
+}
 
 function evaluateRequirement(attributes, requirement) { const actual = attributes?.[requirement.attributeKey]; const expected = requirement.value; switch (requirement.operator || "eq") { case "eq": return actual === expected; case "neq": return actual !== expected; case "gte": return Number(actual) >= Number(expected); case "lte": return Number(actual) <= Number(expected); case "gt": return Number(actual) > Number(expected); case "lt": return Number(actual) < Number(expected); case "in": return Array.isArray(expected) && expected.includes(actual); default: return false; } }
 function edgeCompatible(connection, requirements = []) { return requirements.filter((requirement) => requirement.priority === "required").every((requirement) => evaluateRequirement(connection.attributes || {}, requirement)); }
