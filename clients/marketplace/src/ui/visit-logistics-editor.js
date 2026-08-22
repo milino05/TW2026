@@ -37,16 +37,23 @@ export class ArtAroundVisitLogisticsEditor extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener("submit", this.onSubmit);
+    window.addEventListener("artaround:visit-updated", this.onVisitUpdated);
     this.load();
   }
 
   disconnectedCallback() {
     this.removeEventListener("submit", this.onSubmit);
+    window.removeEventListener("artaround:visit-updated", this.onVisitUpdated);
   }
 
   get visitId() { return visitIdFromUrl(); }
   get revision() { return this.projection?.visit?.revision || null; }
   get editable() { return hasOperation(this.projection, "visit.edit"); }
+
+  onVisitUpdated = (event) => {
+    if (!this.visitId || String(event.detail?.visitId || "") !== String(this.visitId)) return;
+    this.load();
+  };
 
   async load() {
     if (!this.visitId) { this.innerHTML = ""; return; }
@@ -86,6 +93,7 @@ export class ArtAroundVisitLogisticsEditor extends HTMLElement {
       });
       this.projection = await authoringRepository.visitProjection({ visitId: this.visitId });
       this.message = "Indicazioni logistiche aggiornate";
+      window.dispatchEvent(new PopStateEvent("popstate"));
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Aggiornamento logistica non riuscito";
     } finally {
