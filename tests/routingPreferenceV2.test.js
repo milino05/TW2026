@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   normalizeCanonicalRoutingRequirements,
 } = require("../services/routingPreferenceV2.service");
+const { translateRequirements } = require("../services/physicalExecutionV2.service");
 
 test("routing preferences accept only canonical global attributes", () => {
   const normalized = normalizeCanonicalRoutingRequirements([
@@ -39,4 +40,19 @@ test("routing preferences validate value and operator against canonical data typ
     () => normalizeCanonicalRoutingRequirements([{ attributeKey: "stairs", operator: "eq", value: "yes" }]),
     (error) => error?.status === 400 && error?.details?.[0]?.code === "INVALID_ROUTING_VALUE",
   );
+});
+
+test("a global requirement is mapped only through explicit canonicalKey", () => {
+  const requirement = [{ attributeKey: "step_free", operator: "eq", value: true, priority: "required", weight: 1 }];
+  const sameLocalKeyWithoutMapping = translateRequirements({
+    routingAttributes: [{ key: "step_free", label: "Nome locale coincidente", dataType: "boolean", appliesTo: "connection" }],
+  }, requirement);
+  assert.deepEqual(sameLocalKeyWithoutMapping.requirements, []);
+  assert.deepEqual(sameLocalKeyWithoutMapping.unsupportedRequired, ["step_free"]);
+
+  const explicitlyMapped = translateRequirements({
+    routingAttributes: [{ key: "senza_gradini_locale", label: "Senza gradini", dataType: "boolean", appliesTo: "connection", canonicalKey: "step_free" }],
+  }, requirement);
+  assert.equal(explicitlyMapped.requirements[0].attributeKey, "senza_gradini_locale");
+  assert.deepEqual(explicitlyMapped.unsupportedRequired, []);
 });
