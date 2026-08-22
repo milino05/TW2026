@@ -8,7 +8,10 @@ const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const ExecutionPreparation = require("../models/executionPreparation.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
-const { assertCanExecuteVisitV2, resolveExecutableVisitRevisionV2 } = require("./visitExecutionAccessV2.service");
+const {
+  resolveExecutableVisitRevisionV2,
+  assertCanExecuteResolvedVisitRevisionV2,
+} = require("./visitExecutionAccessV2.service");
 const {
   visitRevisionSourceSnapshotV2,
   generatedPlanSourceSnapshotV2,
@@ -119,7 +122,14 @@ async function loadExactSourceForPreparation(preparation, { revalidateAuthorizat
   if (source.sourceType === "visit") {
     const visit = await VisitV2.findOne({ _id: source.visitId, lifecycleStatus: "active" }).lean();
     if (!visit) throw new AppError("Visit della preparation non disponibile", 409, [{ code: "PREPARATION_SOURCE_UNAVAILABLE" }]);
-    if (revalidateAuthorization) await assertCanExecuteVisitV2(visit, preparation.userId);
+    if (revalidateAuthorization) {
+      await assertCanExecuteResolvedVisitRevisionV2({
+        visit,
+        userId: preparation.userId,
+        visitRevisionId: source.visitRevisionId,
+        preparedAt: preparation.createdAt,
+      });
+    }
     const revision = await VisitRevisionV2.findOne({
       _id: source.visitRevisionId,
       visitId: visit._id,
