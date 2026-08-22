@@ -52,6 +52,8 @@ async function createVenue({ payload, actorUserId }) {
   const primaryUsage = await assertCanUseEditorialContextAsVenuePrimary({
     editorialContextId: normalized.primaryEditorialContextId,
     actorUserId,
+    principalType: "organization",
+    principalId: organization._id,
   });
   const venue = await Venue.create({
     name: normalized.name,
@@ -76,7 +78,12 @@ async function updateVenue({ venueId, payload, actorUserId }) {
   const changesPrimary = Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")
     && !sameId(previousPrimaryId, normalized.primaryEditorialContextId || null);
   const primaryUsage = changesPrimary
-    ? await assertCanUseEditorialContextAsVenuePrimary({ editorialContextId: normalized.primaryEditorialContextId, actorUserId })
+    ? await assertCanUseEditorialContextAsVenuePrimary({
+        editorialContextId: normalized.primaryEditorialContextId,
+        actorUserId,
+        principalType: "organization",
+        principalId: venue.ownerOrganizationId,
+      })
     : null;
 
   let adoption = null;
