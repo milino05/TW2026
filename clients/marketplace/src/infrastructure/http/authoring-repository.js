@@ -54,4 +54,19 @@ export const authoringRepository = {
   setContentSpaceMembership({ contentSpaceId, itemId, member }) {
     return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}/items/${encodeURIComponent(itemId)}`, { method: member ? "PUT" : "DELETE" });
   },
+  visitProjection({ visitId = null, principalType = "user", principalId = null } = {}) {
+    if (visitId) return apiClient.request(`/v2/marketplace/visit-authoring/${encodeURIComponent(visitId)}`);
+    const query = queryString({ principalType, principalId });
+    return apiClient.request(`/v2/marketplace/visit-authoring/new${query ? `?${query}` : ""}`);
+  },
+  searchVisitContent({ editorialReleaseId, principalType = "user", principalId = null, q = "", page = 1, limit = 30 }) {
+    const query = queryString({ principalType, principalId, q, page, limit });
+    return apiClient.request(`/v2/marketplace/visit-authoring/releases/${encodeURIComponent(editorialReleaseId)}/content?${query}`);
+  },
+  createVisit(payload) {
+    return apiClient.request("/v2/visits", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateVisit(visitId, payload) {
+    return apiClient.request(`/v2/visits/${encodeURIComponent(visitId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
 };
