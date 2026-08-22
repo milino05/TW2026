@@ -32,6 +32,12 @@ async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, 
     resourceType: "editorial_context",
     resourceId: editorialContext._id,
   });
+  if (access.basis === "entitlement" && access.entitlement?.versionPolicy === "pinned") {
+    throw new AppError("Una EditorialRelease pinned non puo diventare il primary live di una Venue", 409, [{
+      code: "PINNED_CONTEXT_CANNOT_BECOME_LIVE_VENUE_PRIMARY",
+      context: { editorialContextId: editorialContext._id, resolvedSnapshotRef: access.resolvedSnapshotRef },
+    }]);
+  }
   return { editorialContext, access };
 }
 
