@@ -120,6 +120,12 @@ async function nextVersion(itemEditionId) {
   return (latest?.version || 0) + 1;
 }
 
+async function cleanupEditionGraph(edition) {
+  if (!edition?._id) return;
+  await ItemRevisionV2.deleteMany({ itemEditionId: edition._id }).catch(() => {});
+  await edition.deleteOne().catch(() => {});
+}
+
 async function createEdition({ itemId, payload, actorUserId }) {
   const issues = validateCreateEditionPayload(payload || {});
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
@@ -158,7 +164,7 @@ async function createEdition({ itemId, payload, actorUserId }) {
     });
     return { item, edition, revision };
   } catch (error) {
-    if (edition) await edition.deleteOne().catch(() => {});
+    await cleanupEditionGraph(edition);
     if (error?.code === 11000) throw new AppError("Esiste gia una ItemEdition per questo Item e Namespace", 409);
     throw error;
   }
@@ -306,6 +312,8 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
     createdBy: actorUserId,
   });
   let forkedEdition;
+  let forkedRevision;
+  const createdAdoptions = [];
   try {
     forkedEdition = await ItemEdition.create({
       itemId: forkedItem._id,
@@ -314,7 +322,7 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
     });
     const presentation = clonePresentationForFork(sourceRevision);
     const payload = revisionPayload(sourceRevision);
-    const forkedRevision = await ItemRevisionV2.create({
+    forkedRevision = await ItemRevisionV2.create({
       itemEditionId: forkedEdition._id,
       version: 1,
       authoredAgainstNamespaceRevisionId: targetNamespaceRevision._id,
@@ -330,7 +338,7 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
     });
     forkedEdition.workingRevisionId = forkedRevision._id;
     await forkedEdition.save();
-    await recordAdoptionFromAccess({
+    const contentAdoption = await recordAdoptionFromAccess({
       access: contentAccess,
       actorUserId,
       action: "content_fork",
@@ -338,7 +346,8 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
       sourceSnapshotRef: { resourceType: "item_revision", resourceId: sourceRevision._id },
       resultResourceRef: { resourceType: "item", resourceId: forkedItem._id },
     });
-    await recordAdoptionFromAccess({
+    if (contentAdoption) createdAdoptions.push(contentAdoption);
+    const namespaceAdoption = await recordAdoptionFromAccess({
       access: namespaceAccess,
       actorUserId,
       action: "namespace_use",
@@ -346,9 +355,11 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, act
       sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: targetNamespaceRevision._id },
       resultResourceRef: { resourceType: "item_edition", resourceId: forkedEdition._id },
     });
+    if (namespaceAdoption) createdAdoptions.push(namespaceAdoption);
     return { item: forkedItem, edition: forkedEdition, revision: forkedRevision };
   } catch (error) {
-    if (forkedEdition) await forkedEdition.deleteOne().catch(() => {});
+    for (const adoption of createdAdoptions.reverse()) await adoption.deleteOne().catch(() => {});
+    await cleanupEditionGraph(forkedEdition);
     await forkedItem.deleteOne().catch(() => {});
     throw error;
   }
