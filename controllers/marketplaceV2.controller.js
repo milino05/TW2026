@@ -1,6 +1,22 @@
 const service = require("../services/marketplaceVisitV2.service");
 const AppError = require("../utils/AppError");
 
+function projectAcquisitionResult(result) {
+  return {
+    acquisition: {
+      id: result.acquisition._id,
+      acquiredAt: result.acquisition.acquiredAt,
+      alreadyAcquired: result.alreadyAcquired,
+    },
+    grantedUses: (result.entitlements || []).map((entitlement) => ({
+      resourceType: entitlement.resourceType,
+      resourceId: entitlement.resourceId,
+      capability: entitlement.capability,
+      versionPolicy: entitlement.versionPolicy,
+    })),
+  };
+}
+
 async function catalog(req, res, next) {
   try {
     res.status(200).json(await service.listVisitCatalog({
@@ -53,11 +69,12 @@ async function acquire(req, res, next) {
       beneficiaryType: req.body?.beneficiaryType || "user",
       beneficiaryId: req.body?.beneficiaryId || req.user._id,
     });
-    res.status(result.alreadyAcquired ? 200 : 201).json(result);
+    res.status(result.alreadyAcquired ? 200 : 201).json(projectAcquisitionResult(result));
   } catch (error) { next(error); }
 }
 
 module.exports = {
+  projectAcquisitionResult,
   catalog,
   detail,
   createVisitListing,
