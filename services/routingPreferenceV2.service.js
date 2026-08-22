@@ -1,5 +1,5 @@
 const AppError = require("../utils/AppError");
-const { canonicalRoutingAttribute } = require("../config/globalRoutingAttributes");
+const { getCanonicalAttribute } = require("./routingAttributeCatalog.service");
 
 const OPERATORS_BY_TYPE = Object.freeze({
   boolean: new Set(["eq", "neq", "in"]),
@@ -45,13 +45,13 @@ function normalizeValue(definition, operator, value, field) {
   return normalizeScalar(definition, value, field);
 }
 
-function normalizeCanonicalRoutingRequirement(requirement, index = 0) {
-  const field = `requirements[${index}]`;
+function normalizeCanonicalRoutingRequirement(requirement, index = 0, fieldPrefix = "requirements") {
+  const field = `${fieldPrefix}[${index}]`;
   if (!requirement || typeof requirement !== "object" || Array.isArray(requirement)) {
     invalid(field, "INVALID_ROUTING_REQUIREMENT", `${field} deve essere un oggetto`);
   }
   const attributeKey = String(requirement.attributeKey || "").trim().toLowerCase();
-  const definition = canonicalRoutingAttribute(attributeKey);
+  const definition = getCanonicalAttribute(attributeKey);
   if (!definition) {
     invalid(`${field}.attributeKey`, "UNKNOWN_GLOBAL_ROUTING_ATTRIBUTE", `Attributo di routing globale non disponibile: ${attributeKey || "<vuoto>"}`);
   }
@@ -79,7 +79,7 @@ function normalizeCanonicalRoutingRequirement(requirement, index = 0) {
 function normalizeCanonicalRoutingRequirements(requirements, { field = "requirements" } = {}) {
   if (requirements === undefined) return [];
   if (!Array.isArray(requirements)) invalid(field, "INVALID_TYPE", `${field} deve essere un array`);
-  return requirements.map((requirement, index) => normalizeCanonicalRoutingRequirement(requirement, index));
+  return requirements.map((requirement, index) => normalizeCanonicalRoutingRequirement(requirement, index, field));
 }
 
 module.exports = {
