@@ -8,7 +8,8 @@ const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const AppError = require("../utils/AppError");
 const { resolveExecutableVisitRevisionV2 } = require("./visitExecutionAccessV2.service");
 const { resolveInitialPresentation } = require("./presentationRuntimeV2.service");
-const { materializeSessionPhysicalPlan, id } = require("./physicalExecutionV2.service");
+const { id } = require("./physicalExecutionV2.service");
+const { resolveNavigationPreparation } = require("./navigationPreparationV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
@@ -127,7 +128,7 @@ function timingFromMaterialized(contentEntries, visitAnchors, physicalRoute, res
 
 async function prepareInitialSessionPlan({ source, navigation, userPreference = null, explicitPreference = null }) {
   const [physical, contentEntries] = await Promise.all([
-    materializeSessionPhysicalPlan({ sourceAnchors: source.sourceAnchors, sourceLegHints: source.sourceLegHints, navigation }),
+    resolveNavigationPreparation({ sourceAnchors: source.sourceAnchors, sourceLegHints: source.sourceLegHints, navigation }),
     materializeContentEntries({ source, userPreference, explicitPreference }),
   ]);
   const anchorIds = new Set((physical.visitAnchors || []).map((entry) => id(entry._id)));
