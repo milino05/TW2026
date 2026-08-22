@@ -45,13 +45,16 @@ requirePattern("services/visitAuthoringV2.service.js", /mayEditEditorialRevision
 requirePattern("services/visitAuthoringV2.service.js", /presentationProfiles/, "Visit authoring presentation-level metadata");
 requirePattern("routes/marketplaceV2.routes.js", /visit-authoring\/new[\s\S]*visit-authoring\/releases\/:editorialReleaseId\/content[\s\S]*visit-authoring\/:visitId/, "Visit authoring read routes");
 requirePattern("clients/marketplace/src/application/router.js", /\/workspace\/visit-authoring/, "Visit authoring client route");
-requirePattern("clients/marketplace/src/ui/app-shell.js", /visit-authoring-view[\s\S]*artaround-visit-authoring-view/, "Visit authoring client mount");
+requirePattern("clients/marketplace/src/ui/app-shell.js", /visit-authoring-view[\s\S]*visit-logistics-editor[\s\S]*artaround-visit-authoring-view[\s\S]*artaround-visit-logistics-editor/, "Visit authoring and logistics client mount");
 requirePattern("clients/marketplace/src/ui/workspace-view.js", /data-visit-editor[\s\S]*Crea nuova visita/, "Workspace Visit editor entry points");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /createVisit[\s\S]*updateVisit/, "Visit create and edit through VisitV2 API");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-move-entry[\s\S]*data-remove-entry/, "Visit content reorder and removal controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContent[\s\S]*data-content-page/, "Paginated Visit content search");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /executeWorkspaceOperation[\s\S]*resourceType:\s*["']visit["']/, "Backend-authoritative Visit workflow from editor");
+requirePattern("clients/marketplace/src/ui/visit-logistics-editor.js", /preVisitNotes[\s\S]*routeHints/, "Visit logistics edit preserving structured route hints");
+requirePattern("clients/marketplace/src/ui/visit-logistics-editor.js", /non sono Item[\s\S]*contentEntries/, "Visit logistics kept separate from Item content");
+rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /role:\s*["']logistics["']|itemType:\s*["']logistics["']/, "Logistics encoded as Visit content");
 requirePattern("tests/visitAuthoringV2.test.js", /published[\s\S]*visit\.edit[\s\S]*in_review[\s\S]*workflow\.withdraw_review/, "Visit editor workflow regression test");
 
 requirePattern("app.js", /mountBuiltSpa[\s\S]*res\.redirect\(308[\s\S]*\/navigator[\s\S]*\/marketplace/, "Same-site client hosting and canonical redirects");
@@ -71,4 +74,4 @@ rejectPattern("README.md", /seed completo[\s\S]{0,120}(?:ancora|deve essere comp
 requirePattern("docs/deployment.md", /start mongo[\s\S]*start node-22/, "Department gocker procedure");
 
 if (failed) process.exit(1);
-console.log("Slice 9 dataset, visit editor, compliance, static hosting and deployment guardrails are intact.");
+console.log("Slice 9 dataset, visit editor, logistics separation, compliance, static hosting and deployment guardrails are intact.");
