@@ -3,8 +3,6 @@ const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTargetObservationProfile = require("../models/venueTargetObservationProfile.model");
-const EditorialContext = require("../models/editorialContext.model");
-const EditorialRelease = require("../models/editorialRelease.model");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
@@ -30,6 +28,10 @@ const {
 } = require("./visitGeneratorV2Semantics.service");
 const { optimizeVisitV2, transferKey } = require("./visitGeneratorV2Search.service");
 const { validateGenerationRequestV2 } = require("./validation/generationV2.validation");
+const {
+  resolveGenerationSources,
+  resolvePrimaryDefaultGenerationSources,
+} = require("./generationSourceV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function mapById(values = []) { return new Map(values.map((entry) => [id(entry._id), entry])); }
@@ -127,36 +129,53 @@ async function loadPhysicalScope(request) {
   };
 }
 
-function resolveEditorialContextIds(request, physicalScope) {
-  if (Object.prototype.hasOwnProperty.call(request, "editorialContextIds")) {
-    const explicit = uniqueIds(request.editorialContextIds || []);
-    if (!explicit.length) throw new AppError("EditorialScope esplicito vuoto", 400, [{ field: "editorialContextIds", code: "EDITORIAL_SCOPE_EMPTY" }]);
-    return { editorialContextIds: explicit, warnings: [], source: "explicit" };
+async function resolveEditorialSources({ request, physicalScope, actorUserId }) {
+  if (Object.prototype.hasOwnProperty.call(request, "editorialSources")) {
+    return {
+      resolved: await resolveGenerationSources({ sources: request.editorialSources, actorUserId }),
+      warnings: [],
+      source: "explicit",
+    };
   }
-  const ids = uniqueIds(physicalScope.venues.map((venue) => venue.primaryEditorialContextId).filter(Boolean));
-  const missing = physicalScope.venues.filter((venue) => !venue.primaryEditorialContextId).map((venue) => id(venue._id));
-  if (!ids.length) throw new AppError("Nessuna Venue selezionata dispone di un EditorialContext primario", 409, [{ field: "venueIds", code: "PRIMARY_EDITORIAL_CONTEXT_MISSING" }]);
+  const defaults = await resolvePrimaryDefaultGenerationSources({
+    venues: physicalScope.venues,
+    actorUserId,
+  });
   return {
-    editorialContextIds: ids,
+    resolved: defaults.resolved,
+    warnings: defaults.warnings,
     source: "venue_primary_defaults",
-    warnings: missing.map((venueId) => ({ code: "VENUE_WITHOUT_PRIMARY_EDITORIAL_CONTEXT", venueId })),
   };
 }
 
-async function loadEditorialScope({ request, physicalScope }) {
-  const resolved = resolveEditorialContextIds(request, physicalScope), ids = resolved.editorialContextIds;
-  const contexts = await EditorialContext.find({ _id: { $in: ids }, lifecycleStatus: "active" }).lean();
-  if (contexts.length !== ids.length) throw new AppError("Uno o piu EditorialContext selezionati non sono disponibili", 409);
-  const contextById = mapById(contexts), bundles = [];
-  for (const contextId of ids) {
-    const context = contextById.get(contextId);
-    if (!context?.publishedReleaseId) throw new AppError("EditorialContext senza release pubblicata", 409, [{ field: "editorialContextIds", code: "EDITORIAL_CONTEXT_WITHOUT_RELEASE", context: { editorialContextId: contextId } }]);
-    const release = await EditorialRelease.findOne({ _id: context.publishedReleaseId, editorialContextId: context._id }).lean();
-    if (!release || release.integrity?.status !== "valid") throw new AppError("EditorialRelease corrente non utilizzabile", 409, [{ field: "editorialContextIds", code: "EDITORIAL_RELEASE_INVALID", context: { editorialContextId: contextId } }]);
-    const namespaceRevision = await NamespaceRevision.findById(release.namespaceRevisionId).lean();
-    if (!namespaceRevision) throw new AppError("NamespaceRevision della EditorialRelease non trovata", 409);
+async function loadEditorialScope({ request, physicalScope, actorUserId }) {
+  const resolution = await resolveEditorialSources({ request, physicalScope, actorUserId });
+  const bundles = [];
+  for (const source of resolution.resolved) {
+    const context = source.editorialContext;
+    const release = source.editorialRelease;
+    const namespaceRevision = await NamespaceRevision.findOne({
+      _id: release.namespaceRevisionId,
+      namespaceId: context.namespaceId,
+    }).lean();
+    if (!namespaceRevision) throw new AppError("NamespaceRevision della EditorialRelease non trovata", 409, [{
+      field: "editorialSources",
+      code: "GENERATION_SOURCE_NAMESPACE_REVISION_MISSING",
+      context: { editorialReleaseId: release._id },
+    }]);
     const graph = await loadSemanticGraphRevision(release.graphRevisionId, { namespaceRevisionId: release.namespaceRevisionId });
-    bundles.push({ context, release, namespaceRevision, graph, namespaceId: context.namespaceId });
+    bundles.push({
+      context,
+      release,
+      namespaceRevision,
+      graph,
+      namespaceId: context.namespaceId,
+      generationSource: {
+        requestedSourceRef: source.requestedSourceRef,
+        resolvedSourceRef: source.resolvedSourceRef,
+        versionMode: source.versionMode,
+      },
+    });
   }
 
   const editionIds = uniqueIds(bundles.flatMap((bundle) => (bundle.release.itemBindings || []).map((entry) => entry.itemEditionId)));
@@ -173,7 +192,7 @@ async function loadEditorialScope({ request, physicalScope }) {
       const edition = editionById.get(id(binding.itemEditionId)), revision = revisionById.get(id(binding.itemRevisionId));
       const item = edition ? itemById.get(id(edition.itemId)) : null;
       if (!edition || !revision || !item || id(revision.itemEditionId) !== id(edition._id)) {
-        throw new AppError("EditorialRelease contiene un binding editoriale non piu risolvibile", 409, [{ field: "editorialContextIds", code: "EDITORIAL_BINDING_UNRESOLVABLE", context: { editorialReleaseId: bundle.release._id, itemEditionId: binding.itemEditionId } }]);
+        throw new AppError("EditorialRelease contiene un binding editoriale non piu risolvibile", 409, [{ field: "editorialSources", code: "EDITORIAL_BINDING_UNRESOLVABLE", context: { editorialReleaseId: bundle.release._id, itemEditionId: binding.itemEditionId } }]);
       }
       const key = `${id(edition._id)}:${id(revision._id)}`;
       if (!candidateByEditionRevision.has(key)) {
@@ -230,12 +249,21 @@ async function loadEditorialScope({ request, physicalScope }) {
     mergedNamespaceRevisionByNamespaceId.set(key, current);
   }
   return {
-    ...resolved,
-    contexts,
+    source: resolution.source,
+    warnings: resolution.warnings,
+    contexts: [...new Map(bundles.map((bundle) => [id(bundle.context._id), bundle.context])).values()],
     bundles,
     baseCandidates,
     federatedGraph,
     namespaceRevisionByNamespaceId: mergedNamespaceRevisionByNamespaceId,
+    requestedSourceRefs: bundles.map((bundle) => bundle.generationSource.requestedSourceRef),
+    resolvedSources: bundles.map((bundle) => ({
+      requestedSourceRef: bundle.generationSource.requestedSourceRef,
+      resolvedSourceRef: bundle.generationSource.resolvedSourceRef,
+      editorialContextId: bundle.context._id,
+      editorialReleaseId: bundle.release._id,
+      versionMode: bundle.generationSource.versionMode,
+    })),
     sourceEditorialReleaseIds: bundles.map((entry) => entry.release._id),
   };
 }
@@ -330,7 +358,7 @@ async function loadGenerationDataV2({ userId, request }) {
   const requestErrors = validateGenerationRequestV2(request || {});
   if (requestErrors.length) throw new AppError("Richiesta di generazione v2 non valida", 400, requestErrors);
   const physicalScope = await loadPhysicalScope(request);
-  const editorialScope = await loadEditorialScope({ request, physicalScope });
+  const editorialScope = await loadEditorialScope({ request, physicalScope, actorUserId: userId });
   const candidateData = await buildCandidateOptions({ userId, request, editorialScope, physicalScope });
   if (!candidateData.options.length) throw new AppError("Nessun contenuto compatibile disponibile per la generazione", 409);
   assertNoConflictingRequiredEditions(candidateData.options, request);
@@ -388,11 +416,11 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
     requestSnapshot: {
       ...request,
       venueIds: data.physicalScope.venueIds,
-      editorialContextIds: data.editorialScope.editorialContextIds,
+      editorialSources: data.editorialScope.requestedSourceRefs,
       editorialScopeSource: data.editorialScope.source,
     },
     contextSnapshot: {
-      editorialContextIds: data.editorialScope.editorialContextIds,
+      editorialSources: data.editorialScope.resolvedSources,
       venueIds: data.physicalScope.venueIds,
       depthPreference: request.depthPreference ?? null,
       languageComplexityPreference: request.languageComplexityPreference ?? null,
@@ -447,7 +475,7 @@ module.exports = {
   resolveMovementSpeed,
   translateRequirements,
   loadPhysicalScope,
-  resolveEditorialContextIds,
+  resolveEditorialSources,
   loadEditorialScope,
   physicalAssociationScore,
   buildCandidateOptions,
