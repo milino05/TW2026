@@ -28,12 +28,14 @@ async function update(req, res, next) {
 
 async function start(req, res, next) {
   try {
+    const before = await service.getExecutionPreparation({ preparationId: req.params.preparationId, userId: req.user._id });
+    const alreadyStarted = before.status === "consumed";
     const result = await service.startExecutionPreparation({
       preparationId: req.params.preparationId,
       userId: req.user._id,
       expectedVersion: req.body?.expectedVersion,
     });
-    res.status(201).json(result);
+    res.status(alreadyStarted ? 200 : 201).json({ ...result, alreadyStarted });
   } catch (error) { next(error); }
 }
 
