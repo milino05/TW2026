@@ -55,8 +55,9 @@ export const navigatorVisitRepository = {
     const query = configuredVenueId ? `?configuredVenueId=${encodeURIComponent(configuredVenueId)}` : "";
     return apiClient.request<{ visits: LibraryVisit[] }>(`/v2/navigator/library${query}`);
   },
-  detail(visitId: string) {
-    return apiClient.request<NavigatorVisitDetail>(`/v2/navigator/visits/${encodeURIComponent(visitId)}`);
+  detail(visitId: string, configuredVenueId?: string) {
+    const query = configuredVenueId ? `?configuredVenueId=${encodeURIComponent(configuredVenueId)}` : "";
+    return apiClient.request<NavigatorVisitDetail>(`/v2/navigator/visits/${encodeURIComponent(visitId)}${query}`);
   },
   resumableSessions() {
     return apiClient.request<{ sessions: ResumableSession[] }>("/v2/navigator/sessions");
