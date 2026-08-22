@@ -79,10 +79,7 @@ async function getNavigatorVisitDetail({ userId, visitId }) {
       stopCount: physicalScope.stopCount,
       contentCount: (revision.contentEntries || []).length,
     },
-    preparation: {
-      available: true,
-      startMode: "legacy_session_start_until_slice_2",
-    },
+    preparation: { available: true },
   };
 }
 
