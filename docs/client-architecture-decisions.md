@@ -6,33 +6,35 @@ L'obiettivo è completare correttamente la fascia 18–24 predisponendo il siste
 
 ## Regola di manutenzione
 
-Questo file è un registro architetturale vivo. Ogni nuova decisione approvata relativa ai client, ai loro contratti con il backend o alle predisposizioni 18–27/18–33 deve essere aggiunta qui. Le proposte non ancora approvate non devono essere presentate come definitive. Le decisioni più recenti sostituiscono eventuali formulazioni precedenti incompatibili.
+Questo file è un registro architetturale vivo. Ogni nuova decisione approvata relativa ai client, ai loro contratti con il backend o alle predisposizioni 18–27/18–33 deve essere aggiunta qui. Le proposte non ancora approvate non devono essere presentate come definitive. Le decisioni più recenti sostituiscono formulazioni precedenti incompatibili.
 
-# Principio fondamentale: integrazione con il backend
+Quando una decisione legacy non è ancora stata riesaminata rispetto al Domain Model v2, viene indicata esplicitamente come **pending** e non deve essere usata come contratto definitivo.
+
+# 1. Principio fondamentale: integrazione con il backend
 
 Ogni proposta frontend o architetturale deve essere verificata rispetto al **backend reale su `main`** prima di essere approvata.
 
-- Il client deve integrarsi con modelli, servizi, revisioni, autorizzazioni e workflow backend già implementati.
+- Il client deve integrarsi con modelli, servizi, revisioni, autorizzazioni e workflow backend realmente implementati.
 - Quando il backend offre già una capacità utile, il client deve sfruttarla invece di duplicarne la logica.
 - La business logic autorevole rimane nel backend quando appartiene al dominio ArtAround.
 - Se una soluzione frontend mette in evidenza un limite reale del backend, va proposta una modifica backend quando produce un sistema complessivamente migliore.
 - Sono da preferire refactoring coordinati a workaround frontend.
 - Questo principio vale sia per Navigator sia per Marketplace/Editor.
 
-# Principi generali e tecnologie
+# 2. Principi generali e tecnologie
 
 - Un solo repository e un solo backend Node/Express condiviso.
-- Nessun backend separato per i due client.
+- Nessun backend separato per Navigator e Marketplace/Editor.
 - Architettura 18–24 predisposta per 18–27 e 18–33.
-- ArtAround rimane generico rispetto a musei, gallerie ed esposizioni; i client non hardcodano ontologie, contenuti o capacità specifiche di una struttura e rispettano la separazione del Domain Model v2 fra authority, dominio editoriale/semantico e dominio fisico.
+- ArtAround rimane generico rispetto a musei, gallerie ed esposizioni.
 - Navigator: Vue, Vite, TypeScript, Vue Router, Pinia.
 - Marketplace/Editor: vanilla JavaScript con ES Modules e Web Components; nessun framework UI come Vue/React/Svelte.
-- `shared/` può contenere solo codice framework-agnostic, contratti, primitive HTTP e schemi realmente comuni; nessuna UI condivisa fra Vue e Web Components.
+- `shared/` può contenere soltanto codice framework-agnostic, contratti, primitive HTTP e schemi realmente comuni; nessuna UI condivisa fra Vue e Web Components.
 - Lo stesso backend DTO può essere adattato separatamente nei due client.
 
-## Separazione dei contesti di dominio (v2)
+# 3. Separazione dei contesti di dominio — approvato, Punto 1/30
 
-Il Navigator e il Marketplace non assumono che una singola entità “museo” possieda contemporaneamente contenuti, semantica e infrastruttura fisica. I client rispettano la separazione backend fra ownership/authority, EditorialScope e PhysicalScope.
+Il Navigator e il Marketplace non assumono che una singola entità “museo” possieda contemporaneamente contenuti, semantica e infrastruttura fisica. I client rispettano la separazione del Domain Model v2 fra ownership/authority, EditorialScope e PhysicalScope.
 
 ```text
 Ownership / authority
@@ -55,9 +57,30 @@ Physical scope
 
 Un `Venue` non è il proprietario implicito della semantica/editorialità e un `EditorialContext` non implica disponibilità fisica in una Venue. I backend projection/service compongono questi assi quando serve; i client non ne ricostruiscono autonomamente le relazioni.
 
-La parola “museo” può naturalmente rimanere nella UX quando è il termine comprensibile per l'utente; non deve però tornare a essere un aggregate tecnico universale che contiene implicitamente ownership, contenuti, graph, layout, permission e Marketplace.
+La parola “museo” può rimanere nella UX quando è il termine comprensibile per l'utente; non deve però tornare a essere un aggregate tecnico universale che contiene implicitamente ownership, contenuti, graph, layout, permission e Marketplace.
 
-# Organizzazione logica del Navigator
+## Fonti delle Domain Action
+
+Il protocollo Action rimane:
+
+```text
+ActionDefinition
+  -> AvailableAction
+  -> ActionRequest
+  -> ActionResult
+  -> InteractionEvent
+```
+
+Le Domain `ActionDefinition` vengono risolte dalle fonti autorevoli pertinenti:
+
+- semantica/editorialità: `EditorialRelease`, `NamespaceRevision`, `SemanticGraph`, `Subject`;
+- presentazione: `ItemRevision`, `NamespaceRevision`;
+- capacità fisiche: `VenueRelease`, `LayoutRevision`, `VenueTarget`;
+- controllo visita: `VisitSession`, `SessionPlanRevision`, `ContentEntry`, `VisitAnchor`.
+
+Il client non carica questi aggregate per dedurre autonomamente le azioni disponibili. Il backend compone il contesto e restituisce `AvailableAction[]`.
+
+# 4. Organizzazione logica del Navigator
 
 Separazione concettuale leggera:
 
@@ -84,25 +107,11 @@ UI
 
 Non deve esistere un unico gigantesco `ApiService`. Sono preferibili repository/port specifici per responsabilità.
 
-# Sistema Action
+# 5. Sistema Action
 
-È scartato un enum globale di comandi semanticamente hardcoded (`AUTHOR`, `STYLE`, `TOILET`, ecc.). ArtAround deriva le capacità dal dominio e dai dati autorevoli pertinenti, non da un catalogo di comandi specifico del museo hardcoded nel client.
+È scartato un enum globale di comandi semanticamente hardcoded (`AUTHOR`, `STYLE`, `TOILET`, ecc.). ArtAround deriva le capacità dal dominio e dai dati autorevoli pertinenti.
 
-Protocollo:
-
-```text
-ActionDefinition
-  -> AvailableAction
-  -> ActionRequest
-  -> ActionResult
-  -> InteractionEvent
-```
-
-## Action family
-
-Le family descrivono meccanismi strutturali relativamente stabili; binding e valori editoriali, semantici e fisici rimangono dinamici.
-
-Esempi approvati concettualmente:
+Action family concettualmente approvate:
 
 ```text
 relation.query
@@ -113,38 +122,28 @@ presentation.adjust
 
 Le family hanno contratti tipizzati; non è approvato un generico `parameters: any`.
 
-## ActionDefinition e AvailableAction
+`ActionDefinition` rappresenta una capacità esistente nel dominio. `AvailableAction` rappresenta una capacità concretamente disponibile per quell'utente e quel contesto ed è parte versionata del runtime Navigator.
 
-`ActionDefinition` = capacità esistente nel dominio. Le fonti autorevoli dipendono dalla family: semantica/editorialità da `EditorialRelease` / `NamespaceRevision` / `SemanticGraph` / `Subject`; presentazione da `ItemRevision` / `NamespaceRevision`; capacità fisiche da `VenueRelease` / `LayoutRevision` / `VenueTarget`; controllo della visita da `VisitSession` / `SessionPlan`. Le Domain ActionDefinition sono autorevoli nel backend e non richiedono necessariamente una collection Mongo dedicata.
-
-Il client non carica questi aggregate per dedurre autonomamente quali azioni siano disponibili: il backend compone il contesto rilevante e produce le `AvailableAction[]`.
-
-`AvailableAction` = capacità concretamente disponibile per quell'utente e quel contesto. Il Navigator riceve principalmente `AvailableAction[]`, che è parte versionata del `NavigatorRuntimeState`.
-
-Ogni AvailableAction usa:
+Ogni `AvailableAction` usa almeno:
 
 - `definitionKey`: identità semantica relativamente stabile per eventi/analytics/diagnostica;
 - `availableActionId`: identità contestuale dell'azione disponibile ora.
 
-L'ActionRequest contiene almeno `availableActionId`, `expectedRuntimeVersion` ed eventuali input realmente necessari. Il backend ricostruisce e rivalida semantica, availability, autorizzazione e contesto.
+L'`ActionRequest` contiene almeno `availableActionId`, `expectedRuntimeVersion` ed eventuali input realmente necessari. Il backend ricostruisce e rivalida semantica, availability, authorization e contesto.
 
 `ActionResult` descrive il risultato semantico; `RuntimeUpdate` descrive gli effetti sul runtime. Sono concetti distinti.
 
-## Eventi
+Si distinguono:
 
-Sono scartati eventi domain-specific hardcoded come `AUTHOR_REQUESTED`. Si distinguono platform event strutturali e `InteractionEvent` generici che referenziano action e binding dinamici.
+- **Domain Action**: azione applicativa/domain autorevole lato backend;
+- **Client Action**: azione significativa ma realmente locale al device;
+- **UIIntent**: comportamento puramente grafico.
 
-## Domain Action, Client Action e UIIntent
+Gli UIIntent non diventano artificialmente `ActionDefinition`.
 
-- Domain Action: azione applicativa/domain autorevole lato backend.
-- Client Action: azione significativa ma realmente locale al device.
-- UIIntent: comportamento puramente grafico, per esempio aprire/chiudere un pannello.
+## Action Gateway runtime
 
-Gli UIIntent non diventano artificialmente ActionDefinition.
-
-# Action Gateway runtime
-
-È approvato un gateway limitato alle `visit-session`, concettualmente:
+È approvato un gateway limitato alle VisitSession, concettualmente:
 
 ```text
 POST /api/visit-sessions/:sessionId/actions
@@ -152,9 +151,9 @@ POST /api/visit-sessions/:sessionId/actions
 
 Marketplace/Editor continua a usare endpoint resource-specific.
 
-Il gateway delega a dispatcher e handler tipizzati che **riusano i servizi backend esistenti**, per esempio RelationQueryHandler, PlaceNavigationHandler, PresentationAdjustmentHandler e VisitMoveHandler. Non contiene business logic di dominio e non diventa un God service. In futuro gli stessi ActionRequest potranno essere trasportati via realtime.
+Il gateway delega a dispatcher e handler tipizzati che riusano i servizi backend esistenti. Non contiene business logic di dominio e non diventa un God service. In futuro gli stessi `ActionRequest` potranno essere trasportati via realtime.
 
-# Pausa e resume
+# 6. Pausa, runtime e routing Navigator
 
 La pausa rimane uno stato persistente della VisitSession:
 
@@ -164,79 +163,39 @@ active -> paused -> active
 
 Pause/resume sono Domain Action del runtime e riusano i servizi backend esistenti. Non esiste una route Vue `/paused`: l'URL rimane `/sessions/:sessionId` e cambia il runtime autorevole.
 
-# NavigatorRuntimeState
+`NavigatorRuntimeState` rimane una projection autonoma, minima e autorevole del runtime, non una serializzazione completa della VisitSession.
 
-Projection autonoma, minima e autorevole del runtime; non serializzazione completa di `VisitSession`.
+Sono confermate le separazioni fra:
 
-```text
-NavigatorRuntimeState
-  runtimeVersion
-  session
-  control
-  plan
-  currentEntry
-  currentPresentation
-  location
-  navigation
-  availableActions[]
-```
+- runtime corrente;
+- `VisitPlanProjection` completa;
+- `NavigationProjection` completa;
+- stato UI locale.
 
-- `runtimeVersion` è distinta da versioni di piano/vocabulary/layout e serve a stale detection, gap detection, resync e futuro realtime.
-- `session` è una projection minima di identità/status/source type.
-- `control` parte da modalità `individual` ed è predisposto per 18–27; non duplica AvailableAction con `canX`.
-- `plan` contiene solo riferimenti e posizione essenziale.
-- `currentEntry` rappresenta la posizione logica nella sequenza, non l'intero Item.
-- `currentPresentation` contiene la presentation selezionata dal server, incluso il testo; UI e TTS usano la stessa fonte.
-- `location` è posizione logica normalizzata; dati grezzi GPS/QR/sensori restano nei provider.
-- `availableActions` è parte integrante e versionata del runtime.
+La forma esatta di `location`, `navigation` e delle destination è **pending** perché verrà riesaminata nei Punti 19–21.
 
-## VisitPlanProjection
+## Store Pinia
 
-Il piano completo resta separato dal runtime e contiene ciò che serve al Navigator: plan revision/version, entries necessarie, route/timing summary utili. Un cambio di plan revision invalida/aggiorna la projection.
-
-## Navigation
-
-La navigazione è stato runtime persistente minimo. Concettualmente:
+Store concettuali approvati:
 
 ```text
-navigation
-  status
-  routeId
-  routeVersion
-  destinationPlaceId
-  currentLegIndex
+authStore
+configuredVenueStore
+runtimeStore
+planStore
+navigationStore
+uiStore
 ```
-
-La route completa vive in `NavigationProjection`, separata, con route id/version, layout revision, origin, destination, legs, instructions e warnings. Un ricalcolo verso la stessa destinazione mantiene `routeId` e incrementa `routeVersion`.
-
-# Stato Pinia
-
-Sei store concettuali:
-
-- `authStore`;
-- `runtimeStore`;
-- `planStore`;
-- `navigationStore`;
-- `configuredVenueStore`;
-- `uiStore`.
-
-`configuredVenueStore` rappresenta esclusivamente la Venue primaria determinata dal file statico di configurazione e conserva una projection minima dell'identità e dei dati user-facing realmente necessari globalmente. Non è un aggregate frontend del dominio e non contiene `EditorialContext`, `EditorialRelease`, `Namespace`, `SemanticGraph`, `Item`, `Visit`, `VenueRelease` / `LayoutRevision` completi o le altre Venue coinvolte da una VisitSession.
-
-Il branding statico appartiene alla configurazione dell'applicazione, non al `configuredVenueStore`. Le Venue aggiuntive di una Visit o Session multi-Venue appartengono a plan/runtime/navigation. Non vengono introdotti preventivamente `organizationStore`, `editorialContextStore` o altri store globali: nuovi store vengono creati soltanto quando emerge uno stato condiviso con lifecycle applicativo proprio.
 
 Non si creano preventivamente store per speech/TTS/camera/GPS. Si parte da capability/composable locali.
 
-`runtimeStore` installa snapshot e applica RuntimeUpdate versionati, rilevando gap/resync; non contiene business logic delle Action. Gli store non si orchestrano direttamente: l'orchestrazione passa dall'application layer.
+`runtimeStore` installa snapshot e applica `RuntimeUpdate` versionati, rilevando gap/resync; non contiene business logic delle Action. Gli store non si orchestrano direttamente: l'orchestrazione passa dall'application layer.
 
 Non viene introdotto inizialmente un `libraryStore`: la Library può vivere nello stato route/application finché non emerge un reale bisogno di condivisione o caching globale.
 
-# Routing del Navigator
+## Routing del Navigator
 
-Modello approvato: **routing per lifecycle + VisitShellView per runtime attivo**.
-
-> Una route rappresenta un cambio di lifecycle, identità primaria o workflow, non ogni variazione visiva della stessa visita.
-
-Route concettuali approvate:
+Modello approvato: routing per lifecycle + `VisitShellView` per runtime attivo.
 
 ```text
 /
@@ -251,17 +210,11 @@ Route concettuali approvate:
 404
 ```
 
-`/` effettua bootstrap e porta l'utente autenticato a `/library`, quello non autenticato al login.
+`VisitShellView` è la shell del runtime attivo. Mappa, presentation, navigation UI, speech, AvailableAction e pausa non sono route separate. Il bootstrap di una sessione passa dall'application layer e ricostruisce il runtime dal backend autorevole.
 
-`/visits/:visitId` rappresenta una Visit prima dell'esecuzione; `/sessions/:sessionId` rappresenta la VisitSession concreta.
+18–27: participant/student continua a usare la stessa session route. 18–33: LLM, QR, geolocation e translation restano capability/provider; la generazione visita rimane un workflow pre-visita autonomo.
 
-`VisitShellView` è la shell del runtime attivo: mappa, presentation, navigation UI, speech, AvailableAction e pausa non sono route separate. `route_completed` rimane uno stato della VisitShell; solo `completed` porta alla summary.
-
-Il bootstrap di una sessione passa da un application use case come `ResumeVisitSession`, non da fetch/business logic nei router guard. Refresh e deep link devono ricostruire il runtime dal backend autorevole.
-
-18–27: participant/student continua a usare la stessa session route; controllo e availability derivano dal runtime. 18–33: LLM, QR, geolocation e translation restano capability/provider; la generazione visita è invece un workflow pre-visita autonomo e ha route dedicate.
-
-# Configurazione Venue del Navigator
+# 7. Configurazione Venue del Navigator — approvato, Punto 2/30
 
 Navigator è una singola applicazione generica specializzata tramite **file di configurazione statico**. Nel Domain Model v2 l'identificatore canonico di specializzazione è `venueId`, non un generico `museumId`.
 
@@ -282,707 +235,317 @@ NavigatorStaticConfig
       alt
 ```
 
-Il file contiene soltanto l'identità della Venue configurata e presentation branding statico. Non contiene `Organization`, `EditorialContext`, `ContentSpace`, `Namespace`, `VenueRelease`, `LayoutRevision`, `Item` o `Visit`: tali informazioni vengono risolte dal backend dalle rispettive fonti autorevoli. In particolare `Venue.primaryEditorialContextId` rimane dominio backend e non viene duplicato nel file di configurazione.
+Il file contiene soltanto l'identità della Venue configurata e presentation branding statico. Non contiene `Organization`, `EditorialContext`, `ContentSpace`, `Namespace`, `VenueRelease`, `LayoutRevision`, `Item` o `Visit`.
 
-Il `venueId` configurato identifica la Venue primaria dell'istanza Navigator per bootstrap, Library e contesto iniziale, ma non limita una Visit o Session a quella sola Venue: eventuali ulteriori Venue vengono determinate esplicitamente dalla Visit e dal suo PhysicalScope. Non esiste una schermata generica di selezione Venue nel Navigator.
+`Venue.primaryEditorialContextId` rimane dominio backend e non viene duplicato nel file statico.
 
-Configurazione di deployment come API URL o URL del Marketplace rimane separata dal file di specializzazione Venue. Il bootstrap valida il file, risolve la Venue dal backend e tratta configurazione invalida, Venue inesistente o non disponibile come configuration/bootstrap error, non come normale stato di navigazione.
+Il `venueId` configurato identifica la Venue primaria dell'istanza Navigator per bootstrap, Library e contesto iniziale, ma non limita una Visit o Session a quella sola Venue. Eventuali ulteriori Venue vengono determinate esplicitamente dalla Visit e dal relativo PhysicalScope.
 
-# Library del Navigator
+Non esiste una schermata generica di selezione Venue nel Navigator.
 
-La landing operativa è `LibraryView`, non una copia del Marketplace.
+Configurazione di deployment come API URL o URL del Marketplace rimane separata dal file di specializzazione Venue.
 
-La Library usa la Venue configurata come contesto iniziale e mostra:
+# 8. Configured Venue state — approvato, Punto 3/30
 
-- sessioni riprendibili;
-- Visit realmente eseguibili dall'utente;
-- visite personali utilizzabili;
-- accesso alla generazione;
-- azione per aprire il Marketplace.
+Il precedente `museumStore` è sostituito da `configuredVenueStore`.
 
-La Library è personale, quindi autenticazione è un gate normale.
+`configuredVenueStore` rappresenta esclusivamente la Venue primaria determinata dal file statico di configurazione e conserva una projection minima dell'identità e dei dati user-facing realmente necessari globalmente.
 
-Un `GeneratedVisitPlan` non entra nella Library finché non viene materializzato come Visit. Una sua sessione attiva può invece comparire fra le sessioni riprendibili.
+Non è un aggregate frontend del dominio e non contiene:
 
-## Marketplace separato
+- `EditorialContext` / `EditorialRelease`;
+- `Namespace` / `SemanticGraph`;
+- `Item` / `Visit`;
+- `VenueRelease` / `LayoutRevision` completi;
+- le altre Venue coinvolte da una VisitSession.
 
-```text
-Navigator
-= ciò che possiedo / eseguo / genero
+Il branding statico appartiene alla configurazione dell'applicazione, non al `configuredVenueStore`.
 
-Marketplace/Editor
-= ciò che scopro / acquisto / creo / modifico / pubblico
-```
+Le Venue aggiuntive di una Visit o Session multi-Venue appartengono a plan/runtime/navigation.
 
-“Apri Marketplace” porta all'altra applicazione, possibilmente mantenendo il contesto del museo configurato. Il link viene risolto dall'application/infrastructure layer, non hardcodato nei componenti.
+Non vengono introdotti preventivamente `organizationStore`, `editorialContextStore` o altri store globali: nuovi store vengono creati soltanto quando emerge uno stato condiviso con lifecycle applicativo proprio.
 
-I link di condivisione `unlisted` vengono risolti dal Marketplace: lì l'utente scopre la visita e, se necessario, acquisisce l'entitlement; solo dopo la Visit entra nella Library.
+# 9. Passaggio Navigator → Marketplace — approvato, Punto 4/30
 
-# Visit entitlement e diritto di esecuzione
+Il Navigator apre l'unica applicazione Marketplace tramite un application/infrastructure link resolver, senza URL hardcoded nei componenti.
 
-È approvato un modello backend separato per il diritto corrente di esecuzione di una Visit.
-
-## VisitEntitlement
-
-`VisitEntitlement` è un'entità distinta da `User`, `Visit` e dal futuro storico commerciale.
-
-Non viene inizialmente generalizzata in un'entità polimorfica Item/Visit: il dominio commerciale degli Item verrà progettato separatamente prima di decidere se una generalizzazione sia realmente corretta.
-
-Struttura concettuale minima:
+La Venue configurata viene trasferita come **selezione fisica iniziale** del Marketplace, concettualmente:
 
 ```text
-VisitEntitlement
-  userId
-  visitId
-
-  acquisitionType
-    purchase
-    free_acquisition
-    grant
-
-  status
-    active
-    revoked
-
-  acquiredAt
-  revokedAt?
-  revokedBy?
+selectedVenueIds = [configuredVenueId]
 ```
 
-La relazione `userId + visitId` è unica dal punto di vista del diritto corrente: non devono esistere più entitlement concorrenti attivi per la stessa coppia.
+La scelta di una forma plurale è coerente con il pannello Marketplace multi-Venue richiesto dalle specifiche.
 
-`VisitEntitlement` rappresenta **il diritto corrente**, non la transazione economica. Non contiene prezzo, currency, license snapshot, payment data, statistiche di vendita o storico economico.
+La selezione ricevuta dal Navigator:
 
-Il futuro dominio Marketplace potrà avere Offer/Acquisition/Purchase/Sale o equivalenti; una acquisizione riuscita concede o aggiorna il relativo VisitEntitlement.
+- è modificabile dall'utente;
+- non costituisce authorization;
+- non è un limite permanente del catalogo;
+- non determina implicitamente `Organization`, `ContentSpace`, `EditorialContext`, `Namespace` o altri elementi dell'EditorialScope.
 
-Anche una Visit gratuita entra nella Library tramite acquisizione esplicita (`free_acquisition`): essere gratuita non significa comparire automaticamente nella Library di tutti.
+Le relazioni fra Venue e asset Marketplace vengono risolte da backend/read model appropriati. Il client non ricostruisce autonomamente relazioni editoriali a partire da `Venue.primaryEditorialContextId`.
 
-## Ownership vs entitlement
+Non esistono Marketplace specifici per Venue.
 
-Una community Visit creata dall'utente, comprese le visite generate e materializzate, è eseguibile per **ownership** tramite `Visit.createdBy`; non viene creato un entitlement artificiale al proprietario.
+Il destination URL appartiene alla configurazione di deployment, non al `NavigatorStaticConfig`.
 
-I permessi editoriali museali su Visit official non producono automaticamente un diritto personale di esecuzione e non riempiono la Library dell'operatore. Un eventuale preview editoriale nel Navigator sarà un workflow distinto da progettare se necessario.
+Il launch context non contiene credenziali o token. Navigator e Marketplace riusano il normale sistema di autenticazione/sessione del backend condiviso.
 
-Quindi almeno due basi normali di accesso sono:
+# 10. Ownership delle Visit — approvato, Punto 5/30
+
+La precedente distinzione client:
 
 ```text
-ownership
-entitlement
+Visit.kind = official | community
 ```
 
-## VisitExecutionAccessService
+è **superata** e non viene sostituita da un nuovo enum equivalente.
 
-È approvato un unico servizio backend autorevole, concettualmente `VisitExecutionAccessService` / `resolveVisitExecutionAccess({ userId, visitId })`, che determina se una Visit può essere eseguita e su quale base.
-
-Questo servizio deve essere riusato da:
-
-- Library projection;
-- Navigator Visit Detail;
-- `startSession()`;
-- futuri boundary che richiedono il diritto di esecuzione.
-
-La Library non è un controllo di sicurezza sufficiente: conoscere un `visitId` non deve consentire di bypassare l'acquisto o l'accesso.
-
-`startSession()` deve quindi verificare almeno:
+Una Visit possiede un principal tramite:
 
 ```text
-Visit active?
-publishedRevisionId presente?
-execution access consentito?
+ownerType = user | organization
+ownerId
 ```
 
-prima di costruire snapshot/piano/sessione.
+Ownership, provenance, authorization e workflow rimangono concetti distinti.
 
-## Visibility e entitlement
+Navigator Library e Visit Detail non effettuano branch funzionali su un `kind`. Possono mostrare una owner projection user-facing quando utile, ma l'eseguibilità viene determinata dall'execution access autorevole.
 
-Visibility e diritto di esecuzione cooperano ma rimangono concetti distinti.
+Nel Marketplace/Editor la creazione di una Visit avviene rispetto a un owner principal per cui l'utente possiede authority (`User` o `Organization`), non tramite workflow separati “official” e “community”.
 
-- Il creatore di una community Visit può eseguire la propria Visit `public`, `unlisted` o `private`.
-- Un entitlement attivo permette l'esecuzione di Visit `public` o `unlisted`.
-- Un entitlement non aggira `private`: una Visit private rimane eseguibile solo dal proprietario/gestori autorizzati dal dominio.
+Editing, review, publication e altre operazioni non vengono dedotte nel client dal solo `ownerType`: il backend restituisce le operazioni/capability editoriali disponibili per il contesto e il ruolo corrente.
 
-È vietato il normale passaggio di una Visit a `private` quando esistono entitlement esterni attivi, perché ciò revocherebbe implicitamente diritti acquisiti. Il backend deve rifiutare questo cambio, per esempio con `409`; un eventuale ritiro commerciale con revoche/rimborsi richiederà un workflow esplicito futuro.
+Generated Visit, copie e fork mantengono ownership e provenance come assi distinti; la loro origine non diventa un `kind` della Visit.
 
-Il passaggio `public -> unlisted` è invece compatibile con entitlement esistenti: gli utenti autorizzati continuano a eseguire la Visit, che semplicemente non compare più nei listing pubblici.
+# 11. Entitlement Marketplace v2 — approvato, Punto 6/30
 
-Il passaggio `unlisted -> private` revoca atomicamente gli share link attivi. Gli share link non sono entitlement economici e possono quindi essere invalidati insieme al cambio di visibility.
+La precedente entità proposta `VisitEntitlement` è **superata**.
 
-## Entitlement e revisioni
-
-L'entitlement è associato alla **Visit stabile** (`visitId`), non a una specifica `VisitRevision`.
-
-Una nuova published revision della stessa Visit non richiede un nuovo acquisto. Gli utenti autorizzati continuano a ricevere la published revision corrente, mentre eventuali working draft restano invisibili all'esecuzione.
-
-## Lifecycle e hard delete
-
-Solo Visit `active` con una published revision valida sono eseguibili e possono entrare nella Library.
-
-Una Visit `trashed` non è eseguibile anche se esiste un entitlement attivo. Se viene ripristinata, lo stesso entitlement può tornare applicabile.
-
-L'hard delete della Visit deve eliminare gli entitlement correnti collegati alla Visit. Un futuro storico commerciale non deve essere confuso con l'entitlement corrente e potrà avere regole di conservazione differenti.
-
-# VisitLibraryProjection
-
-Il Navigator non riceve `Visit + VisitRevision + VisitEntitlement` grezzi. Il backend espone una projection minima per il museo configurato.
+ArtAround utilizza il modello Marketplace v2 di `Entitlement` generico, capability-based e applicabile a beneficiari `User | Organization`.
 
 Forma concettuale:
 
 ```text
-VisitLibraryProjection
-  museumId
-  visits[]
-
-VisitLibraryEntry
-  visitId
-  revisionId
-  title
-  description?
-  kind
-  visibility
-  museumIds[]
-  estimatedTotalSeconds?
-  access
-    basis: ownership | entitlement
-    acquisitionType?: purchase | free_acquisition | grant
+Entitlement
+  beneficiaryType: user | organization
+  beneficiaryId
+  sourceAcquisitionId?
+  resourceType
+  resourceId
+  capability
+  versionPolicy: pinned | follow_current
+  baselineSnapshotRef?
+  validFrom
+  validUntil?
+  status: active | expired | revoked
 ```
 
-I nomi esatti dei DTO rimangono da fissare, ma la semantica è approvata.
-
-La projection non contiene content entries complete, VisitRevision grezza, physical route, vocabulary, layout, preferenze utente, logistics plan personalizzato, prezzo, transaction history, entitlement document completo, working revision o draft.
-
-La Library risponde a “quali Visit posso aprire/eseguire e quale riepilogo devo mostrarne?”, non restituisce l'intero dominio.
-
-Il filtro del museo usa la published revision e deve supportare Visit multi-museo; non si basa semplicemente su `ownerMuseumId`.
-
-API concettuale approvata:
+Per le Visit le capability rilevanti sono almeno:
 
 ```text
-GET /users/me/visit-library?museumId=:museumId
+visit.execute
+visit.copy_detached
 ```
 
-`GET /visits/mine` rimane invece il contratto Marketplace/Editor per le Visit **editorialmente gestibili** e non viene riusato per il Navigator.
+`visit.execute` e `visit.copy_detached` sono diritti distinti; nessuno implica automaticamente l'altro.
 
-Le sessioni riprendibili rimangono un contratto separato dalla VisitLibraryProjection. L'application layer della Library coordina in parallelo:
+`MarketplaceAcquisition` rappresenta l'evento commerciale immutabile; `Entitlement` rappresenta il diritto applicativo enforceable.
+
+Il Navigator non interpreta Acquisition o documenti Entitlement grezzi e non introduce un `entitlementStore`. Library, Visit Detail e Session start usano risultati di authorization già risolti dal backend.
+
+Il fatto che un Offer sia gratuito non concede implicitamente accesso: anche l'acquisizione gratuita produce una `MarketplaceAcquisition` e gli Entitlement previsti dai suoi grant.
+
+Un entitlement su una risorsa composita concede il technical read/access alle dipendenze immutabili necessarie all'esercizio della capability nei limiti della dependency policy, senza concedere automaticamente capability autonome sulle dipendenze.
+
+L'attuale implementazione `visitExecutionAccessV2.service.js`, limitata a ownership e Organization membership, è considerata transitoria fino all'introduzione del commercial authorization core v2 e non costituisce il contratto client definitivo.
+
+# 12. Visit execution access v2 — approvato, Punto 7/30
+
+Il diritto di avviare una VisitSession viene risolto backend-side sulla capability:
 
 ```text
-VisitLibraryRepository
-SessionRepository.listResumable()
+visit.execute
 ```
 
-così una failure di una sezione non deve necessariamente bloccare l'altra.
-
-# VisitDetail e preparazione
-
-`VisitDetailView` è operativamente accessibile per Visit che il backend riconosce come eseguibili dall'utente.
-
-Il Navigator non dipende dal DTO editoriale/pubblico grezzo `GET /visits/:visitId`. È approvata una **Navigator Visit Detail Projection dedicata, autenticata, composita e autorizzata**, costruita rispetto alla published revision corrente e distinta sia da `VisitRevision` sia dal `logistics-plan` completo.
-
-API concettuale:
+L'accesso può derivare da due famiglie di authority:
 
 ```text
-GET /navigator/visits/:visitId
+A. resource owner authority
+B. Entitlement visit.execute valido
 ```
 
-Il nome esatto della route può essere raffinato; il boundary dedicato e la sua semantica sono approvati.
+## Principal resolution
 
-Flusso concettuale:
+L'actor autenticato viene risolto rispetto ai principal per cui può agire:
 
 ```text
-request
-  -> authentication
-  -> VisitExecutionAccessService
-  -> published VisitRevision fissata
-  -> preference/preparation services
-  -> logistics service
-  -> NavigatorVisitDetailProjection
+actor User
+  -> User principal
+  -> eventuali Organization principal autorizzati
 ```
 
-L'accesso viene verificato **prima** di costruire o restituire dati personali, preferenze, preparation state o logistics personalizzato.
+Per Visit user-owned il proprietario possiede owner authority senza Entitlement artificiale.
 
-## Struttura semantica approvata
+Per Visit organization-owned un utente con ruolo organizzativo sufficiente può agire come Organization owner. Nel modello iniziale `operator` e `manager` sono entrambi idonei all'esecuzione.
+
+La membership non è un diritto Marketplace autonomo: serve alla principal/authority resolution.
+
+Gli Entitlement possono avere beneficiary `user` o `organization`. Un Entitlement Organization-scoped non viene trasformato in Entitlement personali dei membri; viene esercitato da utenti autorizzati ad agire come quel principal.
+
+## Authorization service
+
+La logica comune di:
+
+- principal resolution;
+- ownership/authority;
+- Entitlement;
+- capability;
+- version scope;
+- status/expiry/revocation;
+
+va centralizzata in un `CapabilityAuthorizationService` o equivalente.
+
+`VisitExecutionAccessService` rimane un boundary application-specific che richiede `visit.execute` e applica gli invarianti specifici dell'esecuzione della Visit.
+
+## Contratto verso Navigator
+
+Navigator non interpreta membership, Entitlement o Acquisition.
+
+Le projection autorizzate espongono soltanto lo stato user-facing necessario. Un accesso negato produce un errore stabile come:
 
 ```text
-NavigatorVisitDetailProjection
-  visit
-  access
-  preVisitInformation
-  preparation
-    presentation
-    navigation
-    adaptiveLearning
-  logistics
+VISIT_EXECUTION_ACCESS_REQUIRED
 ```
 
-I nomi TypeScript/JSON esatti rimangono aperti; la separazione di responsabilità è definitiva.
+Il Navigator non deve ricevere, solo per decidere se può iniziare una visita, dettagli interni come `entitlementId`, Organization role, `sourceAcquisitionId` o principal-resolution internals.
 
-### `visit`
+`startSession()` rivalida sempre l'authorization e non si fida di una precedente Library o Visit Detail autorizzata.
 
-Contiene soltanto identità e summary della published revision necessarie al Navigator, almeno concettualmente:
+## Authorization vs Library discovery
 
 ```text
-id
-revisionId
-title
-description
-kind
-visibility
-museums[]
-baselineSummary?
+can execute
+!= must appear in Library
 ```
 
-Per i musei la projection restituisce dati leggibili, almeno `id` e `name`, invece di obbligare il client a risolvere autonomamente tutti i `museumIds`.
+L'authorization risponde alla domanda “posso avviare questa Visit?”. La Library projection decide separatamente quali Visit è utile mostrare all'utente. La forma definitiva della Library viene riesaminata al Punto 10/30.
 
-Non espone nel Visit Detail:
+## Predisposizione 18–27
 
-- `contentEntries[]` completi;
-- route hints grezzi;
-- working revision;
-- review/integrity internals;
-- altri dettagli editoriali non necessari alla preparazione.
+`visit.execute` autorizza l'avvio di una VisitSession dalla Visit. Non viene riusato come diritto di partecipazione alle future sessioni sincronizzate 18–27.
 
-### `access`
+Lo studente che entra in una sessione tramite il meccanismo didattico previsto non deve necessariamente possedere un Entitlement personale `visit.execute`; la session participation authority è un concetto separato.
 
-La projection include il risultato già risolto del `VisitExecutionAccessService`, senza serializzare l'intero `VisitEntitlement`.
+# 13. Decisioni runtime/client ancora confermate
 
-Concettualmente:
+Restano approvate e non vengono riaperte salvo conflitto esplicito con i successivi punti:
 
-```text
-access
-  basis: ownership | entitlement
-  acquisitionType?: purchase | free_acquisition | grant
-```
+- Vue/Vite/TypeScript/Vue Router/Pinia per Navigator;
+- vanilla JS/ESM/Web Components per Marketplace/Editor;
+- architettura Navigator `domain/application/capabilities/infrastructure/UI`;
+- API adapter/repository specifici, nessun God `ApiService`;
+- protocollo Action e principio dell'Action Gateway;
+- `AvailableAction[]` condivise fra voce e bottoni;
+- `currentPresentation` come unica fonte per testo a schermo e TTS;
+- routing per lifecycle e `VisitShellView`;
+- pause/resume nella stessa session route;
+- server authoritative refresh/resume;
+- distinzione `currentEntryIndex` / `executedThroughEntryIndex`;
+- runtime projection ridotta e separazione runtime/plan/navigation;
+- nessun routing/timing autorevole ricalcolato nel client;
+- Visit e GeneratedPlan convergono sulla stessa VisitSession/VisitShell;
+- future capability LLM/QR/geolocation/translation non richiedono una riscrittura del routing principale.
 
-In caso di accesso negato il boundary produce normalmente `403`; `startSession()` rivalida comunque sempre l'execution access al momento dello start.
+# 14. Boundary Navigator già approvati ma con schema v2 pending
 
-## Presentation preparation
+Rimangono approvati come responsabilità, ma i DTO esatti verranno aggiornati nei successivi punti:
 
-La preparation di presentazione riusa i servizi backend esistenti e preserva la distinzione semantica fra Visit official e community.
+## Library
 
-La projection fornisce direttamente **effective preference + opzioni**, così Vue non deve comporre più endpoint o ricostruire la precedence logic.
+- landing operativa personale del Navigator;
+- distinta dal Marketplace;
+- usa projection backend dedicate, non documenti Mongo grezzi;
+- sessioni riprendibili e Visit disponibili sono contratti distinti;
+- la Venue configurata è contesto iniziale, non aggregate universale.
 
-Concettualmente:
+La forma definitiva di `VisitLibraryProjection` è **pending Punto 10/30**.
 
-```text
-preparation.presentation
-  kind
-  effective
-  options
-```
+## Navigator Visit Detail
 
-Per le official l'effective preference continua a usare concetti come `durationKey` e `languageLevelKey`; per le community usa preferenze astratte come `depthPreference` e `languageComplexityPreference`. Quando utile, il backend può indicare anche la provenienza dell'effective preference (`visit_custom`, `user_default`, `visit_default`, `item_default` o naming equivalente).
+Rimane approvata una projection Navigator dedicata, autenticata, composita e access-first. Il client non deve usare il DTO editoriale grezzo della Visit come read model principale.
 
-Il `presentation-plan` completo viene riusato backend-side quando necessario, ma **non viene riversato nella Visit Detail**: la UI di preparazione non necessita della representation materializzata di ogni entry.
+Rimangono approvati:
 
-## Navigation preparation
+- authorization prima di dati personali/preparation/logistics;
+- projection ridotta per preparazione;
+- backend recomputation delle stime;
+- una singola revisione eseguibile coerente per request;
+- `startSession()` come boundary finale che rivalida accesso e consistenza.
 
-È approvato un `NavigationPreparationResolver` o servizio equivalente lato backend.
+La forma definitiva della Visit Detail è **pending Punti 8, 11–18/30**.
 
-Il client non carica `MuseumLayoutRevision` grezzo per interpretare `routingAttributes`, `routingPresets`, operatori e requirement. Il backend proietta opzioni user-facing basate sul layout autorevole.
+# 15. Generazione e UX Navigator ancora approvate
 
-Concettualmente:
-
-```text
-preparation.navigation
-  effectivePreference
-  availableOptions
-```
-
-La prima UX privilegia preset configurati dal museo:
-
-```text
-presets[]
-  key
-  label
-  description
-```
-
-Quando serve una configurazione più fine, possono essere esposti attributi con metadati UI leggibili (`key`, `label`, `description`, input type, unit, options). Operatori grezzi, `priority`, `weight` e strutture routing interne restano contratti application/backend e non diventano la normale interfaccia utente.
-
-### Navigation multi-museo
-
-Per Visit multi-museo non viene costruita una semplice unione indiscriminata degli attributi locali dei layout.
-
-Le preferenze che devono attraversare più musei privilegiano semanticamente `canonicalKey` e requirement canonici. Opzioni puramente locali vengono esposte solo quando hanno un significato non ambiguo nel contesto della Visit corrente.
-
-## Pre-visit information
-
-Il Navigator riusa entrambe le fonti esistenti:
-
-- `MuseumLayoutRevision.preVisitInformation` per informazioni strutturali del museo;
-- `VisitRevision.logistics.preVisitNotes` per note specifiche della Visit.
-
-La provenienza viene preservata. Per Visit multi-museo le informazioni del museo vengono associate al rispettivo museo, invece di concatenare tutti i testi in un array anonimo.
-
-## Adaptive learning nella Visit Detail
-
-La projection espone soltanto ciò che serve alla decisione UX, concettualmente:
-
-```text
-preparation.adaptiveLearning
-  decisionRequired
-  preferences
-    personalHistory
-    collectiveContribution
-```
-
-Non include nella Visit Detail l'intero adaptive profile, semantic affinities, knowledge state o content exposure. Questi dati restano backend-side e possono continuare a essere usati dal planner.
-
-## LogisticsPreview
-
-Il `logistics-plan` esistente rimane la fonte autorevole per percorso, tempi, warning, movimento, osservazione e integrazione con presentation/adaptive planning.
-
-La Visit Detail riceve però soltanto una **LogisticsPreview** ridotta, non il piano tecnico completo.
-
-Concettualmente può contenere:
-
-```text
-logistics
-  estimated
-    contentSeconds
-    observationSeconds
-    movementSeconds
-    totalSeconds
-  typicalRange?
-    lowerSeconds
-    upperSeconds
-    confidence?
-  routeSummary
-    targetCount
-    legCount
-    museumCount
-    hasInterVenueTransfers
-  warnings[]
-```
-
-Non vengono inclusi nel dettaglio pre-visita `physicalRoute.anchors[]`, path completi delle legs, source layout revision IDs, presentation plan completo, movement baseline, pace factor o altri dettagli runtime/tecnici che appartengono allo start/session plan o alla mappa.
-
-I warning vengono proiettati in forma user-facing mantenendo un `code` stabile per il comportamento client; il componente Vue non deve contenere uno switch esaustivo che traduce internamente tutta la semantica dei warning di routing.
-
-## Read iniziale e command endpoint
-
-L'ingresso in `/visits/:visitId` usa una singola GET della Navigator Visit Detail Projection per costruire lo stato iniziale della view.
-
-Gli update rimangono command endpoint specifici per responsabilità, per esempio presentation preference, navigation preference e adaptive-learning consent. Non viene introdotto un `PUT` generico della Visit Detail.
-
-Quando una preferenza che influenza il piano cambia:
-
-```text
-update preference
-  -> backend success
-  -> reload NavigatorVisitDetailProjection
-  -> nuova LogisticsPreview
-```
-
-Le stime e il routing vengono ricalcolati backend-side; Vue non modifica localmente i tempi per simulare il nuovo piano.
-
-## Consistency snapshot della published revision
-
-Il projector deve fissare all'inizio una singola `publishedRevisionId` e costruire tutte le sotto-projection rispetto a quella stessa revisione.
-
-```text
-published revision R7
-  -> presentation preparation on R7
-  -> navigation preparation for R7
-  -> logistics preview for R7
-  -> response revisionId = R7
-```
-
-Non è accettabile comporre, per esempio, metadata da R7 e logistics da R8 a causa di risoluzioni indipendenti della latest published revision durante la stessa request.
-
-Per supportare questo in modo pulito è approvato il refactoring dei servizi interni di presentation/logistics affinché possano ricevere una source revision/context già risolta, invece di ricaricare sempre autonomamente `Visit.publishedRevisionId`. Il refactoring deve essere riusabile anche da `startSession()` e non introdurre adapter artificiosi.
-
-## Authorization dei boundary di preparazione
-
-Con l'introduzione dell'execution access, la protezione non si limita a Library, Visit Detail e `startSession()`.
-
-Anche i boundary Navigator-specifici che leggono o modificano dati di preparazione legati a una Visit devono riusare `VisitExecutionAccessService`, inclusi almeno concettualmente:
-
-- GET/PUT presentation preference della Visit;
-- GET/PUT navigation preference della Visit;
-- logistics plan/preview;
-- altri futuri endpoint Navigator che espongono preparazione personalizzata della Visit.
-
-Conoscere un `visitId` non deve permettere a un utente privo di entitlement/ownership di interrogare dati personalizzati o preparare indirettamente una Visit non eseguibile.
-
-`startSession()` non si fida di una precedente Visit Detail autorizzata: rivalida sempre lifecycle, published revision valida ed execution access al momento dell'operazione.
-
-# Runtime backend necessario
-
-È approvato un backend `NavigatorRuntimeProjectionService` (nome concettuale) e un endpoint concettuale:
-
-```text
-GET /visit-sessions/:sessionId/runtime
-```
-
-Start e resume convergono sullo stesso `NavigatorRuntimeState`; il projector riusa i servizi backend esistenti.
-
-## Cursor vs progresso eseguito
-
-Refactoring approvato:
-
-```text
-currentEntryIndex
-= entry attualmente selezionata/presentata
-
-executedThroughEntryIndex
-= massimo prefisso già eseguito
-```
-
-Planner e validazione del prefisso usano `executedThroughEntryIndex`; runtime/UI usa `currentEntryIndex`. Questo rende corretto `Precedente` senza far retrocedere il progresso eseguito.
-
-`visit.move` supporta almeno `next` e `previous` e il backend verifica stato, bounds, control mode e availability.
-
-# Riuso dei servizi runtime
-
-Presentation adjustment, relation query, facility/place navigation e pause/resume passano da Action Handler che riusano servizi backend esistenti. Il gateway uniforma il protocollo ma non duplica selection delle representation, semantic graph, routing o gestione pause.
-
-# Telemetria e adaptive planning
-
-Il Navigator usa learning/telemetria solo quando il segnale è realmente osservabile e affidabile. Nel 18–24 sono appropriati content experience e interaction events quando misurabili; non vengono inventate transition/movement observations senza positioning o altro segnale affidabile.
-
-Le modifiche ordinarie del piano seguono:
-
-```text
-proposal -> preview -> accept/reject
-```
-
-`route_completed` può offrire complete oppure extend tramite il planning esistente.
-
-Il completion summary aggregato deve essere persistente/recuperabile con read API separata dalla telemetria raw. Il backend deve inoltre offrire una read API per sessioni riprendibili (`active`, `paused`, `route_completed`).
-
-`timeBudgetSeconds` viene esposto come hard constraint nel Navigator solo quando il backend garantisce che influenzi realmente il piano iniziale preservando core e adattando recommended/optional.
-
-# Generazione di visite nel Navigator
-
-È un workflow pre-visita distinto con:
+Il workflow di generazione rimane distinto:
 
 ```text
 /generate
 /generated-plans/:planId
 ```
 
-Il client usa il generatore backend esistente e non implementa scoring/planning.
-
-## NavigatorAppShell e VisitShell
-
-L'esperienza pre/post-visita usa una `NavigatorAppShell` con branding, account e RouterView per Library, VisitDetail, GenerateVisit, GeneratedPlan e Summary.
-
-La visita attiva usa invece `VisitShellView`, più immersiva e orientata all'esecuzione. Non viene forzata dentro la stessa navigazione/chrome della Library.
-
-## GenerateVisitView
-
-Usa un **form strutturato e generico**, non una chat, che traduce bisogni umani nel `GenerationRequest` supportato dal backend.
-
-Il form non hardcoda interessi o ontologia del museo. È approvata una nuova `GenerationOptionsProjection` backend che deriva dalle risorse autorevoli del museo le opzioni realmente proponibili all'utente. Vue non deve fetchare vocabulary, tutti gli Item, relations e layout per dedurre autonomamente le opzioni di generazione.
-
-Le generation preferences esistenti possono inizializzare il form, ma una generazione occasionale non le sovrascrive automaticamente.
-
-## GeneratedPlanView
-
-`/generated-plans/:planId` è una preview recuperabile del piano, non l'esposizione del documento Mongo grezzo.
-
-Azioni principali:
-
-- **Inizia**;
-- **Salva nelle mie visite**;
-- **Modifica criteri**.
-
-Modificare criteri produce una nuova richiesta/un nuovo GeneratedVisitPlan invece di mutare quello precedente.
-
-## Invariante accept/start
-
-Backend e UI devono rispettare:
-
-```text
-proposed -> accepted -> start -> VisitSession
-```
-
-Il backend deve rifiutare lo start di un GeneratedVisitPlan ancora `proposed`; il vincolo non viene affidato solo alla UI.
-
-## Salvataggio/materializzazione
-
-“Salva nelle mie visite” materializza il GeneratedVisitPlan come vera `Visit` community dell'utente. `GeneratedVisitPlan` resta un piano runtime concreto e non diventa il modello editoriale.
-
-La materializzazione conserva la struttura editoriale riutilizzabile, ma non congela impropriamente representation, physical route, timing o dettagli runtime specifici dell'utente/layout corrente.
-
-La Visit generata salvata nasce:
-
-```text
-kind = community
-visibility = private
-```
-
-con una `VisitRevision` **già editorialmente published/eseguibile**. Non nasce come semplice draft inutilizzabile, perché l'utente deve poterla ritrovare nella Library ed eseguirla immediatamente.
-
-Quando viene poi modificata nel Marketplace, si crea una nuova working revision mentre la precedente published private revision rimane eseguibile nel Navigator fino alla pubblicazione della nuova revisione.
-
-La stessa Visit può essere aperta direttamente nel Marketplace/Editor per la modifica usando i normali servizi delle community Visit.
-
-## Convergenza runtime
-
-Visit editoriali e GeneratedVisitPlan convergono sulla stessa VisitSession e sulla stessa VisitShell:
-
-```text
-Visit ──────────────┐
-                    ├─> VisitSession -> VisitShellView
-GeneratedPlan ──────┘
-```
-
-Non esistono `GeneratedVisitShell` o `GeneratedSessionSummary` separati.
-
-La `SessionSummaryView` è unica e recuperabile dal backend. Se la sessione deriva da un GeneratedVisitPlan non ancora materializzato, la summary può offrire **“Salva questa visita”**.
-
-## Futuro LLM 18–33
-
-Il futuro LLM non sostituisce il generatore. Produce lo stesso `GenerationRequest` strutturato del form:
-
-```text
-form ───────────────┐
-                    ├─> GenerationRequest -> generator
-LLM / NL future ────┘
-```
-
-# Workflow revisionale delle Visit
-
-Le Visit possiedono già un sistema revisionale analogo agli Item.
-
-`Visit` mantiene:
-
-```text
-publishedRevisionId
-workingRevisionId
-```
-
-`VisitRevision.status`:
-
-```text
-draft
-in_review
-changes_requested
-published
-superseded
-```
-
-Le official Visit usano review manageriale; le community Visit mantengono comunque working revision, consistency check e publication senza review manageriale.
-
-# Visibility delle Visit
-
-`Visit.visibility` è un asse stabile separato dallo stato della VisitRevision:
-
-```text
-public
-unlisted
-private
-```
-
-Quattro assi restano distinti:
-
-```text
-EDITORIAL REVISION STATUS
-  draft | in_review | changes_requested | published | superseded
-
-VISIBILITY
-  public | unlisted | private
-
-LIFECYCLE
-  active | trashed
-
-ACCESS / RIGHTS
-  ownership | entitlement | share access
-```
-
-Una Visit può avere published revision stabile e working draft contemporaneamente. Gli utenti autorizzati all'esecuzione vedono la published revision, non il draft.
-
-## Public
-
-- compare nei listing/search del Marketplace;
-- è scopribile da tutti;
-- può essere acquistabile quando l'offerta commerciale lo consente;
-- richiede una published revision valida per esposizione/esecuzione pubblica.
-
-## Private
-
-- non compare nel Marketplace;
-- non è raggiungibile tramite share link;
-- è accessibile solo al proprietario/gestori autorizzati;
-- può avere una revisione published ed essere eseguibile dal proprietario.
-
-## Unlisted
-
-- non compare in listing/search;
-- è visibile al creatore;
-- è raggiungibile tramite condivisione esplicita.
-
-Per la prima implementazione si preferisce un opaque share token e non il semplice `visitId` come segreto.
-
-Concetto backend:
-
-```text
-VisitShareLink
-  visitId
-  tokenHash
-  createdBy
-  createdAt
-  expiresAt?
-  revokedAt?
-```
-
-Non si introduce subito una ACL nominativa completa se il link risolve il requisito iniziale.
-
-Share access, entitlement ed editing restano distinti: un share link consente di raggiungere la Visit unlisted, ma non equivale automaticamente a entitlement permanente o diritto di modifica.
-
-# UX del Navigator approvata
-
-View principali:
-
-- `LibraryView`;
-- `VisitDetailView`;
-- `AuthView` login/register con `returnTo`;
-- `GenerateVisitView`;
-- `GeneratedPlanView`;
-- `VisitShellView`;
-- `SessionSummaryView`;
-- `NotFoundView`.
-
-Il bootstrap config Venue + auth avviene a livello app, non tramite view dedicata.
-
-`PresentationRegion` usa esclusivamente `currentPresentation`; testo a schermo e TTS derivano dalla stessa fonte.
-
-Bottoni accessibili e voce selezionano le stesse AvailableAction; non esistono logiche parallele button-vs-voice.
-
-Map e navigation sono panel/region interni; chiudere un pannello è UIIntent e non modifica automaticamente lo stato domain corrispondente.
-
-`paused`, `route_completed` e plan proposal sono stati/overlay della VisitShell; solo `completed` porta alla Summary route.
-
-Loading/error distinguono bootstrap, singola operazione, transport failure, stale runtime, auth, domain outcome e not-found. Un'Action pending non blocca inutilmente l'intera view.
-
-Library gestisce loading, empty, ready, partial failure e auth expired. La failure di una sezione non deve necessariamente bloccare l'intera pagina.
-
-La generazione distingue almeno editing, generating, generated, validation error, domain conflict e transport error. L'assenza di un piano compatibile con i vincoli è un normale outcome di dominio, non un crash.
-
-# Decisioni volutamente ancora aperte
-
-Non sono ancora fissati definitivamente:
-
-- schema TypeScript finale di `ActionDefinition`, `AvailableAction`, `ActionRequest`, `ActionResult` e `InteractionEvent`;
-- generazione/forma esatta di `availableActionId`;
-- rappresentazione esatta del `RuntimeUpdate` incrementale;
-- nomi definitivi di tutte le action family oltre a quelle già approvate;
-- forma esatta degli status e schema finale di `NavigationProjection`;
-- comportamento UX preciso delle relation query rispetto a `currentPresentation`;
-- struttura finale dei componenti Vue all'interno delle view approvate;
-- routing e flussi dettagliati del Marketplace/Editor;
-- DTO/API esatti dell'Action Gateway, NavigatorRuntimeState, completion summary e session discovery;
-- dettagli implementativi dello schema `NavigatorStaticConfig` e della relativa validazione/bootstrap;
-- dettagli di implementazione del refactoring `currentEntryIndex` / `executedThroughEntryIndex`;
-- schema Mongo/API definitivo di `VisitEntitlement` e dettagli operativi di grant/revoke;
-- dominio commerciale Marketplace (pricing/licensing, Offer/Acquisition/Purchase/Sale o equivalenti);
-- forma TypeScript/JSON definitiva di `VisitLibraryProjection`;
-- nomi finali dei campi e schema TypeScript/JSON definitivo della `NavigatorVisitDetailProjection`, senza riaprire la semantica e i boundary approvati;
-- schema esatto di `GenerationOptionsProjection`;
-- forma esatta del servizio/API di materializzazione `GeneratedVisitPlan -> Visit/VisitRevision`;
-- forma esatta di `VisitShareLink`, share token e relativa API;
-- eventuale futura ACL nominativa per le Visit unlisted;
-- workflow esplicito futuro per ritiro commerciale/revoca/rimborso quando una Visit possiede entitlement esterni.
-
-Questi punti devono essere progettati e approvati prima dell'implementazione corrispondente.
+Il client usa il generator backend esistente e non implementa scoring/planning.
+
+`GenerateVisitView` usa un form strutturato e generico, non una chat. Il futuro LLM produce lo stesso request model strutturato invece di creare un percorso applicativo parallelo.
+
+`GeneratedPlanView` è una preview recuperabile del piano, non l'esposizione del documento Mongo grezzo.
+
+Visit editoriali e GeneratedVisitPlan convergono sulla stessa VisitSession e sulla stessa VisitShell.
+
+La materializzazione `GeneratedVisitPlan -> Visit` è **pending Punto 24/30**; i vecchi concetti `kind = community` e `visibility = private` non sono più validi come contratto definitivo.
+
+# 16. Decisioni legacy esplicitamente superseded
+
+Le seguenti formulazioni non devono più essere usate come contratto definitivo:
+
+- `museumId` come aggregate tecnico universale;
+- `museumStore`;
+- `Visit.kind = official | community`;
+- `VisitEntitlement` specializzato;
+- `acquisitionType` come semantica centrale dell'execution access;
+- Organization membership trattata direttamente come entitlement commerciale;
+- Marketplace specifico per museo/Venue;
+- `Venue.primaryEditorialContextId` duplicato nella config Navigator.
+
+Ulteriori concetti legacy saranno eliminati o adattati man mano che vengono approvati i Punti 8–30.
+
+# 17. Punti ancora da riesaminare — non definitivi
+
+La seguente lista rappresenta il lavoro architetturale ancora aperto. Le vecchie formulazioni del documento precedente relative a questi temi non sono definitive se confliggono con Domain Model v2 / Marketplace Domain v2.
+
+8. version policy dell'esecuzione (`follow_current`, pinned snapshot, Visit/VisitRevision);
+9. rimozione della vecchia `Visit.visibility` e degli share link dal percorso 18–24 corrente;
+10. `VisitLibraryProjection` Venue-aware e capability-aware;
+11. `NavigatorVisitDetailProjection` v2;
+12. unificazione della presentation preparation senza official/community;
+13. preparation override non persistente e rimozione della vecchia per-Visit preference persistita;
+14. `NavigationPreparationResolver` su VenueRelease/LayoutRevision;
+15. navigation multi-Venue e `canonicalKey`;
+16. pre-visit information da VenueRelease + Visit notes;
+17. `LogisticsPreview` v2;
+18. execution/preparation context coerente e pin delle dipendenze;
+19. navigation destination tipizzata;
+20. runtime location VenueTarget/anchor-centric;
+21. mappe basate su VenueTarget placement;
+22. Action derivation aggiornata per tutti i source v2;
+23. `GenerationOptionsProjection` scope-aware e authorization-aware;
+24. materializzazione GeneratedPlan -> user-owned Visit v2;
+25. workflow Visit user/organization-owned;
+26. consumer/creator Marketplace projections sul commercial domain v2;
+27. authoring/acquisition con reference/import/copy/fork distinti;
+28. Item authoring Subject/ItemEdition/Revision/VenueTarget;
+29. mapping UX “museo” -> selezione Venue fisica;
+30. pulizia finale delle decisioni aperte e dei residui legacy.
+
+Restano inoltre da fissare gli schemi TypeScript/JSON esatti di `ActionDefinition`, `AvailableAction`, `ActionRequest`, `ActionResult`, `InteractionEvent`, `RuntimeUpdate`, completion summary e session discovery, senza riaprire la semantica già approvata.
