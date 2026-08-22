@@ -68,6 +68,31 @@ requirePattern(
   /projectGeneratedPlanV2/,
   "GeneratedPlan responses must use the Navigator projection",
 );
+requirePattern(
+  "routes/navigatorV2.routes.js",
+  /generation-subjects\/search/,
+  "Source-scoped semantic subject search route",
+);
+requirePattern(
+  "controllers/navigatorV2.controller.js",
+  /searchGenerationSubjectsV2/,
+  "Navigator semantic options must be resolved server-side",
+);
+requirePattern(
+  "clients/navigator/src/infrastructure/http/generatorRepository.ts",
+  /searchSubjects[\s\S]*generation-subjects\/search/,
+  "Navigator generator repository semantic search boundary",
+);
+requirePattern(
+  "clients/navigator/src/ui/GenerateView.vue",
+  /semanticGoals[\s\S]*navigationRequirements/,
+  "Generation form must submit semantic and navigation criteria",
+);
+requirePattern(
+  "clients/navigator/src/ui/GeneratedPlanView.vue",
+  /Modifica criteri[\s\S]*nuova richiesta di generazione/,
+  "GeneratedPlan criteria changes must create a new generation request",
+);
 
 if (failed) process.exit(1);
-console.log("Slice 7 typed generation, projection and materialization boundaries are intact.");
+console.log("Slice 7 typed generation, semantic/routing UX, projection and materialization boundaries are intact.");
