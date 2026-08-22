@@ -197,6 +197,20 @@ L'esplorazione semantica non introduce un catalogo globale obbligatorio di relaz
 
 `ActionRequest` riferisce una `AvailableAction` corrente e il backend ne rivalida disponibilità e authorization prima dell'esecuzione; il canale `button | controlled_voice | natural_language` è provenance/telemetry, non authorization. Ogni Action produce projection/backend update autorevoli e un `InteractionEvent` semantico. Le risposte testuali mostrate e pronunciate attraversano lo stesso presentation channel. Nel 18–33 la LLM può esclusivamente selezionare/mappare una delle `AvailableAction` correnti e non può bypassare authorization, action policy o domain services.
 
+# Punto 23/30 — GenerationOptionsProjection v2
+
+Il Navigator non costruisce autonomamente le opzioni del generator interrogando Venue, ContentSpace, EditorialContext, Namespace o Marketplace separatamente. Un backend projection boundary restituisce le Venue utilizzabili come PhysicalScope e le sorgenti editoriali effettivamente autorizzate per l'actor.
+
+PhysicalScope ed EditorialScope restano indipendenti. La selezione di una Venue non restringe le sorgenti editoriali a Context appartenenti alla sua Organization e non concede implicitamente diritti sulle sorgenti. `Venue.primaryEditorialContextId` è un default/endorsement: può essere scelto automaticamente solo quando la relativa source è utilizzabile con `context.generate`. La policy temporanea che considera il primary Context automaticamente autorizzato viene superseded.
+
+Le source editoriali sono proiettate user-facing raggruppandole per ContentSpace/curator, ma il source tecnico del generator è `EditorialContext` live oppure `EditorialRelease` pinned. Una selezione ContentSpace è soltanto una shortcut UX verso i Context autorizzati contenuti nel gruppo. Se l'utente specifica source, vengono usate esattamente quelle; l'assenza di selezione può applicare i default autorizzati delle Venue.
+
+L'authorization usa owner authority oppure capability `context.generate` e viene rivalidata al momento della generazione. Acquisition/Entitlement e access basis non vengono esposti al Navigator. La request deve evolvere dall'attuale solo-`editorialContextIds[]` a source ref tipizzate per poter rappresentare correttamente sia `follow_current` sia `EditorialRelease` pinned.
+
+Le opzioni semantiche vengono derivate dai Namespace/SemanticGraph delle source selezionate e non da una tassonomia globale museale. Subject, Item o VenueTarget numerosi vengono cercati tramite query backend scope-aware/paginate invece di essere riversati integralmente nella projection. Presentation e navigation controls riusano le projection già definite e non espongono requirement/routing internals.
+
+La stessa structured generation request è usata dal form e dalle future capability 18–33; eventuale LLM non introduce un secondo contratto di generazione né un'interfaccia a prompt.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -233,11 +247,12 @@ Non devono più essere usati come contratto definitivo:
 - `currentEntryIndex`, `VisitAnchor.placeId` o un `fromPlaceId` client-supplied trattati come posizione fisica certa dell'utente;
 - `LayoutRevision`, routing graph o `connectionId[]` esposti al Navigator come contratto cartografico da interpretare client-side;
 - `availableActions` come mere stringhe con business logic duplicata fra endpoint, bottoni e voce;
-- relazioni semantiche museali come `author/style` imposte come catalogo platform-level obbligatorio.
+- relazioni semantiche museali come `author/style` imposte come catalogo platform-level obbligatorio;
+- `Venue.primaryEditorialContextId` usato come bypass implicito di `context.generate`;
+- client che costruisce l'universo delle source del generator leggendo direttamente modelli editoriali/commerciali.
 
-# Punti 23–30 ancora da riesaminare
+# Punti 24–30 ancora da riesaminare
 
-23. `GenerationOptionsProjection` scope/authorization-aware;
 24. materializzazione GeneratedPlan -> user-owned Visit v2;
 25. workflow Visit user/organization-owned;
 26. consumer/creator Marketplace projections;
