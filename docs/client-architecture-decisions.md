@@ -93,6 +93,16 @@ Preset e local attribute key non diventano preference globali persistenti. Le pr
 
 Il resolver riusa le primitive fisiche/routing esistenti (`resolveSessionVenuePins`, requirement translation, movement speed, route resolver) e non introduce un secondo routing engine. Nella fascia 18–24 opera senza posizionamento automatico dell’utente; QR/geolocation/orientation restano capability 18–33 che potranno alimentare lo stesso dominio di navigation.
 
+# Punto 15/30 — Navigation multi-Venue e canonical routing
+
+Le navigation preference persistenti/globali usano esclusivamente requirement riferiti al catalogo canonico platform-level. Local routing attribute e routing preset appartengono alle rispettive `LayoutRevision` e non diventano default globali. `UserPreferenceService` deve validare `attributeKey`, operator e value dei default persistenti contro `GLOBAL_ROUTING_ATTRIBUTE_CATALOG`.
+
+Il backend traduce ogni canonical requirement separatamente contro la `LayoutRevision` corrente di ciascuna Venue. Un requirement globale `required` deve essere supportato e soddisfatto in tutte le Venue/segmenti applicabili; l’assenza di supporto produce un readiness blocker. Un `preferred` viene applicato dove supportato e produce warning per le Venue in cui non può essere applicato.
+
+I routing preset restano Venue-scoped e in una Visit multi-Venue non vengono unificati per key/label. Il `PreparationDraft` distingue override globali da selezioni locali per Venue. I global required non possono essere indeboliti da preset locali; conflitti hard vengono rifiutati invece di essere risolti silenziosamente. All’interno di una `LayoutRevision`, una stessa `canonicalKey` può essere implementata al massimo da un routing attribute locale, così la traduzione resta non ambigua.
+
+Le leg `inter_venue` non appartengono a una `LayoutRevision`. Finché non esiste un provider inter-Venue capace di verificare canonical routing constraints, un requirement `required` rilevante ma non verificabile sul trasferimento produce blocker; un `preferred` produce warning. Non vengono aggiunti campi ad hoc al RouteHint per simulare un routing provider. `movementPacePreference` influenza il routing indoor; le stime manuali dei trasferimenti inter-Venue non vengono scalate arbitrariamente dal pace.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -120,11 +130,11 @@ Non devono più essere usati come contratto definitivo:
 - presentation pipeline separate per provenienza/owner;
 - preference globali basate su taxonomy key di un singolo Namespace;
 - preference persistenti User–Visit per presentation/navigation;
-- routing graph/requirements tecnici interpretati direttamente da Vue.
+- routing graph/requirements tecnici interpretati direttamente da Vue;
+- default globali basati su local routing attribute o preset Venue-specific.
 
-# Punti 15–30 ancora da riesaminare
+# Punti 16–30 ancora da riesaminare
 
-15. navigation multi-Venue e `canonicalKey`;
 16. pre-visit information da VenueRelease + Visit notes;
 17. `LogisticsPreview` v2;
 18. execution/preparation context e pin dipendenze;
