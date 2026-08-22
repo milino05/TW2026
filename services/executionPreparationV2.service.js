@@ -280,7 +280,12 @@ async function consumedStartResult(preparation, userId) {
   if (!preparation.sessionId) throw new AppError("Preparation consumata senza Session", 500);
   const session = await VisitSessionV2.findOne({ _id: preparation.sessionId, userId });
   if (!session) throw new AppError("Session della preparation non disponibile", 409);
-  return { session, current: await currentSessionProjection({ sessionId: session._id, userId }), preparation: publicProjection(preparation) };
+  return {
+    session,
+    current: await currentSessionProjection({ sessionId: session._id, userId }),
+    preparation: publicProjection(preparation),
+    alreadyStarted: true,
+  };
 }
 
 async function startExecutionPreparation({ preparationId, userId, expectedVersion }) {
@@ -329,7 +334,12 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
       { new: true },
     ).lean();
     if (!consumed) throw new Error("Impossibile marcare la preparation come consumata");
-    return { session, current: await currentSessionProjection({ sessionId: session._id, userId }), preparation: publicProjection(consumed) };
+    return {
+      session,
+      current: await currentSessionProjection({ sessionId: session._id, userId }),
+      preparation: publicProjection(consumed),
+      alreadyStarted: false,
+    };
   } catch (error) {
     if (session?._id) {
       await SessionPlanRevisionV2.deleteMany({ sessionId: session._id }).catch(() => {});
