@@ -39,28 +39,10 @@ export const marketplaceRepository = {
       body: JSON.stringify({ resourceType, resourceId, sellerType, sellerId }),
     });
   },
-  importContextSnapshot(editorialContextId, { ownerType = "user", ownerId = null, contentSpaceName = null, displayName = null } = {}) {
-    return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/import-snapshot`, {
+  executeWorkspaceOperation({ operationCode, sourceRef, targetPrincipal, payload = {} }) {
+    return apiClient.request("/v2/marketplace/workspace/operations", {
       method: "POST",
-      body: JSON.stringify({ ownerType, ownerId, contentSpaceName, displayName }),
-    });
-  },
-  copyVisit(visitId, { ownerType = "user", ownerId = null, title = null } = {}) {
-    return apiClient.request(`/v2/visits/${encodeURIComponent(visitId)}/copy`, {
-      method: "POST",
-      body: JSON.stringify({ ownerType, ownerId, title }),
-    });
-  },
-  forkNamespace(namespaceId, { ownerType = "user", ownerId = null, name = null } = {}) {
-    return apiClient.request(`/namespaces/${encodeURIComponent(namespaceId)}/fork`, {
-      method: "POST",
-      body: JSON.stringify({ ownerType, ownerId, name }),
-    });
-  },
-  forkItem(itemId, { sourceEditionId, ownerType = "user", ownerId = null } = {}) {
-    return apiClient.request(`/items/${encodeURIComponent(itemId)}/fork`, {
-      method: "POST",
-      body: JSON.stringify({ sourceEditionId, ownerType, ownerId }),
+      body: JSON.stringify({ operationCode, sourceRef, targetPrincipal, payload }),
     });
   },
 };
