@@ -1,5 +1,4 @@
 const VisitV2 = require("../models/visitV2.model");
-const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const GeneratedVisitPlanV2 = require("../models/generatedVisitPlanV2.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
@@ -7,19 +6,14 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const VisitSessionV2 = require("../models/visitSessionV2.model");
 const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const AppError = require("../utils/AppError");
-const { assertCanExecuteVisitV2 } = require("./visitExecutionAccessV2.service");
+const { resolveExecutableVisitRevisionV2 } = require("./visitExecutionAccessV2.service");
 const { resolveInitialPresentation } = require("./presentationRuntimeV2.service");
 const { materializeSessionPhysicalPlan, id } = require("./physicalExecutionV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
 
-async function visitSourceSnapshotV2({ userId, visitId }) {
-  const visit = await VisitV2.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
-  if (!visit) throw new AppError("Visita pubblicata non trovata", 404);
-  await assertCanExecuteVisitV2(visit, userId);
-  const revision = await VisitRevisionV2.findOne({ _id: visit.publishedRevisionId, visitId: visit._id, status: { $in: ["published", "superseded"] } }).lean();
-  if (!revision) throw new AppError("VisitRevision pubblicata non disponibile", 409);
+function visitRevisionSourceSnapshotV2({ visit, revision }) {
   const sourceById = new Map((revision.editorialSources || []).map((entry) => [id(entry._id), entry]));
   const contentEntries = (revision.contentEntries || []).map((entry) => {
     const source = sourceById.get(id(entry.editorialSourceId));
@@ -41,14 +35,18 @@ async function visitSourceSnapshotV2({ userId, visitId }) {
     sourceAnchors: revision.visitAnchors || [],
     sourceLegHints,
     reservedSeconds: 0,
-    explanation: { source: "published_visit_revision", preVisitNotes: revision.logistics?.preVisitNotes || [] },
+    explanation: { source: "visit_revision", preVisitNotes: revision.logistics?.preVisitNotes || [] },
   };
 }
 
-async function generatedSourceSnapshotV2({ userId, planId }) {
-  const plan = await GeneratedVisitPlanV2.findOne({ _id: planId, userId }).lean();
-  if (!plan) throw new AppError("GeneratedVisitPlan non trovato", 404);
-  if (plan.status !== "accepted") throw new AppError("Il GeneratedVisitPlan deve essere accettato prima dello start", 409);
+async function visitSourceSnapshotV2({ userId, visitId }) {
+  const visit = await VisitV2.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
+  if (!visit) throw new AppError("Visita pubblicata non trovata", 404);
+  const { revision } = await resolveExecutableVisitRevisionV2({ visit, userId });
+  return visitRevisionSourceSnapshotV2({ visit, revision });
+}
+
+function generatedPlanSourceSnapshotV2(plan) {
   const contentEntries = (plan.contentEntries || []).map((entry) => ({
     ...entry,
     generatedBaseline: {
@@ -71,6 +69,13 @@ async function generatedSourceSnapshotV2({ userId, planId }) {
     reservedSeconds: Number(plan.estimatedTiming?.reservedSeconds) || 0,
     explanation: { source: "accepted_generated_plan", generationExplanation: plan.explanation || {} },
   };
+}
+
+async function generatedSourceSnapshotV2({ userId, planId }) {
+  const plan = await GeneratedVisitPlanV2.findOne({ _id: planId, userId }).lean();
+  if (!plan) throw new AppError("GeneratedVisitPlan non trovato", 404);
+  if (plan.status !== "accepted") throw new AppError("Il GeneratedVisitPlan deve essere accettato prima dello start", 409);
+  return generatedPlanSourceSnapshotV2(plan);
 }
 
 async function materializeContentEntries({ source, userPreference = null, explicitPreference = null }) {
@@ -169,4 +174,15 @@ async function getCurrentSessionPlanV2({ sessionId, userId, allowCompleted = fal
   return { session, plan };
 }
 
-module.exports = { roleOf, visitSourceSnapshotV2, generatedSourceSnapshotV2, materializeContentEntries, timingFromMaterialized, prepareInitialSessionPlan, createInitialSessionPlan, getCurrentSessionPlanV2 };
+module.exports = {
+  roleOf,
+  visitRevisionSourceSnapshotV2,
+  visitSourceSnapshotV2,
+  generatedPlanSourceSnapshotV2,
+  generatedSourceSnapshotV2,
+  materializeContentEntries,
+  timingFromMaterialized,
+  prepareInitialSessionPlan,
+  createInitialSessionPlan,
+  getCurrentSessionPlanV2,
+};
