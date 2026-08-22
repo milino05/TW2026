@@ -1,9 +1,16 @@
 const service = require("../services/visitSessionV2.service");
 const actions = require("../services/actionDispatcherV2.service");
+const navigation = require("../services/navigationProjectionV2.service");
 
 async function current(req, res, next) {
   try {
     res.json(await service.currentSessionProjection({ sessionId: req.params.sessionId, userId: req.user._id }));
+  } catch (error) { next(error); }
+}
+
+async function map(req, res, next) {
+  try {
+    res.json(await navigation.projectSessionMap({ sessionId: req.params.sessionId, userId: req.user._id }));
   } catch (error) { next(error); }
 }
 
@@ -37,6 +44,7 @@ async function transition(req, res, next) {
 
 module.exports = {
   current,
+  map,
   dispatchAction,
   contentExperience,
   targetObservation,
