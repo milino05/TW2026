@@ -41,6 +41,13 @@ const ACTION_DEFINITIONS = Object.freeze({
     label: "Più semplice",
     controlledVoiceAliases: ["non ho capito", "più semplice"],
   }),
+  SEMANTIC_RETURN: Object.freeze({
+    actionId: "semantic.return",
+    type: "SEMANTIC_RETURN",
+    family: "semantic",
+    label: "Torna al contenuto della visita",
+    controlledVoiceAliases: ["torna alla visita", "torna al contenuto"],
+  }),
   PAUSE: Object.freeze({
     actionId: "lifecycle.pause",
     type: "PAUSE",
