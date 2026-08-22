@@ -19,18 +19,7 @@ export interface SessionProjection {
   availableActions: string[];
 }
 
-interface StartSessionResponse {
-  session: { _id: string };
-  current: SessionProjection;
-}
-
 export const sessionRepository = {
-  startVisit(visitId: string) {
-    return apiClient.request<StartSessionResponse>("/v2/visit-sessions", {
-      method: "POST",
-      body: JSON.stringify({ visitId }),
-    });
-  },
   current(sessionId: string) {
     return apiClient.request<SessionProjection>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/current`);
   },
