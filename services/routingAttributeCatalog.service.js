@@ -1,11 +1,11 @@
 const GLOBAL_ROUTING_ATTRIBUTE_CATALOG = Object.freeze([
-  { key: "step_free", label: "Senza gradini", dataType: "boolean", appliesTo: "connection" },
-  { key: "tactile_guidance", label: "Guida tattile", dataType: "boolean", appliesTo: "connection" },
+  { key: "step_free", label: "Senza gradini", dataType: "boolean", appliesTo: "connection", obstacleWhen: false },
+  { key: "tactile_guidance", label: "Guida tattile", dataType: "boolean", appliesTo: "connection", obstacleWhen: false },
   { key: "minimum_width_cm", label: "Larghezza minima", dataType: "number", unit: "cm", appliesTo: "connection" },
-  { key: "low_sensory_load", label: "Basso carico sensoriale", dataType: "boolean", appliesTo: "both" },
-  { key: "stairs", label: "Presenza di scale", dataType: "boolean", appliesTo: "connection" },
+  { key: "low_sensory_load", label: "Basso carico sensoriale", dataType: "boolean", appliesTo: "both", obstacleWhen: false },
+  { key: "stairs", label: "Presenza di scale", dataType: "boolean", appliesTo: "connection", obstacleWhen: true },
   { key: "elevator", label: "Uso ascensore", dataType: "boolean", appliesTo: "connection" },
-  { key: "narrow_passage", label: "Passaggio stretto", dataType: "boolean", appliesTo: "connection" },
+  { key: "narrow_passage", label: "Passaggio stretto", dataType: "boolean", appliesTo: "connection", obstacleWhen: true },
   { key: "quiet_area", label: "Area tranquilla", dataType: "boolean", appliesTo: "place" },
 ]);
 
@@ -27,7 +27,11 @@ function getRoutingAttributeCatalog() {
 }
 
 function getCanonicalAttribute(key) {
-  return GLOBAL_ROUTING_ATTRIBUTE_CATALOG.find((entry) => entry.key === key) || null;
+  return GLOBAL_ROUTING_ATTRIBUTE_CATALOG.find((entry) => entry.key === String(key || "").trim().toLowerCase()) || null;
+}
+
+function isDeclaredObstacle(definition, value) {
+  return definition?.obstacleWhen !== undefined && value === definition.obstacleWhen;
 }
 
 module.exports = {
@@ -35,4 +39,5 @@ module.exports = {
   GLOBAL_PLACE_INTENTS,
   getRoutingAttributeCatalog,
   getCanonicalAttribute,
+  isDeclaredObstacle,
 };
