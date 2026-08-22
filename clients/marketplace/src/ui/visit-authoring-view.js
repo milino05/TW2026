@@ -216,6 +216,9 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       this.message = successMessage;
       await this.reloadProjection();
       if (refreshContent) await this.loadContent(false);
+      if (this.visitId) {
+        window.dispatchEvent(new CustomEvent("artaround:visit-updated", { detail: { visitId: this.visitId } }));
+      }
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Operazione non riuscita";
     } finally {
