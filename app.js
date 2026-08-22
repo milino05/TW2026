@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const authRoutes = require("./routes/auth.routes");
@@ -34,7 +36,11 @@ app.use(cors({
 app.use(requireTrustedOrigin);
 app.use(loadCurrentUser);
 app.get("/ping", (req, res) => res.json({ status: "ok", message: "ArtAround backend attivo", time: new Date() }));
-app.get("/", (req, res) => res.json({ name: "ArtAround API", status: "ok" }));
+app.get("/", (req, res) => res.json({
+  name: "ArtAround",
+  status: "ok",
+  applications: { navigator: "/navigator/", marketplace: "/marketplace/" },
+}));
 app.use("/api", authRoutes);
 app.use("/api", organizationRoutes);
 app.use("/api", subjectRoutes);
@@ -50,6 +56,26 @@ app.use("/api", executionPreparationRoutes);
 app.use("/api", marketplaceRoutes);
 app.use("/api", navigatorRoutes);
 app.use("/api", preferenceRoutes);
+
+function mountBuiltSpa({ mountPath, distDir }) {
+  const indexFile = path.join(distDir, "index.html");
+  if (!fs.existsSync(indexFile)) return false;
+  app.use(mountPath, express.static(distDir, { index: false }));
+  app.get(`${mountPath}/*`, (req, res) => res.sendFile(indexFile));
+  return true;
+}
+
+const navigatorDist = path.join(__dirname, "clients", "navigator", "dist");
+const marketplaceDist = path.join(__dirname, "clients", "marketplace", "dist");
+if (fs.existsSync(path.join(navigatorDist, "navigator.config.json"))) {
+  app.get("/navigator.config.json", (req, res) => res.sendFile(path.join(navigatorDist, "navigator.config.json")));
+}
+if (fs.existsSync(path.join(navigatorDist, "maps"))) {
+  app.use("/maps", express.static(path.join(navigatorDist, "maps")));
+}
+mountBuiltSpa({ mountPath: "/navigator", distDir: navigatorDist });
+mountBuiltSpa({ mountPath: "/marketplace", distDir: marketplaceDist });
+
 app.use((req, res, next) => next(new AppError("Risorsa non trovata", 404)));
 app.use(errorHandler);
 module.exports = app;
