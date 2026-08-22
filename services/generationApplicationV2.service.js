@@ -26,32 +26,35 @@ async function resolveAdoptionAccess({ source, actorUserId }) {
 
 async function recordGenerationSourceAdoptions({ plan, actorUserId }) {
   const adoptionIds = [];
-  for (const source of plan.contextSnapshot?.editorialSources || []) {
-    const requested = source.requestedSourceRef;
-    const editorialReleaseId = source.editorialReleaseId;
-    if (!requested?.resourceType || !requested.resourceId || !editorialReleaseId) continue;
-    const { access, sourceResourceRef } = await resolveAdoptionAccess({ source, actorUserId });
-    if (!access.allowed) continue;
-    const adoption = await recordAdoptionFromAccess({
-      access: { ...access, requestedResourceRef: sourceResourceRef },
-      actorUserId,
-      action: "context_reference",
-      sourceResourceRef,
-      sourceSnapshotRef: { resourceType: "editorial_release", resourceId: editorialReleaseId },
-    });
-    if (adoption) adoptionIds.push(adoption._id);
+  try {
+    for (const source of plan.contextSnapshot?.editorialSources || []) {
+      const requested = source.requestedSourceRef;
+      const editorialReleaseId = source.editorialReleaseId;
+      if (!requested?.resourceType || !requested.resourceId || !editorialReleaseId) continue;
+      const { access, sourceResourceRef } = await resolveAdoptionAccess({ source, actorUserId });
+      if (!access.allowed) continue;
+      const adoption = await recordAdoptionFromAccess({
+        access: { ...access, requestedResourceRef: sourceResourceRef },
+        actorUserId,
+        action: "context_reference",
+        sourceResourceRef,
+        sourceSnapshotRef: { resourceType: "editorial_release", resourceId: editorialReleaseId },
+      });
+      if (adoption) adoptionIds.push(adoption._id);
+    }
+    return adoptionIds;
+  } catch (error) {
+    await deleteAdoptions(adoptionIds).catch(() => {});
+    throw error;
   }
-  return adoptionIds;
 }
 
 async function generateVisitPlanForUserV2({ userId, request }) {
   const plan = await generator.generateVisitPlanV2({ userId, request });
-  let adoptionIds = [];
   try {
-    adoptionIds = await recordGenerationSourceAdoptions({ plan, actorUserId: userId });
+    await recordGenerationSourceAdoptions({ plan, actorUserId: userId });
     return plan;
   } catch (error) {
-    await deleteAdoptions(adoptionIds).catch(() => {});
     await GeneratedVisitPlanV2.deleteOne({ _id: plan._id, userId, status: "proposed" }).catch(() => {});
     throw error;
   }
