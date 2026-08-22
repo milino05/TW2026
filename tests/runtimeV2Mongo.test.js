@@ -24,7 +24,7 @@ async function withFreshDatabase(callback) {
 }
 function id(value) { return String(value?._id || value || ""); }
 
-test("VisitSession v2 pins physical state at start while a later Session resolves the new VenueRelease", { skip: !mongoUri }, async () => {
+test("ExecutionPreparation pins physical state, rejects stale starts and new preparation resolves current VenueRelease", { skip: !mongoUri }, async () => {
   process.env.ADAPTIVE_CONTRIBUTOR_SECRET = process.env.ADAPTIVE_CONTRIBUTOR_SECRET || "runtime-v2-test-secret-value";
   await withFreshDatabase(async () => {
     loadAllModels();
@@ -50,8 +50,6 @@ test("VisitSession v2 pins physical state at start while a later Session resolve
     const UserContentExposureV2 = require("../models/userContentExposureV2.model");
     const VenueTargetObservationProfile = require("../models/venueTargetObservationProfile.model");
     const {
-      startVisitSessionV2,
-      startGeneratedPlanSessionV2,
       currentSessionProjection,
       changePresentationDepthV2,
       recordContentEntryExperience,
@@ -60,6 +58,10 @@ test("VisitSession v2 pins physical state at start while a later Session resolve
       routeToIntentV2,
       completeSessionV2,
     } = require("../services/visitSessionV2.service");
+    const {
+      createExecutionPreparation,
+      startExecutionPreparation,
+    } = require("../services/executionPreparationV2.service");
 
     const user = await User.create({
       username: "runtime-v2-test",
@@ -232,8 +234,18 @@ test("VisitSession v2 pins physical state at start while a later Session resolve
       estimatedTiming: { contentSeconds: 20, observationSeconds: 45, logisticsSeconds: 0, totalSeconds: 65, reservedSeconds: 0 },
     });
 
-    const started = await startVisitSessionV2({ userId: user._id, visitId: visit._id, payload: {} });
+    const visitPreparation = await createExecutionPreparation({ userId: user._id, payload: { visitId: visit._id } });
+    const staleGeneratedPreparation = await createExecutionPreparation({ userId: user._id, payload: { generatedVisitPlanId: generatedPlan._id } });
+    assert.equal(id(visitPreparation.source.visitRevisionId), id(visitRevision._id));
+    assert.equal(visitPreparation.logisticsPreview.routeSummary.venueCount, 1);
+
+    const started = await startExecutionPreparation({
+      preparationId: visitPreparation.id,
+      userId: user._id,
+      expectedVersion: visitPreparation.version,
+    });
     const sessionId = started.session._id;
+    assert.equal(started.alreadyStarted, false);
     assert.equal(id(started.session.venuePins[0].venueReleaseId), id(releaseR1._id));
     assert.equal(id(started.session.venuePins[0].layoutRevisionId), id(layoutR1._id));
     assert.equal(id(started.current.current.anchor.placeId), id(targetPlaceR1));
@@ -286,6 +298,15 @@ test("VisitSession v2 pins physical state at start while a later Session resolve
     await VenueRelease.updateOne({ _id: releaseR1._id }, { $set: { status: "superseded" } });
     await LayoutRevision.updateOne({ _id: layoutR1._id }, { $set: { status: "superseded" } });
 
+    await assert.rejects(
+      () => startExecutionPreparation({
+        preparationId: staleGeneratedPreparation.id,
+        userId: user._id,
+        expectedVersion: staleGeneratedPreparation.version,
+      }),
+      (error) => error?.status === 409 && error?.details?.[0]?.code === "PREPARATION_PHYSICAL_STATE_CHANGED",
+    );
+
     const afterMove = await currentSessionProjection({ sessionId, userId: user._id });
     assert.equal(id(afterMove.current.anchor.placeId), id(targetPlaceR1), "existing Session must keep the pinned R1 placement");
     const route = await routeToIntentV2({ sessionId, userId: user._id, payload: { intent: "FIND_TOILET" } });
@@ -304,8 +325,13 @@ test("VisitSession v2 pins physical state at start while a later Session resolve
     const targetProfile = await VenueTargetObservationProfile.findOne({ venueTargetId: target._id }).lean();
     assert.equal(targetProfile.typicalObservationSeconds, 60);
 
-    const generatedStarted = await startGeneratedPlanSessionV2({ userId: user._id, planId: generatedPlan._id, payload: {} });
-    assert.equal(id(generatedStarted.session.venuePins[0].venueReleaseId), id(releaseR2._id), "new Session must resolve current VenueRelease, not GeneratedPlan generation-time release");
+    const freshGeneratedPreparation = await createExecutionPreparation({ userId: user._id, payload: { generatedVisitPlanId: generatedPlan._id } });
+    const generatedStarted = await startExecutionPreparation({
+      preparationId: freshGeneratedPreparation.id,
+      userId: user._id,
+      expectedVersion: freshGeneratedPreparation.version,
+    });
+    assert.equal(id(generatedStarted.session.venuePins[0].venueReleaseId), id(releaseR2._id), "new preparation must resolve current VenueRelease, not GeneratedPlan generation-time release");
     assert.equal(id(generatedStarted.session.venuePins[0].layoutRevisionId), id(layoutR2._id));
     assert.equal(id(generatedStarted.current.current.anchor.placeId), id(targetPlaceR2));
     assert.equal(generatedStarted.current.current.presentation.text, "Testo breve semplice");
