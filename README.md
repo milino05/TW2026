@@ -17,6 +17,8 @@ Dopo `npm run build:clients`, il processo Express serve le due applicazioni sull
 
 Il Navigator è configurato tramite `clients/navigator/public/navigator.config.json`; la configurazione corrente usa la Venue demo della Pinacoteca Nazionale di Bologna. Il Marketplace resta unico e generico rispetto alla Venue.
 
+Il Marketplace include Catalog, Creator Workspace, Item authoring, EditorialRelease composition e Visit authoring. Il Visit editor crea o modifica le `VisitV2`, ricerca i contenuti delle EditorialRelease con paginazione server-side, permette aggiunta/rimozione/riordino e ruoli `core | recommended | optional`, collega i contenuti ai VenueTarget quando il Subject è presente nella Venue e usa il workflow editoriale proiettato dal backend. Le indicazioni logistiche della Visit sono gestite separatamente dai contenuti e non vengono modellate come Item.
+
 ## Installazione e verifica
 
 ```bash
@@ -52,7 +54,7 @@ Il seed è deterministico/idempotente per le entità demo e prepara:
 - 3 Visit pubblicate, ciascuna con almeno 10 opere e interamente sulla stessa Venue;
 - 3 Listing/Offer Marketplace, comprese offerte gratuite e una vendita simulata.
 
-`npm run verify:demo` controlla automaticamente account/password, Venue/config Navigator, target/placement/map, corpus editoriale, Representation, tre Visit e Marketplace. Il seed richiama inoltre i consistency checker reali di VenueRelease e Visit.
+`npm run verify:demo` controlla automaticamente account/password, Venue/config Navigator, target/placement/map, corpus editoriale, Representation, tre Visit e Marketplace. Il seed richiama inoltre i consistency checker reali di Namespace, Item/Presentation, EditorialRelease, VenueRelease, Visit e Offer.
 
 La mappa `pinacoteca-bologna-demo.svg` è intenzionalmente didattica e schematica: non rappresenta la planimetria ufficiale o lo stato operativo corrente del museo.
 
@@ -99,7 +101,7 @@ npm audit --omit=dev --audit-level=high
 npm audit --prefix clients/navigator --audit-level=high
 ```
 
-I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'implementazione, compresi generator, workflow editoriale, dataset d'esame e static hosting.
+I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'implementazione, compresi generator, workflow editoriale, Visit editor, separazione logistica/contenuti, dataset d'esame e static hosting.
 
 ## Documentazione canonica
 
