@@ -14,7 +14,7 @@ const { Adoption } = require("../models/adoption.model");
 const Organization = require("../models/organization.model");
 const AppError = require("../utils/AppError");
 const { resolveActorPrincipals, assertCanActForPrincipal } = require("./principalResolution.service");
-const { resolveMarketableResource } = require("./marketplaceResourceV2.service");
+const { resolveMarketableResource, resolveResourceAuthority, LIVE_RESOURCE_TYPES } = require("./marketplaceResourceV2.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -107,6 +107,7 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       ownership: "owned",
       resourceType: "item_edition",
       resourceId: edition._id,
+      sourceRef: { resourceType: "item_edition", resourceId: edition._id },
       title: revision?.label || "Contenuto",
       state: edition.workingRevisionId ? "working" : (edition.publishedRevisionId ? "published" : "empty"),
       publishedSnapshotRef: edition.publishedRevisionId ? { resourceType: "item_revision", resourceId: edition.publishedRevisionId } : null,
@@ -120,6 +121,7 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       ownership: "owned",
       resourceType: "editorial_context",
       resourceId: context._id,
+      sourceRef: { resourceType: "editorial_context", resourceId: context._id },
       title: context.displayName,
       state: context.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: context.publishedReleaseId ? { resourceType: "editorial_release", resourceId: context.publishedReleaseId } : null,
@@ -133,6 +135,7 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       ownership: "owned",
       resourceType: "namespace",
       resourceId: namespace._id,
+      sourceRef: { resourceType: "namespace", resourceId: namespace._id },
       title: namespace.name,
       state: namespace.workingRevisionId ? "working" : (namespace.publishedRevisionId ? "published" : "empty"),
       publishedSnapshotRef: namespace.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: namespace.publishedRevisionId } : null,
@@ -147,6 +150,7 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       ownership: "owned",
       resourceType: "visit",
       resourceId: visit._id,
+      sourceRef: { resourceType: "visit", resourceId: visit._id },
       title: revision?.title || "Visita",
       summary: revision?.description || "",
       state: visit.workingRevisionId ? "working" : (visit.publishedRevisionId ? "published" : "empty"),
@@ -156,6 +160,30 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
     });
   }
   return { contentSpaces: spaces.map((space) => ({ id: space._id, name: space.name, description: space.description || "" })), assets };
+}
+
+async function actionableRefs(resourceType, resourceId, marketable) {
+  if (LIVE_RESOURCE_TYPES.has(resourceType)) {
+    return {
+      sourceRef: { resourceType, resourceId },
+      snapshotRef: marketable.snapshotRef || null,
+    };
+  }
+  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  if (!authority) return { sourceRef: null, snapshotRef: { resourceType, resourceId } };
+  if (resourceType === "item_revision" && authority.edition) {
+    return { sourceRef: { resourceType: "item_edition", resourceId: authority.edition._id }, snapshotRef: { resourceType, resourceId } };
+  }
+  if (resourceType === "editorial_release" && authority.context) {
+    return { sourceRef: { resourceType: "editorial_context", resourceId: authority.context._id }, snapshotRef: { resourceType, resourceId } };
+  }
+  if (resourceType === "namespace_revision" && authority.aggregate) {
+    return { sourceRef: { resourceType: "namespace", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
+  }
+  if (resourceType === "visit_revision" && authority.aggregate) {
+    return { sourceRef: { resourceType: "visit", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
+  }
+  return { sourceRef: null, snapshotRef: { resourceType, resourceId } };
 }
 
 async function projectLicensedAssets({ principalType, principalId }) {
@@ -181,16 +209,24 @@ async function projectLicensedAssets({ principalType, principalId }) {
       if ([404, 409].includes(error?.status)) continue;
       throw error;
     }
+    const refs = await actionableRefs(first.resourceType, first.resourceId, marketable);
     const capabilities = [...new Set(entries.map((entry) => entry.capability))];
     assets.push({
       ownership: "licensed",
       resourceType: first.resourceType,
       resourceId: first.resourceId,
+      sourceRef: refs.sourceRef,
+      snapshotRef: refs.snapshotRef,
       title: marketable.asset.title,
       summary: marketable.asset.summary || "",
       versionMode: first.versionPolicy,
       capabilities,
-      availableOperations: capabilities.map((capability) => EXTERNAL_OPERATION_BY_CAPABILITY[capability]).filter(Boolean),
+      availableOperations: capabilities.map((capability) => ({
+        ...EXTERNAL_OPERATION_BY_CAPABILITY[capability],
+        capability,
+        sourceRef: refs.sourceRef,
+        snapshotRef: refs.snapshotRef,
+      })).filter((operation) => operation.code),
     });
   }
   return assets;
