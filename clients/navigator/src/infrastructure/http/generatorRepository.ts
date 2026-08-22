@@ -5,6 +5,27 @@ export type GenerationSourceRef = {
   resourceId: string;
 };
 
+export type GenerationSubjectOption = {
+  id: string;
+  preferredLabel: string;
+  description: string;
+  externalRefs: Array<{ scheme: string; id: string }>;
+};
+
+export type GenerationSemanticGoal = {
+  feature: { kind: "subject"; subjectId: string };
+  priority: "required" | "preferred" | "avoid";
+  weight: number;
+};
+
+export type GenerationNavigationRequirement = {
+  attributeKey: string;
+  operator: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "in";
+  value: boolean | number | string | string[];
+  priority: "required" | "preferred";
+  weight?: number;
+};
+
 export interface GenerationOptionsProjection {
   physicalScope: {
     organizations: Array<{
@@ -47,7 +68,13 @@ export interface GenerationOptionsProjection {
     };
     navigation: {
       movementPacePreference: { label: string; minimum: number; maximum: number };
-      requirements: Array<{ key: string; label: string; dataType: string; unit: string | null }>;
+      requirements: Array<{
+        key: string;
+        label: string;
+        dataType: "boolean" | "number" | string;
+        unit: string | null;
+        recommendedOperator?: "eq" | "gte" | "lte";
+      }>;
     };
     semantic: { sourceScoped: boolean; message: string };
   };
@@ -88,10 +115,12 @@ export interface GenerationRequest {
   editorialSources?: GenerationSourceRef[];
   timeBudgetSeconds: number;
   hardTimeBudget?: boolean;
+  semanticGoals?: GenerationSemanticGoal[];
   depthPreference?: number;
   languageComplexityPreference?: number;
   locale?: string;
   movementPacePreference?: number;
+  navigationRequirements?: GenerationNavigationRequirement[];
   historyMode?: "full" | "declared_only" | "current_request_only";
   interVenueTransfers?: Array<{
     fromVenueId: string;
@@ -119,6 +148,12 @@ function selectedVenueQuery(selectedVenueIds: string[]) {
 export const generatorRepository = {
   options(selectedVenueIds: string[] = []) {
     return apiClient.request<GenerationOptionsProjection>(`/v2/navigator/generation-options${selectedVenueQuery(selectedVenueIds)}`);
+  },
+  searchSubjects(editorialSources: GenerationSourceRef[], query = "", limit = 20) {
+    return apiClient.request<{ results: GenerationSubjectOption[] }>("/v2/navigator/generation-subjects/search", {
+      method: "POST",
+      body: JSON.stringify({ editorialSources, query, limit }),
+    });
   },
   generate(request: GenerationRequest) {
     return apiClient.request<GeneratedPlanProjection>("/v2/generated-plans", {
