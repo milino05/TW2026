@@ -4,6 +4,7 @@ const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
+const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { projectEditorialContext } = require("./editorialContextProjection.service");
 const { normalizeEditorialContextPayload, validateEditorialContextPayload } = require("./validation/editorialContext.validation");
 
@@ -39,8 +40,14 @@ async function createEditorialContext({ payload, actorUserId }) {
   ]);
   if (!namespace) throw new AppError("Namespace non trovato", 404);
   await assertCanManageContentSpace(contentSpace, actorUserId);
-  await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
   let editorialContext;
+  let adoption = null;
   try {
     editorialContext = await EditorialContext.create({
       contentSpaceId: contentSpace._id,
@@ -50,7 +57,17 @@ async function createEditorialContext({ payload, actorUserId }) {
       description: normalized.description ?? null,
       createdBy: actorUserId,
     });
+    adoption = await recordAdoptionFromAccess({
+      access: namespaceAccess,
+      actorUserId,
+      action: "namespace_use",
+      sourceResourceRef: { resourceType: "namespace", resourceId: namespace._id },
+      sourceSnapshotRef: namespaceAccess.resolvedSnapshotRef,
+      resultResourceRef: { resourceType: "editorial_context", resourceId: editorialContext._id },
+    });
   } catch (error) {
+    if (adoption) await adoption.deleteOne().catch(() => {});
+    if (editorialContext?._id) await editorialContext.deleteOne().catch(() => {});
     if (error?.code === 11000) throw new AppError("Esiste gia un EditorialContext per questo ContentSpace e Namespace", 409);
     throw error;
   }
