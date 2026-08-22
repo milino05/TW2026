@@ -7,8 +7,9 @@ const MarketplaceListingSchema = new Schema({
   sellerId: { type: Schema.Types.ObjectId, required: true, index: true },
   resourceType: { type: String, enum: RESOURCE_TYPES, required: true, index: true },
   resourceId: { type: Schema.Types.ObjectId, required: true, index: true },
-  status: { type: String, enum: ["active", "withdrawn"], default: "active", index: true },
+  status: { type: String, enum: ["draft", "published", "withdrawn"], default: "published", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
+  publishedAt: { type: Date, default: Date.now },
   withdrawnAt: { type: Date, default: null },
   withdrawnBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
 }, { timestamps: true, collection: "marketplace_listings" });
