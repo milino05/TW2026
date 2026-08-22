@@ -1,6 +1,7 @@
 const EditorialContext = require("../models/editorialContext.model");
 const AppError = require("../utils/AppError");
-const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { findContentSpaceOrFail } = require("./contentSpace.service");
+const { assertCapability } = require("./capabilityAuthorization.service");
 
 async function loadEditorialContextUsageDependencies(editorialContextOrId) {
   const editorialContext = editorialContextOrId?._id
@@ -11,31 +12,26 @@ async function loadEditorialContextUsageDependencies(editorialContextOrId) {
   return { editorialContext, contentSpace };
 }
 
-/**
- * Temporary pre-Marketplace policy for context.generate.
- * A selected Venue may endorse a Context as its primary source, making that
- * Context usable for generation in that Venue. Any other explicit Context is
- * restricted to actors who can manage its ContentSpace until Entitlement
- * capability `context.generate` is implemented.
- */
-async function assertCanUseEditorialContextForGeneration({
-  editorialContext,
-  actorUserId,
-  venuePrimaryContextIds = [],
-}) {
-  const { editorialContext: context, contentSpace } = await loadEditorialContextUsageDependencies(editorialContext);
-  const primaryIds = new Set((venuePrimaryContextIds || []).map(String));
-  if (primaryIds.has(String(context._id))) return context;
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+async function assertCanUseEditorialContextForGeneration({ editorialContext, actorUserId }) {
+  const { editorialContext: context } = await loadEditorialContextUsageDependencies(editorialContext);
+  await assertCapability({
+    actorUserId,
+    capability: "context.generate",
+    resourceType: "editorial_context",
+    resourceId: context._id,
+  });
   return context;
 }
 
 async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, actorUserId }) {
   if (!editorialContextId) return null;
-  const { editorialContext, contentSpace } = await loadEditorialContextUsageDependencies(editorialContextId);
-  // Temporary policy boundary: future `context.use_as_venue_primary`
-  // Entitlement belongs here instead of inside Venue or EditorialContext.
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  const { editorialContext } = await loadEditorialContextUsageDependencies(editorialContextId);
+  await assertCapability({
+    actorUserId,
+    capability: "context.use_as_venue_primary",
+    resourceType: "editorial_context",
+    resourceId: editorialContext._id,
+  });
   return editorialContext;
 }
 
