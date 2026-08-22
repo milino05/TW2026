@@ -4,6 +4,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const EditorialContext = require("../models/editorialContext.model");
 const Namespace = require("../models/namespace.model");
+const NamespaceRevision = require("../models/namespaceRevision.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
@@ -16,6 +17,7 @@ const AppError = require("../utils/AppError");
 const { resolveActorPrincipals, assertCanActForPrincipal } = require("./principalResolution.service");
 const { resolveMarketableResource, resolveResourceAuthority, LIVE_RESOURCE_TYPES } = require("./marketplaceResourceV2.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
+const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function key(type, value) { return `${type}:${id(value)}`; }
@@ -82,27 +84,53 @@ function ownedOperations({ published, listing }) {
   return operations;
 }
 
-async function projectOwnedAssets({ principalType, principalId, listings }) {
+function workflowState(revision) {
+  if (!revision) return null;
+  return {
+    status: revision.status,
+    integrityStatus: revision.integrity?.status || "needs_review",
+  };
+}
+
+function withWorkflowOperations({ baseOperations, principalType, actorRole, revision }) {
+  return [
+    ...baseOperations,
+    ...projectEditorialWorkflowOperations({ ownerType: principalType, actorRole, revision }),
+  ];
+}
+
+async function projectOwnedAssets({ principalType, principalId, actorRole, listings }) {
   const spaces = await ContentSpace.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).sort({ name: 1 }).lean();
   const items = await ItemV2.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
   const editions = items.length ? await ItemEdition.find({ itemId: { $in: items.map((entry) => entry._id) } }).lean() : [];
   const editionRevisionIds = editions.flatMap((entry) => [entry.workingRevisionId, entry.publishedRevisionId]).filter(Boolean);
-  const itemRevisions = editionRevisionIds.length ? await ItemRevisionV2.find({ _id: { $in: editionRevisionIds } }).select("label status version").lean() : [];
+  const itemRevisions = editionRevisionIds.length
+    ? await ItemRevisionV2.find({ _id: { $in: editionRevisionIds } }).select("label status version integrity.status").lean()
+    : [];
   const itemRevisionById = new Map(itemRevisions.map((entry) => [id(entry._id), entry]));
 
   const contexts = spaces.length
     ? await EditorialContext.find({ contentSpaceId: { $in: spaces.map((entry) => entry._id) }, lifecycleStatus: "active" }).sort({ displayName: 1 }).lean()
     : [];
   const namespaces = await Namespace.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).sort({ name: 1 }).lean();
+  const namespaceRevisionIds = namespaces.flatMap((entry) => [entry.workingRevisionId, entry.publishedRevisionId]).filter(Boolean);
+  const namespaceRevisions = namespaceRevisionIds.length
+    ? await NamespaceRevision.find({ _id: { $in: namespaceRevisionIds } }).select("status version integrity.status").lean()
+    : [];
+  const namespaceRevisionById = new Map(namespaceRevisions.map((entry) => [id(entry._id), entry]));
+
   const visits = await VisitV2.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).lean();
   const visitRevisionIds = visits.flatMap((entry) => [entry.workingRevisionId, entry.publishedRevisionId]).filter(Boolean);
-  const visitRevisions = visitRevisionIds.length ? await VisitRevisionV2.find({ _id: { $in: visitRevisionIds } }).select("title description status version").lean() : [];
+  const visitRevisions = visitRevisionIds.length
+    ? await VisitRevisionV2.find({ _id: { $in: visitRevisionIds } }).select("title description status version integrity.status").lean()
+    : [];
   const visitRevisionById = new Map(visitRevisions.map((entry) => [id(entry._id), entry]));
 
   const assets = [];
   for (const edition of editions) {
     const revision = itemRevisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId));
     const listing = listings.get(key("item_edition", edition._id)) || null;
+    const baseOperations = ownedOperations({ published: Boolean(edition.publishedRevisionId), listing });
     assets.push({
       ownership: "owned",
       resourceType: "item_edition",
@@ -110,9 +138,10 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       sourceRef: { resourceType: "item_edition", resourceId: edition._id },
       title: revision?.label || "Contenuto",
       state: edition.workingRevisionId ? "working" : (edition.publishedRevisionId ? "published" : "empty"),
+      editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: edition.publishedRevisionId ? { resourceType: "item_revision", resourceId: edition.publishedRevisionId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(edition.publishedRevisionId), listing }),
+      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
     });
   }
   for (const context of contexts) {
@@ -130,7 +159,9 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
     });
   }
   for (const namespace of namespaces) {
+    const revision = namespaceRevisionById.get(id(namespace.workingRevisionId || namespace.publishedRevisionId));
     const listing = listings.get(key("namespace", namespace._id)) || null;
+    const baseOperations = ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing });
     assets.push({
       ownership: "owned",
       resourceType: "namespace",
@@ -138,14 +169,16 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       sourceRef: { resourceType: "namespace", resourceId: namespace._id },
       title: namespace.name,
       state: namespace.workingRevisionId ? "working" : (namespace.publishedRevisionId ? "published" : "empty"),
+      editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: namespace.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: namespace.publishedRevisionId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing }),
+      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
     });
   }
   for (const visit of visits) {
     const revision = visitRevisionById.get(id(visit.workingRevisionId || visit.publishedRevisionId));
     const listing = listings.get(key("visit", visit._id)) || null;
+    const baseOperations = ownedOperations({ published: Boolean(visit.publishedRevisionId), listing });
     assets.push({
       ownership: "owned",
       resourceType: "visit",
@@ -154,9 +187,10 @@ async function projectOwnedAssets({ principalType, principalId, listings }) {
       title: revision?.title || "Visita",
       summary: revision?.description || "",
       state: visit.workingRevisionId ? "working" : (visit.publishedRevisionId ? "published" : "empty"),
+      editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: visit.publishedRevisionId ? { resourceType: "visit_revision", resourceId: visit.publishedRevisionId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(visit.publishedRevisionId), listing }),
+      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
     });
   }
   return { contentSpaces: spaces.map((space) => ({ id: space._id, name: space.name, description: space.description || "" })), assets };
@@ -236,7 +270,12 @@ async function getCreatorWorkspace({ actorUserId, principalType = "user", princi
   const { selected, availablePrincipals } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
   const listings = await listingMapForPrincipal(selected.type, selected.id);
   const [owned, licensedAssets] = await Promise.all([
-    projectOwnedAssets({ principalType: selected.type, principalId: selected.id, listings }),
+    projectOwnedAssets({
+      principalType: selected.type,
+      principalId: selected.id,
+      actorRole: selected.role,
+      listings,
+    }),
     projectLicensedAssets({ principalType: selected.type, principalId: selected.id }),
   ]);
   return {
