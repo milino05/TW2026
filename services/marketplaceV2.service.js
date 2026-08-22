@@ -9,8 +9,8 @@ const {
   RESOURCE_TYPES,
   capabilitySupportsResource,
 } = require("../config/marketplaceCapabilities");
-const { assertCanActForPrincipal } = require("./principalResolution.service");
-const { resolveCapabilityAccess } = require("./capabilityAuthorization.service");
+const { assertCanActForPrincipal, resolveActorPrincipals } = require("./principalResolution.service");
+const { resolveCapabilityAccess, nowWithin } = require("./capabilityAuthorization.service");
 const {
   resolveMarketableResource,
   LIVE_RESOURCE_TYPES,
@@ -84,6 +84,9 @@ async function assertSellerOwnsMarketableResource({ resourceType, resourceId, se
 }
 
 async function createListing({ resourceType, resourceId, sellerType, sellerId, actorUserId, metadata = {} }) {
+  if (!RESOURCE_TYPES.includes(resourceType)) {
+    throw new AppError("resourceType Marketplace non supportato", 400, [{ field: "resourceType", code: "INVALID_ENUM" }]);
+  }
   const marketable = await assertSellerOwnsMarketableResource({ resourceType, resourceId, sellerType, sellerId, actorUserId });
   const existing = await MarketplaceListing.findOne({
     resourceType,
@@ -276,8 +279,19 @@ function versionBehaviour(versionPolicy) {
 
 async function viewerCapabilities({ actorUserId, offers }) {
   const capabilities = new Set();
+  const offerIds = (offers || []).map((offer) => offer._id);
+  const { principals } = await resolveActorPrincipals(actorUserId);
+  const principalClauses = principals.map((principal) => ({ buyerType: principal.type, buyerId: principal.id }));
+  if (offerIds.length && principalClauses.length) {
+    const acquisitions = await MarketplaceAcquisition.find({ offerId: { $in: offerIds }, $or: principalClauses }).select("_id").lean();
+    if (acquisitions.length) {
+      const entitlements = await Entitlement.find({ sourceAcquisitionId: { $in: acquisitions.map((entry) => entry._id) }, status: "active" }).lean();
+      entitlements.filter((entry) => nowWithin(entry)).forEach((entry) => capabilities.add(entry.capability));
+    }
+  }
   for (const offer of offers || []) {
     for (const grant of offer.grants || []) {
+      if (capabilities.has(grant.capability)) continue;
       const access = await resolveCapabilityAccess({
         actorUserId,
         capability: grant.capability,
@@ -285,16 +299,6 @@ async function viewerCapabilities({ actorUserId, offers }) {
         resourceId: grant.resourceId,
       });
       if (access.allowed) capabilities.add(grant.capability);
-      if (!access.allowed && grant.versionPolicy === "pin_at_acquisition") {
-        const marketable = await resolveMarketableResource({ resourceType: grant.resourceType, resourceId: grant.resourceId });
-        const snapshotAccess = await resolveCapabilityAccess({
-          actorUserId,
-          capability: grant.capability,
-          resourceType: marketable.snapshotRef.resourceType,
-          resourceId: marketable.snapshotRef.resourceId,
-        });
-        if (snapshotAccess.allowed) capabilities.add(grant.capability);
-      }
     }
   }
   return [...capabilities];
