@@ -16,6 +16,7 @@ const forbidden = [
   { pattern: /["']relations\.target["']/, label: 'ItemRevision relation target dependency' },
   { pattern: /relationView\.utils/, label: 'obsolete relationView.utils' },
   { pattern: /schemas\/relation\.schema|schemas\\relation\.schema/, label: 'obsolete embedded RelationSchema' },
+  { pattern: /globalRoutingAttributes/, label: 'obsolete duplicate routing attribute catalog' },
 ];
 let failed = false;
 
@@ -69,9 +70,9 @@ function rejectPattern(file, pattern, label) {
 }
 
 roots.forEach(walk);
-for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js']) {
+for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js', 'config/globalRoutingAttributes.js']) {
   if (fs.existsSync(obsolete)) {
-    console.error(`Obsolete semantic graph file still present: ${obsolete}`);
+    console.error(`Obsolete architecture file still present: ${obsolete}`);
     failed = true;
   }
 }
