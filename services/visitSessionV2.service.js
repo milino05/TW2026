@@ -1,41 +1,14 @@
 const User = require("../models/user");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
-const VisitSessionV2 = require("../models/visitSessionV2.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { estimateConnectionSeconds } = require("./graphRouting.service");
 const { computeTransitionReliability, computePhysicalObservationReliability, computeContentExperienceReliability } = require("./adaptiveLearning.service");
 const { recordContentExposure, recordVenueTargetObservation } = require("./learningV2.service");
-const { visitSourceSnapshotV2, generatedSourceSnapshotV2, prepareInitialSessionPlan, createInitialSessionPlan, getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
+const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { findAdjacentPresentation, resolvePresentationText, id } = require("./presentationRuntimeV2.service");
 const { loadPinnedBundle, routeToIntentInSession } = require("./physicalExecutionV2.service");
-
-function validUnit(value) { return Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1; }
-function navigationForUser(user, payload = {}) {
-  const stored = user?.defaultNavigationPreference || {};
-  const movementPacePreference = validUnit(payload.movementPacePreference) ? Number(payload.movementPacePreference) : Number(stored.movementPacePreference ?? 0.5);
-  const requirements = Array.isArray(payload.navigationRequirements) ? payload.navigationRequirements : (stored.requirements || []);
-  return { movementPacePreference, requirements };
-}
-function explicitPresentationPreference(payload = {}) { return payload.presentationPreference || null; }
-
-async function startFromSource({ userId, source, payload = {} }) {
-  const user = await User.findOne({ _id: userId, status: "active" }).lean();
-  if (!user) throw new AppError("Utente non disponibile", 404);
-  const navigation = navigationForUser(user, payload);
-  const prepared = await prepareInitialSessionPlan({ source, navigation, userPreference: user.defaultPresentationPreference || null, explicitPreference: explicitPresentationPreference(payload) });
-  const session = await VisitSessionV2.create({ userId, sourceType: source.origin.sourceType, visitId: source.visitId || null, visitRevisionId: source.visitRevisionId || null, generatedVisitPlanId: source.generatedVisitPlanId || null, venuePins: prepared.venuePins, navigationSnapshot: navigation, sessionMovementSpeedMps: prepared.speedMps, adaptivePolicyVersion: policy.version });
-  try {
-    const planRevision = await createInitialSessionPlan({ session, plan: prepared.plan });
-    return { session, planRevision, current: await currentSessionProjection({ sessionId: session._id, userId }) };
-  } catch (error) {
-    await VisitSessionV2.deleteOne({ _id: session._id, currentPlanRevisionId: null }).catch(() => {});
-    throw error;
-  }
-}
-async function startVisitSessionV2({ userId, visitId, payload = {} }) { return startFromSource({ userId, source: await visitSourceSnapshotV2({ userId, visitId }), payload }); }
-async function startGeneratedPlanSessionV2({ userId, planId, payload = {} }) { return startFromSource({ userId, source: await generatedSourceSnapshotV2({ userId, planId }), payload }); }
 
 function effectivePresentation(session, entry) {
   const override = (session.presentationOverrides || []).find((value) => id(value.contentEntryId) === id(entry._id));
@@ -205,4 +178,16 @@ async function completeSessionV2({ sessionId, userId }) {
   return { session, learning };
 }
 
-module.exports = { startVisitSessionV2, startGeneratedPlanSessionV2, currentSessionProjection, advanceSession, changePresentationDepthV2: (args) => changePresentationAxis({ ...args, axis: "duration" }), changePresentationLanguageV2: (args) => changePresentationAxis({ ...args, axis: "language" }), recordContentEntryExperience, recordVenueTargetObservationV2, recordTransitionV2, routeToIntentV2, pauseSessionV2, resumeSessionV2, completeSessionV2 };
+module.exports = {
+  currentSessionProjection,
+  advanceSession,
+  changePresentationDepthV2: (args) => changePresentationAxis({ ...args, axis: "duration" }),
+  changePresentationLanguageV2: (args) => changePresentationAxis({ ...args, axis: "language" }),
+  recordContentEntryExperience,
+  recordVenueTargetObservationV2,
+  recordTransitionV2,
+  routeToIntentV2,
+  pauseSessionV2,
+  resumeSessionV2,
+  completeSessionV2,
+};
