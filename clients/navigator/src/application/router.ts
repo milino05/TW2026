@@ -3,6 +3,8 @@ import { useAuthStore } from "./stores";
 import LoginView from "../ui/LoginView.vue";
 import LibraryView from "../ui/LibraryView.vue";
 import VisitDetailView from "../ui/VisitDetailView.vue";
+import GenerateView from "../ui/GenerateView.vue";
+import GeneratedPlanView from "../ui/GeneratedPlanView.vue";
 import SessionView from "../ui/SessionView.vue";
 import PlaceholderView from "../ui/PlaceholderView.vue";
 
@@ -12,8 +14,8 @@ export const router = createRouter({
     { path: "/", name: "home", component: LoginView },
     { path: "/library", name: "library", component: LibraryView, meta: { requiresAuth: true } },
     { path: "/visits/:visitId", name: "visit-detail", component: VisitDetailView, meta: { requiresAuth: true } },
-    { path: "/generate", name: "generate", component: PlaceholderView, props: { title: "Generate" }, meta: { requiresAuth: true } },
-    { path: "/generated-plans/:planId", name: "generated-plan", component: PlaceholderView, props: { title: "Generated plan" }, meta: { requiresAuth: true } },
+    { path: "/generate", name: "generate", component: GenerateView, meta: { requiresAuth: true } },
+    { path: "/generated-plans/:planId", name: "generated-plan", component: GeneratedPlanView, meta: { requiresAuth: true } },
     { path: "/sessions/:sessionId", name: "session", component: SessionView, meta: { requiresAuth: true } },
     { path: "/:pathMatch(.*)*", name: "not-found", component: PlaceholderView, props: { title: "Pagina non trovata" } },
   ],
