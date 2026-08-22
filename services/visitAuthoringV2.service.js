@@ -190,8 +190,11 @@ async function getVisitAuthoringProjection({ actorUserId, visitId = null, princi
         revision,
       })
     : [];
-  const editOperations = visit && mayEditEditorialRevision(revision)
-    ? [{ code: "visit.edit", label: "Modifica visita" }]
+  const mayStartOrContinueEdit = Boolean(visit && revision && (
+    mayEditEditorialRevision(revision) || revision.status === "published"
+  ));
+  const editOperations = mayStartOrContinueEdit
+    ? [{ code: "visit.edit", label: revision.status === "published" ? "Crea nuova revisione" : "Modifica visita" }]
     : [];
   return {
     principal: workspace.principal,
