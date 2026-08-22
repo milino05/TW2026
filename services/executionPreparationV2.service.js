@@ -3,6 +3,7 @@ const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const GeneratedVisitPlanV2 = require("../models/generatedVisitPlanV2.model");
 const Venue = require("../models/venue.model");
+const VenueRelease = require("../models/venueRelease.model");
 const VisitSessionV2 = require("../models/visitSessionV2.model");
 const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const ExecutionPreparation = require("../models/executionPreparation.model");
@@ -18,6 +19,7 @@ const {
   prepareInitialSessionPlan,
   createInitialSessionPlan,
 } = require("./sessionPlanV2.service");
+const { resolveMovementSpeed } = require("./physicalExecutionV2.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
@@ -150,7 +152,7 @@ function projectWarning(warning) {
   const messages = {
     PREFERRED_ATTRIBUTE_UNSUPPORTED: "Una preferenza di percorso non e disponibile in una delle sedi.",
   };
-  return { code, message: messages[code] || "La preparazione contiene un avviso di navigazione." };
+  return { code, message: messages[code] || warning?.message || "La preparazione contiene un avviso di navigazione." };
 }
 function buildLogisticsPreview(prepared) {
   const timing = prepared.plan.estimatedTiming || {};
@@ -172,6 +174,15 @@ function buildLogisticsPreview(prepared) {
     warnings: (prepared.plan.explanation?.physicalWarnings || []).map(projectWarning),
   };
 }
+function emptyLogisticsPreview() {
+  return {
+    estimatedTotalSeconds: 0,
+    breakdown: { contentSeconds: 0, observationSeconds: 0, travelSeconds: 0 },
+    reservedSeconds: 0,
+    routeSummary: { stopCount: 0, legCount: 0, venueCount: 0, interVenueLegCount: 0 },
+    warnings: [],
+  };
+}
 function buildReadiness(prepared) {
   return {
     status: "ready",
@@ -179,6 +190,73 @@ function buildReadiness(prepared) {
     warnings: (prepared.plan.explanation?.physicalWarnings || []).map(projectWarning),
   };
 }
+function readinessFromPlanningError(error) {
+  const details = Array.isArray(error?.details) && error.details.length ? error.details : [{ code: "PREPARATION_NOT_READY" }];
+  return {
+    status: "blocked",
+    blockers: details.map((detail) => ({
+      code: detail.code || "PREPARATION_NOT_READY",
+      message: detail.message || error.message || "La visita non puo essere avviata con la configurazione corrente.",
+    })),
+    warnings: [],
+  };
+}
+
+async function buildPreVisitProjection({ sourceSnapshot, venuePins }) {
+  const releaseIds = (venuePins || []).map((pin) => pin.venueReleaseId);
+  const venueIds = (venuePins || []).map((pin) => pin.venueId);
+  const [venues, releases] = await Promise.all([
+    venueIds.length ? Venue.find({ _id: { $in: venueIds } }).select("_id name").lean() : [],
+    releaseIds.length ? VenueRelease.find({ _id: { $in: releaseIds } }).select("_id venueId preVisitInformation").lean() : [],
+  ]);
+  const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
+  const releaseById = new Map(releases.map((release) => [id(release._id), release]));
+  return {
+    visitNotes: sourceSnapshot.explanation?.preVisitNotes || [],
+    venues: (venuePins || []).map((pin) => {
+      const venue = venueById.get(id(pin.venueId));
+      const release = releaseById.get(id(pin.venueReleaseId));
+      return {
+        id: pin.venueId,
+        name: venue?.name || "Sede",
+        information: release?.preVisitInformation || [],
+      };
+    }),
+  };
+}
+
+async function calculatePreparationState({ sourceSnapshot, navigation, presentation }) {
+  try {
+    const prepared = await prepareInitialSessionPlan({
+      source: sourceSnapshot,
+      navigation,
+      userPreference: null,
+      explicitPreference: presentation,
+    });
+    return {
+      venuePins: prepared.venuePins,
+      speedMps: prepared.speedMps,
+      plan: prepared.plan,
+      readiness: buildReadiness(prepared),
+      logisticsPreview: buildLogisticsPreview(prepared),
+      preVisit: await buildPreVisitProjection({ sourceSnapshot, venuePins: prepared.venuePins }),
+    };
+  } catch (error) {
+    if (error?.status !== 409) throw error;
+    return {
+      venuePins: [],
+      speedMps: resolveMovementSpeed(navigation.movementPacePreference),
+      plan: null,
+      readiness: readinessFromPlanningError(error),
+      logisticsPreview: emptyLogisticsPreview(),
+      preVisit: {
+        visitNotes: sourceSnapshot.explanation?.preVisitNotes || [],
+        venues: [],
+      },
+    };
+  }
+}
+
 function publicProjection(preparation) {
   return {
     id: preparation._id,
@@ -195,6 +273,7 @@ function publicProjection(preparation) {
     navigation: {
       movementPacePreference: preparation.navigationSnapshot.movementPacePreference,
     },
+    preVisit: preparation.preVisit || { visitNotes: [], venues: [] },
     readiness: preparation.readiness,
     logisticsPreview: preparation.logisticsPreview,
     expiresAt: preparation.expiresAt,
@@ -209,12 +288,7 @@ async function createExecutionPreparation({ userId, payload = {} }) {
   const draft = normalizedDraft(payload);
   const presentation = normalizePresentationPreference(user.defaultPresentationPreference, draft.presentationPreference);
   const navigation = normalizeNavigation(user.defaultNavigationPreference, draft);
-  const prepared = await prepareInitialSessionPlan({
-    source: resolved.sourceSnapshot,
-    navigation,
-    userPreference: null,
-    explicitPreference: presentation,
-  });
+  const state = await calculatePreparationState({ sourceSnapshot: resolved.sourceSnapshot, navigation, presentation });
   const preparation = await ExecutionPreparation.create({
     userId,
     source: resolved.identity,
@@ -223,12 +297,13 @@ async function createExecutionPreparation({ userId, payload = {} }) {
     preparationDraft: draft,
     effectivePresentationPreference: presentation,
     navigationSnapshot: navigation,
-    venuePins: prepared.venuePins,
-    sessionMovementSpeedMps: prepared.speedMps,
+    venuePins: state.venuePins,
+    sessionMovementSpeedMps: state.speedMps,
     adaptivePolicyVersion: policy.version,
-    preparedPlanCandidate: prepared.plan,
-    readiness: buildReadiness(prepared),
-    logisticsPreview: buildLogisticsPreview(prepared),
+    preparedPlanCandidate: state.plan,
+    readiness: state.readiness,
+    logisticsPreview: state.logisticsPreview,
+    preVisit: state.preVisit,
     expiresAt: expiryFromNow(),
   });
   return publicProjection(preparation.toObject());
@@ -249,7 +324,7 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
   const presentation = normalizePresentationPreference(preparation.effectivePresentationPreference, patch.presentationPreference);
   const navigation = normalizeNavigation(preparation.navigationSnapshot, draft);
   const sourceSnapshot = await loadExactSourceForPreparation(preparation);
-  const prepared = await prepareInitialSessionPlan({ source: sourceSnapshot, navigation, userPreference: null, explicitPreference: presentation });
+  const state = await calculatePreparationState({ sourceSnapshot, navigation, presentation });
   const nextVersion = preparation.version + 1;
   const updated = await ExecutionPreparation.findOneAndUpdate(
     { _id: preparation._id, userId, status: "active", version: preparation.version },
@@ -258,12 +333,13 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
       preparationDraft: draft,
       effectivePresentationPreference: presentation,
       navigationSnapshot: navigation,
-      venuePins: prepared.venuePins,
-      sessionMovementSpeedMps: prepared.speedMps,
+      venuePins: state.venuePins,
+      sessionMovementSpeedMps: state.speedMps,
       adaptivePolicyVersion: policy.version,
-      preparedPlanCandidate: prepared.plan,
-      readiness: buildReadiness(prepared),
-      logisticsPreview: buildLogisticsPreview(prepared),
+      preparedPlanCandidate: state.plan,
+      readiness: state.readiness,
+      logisticsPreview: state.logisticsPreview,
+      preVisit: state.preVisit,
       expiresAt: expiryFromNow(),
     } },
     { new: true },
@@ -309,6 +385,9 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
   if (preparation.status !== "active") throw new AppError("ExecutionPreparation in avvio", 409, [{ code: "PREPARATION_START_IN_PROGRESS" }]);
   if (preparation.version !== Number(expectedVersion)) {
     throw new AppError("ExecutionPreparation modificata", 409, [{ code: "PREPARATION_VERSION_CONFLICT", context: { currentVersion: preparation.version } }]);
+  }
+  if (preparation.readiness?.status !== "ready" || !preparation.preparedPlanCandidate) {
+    throw new AppError("ExecutionPreparation non pronta per lo start", 409, [{ code: "PREPARATION_NOT_READY" }]);
   }
 
   const claim = await ExecutionPreparation.updateOne(
