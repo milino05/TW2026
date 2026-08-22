@@ -3,18 +3,15 @@ const EditorialContext = require("../models/editorialContext.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
-const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const VenueTarget = require("../models/venueTarget.model");
 const Venue = require("../models/venue.model");
-const AppError = require("../utils/AppError");
 const visitService = require("./visitV2.service");
 const marketplaceCatalog = require("./marketplaceCatalogV2.service");
 const { getCreatorWorkspace } = require("./marketplaceWorkspaceV2.service");
-const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
+const { projectEditorialWorkflowOperations, mayEditEditorialRevision } = require("./editorialWorkflowOperationsV2.service");
 const { assertCanComposeEditorialRelease } = require("./visitEditorialUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
-function sameId(a, b) { return id(a) === id(b); }
 function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 function sourceOptionsFromWorkspace(workspace) {
@@ -193,6 +190,9 @@ async function getVisitAuthoringProjection({ actorUserId, visitId = null, princi
         revision,
       })
     : [];
+  const editOperations = visit && mayEditEditorialRevision(revision)
+    ? [{ code: "visit.edit", label: "Modifica visita" }]
+    : [];
   return {
     principal: workspace.principal,
     availablePrincipals: visit ? [workspace.principal] : workspace.availablePrincipals,
@@ -204,9 +204,27 @@ async function getVisitAuthoringProjection({ actorUserId, visitId = null, princi
       revision: projectedRevision,
     } : null,
     availableOperations: visit
-      ? [{ code: "visit.edit", label: "Modifica visita" }, ...workflowOperations]
+      ? [...editOperations, ...workflowOperations]
       : [{ code: "visit.create", label: "Crea visita" }],
   };
+}
+
+function presentationProfiles(revision) {
+  const profiles = [];
+  const seen = new Set();
+  for (const variant of revision.presentationVariants || []) {
+    for (const representation of variant.representations || []) {
+      const key = [representation.durationTypeDefinitionId, representation.languageLevelDefinitionId, representation.locale].join("::");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      profiles.push({
+        durationTypeDefinitionId: representation.durationTypeDefinitionId,
+        languageLevelDefinitionId: representation.languageLevelDefinitionId,
+        locale: representation.locale,
+      });
+    }
+  }
+  return profiles;
 }
 
 async function searchVisitAuthoringContent({
@@ -236,7 +254,7 @@ async function searchVisitAuthoringContent({
   const [total, revisions] = await Promise.all([
     ItemRevisionV2.countDocuments(query),
     ItemRevisionV2.find(query)
-      .select("label authorCredits metadata.license itemEditionId")
+      .select("label authorCredits metadata.license itemEditionId presentationVariants")
       .sort({ label: 1, _id: 1 })
       .skip((safePage - 1) * safeLimit)
       .limit(safeLimit)
@@ -276,6 +294,7 @@ async function searchVisitAuthoringContent({
         label: revision.label,
         authorCredits: revision.authorCredits || [],
         license: revision.metadata?.license || null,
+        presentationProfiles: presentationProfiles(revision),
         curationSignals: (binding?.curationSignals || []).map((entry) => ({
           definitionId: entry.definitionId,
           weight: entry.weight,
