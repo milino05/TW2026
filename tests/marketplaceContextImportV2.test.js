@@ -34,6 +34,7 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
     const { Adoption } = require("../models/adoption.model");
     const { createListing, createOffer, acquireOffer } = require("../services/marketplaceV2.service");
     const { importEditorialContextSnapshot } = require("../services/marketplaceContextImportV2.service");
+    const { getCreatorWorkspace } = require("../services/marketplaceWorkspaceV2.service");
 
     const [seller, buyer] = await User.create([
       { username: "context-import-seller", passwordHash: "test-hash" },
@@ -47,7 +48,7 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
     const namespaceRevision = await NamespaceRevision.create({
       namespaceId: namespace._id, version: 1,
       durationTypes: [], languageLevels: [], presentationAspects: [],
-      relationTypes: [{ definitionId: "related", key: "related", label: "Collegato", domainSubjectClassDefinitionIds: [], rangeSubjectClassDefinitionIds: [] }],
+      relationTypes: [{ definitionId: "related", key: "related", label: "Collegato" }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },
@@ -111,6 +112,15 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
       },
     });
     await acquireOffer({ offerId: offer._id, actorUserId: buyer._id });
+    assert.equal(await Adoption.countDocuments({ beneficiaryId: buyer._id }), 0, "Acquisition must not create Adoption automatically");
+
+    const beforeWorkspace = await getCreatorWorkspace({ actorUserId: buyer._id });
+    const licensedContext = beforeWorkspace.licensedAssets.find((asset) => asset.capabilities.includes("context.import_snapshot"));
+    assert.ok(licensedContext);
+    assert.equal(licensedContext.ownership, "licensed");
+    assert.equal(licensedContext.sourceRef.resourceType, "editorial_context");
+    assert.equal(String(licensedContext.sourceRef.resourceId), String(sourceContext._id));
+    assert.equal(licensedContext.availableOperations.some((entry) => entry.code === "context.import_snapshot"), true);
 
     const beforeSubjectCount = await Subject.countDocuments();
     const imported = await importEditorialContextSnapshot({
@@ -147,5 +157,10 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
     const contextImport = adoptions.find((entry) => entry.action === "context_import");
     assert.equal(String(contextImport.sourceSnapshotRef.resourceId), String(sourceRelease._id));
     assert.equal(String(contextImport.resultResourceRef.resourceId), String(targetContext._id));
+
+    const afterWorkspace = await getCreatorWorkspace({ actorUserId: buyer._id });
+    const ownedImportedContext = afterWorkspace.ownedAssets.find((asset) => asset.resourceType === "editorial_context" && String(asset.resourceId) === String(targetContext._id));
+    assert.ok(ownedImportedContext);
+    assert.equal(ownedImportedContext.ownership, "owned");
   });
 });
