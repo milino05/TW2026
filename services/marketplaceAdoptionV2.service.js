@@ -41,4 +41,10 @@ async function recordAdoptionFromAccess({
   });
 }
 
-module.exports = { recordAdoptionFromAccess };
+async function deleteAdoptions(adoptionIds = []) {
+  const ids = (adoptionIds || []).filter(Boolean);
+  if (!ids.length) return;
+  await Adoption.deleteMany({ _id: { $in: ids } });
+}
+
+module.exports = { recordAdoptionFromAccess, deleteAdoptions };
