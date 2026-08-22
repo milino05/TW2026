@@ -20,25 +20,40 @@ else {
     fail("Navigator venueId must be a non-zero ObjectId");
   }
 }
-if (!fs.existsSync("clients/navigator/public/maps/pinacoteca-bologna-demo.svg")) fail("Exam demo map asset missing");
+const mapPath = "clients/navigator/public/maps/pinacoteca-bologna-demo.svg";
+if (!fs.existsSync(mapPath)) fail("Exam demo map asset missing");
+else {
+  requirePattern(mapPath, /Ascensore/i, "Elevator on demo map");
+  requirePattern(mapPath, /Scale/i, "Stairs on demo map");
+  requirePattern(mapPath, /non ufficiale/i, "Schematic map disclaimer");
+}
 
 requirePattern("scripts/examDatasetV2.js", /REQUIRED_USERNAMES[\s\S]*autore1[\s\S]*autore2[\s\S]*visitatore1[\s\S]*visitatore2/, "Four required accounts in exam seed");
 requirePattern("scripts/examDatasetV2.js", /const WORKS[\s\S]*const VISIT_DEFINITIONS/, "Exam works and visit definitions");
-requirePattern("scripts/examDatasetV2.js", /computeVenueReleaseIssues[\s\S]*computeVisitV2Integrity/, "Domain consistency checks in exam seed");
+requirePattern("scripts/examDatasetV2.js", /validateNamespaceRevisionSnapshot[\s\S]*validatePresentationAgainstNamespace[\s\S]*validateEditorialReleaseCoherence[\s\S]*computeVenueReleaseIssues[\s\S]*computeVisitV2Integrity[\s\S]*assertSelfContainedOffer/, "Domain consistency checks in exam seed");
+requirePattern("scripts/examDatasetV2.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Elevator and stairs facilities in exam seed");
 requirePattern("scripts/examDatasetV2.js", /async function verifyExamDataset/, "Automatic exam dataset verifier");
 requirePattern("tests/examDatasetV2.test.js", /seedExamDataset[\s\S]*verifyExamDataset/, "Exam seed integration test functions");
+requirePattern("tests/examDatasetV2.test.js", /acquireOffer[\s\S]*listNavigatorLibrary/, "Marketplace to Navigator E2E test");
 requirePattern("tests/examDatasetV2.test.js", /idempotent/i, "Exam seed idempotence test");
 
-requirePattern("app.js", /mountBuiltSpa[\s\S]*\/navigator[\s\S]*\/marketplace/, "Same-site client hosting");
+requirePattern("services/routingAttributeCatalog.service.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Canonical elevator and stairs intents");
+requirePattern("tests/routingCatalogFacilities.test.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Facility intent regression test");
+
+requirePattern("app.js", /mountBuiltSpa[\s\S]*res\.redirect\(308[\s\S]*\/navigator[\s\S]*\/marketplace/, "Same-site client hosting and canonical redirects");
 requirePattern("clients/navigator/vite.config.ts", /base:\s*["']\/navigator\//, "Navigator deployment base");
 requirePattern("clients/navigator/src/application/router.ts", /createWebHistory\(import\.meta\.env\.BASE_URL\)/, "Navigator router deployment base");
 requirePattern("clients/marketplace/src/application/router.js", /BASE_PATH\s*=\s*["']\/marketplace["']/, "Marketplace deployment base");
 requirePattern("clients/marketplace/index.html", /src=["']\/marketplace\/src\/main\.js["']/, "Marketplace nested-route module path");
 requirePattern("Dockerfile", /build:clients/, "Production client build");
 
+requirePattern("clients/navigator/src/ui/SessionView.vue", /presentation\.text[\s\S]*browserTts\.speak\(presentation\.text/, "Displayed text and TTS share the same presentation text");
+requirePattern("clients/navigator/src/capabilities/controlledVoice.ts", /controlledVoiceAliases[\s\S]*normalize\(phrase\)\s*===\s*spoken/, "Controlled voice exact action matching");
+requirePattern("clients/navigator/src/ui/SessionView.vue", /availableActions[\s\S]*@click="dispatch\(action, 'button'\)"/, "Equivalent runtime action buttons");
+
 rejectPattern("docs/revision-workflow.md", /MuseumLayout|MuseumVocabulary|\/api\/museums\//, "Legacy museum workflow terminology");
 rejectPattern("README.md", /seed completo[\s\S]{0,120}(?:ancora|deve essere completato)/i, "Stale seed TODO");
 requirePattern("docs/deployment.md", /start mongo[\s\S]*start node-22/, "Department gocker procedure");
 
 if (failed) process.exit(1);
-console.log("Slice 9 dataset, static hosting and deployment guardrails are intact.");
+console.log("Slice 9 dataset, compliance, static hosting and deployment guardrails are intact.");
