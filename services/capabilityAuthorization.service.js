@@ -15,6 +15,13 @@ function nowWithin(entitlement, now = new Date()) {
   return entitlement.status === "active" && startOk && endOk;
 }
 
+function chooseEffectiveEntitlement(entitlements, now = new Date()) {
+  const valid = (entitlements || []).filter((entry) => nowWithin(entry, now));
+  const followCurrent = valid.find((entry) => entry.versionPolicy === "follow_current");
+  if (followCurrent) return followCurrent;
+  return valid.find((entry) => entry.versionPolicy === "pinned") || null;
+}
+
 async function resolveOwnedResource(resourceType, resourceId) {
   if (resourceType === "visit") {
     const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
@@ -63,9 +70,9 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
       resourceId,
       capability,
       status: "active",
-    }).sort({ createdAt: 1 }).lean()
+    }).sort({ createdAt: -1 }).lean()
     : [];
-  const entitlement = entitlements.find((entry) => nowWithin(entry, now));
+  const entitlement = chooseEffectiveEntitlement(entitlements, now);
   if (entitlement) {
     return {
       allowed: true,
@@ -93,6 +100,7 @@ async function assertCapability(args) {
 
 module.exports = {
   nowWithin,
+  chooseEffectiveEntitlement,
   resolveCapabilityAccess,
   assertCapability,
 };
