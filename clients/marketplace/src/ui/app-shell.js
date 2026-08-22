@@ -148,7 +148,7 @@ export class MarketplaceAppShell extends HTMLElement {
           <p>${entry.asset.stopCount} tappe${venues ? ` · ${escapeHtml(venues)}` : ""}</p>
           <p>Pubblicato da ${escapeHtml(entry.asset.publisher?.name || "")}</p>
           ${entry.viewerState?.alreadyUsable
-            ? "<p><strong>Già disponibile nella tua Library</strong></p>"
+            ? "<p><strong>Già utilizzabile</strong></p>"
             : offer
               ? `<button type="button" data-acquire="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${escapeHtml(offer.label)} · ${escapeHtml(price)}</button>`
               : "<p>Nessuna offerta disponibile.</p>"}
