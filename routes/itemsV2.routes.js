@@ -12,5 +12,8 @@ router.post("/items/:itemId/editions", requireAuth, itemId, controller.createEdi
 router.post("/items/:itemId/fork", requireAuth, itemId, controller.fork);
 router.patch("/item-editions/:editionId", requireAuth, editionId, controller.updateEdition);
 router.post("/item-editions/:editionId/check-consistency", requireAuth, editionId, controller.checkEdition);
+router.post("/item-editions/:editionId/review/request", requireAuth, editionId, controller.requestEditionReview);
+router.post("/item-editions/:editionId/review/withdraw", requireAuth, editionId, controller.withdrawEditionReview);
+router.post("/item-editions/:editionId/review/changes", requireAuth, editionId, controller.requestEditionChanges);
 router.post("/item-editions/:editionId/publish", requireAuth, editionId, controller.publishEdition);
 module.exports = router;
