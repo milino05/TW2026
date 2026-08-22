@@ -42,6 +42,18 @@ function errorCode(error) {
   return error?.details?.[0]?.code || error?.code || "ACTION_FAILED";
 }
 
+function withCurrentSemanticContext(descriptor, session) {
+  if (!descriptor || !session?.semanticPresentation) return descriptor;
+  return {
+    ...descriptor,
+    context: {
+      ...(descriptor.context || {}),
+      semanticSubjectId: descriptor.context?.semanticSubjectId || session.semanticPresentation.subjectId,
+      semanticItemEditionId: descriptor.context?.semanticItemEditionId || session.semanticPresentation.itemEditionId,
+    },
+  };
+}
+
 function interactionEvent({ userId, descriptor, actionId, interactionChannel, status, code = null }) {
   return {
     category: "action",
@@ -144,11 +156,12 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
   const interactionChannel = normalizeInteractionChannel(payload.interactionChannel);
 
   const derived = await deriveRuntimeActions({ sessionId, userId });
-  const descriptor = derived.actions.find((entry) => entry.actionId === actionId) || null;
-  if (!descriptor) {
+  const rawDescriptor = derived.actions.find((entry) => entry.actionId === actionId) || null;
+  if (!rawDescriptor) {
     await recordRejectedUnavailable({ sessionId, userId, actionId, interactionChannel });
     throw new AppError("Action non disponibile nello stato corrente", 409, [{ code: "ACTION_NOT_AVAILABLE" }]);
   }
+  const descriptor = withCurrentSemanticContext(rawDescriptor, derived.session);
 
   if (derived.session.runtimeVersion !== expectedRuntimeVersion) {
     throw new AppError("La Session e stata modificata", 409, [{
