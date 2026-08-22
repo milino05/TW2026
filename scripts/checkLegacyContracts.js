@@ -132,5 +132,27 @@ rejectPattern(
   'VisitSession service must not bypass ExecutionPreparation',
 );
 
+const legacyRuntimeRoutePattern = /\/v2\/visit-sessions\/:sessionId\/(?:advance|presentation-depth|presentation-language|route-to-intent|pause|resume|complete)/;
+rejectPattern(
+  'routes/visitSessionsV2.routes.js',
+  legacyRuntimeRoutePattern,
+  'Legacy endpoint-specific runtime Action route',
+);
+rejectPattern(
+  'clients/navigator/src/infrastructure/http/sessionRepository.ts',
+  /\/advance|\/presentation-depth|\/presentation-language|\/route-to-intent|\/pause|\/resume|\/complete|\badvance\s*\(/,
+  'Navigator must dispatch runtime behavior through actionId',
+);
+rejectPattern(
+  'clients/navigator/src/ui/SessionView.vue',
+  /availableActions\.includes\s*\(|['"](?:NEXT|PREVIOUS|PRESENTATION_LANGUAGE_(?:UP|DOWN)|ROUTE_TO_INTENT)['"]/,
+  'Navigator UI must render AvailableAction without command-string policy',
+);
+rejectPattern(
+  'config/runtimeActions.js',
+  /PRESENTATION_LANGUAGE_(?:UP|DOWN)|presentation\.language\.(?:increase|decrease)/,
+  'Language complexity must not use the legacy public language Action semantic',
+);
+
 if (failed) process.exit(1);
-console.log('No operational legacy visit/generator/semantic-graph/session-start contracts found.');
+console.log('No operational legacy visit/generator/semantic-graph/session-start/action contracts found.');
