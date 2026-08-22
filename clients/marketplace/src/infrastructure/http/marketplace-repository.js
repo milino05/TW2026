@@ -6,16 +6,26 @@ function principalParams({ principalType = "user", principalId = null } = {}) {
   return params;
 }
 
+function venueParams(params, selectedVenueIds = []) {
+  const values = [...new Set((selectedVenueIds || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  if (values.length) params.set("selectedVenueIds", values.join(","));
+  return params;
+}
+
 export const marketplaceRepository = {
-  catalog({ venueId = null, page = 1, limit = 20, q = "", resourceTypes = null } = {}) {
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (venueId) params.set("venueId", venueId);
+  venueSelector() {
+    return apiClient.request("/v2/marketplace/venue-selector");
+  },
+  catalog({ selectedVenueIds = [], page = 1, limit = 20, q = "", resourceTypes = null } = {}) {
+    const params = venueParams(new URLSearchParams({ page: String(page), limit: String(limit) }), selectedVenueIds);
     if (q) params.set("q", q);
     if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
     return apiClient.request(`/v2/marketplace/catalog?${params.toString()}`);
   },
-  detail(listingId) {
-    return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}`);
+  detail(listingId, { selectedVenueIds = [] } = {}) {
+    const params = venueParams(new URLSearchParams(), selectedVenueIds);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}${suffix}`);
   },
   acquire(offerId) {
     return apiClient.request(`/v2/marketplace/offers/${encodeURIComponent(offerId)}/acquire`, {
