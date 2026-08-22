@@ -27,6 +27,7 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const { IDS, seedExamDataset } = require("../scripts/examDatasetV2");
+    const visitService = require("../services/visitV2.service");
     const { getVisitAuthoringProjection, searchVisitAuthoringContent } = require("../services/visitAuthoringV2.service");
     const publication = require("../services/visitV2Publication.service");
 
@@ -58,6 +59,16 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(page.results.every((entry) => entry.presentationProfiles.length >= 2), true);
 
     const visitId = seeded.visitRecords[0].visit._id;
+    const publishedProjection = await getVisitAuthoringProjection({ actorUserId: manager._id, visitId });
+    assert.equal(publishedProjection.visit.revision.status, "published");
+    assert.equal(publishedProjection.availableOperations.some((entry) => entry.code === "visit.edit"), true);
+    assert.equal(publishedProjection.availableOperations.some((entry) => entry.code === "workflow.check"), false);
+
+    await visitService.updateVisitV2({
+      visitId,
+      actorUserId: manager._id,
+      payload: { description: publishedProjection.visit.revision.description },
+    });
     const draftProjection = await getVisitAuthoringProjection({ actorUserId: manager._id, visitId });
     assert.equal(draftProjection.visit.revision.status, "draft");
     assert.equal(draftProjection.availableOperations.some((entry) => entry.code === "visit.edit"), true);
