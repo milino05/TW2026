@@ -25,6 +25,14 @@ function rejectPattern(file, pattern, label) {
   }
 }
 
+function requirePattern(file, pattern, label) {
+  const text = read(file);
+  if (!text || !pattern.test(text)) {
+    console.error(`${label} missing from ${file}`);
+    failed = true;
+  }
+}
+
 // Subject is a global semantic identity. It must not acquire editorial ownership
 // or physical placement just to support the Marketplace Venue selector.
 rejectFields(
@@ -76,6 +84,26 @@ rejectPattern(
   "clients/marketplace/src/infrastructure/http/marketplace-repository.js",
   /(?:searchParams|params)\.set\(\s*["']venueId["']/,
   "Marketplace Catalog must use selectedVenueIds rather than singular venueId",
+);
+
+// A client edit must not silently repair dangling semantic references by deleting them.
+rejectPattern(
+  "clients/marketplace/src/ui/item-authoring-view.js",
+  /filter\(\s*\(entry\)\s*=>\s*!entry(?:\.subject\?)?\.missing\s*\)/,
+  "Item authoring round-trip must preserve dangling Subject references",
+);
+
+// Context composition must resolve the Namespace snapshot through the same capability
+// boundary as the write service, including pinned Entitlements.
+requirePattern(
+  "services/editorialReleaseComposerV2.service.js",
+  /assertCanUseNamespaceForEditorialContext/,
+  "EditorialReleaseComposer Namespace capability resolution",
+);
+requirePattern(
+  "services/editorialReleaseComposerV2.service.js",
+  /resolvedSnapshotRef/,
+  "EditorialReleaseComposer authorized Namespace snapshot",
 );
 
 if (failed) process.exit(1);
