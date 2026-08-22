@@ -48,6 +48,13 @@ const ACTION_DEFINITIONS = Object.freeze({
     label: "Torna al contenuto della visita",
     controlledVoiceAliases: ["torna alla visita", "torna al contenuto"],
   }),
+  CHECK_ROUTE_OBSTACLES: Object.freeze({
+    actionId: "navigation.obstacles.next_route",
+    type: "CHECK_ROUTE_OBSTACLES",
+    family: "navigation",
+    label: "Ci sono ostacoli?",
+    controlledVoiceAliases: ["ci sono ostacoli", "troverò ostacoli", "ci sono barriere"],
+  }),
   PAUSE: Object.freeze({
     actionId: "lifecycle.pause",
     type: "PAUSE",
