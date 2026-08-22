@@ -171,6 +171,20 @@ L'origine della navigazione segue concettualmente `explicit one-shot origin > fr
 
 `venueTargetObservations[]` esistenti restano dati di learning sui tempi di osservazione e non vengono riutilizzati come location state. La mappa 18–24 può mostrare tappa corrente, prossima destination e route, ma non un marker automatico della posizione utente.
 
+# Punto 21/30 — Map projection v2
+
+Il Navigator non riceve né interpreta il `LayoutRevision` grezzo. Un backend Map Projector costruisce la cartografia user-facing dallo snapshot fisico della `ExecutionPreparation` o della `VisitSession`; durante una Session usa esclusivamente le VenueRelease/LayoutRevision pinzate.
+
+I floor espongono label, map asset e coordinate normalizzate. Le tappe della Visit vengono proiettate da `VisitAnchor -> VenueTarget -> VenueTargetPlacement -> Place.position` e mantengono `visitAnchorId`/`venueTargetId` come identità semantica; il Place sottostante è dettaglio fisico del layout. Le facility vengono invece proiettate da Place/PlaceType tramite intenti globali user-facing.
+
+Non vengono inviati al Navigator tutti i Place, le Connection, routing attributes o `path[]` tecnici. Le route vengono trasformate backend-side in overlay geometrici per floor, con punti normalizzati e transition esplicite fra piani. I trasferimenti inter-Venue restano transition logistiche e non vengono disegnati come linee fra floor map differenti.
+
+`MapProjection` contiene la base relativamente stabile della mappa; `NavigationProjection` contiene destination, route overlay, instructions e warning dinamici. Il `navigationStore` può inizialmente gestire entrambe senza introdurre un map store dedicato.
+
+Le floor map appartengono al Physical Domain e non alla `NavigatorStaticConfig`. Un floor senza map asset non invalida universalmente il Layout domain, ma deve emergere come problema di Navigator readiness quando impedisce la visualizzazione cartografica richiesta per una Visit 18–24. Non viene generata implicitamente una falsa mappa schematica dal routing graph.
+
+Nel 18–24 la tappa logica corrente può essere evidenziata, ma non viene mostrato un marker automatico “you are here”. Le future `LocationObservation` 18–33 aggiungono overlay di localizzazione senza modificare la struttura fondamentale della `MapProjection`.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -204,11 +218,11 @@ Non devono più essere usati come contratto definitivo:
 - durata della Visit trattata come proprietà statica/autorevole della VisitRevision;
 - start della Session che rilegge silenziosamente latest VisitRevision/default utente/stato fisico invece di consumare una preparation versionata;
 - destination runtime appiattita su un ID ambiguo o su un generico aggregate Location;
-- `currentEntryIndex`, `VisitAnchor.placeId` o un `fromPlaceId` client-supplied trattati come posizione fisica certa dell'utente.
+- `currentEntryIndex`, `VisitAnchor.placeId` o un `fromPlaceId` client-supplied trattati come posizione fisica certa dell'utente;
+- `LayoutRevision`, routing graph o `connectionId[]` esposti al Navigator come contratto cartografico da interpretare client-side.
 
-# Punti 21–30 ancora da riesaminare
+# Punti 22–30 ancora da riesaminare
 
-21. mappe basate su VenueTarget placement;
 22. Action derivation completa dai source v2;
 23. `GenerationOptionsProjection` scope/authorization-aware;
 24. materializzazione GeneratedPlan -> user-owned Visit v2;
