@@ -1,6 +1,6 @@
 # ArtAround — Decisioni architetturali dei client
 
-Questo documento raccoglie le decisioni architetturali **approvate** per Navigator e Marketplace/Editor. Le decisioni più recenti sostituiscono formulazioni precedenti incompatibili. I temi non ancora riesaminati rispetto al Domain Model v2 sono **pending** e non costituiscono contratto definitivo.
+Questo documento raccoglie le decisioni architetturali **approvate** per Navigator e Marketplace/Editor. Le decisioni più recenti sostituiscono formulazioni precedenti incompatibili.
 
 # Principi generali confermati
 
@@ -293,21 +293,35 @@ Il Marketplace/Editor usa una `ItemAuthoringProjection` con Subject, lineage, Na
 
 # Punto 29/30 — Marketplace Venue selection v2
 
-Il termine user-facing “museo” della specifica viene mappato sul `Venue` come unità atomica della selezione fisica. `Organization` rappresenta invece l'istituzione/owner e può raggruppare più Venue nel pannello; un eventuale “seleziona tutte le sedi” è una shortcut che produce comunque `selectedVenueIds[]`, non un nuovo scope Organization.
+Il termine user-facing “museo” della specifica viene mappato sul `Venue` come unità atomica della selezione fisica. `Organization` rappresenta invece l’istituzione/owner e può raggruppare più Venue nel pannello; un eventuale “seleziona tutte le sedi” è una shortcut che produce comunque `selectedVenueIds[]`, non un nuovo scope Organization.
 
-Il Marketplace usa una projection dedicata per il selector, con Organization summary e Venue user-facing, senza esporre primary Context/release o richiedere lookup client-side. La selezione è multipla, modificabile e costituisce search/filter context transitorio; non è authorization, ownership, EditorialScope o domain state persistente. Se aperto dal Navigator parte da `selectedVenueIds=[configuredVenueId]` ma resta l'unico Marketplace generico.
+Il Marketplace usa una projection dedicata per il selector, con Organization summary e Venue user-facing, senza esporre primary Context/release o richiedere lookup client-side. La selezione è multipla, modificabile e costituisce search/filter context transitorio; non è authorization, ownership, EditorialScope o domain state persistente. Se aperto dal Navigator parte da `selectedVenueIds=[configuredVenueId]` ma resta l’unico Marketplace generico.
 
-Più Venue selezionate usano inizialmente semantica union/OR. Le Visit vengono filtrate tramite PhysicalScope derivato da `VisitAnchor -> VenueTarget -> Venue`, senza introdurre `Visit.museumIds[]`; le card espongono l'intero PhysicalScope così una Visit che include anche Venue non selezionate non viene presentata in modo ambiguo.
+Più Venue selezionate usano inizialmente semantica union/OR. Le Visit vengono filtrate tramite PhysicalScope derivato da `VisitAnchor -> VenueTarget -> Venue`, senza introdurre `Visit.museumIds[]`; le card espongono l’intero PhysicalScope così una Visit che include anche Venue non selezionate non viene presentata in modo ambiguo.
 
 I contenuti editoriali non “appartengono” alla Venue. Un backend `VenueCatalogRelevanceResolver` deriva invece la pertinenza usando evidenze del dominio, inizialmente Subject materializzati da VenueTarget, associazioni esplicite dei contenuti e endorsement tramite `Venue.primaryEditorialContextId`. EditorialContext esterni possono risultare pertinenti quando il loro corpus contiene contenuti rilevanti. `primaryEditorialContextId` è un segnale/default, non un filtro esclusivo o authorization.
 
-Il SemanticGraph e l'EditorialScope non vengono filtrati dalla Venue. Subject non fisici e contenuti cross-museum rimangono pienamente validi; eventuale graph relevance può contribuire in futuro al ranking senza trasformare il PhysicalScope nel confine semantico. Asset intrinsecamente venue-neutral, come Namespace, non ricevono `venueIds[]` artificiali.
+Il SemanticGraph e l’EditorialScope non vengono filtrati dalla Venue. Subject non fisici e contenuti cross-museum rimangono pienamente validi; eventuale graph relevance può contribuire in futuro al ranking senza trasformare il PhysicalScope nel confine semantico. Asset intrinsecamente venue-neutral, come Namespace, non ricevono `venueIds[]` artificiali.
 
-Nell'Editor la selezione Venue restringe browse/search e target picker ma non viene persistita nella Visit: il PhysicalScope reale resta derivato dagli Anchor effettivamente presenti. Cambiare il selector non aggiunge o rimuove automaticamente tappe.
+Nell’Editor la selezione Venue restringe browse/search e target picker ma non viene persistita nella Visit: il PhysicalScope reale resta derivato dagli Anchor effettivamente presenti. Cambiare il selector non aggiunge o rimuove automaticamente tappe.
 
 Search e relevance sono backend-side e scalabili. Eventuali `venueRelevance` denormalizzate appartengono a un indice/projection ricostruibile e non diventano source of truth nei modelli editoriali.
 
-Per la demo obbligatoria, le tre Visit da almeno dieci opere vengono mantenute interamente sulla stessa Venue reale, lasciando l'eventuale multi-Venue come dimostrazione aggiuntiva di generalità.
+Per la demo obbligatoria, le tre Visit da almeno dieci opere vengono mantenute interamente sulla stessa Venue reale, lasciando l’eventuale multi-Venue come dimostrazione aggiuntiva di generalità.
+
+# Punto 30/30 — Final architecture audit e cleanup boundary
+
+I Punti 1–29 costituiscono l’architettura client-v2 canonica di ArtAround. Modelli, servizi, API, documenti o script incompatibili sono implementazione legacy/transitoria da eliminare o rifattorizzare e non costituiscono motivazione per mantenere retrocompatibilità o riaprire il Domain Model v2.
+
+Le fondamenta Domain v2 correnti vengono preservate. Il completamento richiede invece di portare i boundary applicativi alla nuova architettura: Marketplace capability-based con Listing/Offer/Acquisition/Entitlement/Adoption e `CapabilityAuthorizationService`; execution source/version policy; `ExecutionPreparation`; Action protocol; GeneratedPlan materialization; workflow publication corretto; client-facing projection per Navigator, generator, Marketplace e Venue search.
+
+Le policy pre-Marketplace basate esclusivamente su ownership/membership e il bypass `Venue.primaryEditorialContextId -> context.generate` vengono rimossi quando il capability core viene introdotto. I runtime endpoint specifici/string action, `visitId -> publishedRevisionId` implicito, client-supplied routing origin/technical intent e l’ambiguità `presentation language = complexity` sono contratti transitori da sostituire.
+
+La priorità di consegna 18–24 è la realizzazione effettiva dei due client richiesti dalle specifiche: Navigator Vue/Vite/TypeScript e Marketplace/Editor vanilla JavaScript con Web Components, seguiti dai flussi end-to-end, mappa, TTS, vocabolario controllato, bottoni accessibili, authoring/catalogo e dati dimostrativi. Le capability 18–27/18–33 restano predisposte architetturalmente ma non vengono implementate anticipatamente salvo scelta esplicita del livello esteso.
+
+Repository e documentazione vengono ripuliti insieme al codice: README e revision-workflow legacy vengono riscritti, script npm morti eliminati, legacy/hygiene checker ampliati, CI estesa ai client e seed completato con Venue reale, contenuti e tre Visit di almeno dieci opere sulla stessa Venue. Il deploy finale deve inoltre soddisfare i container e gli artifact di consegna richiesti dalle specifiche.
+
+Gli schemi wire esatti di `Action`, `RuntimeUpdate`, completion summary e session discovery sono contratti di implementazione da fissare durante la costruzione dei client; possono evolvere tecnicamente senza contraddire o riaprire la semantica approvata nei Punti 1–29.
 
 # Runtime/UX confermati
 
@@ -358,11 +372,9 @@ Non devono più essere usati come contratto definitivo:
 - fork/import che duplica Subject o VenueTarget per creare ownership locale;
 - Item/Edition/Revision che incorporano `venueId`, `venueTargetId`, coordinate o placement fisico;
 - creazione contenuto che richiede sempre una Venue/occurrence fisica o che trasforma automaticamente `relatedSubjectIds` in graph edge;
-- pannello “museo” implementato come `selectedOrganizationId`, Marketplace separato per museo o campi persistenti `venueIds/museumIds` negli asset editoriali;
-- filtro Venue che restringe implicitamente EditorialScope/SemanticGraph o considera soltanto contenuti dell'Organization proprietaria della Venue.
+- selector “museo” implementato come `Organization` o come `museumIds[]` persistenti nei modelli editoriali/Visit;
+- filtro Venue che limita automaticamente EditorialScope/SemanticGraph o tratta `primaryEditorialContextId` come unico corpus valido.
 
-# Punto 30/30 ancora da riesaminare
+# Audit 1–30 completato
 
-30. pulizia finale residui legacy e decisioni aperte.
-
-Restano inoltre da fissare gli schemi TypeScript/JSON esatti di Action, RuntimeUpdate, completion summary e session discovery senza riaprire la semantica già approvata.
+L’audit architetturale client-v2 è concluso. Le decisioni 1–30 sono il contratto di riferimento per l’implementazione. I dettagli wire ancora non fissati (`Action`, `RuntimeUpdate`, completion summary, session discovery) vengono definiti durante i vertical slice senza riaprire la semantica approvata.
