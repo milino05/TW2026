@@ -28,11 +28,11 @@ function check(file) {
       failed = true;
     }
   }
-  if (/\bmustSeeItemIds\b/.test(text) && normalized !== 'services/validation/generation.validation.js') {
+  if (/\bmustSeeItemIds\b/.test(text) && normalized !== 'services/validation/generationV2.validation.js') {
     console.error(`Legacy contract mustSeeItemIds in ${normalized}`);
     failed = true;
   }
-  if (/payload\.interests\b/.test(text) && normalized !== 'services/validation/generation.validation.js') {
+  if (/payload\.interests\b/.test(text) && normalized !== 'services/validation/generationV2.validation.js') {
     console.error(`Legacy GenerationRequest interests in ${normalized}`);
     failed = true;
   }
