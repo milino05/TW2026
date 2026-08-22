@@ -1,3 +1,4 @@
+const BASE_PATH = "/marketplace";
 const ROUTES = new Set([
   "/",
   "/catalog",
@@ -8,18 +9,32 @@ const ROUTES = new Set([
   "/workspace/context-compose",
 ]);
 
-function routePath(path) {
-  try { return new URL(path, window.location.origin).pathname; }
-  catch { return "/404"; }
+function stripBase(pathname) {
+  if (pathname === BASE_PATH || pathname === `${BASE_PATH}/`) return "/";
+  if (pathname.startsWith(`${BASE_PATH}/`)) return pathname.slice(BASE_PATH.length) || "/";
+  return pathname;
+}
+
+function parseLogicalUrl(path) {
+  try {
+    const url = new URL(path, window.location.origin);
+    return { pathname: stripBase(url.pathname), search: url.search, hash: url.hash };
+  } catch {
+    return { pathname: "/404", search: "", hash: "" };
+  }
 }
 
 export function currentRoute() {
-  return ROUTES.has(window.location.pathname) ? window.location.pathname : "/404";
+  const pathname = stripBase(window.location.pathname);
+  return ROUTES.has(pathname) ? pathname : "/404";
 }
 
 export function navigate(path) {
-  const pathname = routePath(path);
-  if (!ROUTES.has(pathname)) path = "/404";
-  window.history.pushState({}, "", path);
+  const parsed = parseLogicalUrl(path);
+  const pathname = ROUTES.has(parsed.pathname) ? parsed.pathname : "/404";
+  const deployedPath = pathname === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${pathname}`;
+  window.history.pushState({}, "", `${deployedPath}${parsed.search}${parsed.hash}`);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
+
+export { BASE_PATH };
