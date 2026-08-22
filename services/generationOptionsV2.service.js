@@ -140,6 +140,7 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
     : [];
   const pinnedReleaseById = new Map(pinnedReleases.map((release) => [id(release._id), release]));
   contextIds.push(...uniqueIds(pinnedReleases.map((release) => release.editorialContextId)));
+  if (!ownedSpaceIds.length && !contextIds.length) return [];
 
   const contexts = await EditorialContext.find({
     lifecycleStatus: "active",
@@ -280,7 +281,8 @@ function chooseDefaultSources({ contentSpaces, selectedVenueIds }) {
       }
     }
   }
-  candidates.sort((a, b) => b.overlap - a.overlap || (a.source.versionMode === "follow_current" ? -1 : 1));
+  const versionRank = (source) => source.versionMode === "follow_current" ? 0 : 1;
+  candidates.sort((a, b) => b.overlap - a.overlap || versionRank(a.source) - versionRank(b.source));
   const coveredVenues = new Set();
   const defaults = [];
   for (const candidate of candidates) {
