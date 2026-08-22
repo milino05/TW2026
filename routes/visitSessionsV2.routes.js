@@ -5,7 +5,6 @@ const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam"
 const controller = require("../controllers/visitSessionsV2.controller");
 const validateSessionId = validateObjectIdParam("sessionId");
 
-router.post("/v2/visit-sessions", requireAuth, controller.start);
 router.get("/v2/visit-sessions/:sessionId/current", requireAuth, validateSessionId, controller.current);
 router.get("/v2/visit-sessions/:sessionId/plan", requireAuth, validateSessionId, controller.currentPlan);
 router.post("/v2/visit-sessions/:sessionId/advance", requireAuth, validateSessionId, controller.advance);
