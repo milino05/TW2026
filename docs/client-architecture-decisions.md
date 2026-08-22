@@ -251,8 +251,8 @@ NavigatorVisitDetailProjection
     visitNotes[]
 
   preparation
-    presentation             # Punto 12–13
-    navigation               # Punto 14–15
+    presentation             # Punti 12–13
+    navigation               # Punti 14–15
     adaptiveLearning
 
   logistics                  # Punto 17
@@ -319,6 +319,48 @@ La Visit Detail non riceve il presentation plan completo per tutte le ContentEnt
 
 Il servizio v2 esistente di presentation resolution è il nucleo da riusare/rifattorizzare, non da duplicare in resolver separati per Visit user-owned/organization-owned o per vecchie categorie official/community.
 
+# Punto 13/30 — Preparation override temporaneo
+
+ArtAround non introduce preference persistenti per la coppia User–Visit. Le responsabilità restano separate:
+
+```text
+EDITORIAL DEFAULT
+VisitRevision.presentationBaseline
+        ↓
+USER GLOBAL DEFAULT
+User.defaultPresentationPreference
+User.defaultNavigationPreference
+        ↓
+CURRENT PREPARATION DRAFT
+session-specific override
+```
+
+Le modifiche effettuate nella Visit Detail appartengono a un `PreparationDraft` temporaneo relativo alla futura Session, non alla Visit e non al profilo permanente dell’utente.
+
+Concettualmente:
+
+```text
+PreparationDraft
+  source
+    visitId
+    visitRevisionId
+  presentationOverride?
+  navigationOverride?
+  futureStartOptions?
+```
+
+Il draft è application state, non un nuovo aggregate editoriale/commerciale e non richiede inizialmente una collection Mongo dedicata. Parte senza override espliciti: il backend calcola comunque i valori effettivi da baseline e default globali. Le projection devono poter distinguere `effectivePreference` dall’override esplicito scelto nella preparation corrente.
+
+Presentation e navigation applicano gli override campo per campo sopra i rispettivi default. Non vengono introdotti `UserVisitPreference`, `VisitPreference` o endpoint il cui significato sia salvare permanentemente preference User–Visit.
+
+Ogni modifica che influenza presentation, routing o timing viene rivalutata backend-side e produce una nuova preparation/logistics preview; Vue non modifica autonomamente tempi o percorso.
+
+`startSession()` usa la stessa preparation corrente e materializza il risultato nel `VisitSession` / `SessionPlan`. Avviare una Session non modifica automaticamente i default globali dell’utente. Un eventuale comando “usa come default” è un use case esplicito e distinto che aggiorna il profilo globale.
+
+La persistenza tecnica temporanea del draft — route/application state, `sessionStorage` o backend preparation handle — resta da definire al Punto 18. Qualunque soluzione venga scelta, `temporary preparation state != durable User preference != Visit domain state`.
+
+I consent/preference di adaptive learning mantengono la propria semantica globale e non vengono automaticamente assimilati agli override occasionali della preparation.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -348,11 +390,11 @@ Non devono più essere usati come contratto definitivo:
 - `access.basis` / `acquisitionType` nella Library o Visit Detail Navigator;
 - uso del DTO editoriale grezzo `GET /visits/:visitId` come read model principale del Navigator;
 - presentation pipeline separate `official/community`;
-- preference globali basate su `durationKey` / `languageLevelKey` di un singolo Namespace.
+- preference globali basate su `durationKey` / `languageLevelKey` di un singolo Namespace;
+- preference persistenti User–Visit per presentation/navigation.
 
-# Punti 13–30 ancora da riesaminare
+# Punti 14–30 ancora da riesaminare
 
-13. preparation override non persistente;
 14. `NavigationPreparationResolver` su VenueRelease/LayoutRevision;
 15. navigation multi-Venue e `canonicalKey`;
 16. pre-visit information da VenueRelease + Visit notes;
