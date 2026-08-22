@@ -1,58 +1,10 @@
-# Revisioni e workflow editoriale
+# Revision workflow v2
 
-## Identita, contenuto e topologia semantica
+Questo documento descrive il workflow editoriale corrente di ArtAround. Le identità stabili e le snapshot versionate sono separate: `ItemV2 -> ItemEdition -> ItemRevisionV2`, `VisitV2 -> VisitRevisionV2`, `Namespace -> NamespaceRevision` e `Venue -> VenueRelease -> LayoutRevision`.
 
-`Item`, `Visit` e `MuseumLayout` sono identita stabili. I contenuti modificabili risiedono rispettivamente in `ItemRevision`, `VisitRevision` e `MuseumLayoutRevision`.
+## Stati condivisi
 
-Per gli Item la topologia del knowledge graph e separata dal payload revisionato:
-
-```text
-Item
-├── publishedRevisionId
-└── workingRevisionId
-
-ItemRevision
-└── payload editoriale / presentazione
-
-SemanticEdge
-└── sourceItemRevisionId
-```
-
-`SemanticEdge` e la fonte autorevole delle relazioni tra Item. `ItemRevision` non contiene `relations[]`.
-
-## Creazione e modifica Item
-
-La creazione produce l'Item stabile e `ItemRevision version: 1` in stato `draft`. Gli eventuali `semanticEdges` del payload vengono persistiti come documenti `SemanticEdge` associati alla nuova revisione.
-
-Quando un operator modifica un Item gia pubblicato e non esiste una working revision, il backend:
-
-1. clona il payload della revisione pubblicata in una nuova ItemRevision draft;
-2. clona gli outgoing SemanticEdge della revisione pubblicata assegnandoli alla nuova `sourceItemRevisionId`;
-3. imposta `workingRevisionId` sulla nuova revisione.
-
-La revisione pubblicata e il suo edge set restano immutati e continuano a essere serviti al Navigator.
-
-Il payload authoring usa `semanticEdges`. I precedenti `relations` embedded e `relationCommands` vengono rifiutati esplicitamente; non esiste un adapter di conversione.
-
-## Published e working graph
-
-Il pointer dell'Item seleziona simultaneamente nodo e outgoing topology:
-
-```text
-published graph
-Item.publishedRevisionId = R7
-→ payload R7
-→ SemanticEdge[sourceItemRevisionId=R7]
-
-working graph
-Item.workingRevisionId = R8
-→ payload R8
-→ SemanticEdge[sourceItemRevisionId=R8]
-```
-
-Se un Item non ha working revision, la vista working usa la revisione pubblicata. La working graph non viene cacheata perche e mutabile a pointer invariato; la published graph puo usare una cache runtime non autorevole.
-
-## Stati
+Le revisioni editoriali che usano il workflow condiviso possono assumere gli stati:
 
 ```text
 draft
@@ -62,116 +14,47 @@ published
 superseded
 ```
 
-Flusso ufficiale:
+`draft` e `changes_requested` sono modificabili. `in_review` è bloccato fino a ritiro della review, richiesta di modifiche o decisione manageriale. Ogni modifica riporta l'integrità a `needs_review`; la publication richiede sempre `integrity.status = valid`.
 
-```text
-draft -> in_review -> published
-                  -> changes_requested -> draft
-in_review -> draft (ritiro della richiesta)
-```
+## Publication personale e publication organizzativa
 
-Una revisione `in_review` e bloccata. L'operator deve ritirare la richiesta oppure attendere la decisione del manager. Un manager puo pubblicare direttamente un proprio `draft` integro.
+Il dominio distingue due operazioni, senza usare un generico publish che inventi una review:
 
-Le visite community seguono il workflow previsto per le Visit e non creano workflow separati per gli archi semantici.
+- `publishWithoutReview`: per una risorsa `user`-owned; richiede una revisione `draft` integra e scrive soltanto i metadata di publication;
+- `approveReviewAndPublish`: per una risorsa `organization`-owned; richiede una revisione `in_review` integra, registra l'approvazione manageriale e pubblica la stessa snapshot.
 
-## Consistenza e pubblicazione Item
+Di conseguenza una risorsa personale non riceve `review.decision = approved` se nessuna review è avvenuta, mentre una risorsa organizzativa non può saltare `draft -> in_review -> published`.
 
-`check-consistency` valida insieme:
+## ItemEdition
 
-- payload dell'ItemRevision;
-- PresentationVariant/defaultPresentation;
-- semanticRefs e SelectionSignal;
-- SemanticEdge della revisione;
-- esistenza e stato dei target;
-- RelationType;
-- domain/range;
-- multiplicity e peso degli edge.
+Una `ItemEdition` possiede `workingRevisionId` e `publishedRevisionId`. L'editor lavora sulla working `ItemRevisionV2`; il consistency check verifica Presentation/Representation, NamespaceRevision di authoring e riferimenti Subject. Per un owner Organization un operator può inviare o ritirare la review e un manager può richiedere modifiche oppure approvare/pubblicare. Per un owner User, dopo il consistency check, il proprietario pubblica direttamente.
 
-Gli archi non hanno un workflow autonomo. Pubblicare l'Item cambia `publishedRevisionId`; quel singolo pointer rende contemporaneamente autorevoli la revisione e gli edge con la corrispondente `sourceItemRevisionId`. La precedente revisione viene marcata `superseded` ma resta uno snapshot storico coerente con il proprio edge set.
+La publication sostituisce il pointer `publishedRevisionId`, azzera `workingRevisionId` e marca l'eventuale snapshot pubblicata precedente come `superseded`.
 
-## Consistenza transactionless su Mongo standalone
+## VisitV2
 
-Il progetto non assume replica set e non finge atomicita multi-documento che Mongo standalone non fornisce. Per i core publication/switch che richiedono piu write viene usato questo pattern:
+`VisitV2` segue la stessa distinzione User/Organization. La consistency check valida gli snapshot editoriali pinzati, ContentEntry, VisitAnchor/VenueTarget e logistica strutturale. Le Visit Organization-owned richiedono review manageriale; le Visit personali possono essere pubblicate direttamente dopo il controllo.
 
-```text
-snapshot stato precedente
-→ write con compare-and-set sul pointer stabile
-→ aggiorna stato della revisione precedente
-→ eventuale epoch del grafo
-→ commit logico
-```
+La publication di una Visit non congela `VenueRelease`, `LayoutRevision`, Place, path indoor, timing runtime o Representation concreta: questi aspetti vengono risolti da `ExecutionPreparation` e dalla Session.
 
-Se un write del core fallisce, il servizio esegue compensazione esplicita e ripristina pointer e stati precedenti prima di restituire errore. Questo pattern e applicato a Item, Visit, MuseumVocabulary, MuseumLayout e allo switch di `SessionPlanRevision`.
+## Namespace
 
-Gli audit di dipendenza eseguiti dopo il commit logico sono deliberatamente separati: un fallimento post-commit non viene presentato come rollback della pubblicazione. Le response espongono `audit.status: complete|incomplete` e le singole failure, permettendo di distinguere una pubblicazione valida da una propagazione secondaria da ripetere/riparare.
+`NamespaceRevision` usa il workflow condiviso. Le revisioni Organization-owned devono passare dalla review prima della publication; quelle User-owned possono essere pubblicate direttamente dopo la validazione delle definizioni. Gli Item pinzano la `NamespaceRevision` contro cui sono stati authorati.
 
-Per il grafo pubblicato, Item publication e lifecycle cambiano anche il graph epoch. Se l'epoch non puo essere aggiornato coerentemente, il core viene compensato; la cache in-process viene invalidata comunque come misura difensiva.
+## VenueRelease e LayoutRevision
 
-## Relazioni inverse e simmetriche
+La Venue appartiene a una Organization. Una working `VenueRelease` incorpora il riferimento a una working `LayoutRevision`; operator e manager collaborano sullo stesso workflow, ma la publication è sempre un'approvazione manageriale di una release `in_review` integra.
 
-Il database salva un solo SemanticEdge autorevole. Le viste inverse e simmetriche sono materializzate da `relationSemantics.service`/`SemanticGraphService` usando `RelationType`. Non vengono persistiti archi inversi duplicati.
+Il consistency check verifica, tra l'altro, PlaceType, routing attribute/canonicalKey, floor, Place, Connection, VenueTarget placement e target binding. Alla publication `Venue.publishedReleaseId` viene aggiornato e il Layout associato diventa `published`; gli snapshot precedenti vengono marcati `superseded`.
 
-## Baseline temporale della visita
+## EditorialRelease
 
-Una `VisitRevision` pubblicata conserva `baselineTiming` calcolata al momento della pubblicazione con la policy algoritmica e i valori editoriali/cold-start previsti per una baseline riproducibile. I profili comportamentali personali non vengono incorporati nello snapshot editoriale.
+`EditorialRelease` è una snapshot editoriale immutabile, non una revisione con stato draft/in_review. Viene composta da un `EditorialContext`, pinza `NamespaceRevision`, `SemanticGraphRevision` e `ItemRevisionV2`, e registra direttamente `releasedAt/releasedBy` dopo i controlli di composizione. Non va confusa con il workflow di publication degli aggregate revisionabili.
 
-Item, vocabolari o layout che cambiano successivamente possono generare warning o repair draft, ma non riscrivono la baseline storica della VisitRevision pubblicata. Le stime personalizzate runtime usano invece i modelli correnti.
+## Boundary client
 
-## Cestino e hard delete
+Marketplace/Editor non ricostruisce authorization o transizioni dal ruolo, dall'ownerType o dallo stato grezzo. Le projection backend espongono `availableOperations[]` e il client invia i command `workflow.*` disponibili. Publication editoriale e commercializzazione Marketplace (`Listing`/`Offer`) restano lifecycle distinti.
 
-Il cestino appartiene all'entita stabile con `lifecycleStatus: active | trashed`. Un hard delete di Item e bloccato se esistono:
+## Consistenza transactionless
 
-- content entry di Visit che lo referenziano;
-- SemanticEdge di altri nodi che lo usano come target;
-- semanticFocus che lo referenziano.
-
-Se l'Item puo essere cancellato, vengono eliminati anche i suoi ItemRevision e gli outgoing SemanticEdge. Prima della cancellazione distruttiva il backend conserva snapshot autoritativi di Item, revisioni e archi sorgente; se una parte del core o l'aggiornamento del graph epoch fallisce, questi documenti vengono ripristinati con gli stessi `_id`. Non vengono effettuate cancellazioni a cascata di fatti appartenenti ad altri Item.
-
-`trash` e `restore` usano compare-and-set sul `lifecycleStatus` e compensano il cambio se l'epoch del grafo non viene aggiornato.
-
-## Dipendenze Item -> Visit
-
-Le visite mantengono riferimenti a `itemId`, non a una bozza. Quando viene pubblicata una nuova ItemRevision:
-
-- una modifica compatibile genera warning;
-- l'assenza della policy ufficiale, del default community o dell'integrita genera errore bloccante;
-- in caso bloccante viene creato un repair draft e la visita incompatibile non viene piu servita come pubblicata.
-
-Questa propagazione e un audit post-commit: se non viene completata, la pubblicazione Item rimane committed e la response segnala l'audit incompleto.
-
-## Dipendenze vocabolario -> grafo
-
-La rimozione di un RelationType ancora usato da `SemanticEdge` appartenenti a revisioni attive viene bloccata. Il controllo delle dipendenze non legge piu campi embedded di ItemRevision.
-
-La pubblicazione del vocabolario aggiorna il graph epoch nello stesso core compensabile del pointer. Gli audit successivi di Item e Visit sono post-commit e riportano separatamente eventuali failure.
-
-## Dipendenze Layout -> Visit
-
-Quando viene pubblicata una nuova `MuseumLayoutRevision`, il backend controlla le VisitRevision coinvolte. Solo le content entry `target` dipendono dal layout; le entry `context` restano semantiche e non richiedono placement.
-
-Il `plannedPath` e una preferenza editoriale e non un vincolo runtime. Il Navigator usa il layout pubblicato corrente e puo eseguire routing dinamico se il path editoriale non e piu utilizzabile.
-
-Anche la propagazione Layout -> Visit e post-commit: il core publication del layout viene compensato in caso di failure prima del commit, mentre problemi nella propagazione sono esposti come audit incompleto.
-
-## Endpoint principali
-
-Item:
-
-```text
-POST   /api/museums/:museumId/items
-PATCH  /api/museums/:museumId/items/:itemId
-POST   /api/museums/:museumId/items/:itemId/check-consistency
-POST   /api/museums/:museumId/items/:itemId/request-review
-POST   /api/museums/:museumId/items/:itemId/withdraw-review
-POST   /api/museums/:museumId/items/:itemId/request-changes
-POST   /api/museums/:museumId/items/:itemId/publish
-DELETE /api/museums/:museumId/items/:itemId
-POST   /api/museums/:museumId/items/:itemId/restore
-DELETE /api/museums/:museumId/items/:itemId/hard-delete
-```
-
-Le response Item includono `semanticEdges` della revisione selezionata accanto a `item` e `revision`. Le mutazioni lifecycle includono anche lo stato dell'audit post-commit. Per leggere una revisione working autorizzata si usa `?view=working`.
-
-Le viste incoming/outgoing pubbliche usano `SemanticGraphService`; non eseguono piu una scansione delle ItemRevision per ricostruire gli archi inversi.
-
-Visite e Layout mantengono i propri endpoint revisionati gia documentati nelle rispettive specifiche.
+Il progetto deve funzionare con MongoDB standalone. Dove una publication cambia più documenti o pointer, i service conservano lo stato precedente, usano compare-and-set sui pointer stabili e applicano compensazione esplicita se una write del core fallisce. Gli audit di dipendenza post-commit restano separati dal commit logico della publication.
