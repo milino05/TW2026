@@ -1,6 +1,14 @@
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
-const { assertCapability } = require("./capabilityAuthorization.service");
+const {
+  assertCapability,
+  resolveCapabilityAccess,
+  listValidCapabilityEntitlements,
+} = require("./capabilityAuthorization.service");
+
+function sameId(a, b) {
+  return String(a || "") === String(b || "");
+}
 
 async function assertCanExecuteVisitV2(visit, userId) {
   if (!visit) throw new AppError("Visita non trovata", 404);
@@ -32,7 +40,56 @@ async function resolveExecutableVisitRevisionV2({ visit, userId }) {
   return { access, revision };
 }
 
+async function assertCanExecuteResolvedVisitRevisionV2({ visit, userId, visitRevisionId, preparedAt }) {
+  if (!visit) throw new AppError("Visita non trovata", 404);
+  const currentAccess = await resolveCapabilityAccess({
+    actorUserId: userId,
+    capability: "visit.execute",
+    resourceType: "visit",
+    resourceId: visit._id,
+  });
+  if (!currentAccess.allowed) {
+    throw new AppError("Accesso all'esecuzione della Visit non piu disponibile", 403, [{
+      code: "PREPARATION_SOURCE_AUTHORIZATION_CHANGED",
+    }]);
+  }
+  if (currentAccess.basis === "ownership" || currentAccess.basis === "principal_authority") return currentAccess;
+
+  const { entitlements } = await listValidCapabilityEntitlements({
+    actorUserId: userId,
+    capability: "visit.execute",
+    resourceType: "visit",
+    resourceId: visit._id,
+  });
+  const preparationTime = preparedAt ? new Date(preparedAt) : new Date();
+  const matching = entitlements.find((entitlement) => {
+    if (entitlement.versionPolicy === "pinned") {
+      return entitlement.baselineSnapshotRef?.resourceType === "visit_revision"
+        && sameId(entitlement.baselineSnapshotRef.resourceId, visitRevisionId);
+    }
+    if (entitlement.versionPolicy === "follow_current") {
+      const createdInTime = !entitlement.createdAt || new Date(entitlement.createdAt) <= preparationTime;
+      const validFromInTime = !entitlement.validFrom || new Date(entitlement.validFrom) <= preparationTime;
+      return createdInTime && validFromInTime;
+    }
+    return false;
+  });
+  if (!matching) {
+    throw new AppError("Il diritto corrente non autorizza piu la VisitRevision preparata", 403, [{
+      code: "PREPARATION_SOURCE_AUTHORIZATION_CHANGED",
+      context: { visitRevisionId },
+    }]);
+  }
+  return {
+    allowed: true,
+    basis: "entitlement",
+    principal: { type: matching.beneficiaryType, id: matching.beneficiaryId },
+    entitlement: matching,
+  };
+}
+
 module.exports = {
   assertCanExecuteVisitV2,
   resolveExecutableVisitRevisionV2,
+  assertCanExecuteResolvedVisitRevisionV2,
 };
