@@ -19,6 +19,7 @@ function escapeHtml(value = "") {
 
 function refId(ref) { return String(ref?.resourceId || ""); }
 function refType(ref) { return String(ref?.resourceType || ""); }
+function isWorkflowOperation(code) { return String(code || "").startsWith("workflow."); }
 function moneyMap(revenueByCurrency = {}) {
   const entries = Object.entries(revenueByCurrency);
   if (!entries.length) return "0";
@@ -123,12 +124,25 @@ export class ArtAroundWorkspaceView extends HTMLElement {
 
     const operationButton = target?.closest("button[data-operation]");
     if (operationButton) {
+      const operationCode = operationButton.dataset.operation || "";
+      const payload = {};
+      if (operationButton.dataset.requiresMessage === "true") {
+        const message = window.prompt("Motivazione delle modifiche richieste:");
+        if (message === null) return;
+        if (!message.trim()) {
+          this.error = "La motivazione è obbligatoria.";
+          this.render();
+          return;
+        }
+        payload.message = message.trim();
+      }
       const sourceRef = { resourceType: operationButton.dataset.sourceType, resourceId: operationButton.dataset.sourceId };
       await this.execute(() => marketplaceRepository.executeWorkspaceOperation({
-        operationCode: operationButton.dataset.operation,
+        operationCode,
         sourceRef,
         targetPrincipal: { type: this.principal.principalType, id: this.principal.principalId },
-      }), "Operazione completata");
+        payload,
+      }), isWorkflowOperation(operationCode) ? "Operazione editoriale completata" : "Operazione completata");
       return;
     }
 
@@ -167,9 +181,9 @@ export class ArtAroundWorkspaceView extends HTMLElement {
       if (operation.code === "create_listing") {
         return `<button type="button" data-create-listing data-resource-type="${escapeHtml(asset.sourceRef?.resourceType || asset.resourceType)}" data-resource-id="${escapeHtml(refId(asset.sourceRef) || asset.resourceId)}">${escapeHtml(operation.label)}</button>`;
       }
-      if (DIRECT_OPERATIONS.has(operation.code)) {
+      if (DIRECT_OPERATIONS.has(operation.code) || isWorkflowOperation(operation.code)) {
         const source = operation.sourceRef || asset.sourceRef || { resourceType: asset.resourceType, resourceId: asset.resourceId };
-        return `<button type="button" data-operation="${escapeHtml(operation.code)}" data-source-type="${escapeHtml(refType(source))}" data-source-id="${escapeHtml(refId(source))}">${escapeHtml(operation.label)}</button>`;
+        return `<button type="button" data-operation="${escapeHtml(operation.code)}" data-source-type="${escapeHtml(refType(source))}" data-source-id="${escapeHtml(refId(source))}" data-requires-message="${operation.requiresMessage ? "true" : "false"}">${escapeHtml(operation.label)}</button>`;
       }
       const label = operation.code === "open_editor" && asset.resourceType === "editorial_context" ? "Componi release" : operation.label;
       return `<button type="button" data-resource data-resource-type="${escapeHtml(asset.resourceType)}" data-resource-id="${escapeHtml(asset.resourceId)}" data-ownership="${escapeHtml(asset.ownership)}">${escapeHtml(label)}</button>`;
@@ -179,7 +193,10 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   renderAsset(asset) {
     const capabilityText = asset.ownership === "licensed" ? `<p>Capability: ${(asset.capabilities || []).map(escapeHtml).join(" · ")}</p>` : "";
     const listing = asset.listing ? `<p>Listing ${escapeHtml(asset.listing.status)} · ${Number(asset.listing.activeOfferCount) || 0} offerte attive</p>` : "";
-    return `<article class="asset ${asset.ownership}"><p class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</p><h3>${escapeHtml(asset.title)}</h3><p>${escapeHtml(asset.resourceType)}${asset.state ? ` · ${escapeHtml(asset.state)}` : ""}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${capabilityText}${listing}<div class="operations">${this.renderOperations(asset)}</div></article>`;
+    const editorial = asset.editorialWorkflow
+      ? `<p>Workflow editoriale: ${escapeHtml(asset.editorialWorkflow.status)} · integrità ${escapeHtml(asset.editorialWorkflow.integrityStatus)}</p>`
+      : "";
+    return `<article class="asset ${asset.ownership}"><p class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</p><h3>${escapeHtml(asset.title)}</h3><p>${escapeHtml(asset.resourceType)}${asset.state ? ` · ${escapeHtml(asset.state)}` : ""}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${editorial}${capabilityText}${listing}<div class="operations">${this.renderOperations(asset)}</div></article>`;
   }
 
   renderDistribution() {
@@ -200,7 +217,10 @@ export class ArtAroundWorkspaceView extends HTMLElement {
 
   renderResourceRoute(asset) {
     if (!asset) return `<main><button data-workspace-back type="button">← Workspace</button><h1>Risorsa non disponibile</h1></main>`;
-    return `<main><button data-workspace-back type="button">← Workspace</button><p class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</p><h1>${escapeHtml(asset.title)}</h1><p>${escapeHtml(asset.resourceType)}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}<h2>Operazioni disponibili</h2><div class="operations">${this.renderOperations(asset) || "<p>Nessuna operazione disponibile.</p>"}</div><p class="note">Le operazioni che richiedono un target editoriale specifico vengono completate nel relativo editor; questa pagina non costruisce ID o autorizzazioni lato client.</p></main>`;
+    const editorial = asset.editorialWorkflow
+      ? `<p>Workflow editoriale: ${escapeHtml(asset.editorialWorkflow.status)} · integrità ${escapeHtml(asset.editorialWorkflow.integrityStatus)}</p>`
+      : "";
+    return `<main><button data-workspace-back type="button">← Workspace</button><p class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</p><h1>${escapeHtml(asset.title)}</h1><p>${escapeHtml(asset.resourceType)}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${editorial}<h2>Operazioni disponibili</h2><div class="operations">${this.renderOperations(asset) || "<p>Nessuna operazione disponibile.</p>"}</div><p class="note">Le operazioni disponibili sono proiettate dal backend; il client non ricostruisce autorizzazioni o transizioni editoriali.</p></main>`;
   }
 
   render() {
