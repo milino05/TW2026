@@ -36,7 +36,7 @@ test("routing preferences validate value and operator against canonical data typ
     (error) => error?.status === 400 && error?.details?.[0]?.code === "INVALID_ROUTING_OPERATOR",
   );
   assert.throws(
-    () => normalizeCanonicalRoutingRequirements([{ attributeKey: "stairs_present", operator: "eq", value: "yes" }]),
+    () => normalizeCanonicalRoutingRequirements([{ attributeKey: "stairs", operator: "eq", value: "yes" }]),
     (error) => error?.status === 400 && error?.details?.[0]?.code === "INVALID_ROUTING_VALUE",
   );
 });
