@@ -16,6 +16,13 @@ function requirePattern(file, pattern, label) {
     failed = true;
   }
 }
+function functionSection(file, from, to) {
+  const text = read(file);
+  const start = text.indexOf(from);
+  if (start < 0) return "";
+  const end = to ? text.indexOf(to, start + from.length) : -1;
+  return text.slice(start, end < 0 ? text.length : end);
+}
 
 for (const file of [
   "services/revisionWorkflow.service.js",
@@ -32,16 +39,19 @@ requirePattern(
   /function publishWithoutReview[\s\S]*function approveReviewAndPublish/,
   "Separated direct publication and managerial approval",
 );
-requirePattern(
+const directPublish = functionSection(
   "services/revisionWorkflow.service.js",
-  /publishWithoutReview[\s\S]*revision\.publication/,
-  "Direct publication path",
+  "function publishWithoutReview",
+  "function approveReviewAndPublish",
 );
-rejectPattern(
-  "services/revisionWorkflow.service.js",
-  /function publishWithoutReview[\s\S]{0,700}?review\.decision\s*=\s*["']approved["']/,
-  "Direct publication must not fabricate review approval",
-);
+if (!directPublish || !/revision\.publication/.test(directPublish)) {
+  console.error("Direct publication path missing in services/revisionWorkflow.service.js");
+  failed = true;
+}
+if (/review\.decision\s*=\s*["']approved["']/.test(directPublish)) {
+  console.error("Direct publication must not fabricate review approval in services/revisionWorkflow.service.js");
+  failed = true;
+}
 
 requirePattern(
   "services/visitV2Publication.service.js",
