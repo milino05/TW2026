@@ -33,6 +33,12 @@ export const marketplaceRepository = {
   distribution(principal = {}) {
     return apiClient.request(`/v2/marketplace/distribution?${principalParams(principal).toString()}`);
   },
+  createListing({ resourceType, resourceId, sellerType, sellerId }) {
+    return apiClient.request("/v2/marketplace/listings", {
+      method: "POST",
+      body: JSON.stringify({ resourceType, resourceId, sellerType, sellerId }),
+    });
+  },
   importContextSnapshot(editorialContextId, { ownerType = "user", ownerId = null, contentSpaceName = null, displayName = null } = {}) {
     return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/import-snapshot`, {
       method: "POST",
@@ -49,6 +55,12 @@ export const marketplaceRepository = {
     return apiClient.request(`/namespaces/${encodeURIComponent(namespaceId)}/fork`, {
       method: "POST",
       body: JSON.stringify({ ownerType, ownerId, name }),
+    });
+  },
+  forkItem(itemId, { sourceEditionId, ownerType = "user", ownerId = null } = {}) {
+    return apiClient.request(`/items/${encodeURIComponent(itemId)}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ sourceEditionId, ownerType, ownerId }),
     });
   },
 };
