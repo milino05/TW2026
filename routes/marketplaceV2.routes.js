@@ -1,0 +1,17 @@
+const express = require("express");
+const { requireAuth } = require("../middlewares/auth");
+const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const controller = require("../controllers/marketplaceV2.controller");
+
+const router = express.Router();
+const listingId = validateObjectIdParam("listingId");
+const offerId = validateObjectIdParam("offerId");
+
+router.use(requireAuth);
+router.get("/v2/marketplace/catalog", controller.catalog);
+router.post("/v2/marketplace/listings", controller.createVisitListing);
+router.get("/v2/marketplace/listings/:listingId", listingId, controller.detail);
+router.post("/v2/marketplace/listings/:listingId/offers", listingId, controller.createVisitOffer);
+router.post("/v2/marketplace/offers/:offerId/acquire", offerId, controller.acquire);
+
+module.exports = router;
