@@ -20,11 +20,24 @@ const PricingSchema = new Schema({
   currency: { type: String, trim: true, uppercase: true, default: null },
 }, { _id: false });
 
+const DependencyRefSchema = new Schema({
+  resourceType: { type: String, enum: RESOURCE_TYPES, required: true },
+  resourceId: { type: Schema.Types.ObjectId, required: true },
+  ownerType: { type: String, enum: ["user", "organization"], required: true },
+  ownerId: { type: Schema.Types.ObjectId, required: true },
+}, { _id: false });
+
 const MarketplaceOfferSchema = new Schema({
   listingId: { type: Schema.Types.ObjectId, ref: "MarketplaceListing", required: true, index: true },
   label: { type: String, trim: true, default: "" },
   pricing: { type: PricingSchema, required: true },
   grants: { type: [OfferGrantSchema], default: [] },
+  dependencyIntegrity: {
+    status: { type: String, enum: ["unchecked", "self_contained", "external_requirements"], default: "unchecked" },
+    selfContainedDependencies: { type: [DependencyRefSchema], default: [] },
+    externalRequirements: { type: [DependencyRefSchema], default: [] },
+    checkedAt: { type: Date, default: null },
+  },
   status: { type: String, enum: ["active", "withdrawn"], default: "active", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
   withdrawnAt: { type: Date, default: null },
