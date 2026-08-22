@@ -15,4 +15,10 @@ async function visitDetail(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { library, visitDetail };
+async function resumableSessions(req, res, next) {
+  try {
+    res.status(200).json(await service.listResumableNavigatorSessions({ userId: req.user._id }));
+  } catch (error) { next(error); }
+}
+
+module.exports = { library, visitDetail, resumableSessions };
