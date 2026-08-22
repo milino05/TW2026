@@ -7,6 +7,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
+const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
 
@@ -75,8 +76,6 @@ async function resolveVenueCatalogFilter({ selectedVenueIds = [] } = {}) {
     throw new AppError("Una o più Venue selezionate non sono disponibili", 404, [{ field: "selectedVenueIds", code: "VENUE_NOT_AVAILABLE", context: { missing } }]);
   }
 
-  // PhysicalScope delle Visit dipende dall'identità VenueTarget→Venue e non dalla
-  // release fisica corrente. La rilevanza editoriale usa invece solo target pubblicati.
   const allTargets = await VenueTarget.find({ venueId: { $in: requestedVenueIds }, lifecycleStatus: "active" })
     .select("_id venueId subjectId")
     .lean();
@@ -90,14 +89,13 @@ async function resolveVenueCatalogFilter({ selectedVenueIds = [] } = {}) {
     ? await ItemV2.find({ lifecycleStatus: "active", primarySubjectId: { $in: subjectIds } }).select("_id").lean()
     : [];
   const primaryItemIds = ids(primaryItems);
-
   const subjectRevisionQuery = subjectIds.length ? { $or: [
     { relatedSubjectIds: { $in: subjectIds } },
     { "presentationVariants.semanticFocus.subjectId": { $in: subjectIds } },
     { "presentationVariants.knowledgeRequirements.subjectId": { $in: subjectIds } },
   ] } : null;
   const subjectRevisions = subjectRevisionQuery
-    ? await ItemRevisionV2.find(subjectRevisionQuery).select("_id itemEditionId").lean()
+    ? await ItemRevisionV2.find(subjectRevisionQuery).select("_id itemEditionId status").lean()
     : [];
   const revisionEditionIds = ids(subjectRevisions.map((revision) => revision.itemEditionId));
   const primaryEditions = primaryItemIds.length
@@ -121,13 +119,13 @@ async function resolveVenueCatalogFilter({ selectedVenueIds = [] } = {}) {
   const relevantReleases = [...contentRelevantReleases, ...primaryContextReleases];
   const relevantReleaseIds = ids(relevantReleases);
 
-  // Una lineage live è rilevante per corpus se la sua release pubblicata corrente è rilevante;
-  // snapshot storici restano filtrabili come EditorialRelease indipendenti.
   const currentCorpusContexts = relevantReleaseIds.length
     ? await EditorialContext.find({ lifecycleStatus: "active", publishedReleaseId: { $in: relevantReleaseIds } }).select("_id").lean()
     : [];
   const relevantContextIds = ids([...primaryEditorialContextIds, ...currentCorpusContexts]);
 
+  // Snapshot VisitRevision storiche restano asset validi; una Visit live, però, è
+  // pertinente soltanto se la sua revisione pubblicata corrente tocca la Venue selezionata.
   const relevantVisitRevisions = physicalVenueTargetIds.length
     ? await VisitRevisionV2.find({
         status: { $in: ["published", "superseded"] },
@@ -135,7 +133,10 @@ async function resolveVenueCatalogFilter({ selectedVenueIds = [] } = {}) {
       }).select("_id visitId").lean()
     : [];
   const relevantVisitRevisionIds = ids(relevantVisitRevisions);
-  const relevantVisitIds = ids(relevantVisitRevisions.map((revision) => revision.visitId));
+  const liveRelevantVisits = relevantVisitRevisionIds.length
+    ? await VisitV2.find({ lifecycleStatus: "active", publishedRevisionId: { $in: relevantVisitRevisionIds } }).select("_id").lean()
+    : [];
+  const relevantVisitIds = ids(liveRelevantVisits);
 
   const resourceClauses = [
     clause("item_edition", relevantEditionIds),
