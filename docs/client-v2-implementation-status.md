@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Slice corrente
 
-**Slice 4 — Navigation, MapProjection, TTS e controlled voice**
+**Slice 5 — Marketplace Catalog e Creator Workspace**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -52,50 +52,62 @@ Completato su `main`:
 
 Completato su `main`:
 
-- introdotto il runtime Action registry con famiglie progress, presentation, semantic, navigation e lifecycle;
-- `AvailableAction` non è più un array di stringhe: ogni opzione espone `actionId`, type/family, label e controlled voice aliases;
-- la semantica pubblica distingue `presentation.depth` da `presentation.complexity`; `PRESENTATION_LANGUAGE_*` è rimosso dal contratto runtime;
-- `VisitSessionV2` possiede `runtimeVersion` e un `InteractionEvent` generico con actor, action, interaction channel, content/anchor/semantic context, result e timestamp;
-- implementato `ActionDispatcherV2` con re-derivation dell'Action, optimistic runtime concurrency e `RUNTIME_VERSION_CONFLICT`;
-- Action non disponibili producono `ACTION_NOT_AVAILABLE` senza eseguire business logic;
-- introdotto `POST /v2/visit-sessions/:sessionId/actions` come unico command boundary runtime;
-- rimossi dal contratto pubblico `/advance`, `/presentation-depth`, `/presentation-language`, `/route-to-intent`, `/pause`, `/resume`, `/complete` e il raw session-plan endpoint;
-- telemetry/observations restano boundary distinti e non vengono forzati nel protocollo Action;
-- Navigator `SessionView` rende genericamente le `AvailableAction` e invia soltanto `actionId + expectedRuntimeVersion + interactionChannel`;
-- il runtime projection non espone Place/path/connection/venue pins; l'anchor user-facing conserva soltanto VisitAnchor/VenueTarget/Venue;
-- navigation Action concrete vengono materializzate server-side soltanto quando l'intent è presente e raggiungibile nello snapshot fisico pinzato;
-- semantic exploration deriva esclusivamente dalle EditorialRelease/GraphRevision/NamespaceRevision pinzate dalla Session;
-- same-Subject content viene esposto come approfondimento senza richiedere SemanticEdge;
-- related-Subject content viene derivato da relation type Namespace-local: label e voice aliases provengono dal Namespace, senza catalogo globale `author/style/period/curiosity`;
-- gli Action ID semantici sono opachi e non espongono relation key o ID tecnici;
-- un approfondimento semantico usa lo stesso presentation channel della Session e mantiene il currentEntryIndex/Anchor corrente, senza inventare una destinazione fisica;
-- `semantic.return` ripristina il contenuto della Visit; NEXT/PREVIOUS chiudono implicitamente l'approfondimento;
-- depth/complexity continuano a funzionare anche sulla presentation semantica;
-- il relativo Action audit conserva Subject/Item semantico per predisporre il monitoring 18–27;
-- `checkLegacyContracts.js` impedisce il ritorno di endpoint runtime paralleli, string policy client e vecchia semantica presentation-language.
+- runtime Action registry con famiglie progress, presentation, semantic, navigation e lifecycle;
+- `AvailableAction` concrete con `actionId`, type/family, label e controlled voice aliases;
+- `VisitSessionV2.runtimeVersion`, optimistic concurrency e `InteractionEvent` generico;
+- `POST /v2/visit-sessions/:sessionId/actions` come unico command boundary runtime;
+- rimossi gli endpoint runtime command-specific e il raw session-plan endpoint pubblico;
+- Navigator rende le Action genericamente e invia soltanto `actionId + expectedRuntimeVersion + interactionChannel`;
+- semantic exploration deriva dallo snapshot editoriale pinzato e supporta same-Subject e related-Subject senza taxonomy globale `author/style/...`;
+- approfondimento semantico sullo stesso presentation channel, senza nuova destinazione fisica;
+- checker legacy protegge il protocollo Action.
 
-Test Slice 3:
+## Slice 4 — Navigation, MapProjection, TTS e controlled voice
 
-- API E2E usa soltanto `/actions` per progress;
-- `ACTION_NOT_AVAILABLE` viene verificato quando un'Action non è materializzata;
-- una request con `expectedRuntimeVersion` stale produce `RUNTIME_VERSION_CONFLICT`;
-- un Action via `controlled_voice` registra channel e risultato nell'InteractionEvent;
-- runtime physical test usa dispatcher per presentation e completion mantenendo le release fisiche pinzate;
-- test semantico dedicato verifica un secondo Item sullo stesso Subject e un Subject collegato da relation type locale `Autore` con alias `chi è l'autore`;
-- il test semantico verifica che l'approfondimento non avanzi la Visit e non crei una destinazione fisica.
+**Stato: implementato nel codice; test automatici aggiunti; verifica CI push non osservabile tramite il connector corrente.**
+
+Completato su `main`:
+
+- formalizzati `NavigationPreparationResolverV2` e `NavigationOriginResolverV2` riusando il planner/routing esistente;
+- l'origine 18–24 resta `logical_anchor`; il resolver è predisposto a `explicit > fresh physical observation > logical_anchor` senza aggiornare automaticamente il progress della Visit;
+- unificato il catalogo globale dei routing attribute nel preesistente `routingAttributeCatalog.service.js`; eliminato il catalogo parallelo introdotto durante lo slice;
+- default utente e override transienti accettano soltanto canonical routing requirements validati per tipo, operatore, priorità e valore;
+- ogni `canonicalKey` può essere mappata al massimo da un routing attribute locale per LayoutRevision;
+- i requirement globali vengono tradotti esclusivamente tramite `canonicalKey`, mai per coincidenza con il key locale;
+- `MapProjection` backend-side da VenueRelease/LayoutRevision pinzate con floor, asset, coordinate normalizzate, Visit stop, facility, route overlay e floor/inter-Venue transitions;
+- il Navigator non riceve Place ID, Connection ID, LayoutRevision ID o routing graph come contratto cartografico;
+- la tappa corrente è evidenziata come stato logico della Visit, non come posizione fisica automatica dell'utente;
+- una floor realmente necessaria alla Visit senza map asset produce `NAVIGATOR_MAP_ASSET_MISSING` e blocca la preparation Navigator senza invalidare la LayoutRevision come dominio fisico;
+- `NavigationProjection` typed per le destination logistiche materializzate dalle Action runtime;
+- `navigation.obstacles.next_route` è una Action separata, presente soltanto quando esiste un prossimo physical leg;
+- obstacle checking usa esclusivamente routing metadata con canonicalKey dichiarata; in assenza di evidenza canonica restituisce stato non verificabile invece di inventare assenza di ostacoli;
+- TTS browser legge esattamente `current.presentation.text`, la stessa stringa mostrata;
+- controlled voice esegue exact matching locale soltanto su label/aliases delle `AvailableAction` correnti e invia lo stesso ActionRequest dei bottoni; il transcript non viene inviato al backend;
+- in assenza di speech recognition restano disponibili i bottoni equivalenti;
+- il Navigator mostra MapProjection, NavigationProjection e risultato della obstacle query senza ricostruire routing client-side;
+- legacy checker impedisce il ritorno del catalogo routing duplicato e dei command endpoint precedenti.
+
+Test Slice 4:
+
+- validazione canonical routing requirements e rifiuto dei key LayoutRevision-local usati come default globale;
+- un key locale uguale a un canonical key non viene interpretato globalmente senza `canonicalKey` esplicita;
+- duplicate mapping della stessa `canonicalKey` viene rifiutato dall'integrità VenueRelease;
+- una preparation su floor necessaria senza map asset è `blocked` con `NAVIGATOR_MAP_ASSET_MISSING`;
+- MapProjection non serializza `placeId`, `connectionId` o `layoutRevisionId`;
+- obstacle Action via controlled voice usa metadata canonici, incrementa `runtimeVersion` e registra l'InteractionEvent;
+- NavigationOriginResolver verifica fallback logico e precedenza futura explicit/physical senza cambiare `currentEntryIndex`.
 
 ## Stato della verifica automatica
 
-La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il container dell'assistente continua a non risolvere `github.com`, quindi non può clonare `main` per eseguire localmente la suite completa. Il connector GitHub sul commit corrente restituisce `statuses: []` e non espone i workflow push. Per questo codice e test sono versionati, ma l'esito CI del commit corrente non viene dichiarato green senza evidenza osservabile.
+La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il container dell'assistente continua a non risolvere `github.com`, quindi non può clonare `main` per eseguire localmente la suite completa. Il connector GitHub sui commit correnti non espone i workflow push; per questo codice e test sono versionati, ma l'esito CI non viene dichiarato green senza evidenza osservabile.
 
 ## Prossimo incremento
 
-Slice 4 completa il nucleo Navigator obbligatorio 18–24:
+Slice 5 porta Marketplace da Catalog Visit minimo a Marketplace+Editor multi-asset:
 
-1. NavigationPreparationResolver e NavigationProjection user-facing;
-2. MapProjection da VenueRelease/LayoutRevision pinzate, senza raw graph/path;
-3. route overlay per floor e transition esplicite;
-4. TTS sulla stessa `current.presentation.text` mostrata;
-5. controlled voice adapter che seleziona esclusivamente le `AvailableAction` correnti;
-6. bottoni accessibili equivalenti;
-7. destination logistiche e obstacle/accessibility Action senza posizione automatica dell'utente.
+1. completare la capability matrix per ItemEdition/Revision, EditorialContext/Release, Namespace/Revision e Visit/Revision;
+2. Catalog search/pagination e Asset Detail projection multi-asset;
+3. Creator Workspace principal-scoped e `availableOperations` backend-authoritative;
+4. acquisition history, Distribution dashboard e Adoption;
+5. migrare gli authorization boundary creator alle capability approvate;
+6. implementare nel client Marketplace Catalog multi-asset, Workspace User/Organization e resource editor routing.
