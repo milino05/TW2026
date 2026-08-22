@@ -16,6 +16,7 @@ const {
   LIVE_RESOURCE_TYPES,
   SNAPSHOT_RESOURCE_TYPES,
 } = require("./marketplaceResourceV2.service");
+const { assertSelfContainedOffer } = require("./marketplaceOfferIntegrity.service");
 
 const CAPABILITY_LABELS = Object.freeze({
   "content.consume": "Fruisci il contenuto",
@@ -162,11 +163,18 @@ async function createOffer({ listingId, payload = {}, actorUserId }) {
     minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
   });
   const validated = await validateOfferGrants({ listing, grants: payload.grants, actorUserId });
+  const grants = validated.map((entry) => entry.grant);
+  const dependencyIntegrity = await assertSelfContainedOffer({
+    grants,
+    sellerType: listing.sellerType,
+    sellerId: listing.sellerId,
+  });
   return MarketplaceOffer.create({
     listingId: listing._id,
     label: String(payload.label || "").trim(),
     pricing: normalizePricing(payload.pricing || {}),
-    grants: validated.map((entry) => entry.grant),
+    grants,
+    dependencyIntegrity,
     status: "active",
     createdBy: actorUserId,
   });
@@ -227,6 +235,13 @@ async function acquireOffer({ offerId, actorUserId, beneficiaryType = "user", be
     const entitlements = await Entitlement.find({ sourceAcquisitionId: existing._id }).lean();
     return { acquisition: existing, entitlements, alreadyAcquired: true };
   }
+
+  const dependencyIntegrity = await assertSelfContainedOffer({
+    grants: offer.grants || [],
+    sellerType: listing.sellerType,
+    sellerId: listing.sellerId,
+  });
+  await MarketplaceOffer.updateOne({ _id: offer._id }, { $set: { dependencyIntegrity } });
 
   const resolved = [];
   for (const grant of offer.grants || []) resolved.push(await resolveGrantAtAcquisition(grant));
