@@ -21,6 +21,8 @@ const {
 } = require("./sessionPlanV2.service");
 const { resolveMovementSpeed } = require("./physicalExecutionV2.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
+const { normalizeCanonicalRoutingRequirements } = require("./routingPreferenceV2.service");
+const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service");
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
 
@@ -51,13 +53,14 @@ function normalizePresentationPreference(stored = null, override = null) {
   return Object.values(result).some((value) => value !== null) ? result : null;
 }
 function normalizeNavigation(stored = {}, draft = {}) {
+  const rawRequirements = Array.isArray(draft.navigationRequirements)
+    ? draft.navigationRequirements
+    : stored?.requirements;
   return {
     movementPacePreference: validUnit(draft.movementPacePreference)
       ? Number(draft.movementPacePreference)
       : validUnit(stored?.movementPacePreference) ? Number(stored.movementPacePreference) : 0.5,
-    requirements: Array.isArray(draft.navigationRequirements)
-      ? draft.navigationRequirements
-      : Array.isArray(stored?.requirements) ? stored.requirements : [],
+    requirements: normalizeCanonicalRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
   };
 }
 function normalizedDraft(payload = {}) {
@@ -72,7 +75,9 @@ function normalizedDraft(payload = {}) {
     };
   }
   if (validUnit(payload.movementPacePreference)) draft.movementPacePreference = Number(payload.movementPacePreference);
-  if (Array.isArray(payload.navigationRequirements)) draft.navigationRequirements = payload.navigationRequirements;
+  if (payload.navigationRequirements !== undefined) {
+    draft.navigationRequirements = normalizeCanonicalRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
+  }
   return draft;
 }
 function mergeDraft(current = {}, patch = {}) {
@@ -183,11 +188,19 @@ function emptyLogisticsPreview() {
     warnings: [],
   };
 }
-function buildReadiness(prepared) {
+async function buildReadiness(prepared) {
+  const mapReadiness = await assessPreparedMapReadiness({
+    plan: prepared.plan,
+    venuePins: prepared.venuePins,
+  });
+  const blockers = mapReadiness.blockers || [];
   return {
-    status: "ready",
-    blockers: [],
-    warnings: (prepared.plan.explanation?.physicalWarnings || []).map(projectWarning),
+    status: blockers.length ? "blocked" : "ready",
+    blockers,
+    warnings: [
+      ...(prepared.plan.explanation?.physicalWarnings || []).map(projectWarning),
+      ...(mapReadiness.warnings || []),
+    ],
   };
 }
 function readinessFromPlanningError(error) {
@@ -237,7 +250,7 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
       venuePins: prepared.venuePins,
       speedMps: prepared.speedMps,
       plan: prepared.plan,
-      readiness: buildReadiness(prepared),
+      readiness: await buildReadiness(prepared),
       logisticsPreview: buildLogisticsPreview(prepared),
       preVisit: await buildPreVisitProjection({ sourceSnapshot, venuePins: prepared.venuePins }),
     };
