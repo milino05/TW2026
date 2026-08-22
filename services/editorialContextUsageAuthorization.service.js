@@ -1,7 +1,7 @@
 const EditorialContext = require("../models/editorialContext.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail } = require("./contentSpace.service");
-const { assertCapability } = require("./capabilityAuthorization.service");
+const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 
 async function loadEditorialContextUsageDependencies(editorialContextOrId) {
   const editorialContext = editorialContextOrId?._id
@@ -14,25 +14,25 @@ async function loadEditorialContextUsageDependencies(editorialContextOrId) {
 
 async function assertCanUseEditorialContextForGeneration({ editorialContext, actorUserId }) {
   const { editorialContext: context } = await loadEditorialContextUsageDependencies(editorialContext);
-  await assertCapability({
+  const access = await assertCapabilitySource({
     actorUserId,
     capability: "context.generate",
     resourceType: "editorial_context",
     resourceId: context._id,
   });
-  return context;
+  return { editorialContext: context, access };
 }
 
 async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, actorUserId }) {
   if (!editorialContextId) return null;
   const { editorialContext } = await loadEditorialContextUsageDependencies(editorialContextId);
-  await assertCapability({
+  const access = await assertCapabilitySource({
     actorUserId,
     capability: "context.use_as_venue_primary",
     resourceType: "editorial_context",
     resourceId: editorialContext._id,
   });
-  return editorialContext;
+  return { editorialContext, access };
 }
 
 module.exports = {
