@@ -198,7 +198,9 @@ test("Slice 1 API: login, Catalog, acquisition, Library, Detail e NEXT/PREVIOUS"
         body: JSON.stringify({ beneficiaryType: "user" }),
       });
       assert.equal(acquisition.response.status, 201);
-      assert.equal(acquisition.body.entitlements[0].capability, "visit.execute");
+      assert.equal(acquisition.body.grantedUses[0].capability, "visit.execute");
+      assert.equal(acquisition.body.acquisition.alreadyAcquired, false);
+      assert.equal(acquisition.body.entitlements, undefined);
 
       const after = await jsonFetch(`${baseUrl}/api/v2/marketplace/catalog`, { cookie });
       assert.equal(after.response.status, 200);
