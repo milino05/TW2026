@@ -118,7 +118,12 @@ async function createVisitV2({ payload, actorUserId }) {
   const issues = validateVisitV2Payload({ payload: normalized, rawPayload: payload || {}, creating: true });
   if (issues.length) throw new AppError("Payload Visit v2 non valido", 400, issues);
   await assertOwnerUsable({ ownerType: normalized.ownerType, ownerId: normalized.ownerId, actorUserId });
-  const sourceAuthorizations = await authorizeVisitEditorialSources({ editorialSources: normalized.editorialSources || [], actorUserId });
+  const sourceAuthorizations = await authorizeVisitEditorialSources({
+    editorialSources: normalized.editorialSources || [],
+    actorUserId,
+    principalType: normalized.ownerType,
+    principalId: normalized.ownerId,
+  });
   const visit = await VisitV2.create({ ownerType: normalized.ownerType, ownerId: normalized.ownerId, createdBy: actorUserId });
   let revision;
   let adoptionIds = [];
@@ -158,7 +163,12 @@ async function updateVisitV2({ visitId, payload, actorUserId }) {
   const beforeSourceIds = editorialReleaseIds(revision.editorialSources || []);
   const merged = mergedRevisionPayload(revision, payload || {}, normalized);
   const sourceAuthorizations = hasOwn(payload || {}, "editorialSources")
-    ? await authorizeVisitEditorialSources({ editorialSources: merged.editorialSources || [], actorUserId })
+    ? await authorizeVisitEditorialSources({
+        editorialSources: merged.editorialSources || [],
+        actorUserId,
+        principalType: visit.ownerType,
+        principalId: visit.ownerId,
+      })
     : [];
   const addedSourceIds = new Set([...editorialReleaseIds(merged.editorialSources || [])].filter((entry) => !beforeSourceIds.has(entry)));
   try { markRevisionEdited(revision, actorUserId); }
@@ -218,6 +228,8 @@ async function copyVisitV2({ sourceVisitId, sourceRevisionId = null, ownerType, 
     capability: "visit.copy_detached",
     resourceType: "visit",
     resourceId: sourceVisit._id,
+    principalType: ownerType,
+    principalId: ownerId,
   });
   let resolvedRevisionId = sourceRevisionId || access.resolvedSnapshotRef?.resourceId;
   if (!resolvedRevisionId && access.basis !== "entitlement") resolvedRevisionId = sourceVisit.publishedRevisionId;
