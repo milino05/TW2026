@@ -225,6 +225,20 @@ La nuova Visit personale viene sottoposta al normale integrity check e pubblicat
 
 La materializzazione non copia o trasferisce ownership di Item, EditorialContext, Namespace o graph: conserva riferimenti a dipendenze immutabili legittimamente usate dal GeneratedPlan. Provenance commerciale/Adoption resta responsabilità del Marketplace domain. Il legame persistente GeneratedPlan -> Visit è obbligatorio; l'eventuale generalizzazione futura in un modello unico di Visit provenance viene valutata insieme a reference/import/copy/fork.
 
+# Punto 25/30 — Workflow Visit user/organization-owned
+
+Ownership e workflow delle Visit dipendono da `ownerType`, senza reintrodurre `official/community`. Una Visit user-owned è gestita direttamente dal proprietario: può creare/modificare la working revision, eseguire integrity check e pubblicare direttamente una revision valida. Non possiede managerial review e la publication personale non produce review/approval metadata fittizi.
+
+Per una Visit organization-owned, `operator` e `manager` possono creare, modificare, controllare e inviare/ritirare una working revision dalla review. Solo il `manager` può richiedere modifiche, pubblicare, trashare o ripristinare. La publication organizzativa richiede una revision `in_review` valida; il percorso diretto `draft -> published` viene rimosso. Non viene imposto che autore e reviewer siano utenti differenti.
+
+Una working revision `in_review` non è modificabile; deve essere withdrawn oppure ricevere changes requested. La precedente published revision resta immutabile ed eseguibile mentre una nuova working revision viene preparata.
+
+`VisitRevision.status=published` significa snapshot editoriale immutabile/eseguibile e non pubblicazione nel catalogo Marketplace. `MarketplaceListing`, `MarketplaceOffer`, Acquisition ed Entitlement rimangono lifecycle distinti. Una Visit personale o organizzativa può quindi avere una published revision senza Listing. La pubblicazione commerciale non viene attivata automaticamente dal publish editoriale.
+
+Contenuti/release non discoverable possono essere referenziati da Visit pubblicate quando l'actor possiede i diritti necessari; ciò consente le Visit personali/private della docente 18–27 senza introdurre una nuova `Visit.visibility`. La partecipazione degli studenti resta authority di Session separata.
+
+L'Organization proprietaria della Visit non limita PhysicalScope o EditorialScope alle risorse possedute dalla stessa Organization. Il Marketplace/Editor riceve dal backend le operazioni correntemente disponibili invece di dedurre authorization da `ownerType` e ruolo client-side.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -265,11 +279,12 @@ Non devono più essere usati come contratto definitivo:
 - `Venue.primaryEditorialContextId` usato come bypass implicito di `context.generate`;
 - client che costruisce l'universo delle source del generator leggendo direttamente modelli editoriali/commerciali;
 - `acceptGeneratedPlan` usato implicitamente come creazione di una Visit;
-- materializzazione di un GeneratedPlan che congela VenueRelease/LayoutRevision, Place, path indoor, timing o Representation concrete dentro la VisitRevision.
+- materializzazione di un GeneratedPlan che congela VenueRelease/LayoutRevision, Place, path indoor, timing o Representation concrete dentro la VisitRevision;
+- publication di una Visit organization-owned direttamente da `draft` senza passare per managerial review;
+- publication personale che scrive review/approval metadata fittizi.
 
-# Punti 25–30 ancora da riesaminare
+# Punti 26–30 ancora da riesaminare
 
-25. workflow Visit user/organization-owned;
 26. consumer/creator Marketplace projections;
 27. reference/import/copy/fork;
 28. Item authoring Subject/Edition/Revision/VenueTarget;
