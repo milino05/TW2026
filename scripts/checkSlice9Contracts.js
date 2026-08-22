@@ -47,7 +47,8 @@ requirePattern("clients/marketplace/src/application/router.js", /BASE_PATH\s*=\s
 requirePattern("clients/marketplace/index.html", /src=["']\/marketplace\/src\/main\.js["']/, "Marketplace nested-route module path");
 requirePattern("Dockerfile", /build:clients/, "Production client build");
 
-requirePattern("clients/navigator/src/ui/SessionView.vue", /presentation\.text[\s\S]*browserTts\.speak\(presentation\.text/, "Displayed text and TTS share the same presentation text");
+requirePattern("clients/navigator/src/ui/SessionView.vue", /\{\{\s*snapshot\.current\.presentation\.text\s*\}\}/, "Current presentation text rendered in SessionView");
+requirePattern("clients/navigator/src/ui/SessionView.vue", /browserTts\.speak\(presentation\.text,\s*presentation\.locale/, "TTS reads the current presentation text");
 requirePattern("clients/navigator/src/capabilities/controlledVoice.ts", /controlledVoiceAliases[\s\S]*normalize\(phrase\)\s*===\s*spoken/, "Controlled voice exact action matching");
 requirePattern("clients/navigator/src/ui/SessionView.vue", /availableActions[\s\S]*@click="dispatch\(action, 'button'\)"/, "Equivalent runtime action buttons");
 
