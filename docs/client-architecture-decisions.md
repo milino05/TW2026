@@ -103,6 +103,18 @@ I routing preset restano Venue-scoped e in una Visit multi-Venue non vengono uni
 
 Le leg `inter_venue` non appartengono a una `LayoutRevision`. Finché non esiste un provider inter-Venue capace di verificare canonical routing constraints, un requirement `required` rilevante ma non verificabile sul trasferimento produce blocker; un `preferred` produce warning. Non vengono aggiunti campi ad hoc al RouteHint per simulare un routing provider. `movementPacePreference` influenza il routing indoor; le stime manuali dei trasferimenti inter-Venue non vengono scalate arbitrariamente dal pace.
 
+# Punto 16/30 — Pre-visit information v2
+
+Le informazioni logistiche pre-visita mantengono provenance e lifecycle distinti. `VenueRelease.preVisitInformation[]` contiene informazioni operative/strutturali proprie della Venue e riutilizzabili fra Visit; `VisitRevision.logistics.preVisitNotes[]` contiene note specifiche della Visit. Le indicazioni logistiche non sono Item e non vengono trasformate in ContentEntry/Representation.
+
+`NavigatorVisitDetailProjection.preVisit` espone separatamente `visitNotes[]` e `venues[]`, dove ogni Venue include identity user-facing e `information[]`. Le Venue sono ordinate secondo la prima comparsa nell’itinerario della VisitRevision e ogni array mantiene il proprio ordine editoriale. Le due sorgenti non vengono concatenate, deduplicate o trattate con una precedence/override implicita.
+
+Con il modello corrente `preVisitNotes[]` è visit-wide. Non vengono introdotti scope Venue/Anchor o categorie strutturate finché non esiste un requisito concreto; eventuali future esigenze di override/scoping richiederanno un modello tipizzato e non convenzioni codificate nelle stringhe.
+
+Le note della Visit vengono risolte dalla stessa `VisitRevision` fissata dalla `ResolvedVisitExecutionSource`; le informazioni delle Venue vengono risolte dalle stesse `VenueRelease` usate dalla preparation fisica/navigation/logistics. Il Punto 18 dovrà garantire consistency e staleness handling fra queste dipendenze.
+
+`SessionPlan.explanation.preVisitNotes` non è fonte autorevole e il Navigator non deve dipenderne. La projection pre-visita deve essere composta esplicitamente dalle vere sorgenti versionate.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -131,11 +143,11 @@ Non devono più essere usati come contratto definitivo:
 - preference globali basate su taxonomy key di un singolo Namespace;
 - preference persistenti User–Visit per presentation/navigation;
 - routing graph/requirements tecnici interpretati direttamente da Vue;
-- default globali basati su local routing attribute o preset Venue-specific.
+- default globali basati su local routing attribute o preset Venue-specific;
+- logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance.
 
-# Punti 16–30 ancora da riesaminare
+# Punti 17–30 ancora da riesaminare
 
-16. pre-visit information da VenueRelease + Visit notes;
 17. `LogisticsPreview` v2;
 18. execution/preparation context e pin dipendenze;
 19. navigation destination tipizzata;
