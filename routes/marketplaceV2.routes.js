@@ -9,6 +9,7 @@ const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
 const itemId = validateObjectIdParam("itemId");
 const namespaceId = validateObjectIdParam("namespaceId");
+const editorialContextId = validateObjectIdParam("editorialContextId");
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
 
@@ -18,6 +19,7 @@ router.get("/v2/marketplace/venue-selector", controller.venueSelector);
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
+router.get("/v2/marketplace/editorial-contexts/:editorialContextId/release-composer", editorialContextId, authoringController.editorialReleaseComposer);
 router.get("/v2/marketplace/venue-targets/:venueTargetId/authoring-context", venueTargetId, controller.venueTargetAuthoringContext);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
