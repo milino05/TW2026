@@ -28,9 +28,11 @@ test("exam dataset seed is idempotent and satisfies the automatic delivery verif
     const User = require("../models/user");
     const Venue = require("../models/venue.model");
     const VisitV2 = require("../models/visitV2.model");
+    const { acquireOffer } = require("../services/marketplaceV2.service");
+    const { listNavigatorLibrary } = require("../services/navigatorVisitV2.service");
     const { IDS, VISIT_DEFINITIONS, seedExamDataset, verifyExamDataset } = require("../scripts/examDatasetV2");
 
-    await seedExamDataset();
+    const seeded = await seedExamDataset();
     const first = await verifyExamDataset();
     assert.equal(first.ok, true, JSON.stringify(first.failures));
     assert.equal(first.summary.requiredUsers, 4);
@@ -46,9 +48,34 @@ test("exam dataset seed is idempotent and satisfies the automatic delivery verif
     assert.equal(author1.organizationMemberships.some((entry) => String(entry.organizationId) === String(IDS.organization) && entry.role === "manager"), true);
     assert.equal(author2.organizationMemberships.some((entry) => String(entry.organizationId) === String(IDS.organization) && entry.role === "operator"), true);
 
+    const visitor = await User.findOne({ username: "visitatore1" }).lean();
+    const freeVisit = seeded.visitRecords.find((entry) => entry.offer.pricing.type === "free");
+    assert.ok(freeVisit, "Il dataset deve offrire almeno una Visit gratuita");
+    const acquired = await acquireOffer({
+      offerId: freeVisit.offer._id,
+      actorUserId: visitor._id,
+      beneficiaryType: "user",
+      beneficiaryId: visitor._id,
+    });
+    assert.equal(acquired.alreadyAcquired, false);
+    assert.equal(acquired.entitlements.some((entry) => entry.capability === "visit.execute"), true);
+
+    const library = await listNavigatorLibrary({
+      userId: visitor._id,
+      configuredVenueId: IDS.venue,
+    });
+    const acquiredCard = library.visits.find((entry) => String(entry.id) === String(freeVisit.visit._id));
+    assert.ok(acquiredCard, "La Visit acquisita deve comparire nella Library del Navigator");
+    assert.ok(acquiredCard.stopCount >= 10);
+    assert.equal(acquiredCard.physicalScope.length, 1);
+    assert.equal(String(acquiredCard.physicalScope[0].id), String(IDS.venue));
+
     await seedExamDataset();
     const second = await verifyExamDataset();
     assert.equal(second.ok, true, JSON.stringify(second.failures));
-    assert.equal(await VisitV2.countDocuments({ _id: { $in: VISIT_DEFINITIONS.map((entry) => require("crypto").createHash("sha1").update(`artaround-exam:visit:${entry.key}`).digest("hex").slice(0, 24)) } }), 3);
+    const deterministicVisitIds = VISIT_DEFINITIONS.map((entry) =>
+      require("crypto").createHash("sha1").update(`artaround-exam:visit:${entry.key}`).digest("hex").slice(0, 24),
+    );
+    assert.equal(await VisitV2.countDocuments({ _id: { $in: deterministicVisitIds } }), 3);
   });
 });
