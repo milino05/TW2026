@@ -1,4 +1,5 @@
 const service = require("../services/marketplaceVisitV2.service");
+const AppError = require("../utils/AppError");
 
 async function catalog(req, res, next) {
   try {
@@ -30,9 +31,15 @@ async function createVisitListing(req, res, next) {
 
 async function createVisitOffer(req, res, next) {
   try {
+    if (req.body?.versionPolicy && req.body.versionPolicy !== "follow_current") {
+      throw new AppError("Lo Slice 1 espone solo visit.execute follow_current", 409, [{ code: "PINNED_EXECUTION_REQUIRES_PREPARATION" }]);
+    }
+    if (req.body?.pricing?.type && req.body.pricing.type !== "free") {
+      throw new AppError("Lo Slice 1 espone solo acquisizioni gratuite", 409, [{ code: "PAID_ACQUISITION_NOT_IMPLEMENTED" }]);
+    }
     res.status(201).json(await service.createVisitExecuteOffer({
       listingId: req.params.listingId,
-      payload: req.body || {},
+      payload: { ...(req.body || {}), versionPolicy: "follow_current", pricing: { type: "free" } },
       actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
