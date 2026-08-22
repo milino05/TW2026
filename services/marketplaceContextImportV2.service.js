@@ -32,6 +32,8 @@ async function importEditorialContextSnapshot({
     capability: "context.import_snapshot",
     resourceType: "editorial_context",
     resourceId: sourceContext._id,
+    principalType: ownerType,
+    principalId: ownerId,
   });
   const sourceReleaseRef = contextAccess.resolvedSnapshotRef;
   if (sourceReleaseRef?.resourceType !== "editorial_release") {
@@ -45,7 +47,12 @@ async function importEditorialContextSnapshot({
 
   const namespace = await Namespace.findOne({ _id: sourceContext.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace sorgente non disponibile", 409);
-  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType: ownerType,
+    principalId: ownerId,
+  });
   if (namespaceAccess?.basis === "entitlement") {
     const ref = namespaceAccess.resolvedSnapshotRef;
     if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, sourceRelease.namespaceRevisionId)) {
