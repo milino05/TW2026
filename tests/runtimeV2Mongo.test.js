@@ -24,7 +24,7 @@ async function withFreshDatabase(callback) {
 }
 function id(value) { return String(value?._id || value || ""); }
 
-test("ExecutionPreparation pins physical state, rejects stale starts and new preparation resolves current VenueRelease", { skip: !mongoUri }, async () => {
+test("ExecutionPreparation pins physical state and Action runtime keeps the Session snapshot stable", { skip: !mongoUri }, async () => {
   process.env.ADAPTIVE_CONTRIBUTOR_SECRET = process.env.ADAPTIVE_CONTRIBUTOR_SECRET || "runtime-v2-test-secret-value";
   await withFreshDatabase(async () => {
     loadAllModels();
@@ -51,13 +51,12 @@ test("ExecutionPreparation pins physical state, rejects stale starts and new pre
     const VenueTargetObservationProfile = require("../models/venueTargetObservationProfile.model");
     const {
       currentSessionProjection,
-      changePresentationDepthV2,
       recordContentEntryExperience,
       recordVenueTargetObservationV2,
       recordTransitionV2,
       routeToIntentV2,
-      completeSessionV2,
     } = require("../services/visitSessionV2.service");
+    const { dispatchAction } = require("../services/actionDispatcherV2.service");
     const {
       createExecutionPreparation,
       startExecutionPreparation,
@@ -248,15 +247,23 @@ test("ExecutionPreparation pins physical state, rejects stale starts and new pre
     assert.equal(started.alreadyStarted, false);
     assert.equal(id(started.session.venuePins[0].venueReleaseId), id(releaseR1._id));
     assert.equal(id(started.session.venuePins[0].layoutRevisionId), id(layoutR1._id));
-    assert.equal(id(started.current.current.anchor.placeId), id(targetPlaceR1));
+    assert.equal(id(started.current.current.anchor.venueTargetId), id(target._id));
     assert.equal(started.current.current.presentation.text, "Testo breve semplice");
-    assert.ok(started.current.availableActions.includes("NEXT"));
-    assert.ok(started.current.availableActions.includes("PRESENTATION_DEPTH_UP"));
-    assert.ok(started.current.availableActions.includes("ROUTE_TO_INTENT"));
+    assert.ok(started.current.availableActions.some((entry) => entry.actionId === "presentation.depth.increase"));
+    assert.ok(started.current.availableActions.some((entry) => entry.actionId === "navigation.place.find_toilet"));
 
-    const deeper = await changePresentationDepthV2({ sessionId, userId: user._id, direction: "up" });
-    assert.equal(deeper.current.presentation.text, "Testo lungo semplice");
-    assert.equal(deeper.current.presentation.estimatedContentSeconds, 60);
+    const deeper = await dispatchAction({
+      sessionId,
+      userId: user._id,
+      payload: {
+        actionId: "presentation.depth.increase",
+        expectedRuntimeVersion: started.current.session.runtimeVersion,
+        interactionChannel: "button",
+      },
+    });
+    assert.equal(deeper.runtime.current.presentation.text, "Testo lungo semplice");
+    assert.equal(deeper.runtime.current.presentation.estimatedContentSeconds, 60);
+    assert.equal(deeper.runtime.session.runtimeVersion, 2);
     await recordContentEntryExperience({ sessionId, userId: user._id, payload: { experiencedSeconds: 55, completionRatio: 1 } });
     await recordVenueTargetObservationV2({ sessionId, userId: user._id, payload: { observedSeconds: 60 } });
 
@@ -308,18 +315,26 @@ test("ExecutionPreparation pins physical state, rejects stale starts and new pre
     );
 
     const afterMove = await currentSessionProjection({ sessionId, userId: user._id });
-    assert.equal(id(afterMove.current.anchor.placeId), id(targetPlaceR1), "existing Session must keep the pinned R1 placement");
-    const route = await routeToIntentV2({ sessionId, userId: user._id, payload: { intent: "FIND_TOILET" } });
+    assert.equal(id(afterMove.current.anchor.venueTargetId), id(target._id), "existing Session keeps its logical anchor while routing remains pinned to R1");
+    const route = await routeToIntentV2({ sessionId, userId: user._id, intent: "FIND_TOILET" });
     assert.equal(id(route.venueReleaseId), id(releaseR1._id));
     assert.equal(id(route.layoutRevisionId), id(layoutR1._id));
     assert.equal(id(route.destination._id), id(toiletPlaceR1));
     const transition = await recordTransitionV2({ sessionId, userId: user._id, payload: { connectionId: connectionR1, observedSeconds: 10 } });
     assert.equal(id(transition.observation.layoutRevisionId), id(layoutR1._id));
 
-    const completed = await completeSessionV2({ sessionId, userId: user._id });
-    assert.equal(completed.session.status, "completed");
-    assert.equal(completed.learning.contentExposures, 1);
-    assert.equal(completed.learning.physicalObservations, 1);
+    const completed = await dispatchAction({
+      sessionId,
+      userId: user._id,
+      payload: {
+        actionId: "lifecycle.complete",
+        expectedRuntimeVersion: afterMove.session.runtimeVersion,
+        interactionChannel: "button",
+      },
+    });
+    assert.equal(completed.runtime.session.status, "completed");
+    assert.equal(completed.effect.learning.contentExposures, 1);
+    assert.equal(completed.effect.learning.physicalObservations, 1);
     const exposure = await UserContentExposureV2.findOne({ userId: user._id, itemEditionId: edition._id }).lean();
     assert.equal(id(exposure.representationId), id(longSimpleId));
     const targetProfile = await VenueTargetObservationProfile.findOne({ venueTargetId: target._id }).lean();
@@ -333,7 +348,7 @@ test("ExecutionPreparation pins physical state, rejects stale starts and new pre
     });
     assert.equal(id(generatedStarted.session.venuePins[0].venueReleaseId), id(releaseR2._id), "new preparation must resolve current VenueRelease, not GeneratedPlan generation-time release");
     assert.equal(id(generatedStarted.session.venuePins[0].layoutRevisionId), id(layoutR2._id));
-    assert.equal(id(generatedStarted.current.current.anchor.placeId), id(targetPlaceR2));
+    assert.equal(id(generatedStarted.current.current.anchor.venueTargetId), id(target._id));
     assert.equal(generatedStarted.current.current.presentation.text, "Testo breve semplice");
   });
 });
