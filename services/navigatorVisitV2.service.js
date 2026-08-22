@@ -12,6 +12,11 @@ const { projectVisitPhysicalScope, configuredVenueMatches } = require("./visitRe
 const { resolveSessionVenuePins } = require("./physicalExecutionV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function validateConfiguredVenueId(configuredVenueId) {
+  if (configuredVenueId && !mongoose.isValidObjectId(configuredVenueId)) {
+    throw new AppError("configuredVenueId non valido", 400, [{ field: "configuredVenueId", code: "INVALID_OBJECT_ID" }]);
+  }
+}
 
 async function directLibraryVisitIds(userId) {
   const owned = await VisitV2.find({
@@ -64,9 +69,7 @@ async function projectLibraryCard({ visit, userId }) {
 }
 
 async function listNavigatorLibrary({ userId, configuredVenueId = null }) {
-  if (configuredVenueId && !mongoose.isValidObjectId(configuredVenueId)) {
-    throw new AppError("configuredVenueId non valido", 400, [{ field: "configuredVenueId", code: "INVALID_OBJECT_ID" }]);
-  }
+  validateConfiguredVenueId(configuredVenueId);
   const visitIds = await directLibraryVisitIds(userId);
   if (!visitIds.length) return { visits: [] };
   const visits = await VisitV2.find({ _id: { $in: visitIds }, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).sort({ updatedAt: -1 }).lean();
@@ -84,10 +87,18 @@ async function listNavigatorLibrary({ userId, configuredVenueId = null }) {
   return { visits: result };
 }
 
-async function getNavigatorVisitDetail({ userId, visitId }) {
+async function getNavigatorVisitDetail({ userId, visitId, configuredVenueId = null }) {
+  validateConfiguredVenueId(configuredVenueId);
   const visit = await VisitV2.findOne({ _id: visitId, lifecycleStatus: "active", publishedRevisionId: { $ne: null } }).lean();
   if (!visit) throw new AppError("Visit non disponibile", 404);
   const resolved = await resolveNavigatorVisit({ visit, userId });
+  await resolveSessionVenuePins(resolved.revision.visitAnchors || []);
+  if (!configuredVenueMatches({ venues: resolved.physicalScope.venues }, configuredVenueId)) {
+    throw new AppError("La Visit non e applicabile alla sede configurata", 409, [{
+      code: "VISIT_NOT_APPLICABLE_TO_CONFIGURED_VENUE",
+      context: { configuredVenueId },
+    }]);
+  }
   return {
     context: {
       owner: resolved.owner,
