@@ -1,6 +1,8 @@
 const marketplace = require("../services/marketplaceV2.service");
+const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
+const itemAuthoring = require("../services/itemAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 
 function projectAcquisitionResult(result) {
@@ -21,36 +23,55 @@ function projectAcquisitionResult(result) {
   };
 }
 
+function selectedVenueIds(req) {
+  return marketplaceCatalog.normalizeVenueIds(req.query?.selectedVenueIds || []);
+}
+
 async function catalog(req, res, next) {
   try {
-    const resourceTypes = req.query?.resourceTypes || req.query?.resourceType || null;
-    const queryText = String(req.query?.q || "").trim();
-    const legacyVisitOnly = req.query?.venueId && !resourceTypes && !queryText;
-    const result = legacyVisitOnly
-      ? await visitMarketplace.listVisitCatalog({
-          actorUserId: req.user._id,
-          venueId: req.query.venueId,
-          page: req.query?.page,
-          limit: req.query?.limit,
-        })
-      : await marketplace.listCatalog({
-          actorUserId: req.user._id,
-          page: req.query?.page,
-          limit: req.query?.limit,
-          queryText,
-          resourceTypes,
-          sellerType: req.query?.sellerType || null,
-          sellerId: req.query?.sellerId || null,
-        });
-    res.status(200).json(result);
+    res.status(200).json(await marketplaceCatalog.listCatalog({
+      actorUserId: req.user._id,
+      page: req.query?.page,
+      limit: req.query?.limit,
+      queryText: String(req.query?.q || "").trim(),
+      resourceTypes: req.query?.resourceTypes || req.query?.resourceType || null,
+      sellerType: req.query?.sellerType || null,
+      sellerId: req.query?.sellerId || null,
+      selectedVenueIds: selectedVenueIds(req),
+    }));
+  } catch (error) { next(error); }
+}
+
+async function venueSelector(req, res, next) {
+  try {
+    res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection());
   } catch (error) { next(error); }
 }
 
 async function detail(req, res, next) {
   try {
-    res.status(200).json(await marketplace.getListingDetail({
+    res.status(200).json(await marketplaceCatalog.getListingDetail({
       listingId: req.params.listingId,
       actorUserId: req.user._id,
+      selectedVenueIds: selectedVenueIds(req),
+    }));
+  } catch (error) { next(error); }
+}
+
+async function itemAuthoringProjection(req, res, next) {
+  try {
+    res.status(200).json(await itemAuthoring.getItemAuthoringProjection({
+      itemId: req.params.itemId,
+      editionId: req.query?.editionId || null,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function venueTargetAuthoringContext(req, res, next) {
+  try {
+    res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({
+      venueTargetId: req.params.venueTargetId,
     }));
   } catch (error) { next(error); }
 }
@@ -152,7 +173,10 @@ async function workspaceOperation(req, res, next) {
 module.exports = {
   projectAcquisitionResult,
   catalog,
+  venueSelector,
   detail,
+  itemAuthoringProjection,
+  venueTargetAuthoringContext,
   createListing,
   createOffer,
   acquire,
