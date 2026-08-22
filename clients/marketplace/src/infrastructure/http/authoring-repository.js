@@ -29,6 +29,10 @@ export const authoringRepository = {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
     return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}${query}`);
   },
+  namespaceControls(namespaceId, principal) {
+    const query = queryString({ principalType: principal?.type || "user", principalId: principal?.id || null });
+    return apiClient.request(`/v2/marketplace/namespace-authoring/${encodeURIComponent(namespaceId)}?${query}`);
+  },
   venueTargetContext(venueTargetId) {
     return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
   },
