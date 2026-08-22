@@ -142,7 +142,7 @@ async function resolveCapabilitySource({ actorUserId, capability, resourceType, 
     status: "active",
   }).lean();
   const validByResourceId = new Map(
-    candidates.filter((entry) => nowWithin(entry, now)).map((entry) => [sameId(entry.resourceId, entry.resourceId) ? String(entry.resourceId) : "", entry]),
+    candidates.filter((entry) => nowWithin(entry, now)).map((entry) => [String(entry.resourceId), entry]),
   );
   const selectedSnapshot = snapshots.find((snapshot) => validByResourceId.has(String(snapshot.resourceId)));
   if (!selectedSnapshot) return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
