@@ -66,7 +66,7 @@ const GeneratedVisitPlanV2Schema = new Schema({
   utilityScore: { type: Number, default: 0 },
   explanation: { type: Schema.Types.Mixed, default: {} },
   acceptedAt: { type: Date, default: null },
-  materializedVisitId: { type: Schema.Types.ObjectId, ref: "VisitV2", default: null, index: true },
+  materializedVisitId: { type: Schema.Types.ObjectId, ref: "VisitV2", default: null },
 }, { timestamps: true, collection: "generated_visit_plans_v2" });
 
 GeneratedVisitPlanV2Schema.index({ userId: 1, createdAt: -1 });
