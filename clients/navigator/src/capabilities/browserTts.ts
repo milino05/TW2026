@@ -1,4 +1,6 @@
-export class BrowserTextToSpeech {
+import type { TextToSpeechCapability } from "./index";
+
+export class BrowserTextToSpeech implements TextToSpeechCapability {
   get supported() {
     return typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
   }
