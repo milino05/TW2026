@@ -66,6 +66,51 @@ function warningProjection(warnings = []) {
   }));
 }
 
+async function assessPreparedMapReadiness({ plan, venuePins = [] }) {
+  if (!plan || !venuePins.length) return { blockers: [], warnings: [] };
+  const pseudoSession = { venuePins };
+  const anchors = anchorMap(plan);
+  const blockers = [];
+
+  for (const pin of venuePins) {
+    const bundle = await loadPinnedBundle(pseudoSession, pin.venueId);
+    const places = placeMap(bundle.layout);
+    const requiredFloorKeys = new Set();
+
+    for (const anchor of plan.visitAnchors || []) {
+      if (id(anchor.venueId) !== id(pin.venueId)) continue;
+      const place = places.get(id(anchor.placeId));
+      if (place?.floorKey) requiredFloorKeys.add(place.floorKey);
+    }
+
+    const connectionById = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
+    for (const leg of plan.physicalRoute?.legs || []) {
+      if (leg.type !== "indoor" || id(leg.venueReleaseId) !== id(pin.venueReleaseId)) continue;
+      for (const connectionId of leg.path || []) {
+        const connection = connectionById.get(id(connectionId));
+        if (!connection) continue;
+        const from = places.get(id(connection.fromPlaceId));
+        const to = places.get(id(connection.toPlaceId));
+        if (from?.floorKey) requiredFloorKeys.add(from.floorKey);
+        if (to?.floorKey) requiredFloorKeys.add(to.floorKey);
+      }
+    }
+
+    const floorByKey = new Map((bundle.layout.floors || []).map((floor) => [floor.key, floor]));
+    for (const floorKey of requiredFloorKeys) {
+      const floor = floorByKey.get(floorKey);
+      if (floor?.map?.imageUrl) continue;
+      blockers.push({
+        code: "NAVIGATOR_MAP_ASSET_MISSING",
+        message: `La mappa necessaria per ${floor?.label || floorKey} non è disponibile.`,
+        context: { venueId: pin.venueId, floorKey },
+      });
+    }
+  }
+
+  return { blockers, warnings: [] };
+}
+
 async function projectSessionMap({ sessionId, userId }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
   const targetIds = [...new Set((plan.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter(Boolean))];
@@ -253,6 +298,7 @@ async function projectNextRouteObstacles({ sessionId, userId }) {
 module.exports = {
   logicalAnchorForIndex,
   nextPhysicalLeg,
+  assessPreparedMapReadiness,
   projectSessionMap,
   projectNavigationRoute,
   projectNextRouteObstacles,
