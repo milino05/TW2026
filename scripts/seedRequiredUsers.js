@@ -16,7 +16,6 @@ async function seedRequiredUsers() {
   await mongoose.connect(process.env.MONGO_URI);
 
   for (const username of REQUIRED_USERNAMES) {
-    // Ogni account riceve un salt indipendente anche se la password iniziale e uguale.
     const passwordHash = await hashPassword(DEFAULT_PASSWORD);
     const existingUser = await User.findOne({ username });
 
@@ -29,7 +28,7 @@ async function seedRequiredUsers() {
       await User.create({
         username,
         passwordHash,
-        memberships: [],
+        organizationMemberships: [],
         status: "active",
       });
       console.log(`Creato utente ${username}`);
