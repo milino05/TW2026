@@ -36,9 +36,30 @@ function assertSupported(capability, resourceType) {
   }
 }
 
-async function listValidCapabilityEntitlements({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+function scopePrincipals(principals, principalType = null, principalId = null) {
+  if (!principalType && !principalId) return principals;
+  if (!principalType || !principalId) {
+    throw new AppError("principalType e principalId devono essere specificati insieme", 400, [{ code: "INVALID_PRINCIPAL_SCOPE" }]);
+  }
+  const selected = (principals || []).filter((principal) => principal.type === principalType && sameId(principal.id, principalId));
+  if (!selected.length) {
+    throw new AppError("Principal capability non disponibile per l'actor", 403, [{ code: "PRINCIPAL_AUTHORITY_REQUIRED" }]);
+  }
+  return selected;
+}
+
+async function listValidCapabilityEntitlements({
+  actorUserId,
+  capability,
+  resourceType,
+  resourceId,
+  now = new Date(),
+  principalType = null,
+  principalId = null,
+}) {
   assertSupported(capability, resourceType);
-  const { principals } = await resolveActorPrincipals(actorUserId);
+  const resolved = await resolveActorPrincipals(actorUserId);
+  const principals = scopePrincipals(resolved.principals, principalType, principalId);
   const principalClauses = principals.map((principal) => ({
     beneficiaryType: principal.type,
     beneficiaryId: principal.id,
@@ -57,7 +78,15 @@ async function listValidCapabilityEntitlements({ actorUserId, capability, resour
   };
 }
 
-async function resolveCapabilityAccess({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+async function resolveCapabilityAccess({
+  actorUserId,
+  capability,
+  resourceType,
+  resourceId,
+  now = new Date(),
+  principalType = null,
+  principalId = null,
+}) {
   assertSupported(capability, resourceType);
 
   const { principals, entitlements } = await listValidCapabilityEntitlements({
@@ -66,6 +95,8 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
     resourceType,
     resourceId,
     now,
+    principalType,
+    principalId,
   });
   const owned = await resolveResourceAuthority(resourceType, resourceId);
   const ownerPrincipal = owned
@@ -93,10 +124,26 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
   return { allowed: false, basis: null, principal: null, entitlement: null };
 }
 
-async function resolveCapabilitySource({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
+async function resolveCapabilitySource({
+  actorUserId,
+  capability,
+  resourceType,
+  resourceId,
+  now = new Date(),
+  principalType = null,
+  principalId = null,
+}) {
   assertSupported(capability, resourceType);
   const requestedResourceRef = { resourceType, resourceId };
-  const exact = await resolveCapabilityAccess({ actorUserId, capability, resourceType, resourceId, now });
+  const exact = await resolveCapabilityAccess({
+    actorUserId,
+    capability,
+    resourceType,
+    resourceId,
+    now,
+    principalType,
+    principalId,
+  });
   const authority = await resolveResourceAuthority(resourceType, resourceId);
 
   if (exact.allowed) {
@@ -127,7 +174,8 @@ async function resolveCapabilitySource({ actorUserId, capability, resourceType, 
     return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
   }
 
-  const { principals } = await resolveActorPrincipals(actorUserId);
+  const resolved = await resolveActorPrincipals(actorUserId);
+  const principals = scopePrincipals(resolved.principals, principalType, principalId);
   const principalClauses = principals.map((principal) => ({
     beneficiaryType: principal.type,
     beneficiaryId: principal.id,
@@ -186,6 +234,7 @@ async function assertCapabilitySource(args) {
 module.exports = {
   nowWithin,
   chooseEffectiveEntitlement,
+  scopePrincipals,
   listValidCapabilityEntitlements,
   resolveCapabilityAccess,
   resolveCapabilitySource,
