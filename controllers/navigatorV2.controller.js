@@ -11,7 +11,11 @@ async function library(req, res, next) {
 
 async function visitDetail(req, res, next) {
   try {
-    res.status(200).json(await service.getNavigatorVisitDetail({ userId: req.user._id, visitId: req.params.visitId }));
+    res.status(200).json(await service.getNavigatorVisitDetail({
+      userId: req.user._id,
+      visitId: req.params.visitId,
+      configuredVenueId: req.query?.configuredVenueId || null,
+    }));
   } catch (error) { next(error); }
 }
 
