@@ -7,6 +7,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertCanManageContentSpace } = require("./contentSpace.service");
@@ -32,6 +33,11 @@ async function getEditorialReleaseComposer({ editorialContextId, actorUserId }) 
   }).lean();
   if (!namespaceRevision) throw new AppError("La NamespaceRevision pubblicata non è release-ready", 409, [{ code: "NAMESPACE_REVISION_NOT_RELEASE_READY" }]);
   if (!context.workingGraphRevisionId) throw new AppError("EditorialContext privo di GraphRevision di lavoro", 409, [{ code: "WORKING_GRAPH_REVISION_REQUIRED" }]);
+  const graphRevision = await SemanticGraphRevision.findOne({
+    _id: context.workingGraphRevisionId,
+    editorialContextId: context._id,
+  }).select("_id authoredAgainstNamespaceRevisionId").lean();
+  if (!graphRevision) throw new AppError("GraphRevision di lavoro non disponibile", 409, [{ code: "WORKING_GRAPH_REVISION_NOT_FOUND" }]);
 
   const memberships = await ContentSpaceMembership.find({ contentSpaceId: contentSpace._id }).select("itemId").lean();
   const itemIds = memberships.map((entry) => entry.itemId);
@@ -102,7 +108,7 @@ async function getEditorialReleaseComposer({ editorialContextId, actorUserId }) 
     namespace: { id: namespace._id, name: namespace.name },
     releaseInputs: {
       namespaceRevisionId: namespaceRevision._id,
-      graphRevisionId: context.workingGraphRevisionId,
+      graphRevisionId: graphRevision._id,
       selectionSignals: (namespaceRevision.selectionSignals || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
     },
     currentRelease: currentRelease ? { id: currentRelease._id, version: currentRelease.version } : null,
