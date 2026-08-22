@@ -4,7 +4,10 @@ const Entitlement = require("../models/entitlement.model");
 const AppError = require("../utils/AppError");
 const { capabilitySupportsResource } = require("../config/marketplaceCapabilities");
 const { resolveActorPrincipals } = require("./principalResolution.service");
-const { userCanActForOwner } = require("./resourceOwnership.service");
+
+function sameId(a, b) {
+  return String(a || "") === String(b || "");
+}
 
 function nowWithin(entitlement, now = new Date()) {
   const startOk = !entitlement.validFrom || new Date(entitlement.validFrom) <= now;
@@ -35,9 +38,12 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
     }]);
   }
 
-  const { user, principals } = await resolveActorPrincipals(actorUserId);
+  const { principals } = await resolveActorPrincipals(actorUserId);
   const owned = await resolveOwnedResource(resourceType, resourceId);
-  if (owned && userCanActForOwner(user, { ownerType: owned.ownerType, ownerId: owned.ownerId })) {
+  const ownerPrincipal = owned
+    ? principals.find((principal) => principal.type === owned.ownerType && sameId(principal.id, owned.ownerId))
+    : null;
+  if (ownerPrincipal) {
     return {
       allowed: true,
       basis: owned.ownerType === "user" ? "ownership" : "principal_authority",
