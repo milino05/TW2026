@@ -9,7 +9,7 @@ function publicUser(user) {
   return {
     _id: user._id,
     username: user.username,
-    memberships: user.memberships || [],
+    organizationMemberships: user.organizationMemberships || [],
     status: user.status,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
