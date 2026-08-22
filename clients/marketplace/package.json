@@ -1,0 +1,10 @@
+{
+  "name": "@artaround/marketplace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check src/main.js && node --check src/application/router.js && node --check src/infrastructure/http/api-client.js && node --check src/ui/app-shell.js"
+  }
+}
