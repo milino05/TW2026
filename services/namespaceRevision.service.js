@@ -7,7 +7,8 @@ const {
   requestReview,
   withdrawReview,
   requestChanges,
-  markPublished,
+  publishWithoutReview,
+  approveReviewAndPublish,
 } = require("./revisionWorkflow.service");
 const {
   DEFINITION_FIELDS,
@@ -166,6 +167,7 @@ async function evaluateNamespace({ namespaceId, actorUserId, allowInReview = fal
 
 async function requestNamespaceReview({ namespaceId, actorUserId }) {
   const result = await evaluateNamespace({ namespaceId, actorUserId });
+  if (result.namespace.ownerType !== "organization") throw new AppError("I Namespace personali non richiedono review manageriale", 409);
   if (result.issues.some((issue) => issue.severity !== "warning")) throw new AppError("Il Namespace contiene problemi bloccanti", 400, result.issues);
   try { requestReview(result.revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -175,6 +177,7 @@ async function requestNamespaceReview({ namespaceId, actorUserId }) {
 
 async function withdrawNamespaceReview({ namespaceId, actorUserId }) {
   const namespace = await findNamespaceOrFail(namespaceId);
+  if (namespace.ownerType !== "organization") throw new AppError("Operazione non applicabile a un Namespace personale", 409);
   await assertNamespaceAuthority(namespace, actorUserId, "operator");
   const revision = await getWorking(namespace, actorUserId, { create: false });
   try { withdrawReview(revision, actorUserId); }
@@ -185,6 +188,7 @@ async function withdrawNamespaceReview({ namespaceId, actorUserId }) {
 
 async function requestNamespaceChanges({ namespaceId, actorUserId, message }) {
   const namespace = await findNamespaceOrFail(namespaceId);
+  if (namespace.ownerType !== "organization") throw new AppError("Operazione non applicabile a un Namespace personale", 409);
   await assertNamespaceAuthority(namespace, actorUserId, "manager");
   const revision = await getWorking(namespace, actorUserId, { create: false });
   try { requestChanges(revision, actorUserId, message); }
@@ -210,15 +214,23 @@ async function compensateNamespacePublish({ namespace, revision, previousId, pre
 
 async function publishNamespace({ namespaceId, actorUserId }) {
   const namespace = await findNamespaceOrFail(namespaceId);
-  await assertNamespaceAuthority(namespace, actorUserId, "manager");
+  await assertNamespaceAuthority(
+    namespace,
+    actorUserId,
+    namespace.ownerType === "organization" ? "manager" : "operator",
+  );
   const result = await evaluateNamespace({ namespaceId, actorUserId, allowInReview: true });
   const { revision, issues } = result;
   if (issues.some((issue) => issue.severity !== "warning")) throw new AppError("Impossibile pubblicare il Namespace", 400, issues);
 
   const previousId = namespace.publishedRevisionId;
   const previousRevisionState = workflowSnapshot(revision);
-  try { markPublished(revision, actorUserId); }
-  catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
+  try {
+    if (namespace.ownerType === "organization") approveReviewAndPublish(revision, actorUserId);
+    else publishWithoutReview(revision, actorUserId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
   await revision.save();
 
   let pointerSwitched = false;
