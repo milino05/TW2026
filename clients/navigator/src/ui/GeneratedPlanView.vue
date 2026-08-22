@@ -53,6 +53,10 @@ async function load() {
 
 onMounted(load);
 
+function modifyCriteria() {
+  void router.push("/generate");
+}
+
 async function accept() {
   if (!plan.value || !operations.value.has("accept")) return;
   acting.value = true;
@@ -139,6 +143,8 @@ async function materialize() {
       <p class="eyebrow">Piano generato · {{ plan.status }}</p>
       <h1>Proposta di visita</h1>
       <p>{{ plan.routeSummary.stopCount }} tappe · {{ plan.contentEntries.length }} contenuti · circa {{ minutes(plan.timing.totalSeconds) }} min</p>
+      <button type="button" :disabled="acting" @click="modifyCriteria">Modifica criteri</button>
+      <p class="supporting-copy">La modifica apre una nuova richiesta di generazione: questo piano rimane immutato.</p>
 
       <section>
         <h2>Sedi</h2>
@@ -243,6 +249,9 @@ section {
 }
 small {
   display: block;
+  opacity: .75;
+}
+.supporting-copy {
   opacity: .75;
 }
 .preparation-controls {
