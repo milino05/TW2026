@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import type { NavigationProjection, ObstacleCheckProjection } from "./navigationRepository";
 
 export interface AvailableAction {
   actionId: string;
@@ -23,6 +24,8 @@ export interface SessionProjection {
     label: string;
     presentation: {
       text: string;
+      locale?: string;
+      kind?: "visit_content" | "semantic_exploration";
       estimatedContentSeconds?: number;
     };
     anchor?: null | {
@@ -43,11 +46,12 @@ export interface ActionResult {
   runtime: SessionProjection;
   effect: null | {
     type: string;
-    label?: string;
     learning?: {
       contentExposures: number;
       physicalObservations: number;
     };
+    navigation?: NavigationProjection;
+    obstacleCheck?: ObstacleCheckProjection;
   };
 }
 
