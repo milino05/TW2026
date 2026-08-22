@@ -37,9 +37,10 @@ const ExecutionPreparationSchema = new Schema({
   venuePins: { type: [VenuePinSchema], default: [] },
   sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
-  preparedPlanCandidate: { type: Schema.Types.Mixed, required: true },
+  preparedPlanCandidate: { type: Schema.Types.Mixed, default: null },
   readiness: { type: Schema.Types.Mixed, required: true },
   logisticsPreview: { type: Schema.Types.Mixed, required: true },
+  preVisit: { type: Schema.Types.Mixed, default: () => ({ visitNotes: [], venues: [] }) },
   sessionId: { type: Schema.Types.ObjectId, ref: "VisitSessionV2", default: null, index: true },
   consumedAt: { type: Date, default: null },
   expiresAt: { type: Date, required: true, index: true },
@@ -51,6 +52,9 @@ ExecutionPreparationSchema.pre("validate", function validateSource(next) {
   }
   if (this.source?.sourceType === "generated_plan" && !this.source.generatedVisitPlanId) {
     this.invalidate("source", "Una preparation GeneratedPlan richiede generatedVisitPlanId");
+  }
+  if (this.readiness?.status === "ready" && !this.preparedPlanCandidate) {
+    this.invalidate("preparedPlanCandidate", "Una preparation ready richiede un candidate plan");
   }
   next();
 });
