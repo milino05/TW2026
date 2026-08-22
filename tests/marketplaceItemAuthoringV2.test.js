@@ -220,6 +220,6 @@ test("EditorialReleaseComposer exposes only ContentSpace members that the Contex
     assert.equal(projection.candidates.length, 1);
     assert.equal(projection.candidates[0].title, "Owned content");
     assert.equal(String(projection.candidates[0].itemEditionId), String(ownedEdition.edition._id));
-    assert.equal(projection.candidates[0].accessBasis, "owner");
+    assert.equal(projection.candidates[0].accessBasis, "ownership");
   });
 });
