@@ -3,6 +3,7 @@ const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
+const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 
 function projectAcquisitionResult(result) {
@@ -64,6 +65,17 @@ async function itemAuthoringProjection(req, res, next) {
       itemId: req.params.itemId,
       editionId: req.query?.editionId || null,
       actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function namespaceAuthoringControls(req, res, next) {
+  try {
+    res.status(200).json(await getNamespaceAuthoringControls({
+      namespaceId: req.params.namespaceId,
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
     }));
   } catch (error) { next(error); }
 }
@@ -176,6 +188,7 @@ module.exports = {
   venueSelector,
   detail,
   itemAuthoringProjection,
+  namespaceAuthoringControls,
   venueTargetAuthoringContext,
   createListing,
   createOffer,
