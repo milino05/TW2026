@@ -30,8 +30,11 @@ EntitlementSchema.pre("validate", function validateEntitlement(next) {
   if (!capabilitySupportsResource(this.capability, this.resourceType)) {
     this.invalidate("capability", "Capability non compatibile con il resourceType");
   }
-  if (!this.baselineSnapshotRef) {
-    this.invalidate("baselineSnapshotRef", "Un Entitlement Marketplace richiede la baseline snapshot risolta all'acquisizione");
+  if (this.versionPolicy === "pinned" && !this.baselineSnapshotRef) {
+    this.invalidate("baselineSnapshotRef", "Un Entitlement pinned richiede baselineSnapshotRef");
+  }
+  if (this.sourceAcquisitionId && !this.baselineSnapshotRef) {
+    this.invalidate("baselineSnapshotRef", "Un Entitlement derivato da Acquisition richiede la baseline snapshot risolta");
   }
   next();
 });
