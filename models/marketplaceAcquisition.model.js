@@ -6,11 +6,17 @@ const {
 } = require("../config/marketplaceCapabilities");
 const { Schema } = mongoose;
 
+const ResourceRefSchema = new Schema({
+  resourceType: { type: String, enum: RESOURCE_TYPES, required: true },
+  resourceId: { type: Schema.Types.ObjectId, required: true },
+}, { _id: false });
+
 const GrantSnapshotSchema = new Schema({
   resourceType: { type: String, enum: RESOURCE_TYPES, required: true },
   resourceId: { type: Schema.Types.ObjectId, required: true },
   capability: { type: String, enum: CAPABILITIES, required: true },
   versionPolicy: { type: String, enum: OFFER_VERSION_POLICIES, required: true },
+  resolvedSnapshotRef: { type: ResourceRefSchema, required: true },
 }, { _id: false });
 
 const PricingSnapshotSchema = new Schema({
