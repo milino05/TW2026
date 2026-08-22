@@ -23,10 +23,15 @@ async function assertCanManageContext(context, actorUserId, minimumOrganizationR
   return contentSpace;
 }
 
-async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionId, itemBindings, actorUserId }) {
+async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionId, itemBindings, actorUserId, principalType, principalId }) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
-  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType,
+    principalId,
+  });
   if (namespaceAccess?.basis === "entitlement") {
     const ref = namespaceAccess.resolvedSnapshotRef;
     if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, namespaceRevisionId)) {
@@ -39,7 +44,12 @@ async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionI
 
   const itemAccesses = [];
   for (const binding of itemBindings || []) {
-    const usage = await assertCanUseItemEditionForEditorialRelease({ itemEditionId: binding.itemEditionId, actorUserId });
+    const usage = await assertCanUseItemEditionForEditorialRelease({
+      itemEditionId: binding.itemEditionId,
+      actorUserId,
+      principalType,
+      principalId,
+    });
     const access = usage.access;
     if (access?.basis === "entitlement") {
       const ref = access.resolvedSnapshotRef;
@@ -66,12 +76,14 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
   if (shapeIssues.length) throw new AppError("Payload EditorialRelease non valido", 400, shapeIssues);
   const normalized = normalizeEditorialReleasePayload(rawPayload);
   const context = await findContextOrFail(editorialContextId);
-  await assertCanManageContext(context, actorUserId, "manager");
+  const contentSpace = await assertCanManageContext(context, actorUserId, "manager");
   const dependencyAccess = await assertReleaseDependenciesAuthorized({
     context,
     namespaceRevisionId: normalized.namespaceRevisionId,
     itemBindings: normalized.itemBindings,
     actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
   });
   const graphRevisionId = normalized.graphRevisionId || context.workingGraphRevisionId;
   if (!graphRevisionId) throw new AppError("EditorialContext privo di GraphRevision", 409);
