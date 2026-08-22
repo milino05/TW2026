@@ -12,6 +12,7 @@ const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
+const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -24,14 +25,25 @@ async function getEditorialReleaseComposer({ editorialContextId, actorUserId }) 
   ]);
   if (!contentSpace || !namespace) throw new AppError("Dipendenze EditorialContext non disponibili", 409);
   await assertCanManageContentSpace(contentSpace, actorUserId, "manager");
-  if (!namespace.publishedRevisionId) throw new AppError("Il Namespace non ha una revisione pubblicata", 409, [{ code: "PUBLISHED_NAMESPACE_REVISION_REQUIRED" }]);
+
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
+  const namespaceSnapshotRef = namespaceAccess?.resolvedSnapshotRef;
+  if (namespaceSnapshotRef?.resourceType !== "namespace_revision") {
+    throw new AppError("Il Namespace non ha una revisione autorizzata per la release", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
+  }
   const namespaceRevision = await NamespaceRevision.findOne({
-    _id: namespace.publishedRevisionId,
+    _id: namespaceSnapshotRef.resourceId,
     namespaceId: namespace._id,
-    status: "published",
+    status: { $in: ["published", "superseded"] },
     "integrity.status": "valid",
   }).lean();
-  if (!namespaceRevision) throw new AppError("La NamespaceRevision pubblicata non è release-ready", 409, [{ code: "NAMESPACE_REVISION_NOT_RELEASE_READY" }]);
+  if (!namespaceRevision) throw new AppError("La NamespaceRevision autorizzata non è release-ready", 409, [{ code: "NAMESPACE_REVISION_NOT_RELEASE_READY" }]);
+
   if (!context.workingGraphRevisionId) throw new AppError("EditorialContext privo di GraphRevision di lavoro", 409, [{ code: "WORKING_GRAPH_REVISION_REQUIRED" }]);
   const graphRevision = await SemanticGraphRevision.findOne({
     _id: context.workingGraphRevisionId,
