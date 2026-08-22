@@ -7,6 +7,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertCanManageContentSpace, findContentSpaceOrFail } = require("./contentSpace.service");
+const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const {
   materializeDirectEdge,
   materializeReverseEdge,
@@ -94,7 +95,8 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   const context = await findContextOrFail(editorialContextId);
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId);
-  const { namespaceRevision } = await resolveNamespaceRevision(context, normalized.authoredAgainstNamespaceRevisionId);
+  const { namespace, namespaceRevision } = await resolveNamespaceRevision(context, normalized.authoredAgainstNamespaceRevisionId);
+  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
 
   if (normalized.basedOnRevisionId) {
     const base = await SemanticGraphRevision.findOne({ _id: normalized.basedOnRevisionId, editorialContextId: context._id });

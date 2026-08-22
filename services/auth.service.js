@@ -123,7 +123,6 @@ async function registerUser({ username, password }) {
   const user = new User({
     username: normalizedUsername,
     passwordHash: await hashPassword(password),
-    memberships: [],
     status: "active",
   });
 

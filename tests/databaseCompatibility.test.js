@@ -39,29 +39,6 @@ test("MongoDB 7 accepts every current Mongoose schema and index", { skip: !mongo
   });
 });
 
-test("museum deletion refuses canonical dependent resources", { skip: !mongoUri }, async () => {
-  await withFreshDatabase(async () => {
-    loadAllModels();
-    const User = require("../models/user");
-    const Museum = require("../models/museum.model");
-    const MuseumLayout = require("../models/museumLayout.model");
-    const { deleteMuseum } = require("../services/museum.service");
-
-    const user = await User.create({ username: "museum-delete-test", passwordHash: "test-hash" });
-    const museum = await Museum.create({ name: "Delete Guard Museum", createdBy: user._id });
-    user.memberships.push({ museumId: museum._id, role: "manager", assignedBy: user._id });
-    await user.save();
-    await MuseumLayout.create({ museumId: museum._id, createdBy: user._id });
-
-    await assert.rejects(
-      () => deleteMuseum({ museumId: museum._id, actorUserId: user._id }),
-      (error) => error?.status === 409 && error?.details?.[0]?.code === "MUSEUM_HAS_DEPENDENCIES",
-    );
-
-    assert.ok(await Museum.exists({ _id: museum._id }), "Il museo non deve essere eliminato se ha dipendenze");
-  });
-});
-
 test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRevision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     loadAllModels();

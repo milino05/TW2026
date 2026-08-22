@@ -4,6 +4,9 @@ const mongoose = require("mongoose");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const {
+  assertCanUseNamespaceForFork,
+} = require("./namespaceUsageAuthorization.service");
+const {
   normalizeNamespaceMetadataPayload,
   validateNamespaceMetadataPayload,
 } = require("./validation/namespace.validation");
@@ -92,8 +95,11 @@ async function getNamespaceById({ namespaceId }) {
 }
 
 async function forkNamespace({ namespaceId, payload, actorUserId }) {
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "revision")) throw new AppError("La revisione del fork deriva dal Namespace sorgente", 400, [{ field: "revision", code: "FORBIDDEN_FIELD" }]);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "revision")) {
+    throw new AppError("La revisione del fork deriva dal Namespace sorgente", 400, [{ field: "revision", code: "FORBIDDEN_FIELD" }]);
+  }
   const source = await findNamespaceOrFail({ namespaceId });
+  await assertCanUseNamespaceForFork({ namespace: source, actorUserId });
   if (!source.publishedRevisionId) throw new AppError("Il Namespace sorgente deve avere una revisione pubblicata", 409);
   const sourceRevision = await NamespaceRevision.findById(source.publishedRevisionId);
   if (!sourceRevision || sourceRevision.status !== "published") throw new AppError("Revisione pubblicata sorgente non disponibile", 409);

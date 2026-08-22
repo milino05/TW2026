@@ -1,8 +1,11 @@
 const generator = require("../services/visitGeneratorV2.service");
+const { assertGenerationRequestAccess } = require("../services/generationAccess.service");
 
 async function generate(req, res, next) {
   try {
-    res.status(201).json(await generator.generateVisitPlanV2({ userId: req.user._id, request: req.body || {} }));
+    const request = req.body || {};
+    await assertGenerationRequestAccess({ request, actorUserId: req.user._id });
+    res.status(201).json(await generator.generateVisitPlanV2({ userId: req.user._id, request }));
   } catch (error) { next(error); }
 }
 async function get(req, res, next) {

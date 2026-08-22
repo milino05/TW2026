@@ -1,13 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-const MuseumMembershipSchema = new Schema({
-  museumId: { type: Schema.Types.ObjectId, ref: "Museum", required: true },
-  role: { type: String, enum: ["operator", "manager"], required: true },
-  assignedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
-  assignedAt: { type: Date, default: Date.now },
-}, { _id: false });
-
 const OrganizationMembershipSchema = new Schema({
   organizationId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
   role: { type: String, enum: ["operator", "manager"], required: true },
@@ -42,53 +35,30 @@ const LearningPreferencesSchema = new Schema({
 const UserSchema = new Schema({
   username: { type: String, required: true, trim: true, lowercase: true, unique: true },
   passwordHash: { type: String, required: true, select: false },
-
-  // Legacy museum memberships remain only while the museum-centric domain is
-  // migrated to Organization + Venue. They are not part of the v2 contract.
-  memberships: { type: [MuseumMembershipSchema], default: [] },
-
-  // v2 authority boundary. Organization can own collaborative/editorial and
-  // physical resources without conflating them with a single Museum entity.
   organizationMemberships: { type: [OrganizationMembershipSchema], default: [] },
-
   defaultPresentationPreference: { type: AbstractPreferenceSchema, default: null },
   defaultNavigationPreference: { type: NavigationPreferenceSchema, default: () => ({}) },
   learningPreferences: { type: LearningPreferencesSchema, default: () => ({}) },
   status: { type: String, enum: ["active", "disabled"], default: "active", index: true },
 }, { timestamps: true });
 
-function validateUniqueMemberships(document, values, idField, path, message) {
+UserSchema.pre("validate", function validateOrganizationMemberships(next) {
   const seen = new Set();
-  for (const membership of values || []) {
-    const targetId = String(membership?.[idField] || "");
-    if (!targetId) continue;
-    if (seen.has(targetId)) {
-      document.invalidate(path, message);
-      return;
+  for (const membership of this.organizationMemberships || []) {
+    const organizationId = String(membership?.organizationId || "");
+    if (!organizationId) continue;
+    if (seen.has(organizationId)) {
+      this.invalidate(
+        "organizationMemberships",
+        "Una stessa organizzazione puo comparire una sola volta nelle organizationMemberships",
+      );
+      break;
     }
-    seen.add(targetId);
+    seen.add(organizationId);
   }
-}
-
-UserSchema.pre("validate", function validateMemberships(next) {
-  validateUniqueMemberships(
-    this,
-    this.memberships,
-    "museumId",
-    "memberships",
-    "Uno stesso museo puo comparire una sola volta nelle memberships",
-  );
-  validateUniqueMemberships(
-    this,
-    this.organizationMemberships,
-    "organizationId",
-    "organizationMemberships",
-    "Una stessa organizzazione puo comparire una sola volta nelle organizationMemberships",
-  );
   next();
 });
 
-UserSchema.index({ "memberships.museumId": 1, "memberships.role": 1, status: 1 });
 UserSchema.index({ "organizationMemberships.organizationId": 1, "organizationMemberships.role": 1, status: 1 });
 
 module.exports = mongoose.model("User", UserSchema);
