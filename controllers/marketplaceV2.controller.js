@@ -1,6 +1,7 @@
 const marketplace = require("../services/marketplaceV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
+const { importEditorialContextSnapshot } = require("../services/marketplaceContextImportV2.service");
 
 function projectAcquisitionResult(result) {
   return {
@@ -136,6 +137,19 @@ async function distributionDashboard(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function importContextSnapshot(req, res, next) {
+  try {
+    res.status(201).json(await importEditorialContextSnapshot({
+      sourceEditorialContextId: req.params.editorialContextId,
+      ownerType: req.body?.ownerType || "user",
+      ownerId: req.body?.ownerId || req.user._id,
+      actorUserId: req.user._id,
+      contentSpaceName: req.body?.contentSpaceName || null,
+      displayName: req.body?.displayName || null,
+    }));
+  } catch (error) { next(error); }
+}
+
 module.exports = {
   projectAcquisitionResult,
   catalog,
@@ -146,4 +160,5 @@ module.exports = {
   acquisitionHistory,
   creatorWorkspace,
   distributionDashboard,
+  importContextSnapshot,
 };
