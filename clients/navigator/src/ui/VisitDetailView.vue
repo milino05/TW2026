@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useRuntimeStore } from "../application/stores";
+import { useConfiguredVenueStore, useRuntimeStore } from "../application/stores";
 import { navigatorVisitRepository, type NavigatorVisitDetail } from "../infrastructure/http/navigatorVisitRepository";
 import {
   executionPreparationRepository,
@@ -10,6 +10,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const configuredVenueStore = useConfiguredVenueStore();
 const runtimeStore = useRuntimeStore();
 const detail = ref<NavigatorVisitDetail | null>(null);
 const preparation = ref<ExecutionPreparationProjection | null>(null);
@@ -40,7 +41,10 @@ function syncPreparationControls(value: ExecutionPreparationProjection) {
 
 onMounted(async () => {
   try {
-    detail.value = await navigatorVisitRepository.detail(String(route.params.visitId));
+    detail.value = await navigatorVisitRepository.detail(
+      String(route.params.visitId),
+      configuredVenueStore.config?.venueId,
+    );
     preparation.value = await executionPreparationRepository.createForVisit(detail.value.visit.id);
     syncPreparationControls(preparation.value);
   } catch (cause) {
