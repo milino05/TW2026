@@ -69,6 +69,17 @@ function projectedRevisionToWrite(revision) {
   };
 }
 
+function workflowNotice(code) {
+  const messages = {
+    "workflow.check": "Controllo di consistenza completato.",
+    "workflow.request_review": "Revisione inviata alla review manageriale.",
+    "workflow.withdraw_review": "Revisione ritirata dalla review.",
+    "workflow.request_changes": "Modifiche richieste.",
+    "workflow.publish": "Contenuto pubblicato.",
+  };
+  return messages[code] || "Operazione editoriale completata.";
+}
+
 export class ItemAuthoringView extends HTMLElement {
   workspace = null;
   principal = null;
@@ -94,6 +105,14 @@ export class ItemAuthoringView extends HTMLElement {
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("change", this.onChange);
+  }
+
+  availableOperation(code) {
+    return (this.projection?.availableOperations || []).find((operation) => operation.code === code) || null;
+  }
+
+  workflowOperations() {
+    return (this.projection?.availableOperations || []).filter((operation) => String(operation.code || "").startsWith("workflow."));
   }
 
   async bootstrap() {
@@ -217,6 +236,7 @@ export class ItemAuthoringView extends HTMLElement {
         await this.reloadWorkspace();
         this.notice = "Edition e prima Representation create.";
       } else if (form.matches("[data-edit-revision]")) {
+        if (!this.availableOperation("item.edit")) throw new Error("La revisione non è modificabile nello stato corrente");
         const revision = this.projection?.selected?.revision;
         const editionId = this.projection?.selected?.edition?.id;
         if (!revision || !editionId) throw new Error("Nessuna revisione modificabile");
@@ -260,26 +280,47 @@ export class ItemAuthoringView extends HTMLElement {
       finally { this.busy = false; this.render(); }
       return;
     }
-    const consistency = target?.closest("button[data-check-edition]");
-    if (consistency) {
-      this.busy = true; this.error = null; this.render();
+    const workflowButton = target?.closest("button[data-workflow-operation]");
+    if (workflowButton) {
+      const operationCode = workflowButton.dataset.workflowOperation || "";
+      const operation = this.availableOperation(operationCode);
+      const editionId = workflowButton.dataset.editionId || id(this.projection?.selected?.edition?.id);
+      if (!operation || !editionId) return;
+      const payload = {};
+      if (operation.requiresMessage) {
+        const message = window.prompt("Motivazione delle modifiche richieste:");
+        if (message === null) return;
+        if (!message.trim()) {
+          this.error = "La motivazione è obbligatoria.";
+          this.render();
+          return;
+        }
+        payload.message = message.trim();
+      }
+      this.busy = true;
+      this.error = null;
+      this.notice = null;
+      this.render();
       try {
-        const result = await authoringRepository.checkEdition(consistency.dataset.checkEdition);
-        await this.reloadProjection(consistency.dataset.checkEdition);
-        this.notice = result.issues?.length ? `Controllo completato: ${result.issues.length} problema/i.` : "Controllo completato: nessun problema.";
-      } catch (error) { this.error = error instanceof Error ? error.message : "Controllo non riuscito"; }
-      finally { this.busy = false; this.render(); }
-      return;
-    }
-    const publish = target?.closest("button[data-publish-edition]");
-    if (publish) {
-      this.busy = true; this.error = null; this.render();
-      try {
-        await authoringRepository.publishEdition(publish.dataset.publishEdition);
-        await this.reloadProjection(publish.dataset.publishEdition);
-        this.notice = "Contenuto pubblicato.";
-      } catch (error) { this.error = error instanceof Error ? error.message : "Pubblicazione non riuscita"; }
-      finally { this.busy = false; this.render(); }
+        const result = await marketplaceRepository.executeWorkspaceOperation({
+          operationCode,
+          sourceRef: { resourceType: "item_edition", resourceId: editionId },
+          targetPrincipal: { type: this.principal.type, id: this.principal.id },
+          payload,
+        });
+        await this.reloadProjection(editionId);
+        if (operationCode === "workflow.check") {
+          const issues = result?.result?.issues || [];
+          this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i.` : "Controllo completato: nessun problema.";
+        } else {
+          this.notice = workflowNotice(operationCode);
+        }
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Operazione editoriale non riuscita";
+      } finally {
+        this.busy = false;
+        this.render();
+      }
     }
   };
 
@@ -380,22 +421,23 @@ export class ItemAuthoringView extends HTMLElement {
     const durationOptions = (controls?.durationTypes || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${first?.duration?.definitionId === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)} · ${entry.targetSeconds}s</option>`).join("");
     const languageOptions = (controls?.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${first?.languageComplexity?.definitionId === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("");
     const issues = (revision.integrity?.issues || []).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("");
-    return `
-      <section>
-        <h2>3. Revision / Representation</h2>
-        <p>Namespace: <strong>${escapeHtml(selected.namespace.name)}</strong> · stato ${escapeHtml(revision.status)}</p>
-        <form data-edit-revision>
+    const canEdit = Boolean(this.availableOperation("item.edit"));
+    const workflowButtons = this.workflowOperations().map((operation) => `
+      <button type="button" data-workflow-operation="${escapeHtml(operation.code)}" data-edition-id="${escapeHtml(id(selected.edition.id))}" ${this.busy ? "disabled" : ""}>${escapeHtml(operation.label)}</button>`).join("");
+    const editor = canEdit ? `<form data-edit-revision>
           <label>Etichetta <input name="label" value="${escapeHtml(revision.label)}" required></label>
           <div class="two-columns"><label>Autore <input name="author" value="${escapeHtml(revision.authorCredits?.[0] || "")}" required></label><label>Licenza <input name="license" value="${escapeHtml(revision.license || "")}" required></label></div>
           ${first ? `<div class="two-columns"><label>Durata <select name="durationTypeDefinitionId">${durationOptions}</select></label><label>Complessità <select name="languageLevelDefinitionId">${languageOptions}</select></label></div>
           <label>Locale <input name="locale" value="${escapeHtml(first.locale)}"></label>
           <label>Testo <textarea name="text" rows="10">${escapeHtml(first.text)}</textarea></label>` : "<p>Nessuna Representation presente.</p>"}
           <button ${this.busy ? "disabled" : ""}>Salva revisione</button>
-        </form>
-        <div class="actions">
-          <button type="button" data-check-edition="${escapeHtml(id(selected.edition.id))}" ${this.busy ? "disabled" : ""}>Controlla consistenza</button>
-          ${this.projection.availableOperations?.includes("item.publish") ? `<button type="button" data-publish-edition="${escapeHtml(id(selected.edition.id))}" ${revision.integrity?.status !== "valid" || this.busy ? "disabled" : ""}>Pubblica</button>` : ""}
-        </div>
+        </form>` : `<p>La revisione non è modificabile nello stato <strong>${escapeHtml(revision.status)}</strong>. Usa le operazioni editoriali disponibili.</p>`;
+    return `
+      <section>
+        <h2>3. Revision / Representation</h2>
+        <p>Namespace: <strong>${escapeHtml(selected.namespace.name)}</strong> · stato ${escapeHtml(revision.status)} · integrità ${escapeHtml(revision.integrity?.status || "needs_review")}</p>
+        ${editor}
+        <div class="actions">${workflowButtons}</div>
         ${issues ? `<ul class="issues">${issues}</ul>` : ""}
       </section>`;
   }
