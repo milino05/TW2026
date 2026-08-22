@@ -172,6 +172,65 @@ Non viene implementato nel percorso corrente un meccanismo `unlisted` basato su 
 
 Le Visit/contenuti privati richiesti dal 18–27 possono essere owned e published per l’esecuzione senza MarketplaceListing; gli studenti accedono alla Session sincronizzata tramite il relativo meccanismo di partecipazione.
 
+# Punto 10/30 — Navigator Visit Library v2
+
+Il Navigator usa una projection backend dedicata, concettualmente:
+
+```text
+GET /navigator/visit-library?venueId=:configuredVenueId
+```
+
+La Venue configurata è contesto fisico di discovery/applicabilità, non authorization e non limite del PhysicalScope.
+
+La Library personale include normalmente:
+
+```text
+1. Visit owned direttamente dal current User
+2. Visit / VisitRevision coperte da Entitlement diretto visit.execute del current User
+```
+
+L’authority derivata da Organization membership o da Entitlement Organization-scoped può autorizzare l’esecuzione ma non popola automaticamente la Library personale. Authorization e Library membership restano distinti; non viene introdotto un `LibraryMembership` persistente.
+
+Per ogni candidate il backend risolve prima una specifica `ResolvedVisitExecutionSource`, quindi deriva il PhysicalScope dalla relazione:
+
+```text
+VisitAnchor -> VenueTarget -> Venue
+```
+
+Una Visit è applicabile alla Library se la configured Venue appartiene al PhysicalScope della revisione risolta. Visit multi-Venue rimangono supportate e la configured Venue non restringe la Session a una singola Venue.
+
+La normale Library mostra soltanto Visit il cui intero PhysicalScope è attualmente coerente per la preparazione. La logica `VisitAnchor -> VenueTarget -> VenueRelease` deve essere centralizzata in un resolver fisico riusabile da integrity, Library, Visit Detail e `startSession()` invece di essere duplicata.
+
+Forma concettuale minima:
+
+```text
+NavigatorVisitLibraryProjection
+  context
+    venue
+      id
+      name
+  visits[]
+    visitId
+    resolvedRevisionId
+    title
+    description?
+    owner?
+      type
+      id
+      displayName
+    physicalScope
+      venues[]
+        id
+        name
+      isMultiVenue
+```
+
+I nomi esatti dei DTO possono essere raffinati. La projection non espone `kind`, `visibility`, `museumIds`, acquisition type, documenti Entitlement/Marketplace, VisitRevision grezza, VisitAnchor[], VenueTarget[] o VenueRelease complete.
+
+`resolvedRevisionId` garantisce consistenza della singola risposta Library ma non prenota quella revisione per una futura Visit Detail: l’apertura della Detail è una nuova preparation e può risolvere una revisione più recente in caso di `follow_current`.
+
+La Library non calcola inizialmente una durata personalizzata per ogni card. Stime dipendenti da presentation/navigation/adaptive state appartengono alla Visit Detail / LogisticsPreview. Le sessioni riprendibili restano un contratto separato dalla Visit Library e vengono composte dall’application layer della `LibraryView`.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -183,9 +242,6 @@ Le Visit/contenuti privati richiesti dal 18–27 possono essere owned e publishe
 - LLM futuro produce lo stesso request model strutturato del form di generazione.
 
 # Boundary già approvati ma con schema v2 pending
-
-## Library
-Landing personale, distinta dal Marketplace, basata su projection backend. Sessioni riprendibili e Visit disponibili restano contratti distinti. Forma definitiva pending Punto 10.
 
 ## Navigator Visit Detail
 Projection dedicata, autenticata, access-first e composita. Authorization prima di preparation/logistics; backend recomputation; una singola revisione eseguibile coerente per request; `startSession()` boundary finale. Forma definitiva pending Punti 11–18.
@@ -204,11 +260,12 @@ Non devono più essere usati come contratto definitivo:
 - `Venue.primaryEditorialContextId` duplicato nella config Navigator;
 - assunzione `visitId -> latest published revision` valida per ogni accesso;
 - `Visit.visibility = public | unlisted | private`;
-- `VisitShareLink` come meccanismo corrente.
+- `VisitShareLink` come meccanismo corrente;
+- `museumIds[]` come filtro fisico della Library;
+- `access.basis` / `acquisitionType` nella Library Navigator.
 
-# Punti 10–30 ancora da riesaminare
+# Punti 11–30 ancora da riesaminare
 
-10. `VisitLibraryProjection` Venue-aware e capability-aware;
 11. `NavigatorVisitDetailProjection` v2;
 12. presentation preparation unificata;
 13. preparation override non persistente;
