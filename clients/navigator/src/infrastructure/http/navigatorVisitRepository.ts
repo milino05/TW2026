@@ -26,7 +26,6 @@ export interface NavigatorVisitDetail {
   };
   preparation: {
     available: boolean;
-    startMode: string;
   };
 }
 
