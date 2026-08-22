@@ -12,18 +12,20 @@ async function loadEditorialContextUsageDependencies(editorialContextOrId) {
   return { editorialContext, contentSpace };
 }
 
-async function assertCanUseEditorialContextForGeneration({ editorialContext, actorUserId }) {
+async function assertCanUseEditorialContextForGeneration({ editorialContext, actorUserId, principalType = null, principalId = null }) {
   const { editorialContext: context } = await loadEditorialContextUsageDependencies(editorialContext);
   const access = await assertCapabilitySource({
     actorUserId,
     capability: "context.generate",
     resourceType: "editorial_context",
     resourceId: context._id,
+    principalType,
+    principalId,
   });
   return { editorialContext: context, access };
 }
 
-async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, actorUserId }) {
+async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, actorUserId, principalType = null, principalId = null }) {
   if (!editorialContextId) return null;
   const { editorialContext } = await loadEditorialContextUsageDependencies(editorialContextId);
   const access = await assertCapabilitySource({
@@ -31,6 +33,8 @@ async function assertCanUseEditorialContextAsVenuePrimary({ editorialContextId, 
     capability: "context.use_as_venue_primary",
     resourceType: "editorial_context",
     resourceId: editorialContext._id,
+    principalType,
+    principalId,
   });
   if (access.basis === "entitlement" && access.entitlement?.versionPolicy === "pinned") {
     throw new AppError("Una EditorialRelease pinned non puo diventare il primary live di una Venue", 409, [{
