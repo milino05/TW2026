@@ -6,12 +6,14 @@ const controller = require("../controllers/marketplaceV2.controller");
 const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
+const editorialContextId = validateObjectIdParam("editorialContextId");
 
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
+router.post("/v2/marketplace/editorial-contexts/:editorialContextId/import-snapshot", editorialContextId, controller.importContextSnapshot);
 router.post("/v2/marketplace/listings", controller.createListing);
 router.get("/v2/marketplace/listings/:listingId", listingId, controller.detail);
 router.post("/v2/marketplace/listings/:listingId/offers", listingId, controller.createOffer);
