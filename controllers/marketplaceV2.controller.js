@@ -1,5 +1,6 @@
 const marketplace = require("../services/marketplaceV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
+const workspace = require("../services/marketplaceWorkspaceV2.service");
 
 function projectAcquisitionResult(result) {
   return {
@@ -114,6 +115,27 @@ async function acquisitionHistory(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function creatorWorkspace(req, res, next) {
+  try {
+    res.status(200).json(await workspace.getCreatorWorkspace({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function distributionDashboard(req, res, next) {
+  try {
+    res.status(200).json(await workspace.getDistributionDashboard({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
 module.exports = {
   projectAcquisitionResult,
   catalog,
@@ -122,4 +144,6 @@ module.exports = {
   createOffer,
   acquire,
   acquisitionHistory,
+  creatorWorkspace,
+  distributionDashboard,
 };
