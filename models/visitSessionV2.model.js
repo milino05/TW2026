@@ -7,6 +7,15 @@ const VenuePinSchema = new Schema({
   layoutRevisionId: { type: Schema.Types.ObjectId, ref: "LayoutRevision", required: true },
 }, { _id: false });
 
+const PresentationSelectionSchema = new Schema({
+  variantId: { type: Schema.Types.ObjectId, required: true },
+  representationId: { type: Schema.Types.ObjectId, required: true },
+  durationTypeDefinitionId: { type: String, required: true, trim: true },
+  languageLevelDefinitionId: { type: String, required: true, trim: true },
+  locale: { type: String, required: true, trim: true },
+  estimatedContentSeconds: { type: Number, min: 0, required: true },
+}, { _id: false });
+
 const PresentationOverrideSchema = new Schema({
   contentEntryId: { type: Schema.Types.ObjectId, required: true },
   variantId: { type: Schema.Types.ObjectId, required: true },
@@ -16,6 +25,20 @@ const PresentationOverrideSchema = new Schema({
   locale: { type: String, required: true, trim: true },
   estimatedContentSeconds: { type: Number, min: 0, required: true },
   updatedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
+const SemanticPresentationSchema = new Schema({
+  sourceActionId: { type: String, required: true, trim: true },
+  sourceEditorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", required: true },
+  itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
+  itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
+  itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
+  namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
+  subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
+  label: { type: String, required: true, trim: true },
+  relationLabel: { type: String, trim: true, default: null },
+  presentation: { type: PresentationSelectionSchema, required: true },
+  openedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
 const TransitionObservationSchema = new Schema({
@@ -52,6 +75,8 @@ const InteractionContextSchema = new Schema({
   contentEntryId: { type: Schema.Types.ObjectId, default: null },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", default: null },
   visitAnchorId: { type: Schema.Types.ObjectId, default: null },
+  semanticSubjectId: { type: Schema.Types.ObjectId, ref: "Subject", default: null },
+  semanticItemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", default: null },
 }, { _id: false });
 
 const InteractionResultSchema = new Schema({
@@ -95,6 +120,7 @@ const VisitSessionV2Schema = new Schema({
   sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
   presentationOverrides: { type: [PresentationOverrideSchema], default: [] },
+  semanticPresentation: { type: SemanticPresentationSchema, default: null },
   transitionObservations: { type: [TransitionObservationSchema], default: [] },
   contentEntryExperiences: { type: [ContentExperienceSchema], default: [] },
   venueTargetObservations: { type: [VenueTargetObservationSchema], default: [] },
