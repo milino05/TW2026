@@ -16,6 +16,8 @@ const GLOBAL_PLACE_INTENTS = Object.freeze([
   "FIND_TOILET",
   "FIND_BAR",
   "FIND_SHOP",
+  "FIND_ELEVATOR",
+  "FIND_STAIRS",
   "FIND_INFO",
 ]);
 
