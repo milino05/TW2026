@@ -27,7 +27,7 @@ const subjectResults = ref<GenerationSubjectOption[]>([]);
 const selectedSubjectIds = ref<string[]>([]);
 const searchingSubjects = ref(false);
 const booleanRoutingChoices = ref<Record<string, string>>({});
-const numericRoutingValues = ref<Record<string, number | null>>({});
+const numericRoutingValues = ref<Record<string, number | string | null>>({});
 const numericRoutingPriorities = ref<Record<string, "preferred" | "required">>({});
 const busy = ref(true);
 const generating = ref(false);
@@ -125,8 +125,6 @@ async function searchSubjects() {
   try {
     const response = await generatorRepository.searchSubjects(sources, subjectQuery.value.trim(), 30);
     subjectResults.value = response.results;
-    const visible = new Set(response.results.map((subject) => subject.id));
-    selectedSubjectIds.value = selectedSubjectIds.value.filter((subjectId) => visible.has(subjectId));
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile cercare gli interessi";
   } finally {
@@ -151,7 +149,9 @@ function routingRequirements(): GenerationNavigationRequirement[] {
       continue;
     }
     if (control.dataType === "number") {
-      const value = Number(numericRoutingValues.value[control.key]);
+      const rawValue = numericRoutingValues.value[control.key];
+      if (rawValue === undefined || rawValue === null || rawValue === "") continue;
+      const value = Number(rawValue);
       if (!Number.isFinite(value)) continue;
       requirements.push({
         attributeKey: control.key,
@@ -294,6 +294,7 @@ async function generate() {
             {{ searchingSubjects ? "Ricerca…" : "Cerca" }}
           </button>
         </div>
+        <p v-if="selectedSubjectIds.length">Interessi selezionati: {{ selectedSubjectIds.length }}</p>
         <div v-if="subjectResults.length" class="subject-results">
           <label v-for="subject in subjectResults" :key="subject.id" class="check-row">
             <input v-model="selectedSubjectIds" type="checkbox" :value="subject.id" :disabled="generating">
