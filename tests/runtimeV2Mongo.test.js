@@ -157,7 +157,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
         { key: "gallery", label: "Sala", userIntents: [] },
         { key: "toilet", label: "Toilette", userIntents: ["FIND_TOILET"] },
       ],
-      floors: [{ key: "ground", label: "Piano terra" }],
+      floors: [{ key: "ground", label: "Piano terra", map: { imageUrl: "/maps/runtime-r1-ground.svg", width: 1000, height: 800 } }],
       places: [
         { _id: targetPlaceR1, typeKey: "gallery", label: "Sala A", floorKey: "ground", position: { x: 0.1, y: 0.1 } },
         { _id: toiletPlaceR1, typeKey: "toilet", label: "Toilette R1", floorKey: "ground", position: { x: 0.4, y: 0.1 } },
@@ -236,6 +236,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     const visitPreparation = await createExecutionPreparation({ userId: user._id, payload: { visitId: visit._id } });
     const staleGeneratedPreparation = await createExecutionPreparation({ userId: user._id, payload: { generatedVisitPlanId: generatedPlan._id } });
     assert.equal(id(visitPreparation.source.visitRevisionId), id(visitRevision._id));
+    assert.equal(visitPreparation.readiness.status, "ready");
     assert.equal(visitPreparation.logisticsPreview.routeSummary.venueCount, 1);
 
     const started = await startExecutionPreparation({
@@ -277,7 +278,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
         { key: "gallery", label: "Sala", userIntents: [] },
         { key: "toilet", label: "Toilette", userIntents: ["FIND_TOILET"] },
       ],
-      floors: [{ key: "ground", label: "Piano terra" }],
+      floors: [{ key: "ground", label: "Piano terra", map: { imageUrl: "/maps/runtime-r2-ground.svg", width: 1000, height: 800 } }],
       places: [
         { _id: targetPlaceR2, typeKey: "gallery", label: "Sala B", floorKey: "ground", position: { x: 0.7, y: 0.2 } },
         { _id: toiletPlaceR2, typeKey: "toilet", label: "Toilette R2", floorKey: "ground", position: { x: 0.9, y: 0.2 } },
