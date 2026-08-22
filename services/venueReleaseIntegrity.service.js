@@ -51,6 +51,7 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
   const placeIds = new Set((layout.places || []).map((entry) => String(entry._id)));
   const attributeByKey = new Map((layout.routingAttributes || []).map((entry) => [entry.key, entry]));
   const allowedIntents = new Set(GLOBAL_PLACE_INTENTS);
+  const localByCanonical = new Map();
 
   (layout.placeTypes || []).forEach((placeType, index) => (placeType.userIntents || []).forEach((intent, intentIndex) => {
     if (!allowedIntents.has(intent)) add(`layout.placeTypes[${index}].userIntents[${intentIndex}]`, "UNKNOWN_PLACE_INTENT", `Intento globale non riconosciuto: ${intent}`);
@@ -58,7 +59,17 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
   (layout.routingAttributes || []).forEach((attribute, index) => {
     if (attribute.dataType === "choice" && !(attribute.options || []).length) add(`layout.routingAttributes[${index}].options`, "CHOICE_OPTIONS_REQUIRED", "Un attributo choice deve definire almeno una option");
     if (attribute.canonicalKey) {
-      const canonical = getCanonicalAttribute(attribute.canonicalKey);
+      const canonicalKey = String(attribute.canonicalKey).trim().toLowerCase();
+      if (localByCanonical.has(canonicalKey)) {
+        add(
+          `layout.routingAttributes[${index}].canonicalKey`,
+          "DUPLICATE_CANONICAL_ATTRIBUTE_MAPPING",
+          `La canonicalKey ${canonicalKey} e gia mappata dall'attributo locale ${localByCanonical.get(canonicalKey)}`,
+        );
+      } else {
+        localByCanonical.set(canonicalKey, attribute.key);
+      }
+      const canonical = getCanonicalAttribute(canonicalKey);
       if (!canonical) add(`layout.routingAttributes[${index}].canonicalKey`, "UNKNOWN_CANONICAL_ATTRIBUTE", "Attributo globale sconosciuto");
       else {
         if (canonical.dataType !== attribute.dataType) add(`layout.routingAttributes[${index}].dataType`, "CANONICAL_TYPE_MISMATCH", "Il dataType non coincide con il catalogo globale");
