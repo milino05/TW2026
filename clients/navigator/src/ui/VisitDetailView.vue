@@ -14,8 +14,12 @@ const runtimeStore = useRuntimeStore();
 const detail = ref<NavigatorVisitDetail | null>(null);
 const preparation = ref<ExecutionPreparationProjection | null>(null);
 const busy = ref(true);
+const updating = ref(false);
 const starting = ref(false);
 const error = ref<string | null>(null);
+const depthPreference = ref(0.5);
+const complexityPreference = ref(0.5);
+const movementPacePreference = ref(0.5);
 
 const canStart = computed(() => Boolean(
   preparation.value &&
@@ -28,16 +32,43 @@ function minutes(seconds: number) {
   return Math.max(0, Math.ceil(seconds / 60));
 }
 
+function syncPreparationControls(value: ExecutionPreparationProjection) {
+  depthPreference.value = value.effectivePresentationPreference?.depthPreference ?? 0.5;
+  complexityPreference.value = value.effectivePresentationPreference?.languageComplexityPreference ?? 0.5;
+  movementPacePreference.value = value.navigation.movementPacePreference;
+}
+
 onMounted(async () => {
   try {
     detail.value = await navigatorVisitRepository.detail(String(route.params.visitId));
     preparation.value = await executionPreparationRepository.createForVisit(detail.value.visit.id);
+    syncPreparationControls(preparation.value);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile preparare la visita";
   } finally {
     busy.value = false;
   }
 });
+
+async function updatePreparation() {
+  if (!preparation.value || preparation.value.status !== "active") return;
+  updating.value = true;
+  error.value = null;
+  try {
+    preparation.value = await executionPreparationRepository.update(preparation.value, {
+      presentationPreference: {
+        depthPreference: depthPreference.value,
+        languageComplexityPreference: complexityPreference.value,
+      },
+      movementPacePreference: movementPacePreference.value,
+    });
+    syncPreparationControls(preparation.value);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "Impossibile aggiornare la preparazione";
+  } finally {
+    updating.value = false;
+  }
+}
 
 async function start() {
   if (!preparation.value || !canStart.value) return;
@@ -63,13 +94,46 @@ async function start() {
     <template v-else-if="detail">
       <h1>{{ detail.visit.title }}</h1>
       <p>{{ detail.visit.description }}</p>
+      <p>Di {{ detail.context.owner.name }}</p>
       <p>{{ detail.visit.stopCount }} tappe · {{ detail.visit.contentCount }} contenuti</p>
       <p v-if="detail.visit.physicalScope.length">
         {{ detail.visit.physicalScope.map((venue) => venue.name).join(" · ") }}
       </p>
 
+      <section v-if="preparation" aria-labelledby="previsit-title">
+        <h2 id="previsit-title">Informazioni prima della visita</h2>
+        <ul v-if="preparation.preVisit.visitNotes.length">
+          <li v-for="note in preparation.preVisit.visitNotes" :key="note">{{ note }}</li>
+        </ul>
+        <article v-for="venue in preparation.preVisit.venues" :key="venue.id">
+          <h3>{{ venue.name }}</h3>
+          <ul v-if="venue.information.length">
+            <li v-for="information in venue.information" :key="information">{{ information }}</li>
+          </ul>
+        </article>
+      </section>
+
       <section v-if="preparation" aria-labelledby="preparation-title">
-        <h2 id="preparation-title">Prima di iniziare</h2>
+        <h2 id="preparation-title">Adatta la visita</h2>
+        <div class="preparation-controls">
+          <label>
+            Approfondimento
+            <input v-model.number="depthPreference" type="range" min="0" max="1" step="0.1">
+          </label>
+          <label>
+            Complessità del linguaggio
+            <input v-model.number="complexityPreference" type="range" min="0" max="1" step="0.1">
+          </label>
+          <label>
+            Ritmo di spostamento
+            <input v-model.number="movementPacePreference" type="range" min="0" max="1" step="0.1">
+          </label>
+          <button type="button" :disabled="updating || starting" @click="updatePreparation">
+            {{ updating ? "Aggiornamento…" : "Aggiorna stima" }}
+          </button>
+        </div>
+
+        <h3>Riepilogo</h3>
         <p>
           Durata stimata: circa {{ minutes(preparation.logisticsPreview.estimatedTotalSeconds) }} min
           <span v-if="preparation.logisticsPreview.reservedSeconds">
@@ -98,10 +162,22 @@ async function start() {
         </ul>
       </section>
 
-      <button type="button" :disabled="starting || !canStart" @click="start">
+      <button type="button" :disabled="starting || updating || !canStart" @click="start">
         {{ starting ? "Avvio…" : "Inizia visita" }}
       </button>
       <p v-if="error" role="alert">{{ error }}</p>
     </template>
   </main>
 </template>
+
+<style scoped>
+.preparation-controls {
+  display: grid;
+  gap: 1rem;
+  max-width: 34rem;
+}
+.preparation-controls label {
+  display: grid;
+  gap: .35rem;
+}
+</style>
