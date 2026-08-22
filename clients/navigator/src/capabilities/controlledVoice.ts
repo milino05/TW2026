@@ -1,9 +1,4 @@
-import type { AvailableAction } from "../infrastructure/http/sessionRepository";
-
-type RecognitionResult = {
-  transcript: string;
-  action: AvailableAction | null;
-};
+import type { ControlledVoiceCapability, VoiceActionMatch, VoiceActionOption } from "./index";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -38,7 +33,7 @@ function normalize(value: string) {
     .trim();
 }
 
-function matchAction(actions: AvailableAction[], transcript: string) {
+function matchAction<T extends VoiceActionOption>(actions: T[], transcript: string) {
   const spoken = normalize(transcript);
   if (!spoken) return null;
   return actions.find((action) => {
@@ -47,14 +42,14 @@ function matchAction(actions: AvailableAction[], transcript: string) {
   }) || null;
 }
 
-export class BrowserControlledVoice {
+export class BrowserControlledVoice implements ControlledVoiceCapability {
   private recognition: SpeechRecognitionLike | null = null;
 
   get supported() {
     return constructor() !== null;
   }
 
-  listen(actions: AvailableAction[], locale = "it-IT"): Promise<RecognitionResult> {
+  listen<T extends VoiceActionOption>(actions: T[], locale = "it-IT"): Promise<VoiceActionMatch<T>> {
     const Recognition = constructor();
     if (!Recognition) return Promise.reject(new Error("Riconoscimento vocale non supportato dal browser"));
     this.stop();
