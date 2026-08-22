@@ -5,7 +5,7 @@ const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
-async function assertCanComposeEditorialRelease({ editorialReleaseId, actorUserId }) {
+async function assertCanComposeEditorialRelease({ editorialReleaseId, actorUserId, principalType, principalId }) {
   const release = await EditorialRelease.findById(editorialReleaseId).lean();
   if (!release) throw new AppError("EditorialRelease sorgente non disponibile", 404);
   const context = await EditorialContext.findOne({ _id: release.editorialContextId, lifecycleStatus: "active" }).lean();
@@ -15,6 +15,8 @@ async function assertCanComposeEditorialRelease({ editorialReleaseId, actorUserI
     capability: "context.compose_visit",
     resourceType: "editorial_context",
     resourceId: context._id,
+    principalType,
+    principalId,
   });
   if (access.basis === "entitlement") {
     const ref = access.resolvedSnapshotRef;
@@ -28,7 +30,7 @@ async function assertCanComposeEditorialRelease({ editorialReleaseId, actorUserI
   return { release, context, access };
 }
 
-async function authorizeVisitEditorialSources({ editorialSources = [], actorUserId }) {
+async function authorizeVisitEditorialSources({ editorialSources = [], actorUserId, principalType, principalId }) {
   const result = [];
   const seen = new Set();
   for (const source of editorialSources || []) {
@@ -36,7 +38,12 @@ async function authorizeVisitEditorialSources({ editorialSources = [], actorUser
     const key = String(releaseId || "");
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    result.push(await assertCanComposeEditorialRelease({ editorialReleaseId: releaseId, actorUserId }));
+    result.push(await assertCanComposeEditorialRelease({
+      editorialReleaseId: releaseId,
+      actorUserId,
+      principalType,
+      principalId,
+    }));
   }
   return result;
 }
