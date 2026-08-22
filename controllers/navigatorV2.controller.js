@@ -1,5 +1,6 @@
 const service = require("../services/navigatorVisitV2.service");
 const generationOptions = require("../services/generationOptionsV2.service");
+const generationSemanticOptions = require("../services/generationSemanticOptionsV2.service");
 
 async function library(req, res, next) {
   try {
@@ -35,4 +36,21 @@ async function generationOptionsProjection(req, res, next) {
   } catch (error) { next(error); }
 }
 
-module.exports = { library, visitDetail, resumableSessions, generationOptionsProjection };
+async function generationSubjectOptions(req, res, next) {
+  try {
+    res.status(200).json(await generationSemanticOptions.searchGenerationSubjectsV2({
+      actorUserId: req.user._id,
+      editorialSources: req.body?.editorialSources || [],
+      query: req.body?.query || "",
+      limit: req.body?.limit || 20,
+    }));
+  } catch (error) { next(error); }
+}
+
+module.exports = {
+  library,
+  visitDetail,
+  resumableSessions,
+  generationOptionsProjection,
+  generationSubjectOptions,
+};
