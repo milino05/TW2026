@@ -3,7 +3,26 @@ const generator = require("./visitGeneratorV2.service");
 const { resolveCapabilityAccess } = require("./capabilityAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 
-function id(value) { return String(value?._id || value || ""); }
+async function resolveAdoptionAccess({ source, actorUserId }) {
+  const requested = source.requestedSourceRef;
+  let sourceResourceRef = requested;
+  let access = await resolveCapabilityAccess({
+    actorUserId,
+    capability: "context.generate",
+    resourceType: requested.resourceType,
+    resourceId: requested.resourceId,
+  });
+  if (!access.allowed && source.resolvedSourceRef?.resourceType === "editorial_release") {
+    sourceResourceRef = source.resolvedSourceRef;
+    access = await resolveCapabilityAccess({
+      actorUserId,
+      capability: "context.generate",
+      resourceType: sourceResourceRef.resourceType,
+      resourceId: sourceResourceRef.resourceId,
+    });
+  }
+  return { access, sourceResourceRef };
+}
 
 async function recordGenerationSourceAdoptions({ plan, actorUserId }) {
   const adoptionIds = [];
@@ -11,18 +30,13 @@ async function recordGenerationSourceAdoptions({ plan, actorUserId }) {
     const requested = source.requestedSourceRef;
     const editorialReleaseId = source.editorialReleaseId;
     if (!requested?.resourceType || !requested.resourceId || !editorialReleaseId) continue;
-    const access = await resolveCapabilityAccess({
-      actorUserId,
-      capability: "context.generate",
-      resourceType: requested.resourceType,
-      resourceId: requested.resourceId,
-    });
+    const { access, sourceResourceRef } = await resolveAdoptionAccess({ source, actorUserId });
     if (!access.allowed) continue;
     const adoption = await recordAdoptionFromAccess({
-      access: { ...access, requestedResourceRef: requested },
+      access: { ...access, requestedResourceRef: sourceResourceRef },
       actorUserId,
       action: "context_reference",
-      sourceResourceRef: requested,
+      sourceResourceRef,
       sourceSnapshotRef: { resourceType: "editorial_release", resourceId: editorialReleaseId },
     });
     if (adoption) adoptionIds.push(adoption._id);
@@ -43,13 +57,8 @@ async function generateVisitPlanForUserV2({ userId, request }) {
   }
 }
 
-async function assertGenerationAdoptionSnapshot({ planId, editorialReleaseId }) {
-  const plan = await GeneratedVisitPlanV2.findById(planId).select("sourceEditorialReleaseIds").lean();
-  return Boolean(plan && (plan.sourceEditorialReleaseIds || []).some((releaseId) => id(releaseId) === id(editorialReleaseId)));
-}
-
 module.exports = {
+  resolveAdoptionAccess,
   recordGenerationSourceAdoptions,
   generateVisitPlanForUserV2,
-  assertGenerationAdoptionSnapshot,
 };
