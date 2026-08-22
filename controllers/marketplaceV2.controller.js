@@ -22,7 +22,8 @@ function projectAcquisitionResult(result) {
 async function catalog(req, res, next) {
   try {
     const resourceTypes = req.query?.resourceTypes || req.query?.resourceType || null;
-    const legacyVisitOnly = req.query?.venueId && !resourceTypes;
+    const queryText = String(req.query?.q || "").trim();
+    const legacyVisitOnly = req.query?.venueId && !resourceTypes && !queryText;
     const result = legacyVisitOnly
       ? await visitMarketplace.listVisitCatalog({
           actorUserId: req.user._id,
@@ -34,7 +35,7 @@ async function catalog(req, res, next) {
           actorUserId: req.user._id,
           page: req.query?.page,
           limit: req.query?.limit,
-          queryText: req.query?.q || "",
+          queryText,
           resourceTypes,
           sellerType: req.query?.sellerType || null,
           sellerId: req.query?.sellerId || null,
