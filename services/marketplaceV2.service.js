@@ -331,7 +331,6 @@ async function projectCatalogListing({ listing, actorUserId }) {
     MarketplaceOffer.find({ listingId: listing._id, status: "active" }).sort({ createdAt: 1 }).lean(),
     sellerSummary(listing),
   ]);
-  if (!offers.length) return null;
   const availableCapabilities = await viewerCapabilities({ actorUserId, offers });
   return {
     listingId: listing._id,
