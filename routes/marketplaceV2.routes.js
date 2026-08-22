@@ -6,9 +6,14 @@ const controller = require("../controllers/marketplaceV2.controller");
 const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
+const itemId = validateObjectIdParam("itemId");
+const venueTargetId = validateObjectIdParam("venueTargetId");
 
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
+router.get("/v2/marketplace/venue-selector", controller.venueSelector);
+router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
+router.get("/v2/marketplace/venue-targets/:venueTargetId/authoring-context", venueTargetId, controller.venueTargetAuthoringContext);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
