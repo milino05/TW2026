@@ -2,9 +2,9 @@
 
 Questo documento traccia lo stato operativo dei vertical slice definiti in `docs/client-v2-implementation-plan.md`. Il piano e le decisioni architetturali restano le fonti normative; questo file registra soltanto avanzamento e verifiche.
 
-## Slice corrente
+## Fase corrente
 
-**Slice 9 — Dataset d’esame, compliance e deploy**
+**Freeze finale — esecuzione completa di check/build/test/seed e prova deploy.**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -187,7 +187,7 @@ Completato su `main`:
 - `GenerationOptionsProjection` authorization/scope-aware con PhysicalScope e EditorialScope indipendenti;
 - source editoriali tipizzate: `editorial_context` live/follow-current oppure `editorial_release` pinned, senza sostituzione silenziosa della snapshot autorizzata;
 - `Venue.primaryEditorialContextId` usato soltanto come default autorizzato, mai come bypass di `context.generate`;
-- selezione Navigator di più Venue fisiche e sorgenti ContentSpace/Context indipendenti, con transfer inter-Venue espliciti;
+- selezione Navigator di più Venue fisiche e sorgenti ContentSpace/Context editoriali indipendente, con transfer inter-Venue espliciti;
 - ricerca Subject source-scoped tramite `generationSemanticOptionsV2.service.js` e `POST /v2/navigator/generation-subjects/search`;
 - gli interessi selezionati diventano `semanticGoals[]` della structured generation request; i canonical navigation requirements diventano `navigationRequirements[]` senza esporre Layout/routing internals al client;
 - presentation controls per tempo, profondità, complessità linguistica, locale e ritmo di movimento;
@@ -229,18 +229,53 @@ Test Slice 8 aggiunti:
 - test Mongo Visit: publication personale senza `review.approved`; manager Organization respinto su draft; operator respinto al publish manageriale; publish manageriale riuscito dopo request-review;
 - verifica locale isolata della logica pura del nuovo state machine/projector: 11 test passati; MongoDB non è disponibile nel runtime locale della chat e la suite repository completa resta demandata alla CI configurata.
 
+## Slice 9 — Dataset d’esame, compliance e deploy
+
+**Stato: implementato nel codice e documentato; test/guardrail versionati. La verifica completa clone -> install/build/test/seed e il deploy gocker restano da eseguire in un ambiente con MongoDB/rete GitHub osservabile.**
+
+Completato su `main`:
+
+- introdotto un dataset d'esame deterministico/idempotente sulla Venue reale `Pinacoteca Nazionale di Bologna`, con i quattro account obbligatori e password prevista dalle specifiche;
+- `autore1` è manager e `autore2` operator della Organization demo senza introdurre ruoli globali autore/visitatore nel dominio;
+- seed completo di Organization, Venue, 12 VenueTarget/Subject/opere, LayoutRevision, VenueRelease, mappa schematica esplicitamente non ufficiale, facility e routing;
+- Namespace con definition identity UUID valide, Subject class/relation type, duration/language scales, presentation aspect e selection signal;
+- 12 Item/Edition/ItemRevision con più Representation, ContentSpace, EditorialContext, SemanticGraphRevision ed EditorialRelease coerenti;
+- i validator/checker reali di Namespace, Presentation, EditorialRelease, VenueRelease, Visit e Offer fanno fallire il seed se il fixture viola il Domain v2;
+- tre Visit Organization-owned pubblicate, ciascuna con almeno dieci opere, tutte sulla stessa Venue demo, con presentation baseline e snapshot editoriali coerenti;
+- tre Listing/Offer per le Visit, con offerte gratuite e pagamento simulato, più test E2E `Marketplace acquisition -> Entitlement visit.execute -> Navigator Library`;
+- Navigator configurato sulla Venue demo e mappa didattica disponibile come asset statico;
+- aggiunti `FIND_ELEVATOR` e `FIND_STAIRS` al catalogo canonico dei place intent, allineando una capacità già presente nel runtime ai requisiti di riconoscimento facility;
+- verificato nel codice che TTS legge esattamente il testo mostrato e che controlled voice usa soltanto le Action correnti con bottoni equivalenti;
+- Express serve backend, Navigator e Marketplace sullo stesso sito; `/navigator` e `/marketplace` hanno redirect canonico e le route SPA annidate sono compatibili con hard refresh;
+- build/deploy documentati per Docker locale e procedura gocker `mongo + node-22`; README e workflow documentale legacy riallineati al Domain v2;
+- durante la compliance Marketplace è stato individuato e chiuso il gap “creare/modificare una visita” richiesto dalle specifiche;
+- introdotto `VisitAuthoringV2`: projection principal-scoped, source editoriali autorizzate, Venue selector e ricerca contenuti paginata server-side per EditorialRelease;
+- la ricerca authoring espone metadata utente, Subject e profili di presentazione durata/linguaggio senza consegnare aggregate Mongo grezzi al client;
+- Visit create/update continua a usare le API/domain service canonici `VisitV2`; il nuovo boundary Marketplace è read/projection-only e non duplica il write model;
+- il Visit editor Marketplace supporta creazione, modifica di Visit pubblicate tramite nuova working revision, aggiunta/rimozione, riordino, ruoli `core | recommended | optional`, associazione Subject -> VenueTarget e contenuti associati senza target fisico;
+- una Visit `in_review` non espone `visit.edit`; check/review/publish restano backend-authoritative tramite `availableOperations` e `workspace/operations`;
+- le indicazioni logistiche sono editate separatamente dai contenuti: `preVisitNotes` appartiene alla Visit, i `routeHints` strutturati vengono preservati e nessuna logistica viene codificata come Item/contentEntry;
+- `checkSlice9Contracts.js` protegge dataset, facility, Visit editor, separazione logistica/contenuti, TTS/voice, static hosting e deploy.
+
+Test Slice 9 versionati:
+
+- seed idempotente + verifier automatico del dataset obbligatorio;
+- Marketplace -> Navigator E2E tramite Acquisition/Entitlement;
+- regression test del catalogo facility per ascensore e scale;
+- `VisitAuthoringV2` verifica projection nuova Visit, Venue/source disponibili, ricerca paginata, più presentation profile, modifica di una Visit già pubblicata tramite nuova draft, blocco editing durante `in_review` e riapertura dopo withdraw.
+
 ## Stato della verifica automatica
 
-La repository configura GitHub Actions su ogni push a `main` per backend checks, guardrail Slice 6/7/8, check/build dei due client, test Node/Mongo e audit dipendenze. Il connector GitHub sui commit correnti non espone workflow run o status check di push; per questo codice, test e guardrail sono versionati ma l'esito CI non viene dichiarato green senza evidenza osservabile. Il runtime locale della chat non dispone di MongoDB e non riesce a risolvere `github.com`, quindi non può sostituire la CI con un clone/test completo.
+La repository configura GitHub Actions su push a `main` per backend checks, guardrail Slice 6/7/8/9, check/build dei due client, test Node/Mongo e audit dipendenze. Sul commit corrente il connector GitHub non espone workflow run o status check; non viene quindi dichiarata una CI green senza evidenza osservabile.
+
+Il runtime locale della chat dispone di Node 22 ma non di MongoDB e non riesce a risolvere `github.com`, quindi non può clonare l'HEAD corrente ed eseguire la suite completa. Le modifiche e i test sono versionati su `main`, ma il criterio finale del piano `clone pulito -> install/build/test/seed -> prodotto demo funzionante` richiede ancora un ambiente eseguibile reale.
 
 ## Prossimo incremento
 
-Slice 9 trasforma il prodotto tecnicamente implementato in una consegna d’esame verificabile:
+Non sono previsti ulteriori vertical slice architetturali nel piano corrente. Il passo successivo è il **freeze finale di consegna**:
 
-1. creare un seed completo e ripetibile con i quattro account obbligatori, Organization, Venue demo reale, Layout/VenueRelease, almeno dieci opere/target e contenuti editoriali coerenti;
-2. creare almeno tre Visit pubblicate, ciascuna con almeno dieci opere e interamente sulla stessa Venue demo richiesta per il livello base;
-3. popolare Listing/Offer/acquisizioni sufficienti a dimostrare Marketplace, licenze, gratuità/pagamento simulato e adozioni;
-4. verificare end-to-end i requisiti 18–24: selezione Venue/config, Marketplace, selezione/esecuzione Visit, mappa oggetti/facility, TTS, controlled voice e bottoni equivalenti;
-5. riscrivere README e documentazione legacy ancora incompatibile con Domain v2/workflow attuale;
-6. verificare Docker/deploy e artifact di consegna secondo le specifiche ufficiali;
-7. eseguire la suite CI completa e correggere eventuali regressioni prima del freeze finale.
+1. su clone pulito eseguire `npm ci`, install Navigator, `npm run check`, `npm run check:clients`, `npm run build:clients` e `npm test` con MongoDB 7 disponibile;
+2. eseguire `npm run seed:demo` e `npm run verify:demo`, quindi provare manualmente i quattro account e i flussi Marketplace/Navigator principali;
+3. eseguire una prova del deploy gocker di dipartimento con `mongo` e `node-22`, compresi hard refresh su route annidate;
+4. correggere esclusivamente regressioni emerse da queste verifiche, evitando nuovi refactoring non necessari prima della consegna;
+5. congelare l'HEAD verificato e registrare l'esito della prova finale.
