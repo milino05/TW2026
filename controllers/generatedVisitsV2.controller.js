@@ -1,13 +1,11 @@
 const generator = require("../services/visitGeneratorV2.service");
-const { assertGenerationRequestAccess } = require("../services/generationAccess.service");
+const { generateVisitPlanForUserV2 } = require("../services/generationApplicationV2.service");
 const { materializeGeneratedPlanV2 } = require("../services/generatedPlanMaterializationV2.service");
 const { projectGeneratedPlanV2 } = require("../services/generatedPlanProjectionV2.service");
 
 async function generate(req, res, next) {
   try {
-    const request = req.body || {};
-    await assertGenerationRequestAccess({ request, actorUserId: req.user._id });
-    const plan = await generator.generateVisitPlanV2({ userId: req.user._id, request });
+    const plan = await generateVisitPlanForUserV2({ userId: req.user._id, request: req.body || {} });
     res.status(201).json(await projectGeneratedPlanV2(plan));
   } catch (error) { next(error); }
 }
