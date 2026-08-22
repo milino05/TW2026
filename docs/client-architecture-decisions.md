@@ -115,6 +115,18 @@ Le note della Visit vengono risolte dalla stessa `VisitRevision` fissata dalla `
 
 `SessionPlan.explanation.preVisitNotes` non è fonte autorevole e il Navigator non deve dipenderne. La projection pre-visita deve essere composta esplicitamente dalle vere sorgenti versionate.
 
+# Punto 17/30 — LogisticsPreview v2
+
+La Visit Detail espone una `LogisticsPreview` user-facing derivata dalla stessa computation backend usata per preparare il futuro SessionPlan. Non viene introdotto un secondo logistics/routing planner: il calcolo pre-start produce un candidato non persistito, poi proiettato nella preview e riusato allo start secondo le regole di consistency del Punto 18.
+
+La preview contiene durata totale stimata, breakdown fra content/observation/travel, eventuale reserve separata e un route summary con numero di tappe fisiche, leg, Venue e trasferimenti inter-Venue. Le tappe sono VisitAnchor fisici, non ContentEntry. `reservedSeconds` non viene sommato implicitamente al totale e mantiene semantica separata di margine.
+
+Warning non bloccanti appartengono alla LogisticsPreview e vengono proiettati con code stabile e messaggio user-facing; condizioni che impediscono una preparation valida appartengono invece a `readiness.blockers`. Non vengono introdotti range/confidence finché il backend non dispone di un modello statistico aggregato che li giustifichi.
+
+La preview non espone route path, connection ID, VisitAnchor/VenueTarget/Place grezzi, VenueRelease/LayoutRevision ID, speed fisica, preference penalty o presentation plan completo. Tali informazioni rimangono nel dominio backend/Session. La stessa projection è riusabile per Visit e GeneratedVisitPlan.
+
+La `LogisticsPreview` è una stima relativa alla preparation corrente e non un attributo immutabile della VisitRevision. Non viene introdotto un `VisitRevision.estimatedDuration` autorevole: presentation, movement pace, routing requirements, stato fisico corrente e profili di osservazione possono modificare la stima.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -144,11 +156,11 @@ Non devono più essere usati come contratto definitivo:
 - preference persistenti User–Visit per presentation/navigation;
 - routing graph/requirements tecnici interpretati direttamente da Vue;
 - default globali basati su local routing attribute o preset Venue-specific;
-- logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance.
+- logistica pre-visita trasformata in Item/ContentEntry o concatenata senza provenance;
+- durata della Visit trattata come proprietà statica/autorevole della VisitRevision.
 
-# Punti 17–30 ancora da riesaminare
+# Punti 18–30 ancora da riesaminare
 
-17. `LogisticsPreview` v2;
 18. execution/preparation context e pin dipendenze;
 19. navigation destination tipizzata;
 20. runtime location VenueTarget/anchor-centric;
