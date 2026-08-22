@@ -1,7 +1,7 @@
-const { assertCapability } = require("./capabilityAuthorization.service");
+const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 
 async function assertCanUseNamespace({ namespace, actorUserId, capability = "namespace.author" }) {
-  return assertCapability({
+  return assertCapabilitySource({
     actorUserId,
     capability,
     resourceType: "namespace",
