@@ -5,7 +5,7 @@ const AppError = require("../utils/AppError");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { loadPinnedBundle, translateRequirements } = require("./physicalExecutionV2.service");
 const { resolvePlannedPath } = require("./graphRouting.service");
-const { canonicalRoutingAttribute, isDeclaredObstacle } = require("../config/globalRoutingAttributes");
+const { getCanonicalAttribute, isDeclaredObstacle } = require("./routingAttributeCatalog.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function opaqueId(seed) { return crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 16); }
@@ -69,7 +69,6 @@ function warningProjection(warnings = []) {
 async function assessPreparedMapReadiness({ plan, venuePins = [] }) {
   if (!plan || !venuePins.length) return { blockers: [], warnings: [] };
   const pseudoSession = { venuePins };
-  const anchors = anchorMap(plan);
   const blockers = [];
 
   for (const pin of venuePins) {
@@ -275,7 +274,7 @@ async function projectNextRouteObstacles({ sessionId, userId }) {
     if (!connection) continue;
     for (const [localKey, value] of Object.entries(connection.attributes || {})) {
       const localDefinition = localDefinitionByKey.get(localKey);
-      const canonical = canonicalRoutingAttribute(localDefinition?.canonicalKey);
+      const canonical = getCanonicalAttribute(localDefinition?.canonicalKey);
       if (!canonical) continue;
       canonicalEvidence = true;
       if (!isDeclaredObstacle(canonical, value)) continue;
