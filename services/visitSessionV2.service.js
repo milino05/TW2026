@@ -10,6 +10,7 @@ const { recordContentExposure, recordVenueTargetObservation } = require("./learn
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { findAdjacentPresentation, resolvePresentationText, id } = require("./presentationRuntimeV2.service");
 const { loadPinnedBundle, routeToIntentInSession } = require("./physicalExecutionV2.service");
+const { nextPhysicalLeg } = require("./navigationProjectionV2.service");
 const {
   deriveSemanticExplorationActions,
   materializeSemanticPresentation,
@@ -189,6 +190,7 @@ async function deriveRuntimeActions({ sessionId, userId }) {
     }
     if (session.semanticPresentation) actions.push(descriptor(ACTION_DEFINITIONS.SEMANTIC_RETURN, { context }));
     actions.push(...await semanticActions({ session, plan, entry, anchor }));
+    if (nextPhysicalLeg(plan, anchor)) actions.push(descriptor(ACTION_DEFINITIONS.CHECK_ROUTE_OBSTACLES, { context }));
     actions.push(...await navigationActions({ session, anchor, entry }));
   }
   actions.push(descriptor(ACTION_DEFINITIONS.PAUSE, { context }));
