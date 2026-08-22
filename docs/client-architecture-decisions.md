@@ -239,6 +239,22 @@ Contenuti/release non discoverable possono essere referenziati da Visit pubblica
 
 L'Organization proprietaria della Visit non limita PhysicalScope o EditorialScope alle risorse possedute dalla stessa Organization. Il Marketplace/Editor riceve dal backend le operazioni correntemente disponibili invece di dedurre authorization da `ownerType` e ruolo client-side.
 
+# Punto 26/30 — Marketplace Catalog e Creator Workspace
+
+Marketplace ed Editor restano un'unica applicazione generica, ma Catalog consumer e Creator Workspace utilizzano read model distinti. Non esistono account type globali visitor/author: lo stesso actor può consumare, creare e vendere in funzione di ownership, principal authority ed Entitlement.
+
+Il Catalog è Listing-centric e server-side searchable/paginated. Le card/detail proiettano asset, publisher, metadata user-facing, license summary, Offer/prezzo, usi concessi dalle capability, version behaviour ed eventuali external requirements, senza esporre documenti Listing/Offer/Entitlement/Acquisition grezzi. Gli effective rights già posseduti vengono aggregati per asset; la cronologia Acquisition resta separata.
+
+L'acquisizione concede Entitlement ma non importa, copia, collega o adotta automaticamente una risorsa. Adoption nasce soltanto dall'effettivo uso creator dell'asset.
+
+Il Creator Workspace è principal-scoped e distingue risorse possedute/gestibili da risorse esterne utilizzabili tramite capability. Può contenere anche entità non marketable come ContentSpace, Subject o working revisions. Ogni resource projection espone `availableOperations[]` backend-authoritative invece di far dedurre authorization al client.
+
+Le API/domain service esistenti di ContentSpace, ItemEdition, EditorialContext, Namespace, Visit e Venue vengono riusate; le liste raw non diventano automaticamente contratti del Marketplace. Catalog e Workspace adottano search, pagination e projection sintetiche server-side. In particolare l'attuale `GET /items` non rappresenta il catalogo commerciale e deve essere sostituito nelle browse UX da una projection sull'asset marketable appropriato.
+
+Vendite e adozioni hanno projection/dashboard dedicate, con statistiche aggregate e history paginata quando necessaria. User e Organization possono essere buyer/seller/creator principal soltanto fra i principal che il backend autorizza per l'actor.
+
+La selezione UX del museo è un filtro/contesto del catalogo unico e non crea Marketplace separati; il mapping preciso verso Venue viene definito al Punto 29.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -281,11 +297,12 @@ Non devono più essere usati come contratto definitivo:
 - `acceptGeneratedPlan` usato implicitamente come creazione di una Visit;
 - materializzazione di un GeneratedPlan che congela VenueRelease/LayoutRevision, Place, path indoor, timing o Representation concrete dentro la VisitRevision;
 - publication di una Visit organization-owned direttamente da `draft` senza passare per managerial review;
-- publication personale che scrive review/approval metadata fittizi.
+- publication personale che scrive review/approval metadata fittizi;
+- Catalog Marketplace costruito da liste raw di Item/Context/Visit o dal dump di documenti commerciali;
+- acquisition che importa/copia/adotta automaticamente un asset o account type globali `visitor/author` usati come authorization.
 
-# Punti 26–30 ancora da riesaminare
+# Punti 27–30 ancora da riesaminare
 
-26. consumer/creator Marketplace projections;
 27. reference/import/copy/fork;
 28. Item authoring Subject/Edition/Revision/VenueTarget;
 29. mapping UX “museo” -> Venue selection;
