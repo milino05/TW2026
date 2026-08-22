@@ -91,6 +91,13 @@ export class ArtAroundWorkspaceView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
+
+    const visitEditor = target?.closest("button[data-visit-editor]");
+    if (visitEditor) {
+      navigate(`/workspace/visit-authoring?visitId=${encodeURIComponent(visitEditor.dataset.visitEditor)}`);
+      return;
+    }
+
     const resourceLink = target?.closest("button[data-resource]");
     if (resourceLink) {
       const resourceType = resourceLink.dataset.resourceType || "";
@@ -159,6 +166,9 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   renderOperations(asset) {
     return (asset.availableOperations || []).map((operation) => {
       if (operation.code === "create_listing") return `<button type="button" data-create-listing data-resource-type="${escapeHtml(asset.sourceRef?.resourceType || asset.resourceType)}" data-resource-id="${escapeHtml(refId(asset.sourceRef) || asset.resourceId)}">${escapeHtml(operation.label)}</button>`;
+      if (operation.code === "open_editor" && asset.resourceType === "visit" && asset.ownership === "owned") {
+        return `<button type="button" data-visit-editor="${escapeHtml(asset.resourceId)}">${escapeHtml(operation.label)}</button>`;
+      }
       if (DIRECT_OPERATIONS.has(operation.code) || isWorkflowOperation(operation.code)) {
         const source = operation.sourceRef || asset.sourceRef || { resourceType: asset.resourceType, resourceId: asset.resourceId };
         return `<button type="button" data-operation="${escapeHtml(operation.code)}" data-source-type="${escapeHtml(refType(source))}" data-source-id="${escapeHtml(refId(source))}" data-requires-message="${operation.requiresMessage ? "true" : "false"}">${escapeHtml(operation.label)}</button>`;
@@ -201,7 +211,8 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     if (this.busy && !this.workspace) { this.innerHTML = `<main><p>Caricamento Workspace…</p></main>`; return; }
     if (this.error && !this.workspace) { this.innerHTML = `<main><p role="alert">${escapeHtml(this.error)}</p></main>`; return; }
     const selected = this.selectedResource();
-    const body = currentRoute() === "/workspace/resource" ? this.renderResourceRoute(selected) : `<main><h1>Creator Workspace</h1>${this.renderPrincipalSelector()}${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<p><a data-route href="/workspace/item-authoring">Crea nuovo contenuto</a></p><section><h2>ContentSpace</h2>${(this.workspace?.contentSpaces || []).map((space) => `<article><strong>${escapeHtml(space.name)}</strong><p>${escapeHtml(space.description)}</p></article>`).join("") || "<p>Nessun ContentSpace.</p>"}</section><section><h2>Asset di proprietà</h2>${(this.workspace?.ownedAssets || []).map((asset) => this.renderAsset(asset)).join("") || "<p>Nessun asset di proprietà.</p>"}</section><section><h2>Asset con licenza</h2><p>Questi diritti non trasferiscono ownership.</p>${(this.workspace?.licensedAssets || []).map((asset) => this.renderAsset(asset)).join("") || "<p>Nessun asset con licenza.</p>"}</section>${this.renderDistribution()}</main>`;
+    const createVisitHref = `/workspace/visit-authoring?principalType=${encodeURIComponent(this.principal.principalType)}&principalId=${encodeURIComponent(this.principal.principalId || "")}`;
+    const body = currentRoute() === "/workspace/resource" ? this.renderResourceRoute(selected) : `<main><h1>Creator Workspace</h1>${this.renderPrincipalSelector()}${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<p><a data-route href="/workspace/item-authoring">Crea nuovo contenuto</a> · <a data-route href="${createVisitHref}">Crea nuova visita</a></p><section><h2>ContentSpace</h2>${(this.workspace?.contentSpaces || []).map((space) => `<article><strong>${escapeHtml(space.name)}</strong><p>${escapeHtml(space.description)}</p></article>`).join("") || "<p>Nessun ContentSpace.</p>"}</section><section><h2>Asset di proprietà</h2>${(this.workspace?.ownedAssets || []).map((asset) => this.renderAsset(asset)).join("") || "<p>Nessun asset di proprietà.</p>"}</section><section><h2>Asset con licenza</h2><p>Questi diritti non trasferiscono ownership.</p>${(this.workspace?.licensedAssets || []).map((asset) => this.renderAsset(asset)).join("") || "<p>Nessun asset con licenza.</p>"}</section>${this.renderDistribution()}</main>`;
     this.innerHTML = `<style>main{max-width:64rem;margin:0 auto;padding:2rem 1rem}section{margin-block:2rem}.principal{display:flex;gap:.75rem;align-items:end;flex-wrap:wrap}.principal label{display:grid;gap:.3rem}.asset{padding:1rem;margin-block:.75rem;border:1px solid currentColor}.licensed{border-style:dashed}.badge{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}.operations{display:flex;gap:.5rem;flex-wrap:wrap}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.75rem}.stats div{border:1px solid currentColor;padding:.75rem}.stats dt{font-size:.85rem}.stats dd{margin:.25rem 0 0;font-size:1.25rem}button,select{font:inherit;padding:.55rem .75rem}.note{margin-top:2rem}</style>${body}`;
   }
 }
