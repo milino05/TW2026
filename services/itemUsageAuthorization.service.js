@@ -1,7 +1,7 @@
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const AppError = require("../utils/AppError");
-const { assertCapability } = require("./capabilityAuthorization.service");
+const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 
 async function loadItemEditionAuthority({ itemEditionId }) {
   const edition = await ItemEdition.findById(itemEditionId);
@@ -13,7 +13,7 @@ async function loadItemEditionAuthority({ itemEditionId }) {
 
 async function assertCanUseItemEdition({ itemEditionId, actorUserId, capability = "content.consume" }) {
   const { edition, item } = await loadItemEditionAuthority({ itemEditionId });
-  const access = await assertCapability({
+  const access = await assertCapabilitySource({
     actorUserId,
     capability,
     resourceType: "item_edition",
