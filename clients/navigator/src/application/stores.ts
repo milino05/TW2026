@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import type { NavigatorStaticConfig } from "../domain/navigatorStaticConfig";
 import type { AuthUser } from "../infrastructure/http/authRepository";
 import type { SessionProjection } from "../infrastructure/http/sessionRepository";
+import type { MapProjection, NavigationProjection } from "../infrastructure/http/navigationRepository";
 
 export const useAuthStore = defineStore("auth", {
   state: () => ({
@@ -49,7 +50,15 @@ export const usePlanStore = defineStore("plan", {
 });
 
 export const useNavigationStore = defineStore("navigation", {
-  state: () => ({ map: null as unknown, navigation: null as unknown }),
+  state: () => ({
+    map: null as MapProjection | null,
+    navigation: null as NavigationProjection | null,
+  }),
+  actions: {
+    setMap(map: MapProjection) { this.map = map; },
+    setNavigation(navigation: NavigationProjection | null) { this.navigation = navigation; },
+    clear() { this.map = null; this.navigation = null; },
+  },
 });
 
 export const useUiStore = defineStore("ui", {
