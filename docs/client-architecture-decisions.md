@@ -291,6 +291,24 @@ Recognition media della specifica viene separata da media editoriale: `ItemRevis
 
 Il Marketplace/Editor usa una `ItemAuthoringProjection` con Subject, lineage, Namespace/Edition, revision/presentation controls, workspace membership, publication state e `availableOperations[]`; non espone al Web Component una composizione di documenti Mongo grezzi da interpretare.
 
+# Punto 29/30 — Marketplace Venue selection v2
+
+Il termine user-facing “museo” della specifica viene mappato sul `Venue` come unità atomica della selezione fisica. `Organization` rappresenta invece l'istituzione/owner e può raggruppare più Venue nel pannello; un eventuale “seleziona tutte le sedi” è una shortcut che produce comunque `selectedVenueIds[]`, non un nuovo scope Organization.
+
+Il Marketplace usa una projection dedicata per il selector, con Organization summary e Venue user-facing, senza esporre primary Context/release o richiedere lookup client-side. La selezione è multipla, modificabile e costituisce search/filter context transitorio; non è authorization, ownership, EditorialScope o domain state persistente. Se aperto dal Navigator parte da `selectedVenueIds=[configuredVenueId]` ma resta l'unico Marketplace generico.
+
+Più Venue selezionate usano inizialmente semantica union/OR. Le Visit vengono filtrate tramite PhysicalScope derivato da `VisitAnchor -> VenueTarget -> Venue`, senza introdurre `Visit.museumIds[]`; le card espongono l'intero PhysicalScope così una Visit che include anche Venue non selezionate non viene presentata in modo ambiguo.
+
+I contenuti editoriali non “appartengono” alla Venue. Un backend `VenueCatalogRelevanceResolver` deriva invece la pertinenza usando evidenze del dominio, inizialmente Subject materializzati da VenueTarget, associazioni esplicite dei contenuti e endorsement tramite `Venue.primaryEditorialContextId`. EditorialContext esterni possono risultare pertinenti quando il loro corpus contiene contenuti rilevanti. `primaryEditorialContextId` è un segnale/default, non un filtro esclusivo o authorization.
+
+Il SemanticGraph e l'EditorialScope non vengono filtrati dalla Venue. Subject non fisici e contenuti cross-museum rimangono pienamente validi; eventuale graph relevance può contribuire in futuro al ranking senza trasformare il PhysicalScope nel confine semantico. Asset intrinsecamente venue-neutral, come Namespace, non ricevono `venueIds[]` artificiali.
+
+Nell'Editor la selezione Venue restringe browse/search e target picker ma non viene persistita nella Visit: il PhysicalScope reale resta derivato dagli Anchor effettivamente presenti. Cambiare il selector non aggiunge o rimuove automaticamente tappe.
+
+Search e relevance sono backend-side e scalabili. Eventuali `venueRelevance` denormalizzate appartengono a un indice/projection ricostruibile e non diventano source of truth nei modelli editoriali.
+
+Per la demo obbligatoria, le tre Visit da almeno dieci opere vengono mantenute interamente sulla stessa Venue reale, lasciando l'eventuale multi-Venue come dimostrazione aggiuntiva di generalità.
+
 # Runtime/UX confermati
 
 - `NavigatorRuntimeState` resta projection minima e autorevole.
@@ -339,11 +357,12 @@ Non devono più essere usati come contratto definitivo:
 - operazione generica “copy” che confonde reference, import snapshot, Visit detached copy e fork;
 - fork/import che duplica Subject o VenueTarget per creare ownership locale;
 - Item/Edition/Revision che incorporano `venueId`, `venueTargetId`, coordinate o placement fisico;
-- creazione contenuto che richiede sempre una Venue/occurrence fisica o che trasforma automaticamente `relatedSubjectIds` in graph edge.
+- creazione contenuto che richiede sempre una Venue/occurrence fisica o che trasforma automaticamente `relatedSubjectIds` in graph edge;
+- pannello “museo” implementato come `selectedOrganizationId`, Marketplace separato per museo o campi persistenti `venueIds/museumIds` negli asset editoriali;
+- filtro Venue che restringe implicitamente EditorialScope/SemanticGraph o considera soltanto contenuti dell'Organization proprietaria della Venue.
 
-# Punti 29–30 ancora da riesaminare
+# Punto 30/30 ancora da riesaminare
 
-29. mapping UX “museo” -> Venue selection;
 30. pulizia finale residui legacy e decisioni aperte.
 
 Restano inoltre da fissare gli schemi TypeScript/JSON esatti di Action, RuntimeUpdate, completion summary e session discovery senza riaprire la semantica già approvata.
