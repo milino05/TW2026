@@ -87,8 +87,11 @@ test("free acquisition concede visit.execute senza trasferire ownership", { skip
     assert.equal(acquisition.alreadyAcquired, false);
     assert.equal(acquisition.entitlements.length, 1);
     assert.equal(acquisition.entitlements[0].capability, "visit.execute");
+    assert.equal(acquisition.entitlements[0].resourceType, "visit");
+    assert.equal(acquisition.entitlements[0].versionPolicy, "follow_current");
+    assert.equal(acquisition.entitlements[0].baselineSnapshotRef.resourceType, "visit_revision");
     assert.equal(String(visit.ownerId), String(seller._id));
-    assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceId: visit._id }), 1);
+    assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceType: "visit", resourceId: visit._id }), 1);
 
     const after = await resolveCapabilityAccess({
       actorUserId: buyer._id,
@@ -124,19 +127,21 @@ test("free acquisition concede visit.execute senza trasferire ownership", { skip
 
     const duplicate = await acquireOffer({ offerId: offer._id, actorUserId: buyer._id });
     assert.equal(duplicate.alreadyAcquired, true);
-    assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceId: visit._id }), 1);
+    assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceType: "visit", resourceId: visit._id }), 1);
   });
 });
 
-test("pin_at_acquisition continua a risolvere la VisitRevision acquisita dopo una nuova publication", { skip: !mongoUri }, async () => {
+test("pin_at_acquisition produce un diritto VisitRevision pinned e resta eseguibile dopo una nuova publication", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const Entitlement = require("../models/entitlement.model");
+    const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
     const { createVisitListing, createVisitExecuteOffer, acquireOffer } = require("../services/marketplaceVisitV2.service");
     const { resolveExecutableVisitRevisionV2 } = require("../services/visitExecutionAccessV2.service");
     const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
+    const { listNavigatorLibrary } = require("../services/navigatorVisitV2.service");
 
     const [seller, buyer] = await User.create([
       { username: "seller-pinned", passwordHash: "test-hash" },
@@ -162,12 +167,28 @@ test("pin_at_acquisition continua a risolvere la VisitRevision acquisita dopo un
       actorUserId: seller._id,
       payload: { versionPolicy: "pin_at_acquisition" },
     });
-    await acquireOffer({ offerId: offer._id, actorUserId: buyer._id });
+    const acquired = await acquireOffer({ offerId: offer._id, actorUserId: buyer._id });
 
-    const entitlement = await Entitlement.findOne({ beneficiaryId: buyer._id, resourceId: visit._id }).lean();
+    const entitlement = await Entitlement.findOne({
+      beneficiaryId: buyer._id,
+      resourceType: "visit_revision",
+      resourceId: revision1Id,
+      capability: "visit.execute",
+    }).lean();
+    assert.ok(entitlement);
     assert.equal(entitlement.versionPolicy, "pinned");
     assert.equal(entitlement.baselineSnapshotRef.resourceType, "visit_revision");
     assert.equal(String(entitlement.baselineSnapshotRef.resourceId), String(revision1Id));
+    assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceType: "visit", resourceId: visit._id }), 0);
+
+    const acquisition = await MarketplaceAcquisition.findById(acquired.acquisition._id).lean();
+    assert.equal(acquisition.grantSnapshots[0].resourceType, "visit");
+    assert.equal(acquisition.grantSnapshots[0].versionPolicy, "pin_at_acquisition");
+    assert.equal(acquisition.grantSnapshots[0].resolvedSnapshotRef.resourceType, "visit_revision");
+    assert.equal(String(acquisition.grantSnapshots[0].resolvedSnapshotRef.resourceId), String(revision1Id));
+
+    const libraryBeforeRepublish = await listNavigatorLibrary({ userId: buyer._id });
+    assert.deepEqual(libraryBeforeRepublish.visits.map((entry) => entry.title), ["Versione acquisita"]);
 
     const revision2 = await VisitRevisionV2.create({
       visitId: visit._id,
