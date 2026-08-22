@@ -59,6 +59,15 @@ function rejectFields(file, fields, boundary) {
   }
 }
 
+function rejectPattern(file, pattern, label) {
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, 'utf8');
+  if (pattern.test(text)) {
+    console.error(`${label} in ${file}`);
+    failed = true;
+  }
+}
+
 roots.forEach(walk);
 for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js']) {
   if (fs.existsSync(obsolete)) {
@@ -106,5 +115,17 @@ rejectFields('models/visitSessionV2.model.js', [
 rejectFields('models/sessionPlanRevisionV2.model.js', [
   'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision', 'sourceVocabularyRevisionIds',
 ], 'SessionPlanRevision v2');
+
+rejectPattern(
+  'routes/visitSessionsV2.routes.js',
+  /router\.post\(\s*["']\/v2\/visit-sessions["']\s*,/,
+  'Legacy direct VisitSession creation route',
+);
+rejectPattern(
+  'clients/navigator/src/infrastructure/http/sessionRepository.ts',
+  /startVisit\s*\(|["']\/v2\/visit-sessions["']/,
+  'Navigator must start only through ExecutionPreparation',
+);
+
 if (failed) process.exit(1);
-console.log('No operational legacy visit/generator/semantic-graph contracts found.');
+console.log('No operational legacy visit/generator/semantic-graph/session-start contracts found.');
