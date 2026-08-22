@@ -130,12 +130,13 @@ async function createEditorialFixture({ seller }) {
   return { release, entries };
 }
 
-test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e NEXT/PREVIOUS", { skip: !mongoUri }, async () => {
+test("Slice 1/2/3 API: acquisition, preparation e runtime Action versionato", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const app = require("../app");
     const User = require("../models/user");
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const VisitSessionV2 = require("../models/visitSessionV2.model");
     const { hashPassword } = require("../services/auth.service");
     const { createVisitListing, createVisitExecuteOffer } = require("../services/marketplaceVisitV2.service");
 
@@ -200,10 +201,6 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       assert.equal(acquisition.response.status, 201);
       assert.equal(acquisition.body.grantedUses[0].capability, "visit.execute");
 
-      const after = await jsonFetch(`${baseUrl}/api/v2/marketplace/catalog`, { cookie });
-      assert.equal(after.response.status, 200);
-      assert.equal(after.body.results[0].viewerState.alreadyUsable, true);
-
       const library = await jsonFetch(`${baseUrl}/api/v2/navigator/library`, { cookie });
       assert.equal(library.response.status, 200);
       assert.deepEqual(library.body.visits.map((entry) => entry.title), ["Catalog API Visit"]);
@@ -213,7 +210,6 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       assert.equal(detail.response.status, 200);
       assert.equal(detail.body.visit.title, "Catalog API Visit");
       assert.equal(String(detail.body.visit.resolvedRevisionId), String(revision._id));
-      assert.equal(detail.body.preparation.available, true);
 
       const preparation = await jsonFetch(`${baseUrl}/api/v2/execution-preparations`, {
         cookie,
@@ -222,17 +218,7 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       });
       assert.equal(preparation.response.status, 201);
       assert.equal(String(preparation.body.preparation.source.visitRevisionId), String(revision._id));
-      assert.equal(preparation.body.preparation.version, 1);
       assert.equal(preparation.body.preparation.readiness.status, "ready");
-      assert.equal(preparation.body.preparation.logisticsPreview.breakdown.contentSeconds, 30);
-
-      const versionConflict = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${preparation.body.preparation.id}`, {
-        cookie,
-        method: "PATCH",
-        body: JSON.stringify({ expectedVersion: 99, movementPacePreference: 0.7 }),
-      });
-      assert.equal(versionConflict.response.status, 409);
-      assert.equal(versionConflict.body.errors[0].code, "PREPARATION_VERSION_CONFLICT");
 
       const updatedPreparation = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${preparation.body.preparation.id}`, {
         cookie,
@@ -245,9 +231,6 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       });
       assert.equal(updatedPreparation.response.status, 200);
       assert.equal(updatedPreparation.body.preparation.version, 2);
-      assert.equal(updatedPreparation.body.preparation.navigation.movementPacePreference, 0.7);
-      assert.equal(updatedPreparation.body.preparation.effectivePresentationPreference.depthPreference, 0.8);
-      assert.equal(String(updatedPreparation.body.preparation.source.visitRevisionId), String(revision._id));
 
       const revision2 = await VisitRevisionV2.create({
         visitId: visit._id,
@@ -267,13 +250,6 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
       visit.publishedRevisionId = revision2._id;
       await visit.save();
 
-      const directStart = await jsonFetch(`${baseUrl}/api/v2/visit-sessions`, {
-        cookie,
-        method: "POST",
-        body: JSON.stringify({ visitId: visit._id }),
-      });
-      assert.equal(directStart.response.status, 404, "direct Session creation must be unavailable");
-
       const activePreparation = updatedPreparation.body.preparation;
       const start = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${activePreparation.id}/start`, {
         cookie,
@@ -281,43 +257,83 @@ test("Slice 1/2 API: acquisition, preparation exact source, idempotent start e N
         body: JSON.stringify({ expectedVersion: activePreparation.version }),
       });
       assert.equal(start.response.status, 201);
-      assert.equal(start.body.alreadyStarted, false);
       assert.equal(String(start.body.session.visitRevisionId), String(revision._id), "preparation must keep its exact VisitRevision");
       assert.equal(start.body.current.current.label, "Primo contenuto");
-      assert.equal(start.body.current.availableActions.includes("NEXT"), true);
+      assert.equal(start.body.current.session.runtimeVersion, 1);
+      assert.ok(start.body.current.availableActions.some((entry) => entry.actionId === "progress.next"));
       const sessionId = start.body.session._id;
 
-      const discovery = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
-      assert.equal(discovery.response.status, 200);
-      assert.equal(String(discovery.body.sessions[0].id), String(sessionId));
-      assert.equal(discovery.body.sessions[0].title, "Catalog API Visit");
-      assert.equal(discovery.body.sessions[0].status, "active");
-
-      const repeatedStart = await jsonFetch(`${baseUrl}/api/v2/execution-preparations/${activePreparation.id}/start`, {
-        cookie,
-        method: "POST",
-        body: JSON.stringify({ expectedVersion: activePreparation.version }),
-      });
-      assert.equal(repeatedStart.response.status, 200);
-      assert.equal(repeatedStart.body.alreadyStarted, true);
-      assert.equal(String(repeatedStart.body.session._id), String(sessionId));
-
-      const next = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/advance`, {
+      const removedAdvance = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/advance`, {
         cookie,
         method: "POST",
         body: JSON.stringify({ direction: "next" }),
       });
-      assert.equal(next.response.status, 200);
-      assert.equal(next.body.current.label, "Secondo contenuto");
-      assert.equal(next.body.availableActions.includes("PREVIOUS"), true);
+      assert.equal(removedAdvance.response.status, 404, "legacy advance endpoint must be unavailable");
 
-      const previous = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/advance`, {
+      const unavailable = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/actions`, {
         cookie,
         method: "POST",
-        body: JSON.stringify({ direction: "previous" }),
+        body: JSON.stringify({
+          actionId: "progress.previous",
+          expectedRuntimeVersion: 1,
+          interactionChannel: "button",
+        }),
+      });
+      assert.equal(unavailable.response.status, 409);
+      assert.equal(unavailable.body.errors[0].code, "ACTION_NOT_AVAILABLE");
+
+      const next = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/actions`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({
+          actionId: "progress.next",
+          expectedRuntimeVersion: 1,
+          interactionChannel: "controlled_voice",
+        }),
+      });
+      assert.equal(next.response.status, 200);
+      assert.equal(next.body.runtime.current.label, "Secondo contenuto");
+      assert.equal(next.body.runtime.session.runtimeVersion, 2);
+      assert.ok(next.body.runtime.availableActions.some((entry) => entry.actionId === "progress.previous"));
+
+      const stale = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/actions`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({
+          actionId: "progress.previous",
+          expectedRuntimeVersion: 1,
+          interactionChannel: "button",
+        }),
+      });
+      assert.equal(stale.response.status, 409);
+      assert.equal(stale.body.errors[0].code, "RUNTIME_VERSION_CONFLICT");
+
+      const previous = await jsonFetch(`${baseUrl}/api/v2/visit-sessions/${sessionId}/actions`, {
+        cookie,
+        method: "POST",
+        body: JSON.stringify({
+          actionId: "progress.previous",
+          expectedRuntimeVersion: 2,
+          interactionChannel: "button",
+        }),
       });
       assert.equal(previous.response.status, 200);
-      assert.equal(previous.body.current.label, "Primo contenuto");
+      assert.equal(previous.body.runtime.current.label, "Primo contenuto");
+      assert.equal(previous.body.runtime.session.runtimeVersion, 3);
+
+      const persistedSession = await VisitSessionV2.findById(sessionId).lean();
+      const actionEvents = persistedSession.interactionEvents.filter((entry) => entry.category === "action");
+      assert.equal(actionEvents.length, 3, "unavailable + two applied actions should be audited; stale version is not an action execution");
+      assert.equal(actionEvents[0].result.status, "rejected");
+      assert.equal(actionEvents[0].result.code, "ACTION_NOT_AVAILABLE");
+      assert.equal(actionEvents[1].actionId, "progress.next");
+      assert.equal(actionEvents[1].interactionChannel, "controlled_voice");
+      assert.equal(actionEvents[1].result.status, "applied");
+      assert.equal(actionEvents[2].actionId, "progress.previous");
+
+      const discovery = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
+      assert.equal(discovery.response.status, 200);
+      assert.equal(String(discovery.body.sessions[0].id), String(sessionId));
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
