@@ -17,14 +17,14 @@ function resolveMovementSpeed(preference = 0.5) {
 }
 function translateRequirements(layoutRevision, requirements = []) {
   const attrs = layoutRevision.routingAttributes || [];
-  const byLocal = new Map(attrs.map((entry) => [entry.key, entry]));
-  const byCanonical = new Map(attrs.filter((entry) => entry.canonicalKey).map((entry) => [entry.canonicalKey, entry]));
+  const byCanonical = new Map(attrs.filter((entry) => entry.canonicalKey).map((entry) => [String(entry.canonicalKey).trim().toLowerCase(), entry]));
   const translated = [], warnings = [], unsupportedRequired = [];
   for (const requirement of requirements || []) {
-    const definition = byLocal.get(requirement.attributeKey) || byCanonical.get(requirement.attributeKey);
+    const canonicalKey = String(requirement.attributeKey || "").trim().toLowerCase();
+    const definition = byCanonical.get(canonicalKey);
     if (!definition) {
-      if ((requirement.priority || "preferred") === "required") unsupportedRequired.push(requirement.attributeKey);
-      else warnings.push({ code: "PREFERRED_ATTRIBUTE_UNSUPPORTED", attributeKey: requirement.attributeKey });
+      if ((requirement.priority || "preferred") === "required") unsupportedRequired.push(canonicalKey);
+      else warnings.push({ code: "PREFERRED_ATTRIBUTE_UNSUPPORTED", attributeKey: canonicalKey });
     } else translated.push({ ...requirement, attributeKey: definition.key });
   }
   return { requirements: translated, warnings, unsupportedRequired };
