@@ -26,12 +26,14 @@ requirePattern("scripts/examDatasetV2.js", /REQUIRED_USERNAMES[\s\S]*autore1[\s\
 requirePattern("scripts/examDatasetV2.js", /const WORKS[\s\S]*const VISIT_DEFINITIONS/, "Exam works and visit definitions");
 requirePattern("scripts/examDatasetV2.js", /computeVenueReleaseIssues[\s\S]*computeVisitV2Integrity/, "Domain consistency checks in exam seed");
 requirePattern("scripts/examDatasetV2.js", /async function verifyExamDataset/, "Automatic exam dataset verifier");
-requirePattern("tests/examDatasetV2.test.js", /seedExamDataset[\s\S]*verifyExamDataset[\s\S]*idempotent/i, "Exam seed integration test");
+requirePattern("tests/examDatasetV2.test.js", /seedExamDataset[\s\S]*verifyExamDataset/, "Exam seed integration test functions");
+requirePattern("tests/examDatasetV2.test.js", /idempotent/i, "Exam seed idempotence test");
 
 requirePattern("app.js", /mountBuiltSpa[\s\S]*\/navigator[\s\S]*\/marketplace/, "Same-site client hosting");
 requirePattern("clients/navigator/vite.config.ts", /base:\s*["']\/navigator\//, "Navigator deployment base");
 requirePattern("clients/navigator/src/application/router.ts", /createWebHistory\(import\.meta\.env\.BASE_URL\)/, "Navigator router deployment base");
 requirePattern("clients/marketplace/src/application/router.js", /BASE_PATH\s*=\s*["']\/marketplace["']/, "Marketplace deployment base");
+requirePattern("clients/marketplace/index.html", /src=["']\/marketplace\/src\/main\.js["']/, "Marketplace nested-route module path");
 requirePattern("Dockerfile", /build:clients/, "Production client build");
 
 rejectPattern("docs/revision-workflow.md", /MuseumLayout|MuseumVocabulary|\/api\/museums\//, "Legacy museum workflow terminology");
