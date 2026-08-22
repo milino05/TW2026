@@ -36,7 +36,9 @@ function namespaceChoices(workspace) {
 function projectedRevisionToWrite(revision) {
   return {
     label: revision.label,
-    relatedSubjectIds: (revision.relatedSubjects || []).filter((entry) => !entry.missing).map((entry) => entry.id),
+    // Preserve unresolved references. Integrity checks, not client-side data loss,
+    // decide whether the revision may be published.
+    relatedSubjectIds: (revision.relatedSubjects || []).map((entry) => entry.id).filter(Boolean),
     tags: revision.tags || [],
     authorCredits: revision.authorCredits || [],
     metadata: { license: revision.license || null },
@@ -47,14 +49,14 @@ function projectedRevisionToWrite(revision) {
       key: variant.key,
       label: variant.label,
       description: variant.description || null,
-      semanticFocus: (variant.semanticFocus || []).filter((entry) => !entry.subject?.missing).map((entry) => ({ subjectId: entry.subject.id, weight: entry.weight })),
+      semanticFocus: (variant.semanticFocus || []).map((entry) => ({ subjectId: entry.subject?.id, weight: entry.weight })).filter((entry) => entry.subjectId),
       presentationAspects: (variant.presentationAspects || []).map((entry) => ({ definitionId: entry.definitionId, weight: entry.weight })),
-      knowledgeRequirements: (variant.knowledgeRequirements || []).filter((entry) => !entry.subject?.missing).map((entry) => ({
-        subjectId: entry.subject.id,
+      knowledgeRequirements: (variant.knowledgeRequirements || []).map((entry) => ({
+        subjectId: entry.subject?.id,
         minLevel: entry.minLevel,
         maxLevel: entry.maxLevel,
         weight: entry.weight,
-      })),
+      })).filter((entry) => entry.subjectId),
       representations: (variant.representations || []).map((entry) => ({
         _id: entry.id,
         durationTypeDefinitionId: entry.duration.definitionId,
@@ -122,6 +124,12 @@ export class ItemAuthoringView extends HTMLElement {
     if (!this.itemId) return;
     this.projection = await authoringRepository.projection(this.itemId, { editionId });
     this.selectedSubject = this.projection.subject;
+    const owner = this.projection.lineage?.owner;
+    if (owner && (!this.principal || owner.type !== this.principal.type || id(owner.id) !== id(this.principal.id))) {
+      this.principal = { type: owner.type, id: owner.id };
+      await this.reloadWorkspace();
+      this.namespaceControls = null;
+    }
   }
 
   onSubmit = async (event) => {
@@ -296,6 +304,7 @@ export class ItemAuthoringView extends HTMLElement {
   };
 
   async changePrincipal(type, principalId) {
+    if (this.itemId) return;
     this.principal = { type, id: principalId };
     await this.reloadWorkspace();
     this.namespaceControls = null;
@@ -427,7 +436,7 @@ export class ItemAuthoringView extends HTMLElement {
         <p><a data-route href="/workspace">← Workspace</a></p>
         <h1>Editor contenuto</h1>
         <p>Flusso: Subject → Item → Edition → Revision. La Venue è solo un possibile contesto di partenza.</p>
-        ${principalOptions ? `<label>Principal proprietario<select data-principal>${principalOptions}</select></label>` : ""}
+        ${principalOptions ? `<label>Principal proprietario<select data-principal ${this.itemId ? "disabled" : ""}>${principalOptions}</select></label>` : ""}
         ${this.busy ? "<p>Elaborazione…</p>" : ""}
         ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
         ${this.notice ? `<p role="status">${escapeHtml(this.notice)}</p>` : ""}
@@ -439,7 +448,7 @@ export class ItemAuthoringView extends HTMLElement {
       </main>`;
 
     const principalSelect = this.querySelector("select[data-principal]");
-    if (principalSelect) {
+    if (principalSelect && !this.itemId) {
       principalSelect.addEventListener("change", async (event) => {
         const [type, principalId] = String(event.target.value || "").split(":");
         if (!type || !principalId) return;
