@@ -7,8 +7,9 @@ const COVERAGE_GOALS = ["balanced", "all", "custom"];
 const HISTORY_MODES = ["full", "declared_only", "current_request_only"];
 const ROUTING_OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in"];
 const ROUTING_PRIORITIES = ["required", "preferred"];
+const GENERATION_SOURCE_TYPES = ["editorial_context", "editorial_release"];
 const TOP_LEVEL_FIELDS = new Set([
-  "venueIds", "editorialContextIds", "timeBudgetSeconds", "hardTimeBudget",
+  "venueIds", "editorialSources", "timeBudgetSeconds", "hardTimeBudget",
   "semanticGoals", "relationGoals", "coverageGoal", "historyMode", "knowledge", "audience",
   "depthPreference", "languageComplexityPreference", "locale", "movementPacePreference",
   "observationEmphasis", "visitDensity", "discoveryPreference", "timeRiskTolerance",
@@ -34,6 +35,29 @@ function validateIdArray(payload, field, errors, { required = false, nonEmpty = 
   if (!Array.isArray(value) || (nonEmpty && !value.length) || value.some((entry) => !validId(entry))) {
     errors.push(issue(field, "INVALID_OBJECT_ID_ARRAY", `${field} deve contenere ObjectId validi${nonEmpty ? " e non essere vuoto" : ""}`));
   }
+}
+function validateEditorialSources(payload, errors) {
+  if (payload.editorialSources === undefined) return;
+  if (!Array.isArray(payload.editorialSources) || !payload.editorialSources.length) {
+    errors.push(issue("editorialSources", "EDITORIAL_SCOPE_EMPTY", "editorialSources deve essere un array non vuoto quando specificato"));
+    return;
+  }
+  const seen = new Set();
+  payload.editorialSources.forEach((source, index) => {
+    const field = `editorialSources[${index}]`;
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      errors.push(issue(field, "INVALID_TYPE", "Generation source non valida"));
+      return;
+    }
+    const unknown = Object.keys(source).filter((key) => !["resourceType", "resourceId"].includes(key));
+    for (const key of unknown) errors.push(issue(`${field}.${key}`, "UNKNOWN_FIELD", `Campo non supportato: ${key}`));
+    const resourceType = String(source.resourceType || "").trim().toLowerCase();
+    if (!GENERATION_SOURCE_TYPES.includes(resourceType)) errors.push(issue(`${field}.resourceType`, "INVALID_ENUM", "resourceType deve essere editorial_context oppure editorial_release"));
+    if (!validId(source.resourceId)) errors.push(issue(`${field}.resourceId`, "INVALID_OBJECT_ID", "resourceId non valido"));
+    const key = `${resourceType}:${String(source.resourceId || "")}`;
+    if (seen.has(key)) errors.push(issue(field, "DUPLICATE_VALUE", "Generation source duplicata"));
+    seen.add(key);
+  });
 }
 function validateFeature(feature, field, errors) {
   if (!feature || typeof feature !== "object" || !FEATURE_KINDS.includes(feature.kind)) {
@@ -87,7 +111,7 @@ function validateGenerationRequestV2(payload = {}) {
   const errors = [];
   for (const field of Object.keys(payload)) if (!TOP_LEVEL_FIELDS.has(field)) errors.push(issue(field, "UNKNOWN_FIELD", `Campo non supportato: ${field}`));
   validateIdArray(payload, "venueIds", errors, { required: true, nonEmpty: true });
-  validateIdArray(payload, "editorialContextIds", errors);
+  validateEditorialSources(payload, errors);
   validateIdArray(payload, "mustIncludeItemEditionIds", errors);
   validateIdArray(payload, "mustVisitVenueTargetIds", errors);
   validateIdArray(payload, "excludedItemEditionIds", errors);
@@ -142,6 +166,7 @@ module.exports = {
   RELATION_GOAL_KINDS,
   COVERAGE_GOALS,
   HISTORY_MODES,
+  GENERATION_SOURCE_TYPES,
   validateFeature,
   validateSemanticGoal,
   validateRelationGoal,
