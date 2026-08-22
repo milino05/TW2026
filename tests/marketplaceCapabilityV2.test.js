@@ -127,3 +127,72 @@ test("free acquisition concede visit.execute senza trasferire ownership", { skip
     assert.equal(await Entitlement.countDocuments({ beneficiaryId: buyer._id, resourceId: visit._id }), 1);
   });
 });
+
+test("pin_at_acquisition continua a risolvere la VisitRevision acquisita dopo una nuova publication", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const VisitV2 = require("../models/visitV2.model");
+    const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const Entitlement = require("../models/entitlement.model");
+    const { createVisitListing, createVisitExecuteOffer, acquireOffer } = require("../services/marketplaceVisitV2.service");
+    const { resolveExecutableVisitRevisionV2 } = require("../services/visitExecutionAccessV2.service");
+    const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
+
+    const [seller, buyer] = await User.create([
+      { username: "seller-pinned", passwordHash: "test-hash" },
+      { username: "buyer-pinned", passwordHash: "test-hash" },
+    ]);
+    const visit = await createPublishedVisit({
+      VisitV2,
+      VisitRevisionV2,
+      ownerType: "user",
+      ownerId: seller._id,
+      actorUserId: seller._id,
+      title: "Versione acquisita",
+    });
+    const revision1Id = visit.publishedRevisionId;
+    const listing = await createVisitListing({
+      visitId: visit._id,
+      sellerType: "user",
+      sellerId: seller._id,
+      actorUserId: seller._id,
+    });
+    const offer = await createVisitExecuteOffer({
+      listingId: listing._id,
+      actorUserId: seller._id,
+      payload: { versionPolicy: "pin_at_acquisition" },
+    });
+    await acquireOffer({ offerId: offer._id, actorUserId: buyer._id });
+
+    const entitlement = await Entitlement.findOne({ beneficiaryId: buyer._id, resourceId: visit._id }).lean();
+    assert.equal(entitlement.versionPolicy, "pinned");
+    assert.equal(entitlement.baselineSnapshotRef.resourceType, "visit_revision");
+    assert.equal(String(entitlement.baselineSnapshotRef.resourceId), String(revision1Id));
+
+    const revision2 = await VisitRevisionV2.create({
+      visitId: visit._id,
+      version: 2,
+      basedOnRevisionId: revision1Id,
+      title: "Versione nuova",
+      editorialSources: [],
+      contentEntries: [],
+      visitAnchors: [],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+      publication: { publishedAt: new Date(), publishedBy: seller._id },
+      createdBy: seller._id,
+      updatedBy: seller._id,
+    });
+    await VisitRevisionV2.updateOne({ _id: revision1Id }, { $set: { status: "superseded" } });
+    visit.publishedRevisionId = revision2._id;
+    await visit.save();
+
+    const refreshedVisit = await VisitV2.findById(visit._id).lean();
+    const resolved = await resolveExecutableVisitRevisionV2({ visit: refreshedVisit, userId: buyer._id });
+    assert.equal(String(resolved.revision._id), String(revision1Id));
+
+    const preparation = await createExecutionPreparation({ userId: buyer._id, payload: { visitId: visit._id } });
+    assert.equal(preparation.source.versionPolicy, "pinned");
+    assert.equal(String(preparation.source.visitRevisionId), String(revision1Id));
+  });
+});
