@@ -1,0 +1,9 @@
+const mongoose = require("mongoose");
+const RepresentationV2Schema = require("./representationV2.schema");
+const { Schema } = mongoose;
+const SemanticFocusV2Schema = new Schema({ subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true }, weight: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
+const PresentationAspectUseV2Schema = new Schema({ definitionId: { type: String, required: true, trim: true }, weight: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
+const AudienceSuitabilityV2Schema = new Schema({ minAgeYears: { type: Number, min: 0, max: 130, default: null }, maxAgeYears: { type: Number, min: 0, max: 130, default: null }, minMaturity: { type: Number, min: 0, max: 1, default: null }, maxMaturity: { type: Number, min: 0, max: 1, default: null } }, { _id: false });
+const KnowledgeRequirementV2Schema = new Schema({ subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true }, minLevel: { type: Number, min: 0, max: 1, default: 0 }, maxLevel: { type: Number, min: 0, max: 1, default: 1 }, weight: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
+const PresentationVariantV2Schema = new Schema({ key: { type: String, required: true, trim: true, lowercase: true }, label: { type: String, required: true, trim: true }, description: { type: String, trim: true, default: null }, semanticFocus: { type: [SemanticFocusV2Schema], default: [] }, presentationAspects: { type: [PresentationAspectUseV2Schema], default: [] }, audienceSuitability: { type: AudienceSuitabilityV2Schema, default: null }, knowledgeRequirements: { type: [KnowledgeRequirementV2Schema], default: [] }, representations: { type: [RepresentationV2Schema], default: [] } }, { _id: true });
+module.exports = PresentationVariantV2Schema;

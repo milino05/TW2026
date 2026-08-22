@@ -1,0 +1,16 @@
+const express = require("express");
+const { requireAuth } = require("../middlewares/auth");
+const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const controller = require("../controllers/itemsV2.controller");
+const router = express.Router();
+const itemId = validateObjectIdParam("itemId");
+const editionId = validateObjectIdParam("editionId");
+router.get("/items", controller.list);
+router.post("/items", requireAuth, controller.create);
+router.get("/items/:itemId", itemId, controller.get);
+router.post("/items/:itemId/editions", requireAuth, itemId, controller.createEdition);
+router.post("/items/:itemId/fork", requireAuth, itemId, controller.fork);
+router.patch("/item-editions/:editionId", requireAuth, editionId, controller.updateEdition);
+router.post("/item-editions/:editionId/check-consistency", requireAuth, editionId, controller.checkEdition);
+router.post("/item-editions/:editionId/publish", requireAuth, editionId, controller.publishEdition);
+module.exports = router;

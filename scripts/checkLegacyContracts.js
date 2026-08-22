@@ -48,6 +48,17 @@ function walk(dir) {
   }
 }
 
+function rejectFields(file, fields, boundary) {
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, 'utf8');
+  for (const field of fields) {
+    if (new RegExp(`\\b${field}\\b`).test(text)) {
+      console.error(`${boundary} contains forbidden field ${field} in ${file}`);
+      failed = true;
+    }
+  }
+}
+
 roots.forEach(walk);
 for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js']) {
   if (fs.existsSync(obsolete)) {
@@ -55,5 +66,45 @@ for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.sche
     failed = true;
   }
 }
+for (const v2File of ['models/itemV2.model.js', 'models/itemEdition.model.js', 'models/itemRevisionV2.model.js']) {
+  rejectFields(v2File, ['museumId', 'itemType', 'recognitionImage'], 'Item v2 scaffold');
+}
+rejectFields('models/contentSpace.model.js', ['namespaceId', 'venueId', 'parentContentSpaceId'], 'ContentSpace');
+rejectFields('models/contentSpaceMembership.model.js', ['namespaceId', 'ownerType', 'ownerId'], 'ContentSpaceMembership');
+rejectFields('models/editorialContext.model.js', [
+  'ownerType', 'ownerId', 'venueId', 'durationKey', 'languageLevelKey', 'durationTypeDefinitionId', 'languageLevelDefinitionId',
+], 'EditorialContext');
+rejectFields('models/semanticGraphRevision.model.js', ['museumId', 'itemId', 'sourceItemRevisionId'], 'SemanticGraphRevision');
+rejectFields('models/graphSubjectBinding.model.js', ['itemId', 'itemType', 'museumId'], 'GraphSubjectBinding');
+rejectFields('models/semanticEdgeV2.model.js', ['museumId', 'sourceItemId', 'sourceItemRevisionId', 'targetItemId', 'relationTypeKey'], 'SemanticEdge v2');
+rejectFields('models/editorialRelease.model.js', ['ownerType', 'ownerId', 'venueId', 'visibility', 'discoverability'], 'EditorialRelease');
+rejectFields('models/venue.model.js', ['museumId', 'contentSpaceId', 'namespaceId', 'itemId'], 'Venue');
+rejectFields('models/venueTarget.model.js', ['museumId', 'itemId', 'itemRevisionId', 'contentSpaceId'], 'VenueTarget');
+rejectFields('models/layoutRevision.model.js', ['museumId', 'itemPlacements', 'itemId'], 'LayoutRevision v2');
+rejectFields('models/venueRelease.model.js', ['museumId', 'itemId', 'itemRevisionId', 'namespaceId', 'contentSpaceId'], 'VenueRelease');
+rejectFields('models/visitV2.model.js', ['kind', 'ownerMuseumId', 'museumId', 'visibility', 'discoverability'], 'Visit v2 scaffold');
+rejectFields('models/visitRevisionV2.model.js', [
+  'museumId', 'museumIds', 'spatialMode', 'defaultPresentationPolicy', 'durationKey', 'languageLevelKey',
+  'fromTargetEntryId', 'toTargetEntryId', 'layoutRevisionId', 'plannedPath', 'communityNote',
+], 'VisitRevision v2 scaffold');
+rejectFields('models/userSubjectAffinity.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserSubjectAffinity v2');
+rejectFields('models/userSubjectKnowledge.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserSubjectKnowledge v2');
+rejectFields('models/userItemEditionAffinity.model.js', ['museumId', 'itemId', 'itemType', 'featureKey'], 'UserItemEditionAffinity v2');
+rejectFields('models/userContentExposureV2.model.js', [
+  'museumId', 'itemId', 'variantKey', 'durationKey', 'languageLevelKey', 'semanticFeatureKeys', 'presentationAspectKeys',
+], 'UserContentExposure v2');
+rejectFields('models/userNamespaceFeatureAffinity.model.js', [
+  'museumId', 'itemId', 'itemType', 'featureKey', 'relationTypeKey', 'key',
+], 'UserNamespaceFeatureAffinity v2');
+rejectFields('models/venueTargetObservationProfile.model.js', ['museumId', 'itemId', 'itemType'], 'VenueTargetObservationProfile v2');
+rejectFields('models/generatedVisitPlanV2.model.js', [
+  'museumId', 'sourceVocabularyRevisionId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey',
+], 'GeneratedVisitPlan v2');
+rejectFields('models/visitSessionV2.model.js', [
+  'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision',
+], 'VisitSession v2');
+rejectFields('models/sessionPlanRevisionV2.model.js', [
+  'museumId', 'spatialMode', 'variantKey', 'durationKey', 'languageLevelKey', 'MuseumLayoutRevision', 'sourceVocabularyRevisionIds',
+], 'SessionPlanRevision v2');
 if (failed) process.exit(1);
 console.log('No operational legacy visit/generator/semantic-graph contracts found.');
