@@ -1,11 +1,13 @@
 import { currentRoute, navigate } from "../application/router.js";
 import { authRepository } from "../infrastructure/http/auth-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
+import "./workspace-view.js";
 
 const TITLES = {
   "/": "Catalogo",
   "/catalog": "Catalogo",
   "/workspace": "Workspace",
+  "/workspace/resource": "Risorsa Workspace",
   "/404": "Pagina non trovata",
 };
 
@@ -276,8 +278,8 @@ export class MarketplaceAppShell extends HTMLElement {
       ? "<main><p>Caricamento…</p></main>"
       : !this.user
         ? this.renderLogin()
-        : route === "/workspace"
-          ? "<main><h1>Workspace</h1><p>Il Catalog multi-asset è attivo. Le operazioni creator capability-based vengono completate nello Slice 5.</p></main>"
+        : ["/workspace", "/workspace/resource"].includes(route)
+          ? "<artaround-workspace-view></artaround-workspace-view>"
           : route === "/404"
             ? "<main><h1>Pagina non trovata</h1></main>"
             : this.renderCatalog();
@@ -309,7 +311,7 @@ export class MarketplaceAppShell extends HTMLElement {
       </header>
       ${content}
     `;
-    document.title = `${TITLES[route]} · ArtAround`;
+    document.title = `${TITLES[route] || "ArtAround"} · ArtAround`;
   }
 }
 
