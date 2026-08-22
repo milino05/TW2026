@@ -1,0 +1,303 @@
+const ItemEdition = require("../models/itemEdition.model");
+const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+const Namespace = require("../models/namespace.model");
+const NamespaceRevision = require("../models/namespaceRevision.model");
+const Subject = require("../models/subject.model");
+const User = require("../models/user");
+const Organization = require("../models/organization.model");
+const ContentSpace = require("../models/contentSpace.model");
+const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const Venue = require("../models/venue.model");
+const VenueRelease = require("../models/venueRelease.model");
+const VenueTarget = require("../models/venueTarget.model");
+const AppError = require("../utils/AppError");
+const itemService = require("./itemV2.service");
+const { listContentSpaces } = require("./contentSpace.service");
+
+function id(value) { return String(value?._id || value || ""); }
+function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
+
+function collectRevisionSubjectIds(revision) {
+  const values = [...(revision?.relatedSubjectIds || [])];
+  for (const variant of revision?.presentationVariants || []) {
+    for (const focus of variant.semanticFocus || []) values.push(focus.subjectId);
+    for (const requirement of variant.knowledgeRequirements || []) values.push(requirement.subjectId);
+  }
+  return uniqueIds(values);
+}
+
+async function validateReferencedSubjects(revision) {
+  const subjectIds = collectRevisionSubjectIds(revision);
+  if (!subjectIds.length) return [];
+  const existing = await Subject.find({ _id: { $in: subjectIds } }).select("_id").lean();
+  const found = new Set(existing.map((entry) => id(entry)));
+  return subjectIds
+    .filter((subjectId) => !found.has(subjectId))
+    .map((subjectId) => ({
+      code: "SUBJECT_REFERENCE_NOT_FOUND",
+      message: "Un Subject referenziato dalla revisione non esiste",
+      context: { subjectId },
+    }));
+}
+
+async function checkEditionConsistency({ editionId, actorUserId }) {
+  const result = await itemService.checkEditionConsistency({ editionId, actorUserId });
+  const subjectIssues = await validateReferencedSubjects(result.revision);
+  if (!subjectIssues.length) return result;
+  const previousIssues = (result.revision.integrity?.issues || []).filter((issue) => issue.code !== "SUBJECT_REFERENCE_NOT_FOUND");
+  result.revision.integrity = {
+    status: "needs_review",
+    issues: [...previousIssues, ...subjectIssues],
+    checkedAt: new Date(),
+    checkedBy: actorUserId,
+  };
+  await result.revision.save();
+  return { revision: result.revision, issues: result.revision.integrity.issues };
+}
+
+function projectSubject(subject) {
+  if (!subject) return null;
+  return {
+    id: subject._id,
+    preferredLabel: subject.preferredLabel,
+    description: subject.description || "",
+    externalRefs: (subject.externalRefs || []).map((ref) => ({
+      scheme: ref.scheme,
+      id: ref.id,
+      matchType: ref.matchType || "exact",
+    })),
+  };
+}
+
+function definitionMaps(namespaceRevision) {
+  return {
+    duration: new Map((namespaceRevision?.durationTypes || []).map((entry) => [entry.definitionId, entry])),
+    language: new Map((namespaceRevision?.languageLevels || []).map((entry) => [entry.definitionId, entry])),
+    aspect: new Map((namespaceRevision?.presentationAspects || []).map((entry) => [entry.definitionId, entry])),
+    signal: new Map((namespaceRevision?.selectionSignals || []).map((entry) => [entry.definitionId, entry])),
+  };
+}
+
+function projectRepresentation(representation, maps) {
+  const duration = maps.duration.get(representation.durationTypeDefinitionId);
+  const language = maps.language.get(representation.languageLevelDefinitionId);
+  return {
+    id: representation._id,
+    duration: {
+      definitionId: representation.durationTypeDefinitionId,
+      label: duration?.label || representation.durationTypeDefinitionId,
+      targetSeconds: duration?.targetSeconds ?? null,
+    },
+    languageComplexity: {
+      definitionId: representation.languageLevelDefinitionId,
+      label: language?.label || representation.languageLevelDefinitionId,
+    },
+    locale: representation.locale,
+    text: representation.text,
+  };
+}
+
+function projectNamespaceControls(namespace, revision) {
+  return {
+    id: namespace._id,
+    name: namespace.name,
+    description: namespace.description || "",
+    revision: {
+      id: revision._id,
+      version: revision.version,
+      durationTypes: (revision.durationTypes || []).map((entry) => ({
+        definitionId: entry.definitionId,
+        label: entry.label,
+        description: entry.description || "",
+        targetSeconds: entry.targetSeconds,
+      })),
+      languageLevels: (revision.languageLevels || []).map((entry) => ({
+        definitionId: entry.definitionId,
+        label: entry.label,
+        description: entry.description || "",
+      })),
+      presentationAspects: (revision.presentationAspects || []).map((entry) => ({
+        definitionId: entry.definitionId,
+        label: entry.label,
+        description: entry.description || "",
+      })),
+      selectionSignals: (revision.selectionSignals || []).map((entry) => ({
+        definitionId: entry.definitionId,
+        label: entry.label,
+        description: entry.description || "",
+      })),
+    },
+  };
+}
+
+async function ownerSummary(item) {
+  if (item.ownerType === "organization") {
+    const organization = await Organization.findById(item.ownerId).select("name").lean();
+    return { type: "organization", id: item.ownerId, name: organization?.name || "Organization" };
+  }
+  const user = await User.findById(item.ownerId).select("username").lean();
+  return { type: "user", id: item.ownerId, name: user?.username || "Autore" };
+}
+
+async function projectMemberships({ itemId, actorUserId }) {
+  const spaces = await listContentSpaces({ actorUserId });
+  const spaceIds = spaces.map((space) => space._id);
+  const memberships = spaceIds.length
+    ? await ContentSpaceMembership.find({ itemId, contentSpaceId: { $in: spaceIds } }).select("contentSpaceId").lean()
+    : [];
+  const memberOf = new Set(memberships.map((entry) => id(entry.contentSpaceId)));
+  return spaces.map((space) => ({
+    contentSpaceId: space._id,
+    name: space.name,
+    owner: { type: space.ownerType, id: space.ownerId },
+    member: memberOf.has(id(space._id)),
+  }));
+}
+
+async function canPublish(item, actorUserId) {
+  try {
+    await itemService.assertCanManageItem(item, actorUserId, "manager");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getItemAuthoringProjection({ itemId, editionId = null, actorUserId }) {
+  const item = await itemService.findItemOrFail(itemId);
+  await itemService.assertCanManageItem(item, actorUserId);
+  const [subject, editions, owner, memberships] = await Promise.all([
+    Subject.findById(item.primarySubjectId).lean(),
+    ItemEdition.find({ itemId: item._id }).sort({ createdAt: 1 }).lean(),
+    ownerSummary(item),
+    projectMemberships({ itemId: item._id, actorUserId }),
+  ]);
+  if (!subject) throw new AppError("Primary Subject dell'Item non disponibile", 409, [{ code: "PRIMARY_SUBJECT_NOT_FOUND" }]);
+
+  const selectedEdition = editionId
+    ? editions.find((edition) => id(edition._id) === id(editionId))
+    : editions[0] || null;
+  if (editionId && !selectedEdition) throw new AppError("ItemEdition non appartenente all'Item", 404);
+
+  const editionSummaries = [];
+  for (const edition of editions) {
+    const namespace = await Namespace.findOne({ _id: edition.namespaceId, lifecycleStatus: "active" }).select("name description").lean();
+    editionSummaries.push({
+      id: edition._id,
+      namespace: namespace ? { id: namespace._id, name: namespace.name } : null,
+      workingRevisionId: edition.workingRevisionId || null,
+      publishedRevisionId: edition.publishedRevisionId || null,
+    });
+  }
+
+  let selected = null;
+  if (selectedEdition) {
+    const revisionId = selectedEdition.workingRevisionId || selectedEdition.publishedRevisionId;
+    const revision = revisionId ? await ItemRevisionV2.findById(revisionId).lean() : null;
+    const namespace = await Namespace.findOne({ _id: selectedEdition.namespaceId, lifecycleStatus: "active" }).lean();
+    if (!namespace) throw new AppError("Namespace della Edition non disponibile", 409);
+    const namespaceRevisionId = revision?.authoredAgainstNamespaceRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
+    const namespaceRevision = namespaceRevisionId ? await NamespaceRevision.findById(namespaceRevisionId).lean() : null;
+    if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non disponibile", 409);
+    const maps = definitionMaps(namespaceRevision);
+    const referencedSubjectIds = revision ? collectRevisionSubjectIds(revision) : [];
+    const referencedSubjects = referencedSubjectIds.length
+      ? await Subject.find({ _id: { $in: referencedSubjectIds } }).lean()
+      : [];
+    const subjectById = new Map(referencedSubjects.map((entry) => [id(entry), entry]));
+    selected = {
+      edition: { id: selectedEdition._id },
+      namespace: projectNamespaceControls(namespace, namespaceRevision),
+      revision: revision ? {
+        id: revision._id,
+        version: revision.version,
+        status: revision.status,
+        integrity: revision.integrity,
+        label: revision.label,
+        relatedSubjects: (revision.relatedSubjectIds || []).map((subjectId) => projectSubject(subjectById.get(id(subjectId))) || { id: subjectId, missing: true }),
+        authorCredits: revision.authorCredits || [],
+        license: revision.metadata?.license || null,
+        tags: revision.tags || [],
+        illustrativeMedia: (revision.illustrativeMedia || []).map((media) => ({ id: media._id, url: media.url, altText: media.altText || null })),
+        selectionSignals: (revision.selectionSignals || []).map((signal) => ({
+          definitionId: signal.definitionId,
+          label: maps.signal.get(signal.definitionId)?.label || signal.definitionId,
+          weight: signal.weight,
+        })),
+        presentationVariants: (revision.presentationVariants || []).map((variant) => ({
+          id: variant._id,
+          key: variant.key,
+          label: variant.label,
+          description: variant.description || "",
+          semanticFocus: (variant.semanticFocus || []).map((focus) => ({
+            subject: projectSubject(subjectById.get(id(focus.subjectId))) || { id: focus.subjectId, missing: true },
+            weight: focus.weight,
+          })),
+          presentationAspects: (variant.presentationAspects || []).map((aspect) => ({
+            definitionId: aspect.definitionId,
+            label: maps.aspect.get(aspect.definitionId)?.label || aspect.definitionId,
+            weight: aspect.weight,
+          })),
+          knowledgeRequirements: (variant.knowledgeRequirements || []).map((requirement) => ({
+            subject: projectSubject(subjectById.get(id(requirement.subjectId))) || { id: requirement.subjectId, missing: true },
+            minLevel: requirement.minLevel,
+            maxLevel: requirement.maxLevel,
+            weight: requirement.weight,
+          })),
+          representations: (variant.representations || []).map((representation) => projectRepresentation(representation, maps)),
+        })),
+        defaultPresentation: revision.defaultPresentation || null,
+      } : null,
+    };
+  }
+
+  const publishAllowed = await canPublish(item, actorUserId);
+  return {
+    subject: projectSubject(subject),
+    lineage: { id: item._id, owner, provenance: item.provenance || null },
+    editions: editionSummaries,
+    selected,
+    workspaceMemberships: memberships,
+    publicationState: selected?.revision ? {
+      status: selected.revision.status,
+      integrityStatus: selected.revision.integrity?.status || "needs_review",
+    } : null,
+    availableOperations: [
+      "item.edit",
+      "item.create_edition",
+      "item.check_consistency",
+      ...(publishAllowed ? ["item.publish"] : []),
+      "content_space.membership",
+    ],
+  };
+}
+
+async function getVenueTargetAuthoringContext({ venueTargetId }) {
+  const target = await VenueTarget.findOne({ _id: venueTargetId, lifecycleStatus: "active" }).lean();
+  if (!target) throw new AppError("VenueTarget non disponibile", 404);
+  const [venue, subject] = await Promise.all([
+    Venue.findOne({ _id: target.venueId, lifecycleStatus: "active" }).select("name description publishedReleaseId").lean(),
+    Subject.findById(target.subjectId).lean(),
+  ]);
+  if (!venue || !subject) throw new AppError("Contesto fisico del VenueTarget non coerente", 409);
+  let recognitionMedia = [];
+  if (venue.publishedReleaseId) {
+    const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
+    const binding = (release?.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
+    recognitionMedia = (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null }));
+  }
+  return {
+    venue: { id: venue._id, name: venue.name, description: venue.description || "" },
+    venueTarget: { id: target._id, label: target.label, description: target.description || "" },
+    subject: projectSubject(subject),
+    recognitionMedia,
+  };
+}
+
+module.exports = {
+  collectRevisionSubjectIds,
+  validateReferencedSubjects,
+  checkEditionConsistency,
+  getItemAuthoringProjection,
+  getVenueTargetAuthoringContext,
+};
