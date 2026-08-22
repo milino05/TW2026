@@ -14,6 +14,8 @@ async function listSubjects(req, res, next) {
     res.status(200).json(await subjectService.listSubjects({
       search: req.query?.search || "",
       limit: req.query?.limit,
+      externalScheme: req.query?.externalScheme || null,
+      externalId: req.query?.externalId || null,
     }));
   } catch (error) { next(error); }
 }
