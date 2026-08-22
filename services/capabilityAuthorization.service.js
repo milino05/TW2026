@@ -1,9 +1,8 @@
-const VisitV2 = require("../models/visitV2.model");
-const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Entitlement = require("../models/entitlement.model");
 const AppError = require("../utils/AppError");
 const { capabilitySupportsResource } = require("../config/marketplaceCapabilities");
 const { resolveActorPrincipals } = require("./principalResolution.service");
+const { resolveResourceAuthority } = require("./marketplaceResourceV2.service");
 
 function sameId(a, b) {
   return String(a || "") === String(b || "");
@@ -20,20 +19,6 @@ function chooseEffectiveEntitlement(entitlements, now = new Date()) {
   const followCurrent = valid.find((entry) => entry.versionPolicy === "follow_current");
   if (followCurrent) return followCurrent;
   return valid.find((entry) => entry.versionPolicy === "pinned") || null;
-}
-
-async function resolveOwnedResource(resourceType, resourceId) {
-  if (resourceType === "visit") {
-    const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
-    return visit ? { ownerType: visit.ownerType, ownerId: visit.ownerId, resource: visit } : null;
-  }
-  if (resourceType === "visit_revision") {
-    const revision = await VisitRevisionV2.findById(resourceId).lean();
-    if (!revision) return null;
-    const visit = await VisitV2.findOne({ _id: revision.visitId, lifecycleStatus: "active" }).lean();
-    return visit ? { ownerType: visit.ownerType, ownerId: visit.ownerId, resource: revision, aggregate: visit } : null;
-  }
-  return null;
 }
 
 async function listValidCapabilityEntitlements({ actorUserId, capability, resourceType, resourceId, now = new Date() }) {
@@ -79,7 +64,7 @@ async function resolveCapabilityAccess({ actorUserId, capability, resourceType, 
     resourceId,
     now,
   });
-  const owned = await resolveOwnedResource(resourceType, resourceId);
+  const owned = await resolveResourceAuthority(resourceType, resourceId);
   const ownerPrincipal = owned
     ? principals.find((principal) => principal.type === owned.ownerType && sameId(principal.id, owned.ownerId))
     : null;
