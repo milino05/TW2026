@@ -33,6 +33,12 @@ export const authoringRepository = {
   venueTargetContext(venueTargetId) {
     return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
   },
+  editorialReleaseComposer(editorialContextId) {
+    return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/release-composer`);
+  },
+  createEditorialRelease(editorialContextId, payload) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/releases`, { method: "POST", body: JSON.stringify(payload) });
+  },
   createEdition(itemId, payload) {
     return apiClient.request(`/items/${encodeURIComponent(itemId)}/editions`, { method: "POST", body: JSON.stringify(payload) });
   },
