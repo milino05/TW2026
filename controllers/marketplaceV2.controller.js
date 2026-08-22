@@ -1,11 +1,12 @@
-const service = require("../services/marketplaceVisitV2.service");
-const AppError = require("../utils/AppError");
+const marketplace = require("../services/marketplaceV2.service");
+const visitMarketplace = require("../services/marketplaceVisitV2.service");
 
 function projectAcquisitionResult(result) {
   return {
     acquisition: {
       id: result.acquisition._id,
       acquiredAt: result.acquisition.acquiredAt,
+      pricing: result.acquisition.pricingSnapshot,
       alreadyAcquired: result.alreadyAcquired,
     },
     grantedUses: (result.entitlements || []).map((entitlement) => ({
@@ -13,46 +14,76 @@ function projectAcquisitionResult(result) {
       resourceId: entitlement.resourceId,
       capability: entitlement.capability,
       versionPolicy: entitlement.versionPolicy,
+      baselineSnapshotRef: entitlement.baselineSnapshotRef || null,
     })),
   };
 }
 
 async function catalog(req, res, next) {
   try {
-    res.status(200).json(await service.listVisitCatalog({
-      actorUserId: req.user._id,
-      venueId: req.query?.venueId || null,
-      page: req.query?.page,
-      limit: req.query?.limit,
-    }));
+    const resourceTypes = req.query?.resourceTypes || req.query?.resourceType || null;
+    const legacyVisitOnly = req.query?.venueId && !resourceTypes;
+    const result = legacyVisitOnly
+      ? await visitMarketplace.listVisitCatalog({
+          actorUserId: req.user._id,
+          venueId: req.query.venueId,
+          page: req.query?.page,
+          limit: req.query?.limit,
+        })
+      : await marketplace.listCatalog({
+          actorUserId: req.user._id,
+          page: req.query?.page,
+          limit: req.query?.limit,
+          queryText: req.query?.q || "",
+          resourceTypes,
+          sellerType: req.query?.sellerType || null,
+          sellerId: req.query?.sellerId || null,
+        });
+    res.status(200).json(result);
   } catch (error) { next(error); }
 }
 
 async function detail(req, res, next) {
   try {
-    res.status(200).json(await service.getVisitListingDetail({ listingId: req.params.listingId, actorUserId: req.user._id }));
-  } catch (error) { next(error); }
-}
-
-async function createVisitListing(req, res, next) {
-  try {
-    res.status(201).json(await service.createVisitListing({
-      visitId: req.body?.visitId,
-      sellerType: req.body?.sellerType,
-      sellerId: req.body?.sellerId,
+    res.status(200).json(await marketplace.getListingDetail({
+      listingId: req.params.listingId,
       actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
 }
 
-async function createVisitOffer(req, res, next) {
+async function createListing(req, res, next) {
   try {
-    if (req.body?.pricing?.type && req.body.pricing.type !== "free") {
-      throw new AppError("Il pagamento simulato non e ancora implementato", 409, [{ code: "PAID_ACQUISITION_NOT_IMPLEMENTED" }]);
+    const resourceType = req.body?.resourceType || (req.body?.visitId ? "visit" : null);
+    const resourceId = req.body?.resourceId || req.body?.visitId;
+    res.status(201).json(await marketplace.createListing({
+      resourceType,
+      resourceId,
+      sellerType: req.body?.sellerType,
+      sellerId: req.body?.sellerId,
+      actorUserId: req.user._id,
+      metadata: {
+        title: req.body?.title,
+        summary: req.body?.summary,
+        catalogMetadata: req.body?.catalogMetadata,
+      },
+    }));
+  } catch (error) { next(error); }
+}
+
+async function createOffer(req, res, next) {
+  try {
+    if (Array.isArray(req.body?.grants) && req.body.grants.length) {
+      res.status(201).json(await marketplace.createOffer({
+        listingId: req.params.listingId,
+        payload: req.body,
+        actorUserId: req.user._id,
+      }));
+      return;
     }
-    res.status(201).json(await service.createVisitExecuteOffer({
+    res.status(201).json(await visitMarketplace.createVisitExecuteOffer({
       listingId: req.params.listingId,
-      payload: { ...(req.body || {}), pricing: { type: "free" } },
+      payload: req.body || {},
       actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
@@ -60,7 +91,7 @@ async function createVisitOffer(req, res, next) {
 
 async function acquire(req, res, next) {
   try {
-    const result = await service.acquireOffer({
+    const result = await marketplace.acquireOffer({
       offerId: req.params.offerId,
       actorUserId: req.user._id,
       beneficiaryType: req.body?.beneficiaryType || "user",
@@ -70,11 +101,24 @@ async function acquire(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function acquisitionHistory(req, res, next) {
+  try {
+    res.status(200).json(await marketplace.listAcquisitionHistory({
+      actorUserId: req.user._id,
+      beneficiaryType: req.query?.beneficiaryType || "user",
+      beneficiaryId: req.query?.beneficiaryId || req.user._id,
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
 module.exports = {
   projectAcquisitionResult,
   catalog,
   detail,
-  createVisitListing,
-  createVisitOffer,
+  createListing,
+  createOffer,
   acquire,
+  acquisitionHistory,
 };
