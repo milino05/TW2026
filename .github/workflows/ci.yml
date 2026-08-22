@@ -39,14 +39,23 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies from committed lockfile
+      - name: Install backend dependencies from committed lockfile
         run: npm ci
 
-      - name: Check JavaScript syntax, legacy contracts and repository hygiene
+      - name: Install Navigator dependencies
+        run: npm install --prefix clients/navigator --no-audit --no-fund
+
+      - name: Check backend contracts and repository hygiene
         run: npm run check
+
+      - name: Check and build clients
+        run: npm run check:clients && npm run build:clients
 
       - name: Run unit and MongoDB compatibility tests
         run: npm test
 
-      - name: Audit production dependencies
+      - name: Audit production backend dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit Navigator dependencies
+        run: npm audit --prefix clients/navigator --audit-level=high
