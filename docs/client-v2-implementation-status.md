@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Slice corrente
 
-**Slice 6 — Item authoring e Venue catalog relevance**
+**Slice 7 — Generator v2 UX + GeneratedPlan materialization**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -134,17 +134,63 @@ Test Slice 5 aggiunti:
 - Workspace distingue asset licensed e owned prima/dopo l'import;
 - un Entitlement personale non può produrre un fork Organization-owned; dopo Acquisition a beneficio dell'Organization lo stesso workflow è autorizzato e le Adoption sono Organization-scoped.
 
+## Slice 6 — Item authoring e Venue catalog relevance
+
+**Stato: implementato nel codice; test automatici e guardrail aggiunti; verifica CI push non osservabile tramite il connector corrente.**
+
+Completato su `main`:
+
+- introdotto `VenueCatalogRelevanceResolverV2`: la selezione `selectedVenueIds[]` usa semantica union/OR ed è applicata alla query Listing prima della paginazione;
+- `VenueSelectorProjection` raggruppa le Venue per Organization senza esporre primary Context, release o internals fisici;
+- la rilevanza editoriale deriva dai Subject dei VenueTarget attivi nella `VenueRelease` pubblicata; VenueTarget di lavoro non rendono automaticamente un contenuto pertinente alla Venue;
+- `ItemEdition`/`ItemRevision` risultano pertinenti tramite `primarySubjectId`, `relatedSubjectIds`, semantic focus e knowledge requirements, senza introdurre `museumId`, `venueIds[]` o ownership-by-Venue;
+- `EditorialContext`/`EditorialRelease` possono risultare pertinenti per corpus oppure per endorsement `Venue.primaryEditorialContextId`, che resta segnale/default e non authorization;
+- `Namespace`/`NamespaceRevision` restano intrinsecamente Venue-neutral e il `SemanticGraph` non viene filtrato dalla Venue;
+- per le Visit, il PhysicalScope deriva da `VisitAnchor -> VenueTarget -> Venue`; la Visit live segue esclusivamente la propria `publishedRevisionId` corrente, mentre una `VisitRevision` storica resta uno snapshot autonomo filtrabile;
+- le card Visit mostrano sempre l'intero PhysicalScope, anche quando il match deriva da una sola Venue selezionata;
+- Listing e Offer restano lifecycle separati: una Listing pubblicata rimane discoverable anche senza Offer attive e il client può mostrare correttamente “Nessuna offerta disponibile”;
+- Subject search/create supporta exact external identity e rifiuta il binding duplicato della stessa identity `exact`;
+- introdotta `ItemAuthoringProjection` con Subject, lineage/owner, Edition/Namespace, Revision/Presentation, ContentSpace membership, publication/integrity state e operazioni user-facing;
+- il consistency check verifica anche l'esistenza dei Subject referenziati da `relatedSubjectIds`, semantic focus e knowledge requirements; riferimenti dangling producono `SUBJECT_REFERENCE_NOT_FOUND`, lasciano la revisione `needs_review` e impediscono la publication;
+- il round-trip del client preserva i Subject dangling invece di cancellarli silenziosamente durante un edit;
+- il wizard Marketplace implementa `Subject -> Item -> Edition -> Revision`, supporta Subject non fisici senza Venue e mantiene il principal proprietario della lineage stabile dopo la creazione dell'Item;
+- `NamespaceAuthoringProjection` espone controlli user-facing per durata, complessità linguistica, aspetti e selection signal senza consegnare al client una NamespaceRevision grezza;
+- l'entry point “crea contenuto per questo oggetto” usa un VenueTarget pubblicato soltanto per precompilare il Subject; non crea una relazione Item -> VenueTarget;
+- `VenueRelease.targetBindings.recognitionMedia` e `ItemRevision.illustrativeMedia` restano separati; le recognition image possono essere mostrate come contesto fisico ma non vengono copiate nell'Item;
+- la ContentSpace membership è modificabile dall'Editor e continua a organizzare/autorizzare il corpus senza trasferire ownership;
+- introdotto `EditorialReleaseComposerV2`: propone soltanto Item member del ContentSpace, Edition dello stesso Namespace e snapshot realmente autorizzate per il principal proprietario del Context;
+- il composer usa la stessa capability-source resolution del write service anche per Namespace `pinned`, quindi una licenza a una NamespaceRevision storica non viene sostituita silenziosamente dalla revision live corrente;
+- il Marketplace collega gli EditorialContext owned al release composer e riusa l'endpoint/domain service di creazione EditorialRelease esistente;
+- aggiunto `checkSlice6Contracts.js`, eseguito da `npm run check`, per proteggere indipendenza Subject/Item/Namespace dalla Venue, derived Venue relevance, assenza di SemanticGraph filtering, `selectedVenueIds[]`, preservation dei riferimenti Subject dangling e source resolution del composer.
+
+Test Slice 6 aggiunti:
+
+- exact Subject identity ricercabile e duplicazione rifiutata;
+- Venue selector Organization -> Venues senza internals;
+- filtro Venue A, union A+B, contenuto semanticamente correlato e Namespace venue-neutral;
+- Visit A+B visibile selezionando A ma con PhysicalScope completo;
+- VenueTarget non pubblicato non rende editorialmente rilevante un Item ma conserva la propria identità fisica per il PhysicalScope delle Visit;
+- una Visit live non eredita rilevanza Venue da una vecchia VisitRevision superseded, mentre lo snapshot storico rimane filtrabile autonomamente;
+- recognition media fisici separati dagli illustrative media editoriali;
+- due Item indipendenti possono condividere lo stesso Subject non fisico senza alcuna Venue;
+- `ItemAuthoringProjection` resta Venue-free e proietta correttamente membership e Presentation;
+- Subject dangling nei tre punti di riferimento semantico bloccano publication;
+- EditorialRelease composer esclude Item non-member e Item member privi di capability per il principal del Context;
+- NamespaceRevision pinned viene rispettata dal composer anche dopo la pubblicazione di una nuova revision live.
+
 ## Stato della verifica automatica
 
-La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il container dell'assistente continua a non risolvere `github.com`, quindi non può clonare `main` per eseguire localmente la suite completa. Il connector GitHub sui commit correnti non espone i workflow push; per questo codice e test sono versionati, ma l'esito CI non viene dichiarato green senza evidenza osservabile.
+La repository configura GitHub Actions per backend checks, build/check dei due client, test Node/Mongo e audit dipendenze. Il connector GitHub sui commit correnti non espone workflow run o status check di push; per questo codice, test e guardrail sono versionati ma l'esito CI non viene dichiarato green senza evidenza osservabile.
 
 ## Prossimo incremento
 
-Slice 6 completa Item authoring e la semantica di rilevanza Venue del Catalog:
+Slice 7 espone il generator esistente tramite contratti client-v2 e chiude il ciclo “genera -> esegui o salva”:
 
-1. implementare `ItemAuthoringProjection` senza esporre raw aggregate;
-2. Subject search/create con exact external refs e integrity dei Subject referenziati;
-3. Venue selector projection Organization → Venues e filtro Catalog `selectedVenueIds[]` con semantica union/OR;
-4. implementare `VenueCatalogRelevanceResolver` senza introdurre `museumId`, ownership-by-Venue o dipendenza editoriale dal Venue;
-5. completare nel Marketplace il wizard Subject → Item → Edition → Revision, editor delle Representation e ContentSpace/Context composition;
-6. mantenere indipendenti selezione fisica Venue, ownership, ContentSpace membership ed EditorialScope.
+1. implementare `GenerationOptionsProjection` authorization/scope-aware;
+2. introdurre source editoriali tipizzate: live `EditorialContext` oppure `EditorialRelease` pinned, con source resolution/version policy coerente;
+3. usare `Venue.primaryEditorialContextId` soltanto come default se realmente autorizzato, mai come authorization implicita;
+4. proiettare semantic goals, presentation e navigation controls in forma user-facing;
+5. completare nel Navigator selezione Venue fisiche e selezione ContentSpace/Context editoriali indipendenti, GeneratedPlan preview, accept e direct start;
+6. materializzare idempotentemente `GeneratedPlan -> user-owned Visit`, preservando snapshot editoriali e provenance ma senza congelare Representation, path, Layout o timing runtime;
+7. fare apparire la Visit salvata nella normale Library personale ed eseguirla tramite lo stesso ExecutionPreparation boundary;
+8. mantenere la structured generation request riusabile dalla futura natural-language generation 18–33.
