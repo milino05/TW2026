@@ -8,5 +8,6 @@ const validatePlanId = validateObjectIdParam("planId");
 router.post("/v2/generated-plans", requireAuth, controller.generate);
 router.get("/v2/generated-plans/:planId", requireAuth, validatePlanId, controller.get);
 router.post("/v2/generated-plans/:planId/accept", requireAuth, validatePlanId, controller.accept);
+router.post("/v2/generated-plans/:planId/materialize", requireAuth, validatePlanId, controller.materialize);
 
 module.exports = router;
