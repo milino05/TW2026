@@ -28,12 +28,17 @@ async function directLibraryVisitIds(userId) {
   const entitlements = await Entitlement.find({
     beneficiaryType: "user",
     beneficiaryId: userId,
-    resourceType: "visit",
+    resourceType: { $in: ["visit", "visit_revision"] },
     capability: "visit.execute",
     status: "active",
-  }).select("resourceId status validFrom validUntil").lean();
-  const entitled = entitlements.filter((entry) => nowWithin(entry)).map((entry) => entry.resourceId);
-  return [...new Set([...owned, ...entitled].map(id))];
+  }).select("resourceType resourceId status validFrom validUntil").lean();
+  const valid = entitlements.filter((entry) => nowWithin(entry));
+  const liveVisitIds = valid.filter((entry) => entry.resourceType === "visit").map((entry) => entry.resourceId);
+  const revisionIds = valid.filter((entry) => entry.resourceType === "visit_revision").map((entry) => entry.resourceId);
+  const revisionVisits = revisionIds.length
+    ? await VisitRevisionV2.find({ _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } }).distinct("visitId")
+    : [];
+  return [...new Set([...owned, ...liveVisitIds, ...revisionVisits].map(id))];
 }
 
 async function projectOwnerSummary(visit) {
