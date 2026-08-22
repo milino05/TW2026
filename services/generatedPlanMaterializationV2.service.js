@@ -8,6 +8,15 @@ const { publishVisitV2 } = require("./visitV2Publication.service");
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function objectId() { return new mongoose.Types.ObjectId(); }
+function resultProjection({ planId, visit, revision, alreadyMaterialized }) {
+  return {
+    planId,
+    visitId: visit._id,
+    visitRevisionId: revision._id,
+    status: revision.status,
+    alreadyMaterialized: Boolean(alreadyMaterialized),
+  };
+}
 
 function buildPresentationBaseline(plan) {
   const snapshot = plan.contextSnapshot || {};
@@ -124,19 +133,20 @@ async function materializeGeneratedPlanV2({ planId, userId, title = null }) {
   }
   if (plan.materializedVisitId) {
     const existing = await loadMaterializedVisit(plan.materializedVisitId, plan._id, userId);
-    return { planId: plan._id, visit: existing.visit, revision: existing.revision, alreadyMaterialized: true };
+    return resultProjection({ planId: plan._id, ...existing, alreadyMaterialized: true });
   }
 
   const existingByProvenance = await VisitV2.findOne({ materializedFromGeneratedPlanId: plan._id }).lean();
   if (existingByProvenance) {
     const existing = await loadMaterializedVisit(existingByProvenance._id, plan._id, userId);
     await GeneratedVisitPlanV2.updateOne({ _id: plan._id, materializedVisitId: null }, { $set: { materializedVisitId: existing.visit._id } });
-    return { planId: plan._id, visit: existing.visit, revision: existing.revision, alreadyMaterialized: true };
+    return resultProjection({ planId: plan._id, ...existing, alreadyMaterialized: true });
   }
 
   const payload = materializedRevisionPayload(plan.toObject(), { title });
   let visit;
   let revision;
+  let published = null;
   try {
     visit = await VisitV2.create({
       ownerType: "user",
@@ -149,7 +159,7 @@ async function materializeGeneratedPlanV2({ planId, userId, title = null }) {
       const concurrent = await VisitV2.findOne({ materializedFromGeneratedPlanId: plan._id }).lean();
       if (concurrent) {
         const existing = await loadMaterializedVisit(concurrent._id, plan._id, userId);
-        return { planId: plan._id, visit: existing.visit, revision: existing.revision, alreadyMaterialized: true };
+        return resultProjection({ planId: plan._id, ...existing, alreadyMaterialized: true });
       }
     }
     throw error;
@@ -168,7 +178,7 @@ async function materializeGeneratedPlanV2({ planId, userId, title = null }) {
     visit.workingRevisionId = revision._id;
     await visit.save();
 
-    const published = await publishVisitV2({ visitId: visit._id, actorUserId: userId });
+    published = await publishVisitV2({ visitId: visit._id, actorUserId: userId });
     const pointer = await GeneratedVisitPlanV2.updateOne(
       { _id: plan._id, userId, materializedVisitId: null },
       { $set: { materializedVisitId: visit._id } },
@@ -179,10 +189,12 @@ async function materializeGeneratedPlanV2({ planId, userId, title = null }) {
         throw new AppError("GeneratedPlan modificato durante la materializzazione", 409, [{ code: "GENERATED_PLAN_MATERIALIZATION_CONFLICT" }]);
       }
     }
-    return { planId: plan._id, visit: published.visit, revision: published.revision, alreadyMaterialized: false };
+    return resultProjection({ planId: plan._id, visit: published.visit, revision: published.revision, alreadyMaterialized: false });
   } catch (error) {
-    await VisitRevisionV2.deleteMany({ visitId: visit._id }).catch(() => {});
-    await VisitV2.deleteOne({ _id: visit._id, publishedRevisionId: null }).catch(() => {});
+    if (!published) {
+      await VisitRevisionV2.deleteMany({ visitId: visit._id }).catch(() => {});
+      await VisitV2.deleteOne({ _id: visit._id, publishedRevisionId: null }).catch(() => {});
+    }
     throw error;
   }
 }
