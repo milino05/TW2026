@@ -67,13 +67,20 @@ interface StartPreparationResponse {
   alreadyStarted: boolean;
 }
 
+async function createPreparation(payload: { visitId?: string; generatedVisitPlanId?: string }) {
+  const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>("/v2/execution-preparations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response.preparation;
+}
+
 export const executionPreparationRepository = {
-  async createForVisit(visitId: string) {
-    const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>("/v2/execution-preparations", {
-      method: "POST",
-      body: JSON.stringify({ visitId }),
-    });
-    return response.preparation;
+  createForVisit(visitId: string) {
+    return createPreparation({ visitId });
+  },
+  createForGeneratedPlan(generatedVisitPlanId: string) {
+    return createPreparation({ generatedVisitPlanId });
   },
   async get(preparationId: string) {
     const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>(`/v2/execution-preparations/${encodeURIComponent(preparationId)}`);
