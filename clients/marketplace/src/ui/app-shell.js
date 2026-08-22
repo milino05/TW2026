@@ -20,7 +20,8 @@ export class MarketplaceAppShell extends HTMLElement {
   }
 
   onClick = (event) => {
-    const link = event.target.closest("a[data-route]");
+    const target = event.target instanceof Element ? event.target : null;
+    const link = target?.closest("a[data-route]");
     if (!link) return;
     event.preventDefault();
     navigate(link.getAttribute("href"));
