@@ -5,8 +5,11 @@ const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
+const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 const { validateEditorialReleaseCoherence } = require("./editorialReleaseIntegrity.service");
 const { normalizeEditorialReleasePayload, validateEditorialReleasePayload } = require("./validation/editorialRelease.validation");
+
+function sameId(a, b) { return String(a || "") === String(b || ""); }
 
 async function findContextOrFail(editorialContextId) {
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
@@ -20,14 +23,36 @@ async function assertCanManageContext(context, actorUserId, minimumOrganizationR
   return contentSpace;
 }
 
-async function assertReleaseDependenciesAuthorized({ context, itemBindings, actorUserId }) {
+async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionId, itemBindings, actorUserId }) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
-  await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
-  const editionIds = [...new Set((itemBindings || []).map((binding) => String(binding.itemEditionId || "")).filter(Boolean))];
-  for (const itemEditionId of editionIds) {
-    await assertCanUseItemEditionForEditorialRelease({ itemEditionId, actorUserId });
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId });
+  if (namespaceAccess?.basis === "entitlement") {
+    const ref = namespaceAccess.resolvedSnapshotRef;
+    if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, namespaceRevisionId)) {
+      throw new AppError("La NamespaceRevision della Release non e autorizzata", 403, [{
+        code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
+        context: { namespaceRevisionId, authorizedRevisionId: ref?.resourceId || null },
+      }]);
+    }
   }
+
+  const itemAccesses = [];
+  for (const binding of itemBindings || []) {
+    const usage = await assertCanUseItemEditionForEditorialRelease({ itemEditionId: binding.itemEditionId, actorUserId });
+    const access = usage.access;
+    if (access?.basis === "entitlement") {
+      const ref = access.resolvedSnapshotRef;
+      if (ref?.resourceType !== "item_revision" || !sameId(ref.resourceId, binding.itemRevisionId)) {
+        throw new AppError("La ItemRevision della Release non e autorizzata", 403, [{
+          code: "ITEM_REVISION_NOT_AUTHORIZED",
+          context: { itemEditionId: binding.itemEditionId, itemRevisionId: binding.itemRevisionId, authorizedRevisionId: ref?.resourceId || null },
+        }]);
+      }
+    }
+    itemAccesses.push({ binding, access });
+  }
+  return { namespace, namespaceAccess, itemAccesses };
 }
 
 async function nextVersion(editorialContextId) {
@@ -42,7 +67,12 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
   const normalized = normalizeEditorialReleasePayload(rawPayload);
   const context = await findContextOrFail(editorialContextId);
   await assertCanManageContext(context, actorUserId, "manager");
-  await assertReleaseDependenciesAuthorized({ context, itemBindings: normalized.itemBindings, actorUserId });
+  const dependencyAccess = await assertReleaseDependenciesAuthorized({
+    context,
+    namespaceRevisionId: normalized.namespaceRevisionId,
+    itemBindings: normalized.itemBindings,
+    actorUserId,
+  });
   const graphRevisionId = normalized.graphRevisionId || context.workingGraphRevisionId;
   if (!graphRevisionId) throw new AppError("EditorialContext privo di GraphRevision", 409);
 
@@ -66,11 +96,36 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
     releasedBy: actorUserId,
   });
 
+  const adoptionIds = [];
   try {
+    const namespaceAdoption = await recordAdoptionFromAccess({
+      access: dependencyAccess.namespaceAccess,
+      actorUserId,
+      action: "namespace_use",
+      sourceResourceRef: { resourceType: "namespace", resourceId: dependencyAccess.namespace._id },
+      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: normalized.namespaceRevisionId },
+      resultResourceRef: { resourceType: "editorial_context", resourceId: context._id },
+    });
+    if (namespaceAdoption) adoptionIds.push(namespaceAdoption._id);
+
+    for (const { binding, access } of dependencyAccess.itemAccesses) {
+      const adoption = await recordAdoptionFromAccess({
+        access,
+        actorUserId,
+        action: "content_link",
+        sourceResourceRef: { resourceType: "item_edition", resourceId: binding.itemEditionId },
+        sourceSnapshotRef: { resourceType: "item_revision", resourceId: binding.itemRevisionId },
+        targetResourceRef: { resourceType: "editorial_context", resourceId: context._id },
+        resultResourceRef: { resourceType: "editorial_context", resourceId: context._id },
+      });
+      if (adoption) adoptionIds.push(adoption._id);
+    }
+
     context.publishedReleaseId = release._id;
     await context.save();
     return release;
   } catch (error) {
+    await deleteAdoptions(adoptionIds).catch(() => {});
     await EditorialRelease.deleteOne({ _id: release._id }).catch(() => {});
     throw error;
   }
