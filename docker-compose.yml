@@ -30,10 +30,6 @@ services:
       SESSION_DURATION_HOURS: ${SESSION_DURATION_HOURS:-168}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       ADAPTIVE_CONTRIBUTOR_SECRET: ${ADAPTIVE_CONTRIBUTOR_SECRET:-development-only-change-me}
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: npm run dev:container
 
 volumes:
   mongo-data:

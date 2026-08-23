@@ -60,9 +60,18 @@ app.use("/api", preferenceRoutes);
 function mountBuiltSpa({ mountPath, distDir }) {
   const indexFile = path.join(distDir, "index.html");
   if (!fs.existsSync(indexFile)) return false;
-  app.get(mountPath, (req, res) => res.redirect(308, `${mountPath}/`));
+
+  const exactMountPath = new RegExp(
+    `^${mountPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
+  );
+
+  app.get(exactMountPath, (req, res) =>
+    res.redirect(308, `${mountPath}/`)
+  );
+
   app.use(mountPath, express.static(distDir, { index: false }));
   app.get(`${mountPath}/*`, (req, res) => res.sendFile(indexFile));
+
   return true;
 }
 

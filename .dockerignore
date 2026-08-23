@@ -1,7 +1,10 @@
 .git
 .github
 .env
-node_modules
+
+**/node_modules
+**/dist
+
 coverage
 npm-debug.log*
 25 Progetto 2526_removed.pdf

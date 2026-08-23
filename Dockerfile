@@ -6,9 +6,10 @@ COPY package*.json ./
 RUN npm ci
 
 COPY clients/navigator/package*.json ./clients/navigator/
-RUN npm install --prefix clients/navigator --no-audit --no-fund
+RUN npm ci --prefix clients/navigator --no-audit --no-fund
 
 COPY . .
+
 RUN npm run build:clients \
   && npm prune --omit=dev \
   && rm -rf clients/navigator/node_modules
