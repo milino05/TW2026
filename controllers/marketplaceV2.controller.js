@@ -2,6 +2,7 @@ const marketplace = require("../services/marketplaceV2.service");
 const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
+const workspaceResources = require("../services/marketplaceWorkspaceResourcesV2.service");
 const commercial = require("../services/marketplaceCommercialV2.service");
 const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
 const management = require("../services/marketplaceManagementV2.service");
@@ -192,6 +193,31 @@ async function creatorWorkspace(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function creatorWorkspaceContext(req, res, next) {
+  try {
+    res.status(200).json(await workspaceResources.getCreatorWorkspaceContext({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function creatorWorkspaceResources(req, res, next) {
+  try {
+    res.status(200).json(await workspaceResources.listCreatorWorkspaceResources({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      ownership: req.query?.ownership || "owned",
+      q: req.query?.q || "",
+      resourceTypes: req.query?.resourceTypes || req.query?.resourceType || null,
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
 async function marketplaceAccountWorkspace(req, res, next) {
   try {
     res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({
@@ -270,6 +296,8 @@ module.exports = {
   withdrawListing,
   withdrawOffer,
   creatorWorkspace,
+  creatorWorkspaceContext,
+  creatorWorkspaceResources,
   marketplaceAccountWorkspace,
   marketplaceOrganizationDetail,
   marketplaceNamespaceManagement,

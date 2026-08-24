@@ -41,6 +41,18 @@ export const marketplaceRepository = {
   workspace(principal = {}) {
     return apiClient.request(`/v2/marketplace/workspace?${principalParams(principal).toString()}`);
   },
+  workspaceContext(principal = {}) {
+    return apiClient.request(`/v2/marketplace/workspace/context?${principalParams(principal).toString()}`);
+  },
+  workspaceResources(principal = {}, { ownership = "owned", q = "", resourceTypes = null, page = 1, limit = 12 } = {}) {
+    const params = principalParams(principal);
+    params.set("ownership", ownership);
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    if (q) params.set("q", q);
+    if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
+    return apiClient.request(`/v2/marketplace/workspace/resources?${params.toString()}`);
+  },
   distribution(principal = {}) {
     return apiClient.request(`/v2/marketplace/distribution?${principalParams(principal).toString()}`);
   },

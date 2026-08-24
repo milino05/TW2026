@@ -33,6 +33,8 @@ router.get("/v2/marketplace/account-workspace", controller.marketplaceAccountWor
 router.get("/v2/marketplace/management/organizations/:organizationId", organizationId, controller.marketplaceOrganizationDetail);
 router.get("/v2/marketplace/management/namespaces/:namespaceId", namespaceId, controller.marketplaceNamespaceManagement);
 router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.marketplaceVenueManagement);
+router.get("/v2/marketplace/workspace/context", controller.creatorWorkspaceContext);
+router.get("/v2/marketplace/workspace/resources", controller.creatorWorkspaceResources);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
 router.post("/v2/marketplace/workspace/operations", controller.workspaceOperation);

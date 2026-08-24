@@ -1,0 +1,34 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const browserSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-browser-view.js"), "utf8");
+const shellSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/app-shell.js"), "utf8");
+const repositorySource = fs.readFileSync(path.join(root, "clients/marketplace/src/infrastructure/http/marketplace-repository.js"), "utf8");
+
+test("workspace route usa il browser paginato e mantiene il dettaglio separato", () => {
+  assert.match(shellSource, /import "\.\/workspace-browser-view\.js"/);
+  assert.match(shellSource, /route === "\/workspace" \? "<artaround-workspace-browser-view><\/artaround-workspace-browser-view>"/);
+  assert.match(shellSource, /route === "\/workspace\/resource" \? "<artaround-workspace-view><\/artaround-workspace-view>"/);
+});
+
+test("workspace browser usa projection context/resources e non il dump legacy", () => {
+  assert.match(browserSource, /marketplaceRepository\.workspaceContext\(/);
+  assert.match(browserSource, /marketplaceRepository\.workspaceResources\(/);
+  assert.doesNotMatch(browserSource, /marketplaceRepository\.workspace\(/);
+  assert.match(repositorySource, /\/v2\/marketplace\/workspace\/context/);
+  assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
+});
+
+test("tab ownership e metadata del dettaglio usano attributi distinti", () => {
+  assert.match(browserSource, /button\[data-ownership\]/);
+  assert.match(browserSource, /data-resource-ownership=/);
+  assert.match(browserSource, /detail\.dataset\.resourceOwnership/);
+  assert.doesNotMatch(browserSource, /data-resource-detail[^>]*data-ownership=/);
+});
+
+test("la paginazione globale del shell non intercetta quella del workspace", () => {
+  assert.match(shellSource, /pageButton && \["\/", "\/catalog"\]\.includes\(currentRoute\(\)\)/);
+});
