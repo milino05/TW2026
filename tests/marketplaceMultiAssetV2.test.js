@@ -25,6 +25,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
     const Entitlement = require("../models/entitlement.model");
     const {
       createListing,
@@ -145,6 +146,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     assert.equal(after.allowed, true);
     assert.equal(after.basis, "entitlement");
 
+    await MarketplaceListing.init();
     const catalog = await listCatalog({
       actorUserId: buyer._id,
       queryText: "rinascimentale",

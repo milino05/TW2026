@@ -20,8 +20,8 @@ async function createPlan({ userId, status }) {
   return GeneratedVisitPlanV2.create({
     userId,
     status,
-    requestSnapshot: {},
-    contextSnapshot: {},
+    requestSnapshot: { source: "lifecycle-test" },
+    contextSnapshot: { source: "lifecycle-test" },
     sourceEditorialReleaseIds: [],
     sourceVenueReleaseIds: [],
     sourceLayoutRevisionIds: [],

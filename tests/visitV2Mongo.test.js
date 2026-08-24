@@ -39,6 +39,8 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const ContentSpace = require("../models/contentSpace.model");
+    const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
@@ -72,8 +74,15 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     edition.publishedRevisionId = itemRevision._id;
     await edition.save();
 
+    const contentSpace = await ContentSpace.create({ name: "Spazio visita", ownerType: "user", ownerId: user._id, createdBy: user._id });
+    const editorialContext = await EditorialContext.create({
+      contentSpaceId: contentSpace._id,
+      namespaceId: new mongoose.Types.ObjectId(),
+      displayName: "Contesto visita",
+      createdBy: user._id,
+    });
     const editorialRelease = await EditorialRelease.create({
-      editorialContextId: new mongoose.Types.ObjectId(),
+      editorialContextId: editorialContext._id,
       version: 1,
       namespaceRevisionId: new mongoose.Types.ObjectId(),
       graphRevisionId: new mongoose.Types.ObjectId(),
@@ -82,6 +91,8 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
       releasedAt: new Date(),
       releasedBy: user._id,
     });
+    editorialContext.publishedReleaseId = editorialRelease._id;
+    await editorialContext.save();
 
     const venue = await Venue.create({ name: "Venue", ownerOrganizationId: organization._id, createdBy: user._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: user._id });

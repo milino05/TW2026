@@ -84,10 +84,10 @@ const PERIODS = Object.freeze([
 ]);
 
 const WORKS = Object.freeze([
-  { key: "raffaello-santa-cecilia", title: "Estasi di santa Cecilia", artist: "Raffaello", period: "rinascimento", externalRefs: [{ scheme: "wikidata", id: "Q1103801", matchType: "exact" }], focus: "il rapporto tra la figura di Cecilia, i santi e il tema della musica" },
+  { key: "raffaello-santa-cecilia", title: "Estasi di santa Cecilia", artist: "Raffaello", period: "rinascimento", externalIdentityIds: [{ scheme: "wikidata", id: "Q1103801" }], focus: "il rapporto tra la figura di Cecilia, i santi e il tema della musica" },
   { key: "parmigianino-santa-margherita", title: "Pala di Santa Margherita", artist: "Parmigianino", period: "rinascimento", focus: "l'eleganza delle figure e la costruzione della scena sacra" },
   { key: "cossa-pala-mercanti", title: "Pala dei Mercanti", artist: "Francesco del Cossa", period: "rinascimento", focus: "la solidità delle figure e la cultura figurativa ferrarese" },
-  { key: "reni-strage-innocenti", title: "Strage degli innocenti", artist: "Guido Reni", period: "seicento", externalRefs: [{ scheme: "wikidata", id: "Q2448678", matchType: "exact" }], focus: "la tensione narrativa, i gesti e il controllo della composizione" },
+  { key: "reni-strage-innocenti", title: "Strage degli innocenti", artist: "Guido Reni", period: "seicento", externalIdentityIds: [{ scheme: "wikidata", id: "Q2448678" }], focus: "la tensione narrativa, i gesti e il controllo della composizione" },
   { key: "reni-sansone", title: "Sansone vittorioso", artist: "Guido Reni", period: "seicento", focus: "la monumentalità della figura e il rapporto tra azione e posa" },
   { key: "reni-san-sebastiano", title: "San Sebastiano", artist: "Guido Reni", period: "seicento", focus: "l'idealizzazione del corpo e l'intensità devozionale" },
   { key: "domenichino-sant-agnese", title: "Martirio di sant'Agnese", artist: "Domenichino", period: "seicento", focus: "la regia narrativa e la distribuzione dei personaggi" },
@@ -225,7 +225,7 @@ async function seedExamDataset() {
       _id: periodSubjectIds.get(period.key),
       preferredLabel: period.label,
       description: period.description,
-      externalRefs: [],
+      externalIdentities: [],
       createdBy: manager._id,
     });
   }
@@ -234,7 +234,12 @@ async function seedExamDataset() {
       _id: workSubjectIds.get(work.key),
       preferredLabel: work.title,
       description: `${work.title}, ${work.artist}. Opera del percorso dimostrativo della Pinacoteca Nazionale di Bologna.`,
-      externalRefs: work.externalRefs || [],
+      externalIdentities: (work.externalIdentityIds || []).map((identity) => ({
+        ...identity,
+        role: "canonical",
+        confirmation: { source: "seed", confirmedAt: FIXED_NOW, confirmedBy: manager._id },
+        verification: { status: "verified", checkedAt: FIXED_NOW },
+      })),
       createdBy: manager._id,
     });
   }

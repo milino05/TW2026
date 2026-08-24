@@ -39,10 +39,18 @@ function errorHandler(err, req, res, next) {
     }));
   }
 
-  if (status >= 500) {
+  if (status >= 500 && !err.status) {
     console.error(err);
     message = "Errore interno del server";
     details = null;
+  }
+
+  const retryAfterSeconds = Array.isArray(details)
+    ? details.find((detail) => detail?.code === "PROVIDER_UNAVAILABLE")?.retryAfterSeconds
+    : null;
+  if (retryAfterSeconds !== null && retryAfterSeconds !== undefined
+    && Number.isFinite(Number(retryAfterSeconds)) && Number(retryAfterSeconds) >= 0) {
+    res.set("Retry-After", String(Math.ceil(Number(retryAfterSeconds))));
   }
 
   res.status(status).json({

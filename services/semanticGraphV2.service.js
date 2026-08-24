@@ -191,7 +191,7 @@ async function loadSemanticGraphRevision(graphRevisionId, { namespaceRevisionId 
     if (!subject) continue;
     const binding = bindingBySubjectId.get(subjectId) || null;
     nodes.set(subjectId, { subject, binding });
-    for (const ref of subject.externalRefs || []) addCanonical(ref, subjectId);
+    for (const identity of subject.externalIdentities || []) addCanonical(identity, subjectId);
   }
   const authoritativeEdges = [];
   for (const persisted of persistedEdges) {

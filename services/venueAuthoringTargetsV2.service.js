@@ -20,7 +20,7 @@ async function listVenueAuthoringTargets({ venueId }) {
   const targetIds = activeBindings.map((binding) => binding.venueTargetId);
   if (!targetIds.length) return { venue: { id: venue._id, name: venue.name, description: venue.description || "" }, targets: [] };
   const targets = await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).lean();
-  const subjects = await Subject.find({ _id: { $in: targets.map((target) => target.subjectId) } }).select("preferredLabel description externalRefs").lean();
+  const subjects = await Subject.find({ _id: { $in: targets.map((target) => target.subjectId) } }).select("preferredLabel description externalIdentities").lean();
   const targetById = new Map(targets.map((target) => [id(target), target]));
   const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
   const bindingByTarget = new Map(activeBindings.map((binding) => [id(binding.venueTargetId), binding]));
@@ -39,7 +39,13 @@ async function listVenueAuthoringTargets({ venueId }) {
           id: subject._id,
           preferredLabel: subject.preferredLabel,
           description: subject.description || "",
-          externalRefs: (subject.externalRefs || []).map((ref) => ({ scheme: ref.scheme, id: ref.id, matchType: ref.matchType || "exact" })),
+          externalIdentities: (subject.externalIdentities || []).map((identity) => ({
+            scheme: identity.scheme,
+            id: identity.id,
+            role: identity.role,
+            canonicalId: identity.canonicalId || null,
+            verificationStatus: identity.verification?.status,
+          })),
         } : { id: target.subjectId, missing: true },
         recognitionMedia: (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null })),
       };

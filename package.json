@@ -30,6 +30,6 @@
     "build:navigator": "npm --prefix clients/navigator run build",
     "build:marketplace": "npm --prefix clients/marketplace run build",
     "build:clients": "npm run build:navigator && npm run build:marketplace",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
   }
 }

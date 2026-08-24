@@ -1,5 +1,7 @@
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
+import { icon } from "./icons.js";
+import "./semantic-entity-picker.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -83,7 +85,6 @@ function workflowNotice(code) {
 export class ItemAuthoringView extends HTMLElement {
   workspace = null;
   principal = null;
-  subjects = [];
   selectedSubject = null;
   itemId = params().get("itemId") || null;
   venueTargetId = params().get("venueTargetId") || null;
@@ -98,6 +99,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("click", this.onClick);
     this.addEventListener("change", this.onChange);
+    this.addEventListener("subject-selected", this.onSubjectSelected);
     this.bootstrap();
   }
 
@@ -105,6 +107,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("change", this.onChange);
+    this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
 
   availableOperation(code) {
@@ -161,25 +164,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.notice = null;
     this.render();
     try {
-      if (form.matches("[data-subject-search]")) {
-        const externalScheme = String(data.get("externalScheme") || "").trim();
-        const externalId = String(data.get("externalId") || "").trim();
-        this.subjects = await authoringRepository.searchSubjects({
-          search: String(data.get("search") || "").trim(),
-          externalScheme: externalScheme || null,
-          externalId: externalId || null,
-        });
-      } else if (form.matches("[data-subject-create]")) {
-        const scheme = String(data.get("scheme") || "").trim();
-        const externalId = String(data.get("externalId") || "").trim();
-        const externalRefs = scheme && externalId ? [{ scheme, id: externalId, matchType: "exact" }] : [];
-        this.selectedSubject = await authoringRepository.createSubject({
-          preferredLabel: String(data.get("preferredLabel") || "").trim(),
-          description: String(data.get("description") || "").trim(),
-          externalRefs,
-        });
-        this.subjects = [this.selectedSubject];
-      } else if (form.matches("[data-create-item]")) {
+      if (form.matches("[data-create-item]")) {
         if (!this.selectedSubject) throw new Error("Seleziona prima un Subject");
         const item = await authoringRepository.createItem({
           primarySubjectId: this.selectedSubject.id || this.selectedSubject._id,
@@ -263,14 +248,17 @@ export class ItemAuthoringView extends HTMLElement {
     }
   };
 
+  onSubjectSelected = (event) => {
+    if (this.itemId || !event.detail?.subject) return;
+    this.selectedSubject = event.detail.subject;
+    this.notice = event.detail.source === "reuse_existing"
+      ? "Identità già nota: è stato selezionato il Subject ArtAround esistente."
+      : "Subject selezionato. Puoi creare l’Item.";
+    this.render();
+  };
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    const subjectButton = target?.closest("button[data-subject-id]");
-    if (subjectButton) {
-      this.selectedSubject = this.subjects.find((subject) => id(subject.id || subject._id) === subjectButton.dataset.subjectId) || null;
-      this.render();
-      return;
-    }
     const editionButton = target?.closest("button[data-edition-id]");
     if (editionButton) {
       this.busy = true;
@@ -359,28 +347,13 @@ export class ItemAuthoringView extends HTMLElement {
         <p>${escapeHtml(this.venueTargetContext.venue.name)}. Il wizard precompila il Subject ma non collega l'Item al VenueTarget.</p>
         ${(this.venueTargetContext.recognitionMedia || []).length ? `<p>${this.venueTargetContext.recognitionMedia.length} immagine/i di riconoscimento restano nel VenueRelease fisico.</p>` : ""}
       </aside>` : "";
-    const results = this.subjects.map((subject) => `
-      <li><button type="button" data-subject-id="${escapeHtml(id(subject.id || subject._id))}">${escapeHtml(subject.preferredLabel)}</button>
-      <span>${escapeHtml(subject.description || "")}</span></li>`).join("");
+    const identities = (this.selectedSubject?.externalIdentities || []).map((identity) => `<span class="subject-identity">${escapeHtml(identity.scheme)} · ${escapeHtml(identity.id)}${identity.role === "historical" ? " · storico" : ""}</span>`).join("");
     return `
       <section>
-        <h2>1. Subject</h2>
+        <header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Identità universale</span><h2>Subject</h2></div></header>
         ${venueContext}
-        ${this.selectedSubject ? `<p><strong>Selezionato:</strong> ${escapeHtml(this.selectedSubject.preferredLabel)}</p>` : ""}
-        <form data-subject-search>
-          <label>Cerca Subject <input name="search" placeholder="Nome, movimento, persona, opera…"></label>
-          <div class="two-columns"><label>Schema external ID <input name="externalScheme" placeholder="wikidata"></label><label>ID esatto <input name="externalId" placeholder="Q…"></label></div>
-          <button ${this.busy ? "disabled" : ""}>Cerca</button>
-        </form>
-        ${results ? `<ul class="subject-results">${results}</ul>` : ""}
-        <details><summary>Crea nuovo Subject</summary>
-          <form data-subject-create>
-            <label>Nome <input name="preferredLabel" required></label>
-            <label>Descrizione <textarea name="description"></textarea></label>
-            <div class="two-columns"><label>Schema external ID <input name="scheme" placeholder="wikidata"></label><label>ID esatto <input name="externalId" placeholder="Q…"></label></div>
-            <button ${this.busy ? "disabled" : ""}>Crea Subject</button>
-          </form>
-        </details>
+        ${this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(this.selectedSubject.preferredLabel)}</h3><p>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</p><div>${identities || `<span class="subject-identity">Solo locale</span>`}</div></article>` : ""}
+        ${!this.itemId ? `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>` : ""}
         ${!this.itemId && this.selectedSubject ? `<form data-create-item><button ${this.busy ? "disabled" : ""}>Crea Item per ${escapeHtml(this.selectedSubject.preferredLabel)}</button></form>` : ""}
       </section>`;
   }
@@ -394,7 +367,7 @@ export class ItemAuthoringView extends HTMLElement {
     const languageOptions = (controls?.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}">${escapeHtml(entry.label)}</option>`).join("");
     return `
       <section>
-        <h2>2. Edition / Namespace</h2>
+        <header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Vocabolario editoriale</span><h2>Edition e Namespace</h2></div></header>
         <p>Più Edition possono rappresentare lo stesso Item in Namespace differenti.</p>
         <form data-load-namespace>
           <label>Namespace autorizzato <select name="namespaceId" required>${options || "<option value=''>Nessun Namespace disponibile</option>"}</select></label>
@@ -434,7 +407,7 @@ export class ItemAuthoringView extends HTMLElement {
         </form>` : `<p>La revisione non è modificabile nello stato <strong>${escapeHtml(revision.status)}</strong>. Usa le operazioni editoriali disponibili.</p>`;
     return `
       <section>
-        <h2>3. Revision / Representation</h2>
+        <header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Contenuto versionato</span><h2>Revision e Representation</h2></div></header>
         <p>Namespace: <strong>${escapeHtml(selected.namespace.name)}</strong> · stato ${escapeHtml(revision.status)} · integrità ${escapeHtml(revision.integrity?.status || "needs_review")}</p>
         ${editor}
         <div class="actions">${workflowButtons}</div>
@@ -445,13 +418,23 @@ export class ItemAuthoringView extends HTMLElement {
   renderMemberships() {
     if (!this.itemId || !this.projection) return "";
     const rows = (this.projection.workspaceMemberships || []).map((entry) => `<label class="membership"><input type="checkbox" data-content-space-id="${escapeHtml(id(entry.contentSpaceId))}" ${entry.member ? "checked" : ""}> ${escapeHtml(entry.name)}</label>`).join("");
-    return `<section><h2>4. ContentSpace</h2><p>La membership organizza il workspace e non trasferisce ownership dell'Item.</p>${rows || "<p>Nessun ContentSpace disponibile per questo principal.</p>"}</section>`;
+    return `<section><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Organizzazione</span><h2>ContentSpace</h2></div></header><p>La membership organizza il workspace e non trasferisce ownership dell'Item.</p><div class="membership-grid">${rows || "<p>Nessun ContentSpace disponibile per questo principal.</p>"}</div></section>`;
   }
 
   renderEditions() {
     if (!this.projection?.editions?.length) return "";
     const buttons = this.projection.editions.map((edition) => `<button type="button" data-edition-id="${escapeHtml(id(edition.id))}">${escapeHtml(edition.namespace?.name || "Edition")}</button>`).join(" ");
     return `<nav class="edition-tabs" aria-label="Edition dell'Item">${buttons}</nav>`;
+  }
+
+  renderProgress() {
+    const stages = [
+      ["Subject", Boolean(this.selectedSubject || this.itemId)],
+      ["Item", Boolean(this.itemId)],
+      ["Edition", Boolean(this.projection?.selected?.edition)],
+      ["Revision", Boolean(this.projection?.selected?.revision)],
+    ];
+    return `<ol class="editor-progress" aria-label="Avanzamento editor">${stages.map(([label, complete], index) => `<li data-complete="${complete}"><span>${complete ? icon("check", { size: 14 }) : index + 1}</span>${escapeHtml(label)}</li>`).join("")}</ol>`;
   }
 
   render() {
@@ -469,16 +452,19 @@ export class ItemAuthoringView extends HTMLElement {
         .subject-results { list-style:none; padding:0; display:grid; gap:.5rem; }
         .subject-results li { display:flex; gap:1rem; align-items:center; }
         .context-box { padding:1rem; border:1px solid currentColor; }
+        .selected-subject { margin-block:1rem; padding:1rem; border:1px solid #bfd0c8; border-radius:.8rem; background:#f3f8f5; }
+        .selected-subject h3 { margin:.2rem 0; }
+        .subject-identity { display:inline-block; margin:.25rem .35rem 0 0; padding:.25rem .45rem; border-radius:999px; background:#dfece6; font:700 .72rem/1.2 ui-monospace,monospace; }
         .actions, .edition-tabs { display:flex; gap:.7rem; flex-wrap:wrap; margin-block:1rem; }
         .membership { grid-template-columns:auto 1fr; justify-content:start; align-items:center; }
         .issues { border-left:3px solid currentColor; padding-left:1.5rem; }
         @media (max-width: 42rem) { .two-columns { grid-template-columns:1fr; } }
       </style>
-      <main>
-        <p><a data-route href="/workspace">← Workspace</a></p>
-        <h1>Editor contenuto</h1>
-        <p>Flusso: Subject → Item → Edition → Revision. La Venue è solo un possibile contesto di partenza.</p>
-        ${principalOptions ? `<label>Principal proprietario<select data-principal ${this.itemId ? "disabled" : ""}>${principalOptions}</select></label>` : ""}
+      <main class="page editor-page">
+        <nav class="breadcrumb"><a data-route href="/workspace">${icon("arrowLeft", { size: 15 })} Workspace</a><span>/</span><span>Contenuto</span></nav>
+        <header class="page-header"><div><span class="eyebrow">Item authoring</span><h1>Editor contenuto</h1><p>Costruisci una risorsa riusabile mantenendo separati Subject, Item, Namespace e versione editoriale.</p></div></header>
+        ${this.renderProgress()}
+        ${principalOptions ? `<label class="principal-control">Principal proprietario<select data-principal ${this.itemId ? "disabled" : ""}>${principalOptions}</select></label>` : ""}
         ${this.busy ? "<p>Elaborazione…</p>" : ""}
         ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
         ${this.notice ? `<p role="status">${escapeHtml(this.notice)}</p>` : ""}

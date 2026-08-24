@@ -38,7 +38,7 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     const Subject = require("../models/subject.model");
     const { createVenue } = require("../services/venue.service");
     const { createVenueTarget, listVenueTargets } = require("../services/venueTarget.service");
-    const { ensureWorkingVenueRelease, updateWorkingVenueRelease, checkVenueReleaseConsistency, publishVenueRelease, getVenuePhysicalState } = require("../services/venueRelease.service");
+    const { ensureWorkingVenueRelease, updateWorkingVenueRelease, checkVenueReleaseConsistency, submitVenueReleaseReview, publishVenueRelease, getVenuePhysicalState } = require("../services/venueRelease.service");
     const { routeBetweenVenueTargets } = require("../services/venueRouting.service");
 
     const user = await User.create({ username: "venue-v2-test", passwordHash: "test-hash" });
@@ -87,6 +87,7 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
 
     const checked = await checkVenueReleaseConsistency({ venueId, actorUserId: user._id });
     assert.equal(checked.release.integrity.status, "valid");
+    await submitVenueReleaseReview({ venueId, actorUserId: user._id });
     const published = await publishVenueRelease({ venueId, actorUserId: user._id });
     assert.equal(published.release.status, "published");
     assert.equal(published.layout.status, "published");

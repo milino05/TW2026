@@ -5,6 +5,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth.routes");
 const organizationRoutes = require("./routes/organizations.routes");
 const subjectRoutes = require("./routes/subjects.routes");
+const semanticResolverRoutes = require("./routes/semanticResolver.routes");
 const namespaceRoutes = require("./routes/namespaces.routes");
 const itemRoutes = require("./routes/itemsV2.routes");
 const contentSpaceRoutes = require("./routes/contentSpaces.routes");
@@ -44,6 +45,7 @@ app.get("/", (req, res) => res.json({
 app.use("/api", authRoutes);
 app.use("/api", organizationRoutes);
 app.use("/api", subjectRoutes);
+app.use("/api", semanticResolverRoutes);
 app.use("/api", namespaceRoutes);
 app.use("/api", itemRoutes);
 app.use("/api", contentSpaceRoutes);

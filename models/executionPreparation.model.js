@@ -43,7 +43,7 @@ const ExecutionPreparationSchema = new Schema({
   preVisit: { type: Schema.Types.Mixed, default: () => ({ visitNotes: [], venues: [] }) },
   sessionId: { type: Schema.Types.ObjectId, ref: "VisitSessionV2", default: null, index: true },
   consumedAt: { type: Date, default: null },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
 }, { timestamps: true, collection: "execution_preparations_v2" });
 
 ExecutionPreparationSchema.pre("validate", function validateSource(next) {

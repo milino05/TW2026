@@ -9,7 +9,23 @@ export type GenerationSubjectOption = {
   id: string;
   preferredLabel: string;
   description: string;
-  externalRefs: Array<{ scheme: string; id: string }>;
+  externalIdentities: Array<{ scheme: string; id: string; role: "canonical" | "historical"; canonicalId: string | null }>;
+  matchSource: "local" | "external_grounded";
+};
+
+export type GenerationSubjectSearchResponse = {
+  results: GenerationSubjectOption[];
+  resolver: {
+    status: "not_needed" | "grounded" | "no_source_binding" | "unavailable";
+    used: boolean;
+    groundedResultCount?: number;
+    provider?: {
+      scheme: string;
+      label: string;
+      attribution?: { label: string; url: string };
+    };
+  };
+  warnings: Array<{ code: string; message: string }>;
 };
 
 export type GenerationSemanticGoal = {
@@ -149,10 +165,10 @@ export const generatorRepository = {
   options(selectedVenueIds: string[] = []) {
     return apiClient.request<GenerationOptionsProjection>(`/v2/navigator/generation-options${selectedVenueQuery(selectedVenueIds)}`);
   },
-  searchSubjects(editorialSources: GenerationSourceRef[], query = "", limit = 20) {
-    return apiClient.request<{ results: GenerationSubjectOption[] }>("/v2/navigator/generation-subjects/search", {
+  searchSubjects(editorialSources: GenerationSourceRef[], query = "", limit = 20, locale = "it") {
+    return apiClient.request<GenerationSubjectSearchResponse>("/v2/navigator/generation-subjects/search", {
       method: "POST",
-      body: JSON.stringify({ editorialSources, query, limit }),
+      body: JSON.stringify({ editorialSources, query, limit, locale }),
     });
   },
   generate(request: GenerationRequest) {

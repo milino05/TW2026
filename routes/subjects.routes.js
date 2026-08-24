@@ -10,6 +10,7 @@ router.route("/subjects")
   .get(controller.listSubjects)
   .post(requireAuth, controller.createSubject);
 
+router.post("/subjects/from-external-identity", requireAuth, controller.createSubjectFromExternalIdentity);
 router.get("/subjects/:subjectId", validateSubjectId, controller.getSubject);
 
 module.exports = router;

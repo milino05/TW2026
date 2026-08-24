@@ -15,7 +15,7 @@ function normalizedPosition(definitions, definitionId) {
   if (index < 0) return null;
   return values.length === 1 ? 0.5 : index / (values.length - 1);
 }
-function subjectRefs(graph, subjectId) { return graph?.nodes.get(id(subjectId))?.subject?.externalRefs || []; }
+function subjectRefs(graph, subjectId) { return graph?.nodes.get(id(subjectId))?.subject?.externalIdentities || []; }
 function sameCanonical(left, right) { return canonicalKey(left) === canonicalKey(right); }
 function namespaceFeatureKey(namespaceId, kind, definitionId) { return `${id(namespaceId)}:${kind}:${String(definitionId)}`; }
 

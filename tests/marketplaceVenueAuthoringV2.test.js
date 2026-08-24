@@ -81,21 +81,27 @@ async function publishVenueTargets({ VenueRelease, venue, targetIds, userId }) {
   return release;
 }
 
-test("Subject exact external identity is searchable and cannot be duplicated", { skip: !mongoUri }, async () => {
+test("Subject exact external identity is searchable and unique at database level", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
-    const { createSubject, listSubjects } = require("../services/subject.service");
+    const Subject = require("../models/subject.model");
+    const { listSubjects } = require("../services/subject.service");
     const user = await User.create({ username: "subject-author", passwordHash: "hash" });
-    const subject = await createSubject({
-      actorUserId: user._id,
-      payload: { preferredLabel: "Impressionismo", externalRefs: [{ scheme: "Wikidata", id: "Q40415", matchType: "exact" }] },
+    await Subject.syncIndexes();
+    const identity = {
+      scheme: "wikidata", id: "Q40415", role: "canonical",
+      confirmation: { source: "seed", confirmedAt: new Date(), confirmedBy: user._id },
+      verification: { status: "verified", checkedAt: new Date() },
+    };
+    const subject = await Subject.create({
+      preferredLabel: "Impressionismo", externalIdentities: [identity], createdBy: user._id,
     });
     const found = await listSubjects({ externalScheme: "wikidata", externalId: "Q40415" });
     assert.equal(found.length, 1);
     assert.equal(String(found[0]._id), String(subject._id));
     await assert.rejects(
-      () => createSubject({ actorUserId: user._id, payload: { preferredLabel: "Duplicato", externalRefs: [{ scheme: "wikidata", id: "Q40415", matchType: "exact" }] } }),
-      (error) => error?.status === 409 && error?.details?.some((issue) => issue.code === "EXTERNAL_IDENTITY_ALREADY_BOUND"),
+      () => Subject.create({ preferredLabel: "Duplicato", externalIdentities: [identity], createdBy: user._id }),
+      (error) => error?.code === 11000,
     );
   });
 });
@@ -182,9 +188,9 @@ test("multi-Venue Catalog uses union relevance, keeps Namespace venue-neutral an
     await visit.save();
 
     const resources = [
-      ["item_edition", contentA.edition._id, "A"],
-      ["item_edition", contentB.edition._id, "B"],
-      ["item_edition", contentRelatedA.edition._id, "related-A"],
+      ["item_edition", contentA.edition._id, "Contenuto A"],
+      ["item_edition", contentB.edition._id, "Contenuto B"],
+      ["item_edition", contentRelatedA.edition._id, "Approfondimento correlato ad A"],
       ["namespace", namespace._id, "namespace"],
       ["visit", visit._id, "visit"],
     ];

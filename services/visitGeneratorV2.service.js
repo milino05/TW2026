@@ -232,8 +232,8 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
     for (const subject of subjects) {
       const subjectId = id(subject._id);
       federatedGraph.nodes.set(subjectId, { subject, sources: [] });
-      for (const ref of subject.externalRefs || []) {
-        const key = canonicalKey(ref);
+      for (const identity of subject.externalIdentities || []) {
+        const key = canonicalKey(identity);
         if (!federatedGraph.canonicalIndex.has(key)) federatedGraph.canonicalIndex.set(key, new Set());
         federatedGraph.canonicalIndex.get(key).add(subjectId);
       }

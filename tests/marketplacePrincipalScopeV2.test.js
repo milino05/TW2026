@@ -41,6 +41,8 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
     await buyer.save();
 
     const subject = await Subject.create({ preferredLabel: "Opera principal scope", createdBy: seller._id });
+    const durationDefinitionId = "duration-standard";
+    const languageDefinitionId = "language-standard";
     const namespace = await Namespace.create({
       name: "Namespace principal scope",
       ownerType: "user",
@@ -50,8 +52,8 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
     const namespaceRevision = await NamespaceRevision.create({
       namespaceId: namespace._id,
       version: 1,
-      durationTypes: [],
-      languageLevels: [],
+      durationTypes: [{ definitionId: durationDefinitionId, key: "standard", label: "Standard", targetSeconds: 60 }],
+      languageLevels: [{ definitionId: languageDefinitionId, key: "standard", label: "Standard" }],
       presentationAspects: [],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
@@ -69,12 +71,22 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
       createdBy: seller._id,
     });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: seller._id });
+    const variantId = new mongoose.Types.ObjectId();
+    const representationId = new mongoose.Types.ObjectId();
     const revision = await ItemRevisionV2.create({
       itemEditionId: edition._id,
       version: 1,
       authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       label: "Versione autorizzata",
-      presentationVariants: [],
+      authorCredits: ["Autore Marketplace"],
+      metadata: { license: "CC BY" },
+      presentationVariants: [{
+        _id: variantId,
+        key: "standard",
+        label: "Standard",
+        representations: [{ _id: representationId, durationTypeDefinitionId: durationDefinitionId, languageLevelDefinitionId: languageDefinitionId, locale: "it-IT", text: "Versione autorizzata" }],
+      }],
+      defaultPresentation: { variantId, representationId },
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },

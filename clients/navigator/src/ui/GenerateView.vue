@@ -8,6 +8,7 @@ import {
   type GenerationOptionsProjection,
   type GenerationSourceRef,
   type GenerationSubjectOption,
+  type GenerationSubjectSearchResponse,
 } from "../infrastructure/http/generatorRepository";
 
 const router = useRouter();
@@ -24,6 +25,8 @@ const movementPacePreference = ref(0.5);
 const locale = ref("it-IT");
 const subjectQuery = ref("");
 const subjectResults = ref<GenerationSubjectOption[]>([]);
+const subjectSearchMeta = ref<GenerationSubjectSearchResponse["resolver"] | null>(null);
+const subjectSearchWarnings = ref<GenerationSubjectSearchResponse["warnings"]>([]);
 const selectedSubjectIds = ref<string[]>([]);
 const searchingSubjects = ref(false);
 const booleanRoutingChoices = ref<Record<string, string>>({});
@@ -106,6 +109,8 @@ async function onVenueChanged() {
 
 function clearSemanticSelection() {
   subjectResults.value = [];
+  subjectSearchMeta.value = null;
+  subjectSearchWarnings.value = [];
   selectedSubjectIds.value = [];
 }
 
@@ -123,8 +128,10 @@ async function searchSubjects() {
   searchingSubjects.value = true;
   error.value = null;
   try {
-    const response = await generatorRepository.searchSubjects(sources, subjectQuery.value.trim(), 30);
+    const response = await generatorRepository.searchSubjects(sources, subjectQuery.value.trim(), 30, locale.value.trim() || "it-IT");
     subjectResults.value = response.results;
+    subjectSearchMeta.value = response.resolver;
+    subjectSearchWarnings.value = response.warnings;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile cercare gli interessi";
   } finally {
@@ -295,10 +302,15 @@ async function generate() {
           </button>
         </div>
         <p v-if="selectedSubjectIds.length">Interessi selezionati: {{ selectedSubjectIds.length }}</p>
+        <p v-for="warning in subjectSearchWarnings" :key="warning.code" class="semantic-notice" role="status">{{ warning.message }}</p>
+        <p v-if="subjectSearchMeta?.status === 'grounded'" class="semantic-notice">
+          Alcuni risultati sono stati trovati tramite Wikidata, ma sono mostrati solo perché corrispondono a Subject già presenti nelle sorgenti selezionate.
+          <a v-if="subjectSearchMeta.provider?.attribution" :href="subjectSearchMeta.provider.attribution.url" target="_blank" rel="noreferrer">{{ subjectSearchMeta.provider.attribution.label }}</a>
+        </p>
         <div v-if="subjectResults.length" class="subject-results">
           <label v-for="subject in subjectResults" :key="subject.id" class="check-row">
             <input v-model="selectedSubjectIds" type="checkbox" :value="subject.id" :disabled="generating">
-            <span><strong>{{ subject.preferredLabel }}</strong><small v-if="subject.description">{{ subject.description }}</small></span>
+            <span><strong>{{ subject.preferredLabel }}</strong><small v-if="subject.description">{{ subject.description }}</small><small v-if="subject.matchSource === 'external_grounded'">Corrispondenza esterna verificata · Subject ArtAround esistente</small></span>
           </label>
         </div>
         <p v-else-if="subjectQuery && !searchingSubjects">Nessun risultato caricato. Avvia la ricerca per esplorare gli argomenti delle sorgenti selezionate.</p>
@@ -404,6 +416,11 @@ fieldset {
   overflow: auto;
   border: 1px solid currentColor;
   padding: .5rem .75rem;
+}
+.semantic-notice {
+  padding: .7rem .8rem;
+  border-left: 3px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
 @media (max-width: 42rem) {
   .inline-control,
