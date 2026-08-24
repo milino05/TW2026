@@ -56,10 +56,17 @@ async function hydrateVisitRevision(revision) {
   const contextById = new Map(contexts.map((entry) => [id(entry), entry]));
 
   const itemRevisionIds = (revision.contentEntries || []).map((entry) => entry.itemRevisionId);
-  const itemRevisions = itemRevisionIds.length
-    ? await ItemRevisionV2.find({ _id: { $in: itemRevisionIds } }).select("label authorCredits metadata.license").lean()
-    : [];
+  const itemIds = [...new Set((revision.contentEntries || []).map((entry) => id(entry.itemId)).filter(Boolean))];
+  const [itemRevisions, items] = await Promise.all([
+    itemRevisionIds.length
+      ? ItemRevisionV2.find({ _id: { $in: itemRevisionIds } }).select("label authorCredits metadata.license").lean()
+      : [],
+    itemIds.length
+      ? ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).select("primarySubjectId").lean()
+      : [],
+  ]);
   const itemRevisionById = new Map(itemRevisions.map((entry) => [id(entry), entry]));
+  const itemById = new Map(items.map((entry) => [id(entry), entry]));
 
   const targetIds = (revision.visitAnchors || []).map((entry) => entry.venueTargetId);
   const targets = targetIds.length
@@ -111,6 +118,7 @@ async function hydrateVisitRevision(revision) {
     }),
     entries: (revision.contentEntries || []).map((entry, index) => {
       const itemRevision = itemRevisionById.get(id(entry.itemRevisionId));
+      const item = itemById.get(id(entry.itemId));
       const anchor = entry.deliveryAnchorId ? anchorById.get(id(entry.deliveryAnchorId)) : null;
       const target = anchor ? targetById.get(id(anchor.venueTargetId)) : null;
       const venue = target ? venueById.get(id(target.venueId)) : null;
@@ -121,6 +129,7 @@ async function hydrateVisitRevision(revision) {
         itemId: entry.itemId,
         itemEditionId: entry.itemEditionId,
         itemRevisionId: entry.itemRevisionId,
+        primarySubjectId: item?.primarySubjectId || null,
         label: itemRevision?.label || "Contenuto non disponibile",
         authorCredits: itemRevision?.authorCredits || [],
         license: itemRevision?.metadata?.license || null,
