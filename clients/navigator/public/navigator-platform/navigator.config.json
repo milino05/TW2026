@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "branding": {
+    "productTitle": "ArtAround",
+    "museumTitle": "I tuoi musei",
+    "subtitle": "Scegli un museo per iniziare",
+    "logo": {
+      "src": "/navigator-assets/artaround-mark.svg",
+      "alt": "Marchio ArtAround"
+    },
+    "heroImage": {
+      "src": "/navigator-assets/artaround-hero.svg",
+      "alt": "Illustrazione astratta di una galleria museale"
+    },
+    "theme": {
+      "primary": "#8D4050",
+      "accent": "#B78B52",
+      "surface": "#F6F1E8"
+    }
+  }
+}

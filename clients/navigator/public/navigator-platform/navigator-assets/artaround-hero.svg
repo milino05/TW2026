@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Galleria ArtAround</title>
+  <desc id="desc">Illustrazione astratta dimostrativa di più sale museali.</desc>
+  <rect width="1200" height="760" fill="#E8DED0"/>
+  <path d="M0 180 600 65l600 115v580H0z" fill="#F6F1E8"/>
+  <path d="M600 65v695M0 180l600 180 600-180" fill="none" stroke="#C9B9A5" stroke-width="8"/>
+  <rect x="105" y="250" width="290" height="250" rx="10" fill="#8D4050"/>
+  <rect x="805" y="250" width="290" height="250" rx="10" fill="#B78B52"/>
+  <circle cx="250" cy="375" r="76" fill="#F6F1E8"/>
+  <path d="M870 425c68-126 115-126 160 0" fill="none" stroke="#F6F1E8" stroke-width="34" stroke-linecap="round"/>
+  <path d="M0 650h1200" stroke="#B8A691" stroke-width="10"/>
+</svg>

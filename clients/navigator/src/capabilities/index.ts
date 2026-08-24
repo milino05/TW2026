@@ -9,10 +9,16 @@ export interface VoiceActionMatch<T extends VoiceActionOption = VoiceActionOptio
   action: T | null;
 }
 
+export type TextToSpeechState = "idle" | "speaking" | "paused";
+
 export interface TextToSpeechCapability {
   readonly supported: boolean;
+  readonly state: TextToSpeechState;
   speak(text: string, locale?: string | null): boolean;
+  pause(): boolean;
+  resume(): boolean;
   stop(): void;
+  subscribe(listener: (state: TextToSpeechState) => void): () => void;
 }
 
 export interface ControlledVoiceCapability {

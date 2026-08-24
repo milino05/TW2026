@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Marchio dimostrativo Museo Civico Aurora</title>
+  <rect width="96" height="96" rx="22" fill="#1F5A64"/>
+  <path d="M20 65h56M27 58l21-33 21 33M38 58l10-16 10 16" fill="none" stroke="#F1F5F2" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="48" cy="25" r="6" fill="#D27645"/>
+</svg>

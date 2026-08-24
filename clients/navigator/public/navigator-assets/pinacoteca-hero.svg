@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Sala museale dimostrativa ArtAround</title>
+  <desc id="desc">Illustrazione astratta di una galleria con tre opere incorniciate.</desc>
+  <rect width="1200" height="760" fill="#f2eadf"/>
+  <path d="M0 0h1200v170H0z" fill="#e4d7c6"/>
+  <path d="M0 610 250 500h700l250 110v150H0z" fill="#d5c1a8"/>
+  <path d="M90 130h1020v490H90z" fill="#fffaf3" stroke="#84333e" stroke-width="6"/>
+  <g fill="#ead8c7" stroke="#6f2d36" stroke-width="10">
+    <rect x="155" y="215" width="245" height="270" rx="4"/>
+    <rect x="470" y="180" width="260" height="325" rx="4"/>
+    <rect x="800" y="225" width="235" height="255" rx="4"/>
+  </g>
+  <g fill="none" stroke="#bd8d50" stroke-width="16" opacity=".9">
+    <circle cx="277" cy="340" r="76"/>
+    <path d="M525 430c42-150 105-216 158-122 20 35 20 78-3 122"/>
+    <path d="m850 420 70-128 66 128Z"/>
+  </g>
+</svg>
