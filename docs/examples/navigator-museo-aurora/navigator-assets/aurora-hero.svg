@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Sala illustrata del Museo Civico Aurora</title>
+  <desc id="desc">Illustrazione astratta dimostrativa, non una fotografia o planimetria ufficiale.</desc>
+  <rect width="1200" height="760" fill="#DDE8E3"/>
+  <path d="M0 170 600 70l600 100v590H0z" fill="#F1F5F2"/>
+  <path d="M600 70v690M0 170l600 180 600-180" fill="none" stroke="#A5BFB7" stroke-width="8"/>
+  <rect x="122" y="250" width="310" height="280" rx="8" fill="#1F5A64"/>
+  <rect x="768" y="245" width="310" height="285" rx="8" fill="#D27645"/>
+  <circle cx="277" cy="390" r="82" fill="#F1F5F2"/>
+  <path d="M845 445c75-145 120-120 160 0" fill="none" stroke="#F1F5F2" stroke-width="38" stroke-linecap="round"/>
+  <path d="M0 650h1200" stroke="#9DB4AD" stroke-width="10"/>
+</svg>

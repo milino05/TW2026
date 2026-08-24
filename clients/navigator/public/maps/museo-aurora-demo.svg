@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Pianta schematica ArtAround - Museo Civico Aurora</title>
+  <desc id="desc">Mappa didattica di un museo immaginario con dieci tappe, ingresso, uscita e servizi.</desc>
+  <rect width="1200" height="700" fill="#edf4f1"/>
+  <rect x="50" y="70" width="1100" height="520" rx="32" fill="#f8fbf9" stroke="#1f5a64" stroke-width="5"/>
+  <path d="M82 505 H1118" stroke="#d27645" stroke-width="18" stroke-linecap="round" opacity=".2"/>
+  <path d="M105 485 C190 205 410 160 600 195 C790 160 1010 225 1090 485" fill="none" stroke="#1f5a64" stroke-width="10" stroke-linecap="round"/>
+  <g font-family="system-ui, sans-serif" font-size="22" text-anchor="middle">
+    <text x="600" y="42" font-size="27" font-weight="700" fill="#173f46">Museo Civico Aurora · pianta demo</text>
+    <g fill="#f5e4d9" stroke="#9c4e29" stroke-width="3">
+      <circle cx="180" cy="245" r="36"/><circle cx="365" cy="205" r="36"/><circle cx="565" cy="245" r="36"/>
+      <circle cx="790" cy="205" r="36"/><circle cx="995" cy="285" r="36"/><circle cx="985" cy="430" r="36"/>
+      <circle cx="780" cy="475" r="36"/><circle cx="575" cy="430" r="36"/><circle cx="365" cy="475" r="36"/><circle cx="170" cy="405" r="36"/>
+    </g>
+    <g fill="#173f46" font-size="20" font-weight="700">
+      <text x="180" y="252">1</text><text x="365" y="212">2</text><text x="565" y="252">3</text>
+      <text x="790" y="212">4</text><text x="995" y="292">5</text><text x="985" y="437">6</text>
+      <text x="780" y="482">7</text><text x="575" y="437">8</text><text x="365" y="482">9</text><text x="170" y="412">10</text>
+    </g>
+    <g fill="#dcebe6" stroke="#1f5a64" stroke-width="3">
+      <rect x="55" y="515" width="125" height="52" rx="10"/><rect x="190" y="515" width="110" height="52" rx="10"/>
+      <rect x="310" y="515" width="110" height="52" rx="10"/><rect x="430" y="515" width="110" height="52" rx="10"/>
+      <rect x="550" y="515" width="100" height="52" rx="10"/><rect x="660" y="515" width="105" height="52" rx="10"/>
+      <rect x="775" y="515" width="120" height="52" rx="10"/><rect x="905" y="515" width="130" height="52" rx="10"/>
+      <rect x="1045" y="515" width="100" height="52" rx="10"/>
+    </g>
+    <g fill="#173f46" font-size="15">
+      <text x="117" y="546">Ingresso</text><text x="245" y="546">Info</text><text x="365" y="546">Servizi</text>
+      <text x="485" y="546">Ascensore</text><text x="600" y="546">Scale</text><text x="712" y="546">Caffetteria</text>
+      <text x="835" y="546">Bookshop</text><text x="970" y="546">Percorso</text><text x="1095" y="546">Uscita</text>
+    </g>
+    <text x="600" y="620" font-size="18" fill="#31575d">Asset dimostrativo per routing e comandi del Navigator.</text>
+    <text x="600" y="652" font-size="17" fill="#526a6d">Museo, opere e planimetria sono interamente immaginari.</text>
+  </g>
+</svg>

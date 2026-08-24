@@ -1,9 +1,10 @@
 import { createApp } from "vue";
 import { createPinia, setActivePinia } from "pinia";
+import "./ui/theme.css";
 import App from "./ui/App.vue";
 import { router } from "./application/router";
 import { useAuthStore, useConfiguredVenueStore } from "./application/stores";
-import { loadNavigatorStaticConfig } from "./domain/navigatorStaticConfig";
+import { loadNavigatorPlatformConfig } from "./domain/navigatorStaticConfig";
 import { authRepository } from "./infrastructure/http/authRepository";
 
 async function bootstrap() {
@@ -11,12 +12,12 @@ async function bootstrap() {
   setActivePinia(pinia);
 
   const [config] = await Promise.all([
-    loadNavigatorStaticConfig(),
+    loadNavigatorPlatformConfig(),
     authRepository.me()
       .then((response) => useAuthStore().setUser(response.user))
       .catch(() => useAuthStore().clear()),
   ]);
-  useConfiguredVenueStore().bootstrap(config);
+  useConfiguredVenueStore().bootstrapPlatform(config);
 
   createApp(App)
     .use(pinia)

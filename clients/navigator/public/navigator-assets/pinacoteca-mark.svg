@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Marchio dimostrativo Pinacoteca</title>
+  <desc id="desc">Arco stilizzato color bordeaux con punto dorato centrale.</desc>
+  <rect width="64" height="64" rx="14" fill="#fffaf3"/>
+  <path d="M12 53V25C12 14 20 7 32 7s20 7 20 18v28" fill="none" stroke="#84333e" stroke-width="5"/>
+  <path d="M21 53V28c0-7 4-12 11-12s11 5 11 12v25" fill="#84333e" opacity=".13" stroke="#84333e" stroke-width="3"/>
+  <circle cx="32" cy="33" r="5" fill="#bd8d50"/>
+</svg>

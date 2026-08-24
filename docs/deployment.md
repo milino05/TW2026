@@ -29,8 +29,12 @@ Dopo la build, lo stesso processo Express serve:
 - API: `/api/...`;
 - Navigator: `/navigator/`;
 - Marketplace/Editor: `/marketplace/`;
-- configurazione Navigator: `/navigator.config.json`;
+- configurazione piattaforma Navigator: `/navigator-platform/navigator.config.json`;
+- configurazioni musei: `/navigator-configs/:venueId/navigator.config.json`;
 - map asset Navigator: `/maps/...`.
+
+Titoli, immagini e palette del museo possono essere sostituiti senza ricompilare il client
+tramite `NAVIGATOR_CONFIG_DIR`. La procedura completa è in [Configurare Navigator per un museo](navigator-branding.md).
 
 ## Docker locale
 
@@ -85,6 +89,7 @@ NODE_ENV=production
 CORS_ORIGINS=
 SESSION_COOKIE_SECURE=true
 ADAPTIVE_CONTRIBUTOR_SECRET=<segreto casuale stabile>
+NAVIGATOR_CONFIG_DIR=<directory lato server, facoltativa>
 ```
 
 La forma esatta della URI deve usare i parametri Mongo forniti al proprio sito. Non committare password o secret nel repository.
@@ -139,12 +144,12 @@ https://site2526XX.tw.cs.unibo.it/marketplace/
 Verificare poi:
 
 1. login con `visitatore1 / 12345678`;
-2. Marketplace filtrabile sulla Pinacoteca Nazionale di Bologna;
-3. acquisizione di almeno una Visit demo;
-4. Visit acquisita visibile nella Library Navigator;
-5. preparation/start della Visit;
-6. mappa schematica e servizi disponibili;
-7. TTS sul testo corrente e bottoni equivalenti ai comandi vocali;
+2. selettore Navigator con i soli musei per cui l’utente possiede visite;
+3. selezione della Pinacoteca e Library filtrata, senza barra di navigazione inferiore;
+4. Marketplace filtrabile sulla Pinacoteca Nazionale di Bologna;
+5. acquisizione di almeno una Visit demo e sua comparsa nella Library;
+6. generazione e preparation/start della Visit nel contesto della Pinacoteca;
+7. mappa schematica, servizi, TTS e bottoni equivalenti ai comandi vocali;
 8. login autore e Creator Workspace/Editor funzionanti.
 
 ## Dataset della demo

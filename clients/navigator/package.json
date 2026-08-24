@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc --noEmit && vite build",
-    "check": "vue-tsc --noEmit"
+    "build": "npm run check && vite build",
+    "check:config": "node scripts/check-config.mjs public/navigator-platform public/navigator-configs/496f78e51b8861a9800749a7 public/navigator-configs/64a12f680000000000000002 ../../docs/examples/navigator-museo-aurora",
+    "check": "npm run check:config && vue-tsc --noEmit"
   },
   "dependencies": {
     "pinia": "4.0.3",

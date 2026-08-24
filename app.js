@@ -77,8 +77,54 @@ function mountBuiltSpa({ mountPath, distDir }) {
 
 const navigatorDist = path.join(__dirname, "clients", "navigator", "dist");
 const marketplaceDist = path.join(__dirname, "clients", "marketplace", "dist");
-if (fs.existsSync(path.join(navigatorDist, "navigator.config.json"))) {
-  app.get("/navigator.config.json", (req, res) => res.sendFile(path.join(navigatorDist, "navigator.config.json")));
+const externalNavigatorConfigRoot = process.env.NAVIGATOR_CONFIG_DIR
+  ? path.resolve(process.env.NAVIGATOR_CONFIG_DIR)
+  : null;
+const navigatorConfigRoots = [
+  ...(externalNavigatorConfigRoot ? [externalNavigatorConfigRoot] : []),
+  navigatorDist,
+].filter((entry, index, entries) => entries.indexOf(entry) === index);
+
+function firstNavigatorFile(relativePath) {
+  return navigatorConfigRoots
+    .map((root) => path.join(root, relativePath))
+    .find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function serveNavigatorConfig(relativePath) {
+  return (req, res, next) => {
+    const configFile = firstNavigatorFile(relativePath);
+    if (!configFile) return next();
+    res.set("Cache-Control", "no-store");
+    return res.sendFile(configFile);
+  };
+}
+
+app.get("/navigator-platform/navigator.config.json", serveNavigatorConfig(
+  path.join("navigator-platform", "navigator.config.json"),
+));
+app.get("/navigator-configs/:venueId/navigator.config.json", (req, res, next) => {
+  const venueId = String(req.params.venueId || "");
+  if (!/^[0-9a-f]{24}$/i.test(venueId)) return next();
+  return serveNavigatorConfig(path.join("navigator-configs", venueId, "navigator.config.json"))(req, res, next);
+});
+
+// Compatibilità con il precedente deploy a configurazione singola.
+app.get("/navigator.config.json", serveNavigatorConfig("navigator.config.json"));
+
+for (const root of navigatorConfigRoots) {
+  const platformDirectory = path.join(root, "navigator-platform");
+  const museumsDirectory = path.join(root, "navigator-configs");
+  const legacyAssetsDirectory = path.join(root, "navigator-assets");
+  if (fs.existsSync(platformDirectory)) {
+    app.use("/navigator-platform", express.static(platformDirectory, { immutable: true, maxAge: "1h" }));
+  }
+  if (fs.existsSync(museumsDirectory)) {
+    app.use("/navigator-configs", express.static(museumsDirectory, { immutable: true, maxAge: "1h" }));
+  }
+  if (fs.existsSync(legacyAssetsDirectory)) {
+    app.use("/navigator-assets", express.static(legacyAssetsDirectory, { immutable: true, maxAge: "1h" }));
+  }
 }
 if (fs.existsSync(path.join(navigatorDist, "maps"))) {
   app.use("/maps", express.static(path.join(navigatorDist, "maps")));

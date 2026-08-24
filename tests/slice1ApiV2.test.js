@@ -334,6 +334,25 @@ test("Slice 1/2/3 API: acquisition, preparation e runtime Action versionato", { 
       const discovery = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
       assert.equal(discovery.response.status, 200);
       assert.equal(String(discovery.body.sessions[0].id), String(sessionId));
+
+      const dismissal = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions/${sessionId}/resumable`, {
+        cookie,
+        method: "DELETE",
+      });
+      assert.equal(dismissal.response.status, 200);
+      assert.equal(dismissal.body.removedFromResume, true);
+      assert.equal(dismissal.body.session.status, "abandoned");
+
+      const afterDismissal = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
+      assert.equal(afterDismissal.response.status, 200);
+      assert.equal(afterDismissal.body.sessions.length, 0);
+
+      const preservedLibrary = await jsonFetch(`${baseUrl}/api/v2/navigator/library`, { cookie });
+      assert.equal(preservedLibrary.response.status, 200);
+      assert.deepEqual(
+        preservedLibrary.body.visits.map((entry) => entry.title),
+        ["Catalog API Visit aggiornata"],
+      );
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const VisitSessionV2 = require("../models/visitSessionV2.model");
+const Venue = require("../models/venue.model");
 const Entitlement = require("../models/entitlement.model");
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
@@ -121,18 +122,33 @@ async function getNavigatorVisitDetail({ userId, visitId, configuredVenueId = nu
   };
 }
 
-async function listResumableNavigatorSessions({ userId }) {
+async function listResumableNavigatorSessions({ userId, configuredVenueId = null }) {
+  validateConfiguredVenueId(configuredVenueId);
   const sessions = await VisitSessionV2.find({
     userId,
     status: { $in: ["active", "paused", "route_completed"] },
   }).sort({ updatedAt: -1 }).limit(20).lean();
-  const revisionIds = [...new Set(sessions.map((session) => id(session.visitRevisionId)).filter(Boolean))];
-  const revisions = revisionIds.length
-    ? await VisitRevisionV2.find({ _id: { $in: revisionIds } }).select("title").lean()
-    : [];
+  const filteredSessions = configuredVenueId
+    ? sessions.filter((session) => (session.venuePins || []).some((pin) => id(pin.venueId) === id(configuredVenueId)))
+    : sessions;
+
+  const revisionIds = [...new Set(filteredSessions.map((session) => id(session.visitRevisionId)).filter(Boolean))];
+  const venueIds = [...new Set(filteredSessions.flatMap((session) =>
+    (session.venuePins || []).map((pin) => id(pin.venueId)).filter(Boolean)
+  ))];
+  const [revisions, venues] = await Promise.all([
+    revisionIds.length
+      ? VisitRevisionV2.find({ _id: { $in: revisionIds } }).select("title").lean()
+      : [],
+    venueIds.length
+      ? Venue.find({ _id: { $in: venueIds }, lifecycleStatus: "active" }).select("_id name description").lean()
+      : [],
+  ]);
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+  const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
+
   return {
-    sessions: sessions.map((session) => ({
+    sessions: filteredSessions.map((session) => ({
       id: session._id,
       status: session.status,
       sourceType: session.sourceType,
@@ -142,8 +158,69 @@ async function listResumableNavigatorSessions({ userId }) {
         : "Visita generata",
       currentEntryIndex: Number(session.currentEntryIndex) || 0,
       updatedAt: session.updatedAt,
+      physicalScope: (session.venuePins || []).map((pin) => {
+        const venue = venueById.get(id(pin.venueId));
+        return venue ? { id: venue._id, name: venue.name, description: venue.description || "" } : null;
+      }).filter(Boolean),
     })),
   };
+}
+
+async function dismissResumableNavigatorSession({ userId, sessionId }) {
+  const session = await VisitSessionV2.findOne({ _id: sessionId, userId });
+  if (!session) throw new AppError("VisitSession non disponibile", 404);
+  if (!["active", "paused", "route_completed"].includes(session.status)) {
+    throw new AppError("La Session non e presente tra le visite da riprendere", 409, [{
+      code: "SESSION_NOT_RESUMABLE",
+    }]);
+  }
+  if (session.status === "paused") {
+    const interval = session.pauseIntervals.at(-1);
+    if (interval && !interval.endedAt) interval.endedAt = new Date();
+  }
+  session.status = "abandoned";
+  session.runtimeVersion += 1;
+  await session.save();
+  return {
+    removedFromResume: true,
+    session: { id: session._id, status: session.status },
+  };
+}
+
+function projectNavigatorMuseums(visits = [], sessions = []) {
+  const museums = new Map();
+  for (const visit of visits) {
+    const seen = new Set();
+    for (const venue of visit.physicalScope || []) {
+      const venueId = id(venue.id);
+      if (!venueId || seen.has(venueId)) continue;
+      seen.add(venueId);
+      const current = museums.get(venueId) || {
+        id: venue.id,
+        name: venue.name,
+        description: venue.description || "",
+        visitCount: 0,
+        resumableSessionCount: 0,
+      };
+      current.visitCount += 1;
+      museums.set(venueId, current);
+    }
+  }
+  for (const session of sessions) {
+    for (const venue of session.physicalScope || []) {
+      const current = museums.get(id(venue.id));
+      if (current) current.resumableSessionCount += 1;
+    }
+  }
+  return [...museums.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+}
+
+async function listNavigatorMuseums({ userId }) {
+  const [{ visits }, { sessions }] = await Promise.all([
+    listNavigatorLibrary({ userId }),
+    listResumableNavigatorSessions({ userId }),
+  ]);
+  return { museums: projectNavigatorMuseums(visits, sessions) };
 }
 
 module.exports = {
@@ -151,4 +228,7 @@ module.exports = {
   listNavigatorLibrary,
   getNavigatorVisitDetail,
   listResumableNavigatorSessions,
+  dismissResumableNavigatorSession,
+  projectNavigatorMuseums,
+  listNavigatorMuseums,
 };
