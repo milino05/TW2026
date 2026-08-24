@@ -201,6 +201,11 @@ test("Slice 1/2/3 API: acquisition, preparation e runtime Action versionato", { 
       assert.equal(acquisition.response.status, 201);
       assert.equal(acquisition.body.grantedUses[0].capability, "visit.execute");
 
+      const acquisitionHistory = await jsonFetch(`${baseUrl}/api/v2/marketplace/acquisitions`, { cookie });
+      assert.equal(acquisitionHistory.response.status, 200);
+      assert.equal(acquisitionHistory.body.results[0].asset.title, "Catalog API Visit");
+      assert.equal(acquisitionHistory.body.results[0].grants[0].label, "Esegui questa visita");
+
       const library = await jsonFetch(`${baseUrl}/api/v2/navigator/library`, { cookie });
       assert.equal(library.response.status, 200);
       assert.deepEqual(library.body.visits.map((entry) => entry.title), ["Catalog API Visit"]);
@@ -334,6 +339,33 @@ test("Slice 1/2/3 API: acquisition, preparation e runtime Action versionato", { 
       const discovery = await jsonFetch(`${baseUrl}/api/v2/navigator/sessions`, { cookie });
       assert.equal(discovery.response.status, 200);
       assert.equal(String(discovery.body.sessions[0].id), String(sessionId));
+
+      const sellerLogin = await jsonFetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        body: JSON.stringify({ username: seller.username, password: "12345678" }),
+      });
+      assert.equal(sellerLogin.response.status, 200);
+      const sellerCookie = sellerLogin.response.headers.get("set-cookie")?.split(";")[0];
+      const commerce = await jsonFetch(`${baseUrl}/api/v2/marketplace/commerce`, { cookie: sellerCookie });
+      assert.equal(commerce.response.status, 200);
+      assert.equal(commerce.body.listings[0].offers[0].acquisitionCount, 1);
+
+      const replacementOffer = await jsonFetch(`${baseUrl}/api/v2/marketplace/listings/${listing._id}/offers`, {
+        cookie: sellerCookie,
+        method: "POST",
+        body: JSON.stringify({
+          label: "Esecuzione premium",
+          pricing: { type: "paid", amountMinor: 500, currency: "EUR" },
+          grants: [{ resourceType: "visit", resourceId: visit._id, capability: "visit.execute", versionPolicy: "follow_current" }],
+        }),
+      });
+      assert.equal(replacementOffer.response.status, 201);
+      const withdrawnOffer = await jsonFetch(`${baseUrl}/api/v2/marketplace/offers/${replacementOffer.body._id}/withdraw`, { cookie: sellerCookie, method: "POST" });
+      assert.equal(withdrawnOffer.response.status, 200);
+      assert.equal(withdrawnOffer.body.status, "withdrawn");
+      const withdrawnListing = await jsonFetch(`${baseUrl}/api/v2/marketplace/listings/${listing._id}/withdraw`, { cookie: sellerCookie, method: "POST" });
+      assert.equal(withdrawnListing.response.status, 200);
+      assert.equal(withdrawnListing.body.status, "withdrawn");
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

@@ -1,4 +1,5 @@
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
+import { icon } from "./icons.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -104,8 +105,8 @@ export class ArtAroundVisitLogisticsEditor extends HTMLElement {
 
   renderRouteHints() {
     const hints = this.revision?.logistics?.routeHints || [];
-    if (!hints.length) return `<p>Nessuna indicazione di trasferimento esplicita. Il routing fisico resta responsabilità della Venue/Layout.</p>`;
-    return `<ul>${hints.map((hint) => `<li><strong>${escapeHtml(hint.type)}</strong>${hint.instructionOverride ? ` — ${escapeHtml(hint.instructionOverride)}` : ""}${hint.note ? ` · ${escapeHtml(hint.note)}` : ""}${hint.estimatedTransferSeconds != null ? ` · ${escapeHtml(hint.estimatedTransferSeconds)} s` : ""}</li>`).join("")}</ul>`;
+    if (!hints.length) return `<div class="empty-state compact">${icon("route", { size: 24 })}<div><h3>Nessun trasferimento esplicito</h3><p>Il routing fisico resta responsabilità della Venue e del suo layout.</p></div></div>`;
+    return `<div class="route-hint-list">${hints.map((hint, index) => `<article><span class="route-index">${index + 1}</span><div><strong>${escapeHtml(hint.type)}</strong>${hint.instructionOverride ? `<p>${escapeHtml(hint.instructionOverride)}</p>` : ""}${hint.note ? `<small>${escapeHtml(hint.note)}</small>` : ""}</div>${hint.estimatedTransferSeconds != null ? `<span class="chip">${escapeHtml(hint.estimatedTransferSeconds)} s</span>` : ""}</article>`).join("")}</div>`;
   }
 
   render() {
@@ -119,8 +120,8 @@ export class ArtAroundVisitLogisticsEditor extends HTMLElement {
       return;
     }
     const notes = (this.revision?.logistics?.preVisitNotes || []).join("\n");
-    const form = this.editable ? `<form data-visit-logistics><label>Note prima della visita, una per riga<textarea name="preVisitNotes" rows="5">${escapeHtml(notes)}</textarea></label><button type="submit" ${this.busy ? "disabled" : ""}>Salva indicazioni logistiche</button></form>` : `<p>${notes ? escapeHtml(notes).replaceAll("\n", "<br>") : "Nessuna nota pre-visita."}</p><p>La revisione non è modificabile nello stato corrente.</p>`;
-    this.innerHTML = `<style>.visit-logistics{max-width:72rem;margin:0 auto 2rem;padding:1rem;border-top:1px solid currentColor}.visit-logistics form,.visit-logistics label{display:grid;gap:.6rem}.visit-logistics button,.visit-logistics textarea{font:inherit;padding:.55rem .7rem}.visit-logistics .note{opacity:.76}</style><section class="visit-logistics"><h2>Indicazioni logistiche</h2><p class="note">Le indicazioni logistiche appartengono alla Visit ma sono separate dai contenuti: non sono Item e non vengono inserite in <code>contentEntries</code>.</p>${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${form}<h3>Trasferimenti strutturati</h3>${this.renderRouteHints()}</section>`;
+    const form = this.editable ? `<form data-visit-logistics><label>Note prima della visita <small>Una indicazione per riga</small><textarea name="preVisitNotes" rows="5" placeholder="Per esempio: presentarsi 10 minuti prima…">${escapeHtml(notes)}</textarea></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 17 })} Salva indicazioni</button></form>` : `<div class="read-only-notes"><p>${notes ? escapeHtml(notes).replaceAll("\n", "<br>") : "Nessuna nota pre-visita."}</p><span class="chip">Sola lettura</span></div>`;
+    this.innerHTML = `<section class="visit-logistics"><header><div><span class="eyebrow">Supporto alla visita</span><h2>Indicazioni logistiche</h2><p class="note">Informazioni operative separate dai contenuti: non sono Item e non entrano in <code>contentEntries</code>.</p></div><div class="section-icon">${icon("route", { size: 24 })}</div></header>${this.message ? `<p role="status">${icon("check", { size: 17 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}<div class="logistics-grid"><div>${form}</div><div><h3>Trasferimenti strutturati</h3>${this.renderRouteHints()}</div></div></section>`;
   }
 }
 

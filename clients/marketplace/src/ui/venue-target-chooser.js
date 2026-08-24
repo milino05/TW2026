@@ -1,4 +1,5 @@
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
+import { icon } from "./icons.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -29,17 +30,15 @@ export class VenueTargetChooser extends HTMLElement {
 
   render() {
     const targets = (this.data?.targets || []).map((target) => `
-      <article>
-        <h2>${escapeHtml(target.label)}</h2>
-        <p>${escapeHtml(target.subject?.preferredLabel || "Subject non disponibile")}</p>
+      <article class="target-choice">
+        <div class="target-choice__icon">${icon("museum", { size: 22 })}</div>
+        <div class="target-choice__copy"><span class="eyebrow">${escapeHtml(target.subject?.preferredLabel || "Subject non disponibile")}</span><h2>${escapeHtml(target.label)}</h2>
         ${target.description ? `<p>${escapeHtml(target.description)}</p>` : ""}
-        ${(target.recognitionMedia || []).length ? `<p>${target.recognitionMedia.length} immagine/i di riconoscimento disponibili nel contesto fisico.</p>` : ""}
-        <a data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(target.id)}">Crea contenuto per questo oggetto</a>
+        ${(target.recognitionMedia || []).length ? `<span class="chip">${target.recognitionMedia.length} ${target.recognitionMedia.length === 1 ? "immagine" : "immagini"} di riconoscimento</span>` : ""}</div>
+        <a class="button-link" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(target.id)}">Crea contenuto ${icon("chevron", { size: 16 })}</a>
       </article>`).join("");
-    this.innerHTML = `<style>:host{display:block}main{max-width:64rem;margin:0 auto;padding:2rem 1rem}article{padding:1rem 0;border-bottom:1px solid currentColor}</style>
-      <main><p><a data-route href="/catalog">← Catalogo</a></p><h1>${escapeHtml(this.data?.venue?.name || "Oggetti della sede")}</h1>
-      <p>La scelta di un oggetto precompila il Subject del wizard. VenueTarget e Item restano entità separate.</p>
-      ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${targets || (!this.error ? "<p>Nessun oggetto pubblicato disponibile.</p>" : "")}</main>`;
+    this.innerHTML = `<main class="target-chooser-page"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/catalog">${icon("arrowLeft", { size: 16 })} Catalogo</a><span>/</span><span>Oggetti della sede</span></nav><header class="page-header"><div><span class="eyebrow">Contesto fisico</span><h1>${escapeHtml(this.data?.venue?.name || "Oggetti della sede")}</h1><p>Scegli l'oggetto a cui associare il nuovo contenuto. Il soggetto verrà precompilato nel wizard.</p></div>${this.data ? `<span class="count">${this.data.targets.length}</span>` : ""}</header>
+      ${this.error ? `<p role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}<div class="target-choice-list">${targets || (!this.error ? `<div class="empty-state">${icon("museum", { size: 28 })}<h3>Nessun oggetto pubblicato</h3><p>Questa sede non espone ancora oggetti utilizzabili per la creazione di contenuti.</p></div>` : "")}</div></main>`;
   }
 }
 

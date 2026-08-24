@@ -77,10 +77,10 @@ async function listingMapForPrincipal(principalType, principalId) {
   }]));
 }
 
-function ownedOperations({ published, listing }) {
+function ownedOperations({ published, listing, canManageCommerce = true }) {
   const operations = [{ code: "open_editor", label: "Apri editor" }];
-  if (published && !listing) operations.push({ code: "create_listing", label: "Pubblica nel Marketplace" });
-  if (listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
+  if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Pubblica nel Marketplace" });
+  if (canManageCommerce && listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
   return operations;
 }
 
@@ -100,6 +100,7 @@ function withWorkflowOperations({ baseOperations, principalType, actorRole, revi
 }
 
 async function projectOwnedAssets({ principalType, principalId, actorRole, listings }) {
+  const canManageCommerce = principalType === "user" || actorRole === "manager";
   const spaces = await ContentSpace.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).sort({ name: 1 }).lean();
   const items = await ItemV2.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
   const editions = items.length ? await ItemEdition.find({ itemId: { $in: items.map((entry) => entry._id) } }).lean() : [];
@@ -130,7 +131,7 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
   for (const edition of editions) {
     const revision = itemRevisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId));
     const listing = listings.get(key("item_edition", edition._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(edition.publishedRevisionId), listing });
+    const baseOperations = ownedOperations({ published: Boolean(edition.publishedRevisionId), listing, canManageCommerce });
     assets.push({
       ownership: "owned",
       resourceType: "item_edition",
@@ -155,13 +156,13 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
       state: context.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: context.publishedReleaseId ? { resourceType: "editorial_release", resourceId: context.publishedReleaseId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(context.publishedReleaseId), listing }),
+      availableOperations: ownedOperations({ published: Boolean(context.publishedReleaseId), listing, canManageCommerce }),
     });
   }
   for (const namespace of namespaces) {
     const revision = namespaceRevisionById.get(id(namespace.workingRevisionId || namespace.publishedRevisionId));
     const listing = listings.get(key("namespace", namespace._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing });
+    const baseOperations = ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing, canManageCommerce });
     assets.push({
       ownership: "owned",
       resourceType: "namespace",
@@ -178,7 +179,7 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
   for (const visit of visits) {
     const revision = visitRevisionById.get(id(visit.workingRevisionId || visit.publishedRevisionId));
     const listing = listings.get(key("visit", visit._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(visit.publishedRevisionId), listing });
+    const baseOperations = ownedOperations({ published: Boolean(visit.publishedRevisionId), listing, canManageCommerce });
     assets.push({
       ownership: "owned",
       resourceType: "visit",
@@ -299,8 +300,8 @@ async function getDistributionDashboard({ actorUserId, principalType = "user", p
     MarketplaceListing.find({ sellerType: principalType, sellerId: principalId }).lean(),
     MarketplaceAcquisition.find({ sellerType: principalType, sellerId: principalId }).sort({ acquiredAt: -1 }).lean(),
   ]);
-  const listingIds = listings.map((entry) => entry._id);
-  const offers = listingIds.length ? await MarketplaceOffer.find({ listingId: { $in: listingIds } }).lean() : [];
+  const publishedListingIds = listings.filter((entry) => entry.status === "published").map((entry) => entry._id);
+  const offers = publishedListingIds.length ? await MarketplaceOffer.find({ listingId: { $in: publishedListingIds } }).lean() : [];
   const saleIds = sales.map((entry) => entry._id);
   const entitlements = saleIds.length ? await Entitlement.find({ sourceAcquisitionId: { $in: saleIds } }).select("_id sourceAcquisitionId").lean() : [];
   const entitlementIds = entitlements.map((entry) => entry._id);
@@ -349,6 +350,8 @@ async function getDistributionDashboard({ actorUserId, principalType = "user", p
 
 module.exports = {
   EXTERNAL_OPERATION_BY_CAPABILITY,
+  availablePrincipalProjection,
+  resolveSelectedPrincipal,
   getCreatorWorkspace,
   getDistributionDashboard,
 };

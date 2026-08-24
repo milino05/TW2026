@@ -27,14 +27,15 @@ export const marketplaceRepository = {
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}${suffix}`);
   },
-  acquire(offerId) {
+  acquire(offerId, { beneficiaryType = "user", beneficiaryId = null } = {}) {
     return apiClient.request(`/v2/marketplace/offers/${encodeURIComponent(offerId)}/acquire`, {
       method: "POST",
-      body: JSON.stringify({ beneficiaryType: "user" }),
+      body: JSON.stringify({ beneficiaryType, beneficiaryId }),
     });
   },
-  acquisitionHistory({ page = 1, limit = 20 } = {}) {
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  acquisitionHistory({ page = 1, limit = 20, beneficiaryType = "user", beneficiaryId = null } = {}) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit), beneficiaryType });
+    if (beneficiaryId) params.set("beneficiaryId", beneficiaryId);
     return apiClient.request(`/v2/marketplace/acquisitions?${params.toString()}`);
   },
   workspace(principal = {}) {
@@ -43,11 +44,29 @@ export const marketplaceRepository = {
   distribution(principal = {}) {
     return apiClient.request(`/v2/marketplace/distribution?${principalParams(principal).toString()}`);
   },
+  commerce(principal = {}, { page = 1, limit = 10 } = {}) {
+    const params = principalParams(principal);
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    return apiClient.request(`/v2/marketplace/commerce?${params.toString()}`);
+  },
   createListing({ resourceType, resourceId, sellerType, sellerId }) {
     return apiClient.request("/v2/marketplace/listings", {
       method: "POST",
       body: JSON.stringify({ resourceType, resourceId, sellerType, sellerId }),
     });
+  },
+  createOffer(listingId, payload) {
+    return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}/offers`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  withdrawListing(listingId) {
+    return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}/withdraw`, { method: "POST" });
+  },
+  withdrawOffer(offerId) {
+    return apiClient.request(`/v2/marketplace/offers/${encodeURIComponent(offerId)}/withdraw`, { method: "POST" });
   },
   executeWorkspaceOperation({ operationCode, sourceRef, targetPrincipal, payload = {} }) {
     return apiClient.request("/v2/marketplace/workspace/operations", {

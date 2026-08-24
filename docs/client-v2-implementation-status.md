@@ -4,7 +4,7 @@ Questo documento traccia lo stato operativo dei vertical slice definiti in `docs
 
 ## Fase corrente
 
-**Freeze finale — esecuzione completa di check/build/test/seed e prova deploy.**
+**Completamento commerciale e revisione finale locale del client Marketplace.**
 
 ## Slice 0 — Repository e client scaffold
 
@@ -264,18 +264,90 @@ Test Slice 9 versionati:
 - regression test del catalogo facility per ascensore e scale;
 - `VisitAuthoringV2` verifica projection nuova Visit, Venue/source disponibili, ricerca paginata, più presentation profile, modifica di una Visit già pubblicata tramite nuova draft, blocco editing durante `in_review` e riapertura dopo withdraw.
 
+## Perfezionamento Marketplace — Account, Organization, Namespace e Venue
+
+**Stato: management workspace implementato sul branch locale `codex/marketplace_simo`.**
+
+- aggiunta una `MarketplaceAccountWorkspaceProjection` autenticata e backend-authoritative;
+- il profilo è un riepilogo account con preferenze di presentazione, navigazione e apprendimento, Organization e Namespace personali;
+- Organization, Venue e Namespace usano route di gestione dedicate invece di un'unica pagina crescente;
+- la detail projection Organization pagina indipendentemente membri, Venue e Namespace;
+- manager e operator ricevono soltanto le operazioni compatibili con ruolo e invarianti correnti;
+- il Marketplace permette creazione e modifica delle Organization, assegnazione/promozione/rimozione dei membri, creazione e modifica delle Venue e dei Namespace personali o organizzativi;
+- il creatore dell'Organization rimane manager e non riceve operazioni di rimozione o retrocessione;
+- il Namespace editor gestisce classi di Subject, relation type, scale di durata e linguaggio, aspetti di presentazione, selection signal, integrità e workflow senza fondere il vocabolario editoriale con la Venue;
+- il Venue editor proietta `VenueRelease` e `LayoutRevision` e gestisce VenueTarget, recognition media, informazioni pre-visita, place type/facility intent, attributi e preset di routing, piani/mappe, luoghi, collocazioni e connessioni;
+- i write continuano a passare dai domain service canonici; le nuove API Marketplace sono projection read-only e backend-authoritative;
+- la UI mostra stati di caricamento, feedback e conferme per rimozione membri e cestinamento VenueTarget;
+- aggiunti test delle operazioni proiettate e un test Mongo isolato della composizione Account -> Organization -> Venue/Namespace e degli accessi agli editor.
+
+## Restyling UX del Marketplace
+
+**Stato: completato sul branch locale `codex/marketplace_simo`, senza estendere il dominio commerciale.**
+
+- introdotto un design system condiviso con token, tipografia, superfici, form, bottoni, stati, empty state, focus visibile e responsive layout;
+- ridisegnati shell, navigazione desktop/mobile, login, catalogo, filtri, card e paginazione;
+- uniformati Workspace, dettaglio risorsa, wizard Item, wizard Visit, logistica, scelta VenueTarget e composer EditorialRelease;
+- profilo e Organization dispongono di riepiloghi, scorciatoie di sezione, card coerenti e form di creazione contestuali;
+- gli editor Namespace e Venue usano una navigazione interna sticky, indicatori di integrità e avvisi per modifiche non salvate;
+- il Venue editor include un'anteprima schematica non autoritativa con marker numerati, connessioni e legenda, derivata dal Layout corrente;
+- nessuna modifica al Navigator, ai contratti di dominio o alle funzionalità commerciali escluse dall'incremento.
+
+## Completamento commerciale Marketplace
+
+**Stato: implementato sul branch locale `codex/marketplace_simo`.**
+
+- il Catalog indirizza a una scheda Listing completa con licenza editoriale, grant applicativi, comportamento di versione, prezzo e principal beneficiario;
+- l'acquisizione gratuita o a pagamento simulato richiede una conferma esplicita e resta idempotente per Offer e beneficiario;
+- lo storico acquisizioni è paginato e principal-scoped e mostra seller, asset, licenza, Offer, prezzo acquisito e grant snapshot;
+- il seller dispone di una gestione paginata di Listing e Offer per profilo personale o Organization amministrata;
+- la creazione Offer supporta prezzi gratuiti/a pagamento, valuta, capability compatibili col tipo di asset e version policy compatibili con risorse live o pinned;
+- variazioni di prezzo e condizioni si modellano creando una nuova Offer e ritirando la precedente, senza riscrivere lo storico commerciale;
+- Listing e Offer possono essere ritirate con conferma esplicita; Acquisition ed Entitlement esistenti rimangono validi;
+- dashboard di distribuzione, ricavi simulati, acquisizioni e Adoption restano separati e derivati dai record di dominio;
+- licenza editoriale e grant Marketplace sono mostrati come concetti distinti, senza inferire authorization nel client;
+- le nuove operazioni Organization sono disponibili soltanto ai manager tramite projection backend-authoritative.
+
+Test commerciali aggiunti coprono projection seller, licenza editoriale, storico arricchito, cambio prezzo tramite nuova Offer, immutabilità dello snapshot acquisito, ritiro Offer/Listing e boundary API end-to-end.
+
+## Revisione finale locale
+
+**Stato: codice, test, build, dataset e collaudo browser verificati localmente.**
+
+- la suite Node/Mongo è serializzata per evitare interferenze tra file che creano ed eliminano database di test;
+- il container MongoDB usa un limite `nofile` esplicito, necessario per la creazione intensiva degli indici Mongoose durante la suite completa;
+- rimosso l'indice TTL duplicato di `ExecutionPreparation` e riallineati fixture e workflow test ai contratti Domain v2 correnti;
+- i riferimenti Subject mancanti restituiscono ora anche il path preciso del campo che ha fallito l'integrità;
+- `npm run check:backend`, `npm run check:clients` e `npm run build:clients` risultano verdi in locale;
+- la suite completa MongoDB 7 risulta verde con **126 test passati, 0 falliti**;
+- `seed:demo` e `verify:demo` risultano verdi con 4 account, 12 VenueTarget, 12 ItemRevision pubblicate, 3 Visit, 3 Listing e 3 Offer attive;
+- gli smoke test confermano accesso dei quattro account e autorizzazione commerciale Organization riservata al manager (`autore1` 200, `autore2` 403);
+- il collaudo browser copre Catalogo, dettaglio licenza, conferma acquisizione, storico, Workspace, Listing/Offer management, profilo e Organization, desktop/mobile e hard refresh su route annidata;
+- la console browser non riporta errori o warning; la dipendenza development vulnerabile transitiva di `nodemon` è stata aggiornata alla patch sicura e gli audit di backend e Navigator riportano 0 vulnerabilità.
+
 ## Stato della verifica automatica
 
-La repository configura GitHub Actions su push a `main` per backend checks, guardrail Slice 6/7/8/9, check/build dei due client, test Node/Mongo e audit dipendenze. Sul commit corrente il connector GitHub non espone workflow run o status check; non viene quindi dichiarata una CI green senza evidenza osservabile.
+La repository configura GitHub Actions su push a `main` per backend checks, guardrail Slice 6/7/8/9, check/build dei due client, test Node/Mongo e audit dipendenze. Sul commit corrente non viene dichiarata una CI green senza uno status check remoto osservato.
 
-Il runtime locale della chat dispone di Node 22 ma non di MongoDB e non riesce a risolvere `github.com`, quindi non può clonare l'HEAD corrente ed eseguire la suite completa. Le modifiche e i test sono versionati su `main`, ma il criterio finale del piano `clone pulito -> install/build/test/seed -> prodotto demo funzionante` richiede ancora un ambiente eseguibile reale.
+Il guardrail legacy ignora ora i commenti quando verifica che `primaryEditorialContextId` non venga usato per autorizzare la generazione; il commento architetturale in `generationAccess.service.js` non produce più un falso positivo, mentre eventuali accessi eseguibili continuano a essere rifiutati.
 
-## Prossimo incremento
+## Semantic Resolver ArtAround
 
-Non sono previsti ulteriori vertical slice architetturali nel piano corrente. Il passo successivo è il **freeze finale di consegna**:
+**Stato: implementato e verificato sul branch locale `codex/marketplace_simo`.**
 
-1. su clone pulito eseguire `npm ci`, install Navigator, `npm run check`, `npm run check:clients`, `npm run build:clients` e `npm test` con MongoDB 7 disponibile;
-2. eseguire `npm run seed:demo` e `npm run verify:demo`, quindi provare manualmente i quattro account e i flussi Marketplace/Navigator principali;
-3. eseguire una prova del deploy gocker di dipartimento con `mongo` e `node-22`, compresi hard refresh su route annidate;
-4. correggere esclusivamente regressioni emerse da queste verifiche, evitando nuovi refactoring non necessari prima della consegna;
-5. congelare l'HEAD verificato e registrare l'esito della prova finale.
+- sostituito il generico `Subject.externalRefs` con `externalIdentities` exact-only, provenance di conferma, verifica live, identità canoniche/storiche e indice MongoDB unique multikey;
+- aggiunto un registry provider-neutral e l'adapter Wikidata Action API limitato ai fingerprint, con timeout, cache bounded TTL, request coalescing, User-Agent e gestione distinta di unsupported/unavailable/not-found/redirect;
+- aggiunti endpoint autenticati provider/search/resolve e il command `Subject from external identity`, che ri-risolve server-side, riusa i binding noti e segnala collisioni da reconciliation senza auto-merge;
+- mantenuta la creazione di Subject locali indipendente dal provider e bloccato l'inserimento di identity non verificate dal generico endpoint Subject;
+- integrato un picker semantico riusabile in Item authoring e VenueTarget, con un'unica ricerca ArtAround → Wikidata, riuso automatico del Subject già bound anche quando la query usa un alias esterno e creazione manuale soltanto come fallback esplicito;
+- resa resiliente l'integrazione live: le richieste interattive omettono `maxlag`, i processi background conservano `maxlag=5`, gli errori transitori ricevono un solo retry controllato e `Retry-After` alimenta l'azione UI “Riprova Wikidata”;
+- integrati mapping Wikidata Item/Property espliciti nelle definition Namespace e nei PlaceType, mantenendo `semanticRefs` separate da `userIntents`;
+- aggiunto al Navigator un fallback source-scoped che può soltanto ritrovare Subject già bound e già presenti nelle sorgenti editoriali selezionate, senza persistenza;
+- seed, graph semantici, proiezioni e contratti client usano soltanto `externalIdentities`; il guardrail legacy rifiuta il ritorno del precedente contratto;
+- nessun volume MongoDB corrente viene eliminato o azzerato: i test Mongo del resolver usano un database isolato dedicato.
+- check backend/client, build dei due client e suite completa MongoDB 7 risultano verdi con **137 test passati, 0 falliti**;
+- il collaudo browser copre picker Item, ricerca locale, resolution Wikidata, conferma pre-binding, picker VenueTarget, separazione PlaceType mapping/intent, Navigator source-scoped e layout desktop/mobile senza errori o warning in console.
+
+## Attività esterne residue
+
+Il completamento funzionale locale dei punti 6 e 7 è concluso. Restano esterne a questo branch locale la pubblicazione/CI remota e la prova sul gocker di dipartimento con `mongo` e `node-22`, compresi gli hard refresh sulle route annidate. Non è stato eseguito alcun commit, push o deploy durante questa revisione.

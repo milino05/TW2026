@@ -9,6 +9,7 @@ const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
 const itemId = validateObjectIdParam("itemId");
 const namespaceId = validateObjectIdParam("namespaceId");
+const organizationId = validateObjectIdParam("organizationId");
 const editorialContextId = validateObjectIdParam("editorialContextId");
 const editorialReleaseId = validateObjectIdParam("editorialReleaseId");
 const venueId = validateObjectIdParam("venueId");
@@ -27,12 +28,19 @@ router.get("/v2/marketplace/visit-authoring/releases/:editorialReleaseId/content
 router.get("/v2/marketplace/visit-authoring/:visitId", visitId, authoringController.visitAuthoring);
 router.get("/v2/marketplace/venue-targets/:venueTargetId/authoring-context", venueTargetId, controller.venueTargetAuthoringContext);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
+router.get("/v2/marketplace/commerce", controller.commercialManagement);
+router.get("/v2/marketplace/account-workspace", controller.marketplaceAccountWorkspace);
+router.get("/v2/marketplace/management/organizations/:organizationId", organizationId, controller.marketplaceOrganizationDetail);
+router.get("/v2/marketplace/management/namespaces/:namespaceId", namespaceId, controller.marketplaceNamespaceManagement);
+router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.marketplaceVenueManagement);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
 router.post("/v2/marketplace/workspace/operations", controller.workspaceOperation);
 router.post("/v2/marketplace/listings", controller.createListing);
 router.get("/v2/marketplace/listings/:listingId", listingId, controller.detail);
 router.post("/v2/marketplace/listings/:listingId/offers", listingId, controller.createOffer);
+router.post("/v2/marketplace/listings/:listingId/withdraw", listingId, controller.withdrawListing);
 router.post("/v2/marketplace/offers/:offerId/acquire", offerId, controller.acquire);
+router.post("/v2/marketplace/offers/:offerId/withdraw", offerId, controller.withdrawOffer);
 
 module.exports = router;
