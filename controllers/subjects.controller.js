@@ -17,6 +17,7 @@ async function listSubjects(req, res, next) {
     const subjects = await subjectService.listSubjects({
       search: req.query?.search || "",
       limit: req.query?.limit,
+      match: req.query?.match || "text",
       externalScheme: req.query?.externalScheme || null,
       externalId: req.query?.externalId || null,
     });

@@ -41,12 +41,12 @@ async function marketplaceApiClient() {
   )).href);
 }
 
-test("Marketplace Subject search stops on ArtAround results and does not call Wikidata implicitly", async () => {
+test("Marketplace Subject search accepts only an exact ArtAround label before stopping", async () => {
   const { searchSubjectCascade } = await marketplaceSemanticSearchFlow();
   const calls = [];
   const repository = {
-    searchSubjects: async (query) => {
-      calls.push(`local:${query}`);
+    searchSubjects: async (query, options) => {
+      calls.push(`local:${query}:${options.match}`);
       return [{ id: "subject-1", preferredLabel: "Gioconda" }];
     },
     searchExternal: async () => {
@@ -57,7 +57,7 @@ test("Marketplace Subject search stops on ArtAround results and does not call Wi
 
   const result = await searchSubjectCascade({ repository, query: "  Gioconda  " });
 
-  assert.deepEqual(calls, ["local:Gioconda"]);
+  assert.deepEqual(calls, ["local:Gioconda:label_exact"]);
   assert.equal(result.externalSearched, false);
   assert.equal(result.localResults[0].preferredLabel, "Gioconda");
 });
@@ -90,6 +90,109 @@ test("Marketplace Subject search falls back to Wikidata and exposes the already-
   assert.deepEqual(calls, ["local:Mona Lisa", "external:Mona Lisa:it:item"]);
   assert.equal(result.externalSearched, true);
   assert.equal(result.externalResults[0].alreadyBoundSubject.preferredLabel, "Gioconda");
+});
+
+test("Marketplace Subject search retries Wikidata transparently without a leading Italian article", async () => {
+  const { searchSubjectCascade } = await marketplaceSemanticSearchFlow();
+  const calls = [];
+  const repository = {
+    searchSubjects: async (query, options) => {
+      calls.push(`local:${query}:${options.match}`);
+      return [];
+    },
+    searchExternal: async ({ query }) => {
+      calls.push(`external:${query}`);
+      if (query.startsWith("la ")) return { provider: { scheme: "wikidata" }, candidates: [] };
+      return {
+        provider: { scheme: "wikidata" },
+        candidates: [{ scheme: "wikidata", id: "Q185372", label: "Ragazza con l'orecchino di perla" }],
+      };
+    },
+  };
+
+  const result = await searchSubjectCascade({
+    repository,
+    query: "la ragazza con l'orecchino di perla",
+  });
+
+  assert.deepEqual(calls, [
+    "local:la ragazza con l'orecchino di perla:label_exact",
+    "external:la ragazza con l'orecchino di perla",
+    "external:ragazza con l'orecchino di perla",
+  ]);
+  assert.equal(result.externalResults[0].id, "Q185372");
+  assert.deepEqual(result.externalQuery, {
+    requested: "la ragazza con l'orecchino di perla",
+    variant: "ragazza con l'orecchino di perla",
+    attempted: ["la ragazza con l'orecchino di perla", "ragazza con l'orecchino di perla"],
+    variantApplied: true,
+    variantUnavailable: false,
+  });
+  assert.deepEqual(result.externalResults[0].queryMatches, ["variant"]);
+});
+
+test("Marketplace external discovery merges and deduplicates the original and article-free queries", async () => {
+  const { searchExternalCandidates } = await marketplaceSemanticSearchFlow();
+  const calls = [];
+  const repository = {
+    searchExternal: async ({ query }) => {
+      calls.push(query);
+      if (query === "La candidate") {
+        return { candidates: [{ scheme: "wikidata", id: "Q1", label: "La candidate" }] };
+      }
+      return { candidates: [
+        { scheme: "wikidata", id: "Q1", label: "La candidate" },
+        { scheme: "wikidata", id: "Q2", label: "Candidate alternativa" },
+      ] };
+    },
+  };
+
+  const result = await searchExternalCandidates({
+    repository,
+    query: "La candidate",
+    retryWithoutItalianArticle: true,
+  });
+
+  assert.deepEqual(calls, ["La candidate", "candidate"]);
+  assert.deepEqual(result.candidates.map((candidate) => candidate.id), ["Q1", "Q2"]);
+  assert.deepEqual(result.candidates[0].queryMatches, ["requested", "variant"]);
+  assert.deepEqual(result.candidates[1].queryMatches, ["variant"]);
+  assert.deepEqual(result.query, {
+    requested: "La candidate",
+    variant: "candidate",
+    attempted: ["La candidate", "candidate"],
+    variantApplied: true,
+    variantUnavailable: false,
+  });
+});
+
+test("Marketplace external discovery keeps original results if the optional variant fails", async () => {
+  const { searchExternalCandidates } = await marketplaceSemanticSearchFlow();
+  const repository = {
+    searchExternal: async ({ query }) => {
+      if (query !== "La candidate") throw new Error("variant unavailable");
+      return { candidates: [{ scheme: "wikidata", id: "Q1", label: "La candidate" }] };
+    },
+  };
+
+  const result = await searchExternalCandidates({
+    repository,
+    query: "La candidate",
+    retryWithoutItalianArticle: true,
+  });
+
+  assert.deepEqual(result.candidates.map((candidate) => candidate.id), ["Q1"]);
+  assert.equal(result.query.variantUnavailable, true);
+  assert.equal(result.query.variant, "candidate");
+});
+
+test("Subject label normalization is exact but ignores case, accents, spacing and apostrophe style", async () => {
+  const { normalizeSubjectLabel, listSubjects } = require("../services/subject.service");
+  assert.equal(normalizeSubjectLabel("  L’Órecchino   di Perla "), "l'orecchino di perla");
+  await assert.rejects(
+    () => listSubjects({ search: "x", match: "fuzzy" }),
+    (error) => error?.status === 400 && error.details?.[0]?.code === "INVALID_ENUM",
+  );
 });
 
 test("Marketplace unified Subject search resolves a QID without running a text search on Wikidata", async () => {
@@ -367,6 +470,17 @@ test("Semantic Resolver persists canonical and historical identities, reuses and
 
     const local = await createSubject({ actorUserId: user._id, payload: { preferredLabel: "Solo locale" } });
     assert.equal(local.externalIdentities.length, 0);
+    await createSubject({ actorUserId: user._id, payload: { preferredLabel: "L’Orecchino di Perla" } });
+    const exactLabels = await require("../services/subject.service").listSubjects({
+      search: "  l'orecchino   di pérla ",
+      match: "label_exact",
+    });
+    assert.deepEqual(exactLabels.map((subject) => subject.preferredLabel), ["L’Orecchino di Perla"]);
+    const unrelatedLabels = await require("../services/subject.service").listSubjects({
+      search: "la ragazza con l'orecchino di perla",
+      match: "label_exact",
+    });
+    assert.deepEqual(unrelatedLabels, []);
     await assert.rejects(
       () => createSubject({ actorUserId: user._id, payload: { preferredLabel: "Non verificato", externalIdentities: [{ scheme: "wikidata", id: "Q9" }] } }),
       (error) => error?.status === 400 && error.details.some((issue) => issue.field === "externalIdentities"),

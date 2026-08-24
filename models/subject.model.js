@@ -20,6 +20,13 @@ const SubjectSchema = new Schema(
 
 SubjectSchema.index({ preferredLabel: "text", description: "text" });
 SubjectSchema.index(
+  { preferredLabel: 1 },
+  {
+    name: "subject_preferred_label_exact_it",
+    collation: { locale: "it", strength: 1, alternate: "shifted" },
+  },
+);
+SubjectSchema.index(
   { "externalIdentities.scheme": 1, "externalIdentities.id": 1 },
   { unique: true, sparse: true, name: "unique_subject_external_identity" },
 );

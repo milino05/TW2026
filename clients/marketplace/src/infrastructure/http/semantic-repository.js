@@ -18,8 +18,8 @@ export const semanticRepository = {
   resolveExternal({ scheme = "wikidata", id, locale = "it" }) {
     return apiClient.request(`/v2/semantic-resolver/resolve?${queryString({ scheme, id, locale })}`);
   },
-  searchSubjects(search, limit = 25) {
-    return apiClient.request(`/subjects?${queryString({ search, limit })}`);
+  searchSubjects(search, { limit = 25, match = "label_exact" } = {}) {
+    return apiClient.request(`/subjects?${queryString({ search, limit, match })}`);
   },
   createLocalSubject(payload) {
     return apiClient.request("/subjects", { method: "POST", body: JSON.stringify(payload) });
