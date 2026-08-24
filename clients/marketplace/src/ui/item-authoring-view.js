@@ -15,24 +15,12 @@ function escapeHtml(value = "") {
 function params() { return new URLSearchParams(window.location.search); }
 function id(value) { return String(value?.id || value?._id || value || ""); }
 
-function namespaceChoices(workspace) {
-  const choices = [];
-  for (const asset of workspace?.ownedAssets || []) {
-    if (asset.resourceType !== "namespace") continue;
-    choices.push({ id: asset.resourceId, name: asset.title, ownership: "owned" });
-  }
-  for (const asset of workspace?.licensedAssets || []) {
-    const canAuthor = (asset.availableOperations || []).some((operation) => operation.code === "namespace.author");
-    if (!canAuthor || asset.sourceRef?.resourceType !== "namespace") continue;
-    choices.push({ id: asset.sourceRef.resourceId, name: asset.title, ownership: "licensed" });
-  }
-  const seen = new Set();
-  return choices.filter((choice) => {
-    const key = id(choice.id);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function namespaceChoices(preflight) {
+  return (preflight?.content?.usableNamespaces || []).map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    ownership: entry.source,
+  }));
 }
 
 function projectedRevisionToWrite(revision) {
@@ -84,7 +72,8 @@ function workflowNotice(code) {
 
 export class ItemAuthoringView extends HTMLElement {
   workspace = null;
-  principal = null;
+  preflight = null;
+  principal = { type: params().get("principalType") || "user", id: params().get("principalId") || null };
   selectedSubject = null;
   itemId = params().get("itemId") || null;
   venueTargetId = params().get("venueTargetId") || null;
@@ -122,8 +111,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.busy = true;
     this.render();
     try {
-      this.workspace = await marketplaceRepository.workspace();
-      this.principal = this.workspace.principal;
+      await this.reloadAuthoringContext();
       if (this.venueTargetId) {
         this.venueTargetContext = await authoringRepository.venueTargetContext(this.venueTargetId);
         this.selectedSubject = this.venueTargetContext.subject;
@@ -137,9 +125,15 @@ export class ItemAuthoringView extends HTMLElement {
     }
   }
 
-  async reloadWorkspace() {
-    this.workspace = await marketplaceRepository.workspace({ principalType: this.principal.type, principalId: this.principal.id });
-    this.principal = this.workspace.principal;
+  async reloadAuthoringContext() {
+    const requested = { principalType: this.principal?.type || "user", principalId: this.principal?.id || null };
+    const [workspace, preflight] = await Promise.all([
+      marketplaceRepository.workspaceContext(requested),
+      marketplaceRepository.authoringPreflight(requested),
+    ]);
+    this.workspace = workspace;
+    this.preflight = preflight;
+    this.principal = { type: workspace.principal.type, id: workspace.principal.id };
   }
 
   async reloadProjection(editionId = null) {
@@ -149,7 +143,7 @@ export class ItemAuthoringView extends HTMLElement {
     const owner = this.projection.lineage?.owner;
     if (owner && (!this.principal || owner.type !== this.principal.type || id(owner.id) !== id(this.principal.id))) {
       this.principal = { type: owner.type, id: owner.id };
-      await this.reloadWorkspace();
+      await this.reloadAuthoringContext();
       this.namespaceControls = null;
     }
   }
@@ -165,6 +159,9 @@ export class ItemAuthoringView extends HTMLElement {
     this.render();
     try {
       if (form.matches("[data-create-item]")) {
+        if (!this.preflight?.content?.allowed) {
+          throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
+        }
         if (!this.selectedSubject) throw new Error("Seleziona prima un Subject");
         const item = await authoringRepository.createItem({
           primarySubjectId: this.selectedSubject.id || this.selectedSubject._id,
@@ -174,15 +171,17 @@ export class ItemAuthoringView extends HTMLElement {
         this.itemId = item._id || item.id;
         const url = new URL(window.location.href);
         url.searchParams.set("itemId", this.itemId);
+        url.searchParams.set("principalType", this.principal.type);
+        url.searchParams.set("principalId", id(this.principal.id));
         window.history.replaceState({}, "", url);
         await this.reloadProjection();
-        this.notice = "Lineage Item creata. Ora scegli un Namespace.";
+        this.notice = "Contenuto creato. Ora scegli le regole editoriali.";
       } else if (form.matches("[data-load-namespace]")) {
         this.namespaceControls = await authoringRepository.namespaceControls(String(data.get("namespaceId") || ""), this.principal);
       } else if (form.matches("[data-create-edition]")) {
         const namespaceId = String(data.get("namespaceId") || "");
         const controls = this.namespaceControls;
-        if (!controls || id(controls.namespace.id) !== namespaceId) throw new Error("Carica prima i controlli del Namespace selezionato");
+        if (!controls || id(controls.namespace.id) !== namespaceId) throw new Error("Carica prima i controlli delle regole editoriali selezionate");
         const created = await authoringRepository.createEdition(this.itemId, {
           namespaceId,
           authoredAgainstNamespaceRevisionId: controls.revision.id,
@@ -218,8 +217,8 @@ export class ItemAuthoringView extends HTMLElement {
           });
         }
         await this.reloadProjection(created.edition._id);
-        await this.reloadWorkspace();
-        this.notice = "Edition e prima Representation create.";
+        await this.reloadAuthoringContext();
+        this.notice = "Versione editoriale e primo testo creati.";
       } else if (form.matches("[data-edit-revision]")) {
         if (!this.availableOperation("item.edit")) throw new Error("La revisione non è modificabile nello stato corrente");
         const revision = this.projection?.selected?.revision;
@@ -253,7 +252,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.selectedSubject = event.detail.subject;
     this.notice = event.detail.source === "reuse_existing"
       ? "Identità già nota: è stato selezionato il Subject ArtAround esistente."
-      : "Subject selezionato. Puoi creare l’Item.";
+      : "Soggetto selezionato. Puoi creare il contenuto.";
     this.render();
   };
 
@@ -264,7 +263,7 @@ export class ItemAuthoringView extends HTMLElement {
       this.busy = true;
       this.render();
       try { await this.reloadProjection(editionButton.dataset.editionId); }
-      catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la Edition"; }
+      catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; }
       finally { this.busy = false; this.render(); }
       return;
     }
@@ -335,52 +334,70 @@ export class ItemAuthoringView extends HTMLElement {
   async changePrincipal(type, principalId) {
     if (this.itemId) return;
     this.principal = { type, id: principalId };
-    await this.reloadWorkspace();
+    await this.reloadAuthoringContext();
     this.namespaceControls = null;
+    const url = new URL(window.location.href);
+    url.searchParams.set("principalType", this.principal.type);
+    url.searchParams.set("principalId", id(this.principal.id));
+    window.history.replaceState({}, "", url);
     this.render();
   }
 
+  remediationHref() {
+    const configurable = this.preflight?.content?.needsConfiguration?.[0];
+    if (configurable?.id) return `/namespaces/editor?namespaceId=${encodeURIComponent(configurable.id)}`;
+    if (this.principal?.type === "organization" && this.principal?.id) return `/organizations/detail?organizationId=${encodeURIComponent(id(this.principal.id))}#organization-namespaces`;
+    return "/profile";
+  }
+
+  renderPrerequisiteBlocker() {
+    if (this.itemId || this.preflight?.content?.allowed !== false) return "";
+    const blocker = this.preflight?.content?.blockers?.[0];
+    return `<section class="context-box"><span class="eyebrow">Prerequisito</span><h2>Prima prepara le regole editoriali</h2><p>${escapeHtml(blocker?.message || "Manca una configurazione editoriale utilizzabile.")}</p><p>ArtAround non creerà un Item incompleto prima che questo prerequisito sia risolto.</p><a class="button-link" data-route href="${escapeHtml(this.remediationHref())}">Configura le regole editoriali</a></section>`;
+  }
+
   renderSubjectStep() {
+    if (!this.itemId && this.preflight?.content?.allowed === false) return "";
     const venueContext = this.venueTargetContext ? `
       <aside class="context-box">
         <strong>Oggetto fisico selezionato: ${escapeHtml(this.venueTargetContext.venueTarget.label)}</strong>
-        <p>${escapeHtml(this.venueTargetContext.venue.name)}. Il wizard precompila il Subject ma non collega l'Item al VenueTarget.</p>
+        <p>${escapeHtml(this.venueTargetContext.venue.name)}. Il wizard precompila il soggetto ma non collega l'Item al VenueTarget.</p>
         ${(this.venueTargetContext.recognitionMedia || []).length ? `<p>${this.venueTargetContext.recognitionMedia.length} immagine/i di riconoscimento restano nel VenueRelease fisico.</p>` : ""}
       </aside>` : "";
     const identities = (this.selectedSubject?.externalIdentities || []).map((identity) => `<span class="subject-identity">${escapeHtml(identity.scheme)} · ${escapeHtml(identity.id)}${identity.role === "historical" ? " · storico" : ""}</span>`).join("");
     return `
       <section>
-        <header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Identità universale</span><h2>Subject</h2></div></header>
+        <header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Identità</span><h2>Di cosa parla questo contenuto?</h2></div></header>
         ${venueContext}
-        ${this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(this.selectedSubject.preferredLabel)}</h3><p>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</p><div>${identities || `<span class="subject-identity">Solo locale</span>`}</div></article>` : ""}
+        ${this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Soggetto selezionato</span><h3>${escapeHtml(this.selectedSubject.preferredLabel)}</h3><p>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</p><div>${identities || `<span class="subject-identity">Solo locale</span>`}</div></article>` : ""}
         ${!this.itemId ? `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>` : ""}
-        ${!this.itemId && this.selectedSubject ? `<form data-create-item><button ${this.busy ? "disabled" : ""}>Crea Item per ${escapeHtml(this.selectedSubject.preferredLabel)}</button></form>` : ""}
+        ${!this.itemId && this.selectedSubject ? `<form data-create-item><button ${this.busy ? "disabled" : ""}>Continua con ${escapeHtml(this.selectedSubject.preferredLabel)}</button></form>` : ""}
       </section>`;
   }
 
   renderNamespaceStep() {
     if (!this.itemId || !this.projection) return "";
-    const choices = namespaceChoices(this.workspace);
+    const choices = namespaceChoices(this.preflight);
     const options = choices.map((choice) => `<option value="${escapeHtml(id(choice.id))}">${escapeHtml(choice.name)}${choice.ownership === "licensed" ? " · licenza" : ""}</option>`).join("");
     const controls = this.namespaceControls?.controls;
     const durationOptions = (controls?.durationTypes || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}">${escapeHtml(entry.label)} · ${entry.targetSeconds}s</option>`).join("");
     const languageOptions = (controls?.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}">${escapeHtml(entry.label)}</option>`).join("");
     return `
       <section>
-        <header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Vocabolario editoriale</span><h2>Edition e Namespace</h2></div></header>
-        <p>Più Edition possono rappresentare lo stesso Item in Namespace differenti.</p>
+        <header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Regole editoriali</span><h2>Scegli come strutturare il contenuto</h2></div></header>
+        <p>Le regole determinano durate, livelli di linguaggio e altre opzioni disponibili per questa versione.</p>
         <form data-load-namespace>
-          <label>Namespace autorizzato <select name="namespaceId" required>${options || "<option value=''>Nessun Namespace disponibile</option>"}</select></label>
-          <button ${!options || this.busy ? "disabled" : ""}>Carica controlli editoriali</button>
+          <label>Regole editoriali <select name="namespaceId" required>${options || "<option value=''>Nessuna regola disponibile</option>"}</select></label>
+          <button ${!options || this.busy ? "disabled" : ""}>Carica le opzioni</button>
         </form>
         ${controls ? `<form data-create-edition>
           <input type="hidden" name="namespaceId" value="${escapeHtml(id(this.namespaceControls.namespace.id))}">
           <label>Etichetta contenuto <input name="label" required></label>
           <div class="two-columns"><label>Autore <input name="author" required></label><label>Licenza <input name="license" required placeholder="CC BY 4.0"></label></div>
           <div class="two-columns"><label>Durata <select name="durationTypeDefinitionId" required>${durationOptions}</select></label><label>Complessità linguistica <select name="languageLevelDefinitionId" required>${languageOptions}</select></label></div>
-          <label>Locale <input name="locale" value="it-IT" required></label>
+          <label>Lingua e locale <input name="locale" value="it-IT" required></label>
           <label>Testo <textarea name="text" rows="8" required></textarea></label>
-          <button ${this.busy ? "disabled" : ""}>Crea Edition e Representation</button>
+          <button ${this.busy ? "disabled" : ""}>Crea la prima versione</button>
         </form>` : ""}
       </section>`;
   }
@@ -407,8 +424,8 @@ export class ItemAuthoringView extends HTMLElement {
         </form>` : `<p>La revisione non è modificabile nello stato <strong>${escapeHtml(revision.status)}</strong>. Usa le operazioni editoriali disponibili.</p>`;
     return `
       <section>
-        <header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Contenuto versionato</span><h2>Revision e Representation</h2></div></header>
-        <p>Namespace: <strong>${escapeHtml(selected.namespace.name)}</strong> · stato ${escapeHtml(revision.status)} · integrità ${escapeHtml(revision.integrity?.status || "needs_review")}</p>
+        <header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Contenuto versionato</span><h2>Testo e varianti</h2></div></header>
+        <p>Regole editoriali: <strong>${escapeHtml(selected.namespace.name)}</strong> · stato ${escapeHtml(revision.status)} · integrità ${escapeHtml(revision.integrity?.status || "needs_review")}</p>
         ${editor}
         <div class="actions">${workflowButtons}</div>
         ${issues ? `<ul class="issues">${issues}</ul>` : ""}
@@ -418,27 +435,27 @@ export class ItemAuthoringView extends HTMLElement {
   renderMemberships() {
     if (!this.itemId || !this.projection) return "";
     const rows = (this.projection.workspaceMemberships || []).map((entry) => `<label class="membership"><input type="checkbox" data-content-space-id="${escapeHtml(id(entry.contentSpaceId))}" ${entry.member ? "checked" : ""}> ${escapeHtml(entry.name)}</label>`).join("");
-    return `<section><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Organizzazione</span><h2>ContentSpace</h2></div></header><p>La membership organizza il workspace e non trasferisce ownership dell'Item.</p><div class="membership-grid">${rows || "<p>Nessun ContentSpace disponibile per questo principal.</p>"}</div></section>`;
+    return `<section><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Organizzazione</span><h2>Spazi editoriali</h2></div></header><p>La membership organizza il workspace e non trasferisce ownership dell'Item.</p><div class="membership-grid">${rows || "<p>Nessuno spazio editoriale disponibile per questo contesto.</p>"}</div></section>`;
   }
 
   renderEditions() {
     if (!this.projection?.editions?.length) return "";
-    const buttons = this.projection.editions.map((edition) => `<button type="button" data-edition-id="${escapeHtml(id(edition.id))}">${escapeHtml(edition.namespace?.name || "Edition")}</button>`).join(" ");
-    return `<nav class="edition-tabs" aria-label="Edition dell'Item">${buttons}</nav>`;
+    const buttons = this.projection.editions.map((edition) => `<button type="button" data-edition-id="${escapeHtml(id(edition.id))}">${escapeHtml(edition.namespace?.name || "Versione editoriale")}</button>`).join(" ");
+    return `<nav class="edition-tabs" aria-label="Versioni editoriali del contenuto">${buttons}</nav>`;
   }
 
   renderProgress() {
     const stages = [
-      ["Subject", Boolean(this.selectedSubject || this.itemId)],
-      ["Item", Boolean(this.itemId)],
-      ["Edition", Boolean(this.projection?.selected?.edition)],
-      ["Revision", Boolean(this.projection?.selected?.revision)],
+      ["Soggetto", Boolean(this.selectedSubject || this.itemId)],
+      ["Contenuto", Boolean(this.itemId)],
+      ["Regole", Boolean(this.projection?.selected?.edition)],
+      ["Testo", Boolean(this.projection?.selected?.revision)],
     ];
     return `<ol class="editor-progress" aria-label="Avanzamento editor">${stages.map(([label, complete], index) => `<li data-complete="${complete}"><span>${complete ? icon("check", { size: 14 }) : index + 1}</span>${escapeHtml(label)}</li>`).join("")}</ol>`;
   }
 
   render() {
-    const principalOptions = (this.workspace?.availablePrincipals || []).map((entry) => `<option value="${escapeHtml(`${entry.type}:${id(entry.id)}`)}" ${this.principal && entry.type === this.principal.type && id(entry.id) === id(this.principal.id) ? "selected" : ""}>${escapeHtml(entry.name)} · ${escapeHtml(entry.type)}</option>`).join("");
+    const principalOptions = (this.workspace?.availablePrincipals || []).map((entry) => `<option value="${escapeHtml(`${entry.type}:${id(entry.id)}`)}" ${this.principal && entry.type === this.principal.type && id(entry.id) === id(this.principal.id) ? "selected" : ""}>${escapeHtml(entry.name)}${entry.type === "organization" && entry.role ? ` · ${escapeHtml(entry.role)}` : ""}</option>`).join("");
     this.innerHTML = `
       <style>
         :host { display:block; }
@@ -461,13 +478,14 @@ export class ItemAuthoringView extends HTMLElement {
         @media (max-width: 42rem) { .two-columns { grid-template-columns:1fr; } }
       </style>
       <main class="page editor-page">
-        <nav class="breadcrumb"><a data-route href="/workspace">${icon("arrowLeft", { size: 15 })} Workspace</a><span>/</span><span>Contenuto</span></nav>
-        <header class="page-header"><div><span class="eyebrow">Item authoring</span><h1>Editor contenuto</h1><p>Costruisci una risorsa riusabile mantenendo separati Subject, Item, Namespace e versione editoriale.</p></div></header>
+        <nav class="breadcrumb"><a data-route href="/workspace">${icon("arrowLeft", { size: 15 })} Le mie risorse</a><span>/</span><span>Contenuto</span></nav>
+        <header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Modifica il contenuto" : "Nuovo contenuto"}</h1><p>Parti dal soggetto e costruisci una risorsa riutilizzabile con le regole editoriali disponibili.</p></div></header>
         ${this.renderProgress()}
-        ${principalOptions ? `<label class="principal-control">Principal proprietario<select data-principal ${this.itemId ? "disabled" : ""}>${principalOptions}</select></label>` : ""}
+        ${principalOptions ? `<label class="principal-control"><span>Stai lavorando per</span><select data-principal ${this.itemId ? "disabled" : ""}>${principalOptions}</select></label>` : ""}
         ${this.busy ? "<p>Elaborazione…</p>" : ""}
         ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
         ${this.notice ? `<p role="status">${escapeHtml(this.notice)}</p>` : ""}
+        ${this.renderPrerequisiteBlocker()}
         ${this.renderSubjectStep()}
         ${this.renderEditions()}
         ${this.renderNamespaceStep()}
@@ -482,7 +500,7 @@ export class ItemAuthoringView extends HTMLElement {
         if (!type || !principalId) return;
         this.busy = true; this.render();
         try { await this.changePrincipal(type, principalId); }
-        catch (error) { this.error = error instanceof Error ? error.message : "Principal non disponibile"; }
+        catch (error) { this.error = error instanceof Error ? error.message : "Contesto di lavoro non disponibile"; }
         finally { this.busy = false; this.render(); }
       }, { once: true });
     }
