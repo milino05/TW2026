@@ -378,3 +378,20 @@ Non devono più essere usati come contratto definitivo:
 # Audit 1–30 completato
 
 L’audit architetturale client-v2 è concluso. Le decisioni 1–30 sono il contratto di riferimento per l’implementazione. I dettagli wire ancora non fissati (`Action`, `RuntimeUpdate`, completion summary, session discovery) vengono definiti durante i vertical slice senza riaprire la semantica approvata.
+
+# Marketplace/Editor UX — IA novice-first e progressive disclosure
+
+Decisione approvata per il redesign del Marketplace/Editor:
+
+- la navigazione user-facing converge su cinque aree: **Catalogo**, **Le mie risorse**, **Crea**, **Licenze e vendite**, **Account e organizzazioni**;
+- Catalog consumer e Creator Workspace restano read model distinti come stabilito al Punto 26: la nuova IA non introduce account type `visitor/author` né modalità applicative che alterano authorization;
+- il `principal` resta un concetto backend/domain. Nel creator UX viene presentato come contesto persistente **“Stai lavorando per”**; actor autenticato, working principal, beneficiary, seller e owner restano concetti distinti e vengono etichettati in base al task (`Acquista per`, `Pubblica come`, ecc.);
+- la terminologia tecnica interna non viene rinominata nei modelli o nelle API soltanto per semplificare l'interfaccia. La UI usa invece label user-facing (`Risorsa`, `Contenuto`, `Spazio editoriale`, `Raccolta editoriale`, `Regole editoriali`, `Sede`, `Oggetto della sede`, `Scheda nel catalogo`) e mantiene termini/ID tecnici disponibili tramite progressive disclosure;
+- `availableOperations[]` resta backend-authoritative. Il client può ordinarne, raggrupparne e tradurne la presentazione, ma non deduce permessi o transizioni da tipo risorsa, owner o ruolo quando tali decisioni appartengono al backend;
+- le projection del Creator Workspace distinguono la risorsa gestita nel Marketplace dalla destinazione di authoring. Una risorsa owned può quindi esporre un `authoringRef { resourceType, resourceId }` separato da `resourceId`, `sourceRef`, `snapshotRef` e `publishedSnapshotRef`. In particolare un `ItemEdition` usa `authoringRef -> Item`, evitando reverse lookup o converter frontend permanenti per aprire l'Item editor;
+- `authoringRef` è una navigation/application projection e non modifica ownership, marketability o il Domain Model. Per Visit, Namespace ed EditorialContext può puntare allo stesso aggregate live quando quello è già la corretta destinazione di authoring;
+- la UX è **novice-first, expert-capable**: azione primaria, stato, blocker e campi necessari restano immediatamente visibili; capability code, version policy, mapping semantici, ID, PresentationVariant/Representation avanzate, routing attributes/preset e JSON strutturati rimangono accessibili in sezioni avanzate senza essere eliminati;
+- un workflow non deve far creare dati inutilmente quando il backend può già sapere che manca un prerequisito indispensabile. I creator flow introdurranno quindi preflight/prerequisite projection backend-authoritative, iniziando dal requisito Namespace per completare un ItemEdition;
+- la nuova IA deve mantenere **feature parity completa** con Catalog, acquisizioni, Workspace, authoring Item/Visit, EditorialRelease, commerce, account, Organization, Namespace e Venue. La semplificazione della UI non giustifica la perdita di operazioni avanzate;
+- feedback, error recovery, dirty state, conferme distruttive, empty state, focus/keyboard/ARIA e responsive behavior devono convergere su primitive di design comuni invece di essere implementati diversamente in ogni view;
+- l'implementazione è incrementale: prima shell/design primitives e contratti mancanti, poi Le mie risorse e hub Crea, quindi authoring, Catalog/acquisition, commerce, account/Organization e infine gli editor avanzati Namespace/Venue. Ogni slice mantiene il dominio e i contratti già approvati e viene verificata per regressioni e accessibilità.
