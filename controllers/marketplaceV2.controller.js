@@ -48,9 +48,8 @@ async function catalog(req, res, next) {
 }
 
 async function venueSelector(req, res, next) {
-  try {
-    res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection());
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection()); }
+  catch (error) { next(error); }
 }
 
 async function detail(req, res, next) {
@@ -85,11 +84,8 @@ async function namespaceAuthoringControls(req, res, next) {
 }
 
 async function venueTargetAuthoringContext(req, res, next) {
-  try {
-    res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({
-      venueTargetId: req.params.venueTargetId,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId })); }
+  catch (error) { next(error); }
 }
 
 async function createListing(req, res, next) {
@@ -102,11 +98,7 @@ async function createListing(req, res, next) {
       sellerType: req.body?.sellerType,
       sellerId: req.body?.sellerId,
       actorUserId: req.user._id,
-      metadata: {
-        title: req.body?.title,
-        summary: req.body?.summary,
-        catalogMetadata: req.body?.catalogMetadata,
-      },
+      metadata: { title: req.body?.title, summary: req.body?.summary, catalogMetadata: req.body?.catalogMetadata },
     }));
   } catch (error) { next(error); }
 }
@@ -114,18 +106,10 @@ async function createListing(req, res, next) {
 async function createOffer(req, res, next) {
   try {
     if (Array.isArray(req.body?.grants) && req.body.grants.length) {
-      res.status(201).json(await marketplace.createOffer({
-        listingId: req.params.listingId,
-        payload: req.body,
-        actorUserId: req.user._id,
-      }));
+      res.status(201).json(await marketplace.createOffer({ listingId: req.params.listingId, payload: req.body, actorUserId: req.user._id }));
       return;
     }
-    res.status(201).json(await visitMarketplace.createVisitExecuteOffer({
-      listingId: req.params.listingId,
-      payload: req.body || {},
-      actorUserId: req.user._id,
-    }));
+    res.status(201).json(await visitMarketplace.createVisitExecuteOffer({ listingId: req.params.listingId, payload: req.body || {}, actorUserId: req.user._id }));
   } catch (error) { next(error); }
 }
 
@@ -166,21 +150,13 @@ async function commercialManagement(req, res, next) {
 }
 
 async function withdrawListing(req, res, next) {
-  try {
-    res.status(200).json(await marketplace.withdrawListing({
-      listingId: req.params.listingId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplace.withdrawListing({ listingId: req.params.listingId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function withdrawOffer(req, res, next) {
-  try {
-    res.status(200).json(await marketplace.withdrawOffer({
-      offerId: req.params.offerId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplace.withdrawOffer({ offerId: req.params.offerId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function creatorWorkspace(req, res, next) {
@@ -218,12 +194,22 @@ async function creatorWorkspaceResources(req, res, next) {
   } catch (error) { next(error); }
 }
 
-async function marketplaceAccountWorkspace(req, res, next) {
+async function creatorWorkspaceResourceDetail(req, res, next) {
   try {
-    res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({
+    res.status(200).json(await workspaceResources.getCreatorWorkspaceResourceDetail({
       actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      ownership: req.query?.ownership || "owned",
+      resourceType: req.params.resourceType,
+      resourceId: req.params.resourceId,
     }));
   } catch (error) { next(error); }
+}
+
+async function marketplaceAccountWorkspace(req, res, next) {
+  try { res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function marketplaceOrganizationDetail(req, res, next) {
@@ -240,21 +226,13 @@ async function marketplaceOrganizationDetail(req, res, next) {
 }
 
 async function marketplaceNamespaceManagement(req, res, next) {
-  try {
-    res.status(200).json(await management.getNamespaceManagementProjection({
-      namespaceId: req.params.namespaceId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await management.getNamespaceManagementProjection({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function marketplaceVenueManagement(req, res, next) {
-  try {
-    res.status(200).json(await management.getVenueManagementProjection({
-      venueId: req.params.venueId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await management.getVenueManagementProjection({ venueId: req.params.venueId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function distributionDashboard(req, res, next) {
@@ -298,6 +276,7 @@ module.exports = {
   creatorWorkspace,
   creatorWorkspaceContext,
   creatorWorkspaceResources,
+  creatorWorkspaceResourceDetail,
   marketplaceAccountWorkspace,
   marketplaceOrganizationDetail,
   marketplaceNamespaceManagement,

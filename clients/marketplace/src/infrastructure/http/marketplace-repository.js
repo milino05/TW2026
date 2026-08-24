@@ -53,6 +53,11 @@ export const marketplaceRepository = {
     if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
     return apiClient.request(`/v2/marketplace/workspace/resources?${params.toString()}`);
   },
+  workspaceResourceDetail(principal = {}, { ownership = "owned", resourceType, resourceId } = {}) {
+    const params = principalParams(principal);
+    params.set("ownership", ownership);
+    return apiClient.request(`/v2/marketplace/workspace/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}?${params.toString()}`);
+  },
   distribution(principal = {}) {
     return apiClient.request(`/v2/marketplace/distribution?${principalParams(principal).toString()}`);
   },

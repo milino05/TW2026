@@ -7,15 +7,17 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const browserPath = path.join(root, "clients/marketplace/src/ui/workspace-browser-view.js");
 const syntaxTargets = [
+  "services/marketplaceWorkspaceResourceProjectionV2.service.js",
   "services/marketplaceWorkspaceResourcesV2.service.js",
   "controllers/marketplaceV2.controller.js",
   "routes/marketplaceV2.routes.js",
   "clients/marketplace/src/infrastructure/http/marketplace-repository.js",
   "clients/marketplace/src/ui/app-shell.js",
   "clients/marketplace/src/ui/workspace-browser-view.js",
+  "clients/marketplace/src/ui/workspace-view.js",
 ];
 
-test("workspace browser boundary passes the JavaScript syntax gate", () => {
+test("workspace browse/detail boundary passes the JavaScript syntax gate", () => {
   for (const relativePath of syntaxTargets) {
     const result = spawnSync(process.execPath, ["--check", path.join(root, relativePath)], { encoding: "utf8" });
     assert.equal(result.status, 0, `${relativePath}: ${result.stderr || result.stdout}`);

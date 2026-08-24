@@ -15,6 +15,7 @@ const editorialReleaseId = validateObjectIdParam("editorialReleaseId");
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
 const visitId = validateObjectIdParam("visitId");
+const resourceId = validateObjectIdParam("resourceId");
 
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
@@ -35,6 +36,7 @@ router.get("/v2/marketplace/management/namespaces/:namespaceId", namespaceId, co
 router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.marketplaceVenueManagement);
 router.get("/v2/marketplace/workspace/context", controller.creatorWorkspaceContext);
 router.get("/v2/marketplace/workspace/resources", controller.creatorWorkspaceResources);
+router.get("/v2/marketplace/workspace/resources/:resourceType/:resourceId", resourceId, controller.creatorWorkspaceResourceDetail);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
 router.post("/v2/marketplace/workspace/operations", controller.workspaceOperation);
