@@ -155,21 +155,29 @@ async function deriveRuntimeActions({ sessionId, userId }) {
   const entries = plan.contentEntries || [];
   const index = entries.length ? Math.min(Math.max(0, Number(session.currentEntryIndex) || 0), entries.length - 1) : 0;
   const entry = entries[index] || null;
-  const baseRuntime = entry ? await entryRuntimeData(session, entry) : null;
-  const runtime = session.semanticPresentation ? await semanticRuntimeData(session) : baseRuntime;
   const anchor = entries.length ? effectiveAnchorForIndex(plan, index) : null;
   const context = actionContext(entry, anchor);
   const actions = [];
 
-  if (session.status === "paused") {
-    actions.push(descriptor(ACTION_DEFINITIONS.RESUME, { context }));
-    actions.push(descriptor(ACTION_DEFINITIONS.COMPLETE, { context }));
-    return { session, plan, entry, runtime, anchor, actions };
-  }
-
   if (session.status === "route_completed") {
+    let completedRuntime = null;
+    try {
+      const baseRuntime = entry ? await entryRuntimeData(session, entry) : null;
+      completedRuntime = session.semanticPresentation ? await semanticRuntimeData(session) : baseRuntime;
+    } catch {
+      // Il completamento deve restare disponibile anche se l'ultima Representation non e piu risolvibile.
+    }
     if (entries.length) actions.push(descriptor(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
     actions.push(...await navigationActions({ session, anchor, entry }));
+    actions.push(descriptor(ACTION_DEFINITIONS.COMPLETE, { context }));
+    return { session, plan, entry, runtime: completedRuntime, anchor, actions };
+  }
+
+  const baseRuntime = entry ? await entryRuntimeData(session, entry) : null;
+  const runtime = session.semanticPresentation ? await semanticRuntimeData(session) : baseRuntime;
+
+  if (session.status === "paused") {
+    actions.push(descriptor(ACTION_DEFINITIONS.RESUME, { context }));
     actions.push(descriptor(ACTION_DEFINITIONS.COMPLETE, { context }));
     return { session, plan, entry, runtime, anchor, actions };
   }

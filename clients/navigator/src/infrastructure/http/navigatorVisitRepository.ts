@@ -6,6 +6,11 @@ export interface VenueSummary {
   description: string;
 }
 
+export interface NavigatorMuseumSummary extends VenueSummary {
+  visitCount: number;
+  resumableSessionCount: number;
+}
+
 export interface PrincipalSummary {
   type: "user" | "organization";
   id: string;
@@ -48,18 +53,38 @@ export interface ResumableSession {
   title: string;
   currentEntryIndex: number;
   updatedAt: string;
+  physicalScope: VenueSummary[];
+}
+
+function configuredVenueQuery(configuredVenueId?: string) {
+  return configuredVenueId ? `?configuredVenueId=${encodeURIComponent(configuredVenueId)}` : "";
 }
 
 export const navigatorVisitRepository = {
+  museums() {
+    return apiClient.request<{ museums: NavigatorMuseumSummary[] }>("/v2/navigator/museums");
+  },
   library(configuredVenueId?: string) {
-    const query = configuredVenueId ? `?configuredVenueId=${encodeURIComponent(configuredVenueId)}` : "";
-    return apiClient.request<{ visits: LibraryVisit[] }>(`/v2/navigator/library${query}`);
+    return apiClient.request<{ visits: LibraryVisit[] }>(
+      `/v2/navigator/library${configuredVenueQuery(configuredVenueId)}`,
+    );
   },
   detail(visitId: string, configuredVenueId?: string) {
-    const query = configuredVenueId ? `?configuredVenueId=${encodeURIComponent(configuredVenueId)}` : "";
-    return apiClient.request<NavigatorVisitDetail>(`/v2/navigator/visits/${encodeURIComponent(visitId)}${query}`);
+    return apiClient.request<NavigatorVisitDetail>(
+      `/v2/navigator/visits/${encodeURIComponent(visitId)}${configuredVenueQuery(configuredVenueId)}`,
+    );
   },
-  resumableSessions() {
-    return apiClient.request<{ sessions: ResumableSession[] }>("/v2/navigator/sessions");
+  resumableSessions(configuredVenueId?: string) {
+    return apiClient.request<{ sessions: ResumableSession[] }>(
+      `/v2/navigator/sessions${configuredVenueQuery(configuredVenueId)}`,
+    );
+  },
+  dismissResumableSession(sessionId: string) {
+    return apiClient.request<{
+      removedFromResume: true;
+      session: { id: string; status: "abandoned" };
+    }>(`/v2/navigator/sessions/${encodeURIComponent(sessionId)}/resumable`, {
+      method: "DELETE",
+    });
   },
 };

@@ -39,7 +39,7 @@ rejectPattern(
 );
 rejectPattern(
   "clients/navigator/src/application/router.ts",
-  /path:\s*["']\/generate["'][\s\S]{0,160}?PlaceholderView|path:\s*["']\/generated-plans\/:planId["'][\s\S]{0,160}?PlaceholderView/,
+  /name:\s*["'](?:museum-)?generate["'][\s\S]{0,160}?component:\s*PlaceholderView|name:\s*["'](?:museum-)?generated-plan["'][\s\S]{0,160}?component:\s*PlaceholderView/,
   "Navigator generator route still uses PlaceholderView",
 );
 

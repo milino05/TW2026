@@ -34,7 +34,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const VisitSessionV2 = require("../models/visitSessionV2.model");
     const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
-    const { deriveRuntimeActions } = require("../services/visitSessionV2.service");
+    const { deriveRuntimeActions, currentSessionProjection } = require("../services/visitSessionV2.service");
     const { dispatchAction } = require("../services/actionDispatcherV2.service");
     const { projectSessionMap } = require("../services/navigationProjectionV2.service");
 
@@ -229,5 +229,24 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     assert.equal(event.actionId, "navigation.obstacles.next_route");
     assert.equal(event.interactionChannel, "controlled_voice");
     assert.equal(event.result.status, "applied");
+
+    await ItemRevisionV2.deleteOne({ _id: itemRevision._id });
+    await VisitSessionV2.updateOne({ _id: session._id }, { $set: { status: "route_completed" } });
+
+    const routeCompleted = await currentSessionProjection({ sessionId: session._id, userId: user._id });
+    assert.equal(routeCompleted.session.status, "route_completed");
+    assert.equal(routeCompleted.current, null);
+    assert.ok(routeCompleted.availableActions.some((action) => action.actionId === "lifecycle.complete"));
+
+    const completion = await dispatchAction({
+      sessionId: session._id,
+      userId: user._id,
+      payload: {
+        actionId: "lifecycle.complete",
+        expectedRuntimeVersion: 2,
+        interactionChannel: "button",
+      },
+    });
+    assert.equal(completion.runtime.session.status, "completed");
   });
 });

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">ArtAround</title>
+  <rect width="96" height="96" rx="24" fill="#8D4050"/>
+  <path d="M24 70 48 21l24 49M34 52h28" fill="none" stroke="#F6F1E8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="73" cy="24" r="8" fill="#B78B52"/>
+</svg>

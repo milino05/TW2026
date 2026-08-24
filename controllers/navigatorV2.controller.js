@@ -2,6 +2,12 @@ const service = require("../services/navigatorVisitV2.service");
 const generationOptions = require("../services/generationOptionsV2.service");
 const generationSemanticOptions = require("../services/generationSemanticOptionsV2.service");
 
+async function museums(req, res, next) {
+  try {
+    res.status(200).json(await service.listNavigatorMuseums({ userId: req.user._id }));
+  } catch (error) { next(error); }
+}
+
 async function library(req, res, next) {
   try {
     res.status(200).json(await service.listNavigatorLibrary({
@@ -23,7 +29,19 @@ async function visitDetail(req, res, next) {
 
 async function resumableSessions(req, res, next) {
   try {
-    res.status(200).json(await service.listResumableNavigatorSessions({ userId: req.user._id }));
+    res.status(200).json(await service.listResumableNavigatorSessions({
+      userId: req.user._id,
+      configuredVenueId: req.query?.configuredVenueId || null,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function dismissResumableSession(req, res, next) {
+  try {
+    res.status(200).json(await service.dismissResumableNavigatorSession({
+      userId: req.user._id,
+      sessionId: req.params.sessionId,
+    }));
   } catch (error) { next(error); }
 }
 
@@ -49,9 +67,11 @@ async function generationSubjectOptions(req, res, next) {
 }
 
 module.exports = {
+  museums,
   library,
   visitDetail,
   resumableSessions,
+  dismissResumableSession,
   generationOptionsProjection,
   generationSubjectOptions,
 };

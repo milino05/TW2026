@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "venueId": "64a12f680000000000000002",
+  "branding": {
+    "productTitle": "Aurora Navigator",
+    "museumTitle": "Museo Civico Aurora",
+    "subtitle": "Percorsi tra arte e città",
+    "logo": {
+      "src": "/navigator-assets/aurora-mark.svg",
+      "alt": "Marchio dimostrativo del Museo Civico Aurora"
+    },
+    "heroImage": {
+      "src": "/navigator-assets/aurora-hero.svg",
+      "alt": "Illustrazione dimostrativa del Museo Civico Aurora"
+    },
+    "theme": {
+      "primary": "#1F5A64",
+      "accent": "#D27645",
+      "surface": "#F1F5F2"
+    }
+  }
+}

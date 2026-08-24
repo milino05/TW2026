@@ -20,6 +20,7 @@ const materializedTitle = ref("Visita generata");
 const depthPreference = ref(0.5);
 const complexityPreference = ref(0.5);
 const movementPacePreference = ref(0.5);
+const venueId = computed(() => String(route.params.venueId || ""));
 
 const canStart = computed(() => Boolean(
   preparation.value &&
@@ -54,7 +55,7 @@ async function load() {
 onMounted(load);
 
 function modifyCriteria() {
-  void router.push("/generate");
+  void router.push({ name: "museum-generate", params: { venueId: venueId.value } });
 }
 
 async function accept() {
@@ -112,7 +113,7 @@ async function start() {
     const response = await executionPreparationRepository.start(preparation.value);
     preparation.value = response.preparation;
     runtimeStore.applySnapshot(response.current);
-    await router.push(`/sessions/${response.session._id}`);
+    await router.push({ name: "museum-session", params: { venueId: venueId.value, sessionId: response.session._id } });
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile avviare la visita";
   } finally {
@@ -126,7 +127,7 @@ async function materialize() {
   error.value = null;
   try {
     const result = await generatorRepository.materialize(plan.value.id, materializedTitle.value);
-    await router.push(`/visits/${result.visitId}`);
+    await router.push({ name: "museum-visit-detail", params: { venueId: venueId.value, visitId: result.visitId } });
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile salvare la visita";
   } finally {
@@ -235,7 +236,7 @@ async function materialize() {
 
       <section v-if="plan.materializedVisitId">
         <h2>Visita salvata</h2>
-        <RouterLink :to="`/visits/${plan.materializedVisitId}`">Apri la Visit</RouterLink>
+        <RouterLink :to="{ name: 'museum-visit-detail', params: { venueId, visitId: plan.materializedVisitId } }">Apri la Visit</RouterLink>
       </section>
 
       <p v-if="error" role="alert">{{ error }}</p>

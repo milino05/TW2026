@@ -42,6 +42,7 @@ export interface MapProjection {
     };
     warnings: Array<{ code: string; message: string }>;
   }>;
+  logicalCurrentStop: null | { visitAnchorId: string; venueId: string };
   interVenueTransitions: Array<{
     fromVisitAnchorId: string;
     toVisitAnchorId: string;
