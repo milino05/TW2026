@@ -17,28 +17,39 @@ const { resolveActorPrincipals } = require("./principalResolution.service");
 const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
-function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
+
+function collectRevisionSubjectRefs(revision) {
+  const refs = [];
+  for (const [index, subjectId] of (revision?.relatedSubjectIds || []).entries()) {
+    refs.push({ subjectId: id(subjectId), field: `relatedSubjectIds[${index}]` });
+  }
+  for (const [variantIndex, variant] of (revision?.presentationVariants || []).entries()) {
+    for (const [focusIndex, focus] of (variant.semanticFocus || []).entries()) {
+      refs.push({ subjectId: id(focus.subjectId), field: `presentationVariants[${variantIndex}].semanticFocus[${focusIndex}].subjectId` });
+    }
+    for (const [requirementIndex, requirement] of (variant.knowledgeRequirements || []).entries()) {
+      refs.push({ subjectId: id(requirement.subjectId), field: `presentationVariants[${variantIndex}].knowledgeRequirements[${requirementIndex}].subjectId` });
+    }
+  }
+  return [...new Map(refs.filter((entry) => entry.subjectId).map((entry) => [entry.subjectId, entry])).values()];
+}
 
 function collectRevisionSubjectIds(revision) {
-  const values = [...(revision?.relatedSubjectIds || [])];
-  for (const variant of revision?.presentationVariants || []) {
-    for (const focus of variant.semanticFocus || []) values.push(focus.subjectId);
-    for (const requirement of variant.knowledgeRequirements || []) values.push(requirement.subjectId);
-  }
-  return uniqueIds(values);
+  return collectRevisionSubjectRefs(revision).map((entry) => entry.subjectId);
 }
 
 async function validateReferencedSubjects(revision) {
-  const subjectIds = collectRevisionSubjectIds(revision);
-  if (!subjectIds.length) return [];
-  const existing = await Subject.find({ _id: { $in: subjectIds } }).select("_id").lean();
+  const refs = collectRevisionSubjectRefs(revision);
+  if (!refs.length) return [];
+  const existing = await Subject.find({ _id: { $in: refs.map((entry) => entry.subjectId) } }).select("_id").lean();
   const found = new Set(existing.map((entry) => id(entry)));
-  return subjectIds
-    .filter((subjectId) => !found.has(subjectId))
-    .map((subjectId) => ({
+  return refs
+    .filter((entry) => !found.has(entry.subjectId))
+    .map((entry) => ({
+      field: entry.field,
       code: "SUBJECT_REFERENCE_NOT_FOUND",
       message: "Un Subject referenziato dalla revisione non esiste",
-      context: { subjectId },
+      context: { subjectId: entry.subjectId },
     }));
 }
 
@@ -63,10 +74,12 @@ function projectSubject(subject) {
     id: subject._id,
     preferredLabel: subject.preferredLabel,
     description: subject.description || "",
-    externalRefs: (subject.externalRefs || []).map((ref) => ({
-      scheme: ref.scheme,
-      id: ref.id,
-      matchType: ref.matchType || "exact",
+    externalIdentities: (subject.externalIdentities || []).map((identity) => ({
+      scheme: identity.scheme,
+      id: identity.id,
+      role: identity.role,
+      canonicalId: identity.canonicalId || null,
+      verificationStatus: identity.verification?.status,
     })),
   };
 }

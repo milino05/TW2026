@@ -2,12 +2,19 @@ const BASE_PATH = "/marketplace";
 const ROUTES = new Set([
   "/",
   "/catalog",
+  "/catalog/detail",
+  "/acquisitions",
   "/workspace",
   "/workspace/resource",
+  "/workspace/commerce",
   "/workspace/item-authoring",
   "/workspace/visit-authoring",
   "/workspace/venue-targets",
   "/workspace/context-compose",
+  "/profile",
+  "/organizations/detail",
+  "/namespaces/editor",
+  "/venues/editor",
 ]);
 
 function stripBase(pathname) {

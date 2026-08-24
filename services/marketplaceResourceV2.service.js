@@ -189,6 +189,13 @@ function assetText(resourceType, authority, snapshot) {
   return { title: "Risorsa", summary: "" };
 }
 
+function editorialLicense(resourceType, snapshot) {
+  if (["item_edition", "item_revision"].includes(resourceType)) {
+    return snapshot?.metadata?.license || null;
+  }
+  return null;
+}
+
 async function resolveMarketableResource({ resourceType, resourceId }) {
   const authority = await resolveResourceAuthority(resourceType, resourceId);
   if (!authority) throw new AppError("Risorsa Marketplace non disponibile", 404, [{ code: "MARKETPLACE_RESOURCE_NOT_FOUND" }]);
@@ -221,6 +228,7 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
       summary: text.summary,
       version: snapshot?.version || null,
       versionMode: live ? "live" : "snapshot",
+      editorialLicense: editorialLicense(resourceType, snapshot),
     },
   };
 }

@@ -113,6 +113,7 @@ I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'
 - `docs/revision-workflow.md` — workflow editoriale v2;
 - `docs/deployment.md` — build, seed e deploy gocker;
 - `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly.
+- `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring.
 
 ## Principi correnti
 

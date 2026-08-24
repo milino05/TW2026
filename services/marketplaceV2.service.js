@@ -180,6 +180,42 @@ async function createOffer({ listingId, payload = {}, actorUserId }) {
   });
 }
 
+async function withdrawOffer({ offerId, actorUserId }) {
+  const offer = await MarketplaceOffer.findById(offerId);
+  if (!offer) throw new AppError("MarketplaceOffer non disponibile", 404);
+  const listing = await MarketplaceListing.findById(offer.listingId).lean();
+  if (!listing) throw new AppError("MarketplaceListing non disponibile", 404);
+  await assertCanActForPrincipal({
+    actorUserId,
+    principalType: listing.sellerType,
+    principalId: listing.sellerId,
+    minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
+  });
+  if (offer.status === "withdrawn") return offer.toObject();
+  offer.status = "withdrawn";
+  offer.withdrawnAt = new Date();
+  offer.withdrawnBy = actorUserId;
+  await offer.save();
+  return offer.toObject();
+}
+
+async function withdrawListing({ listingId, actorUserId }) {
+  const listing = await MarketplaceListing.findById(listingId);
+  if (!listing) throw new AppError("MarketplaceListing non disponibile", 404);
+  await assertCanActForPrincipal({
+    actorUserId,
+    principalType: listing.sellerType,
+    principalId: listing.sellerId,
+    minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
+  });
+  if (listing.status === "withdrawn") return listing.toObject();
+  listing.status = "withdrawn";
+  listing.withdrawnAt = new Date();
+  listing.withdrawnBy = actorUserId;
+  await listing.save();
+  return listing.toObject();
+}
+
 async function resolveGrantAtAcquisition(grant) {
   const marketable = await resolveMarketableResource({ resourceType: grant.resourceType, resourceId: grant.resourceId });
   assertGrantPolicy({ grant, marketable, index: 0 });
@@ -400,21 +436,66 @@ async function listAcquisitionHistory({ actorUserId, beneficiaryType = "user", b
     MarketplaceAcquisition.find(query).sort({ acquiredAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
     MarketplaceAcquisition.countDocuments(query),
   ]);
+  const listingIds = [...new Set(entries.map((entry) => id(entry.listingId)))];
+  const offerIds = [...new Set(entries.map((entry) => id(entry.offerId)))];
+  const [listings, offers] = await Promise.all([
+    listingIds.length ? MarketplaceListing.find({ _id: { $in: listingIds } }).lean() : [],
+    offerIds.length ? MarketplaceOffer.find({ _id: { $in: offerIds } }).lean() : [],
+  ]);
+  const listingById = new Map(listings.map((entry) => [id(entry._id), entry]));
+  const offerById = new Map(offers.map((entry) => [id(entry._id), entry]));
+  const sellerUserIds = listings.filter((entry) => entry.sellerType === "user").map((entry) => entry.sellerId);
+  const sellerOrganizationIds = listings.filter((entry) => entry.sellerType === "organization").map((entry) => entry.sellerId);
+  const [sellerUsers, sellerOrganizations] = await Promise.all([
+    sellerUserIds.length ? User.find({ _id: { $in: sellerUserIds } }).select("username").lean() : [],
+    sellerOrganizationIds.length ? Organization.find({ _id: { $in: sellerOrganizationIds } }).select("name").lean() : [],
+  ]);
+  const sellerUserNames = new Map(sellerUsers.map((entry) => [id(entry._id), entry.username]));
+  const sellerOrganizationNames = new Map(sellerOrganizations.map((entry) => [id(entry._id), entry.name]));
+  const resourceDetails = new Map();
+  await Promise.all(listings.map(async (listing) => {
+    try {
+      const marketable = await resolveMarketableResource({ resourceType: listing.resourceType, resourceId: listing.resourceId });
+      resourceDetails.set(id(listing._id), marketable.asset);
+    } catch (error) {
+      if (![404, 409].includes(error?.status)) throw error;
+    }
+  }));
   return {
-    results: entries.map((entry) => ({
-      id: entry._id,
-      listingId: entry.listingId,
-      offerId: entry.offerId,
-      pricing: entry.pricingSnapshot,
-      grants: entry.grantSnapshots.map((grant) => ({
-        resourceType: grant.resourceType,
-        resourceId: grant.resourceId,
-        capability: grant.capability,
-        versionPolicy: grant.versionPolicy,
-        resolvedSnapshotRef: grant.resolvedSnapshotRef,
-      })),
-      acquiredAt: entry.acquiredAt,
-    })),
+    beneficiary: { type: beneficiaryType, id: beneficiaryId },
+    results: entries.map((entry) => {
+      const listing = listingById.get(id(entry.listingId));
+      const offer = offerById.get(id(entry.offerId));
+      const resource = resourceDetails.get(id(entry.listingId));
+      const sellerName = listing?.sellerType === "organization"
+        ? sellerOrganizationNames.get(id(listing.sellerId))
+        : sellerUserNames.get(id(listing?.sellerId));
+      return {
+        id: entry._id,
+        listingId: entry.listingId,
+        offerId: entry.offerId,
+        asset: {
+          type: listing?.resourceType || null,
+          id: listing?.resourceId || null,
+          title: listing?.title || resource?.title || "Asset non disponibile",
+          summary: listing?.summary || resource?.summary || "",
+          editorialLicense: resource?.editorialLicense || null,
+        },
+        seller: listing ? { type: listing.sellerType, id: listing.sellerId, name: sellerName || "Publisher" } : null,
+        offer: { label: offer?.label || "Offerta", status: offer?.status || "unavailable" },
+        pricing: entry.pricingSnapshot,
+        grants: entry.grantSnapshots.map((grant) => ({
+          resourceType: grant.resourceType,
+          resourceId: grant.resourceId,
+          capability: grant.capability,
+          label: capabilityLabel(grant.capability),
+          versionPolicy: grant.versionPolicy,
+          versionBehaviour: versionBehaviour(grant.versionPolicy),
+          resolvedSnapshotRef: grant.resolvedSnapshotRef,
+        })),
+        acquiredAt: entry.acquiredAt,
+      };
+    }),
     page: safePage,
     pageSize: safeLimit,
     total,
@@ -426,6 +507,8 @@ module.exports = {
   normalizePricing,
   createListing,
   createOffer,
+  withdrawListing,
+  withdrawOffer,
   acquireOffer,
   projectCatalogListing,
   listCatalog,

@@ -17,6 +17,7 @@ const forbidden = [
   { pattern: /relationView\.utils/, label: 'obsolete relationView.utils' },
   { pattern: /schemas\/relation\.schema|schemas\\relation\.schema/, label: 'obsolete embedded RelationSchema' },
   { pattern: /globalRoutingAttributes/, label: 'obsolete duplicate routing attribute catalog' },
+  { pattern: /\bexternalRefs\b/, label: 'obsolete Subject.externalRefs identity contract' },
 ];
 let failed = false;
 
@@ -60,9 +61,16 @@ function rejectFields(file, fields, boundary) {
   }
 }
 
-function rejectPattern(file, pattern, label) {
+function withoutComments(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+function rejectPattern(file, pattern, label, { ignoreComments = false } = {}) {
   if (!fs.existsSync(file)) return;
-  const text = fs.readFileSync(file, 'utf8');
+  const source = fs.readFileSync(file, 'utf8');
+  const text = ignoreComments ? withoutComments(source) : source;
   if (pattern.test(text)) {
     console.error(`${label} in ${file}`);
     failed = true;
@@ -129,6 +137,7 @@ rejectPattern(
   'services/generationAccess.service.js',
   /venuePrimaryContextIds|primaryEditorialContextId/,
   'Venue primary EditorialContext must not authorize generation',
+  { ignoreComments: true },
 );
 rejectPattern(
   'clients/marketplace/src/infrastructure/http/marketplace-repository.js',

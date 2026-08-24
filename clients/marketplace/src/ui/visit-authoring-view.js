@@ -1,6 +1,7 @@
 import { navigate } from "../application/router.js";
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
+import { icon } from "./icons.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -398,9 +399,8 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   renderCreate() {
-    return `<main><button type="button" data-back>← Workspace</button><h1>Crea visita</h1>
-      <p>La bozza viene creata nel dominio VisitV2. Source editoriali, contenuti e tappe vengono collegati successivamente usando gli stessi riferimenti che saranno pubblicati.</p>
-      <form data-create-visit>${this.renderPrincipalSelector()}
+    return `<main class="page editor-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Workspace</button><span>/</span><span>Nuova visita</span></nav><header class="page-header"><div><span class="eyebrow">Visit authoring</span><h1>Crea una nuova visita</h1><p>Definisci prima l'identità della visita; contenuti, tappe fisiche e preferenze verranno aggiunti nell'editor.</p></div></header>
+      <form class="panel create-visit-form" data-create-visit>${this.renderPrincipalSelector()}
         <label>Titolo <input name="title" required maxlength="160"></label>
         <label>Descrizione <textarea name="description" rows="4"></textarea></label>
         <button type="submit" ${this.busy ? "disabled" : ""}>Crea bozza</button>
@@ -410,13 +410,13 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   renderWorkflow() {
     const operations = (this.projection?.availableOperations || []).filter((operation) => operation.code.startsWith("workflow."));
     if (!operations.length) return "";
-    return `<section><h2>Workflow editoriale</h2><p>Stato: <strong>${escapeHtml(this.revision?.status || "")}</strong> · integrità ${escapeHtml(this.revision?.integrity?.status || "")}</p><div class="actions">${operations.map((operation) => `<button type="button" data-workflow="${escapeHtml(operation.code)}" data-requires-message="${operation.requiresMessage ? "true" : "false"}" ${this.busy ? "disabled" : ""}>${escapeHtml(operation.label)}</button>`).join("")}</div>${(this.revision?.integrity?.issues || []).length ? `<ul class="issues">${this.revision.integrity.issues.map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul>` : ""}</section>`;
+    return `<section class="workflow-panel"><div class="section-heading"><div><span class="eyebrow">Controllo qualità</span><h2>Workflow editoriale</h2></div><div class="status-strip"><span class="chip">${escapeHtml(this.revision?.status || "")}</span><span class="chip">integrità: ${escapeHtml(this.revision?.integrity?.status || "")}</span></div></div><div class="actions">${operations.map((operation) => `<button type="button" data-workflow="${escapeHtml(operation.code)}" data-requires-message="${operation.requiresMessage ? "true" : "false"}" ${this.busy ? "disabled" : ""}>${escapeHtml(operation.label)}</button>`).join("")}</div>${(this.revision?.integrity?.issues || []).length ? `<ul class="issues">${this.revision.integrity.issues.map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul>` : ""}</section>`;
   }
 
   renderMetadata() {
     const baseline = this.revision?.presentationBaseline || {};
-    if (!this.editable) return `<section><h2>Dati visita</h2><h3>${escapeHtml(this.revision?.title || "")}</h3><p>${escapeHtml(this.revision?.description || "")}</p><p>La revisione non è modificabile nello stato corrente.</p></section>`;
-    return `<section><h2>Dati visita</h2><form data-visit-metadata class="metadata-grid">
+    if (!this.editable) return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 1</span><h2>Dati visita</h2></div></div><h3>${escapeHtml(this.revision?.title || "")}</h3><p>${escapeHtml(this.revision?.description || "")}</p><p class="note">La revisione non è modificabile nello stato corrente.</p></section>`;
+    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 1</span><h2>Dati visita</h2></div></div><form data-visit-metadata class="metadata-grid">
       <label>Titolo <input name="title" required value="${escapeHtml(this.revision?.title || "")}"></label>
       <label>Descrizione <textarea name="description" rows="3">${escapeHtml(this.revision?.description || "")}</textarea></label>
       <label>Profondità di default (0–1) <input name="depthPreference" type="number" min="0" max="1" step="0.1" value="${escapeHtml(baseline.depthPreference ?? "")}"></label>
@@ -433,7 +433,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       <label>Ruolo <select data-entry-role="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}><option value="core" ${entry.role === "core" ? "selected" : ""}>Core</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Recommended</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Optional</option></select></label>
       <div class="entry-actions"><button type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="-1" ${!this.editable || index === 0 || this.busy ? "disabled" : ""}>↑</button><button type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="1" ${!this.editable || index === entries.length - 1 || this.busy ? "disabled" : ""}>↓</button><button type="button" data-remove-entry="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}>Rimuovi</button></div>
     </li>`).join("");
-    return `<section><h2>Sequenza della visita</h2><p>${entries.length} contenuti. L'ordine qui mostrato è l'ordine canonico di <code>contentEntries</code>.</p><ol class="entries">${rows || "<li>Nessun contenuto aggiunto.</li>"}</ol></section>`;
+    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 2</span><h2>Sequenza della visita</h2><p>${entries.length} contenuti nell'ordine di fruizione.</p></div><span class="count">${entries.length}</span></div><ol class="entries">${rows || `<li class="empty-state"><h3>La sequenza è vuota</h3><p>Cerca contenuti nella sezione successiva e aggiungili alla visita.</p></li>`}</ol></section>`;
   }
 
   renderSourceAndVenueSelectors() {
@@ -446,7 +446,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
 
   renderContentSearch() {
     if (!this.editable) return "";
-    if (!this.selectedReleaseId) return `<section><h2>Aggiungi contenuti</h2><p>Nessuna EditorialRelease con capability <code>context.compose_visit</code> è disponibile per questo principal.</p></section>`;
+    if (!this.selectedReleaseId) return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 3</span><h2>Aggiungi contenuti</h2></div></div><div class="empty-state"><p>Nessuna EditorialRelease con capability <code>context.compose_visit</code> è disponibile per questo principal.</p></div></section>`;
     const results = this.content?.results || [];
     const existingRevisions = new Set((this.revision?.entries || []).map((entry) => id(entry.itemRevisionId)));
     const cards = results.map((result) => {
@@ -459,14 +459,14 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const page = Number(this.content?.page) || 1;
     const limit = Number(this.content?.limit) || 20;
     const total = Number(this.content?.total) || 0;
-    return `<section><h2>Aggiungi contenuti</h2>${this.renderSourceAndVenueSelectors()}<form data-visit-search role="search"><label>Cerca nella source <input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo del contenuto"></label><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></form><p>${total} contenuti disponibili nella source. I risultati sono paginati server-side.</p><div class="candidates">${cards || "<p>Nessun contenuto trovato.</p>"}</div><nav class="pagination" aria-label="Pagine contenuti"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva</button></nav></section>`;
+    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 3</span><h2>Aggiungi contenuti</h2><p>Scegli una source autorizzata e, opzionalmente, una Venue per associare le tappe fisiche.</p></div></div>${this.renderSourceAndVenueSelectors()}<form class="search-inline" data-visit-search role="search"><label>Cerca nella source <span class="input-icon">${icon("search")}<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo del contenuto"></span></label><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></form><p class="muted">${total} contenuti disponibili · risultati paginati server-side</p><div class="candidates">${cards || `<div class="empty-state"><p>Nessun contenuto trovato.</p></div>`}</div><nav class="pagination" aria-label="Pagine contenuti"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section>`;
   }
 
   render() {
-    if (this.busy && !this.projection) { this.innerHTML = `<main><p>Caricamento editor visita…</p></main>`; return; }
-    if (!this.projection) { this.innerHTML = `<main><p role="alert">${escapeHtml(this.error || "Editor visita non disponibile")}</p></main>`; return; }
+    if (this.busy && !this.projection) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Caricamento editor visita…</p></div></main>`; return; }
+    if (!this.projection) { this.innerHTML = `<main class="page"><p role="alert">${escapeHtml(this.error || "Editor visita non disponibile")}</p></main>`; return; }
     if (!this.visitId) { this.innerHTML = this.styles() + this.renderCreate(); return; }
-    this.innerHTML = `${this.styles()}<main><button type="button" data-back>← Workspace</button><p class="eyebrow">Visit editor · ${escapeHtml(this.principal?.name || this.principal?.type || "")}</p><h1>${escapeHtml(this.revision?.title || "Visita")}</h1>${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderWorkflow()}${this.renderMetadata()}${this.renderEntries()}${this.renderContentSearch()}</main>`;
+    this.innerHTML = `${this.styles()}<main class="page editor-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Workspace</button><span>/</span><span>Visita</span></nav><header class="page-header"><div><span class="eyebrow">Visit editor · ${escapeHtml(this.principal?.name || this.principal?.type || "")}</span><h1>${escapeHtml(this.revision?.title || "Visita")}</h1><p>Coordina contenuti editoriali e tappe fisiche mantenendo la logistica in una sezione separata.</p></div></header>${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderWorkflow()}${this.renderMetadata()}${this.renderEntries()}${this.renderContentSearch()}</main>`;
   }
 
   styles() {

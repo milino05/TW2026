@@ -67,7 +67,8 @@ requirePattern("Dockerfile", /build:clients/, "Production client build");
 requirePattern("clients/navigator/src/ui/SessionView.vue", /\{\{\s*snapshot\.current\.presentation\.text\s*\}\}/, "Current presentation text rendered in SessionView");
 requirePattern("clients/navigator/src/ui/SessionView.vue", /browserTts\.speak\(presentation\.text,\s*presentation\.locale/, "TTS reads the current presentation text");
 requirePattern("clients/navigator/src/capabilities/controlledVoice.ts", /controlledVoiceAliases[\s\S]*normalize\(phrase\)\s*===\s*spoken/, "Controlled voice exact action matching");
-requirePattern("clients/navigator/src/ui/SessionView.vue", /availableActions[\s\S]*@click="dispatch\(action, 'button'\)"/, "Equivalent runtime action buttons");
+requirePattern("clients/navigator/src/ui/SessionView.vue", /<SessionActionSheet[\s\S]*@select="requestAction"/, "Runtime action sheet mounted in SessionView");
+requirePattern("clients/navigator/src/ui/SessionActionSheet.vue", /v-for="action in section\.actions"[\s\S]*@click="emit\('select', action\)"/, "Equivalent runtime action buttons");
 
 rejectPattern("docs/revision-workflow.md", /MuseumLayout|MuseumVocabulary|\/api\/museums\//, "Legacy museum workflow terminology");
 rejectPattern("README.md", /seed completo[\s\S]{0,120}(?:ancora|deve essere completato)/i, "Stale seed TODO");

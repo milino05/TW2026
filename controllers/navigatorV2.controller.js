@@ -60,6 +60,7 @@ async function generationSubjectOptions(req, res, next) {
       actorUserId: req.user._id,
       editorialSources: req.body?.editorialSources || [],
       query: req.body?.query || "",
+      locale: req.body?.locale || "it",
       limit: req.body?.limit || 20,
     }));
   } catch (error) { next(error); }

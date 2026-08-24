@@ -25,19 +25,24 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
     const Entitlement = require("../models/entitlement.model");
     const {
       createListing,
       createOffer,
+      withdrawListing,
+      withdrawOffer,
       acquireOffer,
       listCatalog,
       listAcquisitionHistory,
     } = require("../services/marketplaceV2.service");
+    const { getCommercialManagement } = require("../services/marketplaceCommercialV2.service");
     const { resolveCapabilityAccess } = require("../services/capabilityAuthorization.service");
 
-    const [seller, buyer] = await User.create([
+    const [seller, buyer, secondBuyer] = await User.create([
       { username: "multiasset-seller", passwordHash: "test-hash" },
       { username: "multiasset-buyer", passwordHash: "test-hash" },
+      { username: "multiasset-second-buyer", passwordHash: "test-hash" },
     ]);
     const subject = await Subject.create({ preferredLabel: "Opera commerciale", createdBy: seller._id });
     const namespace = await Namespace.create({
@@ -145,6 +150,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     assert.equal(after.allowed, true);
     assert.equal(after.basis, "entitlement");
 
+    await MarketplaceListing.init();
     const catalog = await listCatalog({
       actorUserId: buyer._id,
       queryText: "rinascimentale",
@@ -158,5 +164,47 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     assert.equal(history.total, 1);
     assert.equal(history.results[0].pricing.amountMinor, 499);
     assert.equal(history.results[0].grants[0].capability, "content.consume");
+    assert.equal(history.results[0].grants[0].label, "Fruisci il contenuto");
+    assert.equal(history.results[0].asset.title, "Approfondimento rinascimentale acquistabile");
+    assert.equal(history.results[0].asset.editorialLicense, "CC BY");
+    assert.equal(history.results[0].seller.name, "multiasset-seller");
+    assert.equal(history.results[0].offer.label, "Licenza contenuto");
+
+    const commercial = await getCommercialManagement({ actorUserId: seller._id });
+    assert.equal(commercial.listings.length, 1);
+    assert.equal(commercial.listings[0].asset.editorialLicense, "CC BY");
+    assert.equal(commercial.listings[0].offers[0].acquisitionCount, 1);
+    assert.deepEqual(
+      commercial.listings[0].offerConfiguration.capabilityOptions.map((entry) => entry.code),
+      ["content.consume", "content.use_in_editorial_release", "content.fork"],
+    );
+
+    const withdrawnOffer = await withdrawOffer({ offerId: offer._id, actorUserId: seller._id });
+    assert.equal(withdrawnOffer.status, "withdrawn");
+    const preserved = await MarketplaceAcquisition.findById(acquisition._id).lean();
+    assert.equal(preserved.pricingSnapshot.amountMinor, 499, "withdrawing an Offer must preserve its Acquisition snapshot");
+
+    const replacementOffer = await createOffer({
+      listingId: listing._id,
+      actorUserId: seller._id,
+      payload: {
+        label: "Licenza contenuto aggiornata",
+        pricing: { type: "paid", amountMinor: 699, currency: "EUR" },
+        grants: [{
+          resourceType: "item_revision",
+          resourceId: revision._id,
+          capability: "content.consume",
+          versionPolicy: "pinned",
+        }],
+      },
+    });
+    assert.equal(replacementOffer.pricing.amountMinor, 699);
+
+    const withdrawnListing = await withdrawListing({ listingId: listing._id, actorUserId: seller._id });
+    assert.equal(withdrawnListing.status, "withdrawn");
+    await assert.rejects(
+      () => acquireOffer({ offerId: replacementOffer._id, actorUserId: secondBuyer._id }),
+      (error) => error?.status === 409,
+    );
   });
 });

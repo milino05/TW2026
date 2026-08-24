@@ -56,8 +56,8 @@ test("federation merges the same Subject while preserving namespaced relation pr
   const graph1 = {
     revision: { _id: oid() },
     nodes: new Map([
-      [String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-a"] } }],
-      [String(subjectB), { subject: { _id: subjectB, externalRefs: [] }, binding: null }],
+      [String(subjectA), { subject: { _id: subjectA, externalIdentities: [] }, binding: { subjectClassDefinitionIds: ["class-a"] } }],
+      [String(subjectB), { subject: { _id: subjectB, externalIdentities: [] }, binding: null }],
     ]),
     edgesFrom: new Map([
       [String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, relationTypeDefinitionId: "rel-1", traversalWeight: 0.8 }]],
@@ -66,7 +66,7 @@ test("federation merges the same Subject while preserving namespaced relation pr
   const graph2 = {
     revision: { _id: oid() },
     nodes: new Map([
-      [String(subjectA), { subject: { _id: subjectA, externalRefs: [] }, binding: { subjectClassDefinitionIds: ["class-b"] } }],
+      [String(subjectA), { subject: { _id: subjectA, externalIdentities: [] }, binding: { subjectClassDefinitionIds: ["class-b"] } }],
     ]),
     edgesFrom: new Map(),
   };

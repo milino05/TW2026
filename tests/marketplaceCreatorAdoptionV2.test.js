@@ -34,6 +34,8 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
       { username: "creator-buyer", passwordHash: "test-hash" },
     ]);
     const subject = await Subject.create({ preferredLabel: "Opera fork", createdBy: seller._id });
+    const durationDefinitionId = "duration-standard";
+    const languageDefinitionId = "language-standard";
     const namespace = await Namespace.create({
       name: "Namespace fork",
       ownerType: "user",
@@ -43,8 +45,8 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
     const namespaceRevision = await NamespaceRevision.create({
       namespaceId: namespace._id,
       version: 1,
-      durationTypes: [],
-      languageLevels: [],
+      durationTypes: [{ definitionId: durationDefinitionId, key: "standard", label: "Standard", targetSeconds: 60 }],
+      languageLevels: [{ definitionId: languageDefinitionId, key: "standard", label: "Standard" }],
       presentationAspects: [],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
@@ -62,12 +64,22 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
       createdBy: seller._id,
     });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: seller._id });
+    const variantId1 = new mongoose.Types.ObjectId();
+    const representationId1 = new mongoose.Types.ObjectId();
     const revision1 = await ItemRevisionV2.create({
       itemEditionId: edition._id,
       version: 1,
       authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       label: "Versione acquisita per fork",
-      presentationVariants: [],
+      authorCredits: ["Autore Marketplace"],
+      metadata: { license: "CC BY" },
+      presentationVariants: [{
+        _id: variantId1,
+        key: "standard",
+        label: "Standard",
+        representations: [{ _id: representationId1, durationTypeDefinitionId: durationDefinitionId, languageLevelDefinitionId: languageDefinitionId, locale: "it-IT", text: "Versione acquisita" }],
+      }],
+      defaultPresentation: { variantId: variantId1, representationId: representationId1 },
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },
@@ -113,13 +125,23 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
     assert.equal(String(rights.find((entry) => entry.resourceType === "item_revision").resourceId), String(revision1._id));
     assert.equal(String(rights.find((entry) => entry.resourceType === "namespace_revision").resourceId), String(namespaceRevision._id));
 
+    const variantId2 = new mongoose.Types.ObjectId();
+    const representationId2 = new mongoose.Types.ObjectId();
     const revision2 = await ItemRevisionV2.create({
       itemEditionId: edition._id,
       version: 2,
       basedOnRevisionId: revision1._id,
       authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       label: "Versione nuova del publisher",
-      presentationVariants: [],
+      authorCredits: ["Autore Marketplace"],
+      metadata: { license: "CC BY" },
+      presentationVariants: [{
+        _id: variantId2,
+        key: "standard",
+        label: "Standard",
+        representations: [{ _id: representationId2, durationTypeDefinitionId: durationDefinitionId, languageLevelDefinitionId: languageDefinitionId, locale: "it-IT", text: "Versione aggiornata" }],
+      }],
+      defaultPresentation: { variantId: variantId2, representationId: representationId2 },
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },

@@ -33,7 +33,7 @@ function buildFederatedSemanticGraph(graphBundles = []) {
         namespaceId: bundle.namespaceId,
         graphRevisionId: bundle.graph.revision?._id || null,
       });
-      for (const ref of node.subject?.externalRefs || []) addCanonical(ref, key);
+      for (const identity of node.subject?.externalIdentities || []) addCanonical(identity, key);
       bindingsByNamespaceSubject.set(`${namespaceId}:${key}`, node.binding || null);
     }
     for (const [fromSubjectId, edges] of bundle.graph.edgesFrom || []) {

@@ -36,13 +36,20 @@ Subject
   id
   preferredLabel
   description?
-  externalRefs[]?
+  externalIdentities[]?
 ```
+
+Ogni `externalIdentity` rappresenta esclusivamente identità esatta e contiene almeno `scheme`, `id`, ruolo `canonical | historical`, provenance della conferma ArtAround e stato della verifica provider. Un identificatore storico dichiara il `canonicalId` corrente senza essere presentato come binding corrente equivalente.
 
 Invarianti:
 
 - la fisicita non e implicita;
-- gli external refs sono opzionali;
+- le identità esterne sono opzionali e provider-neutral;
+- esiste al massimo una identity canonica corrente per scheme nello stesso Subject;
+- la coppia `(scheme, id)` identifica al massimo un Subject nell'intero database, inclusi gli ID storici;
+- `Subject.externalIdentities` ammette soltanto identità esatta: `close`, `broader` e `narrower` restano mapping di vocabolario nelle `semanticRefs` di Namespace e PlaceType;
+- Candidate esterna, mapping di vocabolario e binding confermato sono concetti distinti;
+- redirect e canonicalizzazione non autorizzano modifiche silenziose ai binding esistenti;
 - i label non vengono usati per merge fuzzy;
 - un Subject non viene copiato/forkato quando vengono copiati contenuti o grafi;
 - piu Item e piu VenueTarget possono riferirsi allo stesso Subject.

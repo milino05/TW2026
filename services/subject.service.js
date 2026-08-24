@@ -3,27 +3,18 @@ const AppError = require("../utils/AppError");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
 const { normalizeSubjectPayload, validateSubjectPayload } = require("./validation/subject.validation");
 
-function normalizedExternalRef(scheme, id) {
+function normalizedExternalIdentity(scheme, id) {
   const normalizedScheme = String(scheme || "").trim().toLowerCase();
   const normalizedId = String(id || "").trim();
-  return normalizedScheme && normalizedId ? { scheme: normalizedScheme, id: normalizedId, matchType: "exact" } : null;
+  return normalizedScheme && normalizedId ? { scheme: normalizedScheme, id: normalizedId } : null;
 }
 
-async function findSubjectByExactExternalRef({ scheme, id }) {
-  const ref = normalizedExternalRef(scheme, id);
-  if (!ref) return null;
+async function findSubjectByExternalIdentity({ scheme, id }) {
+  const identity = normalizedExternalIdentity(scheme, id);
+  if (!identity) return null;
   return Subject.findOne({
-    externalRefs: { $elemMatch: ref },
+    externalIdentities: { $elemMatch: identity },
   });
-}
-
-async function exactExternalRefCollision(externalRefs = []) {
-  for (const ref of externalRefs) {
-    if ((ref.matchType || "exact") !== "exact") continue;
-    const exists = await findSubjectByExactExternalRef({ scheme: ref.scheme, id: ref.id });
-    if (exists) return ref;
-  }
-  return null;
 }
 
 async function createSubject({ payload, actorUserId }) {
@@ -32,16 +23,6 @@ async function createSubject({ payload, actorUserId }) {
   const normalized = normalizeSubjectPayload(rawPayload);
   const issues = validateSubjectPayload({ payload: normalized, rawPayload, mode: "create" });
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
-
-  const collision = await exactExternalRefCollision(normalized.externalRefs || []);
-  if (collision) {
-    throw new AppError("Esiste gia un Subject con lo stesso external identity", 409, [{
-      field: "externalRefs",
-      code: "EXTERNAL_IDENTITY_ALREADY_BOUND",
-      scheme: collision.scheme,
-      id: collision.id,
-    }]);
-  }
 
   return Subject.create({ ...normalized, createdBy: actor._id });
 }
@@ -58,7 +39,7 @@ async function listSubjects({ search = "", limit = 50, externalScheme = null, ex
     if (!externalScheme || !externalId) {
       throw new AppError("externalScheme ed externalId devono essere specificati insieme", 400, [{ code: "INVALID_EXTERNAL_IDENTITY_QUERY" }]);
     }
-    const exact = await findSubjectByExactExternalRef({ scheme: externalScheme, id: externalId });
+    const exact = await findSubjectByExternalIdentity({ scheme: externalScheme, id: externalId });
     return exact ? [exact] : [];
   }
   const query = {};
@@ -70,6 +51,6 @@ module.exports = {
   createSubject,
   getSubjectById,
   listSubjects,
-  exactExternalRefCollision,
-  findSubjectByExactExternalRef,
+  findSubjectByExternalIdentity,
+  normalizedExternalIdentity,
 };

@@ -2,6 +2,9 @@ const marketplace = require("../services/marketplaceV2.service");
 const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
+const commercial = require("../services/marketplaceCommercialV2.service");
+const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
+const management = require("../services/marketplaceManagementV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
 const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
@@ -149,12 +152,81 @@ async function acquisitionHistory(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function commercialManagement(req, res, next) {
+  try {
+    res.status(200).json(await commercial.getCommercialManagement({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function withdrawListing(req, res, next) {
+  try {
+    res.status(200).json(await marketplace.withdrawListing({
+      listingId: req.params.listingId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function withdrawOffer(req, res, next) {
+  try {
+    res.status(200).json(await marketplace.withdrawOffer({
+      offerId: req.params.offerId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
 async function creatorWorkspace(req, res, next) {
   try {
     res.status(200).json(await workspace.getCreatorWorkspace({
       actorUserId: req.user._id,
       principalType: req.query?.principalType || "user",
       principalId: req.query?.principalId || req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function marketplaceAccountWorkspace(req, res, next) {
+  try {
+    res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function marketplaceOrganizationDetail(req, res, next) {
+  try {
+    res.status(200).json(await accountWorkspace.getMarketplaceOrganizationDetail({
+      actorUserId: req.user._id,
+      organizationId: req.params.organizationId,
+      memberPage: req.query?.memberPage,
+      venuePage: req.query?.venuePage,
+      namespacePage: req.query?.namespacePage,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function marketplaceNamespaceManagement(req, res, next) {
+  try {
+    res.status(200).json(await management.getNamespaceManagementProjection({
+      namespaceId: req.params.namespaceId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function marketplaceVenueManagement(req, res, next) {
+  try {
+    res.status(200).json(await management.getVenueManagementProjection({
+      venueId: req.params.venueId,
+      actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
 }
@@ -194,7 +266,14 @@ module.exports = {
   createOffer,
   acquire,
   acquisitionHistory,
+  commercialManagement,
+  withdrawListing,
+  withdrawOffer,
   creatorWorkspace,
+  marketplaceAccountWorkspace,
+  marketplaceOrganizationDetail,
+  marketplaceNamespaceManagement,
+  marketplaceVenueManagement,
   distributionDashboard,
   workspaceOperation,
 };

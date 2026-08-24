@@ -1,4 +1,5 @@
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
+import { icon } from "./icons.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -17,9 +18,13 @@ export class ContextReleaseComposer extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("change", this.onChange);
     this.load();
   }
-  disconnectedCallback() { this.removeEventListener("submit", this.onSubmit); }
+  disconnectedCallback() {
+    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("change", this.onChange);
+  }
 
   contextId() { return new URLSearchParams(window.location.search).get("editorialContextId"); }
 
@@ -55,16 +60,26 @@ export class ContextReleaseComposer extends HTMLElement {
     }
   };
 
+  onChange = (event) => {
+    if (!event.target?.matches?.('[name="candidate"]')) return;
+    const count = this.querySelectorAll('[name="candidate"]:checked').length;
+    const output = this.querySelector("[data-selection-count]");
+    if (output) output.textContent = `${count} ${count === 1 ? "contenuto selezionato" : "contenuti selezionati"}`;
+  };
+
   render() {
+    const selectedCount = (this.data?.candidates || []).filter((candidate) => candidate.selectedByCurrentRelease).length;
     const candidates = (this.data?.candidates || []).map((candidate) => `
       <label class="candidate"><input type="checkbox" name="candidate" value="${escapeHtml(candidate.itemEditionId)}" ${candidate.selectedByCurrentRelease ? "checked" : ""}>
-        <span><strong>${escapeHtml(candidate.title)}</strong>${candidate.subject?.preferredLabel ? ` · ${escapeHtml(candidate.subject.preferredLabel)}` : ""}<small>v${escapeHtml(candidate.version)} · ${(candidate.authorCredits || []).map(escapeHtml).join(", ")} · ${escapeHtml(candidate.license || "senza licenza")}</small></span>
+        <span class="candidate-copy"><strong>${escapeHtml(candidate.title)}</strong>${candidate.subject?.preferredLabel ? `<span>${escapeHtml(candidate.subject.preferredLabel)}</span>` : ""}<small>Versione ${escapeHtml(candidate.version)} · ${(candidate.authorCredits || []).map(escapeHtml).join(", ") || "Autore non indicato"}</small></span>
+        <span class="chip">${escapeHtml(candidate.license || "Licenza non indicata")}</span>
       </label>`).join("");
-    this.innerHTML = `<style>:host{display:block}main{max-width:64rem;margin:0 auto;padding:2rem 1rem}form{display:grid;gap:1rem}.candidate{display:grid;grid-template-columns:auto 1fr;gap:.8rem;align-items:start;padding:.8rem 0;border-bottom:1px solid currentColor}.candidate small{display:block;opacity:.75}button{font:inherit;padding:.6rem .8rem}</style>
-      <main><p><a data-route href="/workspace">← Workspace</a></p><h1>Componi EditorialRelease</h1>
-      ${this.data ? `<p><strong>${escapeHtml(this.data.context.name)}</strong> · ${escapeHtml(this.data.contentSpace.name)} · ${escapeHtml(this.data.namespace.name)}</p><p>Vengono proposti solo Item member del ContentSpace, nello stesso Namespace e autorizzati per il principal del Context.</p>` : ""}
-      ${this.busy ? "<p>Elaborazione…</p>" : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p role="status">${escapeHtml(this.notice)}</p>` : ""}
-      ${this.data ? `<form data-release-composer>${candidates || "<p>Nessun contenuto release-ready disponibile.</p>"}<button ${this.busy ? "disabled" : ""}>Pubblica nuova release</button></form>` : ""}
+    this.innerHTML = `<main class="composer-page">
+      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">${icon("arrowLeft", { size: 16 })} Workspace</a><span>/</span><span>Editorial release</span></nav>
+      <header class="page-header"><div><span class="eyebrow">Pubblicazione editoriale</span><h1>Componi la release</h1><p>Seleziona i contenuti pronti e pubblica una nuova versione del contesto editoriale.</p></div>${this.data ? `<span class="chip" data-selection-count>${selectedCount} ${selectedCount === 1 ? "contenuto selezionato" : "contenuti selezionati"}</span>` : ""}</header>
+      ${this.data ? `<section class="release-context surface"><div class="release-context__icon">${icon("book", { size: 24 })}</div><div><span class="eyebrow">Contesto corrente</span><h2>${escapeHtml(this.data.context.name)}</h2><p>${escapeHtml(this.data.contentSpace.name)} · ${escapeHtml(this.data.namespace.name)}</p></div></section>` : ""}
+      ${this.busy ? `<p role="status">${icon("info", { size: 17 })} Elaborazione in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p role="status">${icon("check", { size: 17 })} ${escapeHtml(this.notice)}</p>` : ""}
+      ${this.data ? `<form data-release-composer><div class="section-heading"><div><span class="eyebrow">Contenuti candidati</span><h2>Elementi della release</h2></div><span class="count">${this.data.candidates.length}</span></div><div class="candidate-list">${candidates || `<div class="empty-state">${icon("book", { size: 28 })}<h3>Nessun contenuto pronto</h3><p>Completa e pubblica almeno una revisione compatibile con questo ContentSpace.</p></div>`}</div><div class="composer-actions"><p>La release userà le revisioni di Namespace e grafo correnti.</p><button ${this.busy ? "disabled" : ""}>${icon("check", { size: 17 })} Pubblica nuova release</button></div></form>` : ""}
       </main>`;
   }
 }

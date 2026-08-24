@@ -56,35 +56,23 @@ test("organization payload normalization is strict and predictable", () => {
   }).some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "ownerId"));
 });
 
-test("Subject external identities are normalized without fuzzy label merging", () => {
+test("Subject locale rejects identity bindings outside the verified resolver command", () => {
   const raw = {
     preferredLabel: "  Parmigianino  ",
-    externalRefs: [{ scheme: " WIKIDATA ", id: " Q123 ", matchType: "EXACT" }],
+    description: "  Pittore  ",
   };
   const normalized = normalizeSubjectPayload(raw);
 
   assert.equal(normalized.preferredLabel, "Parmigianino");
-  assert.deepEqual(normalized.externalRefs, [{ scheme: "wikidata", id: "Q123", matchType: "exact" }]);
+  assert.equal(normalized.description, "Pittore");
   assert.deepEqual(validateSubjectPayload({ payload: normalized, rawPayload: raw, mode: "create" }), []);
 
-  const duplicate = validateSubjectPayload({
-    payload: {
-      preferredLabel: "X",
-      externalRefs: [
-        { scheme: "wikidata", id: "Q1", matchType: "exact" },
-        { scheme: "wikidata", id: "Q1", matchType: "close" },
-      ],
-    },
-    rawPayload: {
-      preferredLabel: "X",
-      externalRefs: [
-        { scheme: "wikidata", id: "Q1", matchType: "exact" },
-        { scheme: "wikidata", id: "Q1", matchType: "close" },
-      ],
-    },
+  const forbiddenIdentity = validateSubjectPayload({
+    payload: normalizeSubjectPayload({ preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] }),
+    rawPayload: { preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] },
     mode: "create",
   });
-  assert.ok(duplicate.some((issue) => issue.code === "DUPLICATE_EXTERNAL_REF"));
+  assert.ok(forbiddenIdentity.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "externalIdentities"));
 
   const unknown = validateSubjectPayload({
     payload: normalizeSubjectPayload({ preferredLabel: "X", venueId: "forbidden" }),
