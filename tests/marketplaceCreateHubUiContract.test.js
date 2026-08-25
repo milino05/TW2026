@@ -14,7 +14,7 @@ const workspaceBrowser = fs.readFileSync(path.join(root, "clients/marketplace/sr
 test("shell espone le cinque aree principali e monta il create hub", () => {
   assert.match(router, /"\/create"/);
   assert.match(shell, /import "\.\/create-hub-view\.js"/);
-  assert.match(shell, /route === "\/create" \? "<artaround-create-hub-view><\/artaround-create-hub-view>"/);
+  assert.match(shell, /if \(route === "\/create"\) return "<artaround-create-hub-view><\/artaround-create-hub-view>"/);
   for (const label of ["Catalogo", "Le mie risorse", "Crea", "Licenze e vendite", "Account e organizzazioni"]) assert.match(shell, new RegExp(`>${label}<`));
   assert.doesNotMatch(shell, /<span>Crea contenuto<\/span>/);
   assert.doesNotMatch(shell, /<span>Crea visita<\/span>/);
