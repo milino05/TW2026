@@ -30,10 +30,12 @@ export class ContextReleaseComposer extends HTMLElement {
 
   async load() {
     const contextId = this.contextId();
-    if (!contextId) { this.error = "EditorialContext non specificato."; this.render(); return; }
-    this.busy = true; this.render();
+    if (!contextId) { this.error = "Raccolta editoriale non specificata."; this.render(); return; }
+    this.busy = true;
+    this.error = null;
+    this.render();
     try { this.data = await authoringRepository.editorialReleaseComposer(contextId); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Composer non disponibile"; }
+    catch (error) { this.error = error instanceof Error ? error.message : "Strumento di pubblicazione non disponibile"; }
     finally { this.busy = false; this.render(); }
   }
 
@@ -45,18 +47,22 @@ export class ContextReleaseComposer extends HTMLElement {
     const itemBindings = (this.data?.candidates || [])
       .filter((candidate) => selected.has(String(candidate.itemEditionId)))
       .map((candidate) => ({ itemEditionId: candidate.itemEditionId, itemRevisionId: candidate.itemRevisionId, curationSignals: [] }));
-    this.busy = true; this.error = null; this.notice = null; this.render();
+    this.busy = true;
+    this.error = null;
+    this.notice = null;
+    this.render();
     try {
       const release = await authoringRepository.createEditorialRelease(this.contextId(), {
         namespaceRevisionId: this.data.releaseInputs.namespaceRevisionId,
         graphRevisionId: this.data.releaseInputs.graphRevisionId,
         itemBindings,
       });
-      this.notice = `EditorialRelease ${release.version} pubblicata.`;
+      this.notice = `Versione ${release.version} della raccolta pubblicata.`;
       await this.load();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Pubblicazione della release non riuscita";
-      this.busy = false; this.render();
+      this.error = error instanceof Error ? error.message : "Pubblicazione della nuova versione non riuscita";
+      this.busy = false;
+      this.render();
     }
   };
 
@@ -67,6 +73,11 @@ export class ContextReleaseComposer extends HTMLElement {
     if (output) output.textContent = `${count} ${count === 1 ? "contenuto selezionato" : "contenuti selezionati"}`;
   };
 
+  renderTechnicalDetails() {
+    if (!this.data?.releaseInputs) return "";
+    return `<details class="technical-details"><summary>Dettagli tecnici della versione</summary><dl class="definition-list"><div><dt>NamespaceRevision</dt><dd><code>${escapeHtml(this.data.releaseInputs.namespaceRevisionId || "Non disponibile")}</code></dd></div><div><dt>GraphRevision</dt><dd><code>${escapeHtml(this.data.releaseInputs.graphRevisionId || "Non disponibile")}</code></dd></div></dl><p class="note">Questi riferimenti fissano lo stato delle regole editoriali e del grafo usato dalla versione pubblicata.</p></details>`;
+  }
+
   render() {
     const selectedCount = (this.data?.candidates || []).filter((candidate) => candidate.selectedByCurrentRelease).length;
     const candidates = (this.data?.candidates || []).map((candidate) => `
@@ -74,12 +85,13 @@ export class ContextReleaseComposer extends HTMLElement {
         <span class="candidate-copy"><strong>${escapeHtml(candidate.title)}</strong>${candidate.subject?.preferredLabel ? `<span>${escapeHtml(candidate.subject.preferredLabel)}</span>` : ""}<small>Versione ${escapeHtml(candidate.version)} · ${(candidate.authorCredits || []).map(escapeHtml).join(", ") || "Autore non indicato"}</small></span>
         <span class="chip">${escapeHtml(candidate.license || "Licenza non indicata")}</span>
       </label>`).join("");
+
     this.innerHTML = `<main class="composer-page">
-      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">${icon("arrowLeft", { size: 16 })} Workspace</a><span>/</span><span>Editorial release</span></nav>
-      <header class="page-header"><div><span class="eyebrow">Pubblicazione editoriale</span><h1>Componi la release</h1><p>Seleziona i contenuti pronti e pubblica una nuova versione del contesto editoriale.</p></div>${this.data ? `<span class="chip" data-selection-count>${selectedCount} ${selectedCount === 1 ? "contenuto selezionato" : "contenuti selezionati"}</span>` : ""}</header>
-      ${this.data ? `<section class="release-context surface"><div class="release-context__icon">${icon("book", { size: 24 })}</div><div><span class="eyebrow">Contesto corrente</span><h2>${escapeHtml(this.data.context.name)}</h2><p>${escapeHtml(this.data.contentSpace.name)} · ${escapeHtml(this.data.namespace.name)}</p></div></section>` : ""}
+      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">${icon("arrowLeft", { size: 16 })} Le mie risorse</a><span>/</span><span>Pubblica una nuova versione</span></nav>
+      <header class="page-header"><div><span class="eyebrow">Raccolta editoriale</span><h1>Pubblica una nuova versione</h1><p>Scegli i contenuti da includere e crea una versione pubblicata della raccolta editoriale.</p></div>${this.data ? `<span class="chip" data-selection-count aria-live="polite">${selectedCount} ${selectedCount === 1 ? "contenuto selezionato" : "contenuti selezionati"}</span>` : ""}</header>
+      ${this.data ? `<section class="release-context surface"><div class="release-context__icon">${icon("book", { size: 24 })}</div><div><span class="eyebrow">Raccolta editoriale</span><h2>${escapeHtml(this.data.context.name)}</h2><p>Spazio editoriale: <strong>${escapeHtml(this.data.contentSpace.name)}</strong> · Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong></p></div></section>` : ""}
       ${this.busy ? `<p role="status">${icon("info", { size: 17 })} Elaborazione in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p role="status">${icon("check", { size: 17 })} ${escapeHtml(this.notice)}</p>` : ""}
-      ${this.data ? `<form data-release-composer><div class="section-heading"><div><span class="eyebrow">Contenuti candidati</span><h2>Elementi della release</h2></div><span class="count">${this.data.candidates.length}</span></div><div class="candidate-list">${candidates || `<div class="empty-state">${icon("book", { size: 28 })}<h3>Nessun contenuto pronto</h3><p>Completa e pubblica almeno una revisione compatibile con questo ContentSpace.</p></div>`}</div><div class="composer-actions"><p>La release userà le revisioni di Namespace e grafo correnti.</p><button ${this.busy ? "disabled" : ""}>${icon("check", { size: 17 })} Pubblica nuova release</button></div></form>` : ""}
+      ${this.data ? `<form data-release-composer><div class="section-heading"><div><span class="eyebrow">Contenuti disponibili</span><h2>Contenuti della nuova versione</h2><p>La selezione definisce lo snapshot editoriale che verrà pubblicato.</p></div><span class="count">${this.data.candidates.length}</span></div><div class="candidate-list">${candidates || `<div class="empty-state">${icon("book", { size: 28 })}<h3>Nessun contenuto pronto</h3><p>Completa e pubblica almeno un contenuto compatibile con questo spazio editoriale.</p></div>`}</div><div class="composer-actions"><div><p>La nuova versione fotografa lo stato editoriale corrente.</p>${this.renderTechnicalDetails()}</div><button ${this.busy ? "disabled" : ""}>${icon("check", { size: 17 })} Pubblica nuova versione</button></div></form>` : ""}
       </main>`;
   }
 }

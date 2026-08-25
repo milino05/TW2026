@@ -1,0 +1,13 @@
+/* Final UX audit: tablet navigation and remaining progressive-disclosure polish. */
+.resource-operation-confirmation{margin:1rem 0}.resource-operation-confirmation>div:first-child{display:grid;gap:.55rem;min-width:min(100%,34rem)}
+.composer-actions>div{display:grid;gap:.55rem;min-width:0}.composer-actions .technical-details{max-width:42rem}.release-context strong{color:var(--ink-800)}
+
+/* Avoid the intermediate icon-only navigation state: on tablet use the same complete labelled menu as mobile. */
+@media(max-width:68rem){
+  .menu-toggle{display:inline-flex;margin-left:auto}
+  .market-nav{position:absolute;top:calc(100% + .4rem);right:1rem;left:1rem;display:none;align-items:stretch;flex-direction:column;padding:.7rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-lg)}
+  .market-nav[data-open=true]{display:flex}
+  .market-nav a,.market-nav button{justify-content:flex-start}
+  .market-nav a span,.market-nav button span{display:inline}
+  .market-nav .nav-profile{margin-left:0}
+}

@@ -47,6 +47,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   busy = false;
   error = null;
   message = null;
+  pendingOperation = null;
   state = initialState();
 
   connectedCallback() {
@@ -90,9 +91,47 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     navigate(`/workspace?${params.toString()}`);
   }
 
+  async executeOperation({ operationCode, sourceRef, payload = {} }) {
+    this.pendingOperation = null;
+    await this.execute(
+      () => marketplaceRepository.executeWorkspaceOperation({
+        operationCode,
+        sourceRef,
+        targetPrincipal: { type: this.state.principalType, id: this.state.principalId },
+        payload,
+      }),
+      isWorkflowOperation(operationCode) ? "Operazione editoriale completata" : "Operazione completata",
+    );
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("button[data-workspace-back]")) { this.backToWorkspace(); return; }
+
+    if (target?.closest("button[data-cancel-operation-message]")) {
+      this.pendingOperation = null;
+      this.error = null;
+      this.render();
+      return;
+    }
+
+    if (target?.closest("button[data-confirm-operation-message]") && this.pendingOperation) {
+      const textarea = this.querySelector("textarea[data-operation-message]");
+      const message = String(textarea?.value || "").trim();
+      if (!message) {
+        this.error = "Inserisci una motivazione prima di continuare.";
+        this.render();
+        requestAnimationFrame(() => this.querySelector("textarea[data-operation-message]")?.focus());
+        return;
+      }
+      const operation = this.pendingOperation;
+      await this.executeOperation({
+        operationCode: operation.code,
+        sourceRef: operation.sourceRef,
+        payload: { message },
+      });
+      return;
+    }
 
     const authoringButton = target?.closest("button[data-authoring-href]");
     if (authoringButton) { navigate(authoringButton.dataset.authoringHref); return; }
@@ -123,26 +162,25 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     }
 
     const operationButton = target?.closest("button[data-operation]");
-    if (operationButton) {
-      const operationCode = operationButton.dataset.operation || "";
-      const payload = {};
-      if (operationButton.dataset.requiresMessage === "true") {
-        const message = window.prompt("Motivazione delle modifiche richieste:");
-        if (message === null) return;
-        if (!message.trim()) { this.error = "La motivazione è obbligatoria."; this.render(); return; }
-        payload.message = message.trim();
-      }
-      const sourceRef = { resourceType: operationButton.dataset.sourceType, resourceId: operationButton.dataset.sourceId };
-      await this.execute(
-        () => marketplaceRepository.executeWorkspaceOperation({
-          operationCode,
-          sourceRef,
-          targetPrincipal: { type: this.state.principalType, id: this.state.principalId },
-          payload,
-        }),
-        isWorkflowOperation(operationCode) ? "Operazione editoriale completata" : "Operazione completata",
-      );
+    if (!operationButton) return;
+    const operationCode = operationButton.dataset.operation || "";
+    const sourceRef = {
+      resourceType: operationButton.dataset.sourceType,
+      resourceId: operationButton.dataset.sourceId,
+    };
+    if (operationButton.dataset.requiresMessage === "true") {
+      this.pendingOperation = {
+        code: operationCode,
+        label: operationButton.textContent?.trim() || "Continua",
+        sourceRef,
+      };
+      this.error = null;
+      this.message = null;
+      this.render();
+      requestAnimationFrame(() => this.querySelector("textarea[data-operation-message]")?.focus());
+      return;
     }
+    await this.executeOperation({ operationCode, sourceRef });
   };
 
   async execute(callback, successMessage) {
@@ -182,6 +220,11 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     }).join(" ");
   }
 
+  renderOperationConfirmation() {
+    if (!this.pendingOperation) return "";
+    return `<section class="confirmation-panel resource-operation-confirmation" role="alert"><div><strong>Motivazione richiesta</strong><p>Spiega in modo sintetico quali modifiche sono necessarie. Il messaggio verrà registrato nel workflow editoriale.</p><label>Motivazione<textarea data-operation-message rows="3" placeholder="Descrivi cosa deve essere corretto"></textarea></label></div><div class="button-row"><button type="button" data-confirm-operation-message>${escapeHtml(this.pendingOperation.label)}</button><button class="button-secondary" type="button" data-cancel-operation-message>Annulla</button></div></section>`;
+  }
+
   render() {
     if (this.busy && !this.detail) {
       this.innerHTML = `<main class="page"><div class="empty-state"><div class="skeleton skeleton-line" style="width:14rem"></div><p>Caricamento della risorsa…</p></div></main>`;
@@ -204,7 +247,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
       ? `<p>${icon("store", { size: 15 })}<strong>Nel catalogo</strong> · ${Number(asset.listing.activeOfferCount) || 0} offerte attive</p>`
       : "";
     const principalName = this.detail?.principal?.name || "contesto selezionato";
-    this.innerHTML = `<main class="page resource-page"><nav class="breadcrumb"><button data-workspace-back type="button">${icon("arrowLeft", { size: 15 })} Le mie risorse</button><span>/</span><span>${escapeHtml(asset.title)}</span></nav><div class="working-context surface"><span>Stai lavorando per</span><strong>${escapeHtml(principalName)}</strong></div>${this.message ? `<p class="status success" role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="resource-hero"><div class="button-row"><span class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</span>${state}</div><h1>${escapeHtml(asset.title)}</h1><p>${escapeHtml(resourceLabel(asset.resourceType))}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${editorial}${listing}${rights}</section><section class="panel resource-actions"><span class="eyebrow">Cosa puoi fare</span><h2>Azioni disponibili</h2><div class="operations">${this.renderOperations(asset) || "<p>Nessuna azione disponibile.</p>"}</div><p class="note">Le azioni mostrate dipendono dai tuoi permessi e dallo stato corrente della risorsa.</p></section></main>`;
+    this.innerHTML = `<main class="page resource-page"><nav class="breadcrumb" aria-label="Percorso"><button data-workspace-back type="button">${icon("arrowLeft", { size: 15 })} Le mie risorse</button><span>/</span><span>${escapeHtml(asset.title)}</span></nav><div class="working-context surface"><span>Stai lavorando per</span><strong>${escapeHtml(principalName)}</strong></div>${this.message ? `<p class="status success" role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="resource-hero"><div class="button-row"><span class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</span>${state}</div><h1>${escapeHtml(asset.title)}</h1><p>${escapeHtml(resourceLabel(asset.resourceType))}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${editorial}${listing}${rights}</section><section class="panel resource-actions"><span class="eyebrow">Cosa puoi fare</span><h2>Azioni disponibili</h2>${this.renderOperationConfirmation()}<div class="operations">${this.renderOperations(asset) || "<p>Nessuna azione disponibile.</p>"}</div><p class="note">Le azioni mostrate dipendono dai tuoi permessi e dallo stato corrente della risorsa.</p></section></main>`;
   }
 }
 
