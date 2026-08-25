@@ -1,7 +1,16 @@
 import { navigate } from "../application/router.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
-import { escapeHtml, formatDate, formatPrice, formatRevenue, hasOperation, principalOptions, principalValue } from "./commercial-utils.js";
+import {
+  escapeHtml,
+  formatDate,
+  formatPrice,
+  formatRevenue,
+  hasOperation,
+  marketplaceResourceLabel,
+  principalValue,
+  sellerPrincipalOptions,
+} from "./commercial-utils.js";
 
 function selectedPrincipal() {
   const params = new URLSearchParams(window.location.search);
@@ -19,9 +28,26 @@ function priceInMinorUnits(value) {
   return Number.isSafeInteger(Math.round(amount * 100)) ? Math.round(amount * 100) : null;
 }
 
+function listingStatusLabel(status) {
+  if (status === "published") return "Nel catalogo";
+  if (status === "withdrawn") return "Ritirata";
+  return "Bozza";
+}
+
+function offerStatusLabel(status) {
+  return status === "active" ? "Attiva" : "Ritirata";
+}
+
+function statusTone(status, activeValue) {
+  return status === activeValue ? "success" : "warning";
+}
+
+function uniqueVersionLabels(grants = []) {
+  return [...new Set(grants.map((grant) => grant.versionBehaviour?.label).filter(Boolean))];
+}
+
 export class ArtAroundCommerceManagementView extends HTMLElement {
   data = null;
-  distribution = null;
   principal = selectedPrincipal();
   page = Math.max(1, Number(new URLSearchParams(window.location.search).get("page")) || 1);
   busy = false;
@@ -32,12 +58,14 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
   connectedCallback() {
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("click", this.onClick);
+    this.addEventListener("change", this.onChange);
     this.load();
   }
 
   disconnectedCallback() {
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("change", this.onChange);
   }
 
   async load() {
@@ -45,21 +73,19 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      const [data, distribution] = await Promise.all([
-        marketplaceRepository.commerce(this.principal, { page: this.page }),
-        marketplaceRepository.distribution(this.principal),
-      ]);
-      this.data = data;
-      this.distribution = distribution;
-      this.principal = { principalType: data.principal.type, principalId: String(data.principal.id), listingId: this.principal.listingId };
+      this.data = await marketplaceRepository.commerce(this.principal, { page: this.page });
+      this.principal = {
+        principalType: this.data.principal.type,
+        principalId: String(this.data.principal.id),
+        listingId: this.principal.listingId,
+      };
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Gestione commerciale non disponibile";
+      this.error = error instanceof Error ? error.message : "Vendite non disponibili";
     } finally {
       this.busy = false;
       this.render();
       if (this.principal.listingId) requestAnimationFrame(() => {
-        const expectedId = `listing-${this.principal.listingId}`;
-        [...this.querySelectorAll(".managed-listing")].find((entry) => entry.id === expectedId)?.scrollIntoView({ block: "start" });
+        this.querySelector(`#listing-${CSS.escape(String(this.principal.listingId))}`)?.scrollIntoView({ block: "start" });
       });
     }
   }
@@ -75,6 +101,14 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
       return;
     }
     if (form.matches("form[data-create-offer]")) await this.createOffer(form, formData);
+  };
+
+  onChange = (event) => {
+    const select = event.target instanceof HTMLSelectElement ? event.target : null;
+    if (!select?.matches("select[data-pricing-type]")) return;
+    const listingId = select.dataset.listingId;
+    const paidFields = this.querySelector(`[data-paid-fields="${CSS.escape(String(listingId || ""))}"]`);
+    if (paidFields) paidFields.hidden = select.value !== "paid";
   };
 
   async createOffer(form, formData) {
@@ -117,16 +151,12 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
     };
     await this.execute(
       () => marketplaceRepository.createOffer(listing.id, payload),
-      "Offerta pubblicata. È ora disponibile nel catalogo.",
+      "Offerta pubblicata. La scheda è ora acquisibile con le condizioni che hai scelto.",
     );
   }
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button[data-workspace-back]")) {
-      navigate(`/workspace?principalType=${encodeURIComponent(this.principal.principalType)}&principalId=${encodeURIComponent(this.principal.principalId || "")}`);
-      return;
-    }
     const request = target?.closest("button[data-withdraw]");
     if (request) {
       this.confirmation = {
@@ -158,7 +188,9 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
     this.confirmation = null;
     await this.execute(
       () => current.type === "offer" ? marketplaceRepository.withdrawOffer(current.id) : marketplaceRepository.withdrawListing(current.id),
-      current.type === "offer" ? "Offerta ritirata. Le acquisizioni esistenti restano valide." : "Listing ritirata dal catalogo.",
+      current.type === "offer"
+        ? "Offerta ritirata. Le acquisizioni già completate e i diritti già concessi restano validi."
+        : "Scheda ritirata dal catalogo. Le acquisizioni già completate e i diritti già concessi restano validi.",
     );
   }
 
@@ -179,42 +211,45 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
 
   renderConfirmation() {
     if (!this.confirmation) return "";
-    const subject = this.confirmation.type === "offer" ? "l’offerta" : "la listing";
-    return `<section class="confirmation-panel sticky-confirmation" role="alert"><div><strong>Ritirare ${subject} “${escapeHtml(this.confirmation.label)}”?</strong><p>Non sarà più acquisibile. Le Acquisition e gli Entitlement già creati non verranno modificati.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-withdraw ${this.busy ? "disabled" : ""}>Conferma ritiro</button><button class="button-secondary" type="button" data-cancel-withdraw>Annulla</button></div></section>`;
+    const subject = this.confirmation.type === "offer" ? "l’offerta" : "la scheda nel catalogo";
+    return `<section class="confirmation-panel seller-confirmation" role="alert"><div><strong>Ritirare ${subject} “${escapeHtml(this.confirmation.label)}”?</strong><p>Non sarà più disponibile per nuove acquisizioni. Le acquisizioni già completate e i diritti già concessi resteranno validi.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-withdraw ${this.busy ? "disabled" : ""}>Conferma ritiro</button><button class="button-secondary" type="button" data-cancel-withdraw>Annulla</button></div></section>`;
   }
 
   renderOffer(offer) {
-    const rights = (offer.grants || []).map((grant) => `<li>${icon("check", { size: 14 })}<span>${escapeHtml(grant.label)}<small>${escapeHtml(grant.versionPolicy)}</small></span></li>`).join("");
-    return `<article class="managed-offer" data-status="${escapeHtml(offer.status)}"><header><div><span class="chip" data-tone="${offer.status === "active" ? "success" : "warning"}">${escapeHtml(offer.status)}</span><h4>${escapeHtml(offer.label)}</h4></div><strong>${escapeHtml(formatPrice(offer.pricing))}</strong></header><ul class="rights-list">${rights}</ul><dl class="offer-metrics"><div><dt>Acquisizioni</dt><dd>${offer.acquisitionCount}</dd></div><div><dt>Ricavi simulati</dt><dd>${escapeHtml(formatRevenue(offer.revenueByCurrency))}</dd></div></dl><footer><small>Creata ${escapeHtml(formatDate(offer.createdAt))}</small>${hasOperation(offer.availableOperations, "withdraw_offer") ? `<button class="danger small" type="button" data-withdraw="offer" data-id="${escapeHtml(offer.id)}" data-label="${escapeHtml(offer.label)}">Ritira</button>` : ""}</footer></article>`;
+    const rights = (offer.grants || []).map((grant) => `<li>${icon("check", { size: 14 })}<span><strong>${escapeHtml(grant.label)}</strong>${grant.versionBehaviour?.label ? `<small>${escapeHtml(grant.versionBehaviour.label)}</small>` : ""}</span></li>`).join("");
+    const versionLabels = uniqueVersionLabels(offer.grants || []);
+    const technicalRights = (offer.grants || []).map((grant) => `<li><code>${escapeHtml(grant.capability)}</code> · <code>${escapeHtml(grant.versionPolicy)}</code> · ${escapeHtml(grant.resourceType)}</li>`).join("");
+    return `<article class="seller-offer" data-status="${escapeHtml(offer.status)}"><header class="seller-offer__header"><div><span class="chip" data-tone="${statusTone(offer.status, "active")}">${escapeHtml(offerStatusLabel(offer.status))}</span><h3>${escapeHtml(offer.label)}</h3></div><strong class="seller-offer__price">${escapeHtml(formatPrice(offer.pricing))}</strong></header><div><span class="eyebrow">Cosa ottiene chi acquisisce</span><ul class="rights-list">${rights}</ul></div>${versionLabels.length ? `<p class="seller-version-summary">${icon("history", { size: 15 })}<span><strong>Aggiornamenti inclusi</strong><small>${escapeHtml(versionLabels.join(" · "))}</small></span></p>` : ""}<dl class="seller-offer-metrics"><div><dt>Acquisizioni</dt><dd>${offer.acquisitionCount}</dd></div><div><dt>Ricavi simulati</dt><dd>${escapeHtml(formatRevenue(offer.revenueByCurrency))}</dd></div></dl><details class="technical-details seller-technical"><summary>Dettagli tecnici dell’offerta</summary><dl class="definition-list"><div><dt>Offer ID</dt><dd><code>${escapeHtml(offer.id)}</code></dd></div><div><dt>Diritti</dt><dd><ul class="technical-grants">${technicalRights || "<li>Nessun grant</li>"}</ul></dd></div></dl></details><footer class="seller-offer__footer"><small>Creata ${escapeHtml(formatDate(offer.createdAt))}</small>${hasOperation(offer.availableOperations, "withdraw_offer") ? `<button class="danger small" type="button" data-withdraw="offer" data-id="${escapeHtml(offer.id)}" data-label="${escapeHtml(offer.label)}">Ritira offerta</button>` : ""}</footer></article>`;
   }
 
-  renderOfferForm(listing) {
+  renderOfferForm(listing, { open = false } = {}) {
     const config = listing.offerConfiguration || {};
-    const capabilities = (config.capabilityOptions || []).map((entry, index) => `<label class="capability-choice"><input type="checkbox" name="capability" value="${escapeHtml(entry.code)}" ${index === 0 ? "checked" : ""}><span><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.code)}</small></span></label>`).join("");
+    const capabilities = (config.capabilityOptions || []).map((entry, index) => `<label class="seller-right-choice"><input type="checkbox" name="capability" value="${escapeHtml(entry.code)}" ${index === 0 ? "checked" : ""}><span><strong>${escapeHtml(entry.label)}</strong><small>Concedi questo diritto con l’offerta.</small></span></label>`).join("");
     const policies = (config.versionPolicyOptions || []).map((entry) => `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`).join("");
-    return `<details class="offer-creator"><summary>${icon("plus", { size: 16 })} Crea una nuova offerta</summary><form data-create-offer="${escapeHtml(listing.id)}"><div class="form-grid"><label class="wide">Nome dell’offerta<input name="label" required maxlength="120" placeholder="Es. Licenza visita completa"></label><label>Prezzo<select name="pricingType"><option value="free">Gratuita</option><option value="paid">A pagamento</option></select></label><label>Importo<input name="amount" inputmode="decimal" placeholder="4,99" aria-describedby="price-help-${escapeHtml(listing.id)}"><small id="price-help-${escapeHtml(listing.id)}">Ignorato per le offerte gratuite.</small></label><label>Valuta<input name="currency" value="${escapeHtml(config.defaultCurrency || "EUR")}" maxlength="3"></label><label>Comportamento versione<select name="versionPolicy" required>${policies}</select></label></div><fieldset class="capability-fieldset"><legend>Diritti concessi</legend>${capabilities}</fieldset><p class="note">Per cambiare prezzo in futuro, crea una nuova offerta e ritira quella precedente: lo storico resterà immutato.</p><button type="submit" ${this.busy ? "disabled" : ""}>${icon("store", { size: 16 })} Pubblica offerta</button></form></details>`;
+    const technicalCapabilities = (config.capabilityOptions || []).map((entry) => `<li>${escapeHtml(entry.label)} · <code>${escapeHtml(entry.code)}</code></li>`).join("");
+    return `<details class="seller-offer-creator" ${open ? "open" : ""}><summary>${icon("plus", { size: 16 })} Nuova offerta</summary><form data-create-offer="${escapeHtml(listing.id)}"><div class="form-grid"><label class="wide">Nome dell’offerta<input name="label" required maxlength="120" placeholder="Es. Accesso completo alla visita"></label><label>Prezzo<select name="pricingType" data-pricing-type data-listing-id="${escapeHtml(listing.id)}"><option value="free">Gratuita</option><option value="paid">A pagamento</option></select></label><label>Aggiornamenti inclusi<select name="versionPolicy" required>${policies}</select></label></div><div class="seller-paid-fields" data-paid-fields="${escapeHtml(listing.id)}" hidden><label>Importo<input name="amount" inputmode="decimal" placeholder="4,99"></label><label>Valuta<input name="currency" value="${escapeHtml(config.defaultCurrency || "EUR")}" maxlength="3"></label></div><fieldset class="seller-rights-fieldset"><legend>Diritti concessi</legend><p>Seleziona cosa potrà fare chi acquisisce questa offerta.</p>${capabilities}</fieldset><p class="license-history-note">Cambiare le condizioni non modifica le acquisizioni passate: per nuove condizioni pubblica una nuova offerta e ritira quella precedente.</p><details class="technical-details"><summary>Codici tecnici dei diritti</summary><ul class="technical-grants">${technicalCapabilities}</ul></details><button type="submit" ${this.busy ? "disabled" : ""}>${icon("store", { size: 16 })} Pubblica offerta</button></form></details>`;
   }
 
   renderListing(listing) {
-    const offers = (listing.offers || []).map((offer) => this.renderOffer(offer)).join("");
-    return `<section class="managed-listing" id="listing-${escapeHtml(listing.id)}"><header><div><div class="chip-row"><span class="chip">${escapeHtml(listing.asset.type)}</span><span class="chip" data-tone="${listing.status === "published" ? "success" : "warning"}">${escapeHtml(listing.status)}</span>${listing.asset.editorialLicense ? `<span class="chip">${icon("shield", { size: 13 })}${escapeHtml(listing.asset.editorialLicense)}</span>` : ""}</div><h2>${escapeHtml(listing.asset.title)}</h2><p>${escapeHtml(listing.asset.summary || "Nessuna descrizione")}</p></div><dl class="listing-metrics"><div><dt>Acquisizioni</dt><dd>${listing.metrics.acquisitionCount}</dd></div><div><dt>Ricavi</dt><dd>${escapeHtml(formatRevenue(listing.metrics.revenueByCurrency))}</dd></div></dl></header><div class="managed-offer-grid">${offers || `<div class="empty-state"><h3>Nessuna offerta</h3><p>Definisci prezzo e diritti per rendere acquisibile la listing.</p></div>`}</div>${hasOperation(listing.availableOperations, "create_offer") ? this.renderOfferForm(listing) : ""}<footer class="listing-footer"><small>Pubblicata ${escapeHtml(formatDate(listing.publishedAt))}</small>${hasOperation(listing.availableOperations, "withdraw_listing") ? `<button class="danger" type="button" data-withdraw="listing" data-id="${escapeHtml(listing.id)}" data-label="${escapeHtml(listing.asset.title)}">Ritira listing</button>` : ""}</footer></section>`;
+    const offers = listing.offers || [];
+    const renderedOffers = offers.map((offer) => this.renderOffer(offer)).join("");
+    const canCreateOffer = hasOperation(listing.availableOperations, "create_offer");
+    const publishedDate = listing.publishedAt ? `Pubblicata ${formatDate(listing.publishedAt)}` : "Non ancora pubblicata";
+    return `<article class="seller-listing" id="listing-${escapeHtml(listing.id)}"><header class="seller-listing__header"><div><div class="chip-row"><span class="chip">${escapeHtml(marketplaceResourceLabel(listing.asset.type))}</span><span class="chip" data-tone="${statusTone(listing.status, "published")}">${escapeHtml(listingStatusLabel(listing.status))}</span>${listing.asset.editorialLicense ? `<span class="chip">${icon("shield", { size: 13 })}${escapeHtml(listing.asset.editorialLicense)}</span>` : ""}</div><h2>${escapeHtml(listing.asset.title)}</h2><p>${escapeHtml(listing.asset.summary || "Nessuna descrizione disponibile.")}</p></div><dl class="seller-listing-metrics"><div><dt>Acquisizioni</dt><dd>${listing.metrics.acquisitionCount}</dd></div><div><dt>Ricavi simulati</dt><dd>${escapeHtml(formatRevenue(listing.metrics.revenueByCurrency))}</dd></div></dl></header><div class="seller-listing__section-heading"><div><span class="eyebrow">Offerte</span><h3>${offers.length ? `${offers.length} ${offers.length === 1 ? "offerta" : "offerte"}` : "Nessuna offerta"}</h3></div></div>${renderedOffers ? `<div class="seller-offer-grid">${renderedOffers}</div>` : `<div class="empty-state seller-offer-empty"><h3>La scheda non è ancora acquisibile</h3><p>Pubblica un’offerta indicando prezzo, diritti e gestione degli aggiornamenti.</p></div>`}${canCreateOffer ? this.renderOfferForm(listing, { open: offers.length === 0 }) : ""}<details class="technical-details seller-listing-technical"><summary>Dettagli tecnici della scheda</summary><dl class="definition-list"><div><dt>Listing ID</dt><dd><code>${escapeHtml(listing.id)}</code></dd></div><div><dt>Resource type</dt><dd><code>${escapeHtml(listing.asset.type)}</code></dd></div></dl></details><footer class="seller-listing__footer"><small>${escapeHtml(publishedDate)}</small>${hasOperation(listing.availableOperations, "withdraw_listing") ? `<button class="danger" type="button" data-withdraw="listing" data-id="${escapeHtml(listing.id)}" data-label="${escapeHtml(listing.asset.title)}">Ritira scheda dal catalogo</button>` : ""}</footer></article>`;
   }
 
   renderDistribution() {
-    const summary = this.distribution?.summary;
+    const distribution = this.data?.distribution;
+    const summary = distribution?.summary;
     if (!summary) return "";
-    const listingById = new Map((this.data?.listings || []).map((listing) => [String(listing.id), listing]));
-    const recentSales = (this.distribution.recentSales || []).map((sale) => {
-      const listing = listingById.get(String(sale.listingId));
-      return `<li><div><strong>${escapeHtml(listing?.asset?.title || "Asset Marketplace")}</strong><small>${escapeHtml(sale.buyer?.type || "buyer")} · ${escapeHtml(formatDate(sale.acquiredAt))}</small></div><span>${escapeHtml(formatPrice(sale.pricing))}</span></li>`;
-    }).join("");
-    const recentAdoptions = (this.distribution.recentAdoptions || []).map((adoption) => `<li><div><strong>${escapeHtml(adoption.action)}</strong><small>${escapeHtml(adoption.sourceResourceType)} · ${escapeHtml(formatDate(adoption.adoptedAt))}</small></div><span class="chip">Adozione</span></li>`).join("");
-    return `<section class="distribution-overview"><div class="section-heading"><div><span class="eyebrow">Performance</span><h2>Vendite e adozioni</h2></div></div><dl class="stats"><div><dt>Listing pubblicate</dt><dd>${summary.publishedListingCount}</dd></div><div><dt>Offer attive</dt><dd>${summary.activeOfferCount}</dd></div><div><dt>Acquisizioni</dt><dd>${summary.salesCount}</dd></div><div><dt>Adozioni</dt><dd>${summary.adoptionCount}</dd></div><div><dt>Ricavi simulati</dt><dd>${escapeHtml(formatRevenue(summary.revenueByCurrency))}</dd></div></dl><div class="activity-grid"><article class="activity-panel"><h3>Acquisizioni recenti</h3><ul class="commercial-activity">${recentSales || "<li>Nessuna acquisizione.</li>"}</ul></article><article class="activity-panel"><h3>Adozioni recenti</h3><ul class="commercial-activity">${recentAdoptions || "<li>Nessuna adozione.</li>"}</ul></article></div></section>`;
+    const recentSales = (distribution.recentSales || []).map((sale) => `<li><div><strong>${escapeHtml(sale.asset?.title || "Risorsa del Marketplace")}</strong><small>Acquisita da ${escapeHtml(sale.buyer?.name || "Persona")} · ${escapeHtml(formatDate(sale.acquiredAt))}</small></div><span>${escapeHtml(formatPrice(sale.pricing))}</span></li>`).join("");
+    const recentAdoptions = (distribution.recentAdoptions || []).map((adoption) => `<li><div><strong>${escapeHtml(adoption.actionLabel || "Risorsa riutilizzata")}</strong><small>${escapeHtml(adoption.beneficiary?.name || "Destinatario")} · ${escapeHtml(formatDate(adoption.adoptedAt))}</small></div><span class="chip">Adozione</span></li>`).join("");
+    return `<section class="seller-overview" aria-labelledby="seller-overview-title"><div class="section-heading"><div><span class="eyebrow">Panoramica</span><h2 id="seller-overview-title">Come stanno andando le tue risorse</h2></div></div><dl class="seller-stats"><div><dt>Schede nel catalogo</dt><dd>${summary.publishedListingCount}</dd></div><div><dt>Offerte attive</dt><dd>${summary.activeOfferCount}</dd></div><div><dt>Acquisizioni</dt><dd>${summary.salesCount}</dd></div><div><dt>Adozioni</dt><dd>${summary.adoptionCount}</dd></div><div><dt>Ricavi simulati</dt><dd>${escapeHtml(formatRevenue(summary.revenueByCurrency))}</dd></div></dl><details class="seller-activity" ${(distribution.recentSales || []).length || (distribution.recentAdoptions || []).length ? "open" : ""}><summary>Attività recente</summary><div class="seller-activity-grid"><article><h3>Acquisizioni recenti</h3><ul class="commercial-activity">${recentSales || "<li><span>Nessuna acquisizione recente.</span></li>"}</ul></article><article><h3>Adozioni recenti</h3><ul class="commercial-activity">${recentAdoptions || "<li><span>Nessuna adozione recente.</span></li>"}</ul></article></div><details class="technical-details"><summary>Metriche dettagliate</summary><dl class="definition-list"><div><dt>Acquisizioni a pagamento</dt><dd>${summary.paidSalesCount}</dd></div><div><dt>Acquisizioni gratuite</dt><dd>${summary.freeAcquisitionCount}</dd></div><div><dt>Acquirenti distinti</dt><dd>${summary.uniqueBuyers}</dd></div><div><dt>Utilizzatori distinti</dt><dd>${summary.uniqueAdopters}</dd></div></dl></details></details></section>`;
   }
 
   render() {
     if (this.busy && !this.data) {
-      this.innerHTML = `<main class="page commercial-page"><div class="empty-state"><div class="skeleton skeleton-line" style="width:15rem"></div><p>Caricamento distribuzione…</p></div></main>`;
+      this.innerHTML = `<main class="page seller-page"><div class="empty-state"><div class="skeleton skeleton-line" style="width:15rem"></div><p>Preparazione delle vendite…</p></div></main>`;
       return;
     }
     const selected = principalValue({ type: this.principal.principalType, id: this.principal.principalId });
@@ -222,7 +257,8 @@ export class ArtAroundCommerceManagementView extends HTMLElement {
     const page = Number(this.data?.page) || this.page;
     const pageSize = Number(this.data?.pageSize) || 10;
     const total = Number(this.data?.total) || 0;
-    this.innerHTML = `<main class="page commercial-page commerce-page" aria-busy="${this.busy}"><nav class="breadcrumb"><button type="button" data-workspace-back>${icon("arrowLeft", { size: 15 })} Workspace</button><span>/</span><span>Gestione offerte</span></nav><header class="page-header"><div><span class="eyebrow">Distribuzione commerciale</span><h1>Listing e offerte</h1><p>Configura prezzi e diritti, monitora acquisizioni e adozioni senza alterare lo storico.</p></div><a class="button-link secondary" data-route href="/acquisitions">${icon("history")} Storico licenze</a></header>${this.data ? `<form class="principal surface" data-commerce-principal><label><span>Gestisci la distribuzione di</span><select name="principal">${principalOptions(this.data.availablePrincipals || [], selected)}</select></label><button type="submit">Cambia</button></form>` : ""}${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderConfirmation()}${this.renderDistribution()}<section class="listing-management"><div class="section-heading"><div><span class="eyebrow">Catalogo del seller</span><h2>Listing gestite</h2></div><span class="count">${total}</span></div>${listings || `<div class="empty-state"><span>${icon("store", { size: 28 })}</span><h3>Nessuna listing</h3><p>Pubblica un asset dal Workspace per iniziare a configurare le offerte.</p></div>`}<nav class="pagination" aria-label="Pagine listing"><button type="button" data-commerce-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-commerce-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section></main>`;
+    const workspaceHref = `/workspace?principalType=${encodeURIComponent(this.principal.principalType)}&principalId=${encodeURIComponent(this.principal.principalId || "")}`;
+    this.innerHTML = `<main class="page seller-page" aria-busy="${this.busy}"><nav class="consumer-tabs" aria-label="Licenze e vendite"><a data-route href="/acquisitions">Le mie licenze</a><a data-route href="/workspace/commerce?principalType=${encodeURIComponent(this.principal.principalType)}&principalId=${encodeURIComponent(this.principal.principalId || "")}" aria-current="page">Vendite</a></nav><header class="seller-header"><div><span class="eyebrow">Distribuzione</span><h1>Vendite</h1><p>Gestisci le schede nel catalogo, crea offerte e controlla acquisizioni e adozioni.</p></div><a class="button-link secondary" data-route href="${workspaceHref}">${icon("workspace", { size: 16 })} Le mie risorse</a></header>${this.data ? `<form class="seller-context" data-commerce-principal><label><span>Vendite di</span><select name="principal">${sellerPrincipalOptions(this.data.availablePrincipals || [], selected)}</select><small>Le schede e le offerte appartengono al profilo o all’organizzazione selezionata.</small></label><button type="submit">Cambia</button></form>` : ""}${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderConfirmation()}${this.renderDistribution()}<section class="seller-listings" aria-labelledby="seller-listings-title"><div class="section-heading"><div><span class="eyebrow">Catalogo</span><h2 id="seller-listings-title">Schede nel catalogo</h2><p>Ogni scheda può avere più offerte con prezzo e diritti differenti.</p></div><span class="count">${total}</span></div>${listings || `<div class="empty-state"><span>${icon("store", { size: 28 })}</span><h3>Nessuna scheda pubblicata</h3><p>Apri una tua risorsa pubblicata e scegli “Pubblica nel Marketplace” per iniziare.</p><a class="button-link" data-route href="${workspaceHref}">Vai alle mie risorse</a></div>`}${total > pageSize ? `<nav class="pagination" aria-label="Pagine delle schede nel catalogo"><button type="button" data-commerce-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${page}</span><button type="button" data-commerce-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</section></main>`;
   }
 }
 

@@ -42,12 +42,20 @@ export function principalOptions(principals = [], selectedValue = "") {
   }).join("");
 }
 
-export function beneficiaryOptions(principals = [], selectedValue = "") {
+function scopedPrincipalOptions(principals = [], selectedValue = "") {
   return principals.map((principal) => {
     const value = principalValue(principal);
     const suffix = principal.type === "organization" ? " · organizzazione" : " · personale";
     return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(principal.name || "Account")}${suffix}</option>`;
   }).join("");
+}
+
+export function beneficiaryOptions(principals = [], selectedValue = "") {
+  return scopedPrincipalOptions(principals, selectedValue);
+}
+
+export function sellerPrincipalOptions(principals = [], selectedValue = "") {
+  return scopedPrincipalOptions(principals, selectedValue);
 }
 
 export function marketplaceResourceLabel(resourceType) {
