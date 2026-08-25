@@ -2,52 +2,61 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
-const shell = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/app-shell.js"), "utf8");
-const router = fs.readFileSync(path.join(root, "clients/marketplace/src/application/router.js"), "utf8");
-const hub = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/create-hub-view.js"), "utf8");
-const itemEditor = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/item-authoring-view.js"), "utf8");
-const venueChooser = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/venue-target-chooser.js"), "utf8");
-const workspaceBrowser = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-browser-view.js"), "utf8");
+const files = {
+  shell: "clients/marketplace/src/ui/app-shell.js",
+  create: "clients/marketplace/src/ui/create-hub-view.js",
+  item: "clients/marketplace/src/ui/item-authoring-view.js",
+  visit: "clients/marketplace/src/ui/visit-authoring-view.js",
+  venueTargets: "clients/marketplace/src/ui/venue-target-chooser.js",
+  workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
+};
+function read(key) { return fs.readFileSync(path.join(root, files[key]), "utf8"); }
+const shell = read("shell");
+const create = read("create");
+const item = read("item");
+const visit = read("visit");
+const venueTargets = read("venueTargets");
+const workspace = read("workspace");
 
-test("shell espone le cinque aree principali e monta il create hub", () => {
-  assert.match(router, /"\/create"/);
-  assert.match(shell, /import "\.\/create-hub-view\.js"/);
-  assert.match(shell, /if \(route === "\/create"\) return "<artaround-create-hub-view><\/artaround-create-hub-view>"/);
-  for (const label of ["Catalogo", "Le mie risorse", "Crea", "Licenze e vendite", "Account e organizzazioni"]) assert.match(shell, new RegExp(`>${label}<`));
-  assert.doesNotMatch(shell, /<span>Crea contenuto<\/span>/);
-  assert.doesNotMatch(shell, /<span>Crea visita<\/span>/);
+test("create boundary passa il syntax gate", () => {
+  for (const file of Object.values(files)) {
+    const result = spawnSync(process.execPath, ["--check", path.join(root, file)], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${file}: ${result.stderr || result.stdout}`);
+  }
 });
 
-test("create hub usa il preflight e blocca entrambi i flussi contenuto quando mancano le regole", () => {
-  assert.match(hub, /marketplaceRepository\.authoringPreflight\(/);
-  assert.match(hub, /if \(!content\?\.allowed\) return this\.blockerCard\(\)/);
-  assert.match(hub, /if \(!this\.preflight\?\.content\?\.allowed\) return this\.blockerCard\(\{ physical: true \}\)/);
-  assert.match(hub, /Prima prepara le regole editoriali/);
-  assert.match(hub, /Non verrà creato alcun contenuto finché questo prerequisito non è risolto/);
-  assert.match(hub, /data-venue-content/);
+test("shell espone Crea dentro la IA contestuale", () => {
+  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Marketplace", "Account"]) assert.match(shell, new RegExp(`>${label}<`));
+  assert.match(shell, /class="nav-create"/);
+  assert.match(shell, /authoringIsCreation/);
 });
 
-test("item authoring applica lo stesso preflight anche sui deep link e rispetta il principal selezionato", () => {
-  assert.match(itemEditor, /marketplaceRepository\.workspaceContext\(/);
-  assert.match(itemEditor, /marketplaceRepository\.authoringPreflight\(/);
-  assert.doesNotMatch(itemEditor, /marketplaceRepository\.workspace\(/);
-  assert.match(itemEditor, /if \(!this\.preflight\?\.content\?\.allowed\)/);
-  assert.match(itemEditor, /principalType/);
-  assert.match(itemEditor, /principalId/);
+test("Create Hub deriva l'owner dal contesto di sessione", () => {
+  assert.match(create, /readOperatingContext/);
+  assert.match(create, /operatingPrincipal/);
+  assert.match(create, /this\.principal\(\)/);
+  assert.match(create, /\/workspace\/item-authoring/);
+  assert.match(create, /\/workspace\/visit-authoring/);
+  assert.doesNotMatch(create, /principalType|principalId|data-principal-form/);
 });
 
-test("il flusso oggetto fisico conserva il principal fino all'Item editor", () => {
-  assert.match(hub, /workspace\/venue-targets\?venueId=.*principalQuery/);
-  assert.match(venueChooser, /principalType/);
-  assert.match(venueChooser, /principalId/);
-  assert.match(venueChooser, /params\.set\("venueTargetId", target\.id\)/);
-  assert.match(venueChooser, /workspace\/item-authoring\?\$\{params\.toString\(\)\}/);
+test("Item e Visit editor non permettono di cambiare principal dall'editor", () => {
+  assert.match(item, /readOperatingContext/);
+  assert.match(visit, /readOperatingContext/);
+  assert.doesNotMatch(item, /data-principal-form|changePrincipal\s*\(|searchParams\.set\("principalType"|searchParams\.set\("principalId"/);
+  assert.doesNotMatch(visit, /data-new-principal|principalType:\s*params\.get|principalId:\s*params\.get/);
 });
 
-test("Le mie risorse instrada la nuova creazione attraverso il hub", () => {
-  assert.match(workspaceBrowser, /return `\/create\?\$\{p\.toString\(\)\}`/);
-  assert.doesNotMatch(workspaceBrowser, />Crea un contenuto<\/a>/);
-  assert.doesNotMatch(workspaceBrowser, />Crea una visita<\/a>/);
+test("flusso da oggetto fisico propaga solo il VenueTarget necessario", () => {
+  assert.match(venueTargets, /venueTargetId/);
+  assert.match(venueTargets, /\/workspace\/item-authoring\?venueTargetId=/);
+  assert.doesNotMatch(venueTargets, /principalType|principalId|principalQuery/);
+});
+
+test("Libreria apre Crea senza serializzare il contesto nel link", () => {
+  assert.match(workspace, /href="\/create"/);
+  assert.doesNotMatch(workspace, /\/create\?\$\{p\.toString\(\)\}/);
 });
