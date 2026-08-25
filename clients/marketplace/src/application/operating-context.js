@@ -73,15 +73,6 @@ export function operatingPrincipal(context = readOperatingContext()) {
   return { principalType: normalized.type, principalId: normalized.id };
 }
 
-export function appendOperatingPrincipal(path, context = readOperatingContext()) {
-  const principal = operatingPrincipal(context);
-  if (!principal) return path;
-  const url = new URL(path, window.location.origin);
-  url.searchParams.set("principalType", principal.principalType);
-  url.searchParams.set("principalId", principal.principalId);
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
 export function contextKindLabel(context = readOperatingContext()) {
   return context?.type === "organization" ? "Organizzazione" : "Area personale";
 }
