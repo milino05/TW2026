@@ -17,7 +17,9 @@ Dopo `npm run build:clients`, il processo Express serve le due applicazioni sull
 
 Il Navigator è configurato tramite `clients/navigator/public/navigator.config.json`; la configurazione corrente usa la Venue demo della Pinacoteca Nazionale di Bologna. Il Marketplace resta unico e generico rispetto alla Venue.
 
-Il Marketplace include Catalog, Creator Workspace, Item authoring, EditorialRelease composition e Visit authoring. Il Visit editor crea o modifica le `VisitV2`, ricerca i contenuti delle EditorialRelease con paginazione server-side, permette aggiunta/rimozione/riordino e ruoli `core | recommended | optional`, collega i contenuti ai VenueTarget quando il Subject è presente nella Venue e usa il workflow editoriale proiettato dal backend. Le indicazioni logistiche della Visit sono gestite separatamente dai contenuti e non vengono modellate come Item.
+Dopo il login il Marketplace apre un **Context Hub**: l'utente sceglie se operare nella propria area personale oppure per una Organization a cui ha accesso. Il contesto è una preferenza di sessione e non sostituisce authorization, ownership, Entitlement o selezione della Venue; il backend continua a essere autorevole sui principal e sulle capability. La navigazione principale è **Home · Esplora · Libreria · Crea · Marketplace · Account**, mentre **Esplora** comprende Catalogo, Organizzazioni e Sedi.
+
+Il Marketplace include Catalog, Creator Workspace/Libreria, Item authoring, EditorialRelease composition e Visit authoring. Il Visit editor crea o modifica le `VisitV2`, ricerca i contenuti delle EditorialRelease con paginazione server-side, permette aggiunta/rimozione/riordino e ruoli `core | recommended | optional`, collega i contenuti ai VenueTarget quando il Subject è presente nella Venue e usa il workflow editoriale proiettato dal backend. Le indicazioni logistiche della Visit sono gestite separatamente dai contenuti e non vengono modellate come Item.
 
 ## Installazione e verifica
 
@@ -101,18 +103,19 @@ npm audit --omit=dev --audit-level=high
 npm audit --prefix clients/navigator --audit-level=high
 ```
 
-I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'implementazione, compresi generator, workflow editoriale, Visit editor, separazione logistica/contenuti, dataset d'esame e static hosting.
+I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'implementazione, compresi generator, workflow editoriale, Visit editor, separazione logistica/contenuti, dataset d'esame e static hosting. I contract UX Marketplace proteggono inoltre il Context Hub e l'assenza dei selector locali di principal senza congelare microcopy non normativa.
 
 ## Documentazione canonica
 
 - `docs/domain-model-v2.md` — modello di dominio v2;
 - `docs/marketplace-domain-v2.md` — dominio commerciale capability-based;
 - `docs/client-architecture-decisions.md` — decisioni client-v2 approvate;
+- `docs/marketplace-context-hub-ia.md` — decisione corrente per Context Hub, IA contestuale e separazione discovery/management;
 - `docs/client-v2-implementation-plan.md` — vertical slice e criteri di completamento;
 - `docs/client-v2-implementation-status.md` — stato operativo;
 - `docs/revision-workflow.md` — workflow editoriale v2;
 - `docs/deployment.md` — build, seed e deploy gocker;
-- `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly.
+- `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly;
 - `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring.
 
 ## Principi correnti
