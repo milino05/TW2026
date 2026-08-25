@@ -6,6 +6,10 @@ import { icon } from "./icons.js";
 import "./context-hub-view.js";
 import "./home-view.js";
 import "./catalog-view.js";
+import "./discovery-organizations-view.js";
+import "./public-organization-view.js";
+import "./discovery-venues-view.js";
+import "./public-venue-view.js";
 import "./create-hub-view.js";
 import "./workspace-browser-view.js";
 import "./workspace-view.js";
@@ -22,10 +26,12 @@ import "./acquisition-history-view.js";
 import "./commerce-management-view.js";
 
 const TITLES = {
-  "/": "Home", "/context": "Scegli area", "/home": "Home", "/catalog": "Catalogo", "/catalog/detail": "Dettaglio catalogo", "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
+  "/": "Home", "/context": "Scegli area", "/home": "Home", "/catalog": "Esplora", "/catalog/detail": "Dettaglio catalogo",
+  "/organizations": "Organizzazioni", "/organizations/public": "Organizzazione", "/organizations/detail": "Gestione organizzazione",
+  "/venues": "Musei e sedi", "/venues/public": "Sede", "/venues/editor": "Gestione sede",
+  "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
   "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Oggetti della sede",
-  "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/organizations/detail": "Organizzazione",
-  "/namespaces/editor": "Regole editoriali", "/venues/editor": "Sede e spazi fisici", "/404": "Pagina non trovata",
+  "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/namespaces/editor": "Regole editoriali", "/404": "Pagina non trovata",
 };
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -149,7 +155,8 @@ export class MarketplaceAppShell extends HTMLElement {
   renderNavigation(route) {
     const creation = authoringIsCreation(route);
     const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose"].includes(route) || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
-    return `${this.renderContextIdentity()}<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="${this.menuOpen}" aria-label="Apri navigazione">${icon("menu")}</button><nav class="market-nav" data-open="${this.menuOpen}" aria-label="Navigazione principale"><a data-route href="/home" aria-current="${current(route, ["/", "/home"])}">${icon("home")}<span>Home</span></a><a data-route href="/catalog" aria-current="${current(route, ["/catalog", "/catalog/detail"])}">${icon("catalog")}<span>Catalogo</span></a><a data-route href="/workspace" aria-current="${libraryActive ? "page" : "false"}">${icon("workspace")}<span>Libreria</span></a><a class="nav-create" data-route href="/create" aria-current="${creation ? "page" : "false"}">${icon("plus")}<span>Crea</span></a><a data-route href="/acquisitions" aria-current="${current(route, ["/acquisitions", "/workspace/commerce"])}">${icon("store")}<span>Marketplace</span></a><a class="nav-profile" data-route href="/profile" aria-current="${current(route, ["/profile"])}" title="${escapeHtml(this.user.username)}">${icon("user")}<span>Account</span></a><button type="button" data-logout title="Esci">${icon("logout")}<span>Esci</span></button></nav>`;
+    const exploreActive = ["/catalog", "/catalog/detail", "/organizations", "/organizations/public", "/venues", "/venues/public"].includes(route);
+    return `${this.renderContextIdentity()}<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="${this.menuOpen}" aria-label="Apri navigazione">${icon("menu")}</button><nav class="market-nav" data-open="${this.menuOpen}" aria-label="Navigazione principale"><a data-route href="/home" aria-current="${current(route, ["/", "/home"])}">${icon("home")}<span>Home</span></a><a data-route href="/catalog" aria-current="${exploreActive ? "page" : "false"}">${icon("search")}<span>Esplora</span></a><a data-route href="/workspace" aria-current="${libraryActive ? "page" : "false"}">${icon("workspace")}<span>Libreria</span></a><a class="nav-create" data-route href="/create" aria-current="${creation ? "page" : "false"}">${icon("plus")}<span>Crea</span></a><a data-route href="/acquisitions" aria-current="${current(route, ["/acquisitions", "/workspace/commerce"])}">${icon("store")}<span>Marketplace</span></a><a class="nav-profile" data-route href="/profile" aria-current="${current(route, ["/profile"])}" title="${escapeHtml(this.user.username)}">${icon("user")}<span>Account</span></a><button type="button" data-logout title="Esci">${icon("logout")}<span>Esci</span></button></nav>`;
   }
 
   renderRoute(route) {
@@ -157,6 +164,10 @@ export class MarketplaceAppShell extends HTMLElement {
     if (["/", "/home"].includes(route)) return "<artaround-home-view></artaround-home-view>";
     if (route === "/catalog") return "<artaround-catalog-view></artaround-catalog-view>";
     if (route === "/catalog/detail") return "<artaround-listing-detail-view></artaround-listing-detail-view>";
+    if (route === "/organizations") return "<artaround-discovery-organizations-view></artaround-discovery-organizations-view>";
+    if (route === "/organizations/public") return "<artaround-public-organization-view></artaround-public-organization-view>";
+    if (route === "/venues") return "<artaround-discovery-venues-view></artaround-discovery-venues-view>";
+    if (route === "/venues/public") return "<artaround-public-venue-view></artaround-public-venue-view>";
     if (route === "/acquisitions") return "<artaround-acquisition-history-view></artaround-acquisition-history-view>";
     if (route === "/create") return "<artaround-create-hub-view></artaround-create-hub-view>";
     if (route === "/workspace/commerce") return "<artaround-commerce-management-view></artaround-commerce-management-view>";
