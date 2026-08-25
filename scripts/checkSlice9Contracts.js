@@ -48,7 +48,8 @@ requirePattern("routes/marketplaceV2.routes.js", /visit-authoring\/new[\s\S]*vis
 requirePattern("clients/marketplace/src/application/router.js", /\/workspace\/visit-authoring/, "Visit authoring client route");
 requirePattern("clients/marketplace/src/ui/app-shell.js", /visit-authoring-view[\s\S]*artaround-visit-authoring-view/, "Visit authoring client mount");
 rejectPattern("clients/marketplace/src/ui/app-shell.js", /visit-logistics-editor/, "Legacy separate Visit logistics mount");
-requirePattern("clients/marketplace/src/ui/workspace-view.js", /data-visit-editor[\s\S]*Crea nuova visita/, "Workspace Visit editor entry points");
+requirePattern("clients/marketplace/src/ui/create-hub-view.js", /renderVisitCard[\s\S]*\/workspace\/visit-authoring\?[\s\S]*Crea visita/, "Create hub new Visit entry point");
+requirePattern("clients/marketplace/src/ui/workspace-view.js", /resourceType\s*===\s*["']visit["'][\s\S]*\/workspace\/visit-authoring\?visitId=/, "Workspace existing Visit authoringRef entry point");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /createVisit[\s\S]*updateVisit/, "Visit create and edit through VisitV2 API");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Informazioni principali[\s\S]*Contenuti[\s\S]*Tappe[\s\S]*Impostazioni[\s\S]*Logistica[\s\S]*Riepilogo e pubblicazione/, "Six-step novice-first Visit workflow");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-move-entry[\s\S]*data-remove-entry/, "Visit content reorder and removal controls");
