@@ -1,6 +1,8 @@
 const BASE_PATH = "/marketplace";
 const ROUTES = new Set([
   "/",
+  "/context",
+  "/home",
   "/catalog",
   "/catalog/detail",
   "/acquisitions",

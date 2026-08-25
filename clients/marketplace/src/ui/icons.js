@@ -1,4 +1,5 @@
 const PATHS = {
+  home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
   catalog: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20"/>',
   workspace: '<rect width="18" height="14" x="3" y="5" rx="2"/><path d="M8 5V3h8v2M3 10h18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
