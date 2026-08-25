@@ -57,7 +57,7 @@ requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="cor
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContent[\s\S]*data-content-page/, "Paginated Visit content search");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /deliveryAnchorId:\s*null[\s\S]*data-add-anchor[\s\S]*data-entry-anchor/, "Explicit content-to-anchor separation");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /preVisitNotes[\s\S]*routeHints/, "Visit logistics integrated while preserving route hints");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /non sono Item[\s\S]*contentEntries/, "Visit logistics kept separate from Item content");
+requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-visit-logistics[\s\S]*serializeRouteHints\(\)/, "Visit logistics editing boundary kept separate from content entries");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /executeWorkspaceOperation[\s\S]*resourceType:\s*["']visit["']/, "Backend-authoritative Visit workflow from editor");
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /window\.prompt\(/, "Native prompt in Visit workflow");
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /role:\s*["']logistics["']|itemType:\s*["']logistics["']/, "Logistics encoded as Visit content");
