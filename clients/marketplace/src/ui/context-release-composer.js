@@ -87,7 +87,7 @@ export class ContextReleaseComposer extends HTMLElement {
       </label>`).join("");
 
     this.innerHTML = `<main class="composer-page">
-      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">${icon("arrowLeft", { size: 16 })} Le mie risorse</a><span>/</span><span>Pubblica una nuova versione</span></nav>
+      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">${icon("arrowLeft", { size: 16 })} Libreria</a><span>/</span><span>Pubblica una nuova versione</span></nav>
       <header class="page-header"><div><span class="eyebrow">Raccolta editoriale</span><h1>Pubblica una nuova versione</h1><p>Scegli i contenuti da includere e crea una versione pubblicata della raccolta editoriale.</p></div>${this.data ? `<span class="chip" data-selection-count aria-live="polite">${selectedCount} ${selectedCount === 1 ? "contenuto selezionato" : "contenuti selezionati"}</span>` : ""}</header>
       ${this.data ? `<section class="release-context surface"><div class="release-context__icon">${icon("book", { size: 24 })}</div><div><span class="eyebrow">Raccolta editoriale</span><h2>${escapeHtml(this.data.context.name)}</h2><p>Spazio editoriale: <strong>${escapeHtml(this.data.contentSpace.name)}</strong> · Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong></p></div></section>` : ""}
       ${this.busy ? `<p role="status">${icon("info", { size: 17 })} Elaborazione in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p role="status">${icon("check", { size: 17 })} ${escapeHtml(this.notice)}</p>` : ""}
