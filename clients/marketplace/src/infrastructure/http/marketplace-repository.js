@@ -22,8 +22,12 @@ export const marketplaceRepository = {
     if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
     return apiClient.request(`/v2/marketplace/catalog?${params.toString()}`);
   },
-  detail(listingId, { selectedVenueIds = [] } = {}) {
+  detail(listingId, { selectedVenueIds = [], beneficiaryType = null, beneficiaryId = null } = {}) {
     const params = venueParams(new URLSearchParams(), selectedVenueIds);
+    if (beneficiaryType && beneficiaryId) {
+      params.set("beneficiaryType", beneficiaryType);
+      params.set("beneficiaryId", beneficiaryId);
+    }
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}${suffix}`);
   },

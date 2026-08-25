@@ -1,5 +1,6 @@
 const marketplace = require("../services/marketplaceV2.service");
 const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
+const marketplaceConsumer = require("../services/marketplaceConsumerProjectionV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
 const workspaceResources = require("../services/marketplaceWorkspaceResourcesV2.service");
@@ -58,6 +59,8 @@ async function detail(req, res, next) {
       listingId: req.params.listingId,
       actorUserId: req.user._id,
       selectedVenueIds: selectedVenueIds(req),
+      beneficiaryType: req.query?.beneficiaryType || null,
+      beneficiaryId: req.query?.beneficiaryId || null,
     }));
   } catch (error) { next(error); }
 }
@@ -127,13 +130,14 @@ async function acquire(req, res, next) {
 
 async function acquisitionHistory(req, res, next) {
   try {
-    res.status(200).json(await marketplace.listAcquisitionHistory({
+    const history = await marketplace.listAcquisitionHistory({
       actorUserId: req.user._id,
       beneficiaryType: req.query?.beneficiaryType || "user",
       beneficiaryId: req.query?.beneficiaryId || req.user._id,
       page: req.query?.page,
       limit: req.query?.limit,
-    }));
+    });
+    res.status(200).json(await marketplaceConsumer.enrichAcquisitionHistory({ actorUserId: req.user._id, history }));
   } catch (error) { next(error); }
 }
 

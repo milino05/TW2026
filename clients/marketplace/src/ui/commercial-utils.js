@@ -42,6 +42,22 @@ export function principalOptions(principals = [], selectedValue = "") {
   }).join("");
 }
 
+export function beneficiaryOptions(principals = [], selectedValue = "") {
+  return principals.map((principal) => {
+    const value = principalValue(principal);
+    const suffix = principal.type === "organization" ? " · organizzazione" : " · personale";
+    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(principal.name || "Account")}${suffix}</option>`;
+  }).join("");
+}
+
+export function marketplaceResourceLabel(resourceType) {
+  if (["item_edition", "item_revision"].includes(resourceType)) return "Contenuto";
+  if (["visit", "visit_revision"].includes(resourceType)) return "Visita";
+  if (["editorial_context", "editorial_release"].includes(resourceType)) return "Raccolta editoriale";
+  if (["namespace", "namespace_revision"].includes(resourceType)) return "Regole editoriali";
+  return "Risorsa";
+}
+
 export function hasOperation(operations = [], code) {
   return operations.some((operation) => operation.code === code);
 }
