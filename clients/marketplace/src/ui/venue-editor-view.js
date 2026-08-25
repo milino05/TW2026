@@ -3,167 +3,133 @@ import { accountRepository } from "../infrastructure/http/account-repository.js"
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
+import { venueDraftMixin } from "./venue-editor-draft-mixin.js";
+import { venueActionMixin } from "./venue-editor-action-mixin.js";
+import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
+import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
+import { venueRoutingMixin } from "./venue-editor-routing-mixin.js";
+import { venueSectionMixin } from "./venue-editor-section-mixin.js";
+
+const SECTIONS = [
+  ["overview", "Panoramica"],
+  ["targets", "Oggetti esposti"],
+  ["visitors", "Informazioni visitatori"],
+  ["map", "Mappa e luoghi"],
+  ["routes", "Percorsi"],
+  ["publication", "Pubblicazione"],
+];
+const LAYOUT_FIELDS = ["placeTypes", "routingAttributes", "routingPresets", "floors", "places", "venueTargetPlacements", "connections"];
+const WORKFLOW_CONFIG = {
+  "venue.release.check": ["check-consistency", {}],
+  "venue.release.request_review": ["review", {}],
+  "venue.release.withdraw_review": ["review", { method: "DELETE" }],
+  "venue.release.request_changes": ["request-changes", {}],
+  "venue.release.publish": ["publish", {}],
+};
+const WORKFLOW_LABEL = {
+  "venue.release.check": "Controlla se è tutto pronto",
+  "venue.release.request_review": "Invia in revisione",
+  "venue.release.withdraw_review": "Ritira dalla revisione",
+  "venue.release.request_changes": "Richiedi modifiche",
+  "venue.release.publish": "Pubblica configurazione",
+};
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
 function comma(value) { return String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean); }
-function json(value, fallback = {}) { if (!String(value || "").trim()) return fallback; return JSON.parse(value); }
+function parseJson(value, fallback = {}) { if (!String(value || "").trim()) return fallback; return JSON.parse(value); }
 function pretty(value) { return JSON.stringify(value ?? {}, null, 2); }
 function mediaText(values = []) { return values.map((entry) => `${entry.url}|${entry.altText || ""}`).join("\n"); }
 function parseMedia(value) { return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const separator = line.indexOf("|"); return separator < 0 ? { url: line, altText: "" } : { url: line.slice(0, separator).trim(), altText: line.slice(separator + 1).trim() }; }); }
 function selected(value, current) { return String(value || "") === String(current || "") ? "selected" : ""; }
 function refsText(values = []) { return values.map((entry) => `${entry.scheme}|${entry.id}|${entry.matchType || "exact"}`).join("\n"); }
-function parseRefs(value) { return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [scheme, id, matchType = "exact"] = line.split("|").map((part) => part.trim()); return { scheme, id, matchType }; }); }
+function parseRefs(value) { return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [scheme, id, matchType = "exact"] = line.split("|").map((part) => part.trim()); return { scheme, id, matchType }; }).filter((entry) => entry.scheme && entry.id); }
 function semanticRefChips(values = [], editable = true) { return values.length ? values.map((entry, index) => `<span class="semantic-ref-chip"><span>${escapeHtml(entry.scheme)} · ${escapeHtml(entry.id)} · ${escapeHtml(entry.matchType || "exact")}</span>${editable ? `<button type="button" data-remove-semantic-ref="${index}" aria-label="Rimuovi mapping ${escapeHtml(entry.id)}">×</button>` : ""}</span>`).join("") : `<span class="muted">Nessun mapping esterno</span>`; }
+function statusLabel(status) { return { draft: "Bozza", in_review: "In revisione", changes_requested: "Modifiche richieste", published: "Pubblicata", superseded: "Superata" }[status] || status || "Da configurare"; }
+function sourceLabel(source) { return source === "working" ? "Bozza di lavoro" : source === "published" ? "Versione pubblicata" : "Non configurata"; }
+function availabilityLabel(value) { return value === "active" ? "Disponibile" : "Temporaneamente non disponibile"; }
 
 export class ArtAroundVenueEditorView extends HTMLElement {
-  data = null; busy = false; error = null; message = null; selectedSubject = null; dirty = false; id = venueId();
-  connectedCallback() { this.addEventListener("click", this.onClick); this.addEventListener("submit", this.onSubmit); this.addEventListener("input", this.onInput); this.addEventListener("subject-selected", this.onSubjectSelected); this.addEventListener("semantic-ref-selected", this.onSemanticRefSelected); window.addEventListener("beforeunload", this.onBeforeUnload); this.load(); }
-  disconnectedCallback() { this.removeEventListener("click", this.onClick); this.removeEventListener("submit", this.onSubmit); this.removeEventListener("input", this.onInput); this.removeEventListener("subject-selected", this.onSubjectSelected); this.removeEventListener("semantic-ref-selected", this.onSemanticRefSelected); window.removeEventListener("beforeunload", this.onBeforeUnload); }
-  async load() { if (!this.id) { this.error = "Venue non specificata"; this.render(); return; } this.busy = true; this.error = null; this.render(); try { this.data = await managementRepository.venue(this.id); } catch (error) { this.error = error instanceof Error ? error.message : "Venue non disponibile"; } finally { this.busy = false; this.render(); } }
-  async execute(callback, message) { this.busy = true; this.error = null; this.message = null; this.render(); try { await callback(); this.dirty = false; this.message = message; this.data = await managementRepository.venue(this.id); } catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; } finally { this.busy = false; this.render(); } }
+  data = null;
+  busy = false;
+  error = null;
+  message = null;
+  selectedSubject = null;
+  dirty = false;
+  id = venueId();
+  leaveConfirmation = false;
+  pendingWorkflow = null;
+  workflowMessage = "";
+  trashTarget = null;
 
-  onInput = (event) => { if (event.target?.closest?.("artaround-semantic-entity-picker")) return; this.markDirty(); };
-  markDirty() { this.dirty = true; const indicator = this.querySelector("[data-dirty-indicator]"); if (indicator) { indicator.dataset.tone = "warning"; indicator.innerHTML = `${icon("warning", { size: 14 })} Modifiche non salvate`; } }
-  onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
-
-  collectSection(field) {
-    const rows = [...this.querySelectorAll(`[data-layout-section="${field}"] [data-layout-row]`)];
-    const value = (row, name) => row.querySelector(`[name="${name}"]`)?.value || "";
-    if (field === "placeTypes") return rows.map((row) => ({ key: value(row, "key"), label: value(row, "label"), description: value(row, "description"), userIntents: comma(value(row, "userIntents")), semanticRefs: parseRefs(value(row, "semanticRefs")) }));
-    if (field === "routingAttributes") return rows.map((row) => ({ key: value(row, "key"), label: value(row, "label"), description: value(row, "description"), dataType: value(row, "dataType"), unit: value(row, "unit") || null, options: comma(value(row, "options")), canonicalKey: value(row, "canonicalKey") || null, appliesTo: value(row, "appliesTo") || "connection" }));
-    if (field === "routingPresets") return rows.map((row) => ({ key: value(row, "key"), label: value(row, "label"), description: value(row, "description"), requirements: json(value(row, "requirements"), []) }));
-    if (field === "floors") return rows.map((row) => ({ key: value(row, "key"), label: value(row, "label"), map: { imageUrl: value(row, "imageUrl") || null, width: value(row, "width") ? Number(value(row, "width")) : null, height: value(row, "height") ? Number(value(row, "height")) : null } }));
-    if (field === "places") return rows.map((row) => ({ ...(value(row, "_id") ? { _id: value(row, "_id") } : {}), typeKey: value(row, "typeKey"), label: value(row, "label"), floorKey: value(row, "floorKey"), position: { x: Number(value(row, "x")), y: Number(value(row, "y")) }, attributes: json(value(row, "attributes"), {}) }));
-    if (field === "venueTargetPlacements") return rows.map((row) => ({ venueTargetId: value(row, "venueTargetId"), primaryPlaceId: value(row, "primaryPlaceId"), placeIds: comma(value(row, "placeIds")) }));
-    if (field === "connections") return rows.map((row) => ({ ...(value(row, "_id") ? { _id: value(row, "_id") } : {}), fromPlaceId: value(row, "fromPlaceId"), toPlaceId: value(row, "toPlaceId"), directionality: value(row, "directionality"), distanceMeters: Number(value(row, "distanceMeters")), additionalDelaySeconds: Number(value(row, "additionalDelaySeconds") || 0), attributes: json(value(row, "attributes"), {}), instructions: { forward: value(row, "forward") || null, backward: value(row, "backward") || null } }));
-    return [];
+  connectedCallback() {
+    this.addEventListener("click", this.onClick);
+    this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("input", this.onInput);
+    this.addEventListener("subject-selected", this.onSubjectSelected);
+    this.addEventListener("semantic-ref-selected", this.onSemanticRefSelected);
+    window.addEventListener("beforeunload", this.onBeforeUnload);
+    this.load();
+  }
+  disconnectedCallback() {
+    this.removeEventListener("click", this.onClick);
+    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("input", this.onInput);
+    this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this.removeEventListener("semantic-ref-selected", this.onSemanticRefSelected);
+    window.removeEventListener("beforeunload", this.onBeforeUnload);
   }
 
-  onClick = async (event) => {
+  async load() {
+    if (!this.id) { this.error = "Sede non specificata"; this.render(); return; }
+    this.busy = true; this.error = null; this.render();
+    try { this.data = await managementRepository.venue(this.id); }
+    catch (error) { this.error = error instanceof Error ? error.message : "Sede non disponibile"; }
+    finally { this.busy = false; this.render(); }
+  }
+
+  async execute(callback, message, { preserveDraft = false } = {}) {
+    let draft = null;
+    if (preserveDraft && this.dirty) {
+      try { draft = this.captureDraft(); }
+      catch (error) { this.error = `Correggi prima i dati non validi: ${error.message}`; this.render(); return false; }
+    }
+    this.busy = true; this.error = null; this.message = null; this.render();
+    try {
+      await callback();
+      this.data = await managementRepository.venue(this.id);
+      if (draft) { this.applyDraft(draft); this.dirty = true; }
+      else this.dirty = false;
+      this.leaveConfirmation = false; this.pendingWorkflow = null; this.workflowMessage = ""; this.trashTarget = null;
+      this.message = message;
+      return true;
+    } catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; return false; }
+    finally { this.busy = false; this.render(); }
+  }
+
+  onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
+  onInput = (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    const removeSemanticRef = target?.closest("button[data-remove-semantic-ref]");
-    if (removeSemanticRef) {
-      const row = removeSemanticRef.closest("[data-layout-row]");
-      const input = row?.querySelector('[name="semanticRefs"]');
-      if (input) {
-        const refs = parseRefs(input.value);
-        refs.splice(Number(removeSemanticRef.dataset.removeSemanticRef), 1);
-        input.value = refsText(refs);
-        row.querySelector("[data-semantic-ref-list]").innerHTML = semanticRefChips(refs, true);
-        this.markDirty();
-      }
+    if (!target) return;
+    if (target.matches("[data-workflow-message]")) {
+      this.workflowMessage = target.value;
+      const button = this.querySelector("[data-confirm-workflow], [data-save-and-workflow]");
+      if (button) button.disabled = !this.workflowMessage.trim();
       return;
     }
-    if (target?.closest("button[data-back]")) { if (this.dirty && !window.confirm("Ci sono modifiche non salvate. Uscire comunque?")) return; navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}`); return; }
-    const ensure = target?.closest("button[data-ensure-release]"); if (ensure) { await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Bozza fisica pronta."); return; }
-    const add = target?.closest("button[data-add-layout]");
-    if (add) { try { const field = add.dataset.addLayout; this.data.layout[field] = this.collectSection(field); this.data.layout[field].push(this.emptyEntry(field)); this.dirty = true; this.render(); } catch (error) { this.error = `JSON non valido: ${error.message}`; this.render(); } return; }
-    const remove = target?.closest("button[data-remove-layout]");
-    if (remove) { try { const field = remove.dataset.removeLayout; this.data.layout[field] = this.collectSection(field); this.data.layout[field].splice(Number(remove.dataset.index), 1); this.dirty = true; this.render(); } catch (error) { this.error = `JSON non valido: ${error.message}`; this.render(); } return; }
-    const workflow = target?.closest("button[data-workflow]");
-    if (workflow) {
-      if (this.dirty && !window.confirm("Le modifiche non salvate verranno perse. Continuare con il workflow?")) return;
-      const code = workflow.dataset.workflow; const config = { "venue.release.check": ["check-consistency", {}], "venue.release.request_review": ["review", {}], "venue.release.withdraw_review": ["review", { method: "DELETE" }], "venue.release.request_changes": ["request-changes", {}], "venue.release.publish": ["publish", {}] }[code]; if (!config) return;
-      if (code === "venue.release.request_changes") { const message = window.prompt("Motivazione delle modifiche richieste:"); if (message === null) return; config[1].payload = { message }; }
-      await this.execute(() => managementRepository.venueWorkflow(this.id, config[0], config[1]), "Workflow Venue aggiornato."); return;
-    }
-    const trash = target?.closest("button[data-trash-target]");
-    if (trash && window.confirm(`Spostare ${trash.dataset.label} nel cestino?`)) await this.execute(() => managementRepository.trashVenueTarget(this.id, trash.dataset.trashTarget), "VenueTarget spostato nel cestino.");
-  };
-
-  emptyEntry(field) {
-    if (field === "placeTypes") return { key: "", label: "", description: "", userIntents: [], semanticRefs: [] };
-    if (field === "routingAttributes") return { key: "", label: "", dataType: "boolean", appliesTo: "connection", options: [] };
-    if (field === "routingPresets") return { key: "", label: "", requirements: [] };
-    if (field === "floors") return { key: "", label: "", map: {} };
-    if (field === "places") return { typeKey: "", label: "", floorKey: "", position: { x: 0.5, y: 0.5 }, attributes: {} };
-    if (field === "venueTargetPlacements") return { venueTargetId: "", primaryPlaceId: "", placeIds: [] };
-    return { fromPlaceId: "", toPlaceId: "", directionality: "bidirectional", distanceMeters: 1, additionalDelaySeconds: 0, attributes: {}, instructions: {} };
-  }
-
-  onSubmit = async (event) => {
-    const form = event.target instanceof HTMLFormElement ? event.target : null; if (!form) return; const data = new FormData(form);
-    if (form.matches("[data-venue-metadata]")) { event.preventDefault(); await this.execute(() => accountRepository.updateVenue(this.id, { name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Dettagli Venue aggiornati."); }
-    else if (form.matches("[data-previsit]")) { event.preventDefault(); await this.execute(() => managementRepository.updateVenueRelease(this.id, { preVisitInformation: String(data.get("preVisitInformation") || "").split("\n").map((line) => line.trim()).filter(Boolean) }), "Informazioni pre-visita salvate."); }
-    else if (form.matches("[data-target-metadata]")) { event.preventDefault(); await this.execute(() => managementRepository.updateVenueTarget(this.id, form.dataset.targetMetadata, { label: String(data.get("label") || ""), description: String(data.get("description") || "") }), "VenueTarget aggiornato."); }
-    else if (form.matches("[data-create-target]")) { event.preventDefault(); await this.execute(() => managementRepository.createVenueTarget(this.id, { subjectId: String(data.get("subjectId") || ""), label: String(data.get("label") || ""), description: String(data.get("description") || "") }), "VenueTarget creato."); this.selectedSubject = null; this.render(); }
-    else if (form.matches("[data-target-bindings]")) { event.preventDefault(); const bindings = this.data.targets.map((entry) => { const card = form.querySelector(`[data-binding="${entry.id}"]`); if (!card?.querySelector('[name="included"]')?.checked) return null; return { venueTargetId: entry.id, availability: card.querySelector('[name="availability"]').value, recognitionMedia: parseMedia(card.querySelector('[name="recognitionMedia"]').value) }; }).filter(Boolean); await this.execute(() => managementRepository.updateVenueRelease(this.id, { targetBindings: bindings }), "Disponibilità e riconoscimento salvati."); }
-    else if (form.matches("[data-layout-form]")) { event.preventDefault(); try { const field = form.dataset.layoutForm; const payload = { layout: { [field]: this.collectSection(field) } }; await this.execute(() => managementRepository.updateVenueRelease(this.id, payload), `${field} salvato.`); } catch (error) { this.error = `JSON non valido: ${error.message}`; this.render(); } }
-  };
-
-  onSubjectSelected = (event) => {
-    if (!event.detail?.subject) return;
-    this.selectedSubject = event.detail.subject;
-    this.message = event.detail.source === "reuse_existing" ? "Subject esistente riutilizzato." : "Subject selezionato per il nuovo oggetto.";
-    this.render();
-  };
-
-  onSemanticRefSelected = (event) => {
-    const picker = event.target instanceof Element ? event.target : null;
-    const row = picker?.closest("[data-layout-row]");
-    const input = row?.querySelector('[name="semanticRefs"]');
-    const semanticRef = event.detail?.semanticRef;
-    if (!row || !input || !semanticRef) return;
-    const refs = parseRefs(input.value);
-    const key = `${semanticRef.scheme}::${semanticRef.id}::${semanticRef.matchType}`;
-    if (!refs.some((entry) => `${entry.scheme}::${entry.id}::${entry.matchType}` === key)) refs.push(semanticRef);
-    input.value = refsText(refs);
-    row.querySelector("[data-semantic-ref-list]").innerHTML = semanticRefChips(refs, true);
+    if (target.closest("artaround-semantic-entity-picker")) return;
+    if (target.closest("[data-target-metadata], [data-create-target]")) return;
     this.markDirty();
   };
-
-  rowControls(field, index, editable) { return editable ? `<button class="danger small" type="button" data-remove-layout="${field}" data-index="${index}">Rimuovi</button>` : ""; }
-  renderPlaceTypes(values, editable) { const intents = this.data.catalogs.placeIntents.join(", "); return values.map((entry, index) => `<article data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo tipo")}</strong>${this.rowControls("placeTypes", index, editable)}</header><div class="fields"><label>Chiave<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label>Etichetta<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Intenti utente<input name="userIntents" value="${escapeHtml((entry.userIntents || []).join(", "))}" list="place-intents" title="${escapeHtml(intents)}"><small>Usati per l’interazione, non come identità semantica.</small></label><label class="wide">Descrizione<input name="description" value="${escapeHtml(entry.description || "")}"></label><div class="wide semantic-mappings"><strong>Mapping di vocabolario</strong><div data-semantic-ref-list>${semanticRefChips(entry.semanticRefs || [], editable)}</div>${editable ? `<artaround-semantic-entity-picker mode="mapping" entity-kind="item"></artaround-semantic-entity-picker><details><summary>Inserimento avanzato provider-neutral</summary><label>Una riga schema|ID|relazione<textarea name="semanticRefs" rows="3">${escapeHtml(refsText(entry.semanticRefs || []))}</textarea></label></details>` : `<textarea name="semanticRefs" hidden>${escapeHtml(refsText(entry.semanticRefs || []))}</textarea>`}</div></div></article>`).join(""); }
-  renderRoutingAttributes(values, editable) { return values.map((entry, index) => `<article data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo attributo")}</strong>${this.rowControls("routingAttributes", index, editable)}</header><div class="fields"><label>Chiave<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label>Etichetta<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Tipo<select name="dataType"><option ${selected("boolean", entry.dataType)}>boolean</option><option ${selected("number", entry.dataType)}>number</option><option ${selected("string", entry.dataType)}>string</option><option ${selected("choice", entry.dataType)}>choice</option></select></label><label>Applica a<select name="appliesTo"><option ${selected("connection", entry.appliesTo)}>connection</option><option ${selected("place", entry.appliesTo)}>place</option><option ${selected("both", entry.appliesTo)}>both</option></select></label><label>Chiave canonica<input name="canonicalKey" value="${escapeHtml(entry.canonicalKey || "")}" list="routing-attributes"></label><label>Unità<input name="unit" value="${escapeHtml(entry.unit || "")}"></label><label class="wide">Opzioni separate da virgola<input name="options" value="${escapeHtml((entry.options || []).join(", "))}"></label><label class="wide">Descrizione<input name="description" value="${escapeHtml(entry.description || "")}"></label></div></article>`).join(""); }
-  renderRoutingPresets(values, editable) { return values.map((entry, index) => `<article data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo preset")}</strong>${this.rowControls("routingPresets", index, editable)}</header><div class="fields"><label>Chiave<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label>Etichetta<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label class="wide">Descrizione<input name="description" value="${escapeHtml(entry.description || "")}"></label><label class="wide">Requisiti JSON<textarea name="requirements" rows="5">${escapeHtml(pretty(entry.requirements || []))}</textarea></label></div></article>`).join(""); }
-  renderFloors(values, editable) { return values.map((entry, index) => `<article data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo piano")}</strong>${this.rowControls("floors", index, editable)}</header><div class="fields"><label>Chiave<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label>Etichetta<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label class="wide">URL mappa<input name="imageUrl" value="${escapeHtml(entry.map?.imageUrl || "")}"></label><label>Larghezza px<input type="number" name="width" value="${entry.map?.width || ""}"></label><label>Altezza px<input type="number" name="height" value="${entry.map?.height || ""}"></label></div></article>`).join(""); }
-  renderPlaces(values, editable) { const typeOptions = this.data.layout.placeTypes.map((entry) => `<option value="${escapeHtml(entry.key)}">${escapeHtml(entry.label)}</option>`).join(""); const floorOptions = this.data.layout.floors.map((entry) => `<option value="${escapeHtml(entry.key)}">${escapeHtml(entry.label)}</option>`).join(""); return values.map((entry, index) => `<article data-layout-row><input type="hidden" name="_id" value="${escapeHtml(entry._id || "")}"><header><strong>${escapeHtml(entry.label || "Nuovo luogo")}</strong>${this.rowControls("places", index, editable)}</header><div class="fields"><label>Etichetta<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Tipo<select name="typeKey"><option value="${escapeHtml(entry.typeKey || "")}">${escapeHtml(entry.typeKey || "Scegli")}</option>${typeOptions}</select></label><label>Piano<select name="floorKey"><option value="${escapeHtml(entry.floorKey || "")}">${escapeHtml(entry.floorKey || "Scegli")}</option>${floorOptions}</select></label><label>X (0–1)<input type="number" min="0" max="1" step="0.01" name="x" value="${entry.position?.x ?? 0.5}"></label><label>Y (0–1)<input type="number" min="0" max="1" step="0.01" name="y" value="${entry.position?.y ?? 0.5}"></label><label class="wide">Attributi JSON<textarea name="attributes">${escapeHtml(pretty(entry.attributes || {}))}</textarea></label></div></article>`).join(""); }
-  renderPlacements(values, editable) { const targetOptions = this.data.targets.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`).join(""); const placeOptions = this.data.layout.places.filter((entry) => entry._id).map((entry) => `<option value="${escapeHtml(entry._id)}">${escapeHtml(entry.label)}</option>`).join(""); return values.map((entry, index) => `<article data-layout-row><header><strong>Collocazione</strong>${this.rowControls("venueTargetPlacements", index, editable)}</header><div class="fields"><label>Oggetto<select name="venueTargetId"><option value="${escapeHtml(entry.venueTargetId || "")}">Corrente</option>${targetOptions}</select></label><label>Luogo principale<select name="primaryPlaceId"><option value="${escapeHtml(entry.primaryPlaceId || "")}">Corrente</option>${placeOptions}</select></label><label class="wide">Altri place ID separati da virgola<input name="placeIds" value="${escapeHtml((entry.placeIds || []).join(", "))}"></label></div></article>`).join(""); }
-  renderConnections(values, editable) { const options = this.data.layout.places.filter((entry) => entry._id).map((entry) => `<option value="${escapeHtml(entry._id)}">${escapeHtml(entry.label)}</option>`).join(""); return values.map((entry, index) => `<article data-layout-row><input type="hidden" name="_id" value="${escapeHtml(entry._id || "")}"><header><strong>Connessione ${index + 1}</strong>${this.rowControls("connections", index, editable)}</header><div class="fields"><label>Da<select name="fromPlaceId"><option value="${escapeHtml(entry.fromPlaceId || "")}">Corrente</option>${options}</select></label><label>A<select name="toPlaceId"><option value="${escapeHtml(entry.toPlaceId || "")}">Corrente</option>${options}</select></label><label>Direzione<select name="directionality"><option ${selected("bidirectional", entry.directionality)}>bidirectional</option><option ${selected("directed", entry.directionality)}>directed</option></select></label><label>Distanza metri<input type="number" min="0.1" step="0.1" name="distanceMeters" value="${entry.distanceMeters || 1}"></label><label>Ritardo secondi<input type="number" min="0" name="additionalDelaySeconds" value="${entry.additionalDelaySeconds || 0}"></label><label class="wide">Attributi JSON<textarea name="attributes">${escapeHtml(pretty(entry.attributes || {}))}</textarea></label><label>Istruzioni avanti<input name="forward" value="${escapeHtml(entry.instructions?.forward || "")}"></label><label>Istruzioni indietro<input name="backward" value="${escapeHtml(entry.instructions?.backward || "")}"></label></div></article>`).join(""); }
-
-  renderLayoutSection(field, title, renderer, editable) { const values = this.data.layout[field] || []; return `<details class="section" id="venue-${field}" data-layout-section="${field}"><summary><span>${escapeHtml(title)}</span><span class="count">${values.length}</span></summary><form data-layout-form="${field}">${renderer.call(this, values, editable) || `<div class="empty-state compact">${icon("building", { size: 22 })}<div><h3>Nessun elemento</h3><p>Aggiungi la prima configurazione per questa sezione.</p></div></div>`}${editable ? `<div class="toolbar"><button type="button" class="add" data-add-layout="${field}">${icon("plus", { size: 16 })} Aggiungi</button><button>${icon("check", { size: 16 })} Salva ${escapeHtml(title)}</button></div>` : ""}</form></details>`; }
-
-  renderMapPreview() {
-    const floors = this.data.layout?.floors || [];
-    const places = this.data.layout?.places || [];
-    const connections = this.data.layout?.connections || [];
-    if (!floors.length && !places.length) return `<section class="map-preview" id="venue-map"><div class="empty-state">${icon("route", { size: 28 })}<h3>Anteprima non disponibile</h3><p>Aggiungi almeno un piano e i relativi luoghi per visualizzare lo schema della sede.</p></div></section>`;
-    const floor = floors[0] || { key: places[0]?.floorKey || "", label: "Schema della sede" };
-    const floorPlaces = places.filter((place) => !floor.key || place.floorKey === floor.key);
-    const byId = new Map(floorPlaces.map((place) => [String(place._id || ""), place]));
-    const position = (place, axis) => 8 + Math.max(0, Math.min(1, Number(place?.position?.[axis]) || 0)) * 84;
-    const lines = connections.map((connection) => [byId.get(String(connection.fromPlaceId)), byId.get(String(connection.toPlaceId))]).filter(([from, to]) => from && to).map(([from, to]) => `<line x1="${position(from, "x")}" y1="${position(from, "y")}" x2="${position(to, "x")}" y2="${position(to, "y")}"></line>`).join("");
-    const nodes = floorPlaces.map((place, index) => `<g><circle cx="${position(place, "x")}" cy="${position(place, "y")}" r="2.8"></circle><text x="${position(place, "x")}" y="${position(place, "y") + 0.9}" text-anchor="middle">${index + 1}</text></g>`).join("");
-    const legend = floorPlaces.map((place, index) => `<li><span>${index + 1}</span>${escapeHtml(place.label || `Luogo ${index + 1}`)}</li>`).join("");
-    return `<section class="map-preview surface" id="venue-map"><header><div><span class="eyebrow">Anteprima schematica</span><h2>${escapeHtml(floor.label || floor.key || "Mappa della sede")}</h2><p>Vista orientativa generata dalle coordinate del layout.</p></div><span class="count">${floorPlaces.length} luoghi</span></header><div class="map-canvas">${floor.map?.imageUrl ? `<img src="${escapeHtml(floor.map.imageUrl)}" alt="Mappa ${escapeHtml(floor.label || floor.key)}">` : ""}<svg viewBox="0 0 100 70" role="img" aria-label="Schema numerato dei luoghi e delle connessioni">${lines}${nodes}</svg></div><ol class="map-legend" aria-label="Legenda luoghi">${legend}</ol></section>`;
+  markDirty() {
+    this.dirty = true;
+    const indicator = this.querySelector("[data-dirty-indicator]");
+    if (indicator) { indicator.dataset.tone = "warning"; indicator.innerHTML = `${icon("warning", { size: 14 })} Modifiche non salvate`; }
   }
 
-  renderTargets(editable) {
-    const cards = this.data.targets.map((entry) => `<article class="target"><div><span class="eyebrow">${escapeHtml(entry.subject.label || "Subject mancante")}</span><h3>${escapeHtml(entry.label)}</h3><p>${escapeHtml(entry.description || "Nessuna descrizione")}</p></div><details><summary>Modifica</summary><form data-target-metadata="${escapeHtml(entry.id)}"><label>Etichetta<input name="label" value="${escapeHtml(entry.label)}" required></label><label>Descrizione<textarea name="description">${escapeHtml(entry.description)}</textarea></label><button>Salva</button>${has(entry.availableOperations, "venue.target.trash") ? `<button class="danger" type="button" data-trash-target="${escapeHtml(entry.id)}" data-label="${escapeHtml(entry.label)}">Cestina</button>` : ""}</form></details></article>`).join("");
-    const bindingRows = this.data.targets.map((entry) => `<article data-binding="${escapeHtml(entry.id)}"><label class="check"><input type="checkbox" name="included" ${entry.binding ? "checked" : ""}> <strong>${escapeHtml(entry.label)}</strong></label><label>Disponibilità<select name="availability"><option ${selected("active", entry.binding?.availability)}>active</option><option ${selected("unavailable", entry.binding?.availability)}>unavailable</option></select></label><label class="wide">Media di riconoscimento, una riga URL|testo alternativo<textarea name="recognitionMedia">${escapeHtml(mediaText(entry.binding?.recognitionMedia))}</textarea></label></article>`).join("");
-    const selectedSubject = this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject scelto</span><strong>${escapeHtml(this.selectedSubject.preferredLabel)}</strong><small>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</small></article><form data-create-target><input type="hidden" name="subjectId" value="${escapeHtml(this.selectedSubject.id || this.selectedSubject._id)}"><label>Etichetta nella sede<input name="label" required value="${escapeHtml(this.selectedSubject.preferredLabel)}"></label><label>Descrizione fisica<textarea name="description"></textarea></label><button>Crea VenueTarget</button></form>` : "";
-    return `<section class="section targets" id="venue-targets"><header><div><span class="eyebrow">Subject collocati nella sede</span><h2>Oggetti fisici</h2></div><span class="count">${this.data.targets.length}</span></header><div class="target-grid">${cards || `<div class="empty-state">${icon("museum", { size: 26 })}<h3>Nessun oggetto fisico</h3><p>Collega un Subject per rappresentare un'opera o un punto di interesse della sede.</p></div>`}</div><details><summary>${icon("plus", { size: 16 })} Aggiungi oggetto</summary><p>Cerca prima nell’identità condivisa ArtAround. La creazione da Wikidata è sempre verificata dal server.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>${selectedSubject}</details>${this.data.release && editable ? `<details><summary>Disponibilità e riconoscimento nella release</summary><form data-target-bindings>${bindingRows}<button>${icon("check", { size: 16 })} Salva binding</button></form></details>` : ""}</section>`;
-  }
-
-  render() {
-    if (!this.data) { this.innerHTML = `<main><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento Venue…")}</p></main>`; return; }
-    const { venue, release, layout, availableOperations } = this.data; const editable = has(availableOperations, "venue.release.update");
-    const issues = (release?.integrity.issues || []).map((issue) => `<li><strong>${escapeHtml(issue.field || issue.code)}</strong> — ${escapeHtml(issue.message)}</li>`).join("");
-    const workflow = availableOperations.filter((entry) => entry.code.startsWith("venue.release.") && !["venue.release.update", "venue.release.ensure"].includes(entry.code)).map((entry) => `<button type="button" data-workflow="${entry.code}">${escapeHtml(entry.label)}</button>`).join("");
-    const layoutSections = layout ? [
-      this.renderLayoutSection("placeTypes", "Vocabolario dei luoghi", this.renderPlaceTypes, editable),
-      this.renderLayoutSection("routingAttributes", "Attributi di routing", this.renderRoutingAttributes, editable),
-      this.renderLayoutSection("routingPresets", "Preset di routing", this.renderRoutingPresets, editable),
-      this.renderLayoutSection("floors", "Piani e mappe", this.renderFloors, editable),
-      this.renderLayoutSection("places", "Luoghi", this.renderPlaces, editable),
-      this.renderLayoutSection("venueTargetPlacements", "Collocazioni degli oggetti", this.renderPlacements, editable),
-      this.renderLayoutSection("connections", "Connessioni", this.renderConnections, editable),
-    ].join("") : "";
-    const sectionLinks = [["targets", "Oggetti", this.data.targets.length], ["map", "Anteprima mappa", layout?.places?.length || 0], ["placeTypes", "Vocabolario luoghi", layout?.placeTypes?.length || 0], ["routingAttributes", "Attributi routing", layout?.routingAttributes?.length || 0], ["routingPresets", "Preset routing", layout?.routingPresets?.length || 0], ["floors", "Piani e mappe", layout?.floors?.length || 0], ["places", "Luoghi", layout?.places?.length || 0], ["venueTargetPlacements", "Collocazioni", layout?.venueTargetPlacements?.length || 0], ["connections", "Connessioni", layout?.connections?.length || 0]].map(([field, title, count]) => `<a href="#venue-${field}">${title}<span>${count}</span></a>`).join("");
-    this.innerHTML = `<style>:host{display:block;background:#f3f2ed;color:#173a31;min-height:calc(100vh - 4rem)}*{box-sizing:border-box}main{max-width:80rem;margin:auto;padding:2rem 1rem 5rem}.back{background:transparent;color:#23483e;padding-left:0}.hero{padding:1.6rem;border-radius:1.2rem;background:#244c42;color:white}.hero h1{margin:.25rem 0}.eyebrow{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:#668078}.hero .eyebrow{color:#b8d7cb}.status,.toolbar{display:flex;gap:.55rem;flex-wrap:wrap;margin:1rem 0}.chip{padding:.4rem .65rem;border-radius:999px;background:#e0e9e4;font-weight:750}.feedback,.issues{padding:.9rem;border:1px solid #d2d7d3;border-radius:.7rem;background:white}.section{display:block;margin-top:1rem;padding:1.2rem;border:1px solid #d4d7d1;border-radius:1rem;background:white}.section>summary{cursor:pointer;font-size:1.15rem;font-weight:850}.section>summary span{float:right}.section>header{display:flex;justify-content:space-between;align-items:end}.section h2{margin:.2rem 0}.section article{padding:1rem;margin-top:.75rem;border-radius:.8rem;background:#f4f6f2}.section article>header{display:flex;justify-content:space-between;gap:1rem}.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-top:.7rem}.wide{grid-column:1/-1}.target-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.7rem}.target{display:flex;flex-direction:column;justify-content:space-between}.target h3{margin:.2rem 0}.target p{color:#5f6c68}form,label{display:grid;gap:.35rem}form{gap:.7rem;margin-top:.8rem}label{font-size:.82rem;font-weight:700}.check,.subject{display:flex;align-items:start;gap:.5rem}.subject small{display:block;font-weight:400}fieldset{display:grid;gap:.5rem}input,textarea,select,button{font:inherit}input,textarea,select{width:100%;padding:.6rem;border:1px solid #acb9b4;border-radius:.5rem;background:white}button{width:max-content;padding:.58rem .75rem;border:0;border-radius:.55rem;background:#173e35;color:white;font-weight:780;cursor:pointer}.danger{background:#f5e3df;color:#8b3024}.small{padding:.3rem .5rem}.add{background:#e1ebe6;color:#1b4b3e}details details{margin-top:.8rem;padding:.7rem;border:1px dashed #98aaa1;border-radius:.7rem}@media(max-width:50rem){.fields{grid-template-columns:1fr}.wide{grid-column:auto}}</style><main class="venue-editor-page" aria-busy="${this.busy}"><datalist id="place-intents">${this.data.catalogs.placeIntents.map((value) => `<option value="${escapeHtml(value)}">`).join("")}</datalist><datalist id="routing-attributes">${this.data.catalogs.canonicalRoutingAttributes.map((value) => `<option value="${escapeHtml(value.key)}">`).join("")}</datalist><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Organization</button><span>/</span><span>Venue editor</span></nav><section class="hero editor-hero"><div><span class="eyebrow">Venue · ${escapeHtml(venue.role)}</span><h1>${escapeHtml(venue.name)}</h1><p>${escapeHtml(venue.description || "Nessuna descrizione")}</p></div><div class="editor-hero__mark">${icon("building", { size: 28 })}</div></section>${this.busy ? `<p class="feedback" role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback" role="status">${icon("check", { size: 17 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p class="feedback" role="alert">${icon("warning", { size: 17 })} ${escapeHtml(this.error)}</p>` : ""}<div class="status editor-status"><span class="chip">${escapeHtml(venue.source)}</span>${release ? `<span class="chip">Release ${release.version}</span><span class="chip">${escapeHtml(release.status)}</span><span class="chip" data-tone="${release.integrity.status === "valid" ? "success" : "warning"}">${icon(release.integrity.status === "valid" ? "check" : "warning", { size: 14 })} Integrità: ${escapeHtml(release.integrity.status)}</span>` : ""}<span class="chip" data-dirty-indicator data-tone="${this.dirty ? "warning" : "success"}">${icon(this.dirty ? "warning" : "check", { size: 14 })} ${this.dirty ? "Modifiche non salvate" : "Tutto salvato"}</span></div><div class="editor-layout"><aside class="editor-sidebar"><nav aria-label="Sezioni Venue"><a href="#venue-details">Dettagli</a>${sectionLinks}</nav></aside><div class="editor-content"><details class="section" id="venue-details"><summary>Dettagli Venue</summary><form data-venue-metadata><label>Nome<input name="name" value="${escapeHtml(venue.name)}" required></label><label>Descrizione<textarea name="description">${escapeHtml(venue.description)}</textarea></label><button>${icon("check", { size: 16 })} Salva dettagli</button></form></details>${has(availableOperations, "venue.release.ensure") ? `<div class="toolbar"><button type="button" data-ensure-release>${escapeHtml(availableOperations.find((entry) => entry.code === "venue.release.ensure").label)}</button></div>` : ""}${release ? `<div class="toolbar workflow-toolbar">${workflow}</div>${issues ? `<section class="issues"><h2>${icon("warning", { size: 20 })} Problemi di integrità</h2><ul>${issues}</ul></section>` : ""}${editable ? `<details class="section" id="venue-previsit"><summary>Informazioni pre-visita</summary><form data-previsit><label>Una informazione per riga<textarea name="preVisitInformation" rows="5">${escapeHtml((release.preVisitInformation || []).join("\n"))}</textarea></label><button>${icon("check", { size: 16 })} Salva</button></form></details>` : ""}` : ""}${this.renderTargets(editable)}${this.renderMapPreview()}${layoutSections}</div></div></main>`;
-  }
 }
+
+Object.assign(ArtAroundVenueEditorView.prototype, venueDraftMixin, venueActionMixin, venueTargetsMixin, venueSpatialMixin, venueRoutingMixin, venueSectionMixin);
 
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
