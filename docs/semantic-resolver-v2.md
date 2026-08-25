@@ -45,6 +45,8 @@ GET  /api/v2/semantic-resolver/resolve?scheme=wikidata&id=Q...&locale=it
 POST /api/subjects/from-external-identity
 ```
 
+La discovery locale usata dal picker invoca `GET /api/subjects?search=...&match=label_exact`. La modalita `label_exact` confronta esclusivamente `Subject.preferredLabel` e considera equivalenti maiuscole/minuscole, accenti, spazi ripetuti e varianti tipografiche dell'apostrofo. Non cerca nella descrizione e non applica fuzzy matching. La modalita full-text preesistente rimane il default dell'endpoint per gli altri workflow.
+
 Il command `from-external-identity` accetta `scheme`, `id`, `locale` e le scelte ArtAround opzionali `preferredLabel`/`description`. Il server risolve nuovamente l'ID e non si fida del payload Candidate ricevuto dal client.
 
 Esiti:
@@ -60,12 +62,16 @@ Esiti:
 
 Il Marketplace usa un picker riusabile con due modalità:
 
-- Subject: un'unica query cerca prima in ArtAround e, quando non trova risultati, continua automaticamente su Wikidata; una Candidate già bound riporta al Subject ArtAround esistente, mentre assenza o rifiuto dei risultati rende disponibile la creazione locale;
+- Subject: un'unica query cerca prima in ArtAround un `preferredLabel` con lo stesso nome normalizzato e, quando non trova risultati, continua automaticamente su Wikidata; una Candidate già bound riporta al Subject ArtAround esistente, mentre assenza o rifiuto dei risultati rende disponibile la creazione locale;
 - mapping: discovery di Wikidata Item/Property e scelta esplicita fra `exact`, `close`, `broader`, `narrower`.
 
 La modalità Subject è integrata nell'Item authoring e nella creazione dei VenueTarget. La modalità mapping è integrata in tutte le definition del Namespace e nei PlaceType del Venue editor; `PlaceType.userIntents` rimane separato da `PlaceType.semanticRefs`.
 
-Gli alias restituiti dal provider, per esempio “Mona Lisa” per un Subject ArtAround denominato “Gioconda”, non vengono persistiti come metadati locali. La query esterna riconosce l'identità già bound e propone il riuso del Subject esistente. Se esistono risultati testuali locali non pertinenti, l'utente può estendere la stessa query a Wikidata senza usare una seconda barra di ricerca.
+Gli alias restituiti dal provider, per esempio “Mona Lisa” per un Subject ArtAround denominato “Gioconda”, non vengono persistiti come metadati locali. La query esterna riconosce l'identità già bound e propone il riuso del Subject esistente. Risultati locali che condividono soltanto parole generiche o testo descrittivo non interrompono il fallback esterno. Se esiste un omonimo locale esatto ma non pertinente, l'utente può comunque estendere la stessa query a Wikidata senza usare una seconda barra di ricerca.
+
+Per le query Subject in italiano che iniziano con un articolo determinativo (`il`, `lo`, `la`, `l'`, `i`, `gli`, `le`), il client interroga Wikidata sia con la frase originale sia con la variante senza articolo. Le Candidate vengono unite in ordine di query e deduplicate per `(scheme, id)`; la UI indica per ciascun risultato se è stato trovato con la frase inserita, con la variante o con entrambe. La seconda query è un'estensione non bloccante: se fallisce ma la query originale ha già risultati, questi restano utilizzabili. Le query QID, le query in altre lingue e la modalità mapping non vengono riscritte.
+
+I Subject formano un catalogo globale condiviso: i risultati possono provenire da altri utenti o dai dataset dimostrativi. Il picker lo dichiara esplicitamente e non li presenta come risorse personali dell'utente corrente.
 
 Dopo l'esaurimento del retry server-side, il picker mantiene disponibile la creazione locale e mostra un'azione esplicita “Riprova Wikidata”; quando presente, comunica anche l'attesa minima indicata dal provider. Il fallback completo non viene più mostrato per un singolo errore transitorio recuperabile.
 

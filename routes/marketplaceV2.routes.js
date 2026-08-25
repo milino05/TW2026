@@ -3,6 +3,7 @@ const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 const controller = require("../controllers/marketplaceV2.controller");
 const authoringController = require("../controllers/marketplaceAuthoringV2.controller");
+const preflightController = require("../controllers/marketplaceAuthoringPreflightV2.controller");
 
 const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
@@ -15,10 +16,12 @@ const editorialReleaseId = validateObjectIdParam("editorialReleaseId");
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
 const visitId = validateObjectIdParam("visitId");
+const resourceId = validateObjectIdParam("resourceId");
 
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
 router.get("/v2/marketplace/venue-selector", controller.venueSelector);
+router.get("/v2/marketplace/authoring/preflight", preflightController.authoringPreflight);
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
@@ -33,6 +36,9 @@ router.get("/v2/marketplace/account-workspace", controller.marketplaceAccountWor
 router.get("/v2/marketplace/management/organizations/:organizationId", organizationId, controller.marketplaceOrganizationDetail);
 router.get("/v2/marketplace/management/namespaces/:namespaceId", namespaceId, controller.marketplaceNamespaceManagement);
 router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.marketplaceVenueManagement);
+router.get("/v2/marketplace/workspace/context", controller.creatorWorkspaceContext);
+router.get("/v2/marketplace/workspace/resources", controller.creatorWorkspaceResources);
+router.get("/v2/marketplace/workspace/resources/:resourceType/:resourceId", resourceId, controller.creatorWorkspaceResourceDetail);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
 router.post("/v2/marketplace/workspace/operations", controller.workspaceOperation);

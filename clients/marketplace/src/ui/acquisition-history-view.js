@@ -1,94 +1,111 @@
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
-import { escapeHtml, formatDate, formatPrice, principalOptions, principalValue } from "./commercial-utils.js";
+import { beneficiaryOptions, escapeHtml, formatDate, formatPrice, marketplaceResourceLabel, principalValue } from "./commercial-utils.js";
+
+function readParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    beneficiaryType: params.get("beneficiaryType") || "user",
+    beneficiaryId: params.get("beneficiaryId"),
+    page: Math.max(1, Number(params.get("page")) || 1),
+  };
+}
 
 export class ArtAroundAcquisitionHistoryView extends HTMLElement {
-  workspace = null;
   history = null;
-  principal = "";
+  beneficiaryType = "user";
+  beneficiaryId = null;
   page = 1;
   busy = false;
   error = null;
 
   connectedCallback() {
-    this.addEventListener("submit", this.onSubmit);
+    const initial = readParams();
+    this.beneficiaryType = initial.beneficiaryType;
+    this.beneficiaryId = initial.beneficiaryId;
+    this.page = initial.page;
+    this.addEventListener("change", this.onChange);
     this.addEventListener("click", this.onClick);
-    this.loadInitial();
+    this.load();
   }
 
   disconnectedCallback() {
-    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("change", this.onChange);
     this.removeEventListener("click", this.onClick);
   }
 
-  async loadInitial() {
+  async load() {
     this.busy = true;
+    this.error = null;
     this.render();
     try {
-      this.workspace = await marketplaceRepository.workspace();
-      const params = new URLSearchParams(window.location.search);
-      const requested = `${params.get("beneficiaryType") || ""}:${params.get("beneficiaryId") || ""}`;
-      const available = new Set((this.workspace.availablePrincipals || []).map(principalValue));
-      this.principal = available.has(requested) ? requested : principalValue(this.workspace.principal);
-      await this.loadHistory();
+      this.history = await marketplaceRepository.acquisitionHistory({
+        beneficiaryType: this.beneficiaryType,
+        beneficiaryId: this.beneficiaryId,
+        page: this.page,
+      });
+      this.beneficiaryType = this.history.beneficiary?.type || "user";
+      this.beneficiaryId = this.history.beneficiary?.id || null;
+      this.syncUrl();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Storico acquisizioni non disponibile";
+      this.error = error instanceof Error ? error.message : "Licenze non disponibili";
     } finally {
       this.busy = false;
       this.render();
     }
   }
 
-  async loadHistory() {
-    const [beneficiaryType, beneficiaryId] = this.principal.split(":");
-    this.history = await marketplaceRepository.acquisitionHistory({ page: this.page, beneficiaryType, beneficiaryId });
+  syncUrl() {
     const url = new URL(window.location.href);
-    url.searchParams.set("beneficiaryType", beneficiaryType);
-    url.searchParams.set("beneficiaryId", beneficiaryId);
+    url.search = "";
+    if (this.beneficiaryType) url.searchParams.set("beneficiaryType", this.beneficiaryType);
+    if (this.beneficiaryId) url.searchParams.set("beneficiaryId", this.beneficiaryId);
+    if (this.page > 1) url.searchParams.set("page", String(this.page));
     window.history.replaceState({}, "", url);
   }
 
-  onSubmit = async (event) => {
-    const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form?.matches("form[data-history-principal]")) return;
-    event.preventDefault();
-    this.principal = String(new FormData(form).get("principal") || this.principal);
+  onChange = async (event) => {
+    const select = event.target instanceof HTMLSelectElement ? event.target : null;
+    if (!select?.matches("select[data-beneficiary]")) return;
+    const [type, id] = select.value.split(":");
+    this.beneficiaryType = type;
+    this.beneficiaryId = id;
     this.page = 1;
-    await this.refresh();
+    await this.load();
   };
 
   onClick = async (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const pageButton = target?.closest("button[data-history-page]");
-    if (!pageButton) return;
-    this.page = Math.max(1, Number(pageButton.dataset.historyPage) || 1);
-    await this.refresh();
+    const button = event.target instanceof Element ? event.target.closest("button[data-history-page]") : null;
+    if (!button) return;
+    this.page = Math.max(1, Number(button.dataset.historyPage) || 1);
+    await this.load();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  async refresh() {
-    this.busy = true;
-    this.error = null;
-    this.render();
-    try { await this.loadHistory(); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aggiornare lo storico"; }
-    finally { this.busy = false; this.render(); }
+  renderCurrentRights(entry) {
+    const rights = entry.currentRights || [];
+    if (!rights.length) return `<div class="license-rights-empty"><span class="chip" data-tone="warning">Nessun diritto corrente</span><p>Lo storico dell'acquisizione resta disponibile, ma non risultano diritti applicativi collegati.</p></div>`;
+    return `<ul class="rights-list">${rights.map((right) => `<li>${right.active ? icon("check", { size: 16 }) : icon("warning", { size: 16 })}<span><strong>${escapeHtml(right.label)}</strong><small>${escapeHtml(right.versionBehaviour?.label || "Versione non specificata")} · ${right.active ? "attivo" : "non attivo"}</small></span></li>`).join("")}</ul>`;
   }
 
-  renderEntry(entry) {
-    const grants = (entry.grants || []).map((grant) => `<li><span>${icon("check", { size: 15 })}</span><div><strong>${escapeHtml(grant.label || grant.capability)}</strong><small>${escapeHtml(grant.versionBehaviour?.label || grant.versionPolicy)}</small></div></li>`).join("");
-    return `<article class="acquisition-card"><header><div><span class="eyebrow">${escapeHtml(entry.asset?.type || "Asset")}</span><h2>${escapeHtml(entry.asset?.title || "Asset non disponibile")}</h2><p>Di ${escapeHtml(entry.seller?.name || "Publisher")} · ${escapeHtml(formatDate(entry.acquiredAt))}</p></div><strong class="acquisition-price">${escapeHtml(formatPrice(entry.pricing))}</strong></header><div class="chip-row"><span class="chip">${icon("tag", { size: 13 })}${escapeHtml(entry.offer?.label || "Offerta")}</span><span class="chip">${icon("shield", { size: 13 })}${escapeHtml(entry.asset?.editorialLicense || "Licenza non indicata")}</span></div><ul class="rights-list">${grants}</ul><footer><span>Acquisition ID</span><code>${escapeHtml(entry.id)}</code></footer></article>`;
+  renderTechnical(entry) {
+    return `<details class="technical-details"><summary>Dettagli tecnici dell'acquisizione</summary><dl class="definition-list"><div><dt>Acquisition ID</dt><dd><code>${escapeHtml(entry.id)}</code></dd></div><div><dt>Listing</dt><dd><code>${escapeHtml(entry.listingId)}</code></dd></div><div><dt>Offerta</dt><dd><code>${escapeHtml(entry.offerId)}</code></dd></div></dl><h4>Grant acquisiti</h4><ul class="technical-grants">${(entry.grants || []).map((grant) => `<li><strong>${escapeHtml(grant.label)}</strong><br><code>${escapeHtml(grant.capability)}</code> · <code>${escapeHtml(grant.resourceType)}</code>${grant.resolvedSnapshotRef ? `<br><small>Snapshot: <code>${escapeHtml(grant.resolvedSnapshotRef.resourceType)}</code></small>` : ""}</li>`).join("")}</ul></details>`;
+  }
+
+  renderCard(entry) {
+    const listingWithdrawn = entry.listingStatus !== "published";
+    return `<article class="license-card"><header><div><span class="chip">${escapeHtml(marketplaceResourceLabel(entry.asset?.type))}</span><h2>${escapeHtml(entry.asset?.title || "Risorsa")}</h2><p>${escapeHtml(entry.asset?.summary || "")}</p></div><div class="license-card__price"><strong>${escapeHtml(formatPrice(entry.pricing))}</strong><small>${escapeHtml(formatDate(entry.acquiredAt))}</small></div></header><div class="license-card__meta"><span>Pubblicato da <strong>${escapeHtml(entry.seller?.name || "Autore")}</strong></span>${entry.asset?.editorialLicense ? `<span>${icon("shield", { size: 14 })} ${escapeHtml(entry.asset.editorialLicense)}</span>` : ""}</div>${listingWithdrawn ? `<p class="license-notice">${icon("info", { size: 16 })} La scheda non è più nel Catalogo. I diritti già acquisiti restano separati dalla disponibilità commerciale.</p>` : ""}<section><span class="eyebrow">Cosa puoi fare adesso</span>${this.renderCurrentRights(entry)}</section>${this.renderTechnical(entry)}</article>`;
   }
 
   render() {
-    if (this.busy && !this.workspace) {
-      this.innerHTML = `<main class="page commercial-page"><div class="empty-state"><div class="skeleton skeleton-line" style="width:15rem"></div><p>Caricamento licenze…</p></div></main>`;
-      return;
-    }
-    const entries = (this.history?.results || []).map((entry) => this.renderEntry(entry)).join("");
-    const page = Number(this.history?.page) || this.page;
-    const pageSize = Number(this.history?.pageSize) || 20;
+    const results = this.history?.results || [];
+    const beneficiaries = this.history?.availableBeneficiaries || [];
+    const selectedValue = principalValue(this.history?.beneficiary || { type: this.beneficiaryType, id: this.beneficiaryId });
     const total = Number(this.history?.total) || 0;
-    this.innerHTML = `<main class="page commercial-page" aria-busy="${this.busy}"><header class="page-header"><div><span class="eyebrow">Diritti acquisiti</span><h1>Acquisizioni e licenze</h1><p>Consulta termini economici, licenza editoriale e capability assegnate a ogni principal.</p></div><a class="button-link secondary" data-route href="/catalog">${icon("catalog")} Esplora il catalogo</a></header>${this.workspace ? `<form class="principal surface" data-history-principal><label><span>Mostra lo storico di</span><select name="principal">${principalOptions(this.workspace.availablePrincipals || [], this.principal)}</select></label><button type="submit" ${this.busy ? "disabled" : ""}>Aggiorna</button></form>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="history-section"><div class="results-toolbar"><div><span class="eyebrow">Storico immutabile</span><strong>${total} acquisizioni</strong></div><span class="muted">Pagina ${page}</span></div><div class="acquisition-list">${entries || `<div class="empty-state"><span>${icon("history", { size: 28 })}</span><h3>Nessuna acquisizione</h3><p>Le offerte aggiunte o acquistate compariranno qui.</p></div>`}</div><nav class="pagination" aria-label="Pagine storico"><button type="button" data-history-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-history-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section></main>`;
+    const pageSize = Number(this.history?.pageSize) || 20;
+    const cards = results.map((entry) => this.renderCard(entry)).join("");
+
+    this.innerHTML = `<main class="page licenses-page" aria-busy="${this.busy}"><header class="page-header"><div><span class="eyebrow">Licenze e vendite</span><h1>Le mie licenze</h1><p>Controlla ciò che hai aggiunto o acquistato e i diritti che sono disponibili adesso.</p></div></header><nav class="consumer-tabs" aria-label="Licenze e vendite"><a data-route href="/acquisitions" aria-current="page">Le mie licenze</a><a data-route href="/workspace/commerce">Vendite</a></nav>${beneficiaries.length ? `<label class="consumer-beneficiary license-beneficiary">Mostra le licenze di<select data-beneficiary>${beneficiaryOptions(beneficiaries, selectedValue)}</select></label>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.history ? `<div class="empty-state"><div class="skeleton skeleton-line" style="width:12rem"></div><p>Caricamento licenze…</p></div>` : results.length ? `<section class="license-list">${cards}</section>` : `<div class="empty-state"><span>${icon("shield", { size: 28 })}</span><h3>Nessuna licenza ancora</h3><p>Le risorse gratuite o acquistate compariranno qui.</p><a class="button-link" data-route href="/catalog">Esplora il catalogo</a></div>`}${total ? `<nav class="pagination" aria-label="Pagine delle licenze"><button type="button" data-history-page="${this.page - 1}" ${this.page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${this.page}</span><button type="button" data-history-page="${this.page + 1}" ${this.page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</main>`;
   }
 }
 

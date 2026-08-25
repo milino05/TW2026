@@ -57,10 +57,12 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.ok(page.total >= 10);
     assert.equal(page.results.length, 5);
     assert.equal(page.results.every((entry) => entry.presentationProfiles.length >= 2), true);
+    assert.equal(page.results.every((entry) => entry.primarySubjectId), true);
 
     const visitId = seeded.visitRecords[0].visit._id;
     const publishedProjection = await getVisitAuthoringProjection({ actorUserId: manager._id, visitId });
     assert.equal(publishedProjection.visit.revision.status, "published");
+    assert.equal(publishedProjection.visit.revision.entries.every((entry) => entry.primarySubjectId), true);
     assert.equal(publishedProjection.availableOperations.some((entry) => entry.code === "visit.edit"), true);
     assert.equal(publishedProjection.availableOperations.some((entry) => entry.code === "workflow.check"), false);
 

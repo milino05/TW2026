@@ -1,7 +1,9 @@
 const marketplace = require("../services/marketplaceV2.service");
 const marketplaceCatalog = require("../services/marketplaceCatalogV2.service");
+const marketplaceConsumer = require("../services/marketplaceConsumerProjectionV2.service");
 const visitMarketplace = require("../services/marketplaceVisitV2.service");
 const workspace = require("../services/marketplaceWorkspaceV2.service");
+const workspaceResources = require("../services/marketplaceWorkspaceResourcesV2.service");
 const commercial = require("../services/marketplaceCommercialV2.service");
 const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
 const management = require("../services/marketplaceManagementV2.service");
@@ -47,9 +49,8 @@ async function catalog(req, res, next) {
 }
 
 async function venueSelector(req, res, next) {
-  try {
-    res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection());
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection()); }
+  catch (error) { next(error); }
 }
 
 async function detail(req, res, next) {
@@ -58,6 +59,8 @@ async function detail(req, res, next) {
       listingId: req.params.listingId,
       actorUserId: req.user._id,
       selectedVenueIds: selectedVenueIds(req),
+      beneficiaryType: req.query?.beneficiaryType || null,
+      beneficiaryId: req.query?.beneficiaryId || null,
     }));
   } catch (error) { next(error); }
 }
@@ -84,11 +87,8 @@ async function namespaceAuthoringControls(req, res, next) {
 }
 
 async function venueTargetAuthoringContext(req, res, next) {
-  try {
-    res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({
-      venueTargetId: req.params.venueTargetId,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId })); }
+  catch (error) { next(error); }
 }
 
 async function createListing(req, res, next) {
@@ -101,11 +101,7 @@ async function createListing(req, res, next) {
       sellerType: req.body?.sellerType,
       sellerId: req.body?.sellerId,
       actorUserId: req.user._id,
-      metadata: {
-        title: req.body?.title,
-        summary: req.body?.summary,
-        catalogMetadata: req.body?.catalogMetadata,
-      },
+      metadata: { title: req.body?.title, summary: req.body?.summary, catalogMetadata: req.body?.catalogMetadata },
     }));
   } catch (error) { next(error); }
 }
@@ -113,18 +109,10 @@ async function createListing(req, res, next) {
 async function createOffer(req, res, next) {
   try {
     if (Array.isArray(req.body?.grants) && req.body.grants.length) {
-      res.status(201).json(await marketplace.createOffer({
-        listingId: req.params.listingId,
-        payload: req.body,
-        actorUserId: req.user._id,
-      }));
+      res.status(201).json(await marketplace.createOffer({ listingId: req.params.listingId, payload: req.body, actorUserId: req.user._id }));
       return;
     }
-    res.status(201).json(await visitMarketplace.createVisitExecuteOffer({
-      listingId: req.params.listingId,
-      payload: req.body || {},
-      actorUserId: req.user._id,
-    }));
+    res.status(201).json(await visitMarketplace.createVisitExecuteOffer({ listingId: req.params.listingId, payload: req.body || {}, actorUserId: req.user._id }));
   } catch (error) { next(error); }
 }
 
@@ -142,13 +130,14 @@ async function acquire(req, res, next) {
 
 async function acquisitionHistory(req, res, next) {
   try {
-    res.status(200).json(await marketplace.listAcquisitionHistory({
+    const history = await marketplace.listAcquisitionHistory({
       actorUserId: req.user._id,
       beneficiaryType: req.query?.beneficiaryType || "user",
       beneficiaryId: req.query?.beneficiaryId || req.user._id,
       page: req.query?.page,
       limit: req.query?.limit,
-    }));
+    });
+    res.status(200).json(await marketplaceConsumer.enrichAcquisitionHistory({ actorUserId: req.user._id, history }));
   } catch (error) { next(error); }
 }
 
@@ -165,21 +154,13 @@ async function commercialManagement(req, res, next) {
 }
 
 async function withdrawListing(req, res, next) {
-  try {
-    res.status(200).json(await marketplace.withdrawListing({
-      listingId: req.params.listingId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplace.withdrawListing({ listingId: req.params.listingId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function withdrawOffer(req, res, next) {
-  try {
-    res.status(200).json(await marketplace.withdrawOffer({
-      offerId: req.params.offerId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await marketplace.withdrawOffer({ offerId: req.params.offerId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function creatorWorkspace(req, res, next) {
@@ -192,12 +173,47 @@ async function creatorWorkspace(req, res, next) {
   } catch (error) { next(error); }
 }
 
-async function marketplaceAccountWorkspace(req, res, next) {
+async function creatorWorkspaceContext(req, res, next) {
   try {
-    res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({
+    res.status(200).json(await workspaceResources.getCreatorWorkspaceContext({
       actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
     }));
   } catch (error) { next(error); }
+}
+
+async function creatorWorkspaceResources(req, res, next) {
+  try {
+    res.status(200).json(await workspaceResources.listCreatorWorkspaceResources({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      ownership: req.query?.ownership || "owned",
+      q: req.query?.q || "",
+      resourceTypes: req.query?.resourceTypes || req.query?.resourceType || null,
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function creatorWorkspaceResourceDetail(req, res, next) {
+  try {
+    res.status(200).json(await workspaceResources.getCreatorWorkspaceResourceDetail({
+      actorUserId: req.user._id,
+      principalType: req.query?.principalType || "user",
+      principalId: req.query?.principalId || req.user._id,
+      ownership: req.query?.ownership || "owned",
+      resourceType: req.params.resourceType,
+      resourceId: req.params.resourceId,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function marketplaceAccountWorkspace(req, res, next) {
+  try { res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function marketplaceOrganizationDetail(req, res, next) {
@@ -214,21 +230,13 @@ async function marketplaceOrganizationDetail(req, res, next) {
 }
 
 async function marketplaceNamespaceManagement(req, res, next) {
-  try {
-    res.status(200).json(await management.getNamespaceManagementProjection({
-      namespaceId: req.params.namespaceId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await management.getNamespaceManagementProjection({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function marketplaceVenueManagement(req, res, next) {
-  try {
-    res.status(200).json(await management.getVenueManagementProjection({
-      venueId: req.params.venueId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await management.getVenueManagementProjection({ venueId: req.params.venueId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function distributionDashboard(req, res, next) {
@@ -270,6 +278,9 @@ module.exports = {
   withdrawListing,
   withdrawOffer,
   creatorWorkspace,
+  creatorWorkspaceContext,
+  creatorWorkspaceResources,
+  creatorWorkspaceResourceDetail,
   marketplaceAccountWorkspace,
   marketplaceOrganizationDetail,
   marketplaceNamespaceManagement,

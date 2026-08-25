@@ -22,8 +22,12 @@ export const marketplaceRepository = {
     if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
     return apiClient.request(`/v2/marketplace/catalog?${params.toString()}`);
   },
-  detail(listingId, { selectedVenueIds = [] } = {}) {
+  detail(listingId, { selectedVenueIds = [], beneficiaryType = null, beneficiaryId = null } = {}) {
     const params = venueParams(new URLSearchParams(), selectedVenueIds);
+    if (beneficiaryType && beneficiaryId) {
+      params.set("beneficiaryType", beneficiaryType);
+      params.set("beneficiaryId", beneficiaryId);
+    }
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return apiClient.request(`/v2/marketplace/listings/${encodeURIComponent(listingId)}${suffix}`);
   },
@@ -40,6 +44,26 @@ export const marketplaceRepository = {
   },
   workspace(principal = {}) {
     return apiClient.request(`/v2/marketplace/workspace?${principalParams(principal).toString()}`);
+  },
+  workspaceContext(principal = {}) {
+    return apiClient.request(`/v2/marketplace/workspace/context?${principalParams(principal).toString()}`);
+  },
+  workspaceResources(principal = {}, { ownership = "owned", q = "", resourceTypes = null, page = 1, limit = 12 } = {}) {
+    const params = principalParams(principal);
+    params.set("ownership", ownership);
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    if (q) params.set("q", q);
+    if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
+    return apiClient.request(`/v2/marketplace/workspace/resources?${params.toString()}`);
+  },
+  workspaceResourceDetail(principal = {}, { ownership = "owned", resourceType, resourceId } = {}) {
+    const params = principalParams(principal);
+    params.set("ownership", ownership);
+    return apiClient.request(`/v2/marketplace/workspace/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}?${params.toString()}`);
+  },
+  authoringPreflight(principal = {}) {
+    return apiClient.request(`/v2/marketplace/authoring/preflight?${principalParams(principal).toString()}`);
   },
   distribution(principal = {}) {
     return apiClient.request(`/v2/marketplace/distribution?${principalParams(principal).toString()}`);

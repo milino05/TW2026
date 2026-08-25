@@ -378,3 +378,52 @@ Non devono più essere usati come contratto definitivo:
 # Audit 1–30 completato
 
 L’audit architetturale client-v2 è concluso. Le decisioni 1–30 sono il contratto di riferimento per l’implementazione. I dettagli wire ancora non fissati (`Action`, `RuntimeUpdate`, completion summary, session discovery) vengono definiti durante i vertical slice senza riaprire la semantica approvata.
+
+# Marketplace/Editor UX — IA novice-first e progressive disclosure
+
+Decisione approvata per il redesign del Marketplace/Editor:
+
+- la navigazione user-facing converge su cinque aree: **Catalogo**, **Le mie risorse**, **Crea**, **Licenze e vendite**, **Account e organizzazioni**;
+- Catalog consumer e Creator Workspace restano read model distinti come stabilito al Punto 26: la nuova IA non introduce account type `visitor/author` né modalità applicative che alterano authorization;
+- il `principal` resta un concetto backend/domain. Nel creator UX viene presentato come contesto persistente **“Stai lavorando per”**; actor autenticato, working principal, beneficiary, seller e owner restano concetti distinti e vengono etichettati in base al task (`Acquista per`, `Pubblica come`, ecc.);
+- la terminologia tecnica interna non viene rinominata nei modelli o nelle API soltanto per semplificare l'interfaccia. La UI usa invece label user-facing (`Risorsa`, `Contenuto`, `Spazio editoriale`, `Raccolta editoriale`, `Regole editoriali`, `Sede`, `Oggetto della sede`, `Scheda nel catalogo`) e mantiene termini/ID tecnici disponibili tramite progressive disclosure;
+- `availableOperations[]` resta backend-authoritative. Il client può ordinarne, raggrupparne e tradurne la presentazione, ma non deduce permessi o transizioni da tipo risorsa, owner o ruolo quando tali decisioni appartengono al backend;
+- le projection del Creator Workspace distinguono la risorsa gestita nel Marketplace dalla destinazione di authoring. Una risorsa owned può quindi esporre un `authoringRef { resourceType, resourceId }` separato da `resourceId`, `sourceRef`, `snapshotRef` e `publishedSnapshotRef`. In particolare un `ItemEdition` usa `authoringRef -> Item`, evitando reverse lookup o converter frontend permanenti per aprire l'Item editor;
+- `authoringRef` è una navigation/application projection e non modifica ownership, marketability o il Domain Model. Per Visit, Namespace ed EditorialContext può puntare allo stesso aggregate live quando quello è già la corretta destinazione di authoring;
+- la UX è **novice-first, expert-capable**: azione primaria, stato, blocker e campi necessari restano immediatamente visibili; capability code, version policy, mapping semantici, ID, PresentationVariant/Representation avanzate, routing attributes/preset e JSON strutturati rimangono accessibili in sezioni avanzate senza essere eliminati;
+- un workflow non deve far creare dati inutilmente quando il backend può già sapere che manca un prerequisito indispensabile. I creator flow introdurranno quindi preflight/prerequisite projection backend-authoritative, iniziando dal requisito Namespace per completare un ItemEdition;
+- la nuova IA deve mantenere **feature parity completa** con Catalog, acquisizioni, Workspace, authoring Item/Visit, EditorialRelease, commerce, account, Organization, Namespace e Venue. La semplificazione della UI non giustifica la perdita di operazioni avanzate;
+- feedback, error recovery, dirty state, conferme distruttive, empty state, focus/keyboard/ARIA e responsive behavior devono convergere su primitive di design comuni invece di essere implementati diversamente in ogni view;
+- l'implementazione è incrementale: prima shell/design primitives e contratti mancanti, poi Le mie risorse e hub Crea, quindi authoring, Catalog/acquisition, commerce, account/Organization e infine gli editor avanzati Namespace/Venue. Ogni slice mantiene il dominio e i contratti già approvati e viene verificata per regressioni e accessibilità.
+
+# Marketplace/Editor UX — Visit authoring workflow
+
+Decisione approvata per l'authoring delle Visit nel Marketplace/Editor:
+
+- il flusso user-facing è **Informazioni principali → Contenuti → Tappe → Impostazioni → Logistica → Riepilogo e pubblicazione**; i nomi tecnici `ContentEntry`, `EditorialSource`, `VisitAnchor`, `VenueTarget` e `VisitRevision` restano disponibili tramite progressive disclosure ma non strutturano la navigazione principale;
+- scelta dei contenuti e definizione delle tappe sono due decisioni distinte. Aggiungere un contenuto crea o riusa soltanto il riferimento editoriale necessario e aggiunge una `ContentEntry` con `deliveryAnchorId = null`; non crea implicitamente un `VisitAnchor` e non modifica il PhysicalScope come side effect;
+- `Item.primarySubjectId` può essere incluso nella `VisitAuthoringProjection` per suggerire `VenueTarget` con lo stesso Subject. Tale corrispondenza è un aiuto di authoring e non un'invariante: l'autore decide esplicitamente quali VenueTarget diventano VisitAnchor;
+- una ContentEntry può restare senza tappa specifica oppure essere associata a qualunque VisitAnchor valido della Visit. Questo permette di presentare contenuti su autore, stile, periodo o altri Subject non fisici presso la tappa di un'opera senza introdurre relazioni fisiche artificiali;
+- il PhysicalScope della Visit continua a derivare esclusivamente dai VisitAnchor effettivamente presenti. Il selector di Venue serve a cercare VenueTarget candidati e non viene persistito come scope della Visit né aggiunge/rimuove tappe automaticamente;
+- l'ordine di fruizione resta l'ordine delle `ContentEntry`; non viene introdotto un secondo ordinamento artificiale degli Anchor. La rimozione di un Anchor è impedita quando è ancora referenziato da ContentEntry o RouteHint, invece di riparare silenziosamente il grafo nel frontend;
+- la logistica è presentata come quinto passaggio dello stesso wizard per continuità UX ma resta un dominio distinto: `preVisitNotes` e `routeHints` non sono Item né ContentEntry, e il routing indoor resta responsabilità del Physical Domain. Il precedente componente logistico separato viene eliminato per evitare due UI concorrenti sulla stessa VisitRevision;
+- `presentationBaseline` rimane namespace-neutral e viene presentata come impostazione facoltativa di profondità, complessità linguistica e locale; il mapping verso Representation concrete resta backend-side;
+- integrity e workflow restano backend-authoritative. Il riepilogo può spiegare blocker e stato, ma soltanto `availableOperations[]` determina check, review, richiesta modifiche e publication; la publication editoriale della Visit continua a essere distinta dalla creazione di un MarketplaceListing;
+- modificare una Visit pubblicata usa il normale boundary backend che crea una nuova working revision al primo write; il client non clona revisioni e non muta snapshot pubblicati;
+- il redesign deve preservare ricerca/paginazione server-side dei contenuti, ruoli `core | recommended | optional`, riordino/rimozione, multi-Venue, logistica strutturata e capability autorizzate, esponendole con microcopy novice-first e controlli accessibili.
+
+# Marketplace/Editor UX — Catalogo, acquisizione e licenze
+
+Decisione approvata per il boundary consumer/commerciale del Marketplace:
+
+- il **Catalogo** è una view consumer dedicata e non fa parte dello stato applicativo della shell né del Creator Workspace. La shell si occupa di autenticazione, navigazione e mount delle route; ricerca, filtri, paginazione e stato URL appartengono alla Catalog view;
+- il Catalogo è **search-first**: ricerca e risultati sono prioritari, mentre tipo risorsa e Venue sono filtri secondari. Query, gruppo di tipo, `selectedVenueIds[]` e pagina restano URL-state ripristinabile; il backend continua a eseguire ricerca, Venue relevance e paginazione;
+- la UI raggruppa live resource e snapshot tecnici in categorie user-facing (`Contenuti`, `Visite`, `Raccolte editoriali`, `Regole editoriali`) senza cambiare i `resourceType` del dominio. Tipo tecnico, versione e capability code restano disponibili tramite progressive disclosure;
+- il **beneficiario dell'acquisizione** è un contesto commerciale distinto dal working principal del Creator Workspace. Il backend espone una `availableBeneficiaries[]` autorizzata per l'actor e il dettaglio Catalogo usa `selectedBeneficiary` per etichettare **“Aggiungi o acquista per”**; le view consumer non interrogano il Workspace per risolvere tali opzioni;
+- gli effective rights mostrati nel dettaglio vengono risolti backend-side tramite lo stesso `CapabilityAuthorizationService`, scoped esattamente al beneficiario selezionato. Un Entitlement personale non rende quindi “già disponibile” un'offerta per l'Organization e viceversa;
+- `MarketplaceAcquisition` resta lo **storico commerciale immutabile** dell'operazione; `Entitlement` resta il diritto applicativo corrente. La projection **Le mie licenze** può mostrare entrambi senza fonderli: dati Acquisition/grant snapshot nei dettagli tecnici, `currentRights[]` derivati dagli Entitlement per spiegare cosa è utilizzabile adesso;
+- withdrawal di Listing/Offer e stato corrente dei diritti restano lifecycle distinti. Una scheda rimossa dal Catalogo non revoca implicitamente Entitlement validi già acquisiti; la UI lo comunica senza alterare lo storico;
+- acquisire una licenza, gratuita o a pagamento, non trasferisce ownership e non esegue automaticamente reference, import, copy, fork o Adoption. Dopo il successo la UI può portare a **Le mie risorse** perché i diritti rendono la risorsa utilizzabile, ma l'eventuale Adoption nasce solo da un successivo uso creator effettivo;
+- le offerte espongono principalmente prezzo, diritti user-facing e comportamento degli aggiornamenti. Capability code, resource type, Listing/Offer/Acquisition ID e snapshot reference sono dettagli avanzati, non il linguaggio principale del flusso;
+- il pagamento delle offerte paid resta esplicitamente **simulato** per la demo. Free e paid condividono lo stesso flusso `Per chi → Cosa otterrai → Prezzo → Conferma`, senza introdurre una seconda semantica di acquisizione;
+- **Le mie licenze** e **Vendite** sono due viste della stessa area di navigazione ma con projection differenti: la prima è beneficiary-scoped e consumer-facing, la seconda resta seller/principal-scoped e usa il boundary commerciale creator già esistente.

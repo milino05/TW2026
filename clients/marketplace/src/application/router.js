@@ -4,6 +4,7 @@ const ROUTES = new Set([
   "/catalog",
   "/catalog/detail",
   "/acquisitions",
+  "/create",
   "/workspace",
   "/workspace/resource",
   "/workspace/commerce",

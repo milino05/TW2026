@@ -12,9 +12,10 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
-function id(value) { return String(value || ""); }
-function hasOperation(projection, code) {
-  return (projection?.availableOperations || []).some((operation) => operation.code === code);
+function id(value) { return String(value?.id || value?._id || value || ""); }
+function asNullableNumber(value) {
+  const text = String(value ?? "").trim();
+  return text === "" ? null : Number(text);
 }
 function currentParams() {
   const params = new URLSearchParams(window.location.search);
@@ -22,11 +23,30 @@ function currentParams() {
     visitId: params.get("visitId"),
     principalType: params.get("principalType") || "user",
     principalId: params.get("principalId"),
+    step: Math.max(1, Math.min(6, Number(params.get("step")) || 1)),
   };
 }
-function asNullableNumber(value) {
-  const text = String(value ?? "").trim();
-  return text === "" ? null : Number(text);
+function roleLabel(role) {
+  return ({ core: "Essenziale", recommended: "Consigliato", optional: "Facoltativo" })[role] || role || "Consigliato";
+}
+function workflowLabel(operation) {
+  const labels = {
+    "workflow.check": "Controlla se è tutto pronto",
+    "workflow.request_review": "Invia in revisione",
+    "workflow.withdraw_review": "Ritira dalla revisione",
+    "workflow.request_changes": "Richiedi modifiche",
+    "workflow.publish": operation?.label === "Approva e pubblica" ? "Approva e pubblica" : "Pubblica",
+  };
+  return labels[operation?.code] || operation?.label || "Continua";
+}
+function workflowNotice(code) {
+  return ({
+    "workflow.check": "Controllo completato.",
+    "workflow.request_review": "Visita inviata in revisione.",
+    "workflow.withdraw_review": "Visita ritirata dalla revisione.",
+    "workflow.request_changes": "Richiesta di modifiche inviata.",
+    "workflow.publish": "Visita pubblicata editorialmente.",
+  })[code] || "Operazione editoriale completata.";
 }
 
 export class ArtAroundVisitAuthoringView extends HTMLElement {
@@ -40,6 +60,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   page = 1;
   selectedReleaseId = null;
   selectedVenueId = null;
+  activeStep = 1;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -57,20 +78,26 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   get visitId() { return currentParams().visitId; }
   get revision() { return this.projection?.visit?.revision || null; }
   get principal() { return this.projection?.principal || null; }
-  get editable() { return hasOperation(this.projection, "visit.edit"); }
+  get editable() { return Boolean(this.availableOperation("visit.edit")); }
+
+  availableOperation(code) {
+    return (this.projection?.availableOperations || []).find((operation) => operation.code === code) || null;
+  }
+
+  workflowOperations() {
+    return (this.projection?.availableOperations || []).filter((operation) => String(operation.code || "").startsWith("workflow."));
+  }
 
   sourceChoices() {
     const values = new Map();
-    for (const source of this.projection?.editorialSources || []) {
-      values.set(id(source.editorialReleaseId), source);
-    }
+    for (const source of this.projection?.editorialSources || []) values.set(id(source.editorialReleaseId), source);
     for (const source of this.revision?.editorialSources || []) {
       const key = id(source.editorialReleaseId);
       if (!values.has(key)) values.set(key, {
         editorialContextId: source.editorialContextId,
         editorialReleaseId: source.editorialReleaseId,
         name: source.name,
-        summary: "Source già collegata alla visita",
+        summary: "Raccolta già collegata alla visita",
         ownership: "current_visit",
         versionMode: "pinned",
       });
@@ -101,6 +128,10 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
         this.selectedVenueId = id(this.revision?.anchors?.[0]?.venue?.id || venues[0]?.id || "") || null;
       }
       await Promise.all([this.loadVenueTargets(false), this.loadContent(false)]);
+      if (this.visitId) {
+        const requested = currentParams().step;
+        this.activeStep = this.canOpenStep(requested) ? requested : (this.revision?.status === "published" ? 6 : 1);
+      }
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Editor visita non disponibile";
     } finally {
@@ -110,17 +141,20 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   async reloadProjection() {
-    const params = currentParams();
-    this.projection = await authoringRepository.visitProjection(params);
+    this.projection = await authoringRepository.visitProjection({ visitId: this.visitId });
   }
 
   async loadVenueTargets(render = true) {
-    if (!this.selectedVenueId) { this.venueTargets = null; if (render) this.render(); return; }
+    if (!this.selectedVenueId) {
+      this.venueTargets = null;
+      if (render) this.render();
+      return;
+    }
     try {
       this.venueTargets = await authoringRepository.venueTargets(this.selectedVenueId);
     } catch (error) {
       this.venueTargets = null;
-      if (render) this.error = error instanceof Error ? error.message : "Target della Venue non disponibili";
+      if (render) this.error = error instanceof Error ? error.message : "Oggetti della sede non disponibili";
     }
     if (render) this.render();
   }
@@ -142,7 +176,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       });
     } catch (error) {
       this.content = null;
-      if (render) this.error = error instanceof Error ? error.message : "Contenuti della source non disponibili";
+      if (render) this.error = error instanceof Error ? error.message : "Contenuti della raccolta non disponibili";
     }
     if (render) this.render();
   }
@@ -154,11 +188,8 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     }));
   }
 
-  serializeAnchors() {
-    return (this.revision?.anchors || []).map((anchor) => ({
-      _id: anchor.id,
-      venueTargetId: anchor.venueTargetId,
-    }));
+  serializeAnchors(anchors = this.revision?.anchors || []) {
+    return anchors.map((anchor) => ({ _id: anchor.id, venueTargetId: anchor.venueTargetId }));
   }
 
   serializeEntries(entries = this.revision?.entries || []) {
@@ -173,6 +204,18 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     }));
   }
 
+  serializeRouteHints() {
+    return (this.revision?.logistics?.routeHints || []).map((hint) => ({
+      _id: hint.id,
+      fromAnchorId: hint.fromAnchorId,
+      toAnchorId: hint.toAnchorId,
+      type: hint.type,
+      instructionOverride: hint.instructionOverride || null,
+      note: hint.note || null,
+      estimatedTransferSeconds: hint.estimatedTransferSeconds ?? null,
+    }));
+  }
+
   sourceForRelease(releaseId) {
     return (this.revision?.editorialSources || []).find((source) => id(source.editorialReleaseId) === id(releaseId)) || null;
   }
@@ -181,45 +224,29 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     return (this.revision?.anchors || []).find((anchor) => id(anchor.venueTargetId) === id(targetId)) || null;
   }
 
-  matchingTarget(result) {
-    if (!this.selectedVenueId || !result?.primarySubjectId) return null;
-    return (this.venueTargets?.targets || []).find((target) => id(target.subject?.id) === id(result.primarySubjectId)) || null;
+  async ensureEditorialSource(releaseId) {
+    let source = this.sourceForRelease(releaseId);
+    if (source) return source;
+    await authoringRepository.updateVisit(this.visitId, {
+      editorialSources: [...this.serializeSources(), { editorialReleaseId: releaseId }],
+    });
+    await this.reloadProjection();
+    source = this.sourceForRelease(releaseId);
+    if (!source) throw new Error("La raccolta editoriale non è stata collegata alla visita");
+    return source;
   }
 
-  async ensureReferences(result, target) {
-    let changed = false;
-    const payload = {};
-    if (!this.sourceForRelease(this.selectedReleaseId)) {
-      payload.editorialSources = [...this.serializeSources(), { editorialReleaseId: this.selectedReleaseId }];
-      changed = true;
-    }
-    if (target && !this.anchorForTarget(target.id)) {
-      payload.visitAnchors = [...this.serializeAnchors(), { venueTargetId: target.id }];
-      changed = true;
-    }
-    if (changed) {
-      await authoringRepository.updateVisit(this.visitId, payload);
-      await this.reloadProjection();
-    }
-    const source = this.sourceForRelease(this.selectedReleaseId);
-    const anchor = target ? this.anchorForTarget(target.id) : null;
-    if (!source) throw new Error("La source editoriale non è stata collegata alla visita");
-    return { source, anchor };
-  }
-
-  async execute(callback, successMessage, { refreshContent = false } = {}) {
+  async execute(callback, successMessage, { refreshContent = false, refreshVenueTargets = false } = {}) {
     this.busy = true;
     this.error = null;
     this.message = null;
     this.render();
     try {
       await callback();
-      this.message = successMessage;
       await this.reloadProjection();
       if (refreshContent) await this.loadContent(false);
-      if (this.visitId) {
-        window.dispatchEvent(new CustomEvent("artaround:visit-updated", { detail: { visitId: this.visitId } }));
-      }
+      if (refreshVenueTargets) await this.loadVenueTargets(false);
+      this.message = successMessage;
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Operazione non riuscita";
     } finally {
@@ -228,13 +255,31 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     }
   }
 
+  canOpenStep(step) {
+    if (!this.visitId) return step === 1;
+    if (step === 1 || step === 2 || step === 4 || step === 5 || step === 6) return true;
+    if (step === 3) return (this.revision?.entries || []).length > 0;
+    return false;
+  }
+
+  stepComplete(step) {
+    if (step === 1) return Boolean(this.revision?.title);
+    if (step === 2) return (this.revision?.entries || []).length > 0;
+    if (step === 3) return (this.revision?.anchors || []).length > 0;
+    if (step === 4) return Boolean(this.revision?.presentationBaseline);
+    if (step === 5) return Boolean((this.revision?.logistics?.preVisitNotes || []).length || (this.revision?.logistics?.routeHints || []).length);
+    if (step === 6) return this.revision?.status === "published";
+    return false;
+  }
+
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
+    event.preventDefault();
+    const data = new FormData(form);
 
-    if (form.matches("form[data-create-visit]")) {
-      event.preventDefault();
-      const data = new FormData(form);
+    if (form.matches("[data-create-visit]")) {
+      if (!this.availableOperation("visit.create")) return;
       await this.execute(async () => {
         const response = await authoringRepository.createVisit({
           ownerType: this.principal.type,
@@ -242,29 +287,20 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
           title: String(data.get("title") || "").trim(),
           description: String(data.get("description") || "").trim(),
         });
-        navigate(`/workspace/visit-authoring?visitId=${encodeURIComponent(response.visit._id)}`);
+        navigate(`/workspace/visit-authoring?visitId=${encodeURIComponent(response.visit._id)}&step=2`);
       }, "Bozza visita creata");
       return;
     }
 
-    if (form.matches("form[data-visit-metadata]")) {
-      event.preventDefault();
-      const data = new FormData(form);
+    if (form.matches("[data-visit-main]")) {
       await this.execute(() => authoringRepository.updateVisit(this.visitId, {
         title: String(data.get("title") || "").trim(),
         description: String(data.get("description") || "").trim(),
-        presentationBaseline: {
-          depthPreference: asNullableNumber(data.get("depthPreference")),
-          languageComplexityPreference: asNullableNumber(data.get("languageComplexityPreference")),
-          locale: String(data.get("locale") || "").trim() || null,
-        },
-      }), "Dati della visita aggiornati");
+      }), "Informazioni principali salvate");
       return;
     }
 
-    if (form.matches("form[data-visit-search]")) {
-      event.preventDefault();
-      const data = new FormData(form);
+    if (form.matches("[data-visit-search]")) {
       this.query = String(data.get("q") || "").trim();
       this.page = 1;
       this.busy = true;
@@ -273,6 +309,54 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       await this.loadContent(false);
       this.busy = false;
       this.render();
+      return;
+    }
+
+    if (form.matches("[data-visit-settings]")) {
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, {
+        presentationBaseline: {
+          depthPreference: asNullableNumber(data.get("depthPreference")),
+          languageComplexityPreference: asNullableNumber(data.get("languageComplexityPreference")),
+          locale: String(data.get("locale") || "").trim() || null,
+        },
+      }), "Impostazioni della visita salvate");
+      return;
+    }
+
+    if (form.matches("[data-visit-logistics]")) {
+      const preVisitNotes = String(data.get("preVisitNotes") || "")
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, {
+        logistics: { preVisitNotes, routeHints: this.serializeRouteHints() },
+      }), "Indicazioni logistiche salvate");
+      return;
+    }
+
+    if (form.matches("[data-workflow-form]")) {
+      const operationCode = String(data.get("operationCode") || "");
+      const operation = this.availableOperation(operationCode);
+      if (!operation || !String(operationCode).startsWith("workflow.")) return;
+      const message = operation.requiresMessage ? String(data.get("message") || "").trim() : "";
+      if (operation.requiresMessage && !message) {
+        this.error = "Scrivi la motivazione delle modifiche richieste";
+        this.render();
+        return;
+      }
+      await this.execute(async () => {
+        const result = await marketplaceRepository.executeWorkspaceOperation({
+          operationCode,
+          sourceRef: { resourceType: "visit", resourceId: this.visitId },
+          targetPrincipal: { type: this.principal.type, id: this.principal.id },
+          payload: message ? { message } : {},
+        });
+        if (operationCode === "workflow.check") {
+          const issues = result?.result?.issues || [];
+          this.message = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : "Controllo completato: la visita è pronta per il passaggio successivo.";
+        }
+      }, workflowNotice(operationCode));
+      this.activeStep = 6;
     }
   };
 
@@ -280,197 +364,356 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const target = event.target instanceof HTMLSelectElement ? event.target : null;
     if (!target) return;
 
-    if (target.matches("select[data-new-principal]")) {
+    if (target.matches("[data-new-principal]")) {
       const [principalType, principalId] = target.value.split(":");
       navigate(`/workspace/visit-authoring?principalType=${encodeURIComponent(principalType)}&principalId=${encodeURIComponent(principalId)}`);
       return;
     }
-    if (target.matches("select[data-source]")) {
+
+    if (target.matches("[data-source]")) {
       this.selectedReleaseId = target.value || null;
       this.page = 1;
-      this.busy = true; this.error = null; this.render();
+      this.busy = true;
+      this.error = null;
+      this.render();
       await this.loadContent(false);
-      this.busy = false; this.render();
+      this.busy = false;
+      this.render();
       return;
     }
-    if (target.matches("select[data-venue]")) {
+
+    if (target.matches("[data-venue]")) {
       this.selectedVenueId = target.value || null;
-      this.busy = true; this.error = null; this.render();
+      this.busy = true;
+      this.error = null;
+      this.render();
       await this.loadVenueTargets(false);
-      this.busy = false; this.render();
+      this.busy = false;
+      this.render();
       return;
     }
-    if (target.matches("select[data-entry-role]")) {
+
+    if (target.matches("[data-entry-role]")) {
       const entryId = target.dataset.entryRole;
       const entries = (this.revision?.entries || []).map((entry) => id(entry.id) === id(entryId) ? { ...entry, role: target.value } : entry);
-      await this.execute(() => authoringRepository.updateVisit(this.visitId, { contentEntries: this.serializeEntries(entries) }), "Ruolo del contenuto aggiornato");
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, { contentEntries: this.serializeEntries(entries) }), "Importanza del contenuto aggiornata");
+      return;
+    }
+
+    if (target.matches("[data-entry-anchor]")) {
+      const entryId = target.dataset.entryAnchor;
+      const entries = (this.revision?.entries || []).map((entry) => id(entry.id) === id(entryId) ? { ...entry, deliveryAnchorId: target.value || null } : entry);
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, { contentEntries: this.serializeEntries(entries) }), target.value ? "Tappa associata al contenuto" : "Contenuto lasciato senza tappa specifica");
     }
   };
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    const back = target?.closest("button[data-back]");
-    if (back) { navigate("/workspace"); return; }
+    if (!target) return;
 
-    const addButton = target?.closest("button[data-add-content]");
+    if (target.closest("button[data-back]")) {
+      navigate("/workspace");
+      return;
+    }
+
+    const stepButton = target.closest("button[data-step]");
+    if (stepButton) {
+      const step = Number(stepButton.dataset.step) || 1;
+      if (this.canOpenStep(step)) {
+        this.activeStep = step;
+        this.error = null;
+        this.render();
+      }
+      return;
+    }
+
+    const addButton = target.closest("button[data-add-content]");
     if (addButton) {
       const result = (this.content?.results || []).find((entry) => id(entry.itemRevisionId) === id(addButton.dataset.addContent));
       if (!result) return;
       const card = addButton.closest("article");
       const role = card?.querySelector("select[data-add-role]")?.value || "recommended";
-      const targetMatch = this.matchingTarget(result);
       await this.execute(async () => {
-        const refs = await this.ensureReferences(result, targetMatch);
+        const source = await this.ensureEditorialSource(this.selectedReleaseId);
         const entries = this.serializeEntries();
         entries.push({
-          editorialSourceId: refs.source.id,
+          editorialSourceId: source.id,
           itemId: result.itemId,
           itemEditionId: result.itemEditionId,
           itemRevisionId: result.itemRevisionId,
-          deliveryAnchorId: refs.anchor?.id || null,
+          deliveryAnchorId: null,
           role,
         });
         await authoringRepository.updateVisit(this.visitId, { contentEntries: entries });
-      }, targetMatch ? `Contenuto aggiunto alla tappa ${targetMatch.label}` : "Contenuto associato aggiunto senza tappa", { refreshContent: true });
+      }, "Contenuto aggiunto. Se serve, associa una tappa nel passaggio successivo.", { refreshContent: true });
       return;
     }
 
-    const removeButton = target?.closest("button[data-remove-entry]");
-    if (removeButton) {
-      const remaining = (this.revision?.entries || []).filter((entry) => id(entry.id) !== id(removeButton.dataset.removeEntry));
-      const usedAnchors = new Set(remaining.map((entry) => id(entry.deliveryAnchorId)).filter(Boolean));
-      const anchors = this.serializeAnchors().filter((anchor) => usedAnchors.has(id(anchor._id)));
-      await this.execute(() => authoringRepository.updateVisit(this.visitId, {
-        contentEntries: this.serializeEntries(remaining),
-        visitAnchors: anchors,
-      }), "Contenuto rimosso dalla visita", { refreshContent: true });
+    const removeEntry = target.closest("button[data-remove-entry]");
+    if (removeEntry) {
+      const remaining = (this.revision?.entries || []).filter((entry) => id(entry.id) !== id(removeEntry.dataset.removeEntry));
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, { contentEntries: this.serializeEntries(remaining) }), "Contenuto rimosso dalla visita", { refreshContent: true });
       return;
     }
 
-    const moveButton = target?.closest("button[data-move-entry]");
-    if (moveButton) {
-      const entryId = moveButton.dataset.moveEntry;
-      const direction = Number(moveButton.dataset.direction) || 0;
+    const moveEntry = target.closest("button[data-move-entry]");
+    if (moveEntry) {
       const entries = [...(this.revision?.entries || [])];
-      const index = entries.findIndex((entry) => id(entry.id) === id(entryId));
-      const next = index + direction;
+      const index = entries.findIndex((entry) => id(entry.id) === id(moveEntry.dataset.moveEntry));
+      const next = index + (Number(moveEntry.dataset.direction) || 0);
       if (index < 0 || next < 0 || next >= entries.length) return;
       [entries[index], entries[next]] = [entries[next], entries[index]];
       await this.execute(() => authoringRepository.updateVisit(this.visitId, { contentEntries: this.serializeEntries(entries) }), "Ordine della visita aggiornato");
       return;
     }
 
-    const pageButton = target?.closest("button[data-content-page]");
+    const pageButton = target.closest("button[data-content-page]");
     if (pageButton) {
       this.page = Math.max(1, Number(pageButton.dataset.contentPage) || 1);
-      this.busy = true; this.error = null; this.render();
+      this.busy = true;
+      this.error = null;
+      this.render();
       await this.loadContent(false);
-      this.busy = false; this.render();
+      this.busy = false;
+      this.render();
       return;
     }
 
-    const workflow = target?.closest("button[data-workflow]");
-    if (workflow) {
-      const operationCode = workflow.dataset.workflow;
-      const payload = {};
-      if (workflow.dataset.requiresMessage === "true") {
-        const message = window.prompt("Motivazione delle modifiche richieste:");
-        if (message === null) return;
-        if (!message.trim()) { this.error = "La motivazione è obbligatoria."; this.render(); return; }
-        payload.message = message.trim();
+    const addAnchor = target.closest("button[data-add-anchor]");
+    if (addAnchor) {
+      const targetId = addAnchor.dataset.addAnchor;
+      if (!targetId || this.anchorForTarget(targetId)) return;
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, {
+        visitAnchors: [...this.serializeAnchors(), { venueTargetId: targetId }],
+      }), "Tappa aggiunta alla visita");
+      return;
+    }
+
+    const removeAnchor = target.closest("button[data-remove-anchor]");
+    if (removeAnchor) {
+      const anchorId = removeAnchor.dataset.removeAnchor;
+      const blockers = this.anchorRemovalBlockers(anchorId);
+      if (blockers.length) {
+        this.error = blockers.join(" ");
+        this.render();
+        return;
       }
-      await this.execute(() => marketplaceRepository.executeWorkspaceOperation({
-        operationCode,
-        sourceRef: { resourceType: "visit", resourceId: this.visitId },
-        targetPrincipal: { type: this.principal.type, id: this.principal.id },
-        payload,
-      }), "Workflow visita aggiornato");
+      const anchors = (this.revision?.anchors || []).filter((anchor) => id(anchor.id) !== id(anchorId));
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, { visitAnchors: this.serializeAnchors(anchors) }), "Tappa rimossa dalla visita");
     }
   };
 
+  anchorRemovalBlockers(anchorId) {
+    const entries = (this.revision?.entries || []).filter((entry) => id(entry.deliveryAnchorId) === id(anchorId));
+    const hints = (this.revision?.logistics?.routeHints || []).filter((hint) => id(hint.fromAnchorId) === id(anchorId) || id(hint.toAnchorId) === id(anchorId));
+    const blockers = [];
+    if (entries.length) blockers.push(`La tappa è usata da ${entries.length} contenuto/i: riassegnali prima di rimuoverla.`);
+    if (hints.length) blockers.push(`La tappa è usata da ${hints.length} indicazione/i di trasferimento e non può essere rimossa.`);
+    return blockers;
+  }
+
+  suggestedTargets() {
+    const subjectIds = new Set((this.revision?.entries || []).map((entry) => id(entry.primarySubjectId)).filter(Boolean));
+    const usedTargets = new Set((this.revision?.anchors || []).map((anchor) => id(anchor.venueTargetId)));
+    return (this.venueTargets?.targets || []).filter((entry) => !usedTargets.has(id(entry.id)) && subjectIds.has(id(entry.subject?.id)));
+  }
+
+  otherTargets() {
+    const suggested = new Set(this.suggestedTargets().map((entry) => id(entry.id)));
+    const usedTargets = new Set((this.revision?.anchors || []).map((anchor) => id(anchor.venueTargetId)));
+    return (this.venueTargets?.targets || []).filter((entry) => !usedTargets.has(id(entry.id)) && !suggested.has(id(entry.id)));
+  }
+
+  renderProgress() {
+    const stages = [
+      [1, "Informazioni principali"],
+      [2, "Contenuti"],
+      [3, "Tappe"],
+      [4, "Impostazioni"],
+      [5, "Logistica"],
+      [6, "Riepilogo e pubblicazione"],
+    ];
+    return `<nav class="visit-progress" aria-label="Passaggi di creazione della visita"><ol>${stages.map(([step, label]) => {
+      const current = this.activeStep === step;
+      const enabled = this.canOpenStep(step);
+      const complete = this.stepComplete(step);
+      return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}"><span>${complete ? icon("check", { size: 13 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`;
+    }).join("")}</ol></nav>`;
+  }
+
+  renderWorkingContext() {
+    if (!this.principal) return "";
+    return `<div class="working-context surface"><span>Stai lavorando per</span><strong>${escapeHtml(this.principal.name || "Contesto selezionato")}</strong></div>`;
+  }
+
   renderPrincipalSelector() {
     const options = (this.projection?.availablePrincipals || []).map((principal) => {
-      const value = `${principal.type}:${principal.id}`;
+      const value = `${principal.type}:${id(principal.id)}`;
       const selected = principal.type === this.principal?.type && id(principal.id) === id(this.principal?.id);
-      const role = principal.type === "organization" ? ` · ${principal.role}` : "";
+      const role = principal.type === "organization" && principal.role ? ` · ${principal.role}` : "";
       return `<option value="${escapeHtml(value)}" ${selected ? "selected" : ""}>${escapeHtml(principal.name)}${escapeHtml(role)}</option>`;
     }).join("");
-    return `<label>Proprietario della nuova visita <select data-new-principal>${options}</select></label>`;
+    return `<label>Crea per<select data-new-principal>${options}</select><small>Puoi creare la visita per il tuo account o per un'organizzazione che gestisci.</small></label>`;
   }
 
   renderCreate() {
-    return `<main class="page editor-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Workspace</button><span>/</span><span>Nuova visita</span></nav><header class="page-header"><div><span class="eyebrow">Visit authoring</span><h1>Crea una nuova visita</h1><p>Definisci prima l'identità della visita; contenuti, tappe fisiche e preferenze verranno aggiunti nell'editor.</p></div></header>
-      <form class="panel create-visit-form" data-create-visit>${this.renderPrincipalSelector()}
-        <label>Titolo <input name="title" required maxlength="160"></label>
-        <label>Descrizione <textarea name="description" rows="4"></textarea></label>
-        <button type="submit" ${this.busy ? "disabled" : ""}>Crea bozza</button>
-      </form>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}</main>`;
+    return `<main class="page visit-authoring-page"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Le mie risorse</button><span>/</span><span>Nuova visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>Nuova visita</h1><p>Parti dalle informazioni essenziali. Contenuti, tappe, impostazioni e logistica verranno aggiunti nei passaggi successivi.</p></div></header>${this.renderWorkingContext()}<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni principali</span><h2>Come si presenta questa visita?</h2></div></header><form data-create-visit class="editor-form">${this.renderPrincipalSelector()}<label>Titolo<input name="title" required maxlength="160" placeholder="Un titolo chiaro per chi sceglierà la visita"></label><label>Descrizione<textarea name="description" rows="5" placeholder="Spiega tema, pubblico o obiettivo della visita"></textarea></label><button type="submit" ${this.busy ? "disabled" : ""}>Crea la bozza e scegli i contenuti ${icon("chevron", { size: 15 })}</button></form></section>${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}</main>`;
   }
 
-  renderWorkflow() {
-    const operations = (this.projection?.availableOperations || []).filter((operation) => operation.code.startsWith("workflow."));
-    if (!operations.length) return "";
-    return `<section class="workflow-panel"><div class="section-heading"><div><span class="eyebrow">Controllo qualità</span><h2>Workflow editoriale</h2></div><div class="status-strip"><span class="chip">${escapeHtml(this.revision?.status || "")}</span><span class="chip">integrità: ${escapeHtml(this.revision?.integrity?.status || "")}</span></div></div><div class="actions">${operations.map((operation) => `<button type="button" data-workflow="${escapeHtml(operation.code)}" data-requires-message="${operation.requiresMessage ? "true" : "false"}" ${this.busy ? "disabled" : ""}>${escapeHtml(operation.label)}</button>`).join("")}</div>${(this.revision?.integrity?.issues || []).length ? `<ul class="issues">${this.revision.integrity.issues.map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul>` : ""}</section>`;
+  renderStepOne() {
+    if (this.activeStep !== 1) return "";
+    const published = this.revision?.status === "published";
+    if (!this.editable) {
+      return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni principali</span><h2>${escapeHtml(this.revision?.title || "Visita")}</h2><p>${escapeHtml(this.revision?.description || "Nessuna descrizione")}</p></div></header><p class="note">Questa revisione non è modificabile nello stato corrente.</p></section>`;
+    }
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni principali</span><h2>Presenta la visita</h2><p>Titolo e descrizione aiutano chi la sceglierà a capire tema e obiettivo.</p></div></header>${published ? `<div class="context-box"><strong>Stai modificando una versione pubblicata</strong><p>Il primo salvataggio creerà una nuova bozza di lavoro; la versione pubblicata resterà immutabile.</p></div>` : ""}<form data-visit-main class="editor-form"><label>Titolo<input name="title" required maxlength="160" value="${escapeHtml(this.revision?.title || "")}"></label><label>Descrizione<textarea name="description" rows="5">${escapeHtml(this.revision?.description || "")}</textarea></label><div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>Salva informazioni</button><button class="button-secondary" type="button" data-step="2">Continua ai contenuti ${icon("chevron", { size: 15 })}</button></div></form><details class="technical-details"><summary>Dettagli tecnici</summary><p>Visit ${escapeHtml(this.projection?.visit?.id || "-")} · VisitRevision ${escapeHtml(this.revision?.id || "-")} · versione ${escapeHtml(this.revision?.version || "-")} · stato ${escapeHtml(this.revision?.status || "-")}</p></details></section>`;
   }
 
-  renderMetadata() {
-    const baseline = this.revision?.presentationBaseline || {};
-    if (!this.editable) return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 1</span><h2>Dati visita</h2></div></div><h3>${escapeHtml(this.revision?.title || "")}</h3><p>${escapeHtml(this.revision?.description || "")}</p><p class="note">La revisione non è modificabile nello stato corrente.</p></section>`;
-    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 1</span><h2>Dati visita</h2></div></div><form data-visit-metadata class="metadata-grid">
-      <label>Titolo <input name="title" required value="${escapeHtml(this.revision?.title || "")}"></label>
-      <label>Descrizione <textarea name="description" rows="3">${escapeHtml(this.revision?.description || "")}</textarea></label>
-      <label>Profondità di default (0–1) <input name="depthPreference" type="number" min="0" max="1" step="0.1" value="${escapeHtml(baseline.depthPreference ?? "")}"></label>
-      <label>Complessità linguistica di default (0–1) <input name="languageComplexityPreference" type="number" min="0" max="1" step="0.1" value="${escapeHtml(baseline.languageComplexityPreference ?? "")}"></label>
-      <label>Locale <input name="locale" value="${escapeHtml(baseline.locale || "it-IT")}" placeholder="it-IT"></label>
-      <button type="submit" ${this.busy ? "disabled" : ""}>Salva dati visita</button>
-    </form></section>`;
-  }
-
-  renderEntries() {
+  renderEntrySequence() {
     const entries = this.revision?.entries || [];
-    const rows = entries.map((entry, index) => `<li class="entry">
-      <div><strong>${index + 1}. ${escapeHtml(entry.label)}</strong>${entry.deliveryTarget ? `<small>${escapeHtml(entry.deliveryTarget.venue?.name || "")} · ${escapeHtml(entry.deliveryTarget.label)}</small>` : `<small>Contenuto associato senza tappa fisica</small>`}<small>${escapeHtml((entry.authorCredits || []).join(", "))}${entry.license ? ` · ${escapeHtml(entry.license)}` : ""}</small></div>
-      <label>Ruolo <select data-entry-role="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}><option value="core" ${entry.role === "core" ? "selected" : ""}>Core</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Recommended</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Optional</option></select></label>
-      <div class="entry-actions"><button type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="-1" ${!this.editable || index === 0 || this.busy ? "disabled" : ""}>↑</button><button type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="1" ${!this.editable || index === entries.length - 1 || this.busy ? "disabled" : ""}>↓</button><button type="button" data-remove-entry="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}>Rimuovi</button></div>
-    </li>`).join("");
-    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 2</span><h2>Sequenza della visita</h2><p>${entries.length} contenuti nell'ordine di fruizione.</p></div><span class="count">${entries.length}</span></div><ol class="entries">${rows || `<li class="empty-state"><h3>La sequenza è vuota</h3><p>Cerca contenuti nella sezione successiva e aggiungili alla visita.</p></li>`}</ol></section>`;
-  }
-
-  renderSourceAndVenueSelectors() {
-    const sources = this.sourceChoices();
-    const venues = this.venueChoices();
-    const sourceOptions = sources.map((source) => `<option value="${escapeHtml(source.editorialReleaseId)}" ${id(source.editorialReleaseId) === id(this.selectedReleaseId) ? "selected" : ""}>${escapeHtml(source.name)} · ${escapeHtml(source.ownership)}</option>`).join("");
-    const venueOptions = venues.map((venue) => `<option value="${escapeHtml(venue.id)}" ${id(venue.id) === id(this.selectedVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
-    return `<div class="selectors"><label>Source editoriale <select data-source ${!this.editable ? "disabled" : ""}>${sourceOptions || "<option value=''>Nessuna source disponibile</option>"}</select></label><label>Venue corrente <select data-venue ${!this.editable ? "disabled" : ""}>${venueOptions || "<option value=''>Nessuna Venue disponibile</option>"}</select></label></div>`;
+    if (!entries.length) return `<div class="empty-state compact"><h3>Nessun contenuto nella visita</h3><p>Cerca nella raccolta editoriale e aggiungi il primo contenuto.</p></div>`;
+    return `<ol class="visit-sequence">${entries.map((entry, index) => `<li><article class="sequence-card"><div class="sequence-index">${index + 1}</div><div class="sequence-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml((entry.authorCredits || []).join(", ") || "Autore non indicato")}${entry.deliveryTarget ? ` · tappa: ${escapeHtml(entry.deliveryTarget.label)}` : " · tappa da definire o non necessaria"}</small></div><label>Importanza<select data-entry-role="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}><option value="core" ${entry.role === "core" ? "selected" : ""}>Essenziale</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Consigliato</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Facoltativo</option></select></label><div class="entry-actions"><button class="button-secondary" type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="-1" ${!this.editable || index === 0 || this.busy ? "disabled" : ""} aria-label="Sposta ${escapeHtml(entry.label)} prima">Sposta prima</button><button class="button-secondary" type="button" data-move-entry="${escapeHtml(entry.id)}" data-direction="1" ${!this.editable || index === entries.length - 1 || this.busy ? "disabled" : ""} aria-label="Sposta ${escapeHtml(entry.label)} dopo">Sposta dopo</button><button class="button-secondary danger" type="button" data-remove-entry="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}>Rimuovi</button></div></article></li>`).join("")}</ol>`;
   }
 
   renderContentSearch() {
     if (!this.editable) return "";
-    if (!this.selectedReleaseId) return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 3</span><h2>Aggiungi contenuti</h2></div></div><div class="empty-state"><p>Nessuna EditorialRelease con capability <code>context.compose_visit</code> è disponibile per questo principal.</p></div></section>`;
-    const results = this.content?.results || [];
+    const sources = this.sourceChoices();
+    if (!sources.length) return `<div class="blocker-panel"><span>${icon("warning", { size: 20 })}</span><div><strong>Nessuna raccolta editoriale disponibile</strong><p>Per aggiungere contenuti serve una raccolta che tu possa usare per comporre visite.</p><details class="technical-details"><summary>Dettagli tecnici</summary><p>Nessuna EditorialRelease autorizzata con capability <code>context.compose_visit</code> è disponibile per questo principal.</p></details></div></div>`;
+    const sourceOptions = sources.map((source) => `<option value="${escapeHtml(id(source.editorialReleaseId))}" ${id(source.editorialReleaseId) === id(this.selectedReleaseId) ? "selected" : ""}>${escapeHtml(source.name)}${source.ownership === "licensed" ? " · tramite licenza" : ""}</option>`).join("");
     const existingRevisions = new Set((this.revision?.entries || []).map((entry) => id(entry.itemRevisionId)));
+    const results = this.content?.results || [];
     const cards = results.map((result) => {
-      const target = this.matchingTarget(result);
       const alreadyAdded = existingRevisions.has(id(result.itemRevisionId));
       const profileCount = (result.presentationProfiles || []).length;
-      const action = target ? `Aggiungi alla tappa ${target.label}` : "Aggiungi come contenuto associato";
-      return `<article class="candidate"><div><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml((result.authorCredits || []).join(", "))}${result.license ? ` · ${escapeHtml(result.license)}` : ""}</p><p>${profileCount} profili di presentazione disponibili${target ? ` · oggetto presente nella Venue: ${escapeHtml(target.label)}` : " · nessun target fisico corrispondente nella Venue corrente"}</p></div><label>Ruolo <select data-add-role><option value="core">Core</option><option value="recommended" selected>Recommended</option><option value="optional">Optional</option></select></label><button type="button" data-add-content="${escapeHtml(result.itemRevisionId)}" ${alreadyAdded || this.busy ? "disabled" : ""}>${alreadyAdded ? "Già presente" : escapeHtml(action)}</button></article>`;
+      return `<article class="candidate-card"><div><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml((result.authorCredits || []).join(", ") || "Autore non indicato")}${result.license ? ` · ${escapeHtml(result.license)}` : ""}</p><p class="note">${profileCount} ${profileCount === 1 ? "profilo di presentazione" : "profili di presentazione"} disponibili.</p></div><label>Importanza<select data-add-role ${alreadyAdded ? "disabled" : ""}><option value="core">Essenziale</option><option value="recommended" selected>Consigliato</option><option value="optional">Facoltativo</option></select></label><button type="button" data-add-content="${escapeHtml(id(result.itemRevisionId))}" ${alreadyAdded || this.busy ? "disabled" : ""}>${alreadyAdded ? "Già nella visita" : "Aggiungi alla visita"}</button></article>`;
     }).join("");
     const page = Number(this.content?.page) || 1;
     const limit = Number(this.content?.limit) || 20;
     const total = Number(this.content?.total) || 0;
-    return `<section><div class="section-heading"><div><span class="eyebrow">Passaggio 3</span><h2>Aggiungi contenuti</h2><p>Scegli una source autorizzata e, opzionalmente, una Venue per associare le tappe fisiche.</p></div></div>${this.renderSourceAndVenueSelectors()}<form class="search-inline" data-visit-search role="search"><label>Cerca nella source <span class="input-icon">${icon("search")}<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo del contenuto"></span></label><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></form><p class="muted">${total} contenuti disponibili · risultati paginati server-side</p><div class="candidates">${cards || `<div class="empty-state"><p>Nessun contenuto trovato.</p></div>`}</div><nav class="pagination" aria-label="Pagine contenuti"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section>`;
+    return `<div class="content-browser"><div class="selectors"><label>Raccolta editoriale<select data-source>${sourceOptions}</select><small>Mostriamo soltanto raccolte che puoi usare in questa visita.</small></label></div><form data-visit-search class="search-inline" role="search"><label>Cerca contenuti<span class="input-icon">${icon("search", { size: 16 })}<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo del contenuto"></span></label><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></form><p class="note">${total} contenuti disponibili · ricerca e paginazione gestite dal server.</p><div class="candidate-grid">${cards || `<div class="empty-state compact"><p>Nessun contenuto trovato. Prova a cambiare ricerca o raccolta.</p></div>`}</div><nav class="pagination" aria-label="Pagine dei contenuti"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva</button></nav></div>`;
+  }
+
+  renderStepTwo() {
+    if (this.activeStep !== 2) return "";
+    const count = (this.revision?.entries || []).length;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Contenuti</span><h2>Scegli cosa raccontare e in quale ordine</h2><p>Aggiungi i contenuti, definisci la loro importanza e riordinali. Le tappe fisiche vengono gestite nel passaggio successivo.</p></div><span class="count">${count}</span></header>${this.renderEntrySequence()}${this.renderContentSearch()}<div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3" ${count ? "" : "disabled"}>Continua alle tappe ${icon("chevron", { size: 15 })}</button></div><details class="technical-details"><summary>Per utenti esperti: riferimenti editoriali</summary><p>I contenuti sono ContentEntry che pinano ItemRevision appartenenti alle EditorialRelease autorizzate. Aggiungere un contenuto non crea automaticamente un VisitAnchor.</p></details></section>`;
+  }
+
+  renderCurrentAnchors() {
+    const anchors = this.revision?.anchors || [];
+    if (!anchors.length) return `<div class="empty-state compact"><h3>Nessuna tappa ancora definita</h3><p>Aggiungi almeno una tappa fisica prima del controllo di pubblicazione.</p></div>`;
+    return `<div class="anchor-list">${anchors.map((anchor, index) => {
+      const blockers = this.anchorRemovalBlockers(anchor.id);
+      return `<article class="anchor-card"><div class="anchor-index">${index + 1}</div><div><strong>${escapeHtml(anchor.label)}</strong><small>${escapeHtml(anchor.venue?.name || "Sede non disponibile")}</small>${blockers.length ? `<small>${escapeHtml(blockers.join(" "))}</small>` : ""}</div>${this.editable ? `<button class="button-secondary danger" type="button" data-remove-anchor="${escapeHtml(anchor.id)}" ${blockers.length || this.busy ? "disabled" : ""}>Rimuovi tappa</button>` : ""}<details class="technical-details"><summary>Dettagli</summary><p>VisitAnchor ${escapeHtml(anchor.id)} · VenueTarget ${escapeHtml(anchor.venueTargetId)} · Subject ${escapeHtml(anchor.subjectId || "-")}</p></details></article>`;
+    }).join("")}</div>`;
+  }
+
+  renderTargetCards(targets, { suggested = false } = {}) {
+    if (!targets.length) return suggested ? `<p class="note">Nessuna nuova tappa suggerita per i contenuti presenti.</p>` : `<p class="note">Nessun altro oggetto attivo in questa sede.</p>`;
+    return `<div class="target-grid">${targets.map((target) => `<article class="target-card"><div><strong>${escapeHtml(target.label)}</strong><small>${escapeHtml(target.subject?.preferredLabel || target.description || "Oggetto della sede")}</small>${suggested ? `<span class="chip" data-tone="success">Corrisponde a un contenuto</span>` : ""}</div><button type="button" data-add-anchor="${escapeHtml(id(target.id))}" ${!this.editable || this.busy ? "disabled" : ""}>Aggiungi tappa</button></article>`).join("")}</div>`;
+  }
+
+  renderAnchorAssignments() {
+    const anchors = this.revision?.anchors || [];
+    const entries = this.revision?.entries || [];
+    if (!entries.length) return "";
+    return `<div class="assignment-list">${entries.map((entry, index) => {
+      const current = id(entry.deliveryAnchorId);
+      const currentExists = anchors.some((anchor) => id(anchor.id) === current);
+      const options = [`<option value="">Nessuna tappa specifica · contenuto associato</option>`, ...(current && !currentExists ? [`<option value="${escapeHtml(current)}" selected>Riferimento non disponibile</option>`] : []), ...anchors.map((anchor) => `<option value="${escapeHtml(anchor.id)}" ${id(anchor.id) === current ? "selected" : ""}>${escapeHtml(anchor.label)} · ${escapeHtml(anchor.venue?.name || "Sede")}</option>`)].join("");
+      return `<article class="assignment-card"><div><span class="sequence-index">${index + 1}</span><strong>${escapeHtml(entry.label)}</strong><small>${entry.primarySubjectId ? "ArtAround può suggerire una tappa con lo stesso soggetto, ma non la impone." : "Puoi associare liberamente questo contenuto a una tappa della visita."}</small></div><label>Tappa di fruizione<select data-entry-anchor="${escapeHtml(entry.id)}" ${!this.editable || this.busy ? "disabled" : ""}>${options}</select></label></article>`;
+    }).join("")}</div>`;
+  }
+
+  renderStepThree() {
+    if (this.activeStep !== 3) return "";
+    const venues = this.venueChoices();
+    const venueOptions = venues.map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
+    const suggested = this.suggestedTargets();
+    const others = this.otherTargets();
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Tappe</span><h2>Definisci dove si svolge la visita</h2><p>Le tappe sono oggetti fisici della sede. Aggiungile esplicitamente, poi scegli dove presentare ciascun contenuto.</p></div></header><div class="subsection"><h3>Tappe della visita</h3>${this.renderCurrentAnchors()}</div>${this.editable ? `<div class="subsection"><label>Sede da esplorare<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label>${this.selectedVenueId ? `<h3>Tappe suggerite</h3><p class="note">Il suggerimento usa il soggetto dei contenuti; resta sempre una scelta editoriale.</p>${this.renderTargetCards(suggested, { suggested: true })}<details class="advanced-panel"><summary>Altri oggetti della sede</summary>${this.renderTargetCards(others)}</details>` : ""}</div>` : ""}<div class="subsection"><h3>Associa i contenuti alle tappe</h3><p class="note">Un contenuto può restare associato alla visita senza una tappa propria, oppure essere raccontato presso la tappa di un altro soggetto.</p>${this.renderAnchorAssignments()}</div><div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div><details class="technical-details"><summary>Dettagli tecnici</summary><p>VisitAnchor e VenueTarget appartengono al dominio fisico. Il deliveryAnchorId di ogni ContentEntry è opzionale; la visita complessiva deve invece avere un itinerario fisico valido per superare il controllo.</p></details></section>`;
+  }
+
+  renderStepFour() {
+    if (this.activeStep !== 4) return "";
+    const baseline = this.revision?.presentationBaseline || {};
+    const content = this.editable ? `<form data-visit-settings class="editor-form"><label>Profondità preferita<input name="depthPreference" type="number" min="0" max="1" step="0.1" value="${escapeHtml(baseline.depthPreference ?? "")}" placeholder="Lascia vuoto per nessuna preferenza"><small>0 = più sintetica · 1 = più approfondita.</small></label><label>Complessità del linguaggio<input name="languageComplexityPreference" type="number" min="0" max="1" step="0.1" value="${escapeHtml(baseline.languageComplexityPreference ?? "")}" placeholder="Lascia vuoto per nessuna preferenza"><small>0 = più semplice · 1 = più specialistica.</small></label><label>Lingua preferita<input name="locale" value="${escapeHtml(baseline.locale || "")}" placeholder="es. it-IT"><small>È una preferenza di baseline: il backend sceglierà le Representation compatibili per ogni contenuto.</small></label><button type="submit" ${this.busy ? "disabled" : ""}>Salva impostazioni</button></form>` : `<div class="review-grid"><article><span>Profondità</span><strong>${escapeHtml(baseline.depthPreference ?? "Non impostata")}</strong></article><article><span>Linguaggio</span><strong>${escapeHtml(baseline.languageComplexityPreference ?? "Non impostato")}</strong></article><article><span>Lingua</span><strong>${escapeHtml(baseline.locale || "Non impostata")}</strong></article></div>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Impostazioni</span><h2>Imposta il livello di partenza</h2><p>Queste preferenze guidano l'esecuzione della visita senza fissare un'unica versione del testo per tutti i contenuti.</p></div></header>${content}<div class="step-actions"><button class="button-secondary" type="button" data-step="3" ${(this.revision?.entries || []).length ? "" : "disabled"}>Indietro</button><button type="button" data-step="5">Continua alla logistica ${icon("chevron", { size: 15 })}</button></div><details class="technical-details"><summary>Dettagli tecnici</summary><p>La VisitRevision conserva una presentationBaseline namespace-neutral: depthPreference, languageComplexityPreference e locale. Il mapping verso DurationType/LanguageLevel/Representation resta backend-side.</p></details></section>`;
+  }
+
+  renderRouteHints() {
+    const hints = this.revision?.logistics?.routeHints || [];
+    if (!hints.length) return `<div class="empty-state compact">${icon("route", { size: 22 })}<div><strong>Nessun trasferimento esplicito</strong><p>Il percorso indoor resta responsabilità della sede e del suo layout.</p></div></div>`;
+    const anchorById = new Map((this.revision?.anchors || []).map((anchor) => [id(anchor.id), anchor]));
+    return `<div class="route-hint-list">${hints.map((hint, index) => {
+      const from = anchorById.get(id(hint.fromAnchorId));
+      const to = anchorById.get(id(hint.toAnchorId));
+      const type = hint.type === "inter_venue" ? "Trasferimento tra sedi" : "Indicazione di percorso";
+      return `<article><span>${index + 1}</span><div><strong>${escapeHtml(type)}</strong><small>${escapeHtml(from?.label || "Tappa")}${to ? ` → ${escapeHtml(to.label)}` : ""}</small>${hint.instructionOverride ? `<p>${escapeHtml(hint.instructionOverride)}</p>` : ""}${hint.note ? `<small>${escapeHtml(hint.note)}</small>` : ""}</div>${hint.estimatedTransferSeconds != null ? `<span class="chip">${escapeHtml(hint.estimatedTransferSeconds)} s</span>` : ""}</article>`;
+    }).join("")}</div>`;
+  }
+
+  renderStepFive() {
+    if (this.activeStep !== 5) return "";
+    const notes = (this.revision?.logistics?.preVisitNotes || []).join("\n");
+    const notesUi = this.editable ? `<form data-visit-logistics class="editor-form"><label>Indicazioni prima della visita<textarea name="preVisitNotes" rows="6" placeholder="Una indicazione per riga, per esempio: presentarsi 10 minuti prima">${escapeHtml(notes)}</textarea><small>Inserisci solo informazioni specifiche di questa visita. Le informazioni generali della sede restano nella configurazione della sede.</small></label><button type="submit" ${this.busy ? "disabled" : ""}>Salva indicazioni</button></form>` : `<div class="context-box"><p>${notes ? escapeHtml(notes).replaceAll("\n", "<br>") : "Nessuna indicazione specifica della visita."}</p></div>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">5</span><div><span class="eyebrow">Logistica</span><h2>Prepara le informazioni operative</h2><p>Le indicazioni logistiche restano separate dai contenuti editoriali.</p></div></header>${notesUi}<div class="subsection"><h3>Trasferimenti strutturati</h3>${this.renderRouteHints()}<p class="note">I trasferimenti già strutturati vengono preservati. I percorsi indoor vengono calcolati dal dominio fisico della sede.</p></div><div class="step-actions"><button class="button-secondary" type="button" data-step="4">Indietro</button><button type="button" data-step="6">Vai al riepilogo ${icon("chevron", { size: 15 })}</button></div><details class="technical-details"><summary>Dettagli tecnici</summary><p>Le indicazioni logistiche non sono Item e non entrano in contentEntries. preVisitNotes e routeHints appartengono alla VisitRevision; il routing fisico resta separato.</p></details></section>`;
+  }
+
+  reviewSummary() {
+    const entries = this.revision?.entries || [];
+    const anchors = this.revision?.anchors || [];
+    const roles = { core: 0, recommended: 0, optional: 0 };
+    for (const entry of entries) roles[entry.role || "recommended"] = (roles[entry.role || "recommended"] || 0) + 1;
+    const venues = [...new Set(anchors.map((anchor) => anchor.venue?.name).filter(Boolean))];
+    const unassigned = entries.filter((entry) => !entry.deliveryAnchorId).length;
+    const notes = (this.revision?.logistics?.preVisitNotes || []).length;
+    return `<div class="review-grid"><article><span>Contenuti</span><strong>${entries.length}</strong><small>${roles.core} essenziali · ${roles.recommended} consigliati · ${roles.optional} facoltativi</small></article><article><span>Tappe</span><strong>${anchors.length}</strong><small>${unassigned} contenuti senza tappa specifica</small></article><article><span>Sedi coinvolte</span><strong>${venues.length || 0}</strong><small>${escapeHtml(venues.join(", ") || "Nessuna")}</small></article><article><span>Profondità</span><strong>${escapeHtml(this.revision?.presentationBaseline?.depthPreference ?? "Non impostata")}</strong></article><article><span>Linguaggio</span><strong>${escapeHtml(this.revision?.presentationBaseline?.languageComplexityPreference ?? "Non impostato")}</strong></article><article><span>Indicazioni pre-visita</span><strong>${notes}</strong></article></div>`;
+  }
+
+  renderWorkflowOperation(operation) {
+    if (operation.requiresMessage) {
+      return `<form data-workflow-form class="workflow-message-form"><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><label>Motivazione<textarea name="message" rows="3" required placeholder="Spiega quali modifiche sono necessarie"></textarea></label><button class="button-secondary" type="submit" ${this.busy ? "disabled" : ""}>${escapeHtml(workflowLabel(operation))}</button></form>`;
+    }
+    const secondary = operation.code === "workflow.withdraw_review" ? "button-secondary" : "";
+    return `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button class="${secondary}" type="submit" ${this.busy ? "disabled" : ""}>${operation.code === "workflow.check" ? icon("check", { size: 15 }) : ""}${escapeHtml(workflowLabel(operation))}</button></form>`;
+  }
+
+  renderStepSix() {
+    if (this.activeStep !== 6) return "";
+    const revision = this.revision;
+    const integrity = revision?.integrity?.status || "needs_review";
+    const issues = revision?.integrity?.issues || [];
+    const operations = this.workflowOperations();
+    const published = revision?.status === "published";
+    const state = published
+      ? `<div class="readiness success">${icon("check", { size: 20 })}<div><strong>Versione pubblicata</strong><p>Questa VisitRevision è uno snapshot editoriale immutabile ed eseguibile. La pubblicazione nel Catalogo è un passaggio commerciale separato.</p></div></div>`
+      : integrity === "valid"
+        ? `<div class="readiness success">${icon("check", { size: 20 })}<div><strong>Controllo superato</strong><p>La visita è coerente e può passare alla pubblicazione o alla revisione organizzativa.</p></div></div>`
+        : `<div class="readiness warning">${icon("warning", { size: 20 })}<div><strong>Serve un controllo</strong><p>Esegui il controllo dopo le modifiche. Il backend verificherà contenuti, tappe, sorgenti editoriali e logistica.</p></div></div>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">6</span><div><span class="eyebrow">Riepilogo e pubblicazione</span><h2>Controlla la visita prima di pubblicarla</h2><p>Il riepilogo non sostituisce il controllo autorevole del backend.</p></div></header><div class="summary-title"><h3>${escapeHtml(revision?.title || "Visita")}</h3><p>${escapeHtml(revision?.description || "Nessuna descrizione")}</p></div>${this.reviewSummary()}${state}${issues.length ? `<div class="issue-panel"><strong>Problemi da risolvere</strong><ul>${issues.map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul><div class="step-actions"><button class="button-secondary" type="button" data-step="2">Rivedi contenuti</button>${(this.revision?.entries || []).length ? `<button class="button-secondary" type="button" data-step="3">Rivedi tappe</button>` : ""}</div></div>` : ""}<div class="workflow-panel"><div><h3>Azioni disponibili</h3><p class="note">Le azioni dipendono dallo stato e dai permessi restituiti dal backend. Pubblicare editorialmente non crea automaticamente una scheda nel Marketplace.</p></div><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("") || `<p>Nessuna azione editoriale disponibile nello stato <strong>${escapeHtml(revision?.status || "-")}</strong>.</p>`}</div></div>${published && this.editable ? `<div class="step-actions"><button class="button-secondary" type="button" data-step="1">Prepara modifiche a questa visita</button></div>` : ""}<details class="technical-details"><summary>Dettagli tecnici</summary><p>Visit ${escapeHtml(this.projection?.visit?.id || "-")} · VisitRevision ${escapeHtml(revision?.id || "-")} · stato ${escapeHtml(revision?.status || "-")} · integrità ${escapeHtml(integrity)}</p><p>${(revision?.editorialSources || []).length} EditorialSource · ${(revision?.entries || []).length} ContentEntry · ${(revision?.anchors || []).length} VisitAnchor.</p></details></section>`;
   }
 
   render() {
-    if (this.busy && !this.projection) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Caricamento editor visita…</p></div></main>`; return; }
-    if (!this.projection) { this.innerHTML = `<main class="page"><p role="alert">${escapeHtml(this.error || "Editor visita non disponibile")}</p></main>`; return; }
-    if (!this.visitId) { this.innerHTML = this.styles() + this.renderCreate(); return; }
-    this.innerHTML = `${this.styles()}<main class="page editor-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Workspace</button><span>/</span><span>Visita</span></nav><header class="page-header"><div><span class="eyebrow">Visit editor · ${escapeHtml(this.principal?.name || this.principal?.type || "")}</span><h1>${escapeHtml(this.revision?.title || "Visita")}</h1><p>Coordina contenuti editoriali e tappe fisiche mantenendo la logistica in una sezione separata.</p></div></header>${this.message ? `<p role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderWorkflow()}${this.renderMetadata()}${this.renderEntries()}${this.renderContentSearch()}</main>`;
+    if (this.busy && !this.projection) {
+      this.innerHTML = `<main class="page"><div class="empty-state"><p>Preparazione dell'editor visita…</p></div></main>`;
+      return;
+    }
+    if (!this.projection) {
+      this.innerHTML = `<main class="page"><p role="alert">${escapeHtml(this.error || "Editor visita non disponibile")}</p></main>`;
+      return;
+    }
+    if (!this.visitId) {
+      this.innerHTML = this.styles() + this.renderCreate();
+      return;
+    }
+    this.innerHTML = `${this.styles()}<main class="page visit-authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Le mie risorse</button><span>/</span><span>Visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>${escapeHtml(this.revision?.title || "Visita")}</h1><p>Costruisci il percorso separando contenuti editoriali, tappe fisiche e indicazioni logistiche.</p></div></header>${this.renderWorkingContext()}${this.renderProgress()}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.message ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}${this.renderStepFive()}${this.renderStepSix()}</main>`;
   }
 
   styles() {
-    return `<style>main{max-width:72rem;margin:0 auto;padding:2rem 1rem}section{margin-block:2rem;padding-top:1rem;border-top:1px solid currentColor}form{display:grid;gap:.85rem}label{display:grid;gap:.3rem}.metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metadata-grid label:nth-child(-n+2){grid-column:1/-1}.selectors{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-block:1rem}.actions,.entry-actions{display:flex;gap:.5rem;flex-wrap:wrap}.entries{display:grid;gap:.75rem;padding-left:1.4rem}.entry,.candidate{padding:1rem;border:1px solid currentColor}.entry{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:1rem;align-items:center}.entry small{display:block;margin-top:.25rem;opacity:.75}.candidates{display:grid;gap:.75rem}.candidate{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:1rem;align-items:end}.candidate h3{margin-top:0}.issues{padding-left:1.2rem}.pagination{display:flex;justify-content:space-between;align-items:center;margin-top:1rem}.eyebrow{text-transform:uppercase;font-size:.8rem;letter-spacing:.05em}button,input,select,textarea{font:inherit;padding:.55rem .7rem}code{font-size:.9em}@media(max-width:50rem){.metadata-grid,.selectors,.entry,.candidate{grid-template-columns:1fr}.metadata-grid label:nth-child(-n+2){grid-column:auto}}</style>`;
+    return `<style>
+      :host{display:block}.visit-authoring-page{display:grid;gap:1rem;max-width:72rem;margin:auto;padding:2rem 1rem 5rem}.visit-progress{overflow:auto;padding:.25rem 0}.visit-progress ol{display:grid;grid-template-columns:repeat(6,minmax(9rem,1fr));gap:.5rem;min-width:58rem;margin:0;padding:0;list-style:none}.visit-progress button{display:flex;width:100%;height:100%;align-items:center;gap:.45rem;padding:.62rem .65rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#476159;text-align:left}.visit-progress button>span{display:grid;place-items:center;flex:0 0 1.65rem;height:1.65rem;border-radius:999px;background:#edf2ef;font-weight:850}.visit-progress li[data-current="true"] button{border-color:#2f7561;box-shadow:0 0 0 2px #d8ebe4}.visit-progress li[data-current="true"] button>span,.visit-progress li[data-complete="true"] button>span{background:#dcefe7;color:#176143}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem;align-items:flex-start}.step-heading>div{min-width:0}.step-heading h2{margin:.15rem 0}.step-heading p{margin:.25rem 0}.step-number,.sequence-index,.anchor-index{display:grid;place-items:center;flex:0 0 2rem;height:2rem;border-radius:999px;background:#173e35;color:#fff;font-weight:850}.editor-form{display:grid;gap:.9rem;max-width:50rem;margin-top:1rem}.editor-form label,.selectors label,.assignment-card label,.candidate-card label,.sequence-card label{display:grid;gap:.35rem}.editor-form small,.selectors small,.assignment-card small,.candidate-card small,.sequence-card small{color:#60706a}.step-actions,.entry-actions,.workflow-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:1rem}.visit-sequence{display:grid;gap:.65rem;margin:1rem 0;padding:0;list-style:none}.sequence-card{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(9rem,.35fr) auto;gap:.75rem;align-items:center;padding:.85rem;border:1px solid #d7dfdb;border-radius:.75rem;background:#fff}.sequence-copy{display:grid;gap:.15rem;min-width:0}.entry-actions{margin:0}.content-browser,.subsection{display:grid;gap:.75rem;margin-top:1.25rem;padding-top:1rem;border-top:1px solid #e0e6e3}.selectors{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}.search-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.65rem;align-items:end;max-width:48rem}.candidate-grid,.target-grid,.anchor-list,.assignment-list{display:grid;gap:.65rem}.candidate-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(9rem,.3fr) auto;gap:.75rem;align-items:end;padding:.9rem;border:1px solid #d7dfdb;border-radius:.75rem;background:#fff}.candidate-card h3{margin:.1rem 0}.anchor-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.7rem;align-items:center;padding:.85rem;border:1px solid #d7dfdb;border-radius:.75rem;background:#fff}.anchor-card>div,.target-card>div,.assignment-card>div{display:grid;gap:.15rem}.anchor-card small,.target-card small,.assignment-card small{color:#60706a}.anchor-card .technical-details{grid-column:2/-1;margin-top:.25rem}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.target-card{display:flex;justify-content:space-between;gap:.7rem;align-items:center;padding:.8rem;border:1px solid #d7dfdb;border-radius:.7rem;background:#fff}.assignment-card{display:grid;grid-template-columns:minmax(0,.8fr) minmax(14rem,1.2fr);gap:.8rem;align-items:center;padding:.85rem;border:1px solid #d7dfdb;border-radius:.75rem;background:#fff}.assignment-card>div{grid-template-columns:auto 1fr}.assignment-card>div strong,.assignment-card>div small{grid-column:2}.advanced-panel,.technical-details{margin-top:1rem;padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem;background:#fbfcfb}.advanced-panel summary,.technical-details summary{cursor:pointer;font-weight:800}.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}.review-grid article{display:grid;gap:.18rem;padding:.8rem;border:1px solid #d9e0dc;border-radius:.7rem;background:#fff}.review-grid span{font-size:.75rem;color:#60706a}.review-grid small{color:#60706a}.readiness,.issue-panel,.workflow-panel,.context-box,.blocker-panel,.summary-title{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.readiness{display:flex;gap:.7rem;align-items:flex-start}.readiness.success{border-color:#b9d9c9;background:#eef8f2}.readiness.warning{border-color:#e4c28a;background:#fff8e8}.issue-panel{border-color:#dfb9ae;background:#fff5f2}.issue-panel ul{margin:.65rem 0;padding-left:1.2rem}.workflow-panel{display:grid;grid-template-columns:minmax(12rem,.75fr) minmax(0,1.25fr);gap:1rem;align-items:start}.workflow-message-form{display:grid;gap:.55rem;width:min(100%,32rem)}.workflow-message-form label{display:grid;gap:.35rem}.route-hint-list{display:grid;gap:.55rem}.route-hint-list article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.7rem;align-items:start;padding:.75rem;border:1px solid #d7dfdb;border-radius:.7rem;background:#fff}.route-hint-list article>div{display:grid;gap:.15rem}.pagination{display:flex;justify-content:space-between;align-items:center;margin-top:.4rem}.count{display:grid;place-items:center;min-width:2rem;height:2rem;border-radius:999px;background:#edf2ef;font-weight:850}.note{color:#60706a;font-size:.86rem}.danger{color:#842f22}.compact{padding:1rem}.input-icon{display:flex;align-items:center;gap:.4rem}.input-icon input{flex:1}.summary-title h3{margin:.1rem 0}@media(max-width:58rem){.sequence-card,.candidate-card{grid-template-columns:auto minmax(0,1fr)}.sequence-card label,.sequence-card .entry-actions,.candidate-card label,.candidate-card button{grid-column:2}.target-grid{grid-template-columns:1fr}.assignment-card,.workflow-panel{grid-template-columns:1fr}}@media(max-width:42rem){.visit-authoring-page{padding-top:1rem}.wizard-step{padding:1rem}.search-inline,.review-grid{grid-template-columns:1fr}.anchor-card{grid-template-columns:auto 1fr}.anchor-card>button,.anchor-card .technical-details{grid-column:2}.step-actions>*{width:100%}.step-actions button{justify-content:center}.target-card{align-items:stretch;flex-direction:column}}
+    </style>`;
   }
 }
 

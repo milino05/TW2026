@@ -2,6 +2,7 @@ const MarketplaceListing = require("../models/marketplaceListing.model");
 const AppError = require("../utils/AppError");
 const { RESOURCE_TYPES } = require("../config/marketplaceCapabilities");
 const marketplace = require("./marketplaceV2.service");
+const { projectListingConsumerDetail } = require("./marketplaceConsumerProjectionV2.service");
 const { resolveMarketableResource } = require("./marketplaceResourceV2.service");
 const {
   resolveVenueCatalogFilter,
@@ -92,7 +93,13 @@ async function listCatalog({
   };
 }
 
-async function getListingDetail({ listingId, actorUserId, selectedVenueIds = [] }) {
+async function getListingDetail({
+  listingId,
+  actorUserId,
+  selectedVenueIds = [],
+  beneficiaryType = null,
+  beneficiaryId = null,
+}) {
   const listing = await MarketplaceListing.findOne({ _id: listingId, status: "published" }).lean();
   if (!listing) throw new AppError("MarketplaceListing non disponibile", 404);
   const projected = await marketplace.projectCatalogListing({ listing, actorUserId });
@@ -102,7 +109,13 @@ async function getListingDetail({ listingId, actorUserId, selectedVenueIds = [] 
     const matches = await MarketplaceListing.exists({ _id: listing._id, status: "published", ...venueFilter.listingQuery });
     if (!matches) throw new AppError("La risorsa non è pertinente alle Venue selezionate", 404, [{ code: "NOT_RELEVANT_TO_SELECTED_VENUES" }]);
   }
-  return augmentVenueProjection({ projected, listing, venueFilter });
+  const withVenue = await augmentVenueProjection({ projected, listing, venueFilter });
+  return projectListingConsumerDetail({
+    actorUserId,
+    projected: withVenue,
+    beneficiaryType,
+    beneficiaryId,
+  });
 }
 
 module.exports = {
