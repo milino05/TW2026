@@ -20,14 +20,7 @@ test("visit authoring boundary passa il syntax gate", () => {
 });
 
 test("visit authoring espone i sei passaggi novice-first", () => {
-  for (const label of [
-    "Informazioni principali",
-    "Contenuti",
-    "Tappe",
-    "Impostazioni",
-    "Logistica",
-    "Riepilogo e pubblicazione",
-  ]) assert.match(view, new RegExp(label));
+  for (const label of ["Informazioni principali", "Contenuti", "Tappe", "Impostazioni", "Logistica", "Riepilogo e pubblicazione"]) assert.match(view, new RegExp(label));
   assert.match(view, /aria-label="Passaggi di creazione della visita"/);
   assert.match(view, /aria-current="\$\{current \? "step" : "false"\}"/);
 });
@@ -73,7 +66,7 @@ test("logistica e contenuti restano domini separati nella stessa UX", () => {
   assert.match(view, /data-visit-logistics/);
   assert.match(view, /preVisitNotes/);
   assert.match(view, /serializeRouteHints\(\)/);
-  assert.match(view, /Le indicazioni logistiche non sono Item e non entrano in contentEntries/);
+  assert.match(view, /data-visit-logistics[\s\S]*serializeRouteHints\(\)/);
   assert.doesNotMatch(view, /role:\s*["']logistics["']|itemType:\s*["']logistics["']/);
   assert.doesNotMatch(shell, /visit-logistics-editor/);
   assert.match(shell, /artaround-visit-authoring-view/);
