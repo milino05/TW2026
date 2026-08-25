@@ -5,6 +5,12 @@ const ROUTES = new Set([
   "/home",
   "/catalog",
   "/catalog/detail",
+  "/organizations",
+  "/organizations/public",
+  "/organizations/detail",
+  "/venues",
+  "/venues/public",
+  "/venues/editor",
   "/acquisitions",
   "/create",
   "/workspace",
@@ -15,9 +21,7 @@ const ROUTES = new Set([
   "/workspace/venue-targets",
   "/workspace/context-compose",
   "/profile",
-  "/organizations/detail",
   "/namespaces/editor",
-  "/venues/editor",
 ]);
 
 function stripBase(pathname) {
