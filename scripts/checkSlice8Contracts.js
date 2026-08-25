@@ -97,8 +97,23 @@ rejectPattern(
 );
 requirePattern(
   "clients/marketplace/src/ui/item-authoring-view.js",
-  /data-workflow-operation[\s\S]*executeWorkspaceOperation/,
-  "Item editor executes projected workflow operations",
+  /workflowOperations\(\)\s*\{[\s\S]*projection\?\.availableOperations[\s\S]*isWorkflowOperation\(operation\.code\)/,
+  "Item editor derives workflow actions from the backend projection",
+);
+requirePattern(
+  "clients/marketplace/src/ui/item-authoring-view.js",
+  /form\.matches\(["']\[data-workflow-form\]["']\)[\s\S]*availableOperation\(operationCode\)[\s\S]*executeWorkflow\(operationCode, message\)/,
+  "Item editor validates and submits projected workflow operations",
+);
+requirePattern(
+  "clients/marketplace/src/ui/item-authoring-view.js",
+  /async executeWorkflow[\s\S]*executeWorkspaceOperation\([\s\S]*resourceType:\s*["']item_edition["']/,
+  "Item editor dispatches projected workflow operations through the Workspace command boundary",
+);
+requirePattern(
+  "clients/marketplace/src/ui/item-authoring-view.js",
+  /data-workflow-form[\s\S]*name=["']operationCode["']/,
+  "Item editor renders projected workflow operations as submitted forms",
 );
 requirePattern(
   "clients/marketplace/src/ui/workspace-view.js",
