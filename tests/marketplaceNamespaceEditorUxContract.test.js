@@ -6,7 +6,9 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/namespace-editor-view.js");
+const stylePath = path.join(root, "clients/marketplace/src/styles/namespace-editor.css");
 const source = fs.readFileSync(viewPath, "utf8");
+const styleSource = fs.readFileSync(stylePath, "utf8");
 
 test("Regole editoriali passano il syntax gate", () => {
   const result = spawnSync(process.execPath, ["--check", viewPath], { encoding: "utf8" });
@@ -15,6 +17,17 @@ test("Regole editoriali passano il syntax gate", () => {
 
 test("Namespace editor espone le otto sezioni user-facing approvate", () => {
   for (const label of ["Generale", "Durate", "Livelli di linguaggio", "Tipi di soggetto", "Relazioni", "Presentazione", "Selezione", "Mapping esterni"]) assert.match(source, new RegExp(label));
+});
+
+test("Namespace editor mostra una sezione alla volta con tab accessibili e deep link", () => {
+  assert.match(source, /role="tablist"/);
+  assert.match(source, /data-namespace-section/);
+  assert.match(source, /panel\.hidden = !selected/);
+  assert.match(source, /#namespace-\$\{section\}/);
+  assert.match(source, /ArrowDown/);
+  assert.match(source, /this\.syncSectionNavigation\(\)/);
+  assert.match(styleSource, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.doesNotMatch(styleSource, /namespace-editor-nav nav\{display:flex;overflow:auto\}/);
 });
 
 test("progressive disclosure preserva i campi tecnici e il modello NamespaceRevision", () => {

@@ -49,6 +49,10 @@ function semanticRefChips(values = [], editable = true) { return values.length ?
 function statusLabel(status) { return { draft: "Bozza", in_review: "In revisione", changes_requested: "Modifiche richieste", published: "Pubblicata", superseded: "Superata" }[status] || status || "Da configurare"; }
 function sourceLabel(source) { return source === "working" ? "Bozza di lavoro" : source === "published" ? "Versione pubblicata" : "Non configurata"; }
 function availabilityLabel(value) { return value === "active" ? "Disponibile" : "Temporaneamente non disponibile"; }
+function initialVenueSection() {
+  const requested = String(window.location.hash || "").replace(/^#venue-/, "");
+  return SECTIONS.some(([key]) => key === requested) ? requested : "overview";
+}
 
 export class ArtAroundVenueEditorView extends HTMLElement {
   data = null;
@@ -62,9 +66,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   pendingWorkflow = null;
   workflowMessage = "";
   trashTarget = null;
+  activeSection = initialVenueSection();
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
+    this.addEventListener("keydown", this.onSectionKeyDown);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
     this.addEventListener("subject-selected", this.onSubjectSelected);
@@ -74,6 +80,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("keydown", this.onSectionKeyDown);
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("input", this.onInput);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
@@ -109,6 +116,16 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
+  onSectionKeyDown = (event) => {
+    const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
+    if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+    const tabs = [...this.querySelectorAll("[data-venue-section]")];
+    const current = tabs.indexOf(tab);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : ["ArrowDown", "ArrowRight"].includes(event.key) ? (current + 1) % tabs.length : (current - 1 + tabs.length) % tabs.length;
+    event.preventDefault();
+    this.showSection(tabs[next].dataset.venueSection);
+    tabs[next].focus();
+  };
   onInput = (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;

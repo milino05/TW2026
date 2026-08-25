@@ -21,6 +21,30 @@ function statusLabel(status) { return { draft: "Bozza", in_review: "In revisione
 function sourceLabel(source) { return source === "working" ? "Bozza di lavoro" : source === "published" ? "Versione pubblicata" : "Non configurata"; }
 
 export const venueSectionMixin = {
+  syncSectionNavigation({ scroll = false } = {}) {
+    const available = SECTIONS.map(([key]) => key).filter((key) => this.querySelector(`#venue-${key}`));
+    if (!available.includes(this.activeSection)) this.activeSection = available[0] || "overview";
+    for (const tab of this.querySelectorAll("[data-venue-section]")) {
+      const selected = tab.dataset.venueSection === this.activeSection;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    for (const panel of this.querySelectorAll(".venue-section")) {
+      const selected = panel.id === `venue-${this.activeSection}`;
+      panel.hidden = !selected;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", `venue-tab-${panel.id.replace("venue-", "")}`);
+      panel.tabIndex = -1;
+    }
+    const panel = this.querySelector(`#venue-${this.activeSection}`);
+    if (scroll && panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  },
+  showSection(section, { scroll = false } = {}) {
+    if (!SECTIONS.some(([key]) => key === section)) return;
+    this.activeSection = section;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#venue-${section}`);
+    this.syncSectionNavigation({ scroll });
+  },
   renderWorkflowPanel() {
     if (!this.pendingWorkflow) return "";
     const code = this.pendingWorkflow;
@@ -48,9 +72,10 @@ export const venueSectionMixin = {
     if (!this.data) { this.innerHTML = `<main class="page venue-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento sede…")}</p></main>`; return; }
     const { venue, release, layout, availableOperations } = this.data;
     const editable = has(availableOperations, "venue.release.update");
-    const nav = SECTIONS.map(([key, label]) => `<a href="#venue-${key}">${escapeHtml(label)}</a>`).join("");
+    const nav = SECTIONS.map(([key, label]) => `<button type="button" id="venue-tab-${key}" role="tab" data-venue-section="${key}" aria-controls="venue-${key}">${escapeHtml(label)}</button>`).join("");
     const leavePanel = this.leaveConfirmation ? `<section class="confirmation-panel venue-confirmation" role="alert"><div><strong>Uscire senza salvare?</strong><p>Le modifiche non salvate alla configurazione fisica andranno perse.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-leave>Esci senza salvare</button><button class="button-secondary" type="button" data-cancel-leave>Resta nell'editor</button></div></section>` : "";
     const savebar = this.dirty ? `<div class="venue-savebar"><div><strong>Hai modifiche non salvate</strong><small>Il salvataggio aggiorna insieme informazioni visitatori, binding degli oggetti e layout della bozza.</small></div><button type="button" data-save-venue>${icon("check", { size: 16 })} Salva modifiche</button></div>` : "";
-    this.innerHTML = `<main class="page venue-editor-page" aria-busy="${this.busy}"><datalist id="place-intents">${this.data.catalogs.placeIntents.map((value) => `<option value="${escapeHtml(value)}">`).join("")}</datalist><datalist id="routing-attributes">${this.data.catalogs.canonicalRoutingAttributes.map((value) => `<option value="${escapeHtml(value.key)}">`).join("")}</datalist><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Organizzazione</button><span>/</span><span>Sedi e spazi fisici</span></nav><header class="venue-editor-header"><div><span class="eyebrow">Sede · ${escapeHtml(venue.role === "manager" ? "Manager" : "Operatore")}</span><h1>${escapeHtml(venue.name)}</h1><p>${escapeHtml(venue.description || "Configura gli oggetti, gli spazi e i percorsi fisici della sede.")}</p></div><div class="venue-editor-status"><span class="chip">${escapeHtml(sourceLabel(venue.source))}</span>${release ? `<span class="chip">Versione ${release.version}</span><span class="chip">${escapeHtml(statusLabel(release.status))}</span>` : ""}<span class="chip" data-dirty-indicator data-tone="${this.dirty ? "warning" : "success"}">${icon(this.dirty ? "warning" : "check", { size: 14 })} ${this.dirty ? "Modifiche non salvate" : "Tutto salvato"}</span></div></header>${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${leavePanel}${this.renderTrashConfirmation()}<div class="venue-editor-layout"><aside class="venue-editor-nav"><nav aria-label="Sezioni sede">${nav}</nav><details class="technical-details"><summary>Dettagli tecnici</summary><dl class="definition-list"><div><dt>Venue ID</dt><dd><code>${escapeHtml(venue.id)}</code></dd></div>${release ? `<div><dt>VenueRelease ID</dt><dd><code>${escapeHtml(release.id)}</code></dd></div>` : ""}${layout ? `<div><dt>LayoutRevision ID</dt><dd><code>${escapeHtml(layout.id)}</code></dd></div>` : ""}</dl></details></aside><div class="venue-editor-content">${this.renderOverview()}${this.renderTargets(editable)}${this.renderVisitors(editable)}${this.renderMapAndPlaces(editable)}${this.renderRoutes(editable)}${this.renderPublication()}</div></div>${editable ? savebar : ""}</main>`;
+    this.innerHTML = `<main class="page venue-editor-page" aria-busy="${this.busy}"><datalist id="place-intents">${this.data.catalogs.placeIntents.map((value) => `<option value="${escapeHtml(value)}">`).join("")}</datalist><datalist id="routing-attributes">${this.data.catalogs.canonicalRoutingAttributes.map((value) => `<option value="${escapeHtml(value.key)}">`).join("")}</datalist><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Organizzazione</button><span>/</span><span>Sedi e spazi fisici</span></nav><header class="venue-editor-header"><div><span class="eyebrow">Sede · ${escapeHtml(venue.role === "manager" ? "Manager" : "Operatore")}</span><h1>${escapeHtml(venue.name)}</h1><p>${escapeHtml(venue.description || "Configura gli oggetti, gli spazi e i percorsi fisici della sede.")}</p></div><div class="venue-editor-status"><span class="chip">${escapeHtml(sourceLabel(venue.source))}</span>${release ? `<span class="chip">Versione ${release.version}</span><span class="chip">${escapeHtml(statusLabel(release.status))}</span>` : ""}<span class="chip" data-dirty-indicator data-tone="${this.dirty ? "warning" : "success"}">${icon(this.dirty ? "warning" : "check", { size: 14 })} ${this.dirty ? "Modifiche non salvate" : "Tutto salvato"}</span></div></header>${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${leavePanel}${this.renderTrashConfirmation()}<div class="venue-editor-layout"><aside class="venue-editor-nav"><nav role="tablist" aria-orientation="vertical" aria-label="Sezioni sede">${nav}</nav><details class="technical-details"><summary>Dettagli tecnici</summary><dl class="definition-list"><div><dt>Venue ID</dt><dd><code>${escapeHtml(venue.id)}</code></dd></div>${release ? `<div><dt>VenueRelease ID</dt><dd><code>${escapeHtml(release.id)}</code></dd></div>` : ""}${layout ? `<div><dt>LayoutRevision ID</dt><dd><code>${escapeHtml(layout.id)}</code></dd></div>` : ""}</dl></details></aside><div class="venue-editor-content">${this.renderOverview()}${this.renderTargets(editable)}${this.renderVisitors(editable)}${this.renderMapAndPlaces(editable)}${this.renderRoutes(editable)}${this.renderPublication()}</div></div>${editable ? savebar : ""}</main>`;
+    this.syncSectionNavigation();
   }
 };

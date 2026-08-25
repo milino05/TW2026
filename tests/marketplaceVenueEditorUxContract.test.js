@@ -16,6 +16,7 @@ const files = [
 ];
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 const source = Object.values(sources).join("\n");
+const styleSource = fs.readFileSync(path.join(root, "clients/marketplace/src/styles/venue-editor.css"), "utf8");
 
 test("Sedi e spazi fisici passa il syntax gate", () => {
   for (const file of files) {
@@ -34,6 +35,19 @@ test("i moduli dichiarano le dipendenze di runtime che usano", () => {
 
 test("Venue editor espone le sei sezioni user-facing approvate", () => {
   for (const label of ["Panoramica", "Oggetti esposti", "Informazioni visitatori", "Mappa e luoghi", "Percorsi", "Pubblicazione"]) assert.match(source, new RegExp(label));
+});
+
+test("Venue editor mostra una sezione alla volta con tab accessibili e deep link", () => {
+  assert.match(source, /role="tablist"/);
+  assert.match(source, /data-venue-section/);
+  assert.match(source, /panel\.hidden = !selected/);
+  assert.match(source, /#venue-\$\{section\}/);
+  assert.match(source, /ArrowRight/);
+  assert.match(source, /this\.syncSectionNavigation\(\)/);
+  assert.match(styleSource, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styleSource, /map-canvas\{[^}]*width:100%;min-width:0/);
+  assert.match(styleSource, /map-canvas svg\{[^}]*max-width:100%;min-width:0/);
+  assert.doesNotMatch(styleSource, /venue-editor-nav nav\{display:flex;overflow:auto\}/);
 });
 
 test("VenueTarget, recognition media e Subject restano nel dominio fisico senza diventare Item", () => {

@@ -11,6 +11,12 @@ export const venueActionMixin = {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
 
+    const sectionTab = target.closest("[data-venue-section]");
+    if (sectionTab) {
+      this.showSection(sectionTab.dataset.venueSection, { scroll: true });
+      return;
+    }
+
     if (target.closest("[data-back]")) {
       if (this.dirty) {
         try { this.snapshotDraft(); }

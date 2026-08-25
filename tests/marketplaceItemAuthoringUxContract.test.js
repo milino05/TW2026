@@ -27,6 +27,15 @@ test("item authoring espone i quattro passaggi novice-first approvati", () => {
   assert.doesNotMatch(source, /<h2>Revision e Representation<\/h2>/);
 });
 
+test("lo stepper mobile resta compatto e non richiede scorrimento orizzontale", () => {
+  assert.match(source, /authoring-progress__summary/);
+  assert.match(source, /Passaggio \$\{this\.activeStep\} di \$\{stages\.length\}/);
+  assert.match(source, /aria-label="Passaggio \$\{step\}: \$\{escapeHtml\(label\)\}"/);
+  assert.match(source, /authoring-progress ol\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);min-width:0\}/);
+  assert.match(source, /authoring-progress button strong\{display:none\}/);
+  assert.doesNotMatch(source, /authoring-progress\{overflow:auto/);
+});
+
 test("il wizard non permette di saltare la compilazione del contenuto essenziale", () => {
   assert.match(source, /contentDraftReady\(\)/);
   assert.match(source, /const fieldsReady = \[this\.draft\.label, this\.draft\.author, this\.draft\.license, this\.draft\.text\]/);
