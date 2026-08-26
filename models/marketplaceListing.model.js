@@ -10,9 +10,9 @@ const MarketplaceListingSchema = new Schema({
   title: { type: String, trim: true, default: "" },
   summary: { type: String, trim: true, default: "" },
   catalogMetadata: { type: Schema.Types.Mixed, default: null },
-  status: { type: String, enum: ["draft", "published", "withdrawn"], default: "published", index: true },
+  status: { type: String, enum: ["draft", "published", "withdrawn"], default: "draft", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
-  publishedAt: { type: Date, default: Date.now },
+  publishedAt: { type: Date, default: null },
   withdrawnAt: { type: Date, default: null },
   withdrawnBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
 }, { timestamps: true, collection: "marketplace_listings" });

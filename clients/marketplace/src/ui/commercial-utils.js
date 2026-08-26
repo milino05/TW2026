@@ -30,34 +30,6 @@ export function formatRevenue(revenueByCurrency = {}) {
   return entries.map(([currency, amountMinor]) => formatPrice({ type: "paid", currency, amountMinor })).join(" · ");
 }
 
-export function principalValue(principal) {
-  return `${principal?.type || "user"}:${principal?.id || ""}`;
-}
-
-export function principalOptions(principals = [], selectedValue = "") {
-  return principals.map((principal) => {
-    const value = principalValue(principal);
-    const role = principal.type === "organization" && principal.role ? ` · ${principal.role}` : "";
-    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(principal.name || "Principal")}${escapeHtml(role)}</option>`;
-  }).join("");
-}
-
-function scopedPrincipalOptions(principals = [], selectedValue = "") {
-  return principals.map((principal) => {
-    const value = principalValue(principal);
-    const suffix = principal.type === "organization" ? " · organizzazione" : " · personale";
-    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(principal.name || "Account")}${suffix}</option>`;
-  }).join("");
-}
-
-export function beneficiaryOptions(principals = [], selectedValue = "") {
-  return scopedPrincipalOptions(principals, selectedValue);
-}
-
-export function sellerPrincipalOptions(principals = [], selectedValue = "") {
-  return scopedPrincipalOptions(principals, selectedValue);
-}
-
 export function marketplaceResourceLabel(resourceType) {
   if (["item_edition", "item_revision"].includes(resourceType)) return "Contenuto";
   if (["visit", "visit_revision"].includes(resourceType)) return "Visita";

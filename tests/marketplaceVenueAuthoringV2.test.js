@@ -16,6 +16,23 @@ async function withFreshDatabase(callback) {
   }
 }
 
+async function addActiveOffer({ MarketplaceOffer, listing, userId }) {
+  const policies = {
+    item_edition: ["content.consume", "follow_current"],
+    namespace: ["namespace.author", "follow_current"],
+    visit: ["visit.execute", "follow_current"],
+  };
+  const [capability, versionPolicy] = policies[listing.resourceType];
+  return MarketplaceOffer.create({
+    listingId: listing._id,
+    label: "Accesso disponibile",
+    pricing: { type: "free" },
+    grants: [{ resourceType: listing.resourceType, resourceId: listing.resourceId, capability, versionPolicy }],
+    status: "active",
+    createdBy: userId,
+  });
+}
+
 async function createPublishedNamespace({ Namespace, NamespaceRevision, userId, name = "Namespace demo" }) {
   const namespace = await Namespace.create({ name, ownerType: "user", ownerId: userId, createdBy: userId });
   const revision = await NamespaceRevision.create({
@@ -142,6 +159,7 @@ test("multi-Venue Catalog uses union relevance, keeps Namespace venue-neutral an
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const { listCatalog } = require("../services/marketplaceCatalogV2.service");
 
     const user = await User.create({ username: "catalog-author", passwordHash: "hash" });
@@ -195,7 +213,8 @@ test("multi-Venue Catalog uses union relevance, keeps Namespace venue-neutral an
       ["visit", visit._id, "visit"],
     ];
     for (const [resourceType, resourceId, title] of resources) {
-      await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType, resourceId, title, status: "published", createdBy: user._id });
+      const listing = await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType, resourceId, title, status: "published", createdBy: user._id });
+      await addActiveOffer({ MarketplaceOffer, listing, userId: user._id });
     }
 
     const aOnly = await listCatalog({ actorUserId: user._id, selectedVenueIds: [venueA._id], resourceTypes: ["item_edition"] });
@@ -229,6 +248,7 @@ test("unpublished VenueTarget does not make editorial content Venue-relevant, bu
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const { listCatalog } = require("../services/marketplaceCatalogV2.service");
 
     const user = await User.create({ username: "draft-target", passwordHash: "hash" });
@@ -241,8 +261,10 @@ test("unpublished VenueTarget does not make editorial content Venue-relevant, bu
     const visit = await VisitV2.create({ ownerType: "user", ownerId: user._id, createdBy: user._id });
     const revision = await VisitRevisionV2.create({ visitId: visit._id, version: 1, title: "Visit draft target", visitAnchors: [{ venueTargetId: target._id }], status: "published", createdBy: user._id, updatedBy: user._id });
     visit.publishedRevisionId = revision._id; await visit.save();
-    await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType: "item_edition", resourceId: content.edition._id, createdBy: user._id });
-    await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType: "visit", resourceId: visit._id, createdBy: user._id });
+    const itemListing = await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType: "item_edition", resourceId: content.edition._id, status: "published", createdBy: user._id });
+    const visitListing = await MarketplaceListing.create({ sellerType: "user", sellerId: user._id, resourceType: "visit", resourceId: visit._id, status: "published", createdBy: user._id });
+    await addActiveOffer({ MarketplaceOffer, listing: itemListing, userId: user._id });
+    await addActiveOffer({ MarketplaceOffer, listing: visitListing, userId: user._id });
 
     const itemCatalog = await listCatalog({ actorUserId: user._id, selectedVenueIds: [venue._id], resourceTypes: ["item_edition"] });
     assert.equal(itemCatalog.results.length, 0);

@@ -96,8 +96,11 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
       sellerId: seller._id,
       actorUserId: seller._id,
     });
-    assert.equal(listing.status, "published");
+    assert.equal(listing.status, "draft");
+    assert.equal(listing.publishedAt, null);
     assert.match(listing.title, /rinascimentale/i);
+    const catalogBeforeOffer = await listCatalog({ actorUserId: buyer._id, resourceTypes: ["item_revision"] });
+    assert.equal(catalogBeforeOffer.total, 0, "a listing without an active Offer must not be visible in the Catalog");
 
     const offer = await createOffer({
       listingId: listing._id,
@@ -116,6 +119,9 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     assert.equal(offer.pricing.type, "paid");
     assert.equal(offer.pricing.amountMinor, 499);
     assert.equal(offer.pricing.currency, "EUR");
+    const publishedListing = await MarketplaceListing.findById(listing._id).lean();
+    assert.equal(publishedListing.status, "published");
+    assert.ok(publishedListing.publishedAt);
 
     const before = await resolveCapabilityAccess({
       actorUserId: buyer._id,
@@ -181,6 +187,9 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
 
     const withdrawnOffer = await withdrawOffer({ offerId: offer._id, actorUserId: seller._id });
     assert.equal(withdrawnOffer.status, "withdrawn");
+    const unpublishedListing = await MarketplaceListing.findById(listing._id).lean();
+    assert.equal(unpublishedListing.status, "draft", "withdrawing the last active Offer must hide the listing");
+    assert.equal((await listCatalog({ actorUserId: buyer._id, resourceTypes: ["item_revision"] })).total, 0);
     const preserved = await MarketplaceAcquisition.findById(acquisition._id).lean();
     assert.equal(preserved.pricingSnapshot.amountMinor, 499, "withdrawing an Offer must preserve its Acquisition snapshot");
 
@@ -199,6 +208,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
       },
     });
     assert.equal(replacementOffer.pricing.amountMinor, 699);
+    assert.equal((await MarketplaceListing.findById(listing._id).lean()).status, "published");
 
     const withdrawnListing = await withdrawListing({ listingId: listing._id, actorUserId: seller._id });
     assert.equal(withdrawnListing.status, "withdrawn");

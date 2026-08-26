@@ -197,7 +197,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
         revenueByCurrency: revenueFor(listingAcquisitions),
       },
       availableOperations: [
-        ...(listing.status === "published" ? [{ code: "create_offer", label: "Crea offerta" }] : []),
+        ...(["draft", "published"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
         ...(["draft", "published"].includes(listing.status) ? [{ code: "withdraw_listing", label: "Ritira listing" }] : []),
       ],
     });

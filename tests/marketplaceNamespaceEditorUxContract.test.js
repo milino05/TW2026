@@ -66,3 +66,18 @@ test("ritorno all owner mantiene Account e Organization nelle aree corrette", ()
   assert.match(source, /section=rules/);
   assert.match(source, /\/profile#account-rules/);
 });
+
+test("più durate ricevono valori distinti e vengono salvate in ordine", () => {
+  assert.match(source, /function emptyDefinition\(field, existing = \[\]\)/);
+  assert.match(source, /const longest = Math\.max\(0, \.\.\.existing\.map/);
+  assert.match(source, /base\.targetSeconds = longest \? longest \+ 60 : 60/);
+  assert.match(source, /output\[field\]\.sort\(\(left, right\) => left\.targetSeconds - right\.targetSeconds\)/);
+  assert.match(source, /emptyDefinition\(field, definitions\[field\]\)/);
+});
+
+test("gli errori portano alla sezione da correggere con messaggi comprensibili", () => {
+  assert.match(source, /userFacingFieldLabel, userFacingIssueMessage/);
+  assert.match(source, /error\?\.details\?\.find/);
+  assert.match(source, /if \(section\) this\.activeSection = section/);
+  assert.match(source, /Problemi da risolvere/);
+});

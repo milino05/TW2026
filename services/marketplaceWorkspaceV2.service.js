@@ -79,7 +79,7 @@ async function listingMapForPrincipal(principalType, principalId) {
 
 function ownedOperations({ published, listing, canManageCommerce = true }) {
   const operations = [{ code: "open_editor", label: "Apri editor" }];
-  if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Pubblica nel Marketplace" });
+  if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Configura offerta e pubblica" });
   if (canManageCommerce && listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
   return operations;
 }
@@ -306,6 +306,7 @@ async function getDistributionDashboard({ actorUserId, principalType = "user", p
   ]);
   const publishedListingIds = listings.filter((entry) => entry.status === "published").map((entry) => entry._id);
   const offers = publishedListingIds.length ? await MarketplaceOffer.find({ listingId: { $in: publishedListingIds } }).lean() : [];
+  const activeListingIds = new Set(offers.filter((entry) => entry.status === "active").map((entry) => id(entry.listingId)));
   const saleIds = sales.map((entry) => entry._id);
   const entitlements = saleIds.length ? await Entitlement.find({ sourceAcquisitionId: { $in: saleIds } }).select("_id sourceAcquisitionId").lean() : [];
   const entitlementIds = entitlements.map((entry) => entry._id);
@@ -324,7 +325,7 @@ async function getDistributionDashboard({ actorUserId, principalType = "user", p
     principal: { type: principalType, id: principalId },
     summary: {
       listingCount: listings.length,
-      publishedListingCount: listings.filter((entry) => entry.status === "published").length,
+      publishedListingCount: listings.filter((entry) => entry.status === "published" && activeListingIds.has(id(entry._id))).length,
       activeOfferCount: offers.filter((entry) => entry.status === "active").length,
       salesCount: sales.length,
       paidSalesCount: sales.filter((entry) => entry.pricingSnapshot?.type === "paid").length,

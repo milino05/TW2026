@@ -1,3 +1,5 @@
+import { userFacingErrorMessage } from "../../application/user-facing-errors.js";
+
 function optionalFiniteNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -27,19 +29,28 @@ export class ApiClient {
   }
 
   async request(path, init = {}) {
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers || {}),
-      },
-    });
+    let response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        ...init,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(init.headers || {}),
+        },
+      });
+    } catch (error) {
+      const message = error?.name === "AbortError"
+        ? "La richiesta è stata interrotta. Riprova."
+        : "Non è stato possibile contattare il servizio. Controlla la connessione e riprova.";
+      throw new ApiError(message, { status: 0 });
+    }
     const body = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new ApiError(body?.message || `HTTP ${response.status}`, {
+      const details = body?.errors;
+      throw new ApiError(userFacingErrorMessage(body?.message || `HTTP ${response.status}`, { status: response.status, details }), {
         status: response.status,
-        details: body?.errors,
+        details,
         retryAfterHeader: response.headers.get("retry-after"),
       });
     }

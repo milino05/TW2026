@@ -4,6 +4,7 @@ const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam"
 const controller = require("../controllers/marketplaceV2.controller");
 const authoringController = require("../controllers/marketplaceAuthoringV2.controller");
 const preflightController = require("../controllers/marketplaceAuthoringPreflightV2.controller");
+const discoveryController = require("../controllers/marketplaceDiscoveryV2.controller");
 
 const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
@@ -21,6 +22,10 @@ const resourceId = validateObjectIdParam("resourceId");
 router.use(requireAuth);
 router.get("/v2/marketplace/catalog", controller.catalog);
 router.get("/v2/marketplace/venue-selector", controller.venueSelector);
+router.get("/v2/marketplace/discovery/organizations", discoveryController.organizations);
+router.get("/v2/marketplace/discovery/organizations/:organizationId", organizationId, discoveryController.organization);
+router.get("/v2/marketplace/discovery/venues", discoveryController.venues);
+router.get("/v2/marketplace/discovery/venues/:venueId", venueId, discoveryController.venue);
 router.get("/v2/marketplace/authoring/preflight", preflightController.authoringPreflight);
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);

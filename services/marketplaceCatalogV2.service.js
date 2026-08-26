@@ -1,4 +1,5 @@
 const MarketplaceListing = require("../models/marketplaceListing.model");
+const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
 const { RESOURCE_TYPES } = require("../config/marketplaceCapabilities");
 const marketplace = require("./marketplaceV2.service");
@@ -56,8 +57,9 @@ async function listCatalog({
   const safePage = Math.max(1, Number(page) || 1);
   const types = normalizeResourceTypes(resourceTypes);
   const venueFilter = await resolveVenueCatalogFilter({ selectedVenueIds: normalizeVenueIds(selectedVenueIds) });
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
 
-  const filters = [{ status: "published" }];
+  const filters = [{ status: "published", _id: { $in: activeListingIds } }];
   if (types) filters.push({ resourceType: { $in: types } });
   if (sellerType) filters.push({ sellerType });
   if (sellerId) filters.push({ sellerId });
@@ -102,6 +104,9 @@ async function getListingDetail({
 }) {
   const listing = await MarketplaceListing.findOne({ _id: listingId, status: "published" }).lean();
   if (!listing) throw new AppError("MarketplaceListing non disponibile", 404);
+  if (!await MarketplaceOffer.exists({ listingId: listing._id, status: "active" })) {
+    throw new AppError("Questa scheda non è disponibile perché non ha un'offerta attiva", 404, [{ code: "ACTIVE_OFFER_REQUIRED" }]);
+  }
   const projected = await marketplace.projectCatalogListing({ listing, actorUserId });
   if (!projected) throw new AppError("La risorsa del Listing non e disponibile", 409);
   const venueFilter = await resolveVenueCatalogFilter({ selectedVenueIds: normalizeVenueIds(selectedVenueIds) });

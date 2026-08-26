@@ -1,4 +1,5 @@
 import { icon } from "./icons.js";
+import { userFacingFieldLabel, userFacingIssueMessage } from "../application/user-facing-errors.js";
 
 const SECTIONS = [
   ["overview", "Panoramica"],
@@ -55,7 +56,7 @@ export const venueSectionMixin = {
   },
   renderPublication() {
     const { release, availableOperations } = this.data;
-    const issues = (release?.integrity?.issues || []).map((issue) => `<li><strong>${escapeHtml(issue.field || issue.code || "Controllo")}</strong><span>${escapeHtml(issue.message)}</span></li>`).join("");
+    const issues = (release?.integrity?.issues || []).map((issue) => `<li><strong>${escapeHtml(userFacingFieldLabel(issue.field) || "Controllo")}</strong><span>${escapeHtml(userFacingIssueMessage({ ...issue, field: "" }))}</span></li>`).join("");
     const buttons = availableOperations.filter((entry) => entry.code.startsWith("venue.release.") && !["venue.release.update", "venue.release.ensure"].includes(entry.code)).map((entry) => `<button type="button" data-workflow="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join("");
     const ensure = availableOperations.find((entry) => entry.code === "venue.release.ensure");
     return `<section class="venue-section" id="venue-publication"><div class="section-heading"><div><span class="eyebrow">Pubblicazione</span><h2>Controllo della configurazione fisica</h2><p>La pubblicazione riguarda VenueRelease e LayoutRevision. Non pubblica contenuti editoriali nel Catalogo.</p></div></div>${ensure ? `<div class="venue-start"><div><strong>Non c'è una bozza modificabile</strong><p>Crea una nuova bozza dalla versione pubblicata o avvia la prima configurazione.</p></div><button type="button" data-ensure-release>${escapeHtml(ensure.label)}</button></div>` : ""}${release ? `<div class="venue-publication-status"><div><span class="eyebrow">Stato</span><h3>${escapeHtml(statusLabel(release.status))}</h3></div><span class="chip" data-tone="${release.integrity.status === "valid" ? "success" : "warning"}">${icon(release.integrity.status === "valid" ? "check" : "warning", { size: 14 })} ${release.integrity.status === "valid" ? "Controllo superato" : "Da controllare"}</span></div>${issues ? `<div class="issues"><h4>Problemi da risolvere</h4><ul>${issues}</ul></div>` : `<p class="note">Nessun problema di integrità segnalato nell'ultimo controllo.</p>`}${buttons ? `<div class="button-row">${buttons}</div>` : ""}` : ""}${this.renderWorkflowPanel()}</section>`;

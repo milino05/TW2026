@@ -5,83 +5,83 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
-const marketplace = path.join(root, "clients/marketplace");
-const uiDir = path.join(marketplace, "src/ui");
-const srcDir = path.join(marketplace, "src");
+const marketRoot = path.join(root, "clients/marketplace/src");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
-function jsFiles(dir) {
+function collectJs(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const target = path.join(dir, entry.name);
-    if (entry.isDirectory()) return jsFiles(target);
-    return entry.isFile() && entry.name.endsWith(".js") ? [target] : [];
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return collectJs(full);
+    return entry.isFile() && entry.name.endsWith(".js") ? [full] : [];
   });
 }
 
-function allUiSource() {
-  return jsFiles(uiDir).map((file) => fs.readFileSync(file, "utf8")).join("\n");
-}
+const shell = read("clients/marketplace/src/ui/app-shell.js");
+const router = read("clients/marketplace/src/application/router.js");
+const context = read("clients/marketplace/src/application/operating-context.js");
+const createHub = read("clients/marketplace/src/ui/create-hub-view.js");
+const itemEditor = read("clients/marketplace/src/ui/item-authoring-view.js");
+const visitEditor = read("clients/marketplace/src/ui/visit-authoring-view.js");
+const commerce = read("clients/marketplace/src/ui/commerce-management-view.js");
+const acquisition = read("clients/marketplace/src/ui/acquisition-history-view.js");
+const organization = read("clients/marketplace/src/ui/organization-view.js");
 
-test("tutto il frontend Marketplace passa il syntax gate JavaScript", () => {
-  for (const file of jsFiles(srcDir)) {
-    const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
-    assert.equal(result.status, 0, `${path.relative(root, file)}\n${result.stderr || result.stdout}`);
+test("tutto il client Marketplace passa il syntax gate JavaScript", () => {
+  for (const target of collectJs(marketRoot)) {
+    const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${path.relative(root, target)}: ${result.stderr || result.stdout}`);
   }
 });
 
-test("nessuna view Marketplace usa prompt o confirm nativi", () => {
-  const source = allUiSource();
-  assert.doesNotMatch(source, /window\.prompt\s*\(/);
-  assert.doesNotMatch(source, /window\.confirm\s*\(/);
+test("il client non usa dialoghi nativi bloccanti", () => {
+  for (const target of collectJs(marketRoot)) {
+    const source = fs.readFileSync(target, "utf8");
+    assert.doesNotMatch(source, /window\.(?:prompt|confirm)\s*\(/, path.relative(root, target));
+  }
 });
 
-test("shell e router mantengono le cinque aree e tutte le route funzionali", () => {
-  const shell = read("clients/marketplace/src/ui/app-shell.js");
-  const router = read("clients/marketplace/src/application/router.js");
-  for (const label of ["Catalogo", "Le mie risorse", "Crea", "Licenze e vendite", "Account e organizzazioni"]) assert.match(shell, new RegExp(label));
-  for (const route of ["/catalog/detail", "/acquisitions", "/create", "/workspace/resource", "/workspace/commerce", "/workspace/item-authoring", "/workspace/visit-authoring", "/workspace/venue-targets", "/workspace/context-compose", "/profile", "/organizations/detail", "/namespaces/editor", "/venues/editor"]) assert.match(router, new RegExp(route.replaceAll("/", "\\/")));
+test("shell e router espongono la IA contestuale corrente", () => {
+  for (const route of ["/context", "/home", "/catalog", "/organizations", "/venues", "/workspace", "/create", "/acquisitions", "/profile"]) {
+    assert.match(router, new RegExp(`"${route.replaceAll("/", "\\/")}"`));
+  }
+  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Marketplace", "Account"]) {
+    assert.match(shell, new RegExp(`>${label}<`));
+  }
+  assert.match(shell, /data-change-context/);
+  assert.match(shell, /navigate\("\/context"\)/);
+  assert.doesNotMatch(shell, />Le mie risorse</);
+  assert.doesNotMatch(shell, />Licenze e vendite</);
+  assert.doesNotMatch(shell, />Account e organizzazioni</);
 });
 
-test("la navigazione tablet non ricade nello stato a sole icone", () => {
-  const css = read("clients/marketplace/src/styles/final-audit.css");
-  assert.match(css, /max-width:68rem/);
-  assert.match(css, /\.market-nav a span,\.market-nav button span\{display:inline\}/);
-  assert.match(css, /\.menu-toggle\{display:inline-flex/);
+test("il contesto operativo è session-scoped e non un contesto museo", () => {
+  assert.match(context, /window\.sessionStorage/);
+  assert.match(context, /type === "organization"/);
+  assert.match(context, /type === "user"/);
+  assert.match(context, /validateOperatingContext/);
+  assert.doesNotMatch(context, /venueId|museumId|selectedVenueIds/);
 });
 
-test("dettaglio risorsa usa motivazione inline per le operazioni che la richiedono", () => {
-  const source = read("clients/marketplace/src/ui/workspace-view.js");
-  assert.match(source, /pendingOperation/);
-  assert.match(source, /data-operation-message/);
-  assert.match(source, /data-confirm-operation-message/);
-  assert.match(source, /requiresMessage/);
-  assert.doesNotMatch(source, /window\.prompt|window\.confirm/);
+test("le aree operative non reintroducono selector di principal", () => {
+  for (const [name, source] of [["create hub", createHub], ["item editor", itemEditor], ["visit editor", visitEditor], ["commerce", commerce]]) {
+    assert.doesNotMatch(source, /data-principal-form|data-new-principal|data-commerce-principal/, name);
+  }
+  assert.doesNotMatch(itemEditor, /changePrincipal\s*\(/);
+  assert.doesNotMatch(visitEditor, /data-new-principal/);
+  assert.match(acquisition, /operatingPrincipal\(this\.context\)/);
 });
 
-test("composer della raccolta usa microcopy user-facing e mantiene i riferimenti tecnici in disclosure", () => {
-  const source = read("clients/marketplace/src/ui/context-release-composer.js");
-  for (const token of ["Pubblica una nuova versione", "Raccolta editoriale", "Spazio editoriale", "Regole editoriali", "Contenuti della nuova versione", "Dettagli tecnici della versione"]) assert.match(source, new RegExp(token));
-  assert.match(source, /NamespaceRevision/);
-  assert.match(source, /GraphRevision/);
-  assert.doesNotMatch(source, /<h1>Componi la release<\/h1>|>Workspace<|>Editorial release/);
+test("authoring e commerce mantengono feature parity strutturale", () => {
+  for (const term of ["Di cosa parla", "Controllo e pubblicazione", "data-new-edition", "data-content-space-id", "data-add-text", "data-remove-text"]) assert.match(itemEditor, new RegExp(term));
+  for (const term of ["Informazioni principali", "Contenuti", "Tappe", "Logistica", "Riepilogo e pubblicazione", "data-add-content", "data-add-anchor"]) assert.match(visitEditor, new RegExp(term));
+  for (const term of ["Schede nel catalogo", "Nuova offerta", "data-pricing-type", "withdrawOffer", "withdrawListing"]) assert.match(commerce, new RegExp(term));
 });
 
-test("feature parity trasversale resta rappresentata nei flussi principali", () => {
-  const expectations = {
-    "clients/marketplace/src/ui/catalog-view.js": ["selectedVenueIds", "resourceType", "page"],
-    "clients/marketplace/src/ui/listing-detail-view.js": ["beneficiary", "acquisition"],
-    "clients/marketplace/src/ui/acquisition-history-view.js": ["currentRights", "availableBeneficiaries"],
-    "clients/marketplace/src/ui/workspace-browser-view.js": ["ownership", "workspaceResources"],
-    "clients/marketplace/src/ui/create-hub-view.js": ["authoringPreflight"],
-    "clients/marketplace/src/ui/item-authoring-view.js": ["presentationVariants", "representations", "workflow"],
-    "clients/marketplace/src/ui/visit-authoring-view.js": ["deliveryAnchorId", "preVisitNotes", "routeHints"],
-    "clients/marketplace/src/ui/commerce-management-view.js": ["createOffer", "withdraw"],
-    "clients/marketplace/src/ui/organization-view.js": ["organization.member", "venue.create", "namespace.create"],
-    "clients/marketplace/src/ui/namespace-editor-view.js": ["semanticRefs", "namespace.revision.publish"],
-    "clients/marketplace/src/ui/venue-editor-view.js": ["venueDraftMixin", "venueTargetsMixin", "venueRoutingMixin"],
-  };
-  for (const [file, tokens] of Object.entries(expectations)) {
-    const source = read(file);
-    for (const token of tokens) assert.match(source, new RegExp(token), `${file} deve preservare ${token}`);
+test("management Organization resta separato dal profilo pubblico", () => {
+  assert.match(organization, /Gestione organizzazione/);
+  assert.match(organization, /data-public-profile/);
+  assert.match(organization, /\/organizations\/public\?organizationId=/);
+  for (const operation of ["organization.member.add", "venue.create", "namespace.create"]) {
+    assert.match(organization, new RegExp(operation.replaceAll(".", "\\.")));
   }
 });
