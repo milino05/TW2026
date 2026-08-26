@@ -30,7 +30,8 @@ test("contenuti e tappe sono due decisioni distinte", () => {
   assert.match(view, /deliveryAnchorId:\s*null/);
   assert.match(view, /data-add-anchor/);
   assert.match(view, /data-entry-anchor/);
-  assert.match(view, /Aggiungere un contenuto non crea automaticamente un VisitAnchor/);
+  assert.match(view, /Le tappe fisiche vengono gestite nel passaggio successivo/);
+  assert.match(view, /Le tappe sono oggetti fisici della sede/);
   assert.doesNotMatch(view, /ensureReferences/);
   assert.doesNotMatch(view, /matchingTarget\(result\)/);
 });
