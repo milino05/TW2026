@@ -93,6 +93,22 @@ test("testi multipli vengono aggiunti e rimossi nella stessa bozza", () => {
   assert.match(source, /authoringRepository\.updateEdition\(editionId, payload\)/);
 });
 
+test("solo il testo selezionato resta espanso mentre gli altri mostrano i dati essenziali", () => {
+  assert.match(source, /activeRepresentationIndex = 0/);
+  assert.match(source, /data-selected="true"/);
+  assert.match(source, /data-collapsed-text="\$\{index\}"/);
+  assert.match(source, /data-select-text="\$\{index\}"/);
+  assert.match(source, /class="representation-summary"/);
+  for (const label of ["Durata", "Livello di linguaggio", "Lingua", "Modifica"]) assert.match(source, new RegExp(label));
+  assert.match(source, /this\.activeRepresentationIndex = this\.draft\.representations\.length - 1/);
+  assert.match(source, /this\.activeRepresentationIndex = Math\.min\(index, this\.draft\.representations\.length - 1\)/);
+  assert.match(source, /Completa durata, livello di linguaggio, lingua e testo/);
+  assert.match(source, /representation-editor--collapsed\{[^}]*cursor:pointer/);
+  assert.match(source, /representation-summary\{display:grid;grid-template-columns:repeat\(3/);
+  assert.match(source, /authoring-page\{grid-template-columns:minmax\(0,1fr\)\}/);
+  assert.match(source, /authoring-page>\*,\.wizard-step,\.editor-form,\.representation-list,\.representation-editor\{min-width:0\}/);
+});
+
 test("il riepilogo separa visivamente etichette, valori e testi", () => {
   assert.match(source, /\.review-grid article\{display:grid;gap:\.35rem;padding:1rem/);
   assert.match(source, /\.review-texts article\{display:grid;gap:\.65rem;padding:1rem/);

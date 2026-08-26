@@ -91,6 +91,7 @@ export class ItemAuthoringView extends HTMLElement {
   projection = null;
   namespaceControls = null;
   activeStep = 1;
+  activeRepresentationIndex = 0;
   newEditionMode = false;
   draft = newDraft();
   busy = false;
@@ -189,7 +190,7 @@ export class ItemAuthoringView extends HTMLElement {
 
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor());
+    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor()); this.activeRepresentationIndex = 0;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
     this.activeStep = 2;
@@ -273,6 +274,11 @@ export class ItemAuthoringView extends HTMLElement {
           representation.locale = String(representation.locale || "").trim();
           representation.text = String(representation.text || "").trim();
         }
+        const incompleteTextIndex = this.draft.representations.findIndex((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].some((value) => !String(value || "").trim()));
+        if (incompleteTextIndex >= 0) {
+          this.activeRepresentationIndex = incompleteTextIndex;
+          throw new Error(`Completa durata, livello di linguaggio, lingua e testo per ${incompleteTextIndex === 0 ? "il testo principale" : `il testo ${incompleteTextIndex + 1}`}.`);
+        }
         if (this.newEditionMode) await this.createEditionFromDraft(); else await this.updateEditionFromDraft();
       } else if (form.matches("[data-workflow-form]")) {
         const operationCode = String(data.get("operationCode") || ""); const operation = this.availableOperation(operationCode);
@@ -351,14 +357,16 @@ export class ItemAuthoringView extends HTMLElement {
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
     const addTextButton = target.closest("button[data-add-text]");
-    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${this.draft.representations.length - 1}"] textarea`)?.focus()); return; }
+    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.activeRepresentationIndex = this.draft.representations.length - 1; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${this.activeRepresentationIndex}"] textarea`)?.focus()); return; }
     const removeTextButton = target.closest("button[data-remove-text]");
-    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations.length > 1 && this.draft.representations[index]) { this.draft.representations.splice(index, 1); this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
+    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations.length > 1 && this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = Math.min(index, this.draft.representations.length - 1); else if (this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
+    const collapsedText = target.closest("[data-collapsed-text]");
+    if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
     const stepButton = target.closest("button[data-step]"); if (stepButton) { const step = Number(stepButton.dataset.step); if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.render(); } return; }
     const backButton = target.closest("button[data-back-step]"); if (backButton) { const step = Math.max(1, Number(backButton.dataset.backStep) || 1); if (this.canOpenStep(step)) { this.activeStep = step; this.render(); } return; }
     const newEditionButton = target.closest("button[data-new-edition]");
     if (newEditionButton) { this.busy = true; this.error = null; this.render(); try { await this.prepareNewEdition(); } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aggiungere una nuova versione editoriale"; } finally { this.busy = false; this.render(); } return; }
-    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeStep = 2; this.render(); return; }
+    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = 0; this.activeStep = 2; this.render(); return; }
     const editionButton = target.closest("button[data-edition-id]");
     if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 3; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
   };
@@ -429,7 +437,19 @@ export class ItemAuthoringView extends HTMLElement {
       `<option value="">Scegli il livello</option>`,
       ...(controls.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`),
     ].join("");
-    return `<div class="representation-list">${this.draft.representations.map((representation, index) => `<article class="representation-editor" data-representation-index="${index}"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${index === 0 ? "Prima versione del testo" : "Versione aggiuntiva"}</h3></div>${this.draft.representations.length > 1 ? `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</header><div class="representation-settings"><label>Durata<select name="durationTypeDefinitionId" data-representation-index="${index}" required>${durationOptions(representation.durationTypeDefinitionId)}</select></label><label>Livello di linguaggio<select name="languageLevelDefinitionId" data-representation-index="${index}" required>${languageOptions(representation.languageLevelDefinitionId)}</select></label><label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`).join("")}</div>`;
+    this.activeRepresentationIndex = Math.min(Math.max(0, this.activeRepresentationIndex), this.draft.representations.length - 1);
+    return `<div class="representation-list">${this.draft.representations.map((representation, index) => {
+      const active = index === this.activeRepresentationIndex;
+      const title = index === 0 ? "Prima versione del testo" : "Versione aggiuntiva";
+      const duration = (controls.durationTypes || []).find((entry) => entry.definitionId === representation.durationTypeDefinitionId);
+      const language = (controls.languageLevels || []).find((entry) => entry.definitionId === representation.languageLevelDefinitionId);
+      const durationLabel = duration ? `${duration.label}${Number.isFinite(Number(duration.targetSeconds)) ? ` · ${duration.targetSeconds}s` : ""}` : "Da scegliere";
+      const languageLabel = language?.label || "Da scegliere";
+      const localeLabel = representation.locale || "Da indicare";
+      const removeButton = this.draft.representations.length > 1 ? `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>` : "";
+      if (!active) return `<article class="representation-editor representation-editor--collapsed" data-representation-index="${index}" data-collapsed-text="${index}"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div><div class="representation-compact-actions"><button class="button-secondary select-text" type="button" data-select-text="${index}" aria-expanded="false">${icon("edit", { size: 15 })} Modifica</button>${removeButton}</div></header><dl class="representation-summary"><div><dt>Durata</dt><dd>${escapeHtml(durationLabel)}</dd></div><div><dt>Livello di linguaggio</dt><dd>${escapeHtml(languageLabel)}</dd></div><div><dt>Lingua</dt><dd>${escapeHtml(localeLabel)}</dd></div></dl></article>`;
+      return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings"><label>Durata<select name="durationTypeDefinitionId" data-representation-index="${index}" required>${durationOptions(representation.durationTypeDefinitionId)}</select></label><label>Livello di linguaggio<select name="languageLevelDefinitionId" data-representation-index="${index}" required>${languageOptions(representation.languageLevelDefinitionId)}</select></label><label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
+    }).join("")}</div>`;
   }
 
   renderStepTwo() {
@@ -482,7 +502,26 @@ export class ItemAuthoringView extends HTMLElement {
 
   render() {
     const blocked = !this.itemId && this.preflight?.content?.allowed === false;
-    this.innerHTML = `${this.styles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Tre passaggi: identifica il soggetto, configura e scrivi i testi, quindi controlla il risultato prima della pubblicazione.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}`}</main>`;
+    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Tre passaggi: identifica il soggetto, configura e scrivi i testi, quindi controlla il risultato prima della pubblicazione.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}`}</main>`;
+  }
+
+  representationStyles() {
+    return `<style>
+      .authoring-page{grid-template-columns:minmax(0,1fr)}
+      .authoring-page>*,.wizard-step,.editor-form,.representation-list,.representation-editor{min-width:0}
+      .representation-editor[data-selected="true"]{border-color:#91a39b;box-shadow:0 0 0 2px rgba(23,62,53,.08)}
+      .representation-editor:focus{outline:3px solid rgba(233,168,68,.3);outline-offset:2px}
+      .representation-editor--collapsed{gap:.65rem;padding:.8rem 1rem;cursor:pointer;background:#f8faf8;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}
+      .representation-editor--collapsed:hover{border-color:#91a39b;background:#f1f6f3;box-shadow:0 .35rem 1rem rgba(16,40,33,.06)}
+      .representation-editor--collapsed>header{align-items:center}
+      .representation-compact-actions{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}
+      .representation-compact-actions button{min-height:2.3rem;padding:.45rem .65rem}
+      .representation-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin:0}
+      .representation-summary>div{display:grid;min-width:0;gap:.1rem;padding:.55rem .65rem;border-radius:.55rem;background:#fff}
+      .representation-summary dt{color:#60706a;font-size:.72rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+      .representation-summary dd{overflow:hidden;margin:0;color:#173e35;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+      @media(max-width:32rem){.representation-summary{grid-template-columns:1fr 1fr}.representation-summary>div:last-child{grid-column:1/-1}.representation-compact-actions{justify-content:flex-start}.representation-editor--collapsed>header{display:grid}}
+    </style>`;
   }
 
   styles() {
