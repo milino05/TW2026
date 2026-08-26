@@ -87,3 +87,13 @@ test("Sedi e Regole editoriali restano domini distinti e usano gli editor esiste
   assert.match(organization, /data-create-venue/);
   assert.match(organization, /data-create-namespace/);
 });
+
+test("dopo la creazione delle regole si entra subito nell'editor guidato", () => {
+  for (const source of [profile, organization]) {
+    assert.match(source, /const created = await this\.execute/);
+    assert.match(source, /created\?\.namespace\?\._id/);
+    assert.match(source, /\/namespaces\/editor\?namespaceId=/);
+    assert.match(source, /Crea e configura/);
+    assert.match(source, /tutorial e un modello già pronto facoltativo/);
+  }
+});

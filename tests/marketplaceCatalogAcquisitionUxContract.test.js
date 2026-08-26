@@ -36,17 +36,27 @@ test("Catalogo mantiene discovery multi-asset, ricerca e filtro multi-sede", () 
   assert.match(catalog, /renderExploreNavigation\("catalog"\)/);
 });
 
-test("il selettore delle sedi resta usabile con centinaia di musei", () => {
+test("il selettore delle sedi resta nascosto finché non si cerca ed è usabile con centinaia di musei", () => {
   assert.match(catalog, /data-venue-search/);
   assert.match(catalog, /normalizeVenueSearch/);
+  assert.match(catalog, /MIN_VENUE_QUERY_LENGTH = 2/);
+  assert.match(catalog, /const searchReady = query\.length >= MIN_VENUE_QUERY_LENGTH/);
+  assert.match(catalog, /const matches = searchReady &&/);
   assert.match(catalog, /filterVenueOptions\(\)/);
   assert.match(catalog, /data-venue-search-text/);
+  assert.match(catalog, /data-venue-search-prompt/);
+  assert.match(catalog, /Le organizzazioni e le sedi vengono mostrate soltanto dopo una ricerca/);
   assert.match(catalog, /data-venue-result-count/);
   assert.match(catalog, /data-clear-venue-search/);
   assert.match(catalog, /data-remove-selected-venue/);
   assert.match(catalog, /event\.key === "Enter"/);
+  assert.match(consumerStyles, /consumer-venue-prompt\{[^}]*border:[^}]*dashed/);
   assert.match(consumerStyles, /consumer-venue-results\{[^}]*max-height:[^}]*overflow:auto/);
   assert.match(consumerStyles, /consumer-venue-group legend\{[^}]*position:sticky/);
+  assert.match(consumerStyles, /consumer-venue-search__control \.input-icon:focus-within\{[^}]*outline:0[^}]*box-shadow/);
+  assert.match(consumerStyles, /consumer-venue-search__control input:focus\{[^}]*outline:0/);
+  assert.match(consumerStyles, /consumer-filter-count\{[^}]*flex:0 0 1\.7rem[^}]*border-radius:\.45rem/);
+  assert.match(consumerStyles, /consumer-filters:not\(\[open\]\)>summary\{display:flex/);
 });
 
 test("beneficiary commerciale deriva dal Context Hub e non da un selector locale", () => {

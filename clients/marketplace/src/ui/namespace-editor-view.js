@@ -2,6 +2,7 @@ import { navigate } from "../application/router.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { userFacingFieldLabel, userFacingIssueMessage } from "../application/user-facing-errors.js";
+import { starterDefinitions } from "../application/namespace-editor-starter.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
 
@@ -16,13 +17,31 @@ const SECTIONS = [
   ["mappings", "Mapping esterni"],
 ];
 const COLLECTION_META = {
-  durationTypes: { title: "Durate", description: "Definisci le lunghezze editoriali disponibili per i contenuti.", singular: "durata" },
-  languageLevels: { title: "Livelli di linguaggio", description: "Definisci i livelli di complessità linguistica disponibili.", singular: "livello" },
-  subjectClasses: { title: "Tipi di soggetto", description: "Categorie editoriali usate per descrivere i soggetti del contenuto.", singular: "tipo di soggetto" },
-  relationTypes: { title: "Relazioni", description: "Relazioni ammesse tra i soggetti del grafo semantico.", singular: "relazione" },
-  presentationAspects: { title: "Presentazione", description: "Dimensioni editoriali che possono caratterizzare una presentazione.", singular: "aspetto di presentazione" },
-  selectionSignals: { title: "Selezione", description: "Segnali che aiutano a scegliere il contenuto più adatto.", singular: "segnale di selezione" },
+  durationTypes: { title: "Durate", description: "Stabilisci quanto può essere lungo un testo, così chi scrive può scegliere fra una versione rapida e una più approfondita.", question: "Quanto tempo deve richiedere la lettura?", example: "Breve · circa 1 minuto; Media · circa 3 minuti.", singular: "durata" },
+  languageLevels: { title: "Livelli di linguaggio", description: "Definisci come cambia il linguaggio per pubblici diversi, dal visitatore occasionale a chi conosce già l'argomento.", question: "Quanto deve essere semplice o specialistico il testo?", example: "Semplice · termini comuni; Specialistico · lessico disciplinare.", singular: "livello" },
+  subjectClasses: { title: "Tipi di soggetto", description: "Indica quali cose potranno essere raccontate: opere, persone, luoghi, movimenti artistici o altri soggetti.", question: "Di quali tipi di soggetto parleranno i contenuti?", example: "Opera o bene culturale; Persona o autore; Luogo.", singular: "tipo di soggetto" },
+  relationTypes: { title: "Relazioni", description: "Descrivi i collegamenti fra i soggetti e le domande a cui devono rispondere.", question: "Come sono collegati tra loro i soggetti?", example: "Creata da · risponde alla domanda “Chi è l'autore?”.", singular: "relazione" },
+  presentationAspects: { title: "Presentazione", description: "Definisci, se serve, la funzione delle diverse parti del testo e il modo in cui presentare le informazioni.", question: "Come deve essere organizzato e presentato il testo?", example: "Apertura del testo; Conclusione e invito all'osservazione.", singular: "aspetto di presentazione" },
+  selectionSignals: { title: "Selezione", description: "Aggiungi criteri facoltativi che aiutano a proporre il contenuto più adatto a una situazione o a un pubblico.", question: "Quando è particolarmente adatto questo contenuto?", example: "Adatto a famiglie; Opera fondamentale del percorso.", singular: "segnale di selezione" },
 };
+const DEFINITION_COPY = {
+  durationTypes: { name: "Nome della durata", placeholder: "Es. Breve", nameHelp: "Il nome che l'autore vedrà quando sceglie quanto deve essere lungo il testo.", description: "Quando usare questa durata?", descriptionPlaceholder: "Es. Per una lettura rapida davanti all'opera.", descriptionHelp: "Spiega in una frase in quale situazione questa durata è consigliata." },
+  languageLevels: { name: "Nome del livello", placeholder: "Es. Semplice", nameHelp: "Il nome del livello di complessità mostrato a chi scrive.", description: "Come deve essere il linguaggio?", descriptionPlaceholder: "Es. Frasi brevi e termini comuni, senza conoscenze pregresse.", descriptionHelp: "Descrivi tono, lessico e conoscenze che puoi dare per scontate." },
+  subjectClasses: { name: "Nome del tipo di soggetto", placeholder: "Es. Opera o bene culturale", nameHelp: "Una categoria di cose di cui i contenuti possono parlare.", description: "Che cosa comprende?", descriptionPlaceholder: "Es. Dipinti, sculture, manufatti e altri beni culturali.", descriptionHelp: "Chiarisci quali soggetti appartengono a questa categoria." },
+  relationTypes: { name: "Nome della relazione", placeholder: "Es. Creata da", nameHelp: "Il collegamento leggibile fra due soggetti, per esempio fra un'opera e il suo autore.", description: "A quale domanda risponde?", descriptionPlaceholder: "Es. Risponde a “Chi è l'autore?” e collega l'opera alla persona che l'ha realizzata.", descriptionHelp: "Scrivi la domanda dell'utente e il significato del collegamento." },
+  presentationAspects: { name: "Nome dell'aspetto", placeholder: "Es. Apertura del testo", nameHelp: "Una parte o una funzione editoriale della presentazione, non un collegamento tra soggetti.", description: "Come deve essere presentata?", descriptionPlaceholder: "Es. Introduci subito l'opera con un dettaglio riconoscibile e una frase breve.", descriptionHelp: "Descrivi l'effetto e la struttura che questa parte del testo dovrebbe avere." },
+  selectionSignals: { name: "Nome del criterio", placeholder: "Es. Adatto a famiglie", nameHelp: "Un indizio usato per scegliere quando proporre questo contenuto.", description: "Quando si applica?", descriptionPlaceholder: "Es. Quando il pubblico include bambini o gruppi familiari.", descriptionHelp: "Descrivi la situazione in cui questo criterio rende il contenuto pertinente." },
+};
+const TUTORIAL_STORAGE_KEY = "artaround.namespace-editor.tutorial.v1";
+const TUTORIAL_STEPS = [
+  { title: "A cosa servono le regole editoriali?", body: "Sono il modello condiviso che guida chi scrive: stabiliscono lunghezza, linguaggio, soggetti, relazioni e domande da affrontare.", target: '[data-tutorial-anchor="overview"]', section: "general" },
+  { title: "Un passaggio alla volta", body: "Usa queste sezioni come un percorso. I numeri indicano quante definizioni hai già aggiunto; puoi tornare su ogni sezione in qualsiasi momento.", target: '[data-tutorial-anchor="sections"]' },
+  { title: "1. Scegli le durate", body: "Crea almeno una durata. Dai un nome comprensibile e indica i secondi di lettura: per esempio Breve, 60 secondi.", target: "#namespace-durationTypes", section: "durationTypes" },
+  { title: "2. Definisci il linguaggio", body: "Crea almeno un livello di linguaggio. La descrizione deve dire con chiarezza quale lessico e quali conoscenze sono adatti al pubblico.", target: "#namespace-languageLevels", section: "languageLevels" },
+  { title: "3. Guida ciò che verrà raccontato", body: "Tipi di soggetto e relazioni trasformano domande concrete — come “Chi è l'autore?” o “Quando è stata realizzata?” — in collegamenti riutilizzabili.", target: "#namespace-relationTypes", section: "relationTypes" },
+  { title: "Controlla, poi pubblica", body: "Torna in Generale per salvare, verificare eventuali problemi e pubblicare. I dettagli tecnici restano chiusi finché non ti servono.", target: '[data-tutorial-anchor="workflow"]', section: "general" },
+  { title: "Vuoi partire da un modello pronto?", body: "Puoi aggiungere un modello culturale di base già completo di durate, linguaggi, tipi di soggetto e tre relazioni. Potrai modificarlo liberamente.", target: null, template: true },
+];
 const DEFINITION_FIELDS = Object.keys(COLLECTION_META);
 const WORKFLOW_ACTION = {
   "namespace.revision.check": "check-consistency",
@@ -69,16 +88,145 @@ function semanticRefChips(values = [], editable = true) {
   return values.map((entry, index) => `<span class="semantic-ref-chip"><span>${escapeHtml(entry.scheme)} · ${escapeHtml(entry.id)} · ${escapeHtml(MATCH_LABEL[entry.matchType] || entry.matchType || "Equivalente")}</span>${editable ? `<button type="button" data-remove-semantic-ref="${index}" aria-label="Rimuovi mapping ${escapeHtml(entry.id)}">×</button>` : ""}</span>`).join("");
 }
 
-export class ArtAroundNamespaceEditorView extends HTMLElement {
-  data = null; busy = false; error = null; message = null; dirty = false; id = namespaceId(); leaveConfirmation = false; pendingWorkflow = null; workflowMessage = ""; activeSection = initialNamespaceSection();
+function helpButton(label, explanation) {
+  return `<button class="namespace-help" type="button" aria-label="${escapeHtml(`${label}: ${explanation}`)}" data-tooltip="${escapeHtml(explanation)}">?</button>`;
+}
 
-  connectedCallback() { this.addEventListener("click", this.onClick); this.addEventListener("keydown", this.onSectionKeyDown); this.addEventListener("submit", this.onSubmit); this.addEventListener("input", this.onInput); this.addEventListener("semantic-ref-selected", this.onSemanticRefSelected); window.addEventListener("beforeunload", this.onBeforeUnload); this.load(); }
-  disconnectedCallback() { this.removeEventListener("click", this.onClick); this.removeEventListener("keydown", this.onSectionKeyDown); this.removeEventListener("submit", this.onSubmit); this.removeEventListener("input", this.onInput); this.removeEventListener("semantic-ref-selected", this.onSemanticRefSelected); window.removeEventListener("beforeunload", this.onBeforeUnload); }
-  async load() { if (!this.id) { this.error = "Regole editoriali non specificate"; this.render(); return; } this.busy = true; this.error = null; this.render(); try { this.data = await managementRepository.namespace(this.id); } catch (error) { this.error = error instanceof Error ? error.message : "Regole editoriali non disponibili"; } finally { this.busy = false; this.render(); } }
+export class ArtAroundNamespaceEditorView extends HTMLElement {
+  data = null; busy = false; error = null; message = null; dirty = false; id = namespaceId(); leaveConfirmation = false; pendingWorkflow = null; workflowMessage = ""; activeSection = initialNamespaceSection(); tutorialOpen = false; tutorialStep = 0; tutorialReturnSection = "general"; starterDialogOpen = false;
+
+  connectedCallback() { this.addEventListener("click", this.onClick); this.addEventListener("keydown", this.onSectionKeyDown); this.addEventListener("submit", this.onSubmit); this.addEventListener("input", this.onInput); this.addEventListener("semantic-ref-selected", this.onSemanticRefSelected); this.addEventListener("wheel", this.onTutorialScroll, { passive: false }); this.addEventListener("touchmove", this.onTutorialScroll, { passive: false }); window.addEventListener("beforeunload", this.onBeforeUnload); window.addEventListener("resize", this.onTutorialViewportChange); this.load(); }
+  disconnectedCallback() { this.removeEventListener("click", this.onClick); this.removeEventListener("keydown", this.onSectionKeyDown); this.removeEventListener("submit", this.onSubmit); this.removeEventListener("input", this.onInput); this.removeEventListener("semantic-ref-selected", this.onSemanticRefSelected); this.removeEventListener("wheel", this.onTutorialScroll); this.removeEventListener("touchmove", this.onTutorialScroll); window.removeEventListener("beforeunload", this.onBeforeUnload); window.removeEventListener("resize", this.onTutorialViewportChange); document.documentElement.classList.remove("namespace-overlay-open"); document.body?.classList.remove("namespace-overlay-open"); }
+  async load() {
+    if (!this.id) { this.error = "Regole editoriali non specificate"; this.render(); return; }
+    this.busy = true; this.error = null; this.render();
+    try {
+      this.data = await managementRepository.namespace(this.id);
+      if (this.shouldStartTutorial()) {
+        this.tutorialOpen = true;
+        this.tutorialStep = 0;
+        this.tutorialReturnSection = this.activeSection;
+        this.activeSection = "general";
+        this.rememberTutorialSeen();
+      }
+    } catch (error) { this.error = error instanceof Error ? error.message : "Regole editoriali non disponibili"; }
+    finally { this.busy = false; this.render(); }
+  }
   async execute(callback, message) { this.busy = true; this.error = null; this.message = null; this.render(); try { await callback(); this.dirty = false; this.leaveConfirmation = false; this.pendingWorkflow = null; this.workflowMessage = ""; this.message = message; this.data = await managementRepository.namespace(this.id); } catch (error) { const field = error?.details?.find((entry) => entry?.field)?.field || ""; const section = DEFINITION_FIELDS.find((entry) => field.startsWith(entry)); if (section) this.activeSection = section; this.error = error instanceof Error ? error.message : "Non è stato possibile salvare le regole editoriali"; } finally { this.busy = false; this.render(); } }
+
+  shouldStartTutorial() {
+    if (!this.data?.revision || this.data.revision.version !== 1 || this.data.revision.status !== "draft") return false;
+    if (DEFINITION_FIELDS.some((field) => (this.data.revision.definitions?.[field] || []).length)) return false;
+    try { return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "seen"; } catch { return false; }
+  }
+  rememberTutorialSeen() { try { localStorage.setItem(TUTORIAL_STORAGE_KEY, "seen"); } catch { /* Il tutorial resta comunque utilizzabile nella sessione. */ } }
+  startTutorial() {
+    if (this.dirty) this.snapshotDraft();
+    this.tutorialReturnSection = this.activeSection;
+    this.tutorialOpen = true;
+    this.starterDialogOpen = false;
+    this.tutorialStep = 0;
+    this.activeSection = "general";
+    this.rememberTutorialSeen();
+    this.render();
+  }
+  finishTutorial() {
+    this.tutorialOpen = false;
+    this.tutorialStep = 0;
+    this.activeSection = this.tutorialReturnSection || "general";
+    this.render();
+  }
+  setTutorialStep(step) {
+    if (this.dirty) this.snapshotDraft();
+    this.tutorialStep = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, step));
+    const section = TUTORIAL_STEPS[this.tutorialStep].section;
+    if (section) this.activeSection = section;
+    this.render();
+  }
+  syncOverlayLock() {
+    const locked = this.tutorialOpen || this.starterDialogOpen;
+    document.documentElement.classList.toggle("namespace-overlay-open", locked);
+    document.body?.classList.toggle("namespace-overlay-open", locked);
+  }
+  onTutorialScroll = (event) => { if (this.tutorialOpen) event.preventDefault(); };
+  onTutorialViewportChange = () => { if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial()); };
+  positionTutorial() {
+    const overlay = this.querySelector("[data-tutorial-overlay]");
+    const bubble = overlay?.querySelector("[data-tutorial-bubble]");
+    const spotlight = overlay?.querySelector("[data-tutorial-spotlight]");
+    const step = TUTORIAL_STEPS[this.tutorialStep];
+    if (!overlay || !bubble || !spotlight || !step) return;
+    const target = step.target ? this.querySelector(step.target) : null;
+    if (!target) { overlay.dataset.centered = "true"; bubble.querySelector("button")?.focus(); return; }
+    delete overlay.dataset.centered;
+    delete overlay.dataset.mobile;
+    target.scrollIntoView({ behavior: "auto", block: "center" });
+    const expectedStep = this.tutorialStep;
+    requestAnimationFrame(() => {
+      if (!this.tutorialOpen || this.tutorialStep !== expectedStep || !target.isConnected) return;
+      this.placeTutorial(target);
+    });
+  }
+  placeTutorial(target) {
+    const overlay = this.querySelector("[data-tutorial-overlay]");
+    const bubble = overlay?.querySelector("[data-tutorial-bubble]");
+    const spotlight = overlay?.querySelector("[data-tutorial-spotlight]");
+    if (!overlay || !bubble || !spotlight) return;
+    const rect = target.getBoundingClientRect();
+    const padding = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const highlight = {
+      left: Math.max(6, rect.left - padding),
+      top: Math.max(6, rect.top - padding),
+      right: Math.min(viewportWidth - 6, rect.right + padding),
+      bottom: Math.min(viewportHeight - 6, rect.bottom + padding),
+    };
+    highlight.width = Math.max(1, highlight.right - highlight.left);
+    highlight.height = Math.max(1, highlight.bottom - highlight.top);
+    Object.assign(spotlight.style, { left: `${highlight.left}px`, top: `${highlight.top}px`, width: `${highlight.width}px`, height: `${highlight.height}px` });
+    if (window.innerWidth <= 720) { overlay.dataset.mobile = "true"; bubble.querySelector("button")?.focus(); return; }
+    const gap = 20;
+    const bubbleWidth = bubble.offsetWidth;
+    const bubbleHeight = bubble.offsetHeight;
+    let left;
+    let top;
+    let side;
+    if (viewportWidth - highlight.right >= bubbleWidth + gap) { side = "right"; left = highlight.right + gap; top = highlight.top + highlight.height / 2 - bubbleHeight / 2; }
+    else if (highlight.left >= bubbleWidth + gap + 16) { side = "left"; left = highlight.left - bubbleWidth - gap; top = highlight.top + highlight.height / 2 - bubbleHeight / 2; }
+    else if (viewportHeight - highlight.bottom >= bubbleHeight + gap) { side = "bottom"; left = highlight.left + highlight.width / 2 - bubbleWidth / 2; top = highlight.bottom + gap; }
+    else if (highlight.top >= bubbleHeight + gap + 16) { side = "top"; left = highlight.left + highlight.width / 2 - bubbleWidth / 2; top = highlight.top - bubbleHeight - gap; }
+    else { side = "floating"; left = viewportWidth - bubbleWidth - 16; top = viewportHeight - bubbleHeight - 16; }
+    bubble.dataset.side = side;
+    Object.assign(bubble.style, { left: `${Math.max(16, Math.min(viewportWidth - bubbleWidth - 16, left))}px`, top: `${Math.max(16, Math.min(viewportHeight - bubbleHeight - 16, top))}px` });
+    bubble.querySelector("button")?.focus();
+  }
+  async applyStarterTemplate() {
+    if (!this.data?.revision || !has(this.data.availableOperations, "namespace.revision.update")) return;
+    const { metadata, definitions } = this.snapshotDraft();
+    const prepared = starterDefinitions(definitions);
+    this.data.revision.definitions = prepared;
+    this.tutorialOpen = false;
+    this.starterDialogOpen = false;
+    this.activeSection = "relationTypes";
+    await this.execute(async () => {
+      if (metadata) await accountRepository.updateNamespace(this.id, metadata);
+      await managementRepository.updateNamespaceRevision(this.id, prepared);
+    }, "Modello iniziale aggiunto. Puoi personalizzarlo in ogni sezione.");
+  }
 
   onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
   onSectionKeyDown = (event) => {
+    const modal = this.querySelector('[aria-modal="true"]');
+    if (modal && event.key === "Escape") { event.preventDefault(); this.tutorialOpen ? this.finishTutorial() : (this.starterDialogOpen = false, this.render()); return; }
+    if (modal && event.key === "Tab") {
+      const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      return;
+    }
     const tab = event.target instanceof Element ? event.target.closest("[data-namespace-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
     const tabs = [...this.querySelectorAll("[data-namespace-section]")];
@@ -126,6 +274,13 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    if (target.closest("[data-start-tutorial]")) { this.startTutorial(); return; }
+    if (target.closest("[data-close-tutorial], [data-finish-tutorial]")) { this.finishTutorial(); return; }
+    if (target.closest("[data-tutorial-previous]")) { this.setTutorialStep(this.tutorialStep - 1); return; }
+    if (target.closest("[data-tutorial-next]")) { this.setTutorialStep(this.tutorialStep + 1); return; }
+    if (target.closest("[data-open-starter-template]")) { if (this.dirty) this.snapshotDraft(); this.starterDialogOpen = true; this.tutorialOpen = false; this.render(); return; }
+    if (target.closest("[data-cancel-starter-template]")) { this.starterDialogOpen = false; this.render(); return; }
+    if (target.closest("[data-apply-starter-template]")) { await this.applyStarterTemplate(); return; }
     const sectionTab = target.closest("[data-namespace-section]");
     if (sectionTab) { this.showSection(sectionTab.dataset.namespaceSection, { scroll: true }); return; }
     if (target.closest("[data-back]")) { if (this.dirty) { this.snapshotDraft(); this.leaveConfirmation = true; this.pendingWorkflow = null; this.render(); } else navigate(ownerBackUrl(this.data?.namespace.owner)); return; }
@@ -154,14 +309,45 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
     const options = (selected = []) => subjectClasses.map((subject) => `<option value="${escapeHtml(subject.definitionId)}" ${selected.includes(subject.definitionId) ? "selected" : ""}>${escapeHtml(subject.label || subject.key)}</option>`).join("");
     return `<details class="namespace-advanced"><summary>Vincoli e semantica della relazione</summary><div class="namespace-technical-grid"><label>Tipi ammessi in partenza<select name="domainDefinitionIds" multiple>${options(entry.domainDefinitionIds)}</select></label><label>Tipi ammessi in arrivo<select name="rangeDefinitionIds" multiple>${options(entry.rangeDefinitionIds)}</select></label><label>Categoria<select name="category"><option value="semantic" ${entry.category === "semantic" ? "selected" : ""}>Semantica</option><option value="contextual" ${entry.category === "contextual" ? "selected" : ""}>Contestuale</option><option value="editorial" ${entry.category === "editorial" ? "selected" : ""}>Editoriale</option></select></label><label>Forza<select name="strength"><option value="strong" ${entry.strength === "strong" ? "selected" : ""}>Forte</option><option value="medium" ${(!entry.strength || entry.strength === "medium") ? "selected" : ""}>Media</option><option value="weak" ${entry.strength === "weak" ? "selected" : ""}>Debole</option></select></label><label>Direzione<select name="directionality"><option value="directed" ${(!entry.directionality || entry.directionality === "directed") ? "selected" : ""}>Diretta</option><option value="symmetric" ${entry.directionality === "symmetric" ? "selected" : ""}>Simmetrica</option></select></label><label>Intenti utente<input name="userIntents" value="${escapeHtml((entry.userIntents || []).join(", "))}" placeholder="es. chi, dove, quando"></label><label>Etichetta inversa<input name="reverseLabel" value="${escapeHtml(entry.reverse?.label || "")}"></label><label>Descrizione inversa<input name="reverseDescription" value="${escapeHtml(entry.reverse?.description || "")}"></label><label>Intenti inversi<input name="reverseUserIntents" value="${escapeHtml((entry.reverse?.userIntents || []).join(", "))}"></label><label class="check"><input type="checkbox" name="allowMultiple" ${entry.validationRules?.allowMultiple !== false ? "checked" : ""}> Consenti più valori</label><label class="check"><input type="checkbox" name="targetRequired" ${entry.validationRules?.targetRequired !== false ? "checked" : ""}> Destinazione obbligatoria</label></div></details>`;
   }
-  renderDefinition(field, entry, index, definitions, editable) { const title = entry.label || `Nuovo ${COLLECTION_META[field].singular}`; return `<article class="namespace-definition" data-definition-row data-definition-index="${index}"><input type="hidden" name="definitionId" value="${escapeHtml(entry.definitionId || uuid())}"><textarea name="semanticRefs" hidden>${escapeHtml(refsText(entry.semanticRefs || []))}</textarea><header><div><span class="eyebrow">${escapeHtml(COLLECTION_META[field].singular)}</span><h3>${escapeHtml(title)}</h3></div>${editable ? `<button class="danger small" type="button" data-collection="${field}" data-remove-definition="${index}">Rimuovi</button>` : ""}</header><div class="namespace-definition-fields"><label>Nome visibile<input name="label" value="${escapeHtml(entry.label || "")}" required placeholder="Nome mostrato agli autori"></label>${field === "durationTypes" ? `<label>Durata indicativa (secondi)<input name="targetSeconds" type="number" min="1" value="${Number(entry.targetSeconds) || 60}" required></label>` : ""}<label class="wide">Descrizione<input name="description" value="${escapeHtml(entry.description || "")}" placeholder="Quando e come usare questa definizione"></label></div>${field === "relationTypes" ? this.renderRelationFields(entry, definitions.subjectClasses || []) : ""}${this.renderTechnicalBase(entry)}</article>`; }
-  renderCollection(field, definitions, editable) { const meta = COLLECTION_META[field]; const rows = (definitions[field] || []).map((entry, index) => this.renderDefinition(field, entry, index, definitions, editable)).join(""); return `<section class="namespace-section" id="namespace-${field}" data-collection="${field}"><div class="section-heading"><div><span class="eyebrow">${escapeHtml(meta.title)}</span><h2>${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.description)}</p></div><span class="count">${(definitions[field] || []).length}</span></div>${rows ? `<div class="namespace-definition-list">${rows}</div>` : `<div class="empty-state"><h3>Nessuna definizione</h3><p>Aggiungi il primo ${escapeHtml(meta.singular)} quando serve al tuo modello editoriale.</p></div>`}${editable ? `<button class="button-secondary" type="button" data-add-definition="${field}">${icon("plus", { size: 16 })} Aggiungi ${escapeHtml(meta.singular)}</button>` : ""}</section>`; }
+  renderDefinition(field, entry, index, definitions, editable) {
+    const title = entry.label || `Nuovo ${COLLECTION_META[field].singular}`;
+    const copy = DEFINITION_COPY[field];
+    const inputId = `namespace-${field}-${index}`;
+    const durationField = field === "durationTypes" ? `<div class="namespace-form-field"><div class="namespace-label-row"><label for="${inputId}-seconds">Tempo di lettura in secondi</label>${helpButton("Tempo di lettura", "È una stima utile per confrontare e ordinare le durate. Un minuto corrisponde a 60 secondi.")}</div><input id="${inputId}-seconds" name="targetSeconds" type="number" min="1" value="${Number(entry.targetSeconds) || 60}" required><small>Per esempio: 60 per un testo breve, 180 per uno medio.</small></div>` : "";
+    return `<article class="namespace-definition" data-definition-row data-definition-index="${index}"><input type="hidden" name="definitionId" value="${escapeHtml(entry.definitionId || uuid())}"><textarea name="semanticRefs" hidden>${escapeHtml(refsText(entry.semanticRefs || []))}</textarea><header><div><span class="eyebrow">${escapeHtml(COLLECTION_META[field].singular)}</span><h3>${escapeHtml(title)}</h3></div>${editable ? `<button class="danger small" type="button" data-collection="${field}" data-remove-definition="${index}">Rimuovi</button>` : ""}</header><div class="namespace-definition-fields"><div class="namespace-form-field"><div class="namespace-label-row"><label for="${inputId}-label">${escapeHtml(copy.name)}</label>${helpButton(copy.name, copy.nameHelp)}</div><input id="${inputId}-label" name="label" value="${escapeHtml(entry.label || "")}" required placeholder="${escapeHtml(copy.placeholder)}"><small>${escapeHtml(copy.nameHelp)}</small></div>${durationField}<div class="namespace-form-field wide"><div class="namespace-label-row"><label for="${inputId}-description">${escapeHtml(copy.description)}</label>${helpButton(copy.description, copy.descriptionHelp)}</div><textarea id="${inputId}-description" name="description" rows="2" placeholder="${escapeHtml(copy.descriptionPlaceholder)}">${escapeHtml(entry.description || "")}</textarea><small>${escapeHtml(copy.descriptionHelp)}</small></div></div>${field === "relationTypes" ? this.renderRelationFields(entry, definitions.subjectClasses || []) : ""}${this.renderTechnicalBase(entry)}</article>`;
+  }
+  renderCollection(field, definitions, editable) {
+    const meta = COLLECTION_META[field];
+    const rows = (definitions[field] || []).map((entry, index) => this.renderDefinition(field, entry, index, definitions, editable)).join("");
+    return `<section class="namespace-section" id="namespace-${field}" data-collection="${field}"><div class="section-heading"><div><span class="eyebrow">${escapeHtml(meta.title)}</span><h2>${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.description)}</p></div><span class="count">${(definitions[field] || []).length}</span></div><div class="namespace-guidance"><span>${icon("info", { size: 20 })}</span><div><strong>${escapeHtml(meta.question)}</strong><p>${escapeHtml(meta.description)}</p><small><b>Esempio:</b> ${escapeHtml(meta.example)}</small></div></div>${rows ? `<div class="namespace-definition-list">${rows}</div>` : `<div class="empty-state namespace-empty-guided"><h3>Non hai ancora aggiunto nessun ${escapeHtml(meta.singular)}</h3><p>Usa l'esempio qui sopra come punto di partenza. Potrai modificare tutto in seguito.</p></div>`}${editable ? `<button class="button-secondary" type="button" data-add-definition="${field}">${icon("plus", { size: 16 })} Aggiungi ${escapeHtml(meta.singular)}</button>` : ""}</section>`;
+  }
   renderMappings(definitions, editable) {
     const groups = DEFINITION_FIELDS.map((field) => { const entries = definitions[field] || []; if (!entries.length) return ""; const cards = entries.map((entry, index) => `<article class="namespace-mapping-card" data-mapping-card data-map-field="${field}" data-map-index="${index}"><header><div><span class="eyebrow">${escapeHtml(COLLECTION_META[field].title)}</span><h3>${escapeHtml(entry.label || entry.key)}</h3></div><span class="chip">${(entry.semanticRefs || []).length} mapping</span></header><p>Collega questa definizione a identificatori di vocabolari esterni senza cambiarne l'identità interna.</p><div data-semantic-ref-list>${semanticRefChips(entry.semanticRefs || [], editable)}</div>${editable ? `<artaround-semantic-entity-picker mode="mapping" entity-kind="${field === "relationTypes" ? "property" : "item"}"></artaround-semantic-entity-picker><details class="namespace-advanced"><summary>Inserimento provider-neutral</summary><label>Una riga schema|ID|relazione<textarea rows="3" data-semantic-ref-manual placeholder="schema|identificativo|exact">${escapeHtml(refsText(entry.semanticRefs || []))}</textarea></label><p class="note">Relazioni supportate: exact, close, broader, narrower.</p></details>` : ""}</article>`).join(""); return `<section class="namespace-mapping-group"><div class="section-heading"><div><h3>${escapeHtml(COLLECTION_META[field].title)}</h3><p>${entries.length} definizioni configurabili.</p></div></div><div class="namespace-mapping-grid">${cards}</div></section>`; }).join("");
     return `<section class="namespace-section" id="namespace-mappings"><div class="section-heading"><div><span class="eyebrow">Interoperabilità</span><h2>Mapping esterni</h2><p>Associa le definizioni a Wikidata o altri schemi provider-neutral. Questi mapping descrivono equivalenze o vicinanze semantiche: non creano nuovi Subject globali.</p></div></div>${groups || `<div class="empty-state"><h3>Nessuna definizione da collegare</h3><p>Crea prima almeno una durata, un livello, un tipo, una relazione o un altro criterio editoriale.</p></div>`}</section>`;
   }
   renderWorkflowPanel() { if (!this.pendingWorkflow) return ""; const code = this.pendingWorkflow; if (code === "namespace.revision.request_changes" && !this.dirty) return `<section class="confirmation-panel namespace-confirmation" role="alert"><div><strong>Quali modifiche sono necessarie?</strong><p>La motivazione verrà registrata nel workflow della revisione.</p><label>Motivazione<textarea data-workflow-message rows="3" placeholder="Descrivi cosa deve essere corretto">${escapeHtml(this.workflowMessage)}</textarea></label></div><div class="button-row"><button type="button" data-confirm-workflow ${this.workflowMessage.trim() ? "" : "disabled"}>Invia richiesta</button><button class="button-secondary" type="button" data-cancel-workflow>Annulla</button></div></section>`; return `<section class="confirmation-panel namespace-confirmation" role="alert"><div><strong>Prima salva le modifiche</strong><p>Il workflow deve operare sulla revisione effettivamente salvata. Salva ora e continua con “${escapeHtml(WORKFLOW_LABEL[code] || "l'operazione")}”.</p>${code === "namespace.revision.request_changes" ? `<label>Motivazione<textarea data-workflow-message rows="3" placeholder="Descrivi cosa deve essere corretto">${escapeHtml(this.workflowMessage)}</textarea></label>` : ""}</div><div class="button-row"><button type="button" data-save-and-workflow ${code === "namespace.revision.request_changes" && !this.workflowMessage.trim() ? "disabled" : ""}>Salva e continua</button><button class="button-secondary" type="button" data-cancel-workflow>Annulla</button></div></section>`; }
-  renderGeneral(namespace, revision, availableOperations) { const issues = (revision?.integrity?.issues || []).map((issue) => `<li><strong>${escapeHtml(userFacingFieldLabel(issue.field) || "Controllo")}</strong><span>${escapeHtml(userFacingIssueMessage({ ...issue, field: "" }))}</span></li>`).join(""); const workflowButtons = availableOperations.filter((entry) => entry.code.startsWith("namespace.revision.") && entry.code !== "namespace.revision.update").map((entry) => `<button type="button" data-operation="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join(""); const ensure = availableOperations.find((entry) => entry.code === "namespace.working.ensure"); return `<section class="namespace-section" id="namespace-general"><div class="section-heading"><div><span class="eyebrow">Generale</span><h2>Identità e pubblicazione</h2><p>Nome, descrizione, stato della revisione e controlli editoriali.</p></div></div><form data-namespace-metadata class="namespace-general-form"><label>Nome<input name="name" value="${escapeHtml(namespace.name)}" required></label><label class="wide">Descrizione<textarea name="description" rows="3">${escapeHtml(namespace.description || "")}</textarea></label><button type="submit">${icon("check", { size: 16 })} Salva modifiche</button></form>${ensure ? `<div class="namespace-start"><div><strong>Non c'è una bozza modificabile</strong><p>Avvia una bozza per configurare le regole mantenendo intatta l'eventuale versione pubblicata.</p></div><button type="button" data-operation="namespace.working.ensure">${escapeHtml(ensure.label)}</button></div>` : ""}${revision ? `<div class="namespace-workflow"><div class="namespace-workflow-heading"><div><span class="eyebrow">Controllo e pubblicazione</span><h3>${escapeHtml(statusLabel(revision.status))}</h3></div><span class="chip" data-tone="${revision.integrity.status === "valid" ? "success" : "warning"}">${icon(revision.integrity.status === "valid" ? "check" : "warning", { size: 14 })} ${revision.integrity.status === "valid" ? "Controllo superato" : "Da controllare"}</span></div>${issues ? `<div class="issues"><h4>Problemi da risolvere</h4><ul>${issues}</ul></div>` : `<p class="note">Nessun problema di integrità segnalato nell'ultimo controllo.</p>`}${workflowButtons ? `<div class="button-row">${workflowButtons}</div>` : ""}</div>` : ""}${this.renderWorkflowPanel()}</section>`; }
+  renderGeneral(namespace, revision, availableOperations) {
+    const issues = (revision?.integrity?.issues || []).map((issue) => `<li><strong>${escapeHtml(userFacingFieldLabel(issue.field) || "Controllo")}</strong><span>${escapeHtml(userFacingIssueMessage({ ...issue, field: "" }))}</span></li>`).join("");
+    const workflowButtons = availableOperations.filter((entry) => entry.code.startsWith("namespace.revision.") && entry.code !== "namespace.revision.update").map((entry) => `<button type="button" data-operation="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join("");
+    const ensure = availableOperations.find((entry) => entry.code === "namespace.working.ensure");
+    return `<section class="namespace-section" id="namespace-general"><div class="section-heading"><div><span class="eyebrow">Generale</span><h2>Identità e pubblicazione</h2><p>Dai un nome riconoscibile a questo modello e controlla quando è pronto per essere usato.</p></div></div><div class="namespace-purpose-card"><span>${icon("book", { size: 22 })}</span><div><strong>In parole semplici</strong><p>Queste regole aiutano più autori a produrre testi coerenti: decidono quali versioni creare, quali domande affrontare e quale linguaggio usare.</p></div></div><form data-namespace-metadata class="namespace-general-form"><div class="namespace-form-field"><div class="namespace-label-row"><label for="namespace-name">Nome delle regole</label>${helpButton("Nome delle regole", "Scegli un nome che faccia capire a quale collezione, progetto o stile editoriale si applicano.")}</div><input id="namespace-name" name="name" value="${escapeHtml(namespace.name)}" required placeholder="Es. Regole editoriali della collezione permanente"><small>Lo vedranno gli autori quando scelgono le regole da usare.</small></div><div class="namespace-form-field wide"><div class="namespace-label-row"><label for="namespace-description">Scopo e ambito</label>${helpButton("Scopo e ambito", "Spiega per quali contenuti e per quale pubblico sono state pensate queste regole.")}</div><textarea id="namespace-description" name="description" rows="3" placeholder="Es. Linee guida per i contenuti delle opere della collezione, rivolti a visitatori adulti non specialisti.">${escapeHtml(namespace.description || "")}</textarea><small>Una o due frasi sono sufficienti.</small></div><button type="submit">${icon("check", { size: 16 })} Salva dettagli</button></form>${ensure ? `<div class="namespace-start"><div><strong>Non c'è una bozza modificabile</strong><p>Avvia una bozza per configurare le regole mantenendo intatta l'eventuale versione pubblicata.</p></div><button type="button" data-operation="namespace.working.ensure">${escapeHtml(ensure.label)}</button></div>` : ""}${revision ? `<div class="namespace-workflow" data-tutorial-anchor="workflow"><div class="namespace-workflow-heading"><div><span class="eyebrow">Controllo e pubblicazione</span><h3>${escapeHtml(statusLabel(revision.status))}</h3><p>Prima controlla le regole: se manca qualcosa, verrai portato direttamente alla sezione da correggere.</p></div><span class="chip" data-tone="${revision.integrity.status === "valid" ? "success" : "warning"}">${icon(revision.integrity.status === "valid" ? "check" : "warning", { size: 14 })} ${revision.integrity.status === "valid" ? "Controllo superato" : "Da controllare"}</span></div>${issues ? `<div class="issues"><h4>Problemi da risolvere</h4><ul>${issues}</ul></div>` : `<p class="note">Nessun problema segnalato nell'ultimo controllo.</p>`}${workflowButtons ? `<div class="button-row">${workflowButtons}</div>` : ""}</div>` : ""}${this.renderWorkflowPanel()}</section>`;
+  }
+
+  renderTutorial() {
+    if (!this.tutorialOpen) return "";
+    const step = TUTORIAL_STEPS[this.tutorialStep];
+    const canApplyTemplate = Boolean(this.data?.revision && has(this.data?.availableOperations, "namespace.revision.update"));
+    const progress = TUTORIAL_STEPS.map((_, index) => `<span class="${index === this.tutorialStep ? "active" : ""}"></span>`).join("");
+    const actions = step.template
+      ? `<div class="namespace-tutorial-template"><button type="button" data-apply-starter-template ${canApplyTemplate ? "" : "disabled"}>${icon("plus", { size: 16 })} Usa il modello guidato</button><button class="button-secondary" type="button" data-finish-tutorial>Preferisco partire da zero</button></div>${canApplyTemplate ? "" : `<p class="namespace-tutorial-note">Per applicare il modello, avvia prima una bozza modificabile.</p>`}<button class="button-secondary small" type="button" data-tutorial-previous>${icon("arrowLeft", { size: 14 })} Precedente</button>`
+      : `<div class="namespace-tutorial-navigation"><button class="button-secondary" type="button" data-tutorial-previous ${this.tutorialStep === 0 ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><button type="button" data-tutorial-next>Avanti ${icon("chevron", { size: 14 })}</button></div>`;
+    return `<div class="namespace-tutorial-overlay" data-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="namespace-tutorial-title"><div class="namespace-tutorial-spotlight" data-tutorial-spotlight></div><article class="namespace-tutorial-bubble" data-tutorial-bubble><button class="namespace-tutorial-close" type="button" data-close-tutorial aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="namespace-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.template ? `<ul><li><strong>Creata da</strong> · relazione: “Chi è l'autore?”</li><li><strong>Contesto storico e culturale</strong> · relazione: “Quando e dove è stata realizzata?”</li><li><strong>Tecnica e esecuzione</strong> · relazione su materiali e tecniche impiegati</li></ul>` : ""}<div class="namespace-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
+  }
+
+  renderStarterDialog() {
+    if (!this.starterDialogOpen) return "";
+    return `<div class="namespace-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="starter-template-title"><article class="namespace-starter-dialog"><button class="namespace-tutorial-close" type="button" data-cancel-starter-template aria-label="Chiudi">×</button><span class="eyebrow">Modello facoltativo</span><h2 id="starter-template-title">Aggiungere un modello culturale di partenza?</h2><p>Il modello preserva le definizioni che hai inserito. Se riconosce le due voci create da una versione precedente del modello, le corregge spostandole da Presentazione a Relazioni.</p><div class="namespace-starter-preview"><div><strong>3 durate</strong><small>Breve, Media, Approfondita</small></div><div><strong>3 linguaggi</strong><small>Semplice, Divulgativo, Specialistico</small></div><div><strong>4 tipi di soggetto</strong><small>Opera, autore, contesto e tecnica</small></div><div><strong>3 relazioni</strong><small>Creata da, Contesto storico e culturale, Tecnica e esecuzione</small></div></div><div class="button-row"><button type="button" data-apply-starter-template>${icon("plus", { size: 16 })} Aggiungi il modello</button><button class="button-secondary" type="button" data-cancel-starter-template>Annulla</button></div></article></div>`;
+  }
 
   syncSectionNavigation({ scroll = false } = {}) {
     const available = SECTIONS.map(([key]) => key).filter((key) => this.querySelector(`#namespace-${key}`));
@@ -189,14 +375,17 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
   }
 
   render() {
+    this.syncOverlayLock();
     if (!this.data) { this.innerHTML = `<main class="page namespace-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento regole editoriali…")}</p></main>`; return; }
     const { namespace, revision, availableOperations } = this.data; const editable = has(availableOperations, "namespace.revision.update"); const definitions = revision?.definitions || Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, []]));
     const visibleSections = revision ? SECTIONS : SECTIONS.filter(([field]) => field === "general");
     const nav = visibleSections.map(([field, label]) => { const count = DEFINITION_FIELDS.includes(field) ? (definitions[field] || []).length : null; return `<button type="button" id="namespace-tab-${field}" role="tab" data-namespace-section="${field}" aria-controls="namespace-${field}">${escapeHtml(label)}${count !== null ? `<span>${count}</span>` : ""}</button>`; }).join("");
     const collections = revision ? DEFINITION_FIELDS.map((field) => this.renderCollection(field, definitions, editable)).join("") : ""; const mappings = revision ? this.renderMappings(definitions, editable) : "";
     const leavePanel = this.leaveConfirmation ? `<section class="confirmation-panel namespace-confirmation" role="alert"><div><strong>Uscire senza salvare?</strong><p>Le modifiche non salvate alle regole editoriali andranno perse.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-leave>Esci senza salvare</button><button class="button-secondary" type="button" data-cancel-leave>Resta nell'editor</button></div></section>` : "";
-    this.innerHTML = `<main class="page namespace-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} ${namespace.owner.type === "organization" ? "Organizzazione" : "Account e organizzazioni"}</button><span>/</span><span>Regole editoriali</span></nav><header class="namespace-editor-header"><div><span class="eyebrow">Regole editoriali ${namespace.owner.type === "organization" ? "dell'organizzazione" : "personali"}</span><h1>${escapeHtml(namespace.name)}</h1><p>${escapeHtml(namespace.description || "Configura il vocabolario e i criteri usati durante l'authoring.")}</p></div><div class="namespace-editor-status"><span class="chip">${escapeHtml(sourceLabel(namespace.source))}</span>${revision ? `<span class="chip">Versione ${revision.version}</span><span class="chip">${escapeHtml(statusLabel(revision.status))}</span>` : ""}<span class="chip" data-dirty-indicator data-tone="${this.dirty ? "warning" : "success"}">${icon(this.dirty ? "warning" : "check", { size: 14 })} ${this.dirty ? "Modifiche non salvate" : "Tutto salvato"}</span></div></header>${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${leavePanel}<div class="namespace-editor-layout"><aside class="namespace-editor-nav"><nav role="tablist" aria-orientation="vertical" aria-label="Sezioni regole editoriali">${nav}</nav><details class="technical-details"><summary>Dettagli tecnici</summary><dl class="definition-list"><div><dt>Namespace ID</dt><dd><code>${escapeHtml(namespace.id)}</code></dd></div>${revision ? `<div><dt>NamespaceRevision ID</dt><dd><code>${escapeHtml(revision.id)}</code></dd></div>` : ""}</dl></details></aside><div class="namespace-editor-content">${this.renderGeneral(namespace, revision, availableOperations)}${revision ? `<form data-definitions><fieldset class="definitions-fieldset" ${editable ? "" : "disabled"}>${collections}${mappings}</fieldset>${editable ? `<div class="namespace-savebar"><div><strong>${this.dirty ? "Hai modifiche da salvare" : "Bozza salvata"}</strong><small>Nome, definizioni e mapping vengono salvati insieme dal punto di vista dell'editor.</small></div><button type="submit" data-save-all ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Salva modifiche</button></div>` : ""}</form>` : `<div class="empty-state"><h3>Nessuna revisione disponibile</h3><p>Avvia una bozza dalla sezione Generale per iniziare a configurare le regole.</p></div>`}</div></div></main>`;
+    this.innerHTML = `<main class="page namespace-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} ${namespace.owner.type === "organization" ? "Organizzazione" : "Account e organizzazioni"}</button><span>/</span><span>Regole editoriali</span></nav><header class="namespace-editor-header" data-tutorial-anchor="overview"><div class="namespace-editor-heading"><span class="eyebrow">Regole editoriali ${namespace.owner.type === "organization" ? "dell'organizzazione" : "personali"}</span><h1>${escapeHtml(namespace.name)}</h1><p>${escapeHtml(namespace.description || "Configura le indicazioni che guideranno chi scrive i contenuti.")}</p></div><div class="namespace-editor-side"><div class="namespace-editor-actions"><button class="button-secondary" type="button" data-start-tutorial>${icon("info", { size: 16 })} Ripeti tutorial</button><button type="button" data-open-starter-template ${editable ? "" : "disabled"}>${icon("plus", { size: 16 })} Usa modello guidato</button></div><div class="namespace-editor-status"><span class="chip">${escapeHtml(sourceLabel(namespace.source))}</span>${revision ? `<span class="chip">Versione ${revision.version}</span><span class="chip">${escapeHtml(statusLabel(revision.status))}</span>` : ""}<span class="chip" data-dirty-indicator data-tone="${this.dirty ? "warning" : "success"}">${icon(this.dirty ? "warning" : "check", { size: 14 })} ${this.dirty ? "Modifiche non salvate" : "Tutto salvato"}</span></div></div></header>${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${leavePanel}<div class="namespace-editor-layout"><aside class="namespace-editor-nav" data-tutorial-anchor="sections"><nav role="tablist" aria-orientation="vertical" aria-label="Sezioni regole editoriali">${nav}</nav><details class="technical-details"><summary>Dettagli tecnici</summary><dl class="definition-list"><div><dt>Namespace ID</dt><dd><code>${escapeHtml(namespace.id)}</code></dd></div>${revision ? `<div><dt>NamespaceRevision ID</dt><dd><code>${escapeHtml(revision.id)}</code></dd></div>` : ""}</dl></details></aside><div class="namespace-editor-content">${this.renderGeneral(namespace, revision, availableOperations)}${revision ? `<form data-definitions><fieldset class="definitions-fieldset" ${editable ? "" : "disabled"}>${collections}${mappings}</fieldset>${editable ? `<div class="namespace-savebar"><div><strong>${this.dirty ? "Hai modifiche da salvare" : "Bozza salvata"}</strong><small>Salva per rendere effettive tutte le modifiche fatte in questa sezione.</small></div><button type="submit" data-save-all ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Salva modifiche</button></div>` : ""}</form>` : `<div class="empty-state"><h3>Nessuna revisione disponibile</h3><p>Avvia una bozza dalla sezione Generale per iniziare a configurare le regole.</p></div>`}</div></div></main>${this.renderStarterDialog()}${this.renderTutorial()}`;
     this.syncSectionNavigation();
+    if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial());
+    else if (this.starterDialogOpen) requestAnimationFrame(() => this.querySelector("[data-apply-starter-template]")?.focus());
   }
 }
 customElements.define("artaround-namespace-editor-view", ArtAroundNamespaceEditorView);

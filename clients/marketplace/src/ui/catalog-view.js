@@ -18,6 +18,7 @@ const TYPE_OPTIONS = [
   ["collections", "Raccolte editoriali"],
   ["rules", "Regole editoriali"],
 ];
+const MIN_VENUE_QUERY_LENGTH = 2;
 
 function readState() {
   const params = new URLSearchParams(window.location.search);
@@ -142,31 +143,37 @@ export class ArtAroundCatalogView extends HTMLElement {
     return (this.venueSelector?.organizations || []).flatMap((organization) => (organization.venues || []).map((venue) => ({ ...venue, organizationName: organization.name }))).filter((venue) => selected.has(String(venue.id)));
   }
 
-  venueCount() {
-    return (this.venueSelector?.organizations || []).reduce((total, organization) => total + (organization.venues || []).length, 0);
-  }
-
   matchingVenueCount() {
     const query = normalizeVenueSearch(this.venueQuery);
-    if (!query) return this.venueCount();
+    if (query.length < MIN_VENUE_QUERY_LENGTH) return 0;
     return (this.venueSelector?.organizations || []).reduce((total, organization) => total + (organization.venues || []).filter((venue) => normalizeVenueSearch(`${venue.name} ${venue.description || ""} ${organization.name}`).includes(query)).length, 0);
   }
 
   filterVenueOptions() {
     const query = normalizeVenueSearch(this.venueQuery);
+    const searchReady = query.length >= MIN_VENUE_QUERY_LENGTH;
     let visible = 0;
     this.querySelectorAll("[data-venue-option]").forEach((option) => {
-      const matches = !query || String(option.dataset.venueSearchText || "").includes(query);
+      const matches = searchReady && String(option.dataset.venueSearchText || "").includes(query);
       option.hidden = !matches;
       if (matches) visible += 1;
     });
     this.querySelectorAll("[data-venue-group]").forEach((group) => {
-      group.hidden = ![...group.querySelectorAll("[data-venue-option]")].some((option) => !option.hidden);
+      const groupVisible = [...group.querySelectorAll("[data-venue-option]")].filter((option) => !option.hidden).length;
+      group.hidden = !searchReady || groupVisible === 0;
+      const groupCount = group.querySelector("[data-venue-group-count]");
+      if (groupCount) groupCount.textContent = String(groupVisible);
     });
     const count = this.querySelector("[data-venue-result-count]");
-    if (count) count.textContent = query ? `${visible} ${visible === 1 ? "sede trovata" : "sedi trovate"}` : `${this.venueCount()} sedi disponibili`;
+    if (count) count.textContent = !query ? "I risultati compariranno dopo la ricerca." : !searchReady ? `Scrivi almeno ${MIN_VENUE_QUERY_LENGTH} caratteri.` : `${visible} ${visible === 1 ? "sede trovata" : "sedi trovate"}`;
+    const results = this.querySelector("[data-venue-results]");
+    if (results) results.hidden = !searchReady || visible === 0;
+    const prompt = this.querySelector("[data-venue-search-prompt]");
+    if (prompt) prompt.hidden = searchReady;
+    const promptText = this.querySelector("[data-venue-search-prompt-text]");
+    if (promptText) promptText.textContent = query ? `Aggiungi ancora ${MIN_VENUE_QUERY_LENGTH - query.length} carattere per vedere i risultati.` : "Scrivi il nome di un museo, una sede o un'organizzazione.";
     const empty = this.querySelector("[data-no-venue-results]");
-    if (empty) empty.hidden = visible > 0;
+    if (empty) empty.hidden = !searchReady || visible > 0;
     const clear = this.querySelector("button[data-clear-venue-search]");
     if (clear) clear.hidden = !query;
   }
@@ -174,19 +181,21 @@ export class ArtAroundCatalogView extends HTMLElement {
   renderVenueFilters() {
     const selected = new Set(this.state.selectedVenueIds);
     const query = normalizeVenueSearch(this.venueQuery);
+    const searchReady = query.length >= MIN_VENUE_QUERY_LENGTH;
     let visibleCount = 0;
     const groups = (this.venueSelector?.organizations || []).map((organization) => {
-      let groupVisible = false;
+      let groupVisibleCount = 0;
       const venues = (organization.venues || []).map((venue) => {
         const searchText = normalizeVenueSearch(`${venue.name} ${venue.description || ""} ${organization.name}`);
-        const visible = !query || searchText.includes(query);
-        if (visible) { visibleCount += 1; groupVisible = true; }
+        const visible = searchReady && searchText.includes(query);
+        if (visible) { visibleCount += 1; groupVisibleCount += 1; }
         return `<label class="consumer-venue-choice" data-venue-option data-venue-search-text="${escapeHtml(searchText)}" ${visible ? "" : "hidden"}><input type="checkbox" name="selectedVenueIds" value="${escapeHtml(venue.id)}" ${selected.has(String(venue.id)) ? "checked" : ""}><span><strong>${escapeHtml(venue.name)}</strong>${venue.description ? `<small>${escapeHtml(venue.description)}</small>` : ""}</span></label>`;
       }).join("");
-      return `<fieldset class="consumer-venue-group" data-venue-group ${groupVisible ? "" : "hidden"}><legend><span>${escapeHtml(organization.name)}</span><small>${(organization.venues || []).length}</small></legend>${venues}</fieldset>`;
+      return `<fieldset class="consumer-venue-group" data-venue-group ${groupVisibleCount ? "" : "hidden"}><legend><span>${escapeHtml(organization.name)}</span><small data-venue-group-count>${groupVisibleCount}</small></legend>${venues}</fieldset>`;
     }).join("");
     if (!groups) return `<p class="muted">Nessuna sede disponibile per il filtro.</p>`;
-    return `<div class="consumer-venue-results" data-venue-results>${groups}</div><p class="consumer-venue-empty" data-no-venue-results ${visibleCount ? "hidden" : ""}>Nessuna sede corrisponde alla ricerca. Prova con un altro nome.</p>`;
+    const prompt = !query ? "Scrivi il nome di un museo, una sede o un'organizzazione." : `Aggiungi ancora ${MIN_VENUE_QUERY_LENGTH - query.length} carattere per vedere i risultati.`;
+    return `<div class="consumer-venue-prompt" data-venue-search-prompt ${searchReady ? "hidden" : ""}><span>${icon("search", { size: 20 })}</span><div><strong>Cerca prima di scegliere</strong><small data-venue-search-prompt-text>${escapeHtml(prompt)}</small></div></div><div class="consumer-venue-results" data-venue-results ${searchReady && visibleCount ? "" : "hidden"}>${groups}</div><p class="consumer-venue-empty" data-no-venue-results ${searchReady && !visibleCount ? "" : "hidden"}>Nessuna sede corrisponde alla ricerca. Prova con un altro nome.</p>`;
   }
 
   renderCard(entry) {
@@ -210,13 +219,15 @@ export class ArtAroundCatalogView extends HTMLElement {
     const page = Number(this.catalog?.page) || this.state.page;
     const pageSize = Number(this.catalog?.pageSize) || 20;
     const selectedVenues = this.selectedVenues();
-    const venueCount = this.venueCount();
     const matchingVenueCount = this.matchingVenueCount();
     const cards = (this.catalog?.results || []).map((entry) => this.renderCard(entry)).join("");
     const typeOptions = TYPE_OPTIONS.map(([value, label]) => `<option value="${value}" ${this.state.type === value ? "selected" : ""}>${label}</option>`).join("");
     const noResults = !this.busy && this.catalog && total === 0;
     const selectedVenueSummary = selectedVenues.length ? `<aside class="selected-venues" aria-label="Sedi applicate al catalogo"><div class="selected-venues__heading"><span>${icon("museum", { size: 16 })}</span><span><strong>${selectedVenues.length} ${selectedVenues.length === 1 ? "sede selezionata" : "sedi selezionate"}</strong><small>Selezione applicata ai risultati.</small></span></div><div class="selected-venue-chips">${selectedVenues.map((venue) => `<button class="selected-venue-chip" type="button" data-remove-selected-venue="${escapeHtml(venue.id)}" title="Rimuovi ${escapeHtml(venue.name)}"><span>${escapeHtml(venue.name)}</span><span aria-hidden="true">×</span></button>`).join("")}</div></aside>` : "";
-    const filterPanel = `<details class="consumer-filters" ${this.filterCount() || this.venueQuery ? "open" : ""}><summary><span>Filtri</span><span class="consumer-filter-count">${this.filterCount()}</span></summary><div class="consumer-filters__body"><section class="consumer-filter-kind" aria-labelledby="catalog-type-title"><div><span class="eyebrow">Formato</span><strong id="catalog-type-title">Che cosa cerchi?</strong><small>Restringi il catalogo a una categoria.</small></div><label for="catalog-type">Tipo di risorsa<select id="catalog-type" name="type">${typeOptions}</select></label></section><section class="consumer-venues" aria-labelledby="catalog-venues-title"><div class="consumer-venues__heading"><div><span class="eyebrow">Luogo</span><strong id="catalog-venues-title">Musei e sedi</strong><small id="venue-filter-help">Cerca per nome, descrizione o organizzazione e seleziona anche più sedi.</small></div><span class="consumer-venue-selection-count">${selectedVenues.length} selezionate</span></div><div class="consumer-venue-search"><label for="catalog-venue-q">Cerca tra ${venueCount} ${venueCount === 1 ? "sede" : "sedi"}</label><div class="consumer-venue-search__control"><span class="input-icon">${icon("search", { size: 16 })}<input id="catalog-venue-q" type="search" data-venue-search value="${escapeHtml(this.venueQuery)}" placeholder="Nome del museo, sede o organizzazione…" autocomplete="off" aria-describedby="venue-filter-help venue-result-count"></span><button class="button-secondary small" type="button" data-clear-venue-search ${normalizeVenueSearch(this.venueQuery) ? "" : "hidden"}>Cancella</button></div><small id="venue-result-count" data-venue-result-count aria-live="polite">${this.venueQuery ? `${matchingVenueCount} ${matchingVenueCount === 1 ? "sede trovata" : "sedi trovate"}` : `${venueCount} sedi disponibili`}</small></div>${this.renderVenueFilters()}</section><div class="consumer-filters__actions"><button type="submit" ${this.busy ? "disabled" : ""}>Applica filtri</button>${this.filterCount() || this.state.q ? `<button class="button-secondary" type="button" data-clear-catalog>Rimuovi tutti i filtri</button>` : ""}</div></div></details>`;
+    const normalizedVenueQuery = normalizeVenueSearch(this.venueQuery);
+    const venueSearchReady = normalizedVenueQuery.length >= MIN_VENUE_QUERY_LENGTH;
+    const venueResultLabel = !normalizedVenueQuery ? "I risultati compariranno dopo la ricerca." : !venueSearchReady ? `Scrivi almeno ${MIN_VENUE_QUERY_LENGTH} caratteri.` : `${matchingVenueCount} ${matchingVenueCount === 1 ? "sede trovata" : "sedi trovate"}`;
+    const filterPanel = `<details class="consumer-filters" ${this.filterCount() || this.venueQuery ? "open" : ""}><summary><span>Filtri</span><span class="consumer-filter-count">${this.filterCount()}</span></summary><div class="consumer-filters__body"><section class="consumer-filter-kind" aria-labelledby="catalog-type-title"><div><span class="eyebrow">Formato</span><strong id="catalog-type-title">Che cosa cerchi?</strong><small>Restringi il catalogo a una categoria.</small></div><label for="catalog-type">Tipo di risorsa<select id="catalog-type" name="type">${typeOptions}</select></label></section><section class="consumer-venues" aria-labelledby="catalog-venues-title"><div class="consumer-venues__heading"><div><span class="eyebrow">Luogo</span><strong id="catalog-venues-title">Musei e sedi</strong><small id="venue-filter-help">Le organizzazioni e le sedi vengono mostrate soltanto dopo una ricerca.</small></div><span class="consumer-venue-selection-count">${selectedVenues.length} selezionate</span></div><div class="consumer-venue-search"><label for="catalog-venue-q">Cerca una sede o un'organizzazione</label><div class="consumer-venue-search__control"><span class="input-icon">${icon("search", { size: 16 })}<input id="catalog-venue-q" type="search" data-venue-search value="${escapeHtml(this.venueQuery)}" placeholder="Nome del museo, sede o organizzazione…" autocomplete="off" aria-describedby="venue-filter-help venue-result-count"></span><button class="button-secondary small" type="button" data-clear-venue-search ${normalizedVenueQuery ? "" : "hidden"}>Cancella</button></div><small id="venue-result-count" data-venue-result-count aria-live="polite">${venueResultLabel}</small></div>${this.renderVenueFilters()}</section><div class="consumer-filters__actions"><button type="submit" ${this.busy ? "disabled" : ""}>Applica filtri</button>${this.filterCount() || this.state.q ? `<button class="button-secondary" type="button" data-clear-catalog>Rimuovi tutti i filtri</button>` : ""}</div></div></details>`;
     this.innerHTML = `<main class="page consumer-catalog" aria-busy="${this.busy}">${renderExploreNavigation("catalog")}<header class="consumer-catalog__intro"><span class="eyebrow">Catalogo ArtAround</span><h1>Trova contenuti e visite da usare.</h1><p>Cerca per titolo o descrizione. Per luogo, puoi trovare rapidamente una sede anche in cataloghi con centinaia di musei.</p></header><form class="consumer-search" data-catalog-search role="search"><div class="consumer-search__bar"><label class="sr-only" for="catalog-q">Cerca nel catalogo</label><span class="input-icon">${icon("search")}<input id="catalog-q" name="q" value="${escapeHtml(this.state.q)}" placeholder="Cerca contenuti, visite o raccolte…"></span><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></div>${filterPanel}</form>${selectedVenueSummary}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="catalog-results" aria-live="polite"><div class="results-toolbar"><div><span class="eyebrow">Risultati</span><strong>${total} ${total === 1 ? "risorsa" : "risorse"}</strong></div>${total ? `<span class="muted">Pagina ${page}</span>` : ""}</div>${this.busy && !this.catalog ? `<div class="catalog-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : noResults ? `<div class="empty-state"><span>${icon("search", { size: 28 })}</span><h3>Nessun risultato</h3><p>Prova una ricerca più ampia oppure rimuovi alcuni filtri.</p><button type="button" data-clear-catalog>Mostra tutto il catalogo</button></div>` : `<div class="catalog-grid">${cards}</div>`}${total ? `<nav class="pagination" aria-label="Pagine del catalogo"><button type="button" data-catalog-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${page}</span><button type="button" data-catalog-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</section></main>`;
   }
 }

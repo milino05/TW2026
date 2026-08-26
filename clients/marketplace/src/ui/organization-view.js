@@ -34,9 +34,11 @@ export class ArtAroundOrganizationView extends HTMLElement {
 
   async execute(callback, message) {
     this.busy = true; this.error = null; this.message = null; this.render();
-    try { await callback(); this.message = message; this.data = await managementRepository.organization(this.state.organizationId, this.state); }
+    let result = null;
+    try { result = await callback(); this.message = message; this.data = await managementRepository.organization(this.state.organizationId, this.state); }
     catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; }
     finally { this.busy = false; this.render(); }
+    return result;
   }
 
   onClick = async (event) => {
@@ -70,7 +72,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
     if (form.matches("[data-update-organization]")) { event.preventDefault(); await this.execute(() => accountRepository.updateOrganization(this.state.organizationId, { name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Organizzazione aggiornata."); }
     else if (form.matches("[data-add-member]")) { event.preventDefault(); await this.execute(() => accountRepository.addOrganizationMember(this.state.organizationId, { username: String(data.get("username") || ""), role: "operator" }), "Persona aggiunta come operatore."); }
     else if (form.matches("[data-create-venue]")) { event.preventDefault(); await this.execute(() => accountRepository.createVenue({ ownerOrganizationId: this.state.organizationId, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Sede creata."); }
-    else if (form.matches("[data-create-namespace]")) { event.preventDefault(); await this.execute(() => accountRepository.createNamespace({ ownerType: "organization", ownerId: this.state.organizationId, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Regole editoriali create."); }
+    else if (form.matches("[data-create-namespace]")) { event.preventDefault(); const created = await this.execute(() => accountRepository.createNamespace({ ownerType: "organization", ownerId: this.state.organizationId, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Regole editoriali create."); const createdId = created?.namespace?._id || created?.namespace?.id; if (createdId) navigate(`/namespaces/editor?namespaceId=${encodeURIComponent(createdId)}`); }
   };
 
   renderRemovalConfirmation() {
@@ -105,7 +107,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
   renderRules() {
     const { organization, namespaces } = this.data;
     const cards = namespaces.results.map((namespace) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("book", { size: 19 })}</span><div><span class="eyebrow">${escapeHtml(rulesStateLabel(namespace.state))}</span><h3>${escapeHtml(namespace.name)}</h3></div></header><p>${escapeHtml(namespace.description || "Nessuna descrizione disponibile.")}</p><button type="button" data-namespace="${escapeHtml(namespace.id)}">Modifica regole editoriali ${icon("chevron", { size: 15 })}</button></article>`).join("");
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Regole editoriali dell'organizzazione</h2><p>Vocabolari, livelli, durate e criteri usati dai contenuti dell'organizzazione.</p></div><span class="count">${namespaces.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 25 })}<h3>Nessuna regola editoriale</h3><p>Crea le regole che guideranno l'authoring dell'organizzazione.</p></div>`}</div>${pagination("namespace", namespaces)}${has(organization.availableOperations, "namespace.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuove regole editoriali</summary><form data-create-namespace><label>Nome<input name="name" required placeholder="Nome delle regole editoriali"></label><label>Descrizione<textarea name="description" placeholder="Ambito e finalità editoriali"></textarea></label><button>${icon("plus", { size: 16 })} Crea</button></form></details>` : ""}</section>`;
+    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Regole editoriali dell'organizzazione</h2><p>Vocabolari, livelli, durate e criteri usati dai contenuti dell'organizzazione.</p></div><span class="count">${namespaces.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 25 })}<h3>Nessuna regola editoriale</h3><p>Crea le regole che guideranno l'authoring dell'organizzazione.</p></div>`}</div>${pagination("namespace", namespaces)}${has(organization.availableOperations, "namespace.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuove regole editoriali</summary><form data-create-namespace><div class="namespace-create-intro"><strong>Da dove si parte?</strong><p>Crea il contenitore delle regole: nella schermata successiva troverai spiegazioni, tutorial e un modello già pronto facoltativo.</p></div><label>Nome<input name="name" required placeholder="Es. Regole della collezione permanente"><small>Usa un nome che faccia capire a quale progetto o collezione si applicano.</small></label><label>Scopo e pubblico<textarea name="description" placeholder="Es. Indicazioni per raccontare le opere a un pubblico adulto non specialista."></textarea><small>Descrivi in una frase per quali contenuti e visitatori sono pensate.</small></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details>` : ""}</section>`;
   }
 
   renderCurrentSection() {
