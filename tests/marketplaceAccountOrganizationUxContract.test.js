@@ -33,6 +33,18 @@ test("Account usa IA user-facing per preferenze e strumenti personali", () => {
   assert.match(profile, /data-organization-section="rules"/);
 });
 
+test("le scorciatoie Account navigano alle sezioni e mantengono il deep link", () => {
+  for (const section of ["account-overview", "account-preferences", "account-organizations", "account-rules"]) {
+    assert.match(profile, new RegExp(`data-account-section="${section}"`));
+    assert.match(profile, new RegExp(`id="${section}" tabindex="-1"`));
+  }
+  assert.match(profile, /event\.preventDefault\(\);[\s\S]*?scrollToSection\(accountSection\.dataset\.accountSection/);
+  assert.match(profile, /window\.history\.pushState/);
+  assert.match(profile, /section\.scrollIntoView\(\{ behavior, block: "start" \}\)/);
+  assert.match(profile, /section\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(profile, /accountSectionFromHash/);
+});
+
 test("la creazione Organization è centralizzata nel Context Hub", () => {
   assert.doesNotMatch(profile, /data-create-organization/);
   assert.match(profile, /data-context-hub/);

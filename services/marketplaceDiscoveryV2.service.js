@@ -3,6 +3,7 @@ const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
+const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -16,13 +17,14 @@ function textQuery(q) {
 
 async function organizationCounts(organizationIds) {
   if (!organizationIds.length) return new Map();
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
   const [venueCounts, listingCounts] = await Promise.all([
     Venue.aggregate([
       { $match: { ownerOrganizationId: { $in: organizationIds }, lifecycleStatus: "active", publishedReleaseId: { $ne: null } } },
       { $group: { _id: "$ownerOrganizationId", count: { $sum: 1 } } },
     ]),
     MarketplaceListing.aggregate([
-      { $match: { sellerType: "organization", sellerId: { $in: organizationIds }, status: "published" } },
+      { $match: { _id: { $in: activeListingIds }, sellerType: "organization", sellerId: { $in: organizationIds }, status: "published" } },
       { $group: { _id: "$sellerId", count: { $sum: 1 } } },
     ]),
   ]);
@@ -52,9 +54,10 @@ async function organizationDirectory({ q = "", page = 1, limit = 12 } = {}) {
 async function organizationPublicProfile({ organizationId }) {
   const organization = await Organization.findOne({ _id: organizationId, lifecycleStatus: "active" }).select("name description").lean();
   if (!organization) throw new AppError("Organizzazione non trovata", 404);
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
   const [venues, publications] = await Promise.all([
     Venue.find({ ownerOrganizationId: organization._id, lifecycleStatus: "active", publishedReleaseId: { $ne: null } }).sort({ name: 1 }).select("name description publishedReleaseId").lean(),
-    MarketplaceListing.find({ sellerType: "organization", sellerId: organization._id, status: "published" }).sort({ publishedAt: -1, _id: -1 }).limit(8).select("title summary resourceType publishedAt").lean(),
+    MarketplaceListing.find({ _id: { $in: activeListingIds }, sellerType: "organization", sellerId: organization._id, status: "published" }).sort({ publishedAt: -1, _id: -1 }).limit(8).select("title summary resourceType publishedAt").lean(),
   ]);
   return {
     organization: { id: organization._id, name: organization.name, description: organization.description || "" },

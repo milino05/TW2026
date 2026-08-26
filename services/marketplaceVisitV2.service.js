@@ -1,4 +1,5 @@
 const MarketplaceListing = require("../models/marketplaceListing.model");
+const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const VenueTarget = require("../models/venueTarget.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
@@ -20,7 +21,7 @@ async function createVisitListing({ visitId, sellerType, sellerId, actorUserId }
 }
 
 async function createVisitExecuteOffer({ listingId, payload = {}, actorUserId }) {
-  const listing = await MarketplaceListing.findOne({ _id: listingId, resourceType: "visit", status: "published" }).lean();
+  const listing = await MarketplaceListing.findOne({ _id: listingId, resourceType: "visit", status: { $in: ["draft", "published"] } }).lean();
   if (!listing) throw new AppError("Listing Visit non disponibile", 404);
   return marketplace.createOffer({
     listingId,
@@ -62,7 +63,8 @@ async function listVisitCatalog({ actorUserId, venueId = null, page = 1, limit =
   const safeLimit = clampLimit(limit);
   const safePage = Math.max(1, Number(page) || 1);
   const venueVisitIds = await catalogVisitIdsForVenue(venueId);
-  const query = { resourceType: "visit", status: "published" };
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
+  const query = { resourceType: "visit", status: "published", _id: { $in: activeListingIds } };
   if (venueVisitIds) query.resourceId = { $in: venueVisitIds };
   const [listings, total] = await Promise.all([
     MarketplaceListing.find(query).sort({ updatedAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
@@ -80,7 +82,7 @@ async function getVisitListingDetail({ listingId, actorUserId }) {
   const listing = await MarketplaceListing.findOne({ _id: listingId, resourceType: "visit", status: "published" }).lean();
   if (!listing) throw new AppError("Listing Visit non disponibile", 404);
   const projection = await marketplace.projectCatalogListing({ listing, actorUserId });
-  if (!projection) throw new AppError("La risorsa del Listing non e disponibile", 409);
+  if (!projection) throw new AppError("La visita non è disponibile: serve almeno un'offerta attiva", 404, [{ code: "ACTIVE_OFFER_REQUIRED" }]);
   return enrichVisitProjection(projection);
 }
 

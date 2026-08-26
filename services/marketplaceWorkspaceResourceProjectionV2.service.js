@@ -14,7 +14,7 @@ function workflowState(revision) {
 
 function ownedOperations({ published, listing, canManageCommerce = true }) {
   const operations = [{ code: "open_editor", label: "Apri editor" }];
-  if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Pubblica nel Marketplace" });
+  if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Configura offerta e pubblica" });
   if (canManageCommerce && listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
   return operations;
 }

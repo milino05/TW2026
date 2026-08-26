@@ -23,6 +23,7 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     const VenueTarget = require("../models/venueTarget.model");
     const VenueRelease = require("../models/venueRelease.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const {
       organizationDirectory,
       organizationPublicProfile,
@@ -60,7 +61,7 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     publishedVenue.publishedReleaseId = release._id;
     await publishedVenue.save();
 
-    await MarketplaceListing.create({
+    const organizationListing = await MarketplaceListing.create({
       sellerType: "organization",
       sellerId: organization._id,
       resourceType: "visit",
@@ -68,6 +69,14 @@ test("Marketplace discovery projects only published Venue state and keeps publis
       title: "Visita della rete",
       summary: "Pubblicazione editoriale",
       status: "published",
+      createdBy: actorId,
+    });
+    await MarketplaceOffer.create({
+      listingId: organizationListing._id,
+      label: "Accesso alla visita",
+      pricing: { type: "free" },
+      grants: [{ resourceType: "visit", resourceId: organizationListing.resourceId, capability: "visit.execute", versionPolicy: "follow_current" }],
+      status: "active",
       createdBy: actorId,
     });
     await MarketplaceListing.create({

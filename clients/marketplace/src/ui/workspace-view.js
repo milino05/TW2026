@@ -53,7 +53,9 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     if (listingButton) {
       const principal = this.principal();
       if (!principal) return;
-      await this.execute(() => marketplaceRepository.createListing({ resourceType: listingButton.dataset.resourceType, resourceId: listingButton.dataset.resourceId, sellerType: principal.principalType, sellerId: principal.principalId }), "La risorsa è ora disponibile nel catalogo");
+      const listing = await this.execute(() => marketplaceRepository.createListing({ resourceType: listingButton.dataset.resourceType, resourceId: listingButton.dataset.resourceId, sellerType: principal.principalType, sellerId: principal.principalId }), "Preparazione creata. Formula l'offerta per pubblicare la risorsa.");
+      const listingId = String(listing?.id || listing?._id || "");
+      if (listingId) navigate(`/workspace/commerce?listingId=${encodeURIComponent(listingId)}`);
       return;
     }
     const commerceButton = target?.closest("button[data-commerce-listing]");
@@ -66,11 +68,11 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     await this.executeOperation({ operationCode, sourceRef });
   };
 
-  async execute(callback, successMessage) { this.busy = true; this.error = null; this.message = null; this.render(); try { await callback(); await this.fetchDetail(); this.message = successMessage; } catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; } finally { this.busy = false; this.render(); } }
+  async execute(callback, successMessage) { this.busy = true; this.error = null; this.message = null; this.render(); let result = null; try { result = await callback(); await this.fetchDetail(); this.message = successMessage; } catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; } finally { this.busy = false; this.render(); } return result; }
 
   renderOperations(asset) {
     return (asset.availableOperations || []).map((operation) => {
-      if (operation.code === "create_listing") return `<button type="button" data-create-listing data-resource-type="${escapeHtml(asset.sourceRef?.resourceType || asset.resourceType)}" data-resource-id="${escapeHtml(refId(asset.sourceRef) || asset.resourceId)}">${icon("catalog", { size: 15 })}Pubblica nel catalogo</button>`;
+      if (operation.code === "create_listing") return `<button type="button" data-create-listing data-resource-type="${escapeHtml(asset.sourceRef?.resourceType || asset.resourceType)}" data-resource-id="${escapeHtml(refId(asset.sourceRef) || asset.resourceId)}">${icon("catalog", { size: 15 })}Configura offerta e pubblica</button>`;
       if (operation.code === "open_editor" && asset.ownership === "owned") { const href = authoringHref(asset.authoringRef); if (href) return `<button type="button" data-authoring-href="${escapeHtml(href)}">${icon("edit", { size: 15 })}${escapeHtml(editorLabel(asset.resourceType, operation.label))}</button>`; }
       if (operation.code === "manage_distribution") return `<button type="button" data-commerce-listing="${escapeHtml(asset.listing?.id || "")}">${icon("store", { size: 15 })}Gestisci vendita</button>`;
       if (DIRECT_OPERATIONS.has(operation.code) || isWorkflowOperation(operation.code)) { const source = operation.sourceRef || asset.sourceRef || { resourceType: asset.resourceType, resourceId: asset.resourceId }; return `<button class="button-secondary" type="button" data-operation="${escapeHtml(operation.code)}" data-source-type="${escapeHtml(refType(source))}" data-source-id="${escapeHtml(refId(source))}" data-requires-message="${operation.requiresMessage ? "true" : "false"}">${escapeHtml(operation.label)}</button>`; }
@@ -87,7 +89,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     const editorial = asset.editorialWorkflow ? `<p><strong>Stato editoriale:</strong> ${escapeHtml(resourceStateLabel(asset.editorialWorkflow.status))} · ${escapeHtml(integrityLabel(asset.editorialWorkflow.integrityStatus))}</p>` : "";
     const state = asset.state ? `<span class="status">${escapeHtml(resourceStateLabel(asset.state))}</span>` : "";
     const rights = asset.ownership === "licensed" && (asset.capabilities || []).length ? `<details class="technical-details"><summary>Dettagli dei diritti</summary><p>${asset.capabilities.map(escapeHtml).join(" · ")}</p></details>` : "";
-    const listing = asset.listing ? `<p>${icon("store", { size: 15 })}<strong>Nel catalogo</strong> · ${Number(asset.listing.activeOfferCount) || 0} offerte attive</p>` : "";
+    const listing = asset.listing ? `<p>${icon("store", { size: 15 })}<strong>${asset.listing.status === "published" && Number(asset.listing.activeOfferCount) > 0 ? "Nel catalogo" : "Pubblicazione da completare"}</strong> · ${Number(asset.listing.activeOfferCount) || 0} offerte attive</p>` : "";
     this.innerHTML = `<main class="page resource-page"><nav class="breadcrumb" aria-label="Percorso"><button data-workspace-back type="button">${icon("arrowLeft", { size: 15 })} Libreria</button><span>/</span><span>${escapeHtml(asset.title)}</span></nav>${this.message ? `<p class="status success" role="status">${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="resource-hero"><div class="button-row"><span class="badge">${asset.ownership === "owned" ? "Di proprietà" : "Con licenza"}</span>${state}</div><h1>${escapeHtml(asset.title)}</h1><p>${escapeHtml(resourceLabel(asset.resourceType))}</p>${asset.summary ? `<p>${escapeHtml(asset.summary)}</p>` : ""}${editorial}${listing}${rights}</section><section class="panel resource-actions"><span class="eyebrow">Cosa puoi fare</span><h2>Azioni disponibili</h2>${this.renderOperationConfirmation()}<div class="operations">${this.renderOperations(asset) || "<p>Nessuna azione disponibile.</p>"}</div><p class="note">Le azioni mostrate dipendono dai tuoi permessi e dallo stato corrente della risorsa.</p></section></main>`;
   }
 }

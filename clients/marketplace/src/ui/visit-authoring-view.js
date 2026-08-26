@@ -2,6 +2,7 @@ import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
+import { userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") {
@@ -541,7 +542,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     if (this.activeStep !== 6) return "";
     const revision = this.revision; const integrity = revision?.integrity?.status || "needs_review"; const issues = revision?.integrity?.issues || []; const operations = this.workflowOperations(); const published = revision?.status === "published";
     const state = published ? `<div class="readiness success">${icon("check", { size: 20 })}<div><strong>Versione pubblicata</strong><p>Questa VisitRevision è uno snapshot editoriale immutabile.</p></div></div>` : integrity === "valid" ? `<div class="readiness success">${icon("check", { size: 20 })}<div><strong>Controllo superato</strong><p>La visita è coerente e può passare alla pubblicazione.</p></div></div>` : `<div class="readiness warning">${icon("warning", { size: 20 })}<div><strong>Serve un controllo</strong><p>Esegui il controllo dopo le modifiche.</p></div></div>`;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">6</span><div><span class="eyebrow">Riepilogo e pubblicazione</span><h2>Controlla la visita prima di pubblicarla</h2></div></header>${this.reviewSummary()}${state}${issues.length ? `<div class="issue-panel"><strong>Problemi da risolvere</strong><ul>${issues.map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul></div>` : ""}<div class="workflow-panel"><div><h3>Azioni disponibili</h3></div><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("") || `<p>Nessuna azione editoriale disponibile.</p>`}</div></div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">6</span><div><span class="eyebrow">Riepilogo e pubblicazione</span><h2>Controlla la visita prima di pubblicarla</h2></div></header>${this.reviewSummary()}${state}${issues.length ? `<div class="issue-panel"><strong>Problemi da risolvere</strong><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}<div class="workflow-panel"><div><h3>Azioni disponibili</h3></div><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("") || `<p>Nessuna azione editoriale disponibile.</p>`}</div></div></section>`;
   }
 
   render() {

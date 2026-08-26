@@ -105,8 +105,8 @@ async function createListing({ resourceType, resourceId, sellerType, sellerId, a
     title: String(metadata.title ?? marketable.asset.title ?? "").trim(),
     summary: String(metadata.summary ?? marketable.asset.summary ?? "").trim(),
     catalogMetadata: metadata.catalogMetadata || null,
-    status: "published",
-    publishedAt: new Date(),
+    status: "draft",
+    publishedAt: null,
     createdBy: actorUserId,
   });
 }
@@ -154,8 +154,8 @@ async function validateOfferGrants({ listing, grants, actorUserId }) {
 }
 
 async function createOffer({ listingId, payload = {}, actorUserId }) {
-  const listing = await MarketplaceListing.findOne({ _id: listingId, status: "published" }).lean();
-  if (!listing) throw new AppError("MarketplaceListing pubblicata non disponibile", 404);
+  const listing = await MarketplaceListing.findOne({ _id: listingId, status: { $in: ["draft", "published"] } }).lean();
+  if (!listing) throw new AppError("Scheda Marketplace non disponibile", 404);
   await assertCanActForPrincipal({
     actorUserId,
     principalType: listing.sellerType,
@@ -169,15 +169,34 @@ async function createOffer({ listingId, payload = {}, actorUserId }) {
     sellerType: listing.sellerType,
     sellerId: listing.sellerId,
   });
-  return MarketplaceOffer.create({
-    listingId: listing._id,
-    label: String(payload.label || "").trim(),
-    pricing: normalizePricing(payload.pricing || {}),
-    grants,
-    dependencyIntegrity,
-    status: "active",
-    createdBy: actorUserId,
-  });
+  let offer = null;
+  try {
+    offer = await MarketplaceOffer.create({
+      listingId: listing._id,
+      label: String(payload.label || "").trim(),
+      pricing: normalizePricing(payload.pricing || {}),
+      grants,
+      dependencyIntegrity,
+      status: "active",
+      createdBy: actorUserId,
+    });
+    if (listing.status === "draft") {
+      const published = await MarketplaceListing.updateOne(
+        { _id: listing._id, status: "draft" },
+        { $set: { status: "published", publishedAt: new Date(), withdrawnAt: null, withdrawnBy: null } },
+      );
+      if (published.modifiedCount !== 1) {
+        const current = await MarketplaceListing.findById(listing._id).select("status").lean();
+        if (current?.status !== "published") {
+          throw new AppError("La scheda non può essere pubblicata nello stato corrente", 409, [{ code: "LISTING_NOT_PUBLISHABLE" }]);
+        }
+      }
+    }
+    return offer;
+  } catch (error) {
+    if (offer?._id) await MarketplaceOffer.deleteOne({ _id: offer._id }).catch(() => {});
+    throw error;
+  }
 }
 
 async function withdrawOffer({ offerId, actorUserId }) {
@@ -196,6 +215,20 @@ async function withdrawOffer({ offerId, actorUserId }) {
   offer.withdrawnAt = new Date();
   offer.withdrawnBy = actorUserId;
   await offer.save();
+  const hasAnotherActiveOffer = await MarketplaceOffer.exists({ listingId: listing._id, status: "active" });
+  if (!hasAnotherActiveOffer) {
+    await MarketplaceListing.updateOne(
+      { _id: listing._id, status: "published" },
+      { $set: { status: "draft", publishedAt: null } },
+    );
+    const activeOfferCreatedConcurrently = await MarketplaceOffer.exists({ listingId: listing._id, status: "active" });
+    if (activeOfferCreatedConcurrently) {
+      await MarketplaceListing.updateOne(
+        { _id: listing._id, status: "draft" },
+        { $set: { status: "published", publishedAt: new Date() } },
+      );
+    }
+  }
   return offer.toObject();
 }
 
@@ -367,6 +400,7 @@ async function projectCatalogListing({ listing, actorUserId }) {
     MarketplaceOffer.find({ listingId: listing._id, status: "active" }).sort({ createdAt: 1 }).lean(),
     sellerSummary(listing),
   ]);
+  if (!offers.length) return null;
   const availableCapabilities = await viewerCapabilities({ actorUserId, offers });
   return {
     listingId: listing._id,
@@ -401,7 +435,8 @@ async function listCatalog({ actorUserId, page = 1, limit = 20, queryText = "", 
   const safeLimit = clampLimit(limit);
   const safePage = Math.max(1, Number(page) || 1);
   const types = normalizeResourceTypes(resourceTypes);
-  const query = { status: "published" };
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
+  const query = { status: "published", _id: { $in: activeListingIds } };
   if (types) query.resourceType = { $in: types };
   if (sellerType) query.sellerType = sellerType;
   if (sellerId) query.sellerId = sellerId;
@@ -423,7 +458,7 @@ async function getListingDetail({ listingId, actorUserId }) {
   const listing = await MarketplaceListing.findOne({ _id: listingId, status: "published" }).lean();
   if (!listing) throw new AppError("MarketplaceListing non disponibile", 404);
   const projected = await projectCatalogListing({ listing, actorUserId });
-  if (!projected) throw new AppError("La risorsa del Listing non e disponibile", 409);
+  if (!projected) throw new AppError("La scheda non è disponibile: serve almeno un'offerta attiva", 404, [{ code: "ACTIVE_OFFER_REQUIRED" }]);
   return projected;
 }
 

@@ -18,6 +18,7 @@ const detail = read("detail");
 const history = read("history");
 const repository = read("repository");
 const context = read("context");
+const consumerStyles = fs.readFileSync(path.join(root, "clients/marketplace/src/styles/consumer-marketplace.css"), "utf8");
 
 test("catalogo, dettaglio e acquisizioni passano il syntax gate", () => {
   for (const file of Object.values(files)) {
@@ -33,6 +34,19 @@ test("Catalogo mantiene discovery multi-asset, ricerca e filtro multi-sede", () 
   assert.match(catalog, /getAll\("selectedVenueIds"\)/);
   assert.match(catalog, /marketplaceRepository\.catalog/);
   assert.match(catalog, /renderExploreNavigation\("catalog"\)/);
+});
+
+test("il selettore delle sedi resta usabile con centinaia di musei", () => {
+  assert.match(catalog, /data-venue-search/);
+  assert.match(catalog, /normalizeVenueSearch/);
+  assert.match(catalog, /filterVenueOptions\(\)/);
+  assert.match(catalog, /data-venue-search-text/);
+  assert.match(catalog, /data-venue-result-count/);
+  assert.match(catalog, /data-clear-venue-search/);
+  assert.match(catalog, /data-remove-selected-venue/);
+  assert.match(catalog, /event\.key === "Enter"/);
+  assert.match(consumerStyles, /consumer-venue-results\{[^}]*max-height:[^}]*overflow:auto/);
+  assert.match(consumerStyles, /consumer-venue-group legend\{[^}]*position:sticky/);
 });
 
 test("beneficiary commerciale deriva dal Context Hub e non da un selector locale", () => {

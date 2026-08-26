@@ -43,6 +43,12 @@ test("Create Hub deriva l'owner dal contesto di sessione", () => {
   assert.doesNotMatch(create, /principalType|principalId|data-principal-form/);
 });
 
+test("Create Hub mostra una sola remediation e non espone la gestione avanzata", () => {
+  assert.match(create, /if \(!this\.preflight\?\.content\?\.allowed\) return ""/);
+  assert.doesNotMatch(create, /blockerCard\(\{ physical:/);
+  assert.doesNotMatch(create, /Gestione avanzata/);
+});
+
 test("Item e Visit editor non permettono di cambiare principal dall'editor", () => {
   assert.match(item, /readOperatingContext/);
   assert.match(visit, /readOperatingContext/);
@@ -57,6 +63,6 @@ test("flusso da oggetto fisico propaga solo il VenueTarget necessario", () => {
 });
 
 test("Libreria apre Crea senza serializzare il contesto nel link", () => {
-  assert.match(workspace, /href="\/create"/);
+  assert.match(workspace, /createHref\(\) \{ return "\/create"; \}/);
   assert.doesNotMatch(workspace, /\/create\?\$\{p\.toString\(\)\}/);
 });

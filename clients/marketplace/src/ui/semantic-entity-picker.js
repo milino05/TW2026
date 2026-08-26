@@ -247,24 +247,9 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
       return;
     }
 
-    if (form.matches("[data-external-create]")) {
-      await this.run(async () => {
-        if (!this.selectedCandidate) throw new Error("Seleziona prima una corrispondenza verificata");
-        const result = await semanticRepository.createSubjectFromExternalIdentity({
-          scheme: this.selectedCandidate.scheme,
-          id: this.selectedCandidate.requestedId || this.selectedCandidate.id,
-          preferredLabel: String(data.get("preferredLabel") || "").trim(),
-          description: String(data.get("description") || "").trim(),
-          locale: "it",
-        });
-        this.emit("subject-selected", { subject: result.subject, source: result.outcome, resolution: result.resolution });
-        this.notice = result.created ? "Soggetto verificato creato e selezionato." : "Identità già presente: riutilizzato il soggetto esistente.";
-        this.selectedCandidate = null;
-      });
-    }
   };
 
-  onClick = (event) => {
+  onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     const retryExternal = target?.closest("button[data-retry-external]");
     if (retryExternal) {
@@ -312,7 +297,21 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
       return;
     }
     this.selectedCandidate = candidate;
-    this.render();
+    await this.run(async () => {
+      const result = await semanticRepository.createSubjectFromExternalIdentity({
+        scheme: candidate.scheme,
+        id: candidate.requestedId || candidate.id,
+        preferredLabel: candidate.label,
+        description: candidate.description || "",
+        locale: "it",
+      });
+      this.notice = result.created ? "Soggetto verificato creato e selezionato." : "Identità già presente: riutilizzato il soggetto esistente.";
+      this.emit("subject-selected", { subject: result.subject, source: result.outcome, resolution: result.resolution });
+    });
+    if (this.error) {
+      this.selectedCandidate = null;
+      this.render();
+    }
   };
 
   renderLocalResults() {
@@ -331,7 +330,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
         : variant ? "Trovato senza l’articolo iniziale" : "Trovato con la frase inserita";
       return `<span class="query-match">${escapeHtml(label)}</span>`;
     };
-    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">Wikidata</span><strong>${this.mode === "mapping" ? "Concetti esterni" : "Corrispondenze verificate"}</strong></div><span class="result-count">${this.externalResults.length}</span></div><ul class="resolver-results">${this.externalResults.map((candidate) => `<li><div><strong>${escapeHtml(candidate.label || candidate.id)}</strong><small>${escapeHtml(candidate.description || "Nessuna descrizione disponibile")}</small><span class="identity">${escapeHtml(candidate.scheme)} · ${escapeHtml(candidate.id)}${candidate.resolutionStatus === "redirected" ? " · redirect verificato" : ""}</span>${queryMatch(candidate)}${candidate.alreadyBoundSubject ? `<span class="bound">Già presente in ArtAround come ${escapeHtml(candidate.alreadyBoundSubject.preferredLabel)}</span>` : ""}</div><button type="button" data-external-candidate="${escapeHtml(candidate.id)}">${this.mode === "mapping" ? "Aggiungi" : candidate.alreadyBoundSubject ? "Usa esistente" : "Seleziona"}</button></li>`).join("")}</ul>${this.mode === "subject" ? `<div class="result-actions"><span>Nessuna corrispondenza è quella giusta?</span><button class="button-secondary" type="button" data-show-manual>Crea manualmente</button></div>` : ""}</section>`;
+    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">Wikidata</span><strong>${this.mode === "mapping" ? "Concetti esterni" : "Corrispondenze verificate"}</strong></div><span class="result-count">${this.externalResults.length}</span></div><ul class="resolver-results">${this.externalResults.map((candidate) => { const selected = this.mode === "subject" && this.selectedCandidate?.id === candidate.id; const action = this.mode === "mapping" ? "Aggiungi" : candidate.alreadyBoundSubject ? "Usa esistente" : selected ? icon("check", { size: 17 }) : "Seleziona"; return `<li><div><strong>${escapeHtml(candidate.label || candidate.id)}</strong><small>${escapeHtml(candidate.description || "Nessuna descrizione disponibile")}</small><span class="identity">${escapeHtml(candidate.scheme)} · ${escapeHtml(candidate.id)}${candidate.resolutionStatus === "redirected" ? " · redirect verificato" : ""}</span>${queryMatch(candidate)}${candidate.alreadyBoundSubject ? `<span class="bound">Già presente in ArtAround come ${escapeHtml(candidate.alreadyBoundSubject.preferredLabel)}</span>` : ""}</div><button type="button" data-external-candidate="${escapeHtml(candidate.id)}" ${selected ? `aria-label="Soggetto selezionato"` : ""}>${action}</button></li>`; }).join("")}</ul>${this.mode === "subject" ? `<div class="result-actions"><span>Nessuna corrispondenza è quella giusta?</span><button class="button-secondary" type="button" data-show-manual>Crea manualmente</button></div>` : ""}</section>`;
   }
 
   renderSubjectSearch() {
@@ -359,13 +358,11 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
 
   render() {
     const mapping = this.mode === "mapping";
-    const candidate = this.selectedCandidate;
     this.shadowRoot.innerHTML = `<style>
-      :host{display:block}.resolver{display:grid;gap:.8rem;padding:.9rem;border:1px solid #c9d4cf;border-radius:.75rem;background:#fbfcfa;color:#173e35}.resolver h4{margin:0;color:#173e35}.resolver p{margin:.15rem 0;color:#5e6d67}.resolver form{display:flex;gap:.5rem;align-items:end;flex-wrap:wrap}.resolver label{display:grid;gap:.3rem;flex:1;min-width:12rem;font-size:.82rem;font-weight:700}.resolver input,.resolver select,.resolver textarea{box-sizing:border-box;width:100%;padding:.62rem;border:1px solid #aebbb5;border-radius:.5rem;background:#fff;font:inherit}.resolver input:focus,.resolver select:focus,.resolver textarea:focus{outline:3px solid #b9d9cf;outline-offset:1px;border-color:#2f7561}.resolver button{padding:.6rem .76rem;border:0;border-radius:.5rem;background:#173e35;color:white;font:inherit;font-weight:750;cursor:pointer}.resolver button:disabled{cursor:wait;opacity:.6}.resolver .button-secondary{border:1px solid #8ea69e;background:#fff;color:#173e35}.unified-search{padding:.35rem;border-radius:.65rem;background:#eef3f0}.search-explanation{font-size:.8rem}.result-group{display:grid;gap:.5rem}.result-heading{display:flex;align-items:end;justify-content:space-between;gap:.5rem}.result-heading>div{display:grid;gap:.12rem}.result-source{display:block;color:#2f7561;font-size:.7rem;font-weight:850;letter-spacing:.07em;text-transform:uppercase}.result-count{display:grid;place-items:center;min-width:1.8rem;min-height:1.8rem;border-radius:999px;background:#dce9e4;font-size:.75rem;font-weight:850}.resolver-results{display:grid;gap:.45rem;padding:0;margin:0;list-style:none}.resolver-results li{display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding:.72rem;border:1px solid #d7e0dc;border-radius:.6rem;background:#fff}.resolver-results li>div{min-width:0}.resolver-results small,.resolver-results span{display:block}.identity{margin-top:.25rem;font:700 .72rem/1.2 ui-monospace,monospace;color:#46625a}.query-match{margin-top:.28rem;color:#5e6d67;font-size:.72rem;font-weight:750}.bound{margin-top:.3rem;padding:.28rem .38rem;border-radius:.35rem;background:#dcefe7;color:#176143;font-size:.75rem;font-weight:800}.result-actions,.continue-search,.provider-retry{display:flex;align-items:center;justify-content:space-between;gap:.65rem;padding:.6rem;border-radius:.55rem;background:#eef3f0;font-size:.78rem}.continue-search>div,.provider-retry>div{display:grid;gap:.1rem}.continue-search small,.provider-retry span{color:#5e6d67}.provider-retry{border:1px solid #d6c58c;background:#fff9e8}.resolver-feedback{padding:.6rem;border-radius:.5rem;background:#eef3f0}.resolver-error{background:#f8e8e4;color:#842f22}.external-confirm,.manual-create{display:grid;gap:.55rem;padding:.75rem;border-left:3px solid #2f7561;background:#eef5f2}.external-confirm form,.manual-create form{display:grid}.attribution{font-size:.72rem;color:#285f50}@media(max-width:560px){.resolver{padding:.72rem}.resolver form,.resolver-results li,.result-actions,.continue-search,.provider-retry{align-items:stretch;flex-direction:column}.resolver button{width:100%}.resolver label{min-width:0}}
+      :host{display:block}.resolver{display:grid;gap:.8rem;padding:.9rem;border:1px solid #c9d4cf;border-radius:.75rem;background:#fbfcfa;color:#173e35}.resolver h4{margin:0;color:#173e35}.resolver p{margin:.15rem 0;color:#5e6d67}.resolver form{display:flex;gap:.5rem;align-items:end;flex-wrap:wrap}.resolver label{display:grid;gap:.3rem;flex:1;min-width:12rem;font-size:.82rem;font-weight:700}.resolver input,.resolver select,.resolver textarea{box-sizing:border-box;width:100%;padding:.62rem;border:1px solid #aebbb5;border-radius:.5rem;background:#fff;font:inherit}.resolver input:focus,.resolver select:focus,.resolver textarea:focus{outline:3px solid #b9d9cf;outline-offset:1px;border-color:#2f7561}.resolver button{padding:.6rem .76rem;border:0;border-radius:.5rem;background:#173e35;color:white;font:inherit;font-weight:750;cursor:pointer}.resolver button:disabled{cursor:wait;opacity:.6}.resolver .button-secondary{border:1px solid #8ea69e;background:#fff;color:#173e35}.unified-search{padding:.35rem;border-radius:.65rem;background:#eef3f0}.search-explanation{font-size:.8rem}.result-group{display:grid;gap:.5rem}.result-heading{display:flex;align-items:end;justify-content:space-between;gap:.5rem}.result-heading>div{display:grid;gap:.12rem}.result-source{display:block;color:#2f7561;font-size:.7rem;font-weight:850;letter-spacing:.07em;text-transform:uppercase}.result-count{display:grid;place-items:center;min-width:1.8rem;min-height:1.8rem;border-radius:999px;background:#dce9e4;font-size:.75rem;font-weight:850}.resolver-results{display:grid;gap:.45rem;padding:0;margin:0;list-style:none}.resolver-results li{display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding:.72rem;border:1px solid #d7e0dc;border-radius:.6rem;background:#fff}.resolver-results li>div{min-width:0}.resolver-results small,.resolver-results span{display:block}.identity{margin-top:.25rem;font:700 .72rem/1.2 ui-monospace,monospace;color:#46625a}.query-match{margin-top:.28rem;color:#5e6d67;font-size:.72rem;font-weight:750}.bound{margin-top:.3rem;padding:.28rem .38rem;border-radius:.35rem;background:#dcefe7;color:#176143;font-size:.75rem;font-weight:800}.result-actions,.continue-search,.provider-retry{display:flex;align-items:center;justify-content:space-between;gap:.65rem;padding:.6rem;border-radius:.55rem;background:#eef3f0;font-size:.78rem}.continue-search>div,.provider-retry>div{display:grid;gap:.1rem}.continue-search small,.provider-retry span{color:#5e6d67}.provider-retry{border:1px solid #d6c58c;background:#fff9e8}.resolver-feedback{padding:.6rem;border-radius:.5rem;background:#eef3f0}.resolver-error{background:#f8e8e4;color:#842f22}.manual-create{display:grid;gap:.55rem;padding:.75rem;border-left:3px solid #2f7561;background:#eef5f2}.manual-create form{display:grid}.attribution{font-size:.72rem;color:#285f50}@media(max-width:560px){.resolver{padding:.72rem}.resolver form,.resolver-results li,.result-actions,.continue-search,.provider-retry{align-items:stretch;flex-direction:column}.resolver button{width:100%}.resolver label{min-width:0}}
     </style><section class="resolver" aria-busy="${this.busy}">
       <div><h4>${mapping ? "Collega un concetto esterno" : "Trova o crea il soggetto corretto"}</h4><p>${mapping ? "Il mapping descrive il rapporto tra questa definizione e un vocabolario esterno." : "ArtAround riusa un'identità condivisa quando esiste e ne crea una nuova solo quando serve."}</p></div>
       ${mapping ? `<form data-external-search><label>Wikidata · ${this.entityKind === "property" ? "Property" : "Item"}<input name="query" required value="${escapeHtml(this.query)}" placeholder="Testo o ${this.entityKind === "property" ? "P" : "Q"}ID"></label><label>Relazione<select data-match-type><option value="exact">exact · stesso significato</option><option value="close">close · molto vicino</option><option value="broader">broader · esterno più ampio</option><option value="narrower">narrower · esterno più specifico</option></select></label><button ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca su Wikidata</button></form>${this.renderExternalResults()}` : this.renderSubjectSearch()}
-      ${candidate && !mapping ? `<section class="external-confirm"><strong>Conferma il nuovo soggetto</strong><p>L’identità ${escapeHtml(candidate.id)} sarà ri-verificata dal server prima del salvataggio.</p><form data-external-create><label>Nome in ArtAround<input name="preferredLabel" required value="${escapeHtml(candidate.label)}"></label><label>Descrizione<textarea name="description">${escapeHtml(candidate.description || "")}</textarea></label><button ${this.busy ? "disabled" : ""}>Crea da identità verificata</button></form></section>` : ""}
       ${this.renderProviderRetry()}
       ${this.renderManualCreation()}
       ${this.busy ? `<p class="resolver-feedback" role="status">Interrogazione in corso…</p>` : ""}

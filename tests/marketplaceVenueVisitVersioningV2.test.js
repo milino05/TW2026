@@ -25,6 +25,7 @@ test("live Visit relevance follows only its current published revision while his
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const { listCatalog } = require("../services/marketplaceCatalogV2.service");
 
     const user = await User.create({ username: "visit-version-relevance", passwordHash: "hash" });
@@ -65,7 +66,7 @@ test("live Visit relevance follows only its current published revision while his
     visit.publishedRevisionId = revisionB._id;
     await visit.save();
 
-    await MarketplaceListing.create([
+    const listings = await MarketplaceListing.create([
       {
         sellerType: "user",
         sellerId: user._id,
@@ -85,6 +86,14 @@ test("live Visit relevance follows only its current published revision while his
         createdBy: user._id,
       },
     ]);
+    await MarketplaceOffer.create(listings.map((listing) => ({
+      listingId: listing._id,
+      label: "Accesso alla visita",
+      pricing: { type: "free" },
+      grants: [{ resourceType: listing.resourceType, resourceId: listing.resourceId, capability: "visit.execute", versionPolicy: listing.resourceType === "visit" ? "follow_current" : "pinned" }],
+      status: "active",
+      createdBy: user._id,
+    })));
 
     const liveAtA = await listCatalog({
       actorUserId: user._id,
