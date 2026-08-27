@@ -129,6 +129,22 @@ function newDraft(author = "", illustrativeMedia = []) {
   };
 }
 
+function normalizedWorkingDraft(value, defaultAuthor = "") {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    namespaceId: String(source.namespaceId || ""),
+    label: String(source.label || ""),
+    author: String(source.author || defaultAuthor || "").trim(),
+    license: String(source.license || ""),
+    illustrativeMedia: (Array.isArray(source.illustrativeMedia) ? source.illustrativeMedia : [])
+      .map((entry) => writableMedia(entry, { includeId: false }))
+      .filter(Boolean)
+      .slice(0, 1),
+    representations: (Array.isArray(source.representations) ? source.representations : [])
+      .map((entry) => newRepresentation(entry)),
+  };
+}
+
 export class ItemAuthoringView extends HTMLElement {
   context = readOperatingContext();
   workspace = null;
@@ -183,6 +199,74 @@ export class ItemAuthoringView extends HTMLElement {
   firstRepresentation() { return this.firstVariant()?.representations?.[0] || null; }
   defaultAuthor() { return String(this.workspace?.principal?.name || this.context?.name || "").trim(); }
   currentMedia() { return this.draft.illustrativeMedia?.[0] || null; }
+  workingDraftStorageKey() {
+    const principalType = String(this.principal?.type || "");
+    const principalId = id(this.principal?.id);
+    if (!this.itemId || !principalType || !principalId) return "";
+    return `artaround:item-authoring-draft:v1:${encodeURIComponent(principalType)}:${encodeURIComponent(principalId)}:${encodeURIComponent(this.itemId)}`;
+  }
+  persistWorkingDraft() {
+    if (!this.itemId || this.activeStep !== 2 || (!this.newEditionMode && !this.selectedRevision())) return;
+    const key = this.workingDraftStorageKey(); if (!key) return;
+    try {
+      window.sessionStorage.setItem(key, JSON.stringify({
+        version: 1,
+        mode: this.newEditionMode ? "new" : "edit",
+        editionId: this.newEditionMode ? null : id(this.selectedEdition()?.id),
+        revisionId: this.newEditionMode ? null : id(this.selectedRevision()?.id),
+        activeRepresentationIndex: Number.isInteger(this.activeRepresentationIndex) ? this.activeRepresentationIndex : null,
+        mediaEditorOpen: Boolean(this.mediaEditorOpen),
+        draft: normalizedWorkingDraft(this.draft, this.defaultAuthor()),
+      }));
+    } catch {
+      // Il salvataggio locale è un aiuto al refresh e non deve bloccare l'editor.
+    }
+  }
+  readWorkingDraft() {
+    const key = this.workingDraftStorageKey(); if (!key) return null;
+    try {
+      const value = JSON.parse(window.sessionStorage.getItem(key) || "null");
+      return value?.version === 1 && ["new", "edit"].includes(value.mode) ? value : null;
+    } catch { return null; }
+  }
+  clearWorkingDraft() {
+    const key = this.workingDraftStorageKey(); if (!key) return;
+    try { window.sessionStorage.removeItem(key); } catch { /* Ignora storage non disponibile. */ }
+  }
+  async restoreWorkingDraft() {
+    const stored = this.readWorkingDraft(); if (!stored) return false;
+    if (stored.mode === "edit") {
+      const revision = this.selectedRevision();
+      const sameEdition = id(this.selectedEdition()?.id) === String(stored.editionId || "");
+      const sameRevision = id(revision?.id) === String(stored.revisionId || "");
+      if (!revision || !sameEdition || !sameRevision) { this.clearWorkingDraft(); return false; }
+      this.newEditionMode = false;
+      this.namespaceControls = null;
+      this.draft = normalizedWorkingDraft(stored.draft, this.defaultAuthor());
+    } else {
+      const choices = this.usableNamespaceChoices({ excludeUsed: true });
+      if (!choices.length) { this.clearWorkingDraft(); return false; }
+      this.newEditionMode = true;
+      this.namespaceControls = null;
+      this.draft = normalizedWorkingDraft(stored.draft, this.defaultAuthor());
+      const selectedNamespaceId = this.draft.namespaceId;
+      const namespaceStillAvailable = choices.some((entry) => entry.id === selectedNamespaceId);
+      this.activeStep = 2;
+      if (namespaceStillAvailable) await this.selectNamespace(selectedNamespaceId);
+      else {
+        this.draft.namespaceId = "";
+        if (choices.length === 1) await this.selectNamespace(choices[0].id);
+      }
+    }
+    const restoredIndex = Number(stored.activeRepresentationIndex);
+    this.activeRepresentationIndex = Number.isInteger(restoredIndex) && this.draft.representations[restoredIndex] ? restoredIndex : null;
+    this.mediaEditorOpen = Boolean(stored.mediaEditorOpen && this.currentMedia());
+    this.mediaSuggestionAttempted = Boolean(this.currentMedia());
+    this.activeStep = 2;
+    this.notice = "Bozza ripristinata dopo l'aggiornamento della pagina.";
+    this.persistWorkingDraft();
+    return true;
+  }
   wikidataIdentity() {
     const identities = this.selectedSubject?.externalIdentities || [];
     return identities.find((entry) => entry.scheme === "wikidata" && entry.role === "canonical")
@@ -196,6 +280,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (!identity) {
       this.mediaSuggestionAttempted = true;
       this.mediaNotice = "Questo soggetto non è collegato a Wikidata: puoi comunque aggiungere un'immagine.";
+      this.persistWorkingDraft();
       return;
     }
     this.mediaBusy = true; this.mediaNotice = null; this.render();
@@ -221,6 +306,7 @@ export class ItemAuthoringView extends HTMLElement {
     } finally {
       this.mediaSuggestionAttempted = true;
       this.mediaBusy = false;
+      this.persistWorkingDraft();
       this.render();
     }
   }
@@ -239,6 +325,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.mediaEditorOpen = true;
     this.mediaSuggestionAttempted = true;
     this.mediaNotice = "Immagine caricata. Controlla la descrizione prima di salvare.";
+    this.persistWorkingDraft();
   }
 
   async bootstrap() {
@@ -253,7 +340,11 @@ export class ItemAuthoringView extends HTMLElement {
       if (this.itemId) {
         await this.reloadProjection();
         await this.loadSuggestedMedia();
-        this.activeStep = this.selectedRevision() ? 3 : 2;
+        const restored = await this.restoreWorkingDraft();
+        if (!restored) {
+          if (this.selectedRevision()) this.activeStep = 3;
+          else await this.prepareNewEdition();
+        }
       }
     } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile inizializzare l'editor"; }
     finally { this.busy = false; this.render(); }
@@ -312,15 +403,15 @@ export class ItemAuthoringView extends HTMLElement {
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
     const illustrativeMedia = this.draft.illustrativeMedia || [];
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null;
+    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null; this.activeStep = 2;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
-    this.activeStep = 2;
+    this.persistWorkingDraft();
   }
 
   async selectNamespace(namespaceId) {
     this.draft.namespaceId = String(namespaceId || ""); this.namespaceControls = null;
-    if (!this.draft.namespaceId) return;
+    if (!this.draft.namespaceId) { this.persistWorkingDraft(); return; }
     this.namespaceControls = await authoringRepository.namespaceControls(this.draft.namespaceId, this.principal);
     const durationIds = new Set((this.namespaceControls?.controls?.durationTypes || []).map((entry) => entry.definitionId));
     const languageIds = new Set((this.namespaceControls?.controls?.languageLevels || []).map((entry) => entry.definitionId));
@@ -328,6 +419,7 @@ export class ItemAuthoringView extends HTMLElement {
       if (!durationIds.has(representation.durationTypeDefinitionId)) representation.durationTypeDefinitionId = "";
       if (!languageIds.has(representation.languageLevelDefinitionId)) representation.languageLevelDefinitionId = "";
     }
+    this.persistWorkingDraft();
   }
 
   updateDraftField(target) {
@@ -356,9 +448,11 @@ export class ItemAuthoringView extends HTMLElement {
     }
     if (Object.prototype.hasOwnProperty.call(this.draft, target.name)) this.draft[target.name] = target.value;
   }
+
   onInput = (event) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) event.target.setCustomValidity("");
     this.updateDraftField(event.target);
+    this.persistWorkingDraft();
   };
 
   onInvalid = (event) => {
@@ -371,6 +465,7 @@ export class ItemAuthoringView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) target.setCustomValidity("");
     this.updateDraftField(target);
+    this.persistWorkingDraft();
     const mediaUpload = target.closest("input[data-media-upload]");
     if (mediaUpload instanceof HTMLInputElement && mediaUpload.files?.[0]) {
       const file = mediaUpload.files[0];
@@ -421,6 +516,7 @@ export class ItemAuthoringView extends HTMLElement {
           representation.locale = String(representation.locale || "").trim();
           representation.text = String(representation.text || "").trim();
         }
+        this.persistWorkingDraft();
         const media = this.currentMedia();
         if (media) {
           media.url = String(media.url || "").trim();
@@ -465,6 +561,7 @@ export class ItemAuthoringView extends HTMLElement {
     });
     const variant = created.revision?.presentationVariants?.[0]; const representation = variant?.representations?.[0];
     if (variant?._id && representation?._id) await authoringRepository.updateEdition(created.edition._id, { defaultPresentation: { variantId: variant._id, representationId: representation._id } });
+    this.clearWorkingDraft();
     this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(created.edition._id); await this.reloadAuthoringContext(); this.activeStep = 3;
     this.notice = "Bozza salvata. Controlla il riepilogo quando è tutto pronto.";
   }
@@ -486,6 +583,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (!variant.representations.length) payload.defaultPresentation = null;
     const result = await authoringRepository.updateEdition(editionId, payload);
     await this.ensureDefaultRepresentation(editionId, result.revision);
+    this.clearWorkingDraft();
     await this.reloadProjection(editionId); this.activeStep = 3;
     this.notice = "Modifiche salvate. Esegui di nuovo il controllo quando il contenuto è pronto.";
   }
@@ -524,39 +622,54 @@ export class ItemAuthoringView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    const representationChoice = target.closest("button[data-representation-choice]");
+    if (representationChoice) {
+      const index = Number(representationChoice.dataset.representationIndex);
+      const field = representationChoice.dataset.representationChoice;
+      const representation = this.draft.representations[index];
+      if (representation && ["durationTypeDefinitionId", "languageLevelDefinitionId"].includes(field)) {
+        representation[field] = representationChoice.dataset.value || "";
+        this.error = null;
+        this.persistWorkingDraft();
+        this.render();
+        requestAnimationFrame(() => this.querySelector(`details[data-representation-choice-menu="${field}"][data-representation-index="${index}"] summary`)?.focus({ preventScroll: true }));
+      }
+      return;
+    }
     const closePrivateSuccess = target.closest("button[data-close-private-success]");
     if (closePrivateSuccess) { this.privateSuccessOpen = false; this.render(); return; }
     const changeMediaButton = target.closest("button[data-change-media]");
     if (changeMediaButton) {
       if (!this.currentMedia()) this.draft.illustrativeMedia = [{ url: "", altText: this.selectedSubject?.preferredLabel || "", source: { provider: "author_url", retrievedAt: new Date().toISOString() }, rights: null }];
-      this.mediaEditorOpen = true; this.error = null; this.render();
+      this.mediaEditorOpen = true; this.error = null; this.persistWorkingDraft(); this.render();
       requestAnimationFrame(() => this.querySelector("[data-media-field='url']")?.focus());
       return;
     }
     const closeMediaButton = target.closest("button[data-close-media-editor]");
-    if (closeMediaButton) { this.mediaEditorOpen = false; this.render(); return; }
+    if (closeMediaButton) { this.mediaEditorOpen = false; this.persistWorkingDraft(); this.render(); return; }
     const removeMediaButton = target.closest("button[data-remove-media]");
     if (removeMediaButton) {
       this.draft.illustrativeMedia = [];
       this.mediaEditorOpen = false;
       this.mediaSuggestionAttempted = true;
       this.mediaNotice = "Immagine rimossa dalla bozza.";
+      this.persistWorkingDraft();
       this.render();
       return;
     }
     const suggestMediaButton = target.closest("button[data-suggest-media]");
     if (suggestMediaButton) { this.draft.illustrativeMedia = []; await this.loadSuggestedMedia({ force: true }); return; }
     const addTextButton = target.closest("button[data-add-text]");
-    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.notice = "Testo aggiunto. Selezionalo quando vuoi compilarlo."; this.render(); return; }
+    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.notice = "Testo aggiunto. Selezionalo quando vuoi compilarlo."; this.persistWorkingDraft(); this.render(); return; }
     const removeTextButton = target.closest("button[data-remove-text]");
-    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = null; else if (Number.isInteger(this.activeRepresentationIndex) && this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
+    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = null; else if (Number.isInteger(this.activeRepresentationIndex) && this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.persistWorkingDraft(); this.render(); } return; }
     const collapsedText = target.closest("[data-collapsed-text]");
-    if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
+    if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.persistWorkingDraft(); this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
     const stepButton = target.closest("button[data-step]"); if (stepButton) { const step = Number(stepButton.dataset.step); if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.render(); } return; }
     const backButton = target.closest("button[data-back-step]"); if (backButton) { const step = Math.max(1, Number(backButton.dataset.backStep) || 1); if (this.canOpenStep(step)) { this.activeStep = step; this.render(); } return; }
     const newEditionButton = target.closest("button[data-new-edition]");
     if (newEditionButton) { this.busy = true; this.error = null; this.render(); try { await this.prepareNewEdition(); } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aggiungere una nuova versione editoriale"; } finally { this.busy = false; this.render(); } return; }
-    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.render(); return; }
+    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.persistWorkingDraft(); this.render(); return; }
     const editionButton = target.closest("button[data-edition-id]");
     if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 3; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
   };
@@ -655,14 +768,13 @@ export class ItemAuthoringView extends HTMLElement {
 
   personalizationControls() { return this.newEditionMode ? this.namespaceControls?.controls || null : this.selectedNamespace()?.revision || null; }
   renderRepresentationEditors(controls) {
-    const durationOptions = (selected = "") => [
-      `<option value="">Scegli la durata</option>`,
-      ...(controls.durationTypes || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)} · ${entry.targetSeconds}s</option>`),
-    ].join("");
-    const languageOptions = (selected = "") => [
-      `<option value="">Scegli il livello</option>`,
-      ...(controls.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`),
-    ].join("");
+    const choiceMenu = ({ index, field, label, selected, placeholder, options }) => {
+      const labelId = `representation-${index}-${field}-label`;
+      const selectedOption = options.find((entry) => entry.value === selected);
+      return `<div class="representation-choice"><span class="representation-choice__label" id="${labelId}">${escapeHtml(label)}</span><input type="hidden" name="${field}" data-representation-index="${index}" value="${escapeHtml(selected)}"><details name="representation-choice" data-representation-choice-menu="${field}" data-representation-index="${index}"><summary aria-labelledby="${labelId}"><span>${escapeHtml(selectedOption?.label || placeholder)}</span></summary><div class="representation-choice__options" role="listbox" aria-labelledby="${labelId}">${options.map((entry) => `<button class="representation-choice__option" type="button" role="option" aria-selected="${entry.value === selected}" data-representation-choice="${field}" data-representation-index="${index}" data-value="${escapeHtml(entry.value)}"><span>${escapeHtml(entry.label)}</span>${entry.value === selected ? icon("check", { size: 15 }) : ""}</button>`).join("")}</div></details></div>`;
+    };
+    const durationOptions = (controls.durationTypes || []).map((entry) => ({ value: entry.definitionId, label: `${entry.label} · ${entry.targetSeconds}s` }));
+    const languageOptions = (controls.languageLevels || []).map((entry) => ({ value: entry.definitionId, label: entry.label }));
     if (!Number.isInteger(this.activeRepresentationIndex) || this.activeRepresentationIndex < 0 || this.activeRepresentationIndex >= this.draft.representations.length) this.activeRepresentationIndex = null;
     if (!this.draft.representations.length) return `<div class="text-empty-state" role="status"><span class="text-empty-state__icon">${icon("edit", { size: 22 })}</span><div><h3>Non hai ancora aggiunto nessun testo</h3><p>Puoi salvare la bozza anche così. Per superare il controllo dovrai aggiungere almeno un testo completo.</p></div></div>`;
     return `<div class="representation-list">${this.draft.representations.map((representation, index) => {
@@ -675,7 +787,7 @@ export class ItemAuthoringView extends HTMLElement {
       const localeLabel = representation.locale || "Da indicare";
       const removeButton = `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>`;
       if (!active) return `<article class="representation-editor representation-editor--collapsed" data-representation-index="${index}" data-collapsed-text="${index}"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div><div class="representation-compact-actions"><button class="button-secondary select-text" type="button" data-select-text="${index}" aria-expanded="false">${icon("edit", { size: 15 })} Modifica</button>${removeButton}</div></header><dl class="representation-summary"><div><dt>Durata</dt><dd>${escapeHtml(durationLabel)}</dd></div><div><dt>Livello di linguaggio</dt><dd>${escapeHtml(languageLabel)}</dd></div><div><dt>Lingua</dt><dd>${escapeHtml(localeLabel)}</dd></div></dl></article>`;
-      return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings"><label>Durata<select name="durationTypeDefinitionId" data-representation-index="${index}" required>${durationOptions(representation.durationTypeDefinitionId)}</select></label><label>Livello di linguaggio<select name="languageLevelDefinitionId" data-representation-index="${index}" required>${languageOptions(representation.languageLevelDefinitionId)}</select></label><label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
+      return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings">${choiceMenu({ index, field: "durationTypeDefinitionId", label: "Durata", selected: representation.durationTypeDefinitionId, placeholder: "Scegli la durata", options: durationOptions })}${choiceMenu({ index, field: "languageLevelDefinitionId", label: "Livello di linguaggio", selected: representation.languageLevelDefinitionId, placeholder: "Scegli il livello", options: languageOptions })}<label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
     }).join("")}</div>`;
   }
 
@@ -749,6 +861,15 @@ export class ItemAuthoringView extends HTMLElement {
       .representation-editor--collapsed{gap:.65rem;padding:.8rem 1rem;cursor:pointer;background:#f8faf8;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}
       .representation-editor--collapsed:hover{border-color:#91a39b;background:#f1f6f3;box-shadow:0 .35rem 1rem rgba(16,40,33,.06)}
       .representation-editor--collapsed>header{align-items:center}
+      .representation-choice{position:relative;display:grid;gap:.38rem;min-width:0;color:#173e35}
+      .representation-choice__label{font-size:.86rem;font-weight:650}
+      .representation-choice details{position:relative;border-radius:.55rem}
+      .representation-choice details[open]>summary{margin-bottom:0;border-color:#173e35;box-shadow:0 0 0 3px rgba(233,168,68,.3)}
+      .representation-choice summary{display:flex;min-height:2.7rem;align-items:center;justify-content:space-between;gap:.6rem;border:1px solid #91a39b;border-radius:.55rem;padding:.62rem .72rem;background:#fff;list-style:none;font-weight:500;cursor:pointer}
+      .representation-choice summary::-webkit-details-marker{display:none}.representation-choice summary::marker{content:""}.representation-choice summary::after{content:"⌄";font-size:1rem;font-weight:800;line-height:1;transition:transform .15s ease}.representation-choice details[open]>summary::after{transform:rotate(180deg)}
+      .representation-choice__options{position:absolute;z-index:40;top:calc(100% + .35rem);right:0;left:0;display:grid;gap:.2rem;padding:.3rem;border:1px solid #c4d0ca;border-radius:.6rem;background:#fff;box-shadow:0 .8rem 2rem rgba(16,40,33,.16)}
+      .representation-choice__option{display:flex;width:100%;min-height:2.45rem;align-items:center;justify-content:space-between;gap:.5rem;border:0;padding:.55rem .65rem;background:#fff;color:#173e35;text-align:left;box-shadow:none;transform:none}
+      .representation-choice__option:hover:not(:disabled),.representation-choice__option[aria-selected="true"]{background:#eef4f1;color:#173e35;box-shadow:none;transform:none}
       .representation-compact-actions{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}
       .representation-compact-actions button{min-height:2.3rem;padding:.45rem .65rem}
       .representation-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin:0}

@@ -50,8 +50,8 @@ test("le regole editoriali vengono scelte nello stesso step dei testi", () => {
   const stepTwo = source.match(/renderStepTwo\(\) \{([\s\S]*?)\n  \}\n\n  renderMemberships/)?.[1] || "";
   assert.match(stepTwo, /this\.renderNamespaceSelector\(\)/);
   assert.match(stepTwo, /this\.renderRepresentationEditors\(controls\)/);
-  assert.match(source, /<label>Durata<select name="durationTypeDefinitionId"/);
-  assert.match(source, /<label>Livello di linguaggio<select name="languageLevelDefinitionId"/);
+  assert.match(source, /field: "durationTypeDefinitionId", label: "Durata"/);
+  assert.match(source, /field: "languageLevelDefinitionId", label: "Livello di linguaggio"/);
   assert.doesNotMatch(source, /data-personalization-draft/);
 });
 
@@ -110,6 +110,32 @@ test("solo il testo selezionato resta espanso mentre gli altri mostrano i dati e
   assert.match(source, /representation-summary\{display:grid;grid-template-columns:repeat\(3/);
   assert.match(source, /authoring-page\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(source, /authoring-page>\*,\.wizard-step,\.editor-form,\.representation-list,\.representation-editor\{min-width:0\}/);
+});
+
+test("durata e linguaggio usano menu interni affidabili al singolo click", () => {
+  assert.match(source, /const choiceMenu = \(\{ index, field, label, selected, placeholder, options \}\)/);
+  assert.match(source, /<details name="representation-choice" data-representation-choice-menu=/);
+  assert.match(source, /role="listbox"/);
+  assert.match(source, /role="option" aria-selected=/);
+  assert.match(source, /button\[data-representation-choice\]/);
+  assert.match(source, /representation\[field\] = representationChoice\.dataset\.value/);
+  assert.match(source, /input type="hidden" name="\$\{field\}" data-representation-index=/);
+  assert.doesNotMatch(source, /select name="durationTypeDefinitionId"/);
+  assert.doesNotMatch(source, /select name="languageLevelDefinitionId"/);
+});
+
+test("il refresh ripristina regole editoriali e bozza dello step due", () => {
+  assert.match(source, /workingDraftStorageKey\(\)/);
+  assert.match(source, /window\.sessionStorage\.setItem/);
+  assert.match(source, /window\.sessionStorage\.getItem/);
+  assert.match(source, /async restoreWorkingDraft\(\)/);
+  assert.match(source, /const restored = await this\.restoreWorkingDraft\(\)/);
+  assert.match(source, /if \(this\.selectedRevision\(\)\) this\.activeStep = 3;\s*else await this\.prepareNewEdition\(\)/);
+  assert.match(source, /namespaceStillAvailable/);
+  assert.match(source, /await this\.selectNamespace\(selectedNamespaceId\)/);
+  assert.match(source, /Bozza ripristinata dopo l'aggiornamento della pagina/);
+  assert.match(source, /this\.clearWorkingDraft\(\);\s*this\.newEditionMode = false/);
+  assert.match(source, /this\.clearWorkingDraft\(\);\s*await this\.reloadProjection\(editionId\)/);
 });
 
 test("lo stato senza testi è esplicito e l'ultimo testo può essere rimosso", () => {
