@@ -6,6 +6,8 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const service = fs.readFileSync(path.join(root, "services/marketplaceWorkspaceResourcesV2.service.js"), "utf8");
 const projector = fs.readFileSync(path.join(root, "services/marketplaceWorkspaceResourceProjectionV2.service.js"), "utf8");
+const workspaceProjector = fs.readFileSync(path.join(root, "services/marketplaceWorkspaceV2.service.js"), "utf8");
+const presentation = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/presentation.js"), "utf8");
 const controller = fs.readFileSync(path.join(root, "controllers/marketplaceV2.controller.js"), "utf8");
 const routes = fs.readFileSync(path.join(root, "routes/marketplaceV2.routes.js"), "utf8");
 
@@ -22,4 +24,13 @@ test("workspace detail è esposto come endpoint autenticato con ObjectId validat
   assert.match(controller, /creatorWorkspaceResourceDetail/);
   assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId/);
   assert.match(routes, /resourceId, controller\.creatorWorkspaceResourceDetail/);
+});
+
+test("un contenuto controllato resta privato finché listing e offerta non sono pubblici", () => {
+  for (const source of [projector, workspaceProjector]) {
+    assert.match(source, /function itemState/);
+    assert.match(source, /listing\?\.status === "published" && Number\(listing\.activeOfferCount\) > 0/);
+    assert.match(source, /finalizePrivatelyOnCheck: resourceType === "item_edition"/);
+  }
+  assert.match(presentation, /private: "Privato"/);
 });

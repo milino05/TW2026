@@ -94,6 +94,18 @@ function workflowState(revision) {
   };
 }
 
+function itemState(edition, listing) {
+  if (edition.workingRevisionId) return "working";
+  if (!edition.publishedRevisionId) return "empty";
+  return listing?.status === "published" && Number(listing.activeOfferCount) > 0 ? "published" : "private";
+}
+
+function itemWorkflowState(revision, listing) {
+  const state = workflowState(revision);
+  const publiclyAvailable = listing?.status === "published" && Number(listing.activeOfferCount) > 0;
+  return state?.status === "published" && !publiclyAvailable ? { ...state, status: "private" } : state;
+}
+
 function resourceCapabilities(principal, resourceType) {
   if (principal.type === "user") return { edit: true, review: true, publish: true };
   const permissions = new Set(principal.effectivePermissions || []);
@@ -108,7 +120,12 @@ function resourceCapabilities(principal, resourceType) {
 function withWorkflowOperations({ baseOperations, principal, resourceType, revision }) {
   return [
     ...baseOperations,
-    ...projectEditorialWorkflowOperations({ ownerType: principal.type, capabilities: resourceCapabilities(principal, resourceType), revision }),
+    ...projectEditorialWorkflowOperations({
+      ownerType: principal.type,
+      capabilities: resourceCapabilities(principal, resourceType),
+      revision,
+      finalizePrivatelyOnCheck: resourceType === "item_edition",
+    }),
   ];
 }
 
@@ -157,8 +174,8 @@ async function projectOwnedAssets({ principal, listings }) {
       sourceRef: { resourceType: "item_edition", resourceId: edition._id },
       authoringRef: { resourceType: "item", resourceId: edition.itemId },
       title: revision?.label || "Contenuto",
-      state: edition.workingRevisionId ? "working" : (edition.publishedRevisionId ? "published" : "empty"),
-      editorialWorkflow: workflowState(revision),
+      state: itemState(edition, listing),
+      editorialWorkflow: itemWorkflowState(revision, listing),
       publishedSnapshotRef: edition.publishedRevisionId ? { resourceType: "item_revision", resourceId: edition.publishedRevisionId } : null,
       listing,
       availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),

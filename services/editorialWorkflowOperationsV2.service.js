@@ -4,7 +4,7 @@ function operation(code, label, extra = {}) {
   return { code, label, ...extra };
 }
 
-function projectEditorialWorkflowOperations({ ownerType, capabilities = {}, revision }) {
+function projectEditorialWorkflowOperations({ ownerType, capabilities = {}, revision, finalizePrivatelyOnCheck = false }) {
   if (!revision) return [];
   const status = revision.status;
   const integrityValid = revision.integrity?.status === "valid";
@@ -17,6 +17,8 @@ function projectEditorialWorkflowOperations({ ownerType, capabilities = {}, revi
   if (status === "draft" && canEdit) {
     operations.push(operation("workflow.check", "Controlla consistenza"));
   }
+
+  if (finalizePrivatelyOnCheck) return operations;
 
   if (ownerType === "user") {
     if (status === "draft" && integrityValid) {

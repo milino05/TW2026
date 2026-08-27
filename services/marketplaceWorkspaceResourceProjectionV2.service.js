@@ -12,6 +12,18 @@ function workflowState(revision) {
   return { status: revision.status, integrityStatus: revision.integrity?.status || "needs_review" };
 }
 
+function itemState(candidate, listing) {
+  if (candidate.workingRevisionId) return "working";
+  if (!candidate.publishedRevisionId) return "empty";
+  return listing?.status === "published" && Number(listing.activeOfferCount) > 0 ? "published" : "private";
+}
+
+function itemWorkflowState(revision, listing) {
+  const state = workflowState(revision);
+  const publiclyAvailable = listing?.status === "published" && Number(listing.activeOfferCount) > 0;
+  return state?.status === "published" && !publiclyAvailable ? { ...state, status: "private" } : state;
+}
+
 function ownedOperations({ published, listing, canManageCommerce = true, canEdit = true }) {
   const operations = canEdit ? [{ code: "open_editor", label: "Apri editor" }] : [];
   if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Configura offerta e pubblica" });
@@ -27,7 +39,12 @@ function workflowCapabilities(principal, resourceType) {
 }
 
 function withWorkflowOperations({ baseOperations, principal, resourceType, revision }) {
-  return [...baseOperations, ...projectEditorialWorkflowOperations({ ownerType: principal.type, capabilities: workflowCapabilities(principal, resourceType), revision })];
+  return [...baseOperations, ...projectEditorialWorkflowOperations({
+    ownerType: principal.type,
+    capabilities: workflowCapabilities(principal, resourceType),
+    revision,
+    finalizePrivatelyOnCheck: resourceType === "item_edition",
+  })];
 }
 
 async function listingMapForCandidates(principal, candidates) {
@@ -63,8 +80,8 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       sourceRef: { resourceType: "item_edition", resourceId: candidate._id },
       authoringRef: { resourceType: "item", resourceId: candidate.itemId },
       title: revision?.label || "Contenuto", summary: "",
-      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
-      editorialWorkflow: workflowState(revision),
+      state: itemState(candidate, listing),
+      editorialWorkflow: itemWorkflowState(revision, listing),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "item_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
       availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),

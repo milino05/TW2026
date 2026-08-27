@@ -15,6 +15,7 @@ const RESOURCE_STATE_LABELS = Object.freeze({
   draft: "Bozza",
   in_review: "In revisione",
   changes_requested: "Modifiche richieste",
+  private: "Privato",
   published: "Pubblicata",
   withdrawn: "Ritirata",
   empty: "Da completare",
