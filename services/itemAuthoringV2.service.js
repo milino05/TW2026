@@ -18,6 +18,21 @@ const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOpera
 
 function id(value) { return String(value?._id || value || ""); }
 
+function projectIllustrativeMedia(media) {
+  if (!media) return null;
+  return {
+    id: media._id,
+    url: media.url,
+    originalUrl: media.originalUrl || null,
+    altText: media.altText || null,
+    mimeType: media.mimeType || null,
+    width: media.width || null,
+    height: media.height || null,
+    source: media.source || null,
+    rights: media.rights || null,
+  };
+}
+
 function collectRevisionSubjectRefs(revision) {
   const refs = [];
   for (const [index, subjectId] of (revision?.relatedSubjectIds || []).entries()) {
@@ -234,7 +249,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
         authorCredits: revision.authorCredits || [],
         license: revision.metadata?.license || null,
         tags: revision.tags || [],
-        illustrativeMedia: (revision.illustrativeMedia || []).map((media) => ({ id: media._id, url: media.url, altText: media.altText || null })),
+        illustrativeMedia: (revision.illustrativeMedia || []).map(projectIllustrativeMedia).filter(Boolean),
         selectionSignals: (revision.selectionSignals || []).map((signal) => ({
           definitionId: signal.definitionId,
           label: maps.signal.get(signal.definitionId)?.label || signal.definitionId,

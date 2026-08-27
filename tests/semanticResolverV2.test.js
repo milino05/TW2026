@@ -299,6 +299,66 @@ test("Wikidata adapter searches fingerprints, resolves redirects and coalesces c
   assert.equal(requestedUrls.every((url) => !url.searchParams.has("maxlag")), true, "le richieste interattive non devono inviare maxlag");
 });
 
+test("Wikidata adapter propone immagini P18 con metadati Wikimedia Commons", async () => {
+  const { WikidataProvider } = require("../services/semanticResolver/providers/wikidata.provider");
+  const requestedUrls = [];
+  const provider = new WikidataProvider({
+    fetchImpl: async (url) => {
+      const requested = new URL(url);
+      requestedUrls.push(requested);
+      if (requested.hostname === "commons.wikimedia.org") {
+        return jsonResponse({
+          query: {
+            pages: {
+              12: {
+                title: "File:Example artwork.jpg",
+                imageinfo: [{
+                  url: "https://upload.wikimedia.org/original.jpg",
+                  thumburl: "https://upload.wikimedia.org/thumb-1200.jpg",
+                  mime: "image/jpeg",
+                  width: 2400,
+                  height: 1600,
+                  thumbwidth: 1200,
+                  thumbheight: 800,
+                  descriptionurl: "https://commons.wikimedia.org/wiki/File:Example_artwork.jpg",
+                  extmetadata: {
+                    Artist: { value: "<b>Autrice</b>" },
+                    LicenseShortName: { value: "CC BY-SA 4.0" },
+                    LicenseUrl: { value: "https://creativecommons.org/licenses/by-sa/4.0/" },
+                  },
+                }],
+              },
+            },
+          },
+        });
+      }
+      return jsonResponse({
+        entities: {
+          Q42: {
+            labels: { it: { language: "it", value: "Opera di esempio" } },
+            claims: {
+              P18: [{ rank: "preferred", mainsnak: { datavalue: { type: "string", value: "Example artwork.jpg" } } }],
+            },
+          },
+        },
+      });
+    },
+  });
+
+  const media = await provider.mediaCandidates({ id: "Q42", locale: "it" });
+
+  assert.equal(media.length, 1);
+  assert.equal(media[0].url, "https://upload.wikimedia.org/thumb-1200.jpg");
+  assert.equal(media[0].altText, "Opera di esempio");
+  assert.equal(media[0].source.provider, "wikimedia_commons");
+  assert.equal(media[0].source.wikidataEntityId, "Q42");
+  assert.equal(media[0].rights.creator, "Autrice");
+  assert.equal(media[0].rights.licenseName, "CC BY-SA 4.0");
+  assert.equal(requestedUrls[0].searchParams.get("props"), "labels|claims");
+  assert.equal(requestedUrls[1].searchParams.get("iiurlwidth"), "1200");
+  assert.match(requestedUrls[1].searchParams.get("iiprop"), /extmetadata/);
+});
+
 test("Wikidata background mode keeps maxlag and retries one short transient failure", async () => {
   const { WikidataProvider } = require("../services/semanticResolver/providers/wikidata.provider");
   let calls = 0;

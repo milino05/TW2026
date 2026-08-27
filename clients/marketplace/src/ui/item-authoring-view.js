@@ -1,6 +1,7 @@
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
+import { semanticRepository } from "../infrastructure/http/semantic-repository.js";
 import { userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
@@ -16,6 +17,65 @@ function escapeHtml(value = "") {
 function params() { return new URLSearchParams(window.location.search); }
 function id(value) { return String(value?.id || value?._id || value || ""); }
 function isWorkflowOperation(code) { return String(code || "").startsWith("workflow."); }
+function safeExternalHref(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch { return null; }
+}
+
+function writableMedia(entry, { includeId = true } = {}) {
+  if (!entry) return null;
+  return {
+    ...(includeId && id(entry) ? { _id: id(entry) } : {}),
+    url: String(entry.url || ""),
+    originalUrl: entry.originalUrl || null,
+    altText: entry.altText || null,
+    mimeType: entry.mimeType || null,
+    width: entry.width || null,
+    height: entry.height || null,
+    source: entry.source ? { ...entry.source } : null,
+    rights: entry.rights ? { ...entry.rights } : null,
+  };
+}
+
+function fileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "").split(",")[1] || ""), { once: true });
+    reader.addEventListener("error", () => reject(new Error("Non è stato possibile leggere l'immagine")), { once: true });
+    reader.readAsDataURL(file);
+  });
+}
+
+function canvasAsBlob(canvas, mimeType, quality) {
+  return new Promise((resolve, reject) => canvas.toBlob(
+    (blob) => blob ? resolve(blob) : reject(new Error("Non è stato possibile ottimizzare l'immagine")),
+    mimeType,
+    quality,
+  ));
+}
+
+async function optimizedMediaFile(file) {
+  const maxBytes = 700 * 1024;
+  if (file.size <= maxBytes) return file;
+  if (typeof createImageBitmap !== "function") throw new Error("L'immagine è troppo grande. Scegline una più piccola di 700 KB.");
+  const bitmap = await createImageBitmap(file);
+  try {
+    for (const option of [{ maxSide: 1600, quality: .82 }, { maxSide: 1200, quality: .7 }, { maxSide: 900, quality: .58 }]) {
+      const scale = Math.min(1, option.maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Non è stato possibile preparare l'immagine");
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const optimized = await canvasAsBlob(canvas, "image/webp", option.quality);
+      if (optimized.size <= maxBytes) return optimized;
+    }
+  } finally { bitmap.close(); }
+  throw new Error("Non è stato possibile ridurre abbastanza l'immagine. Scegline una più leggera.");
+}
 
 function projectedRevisionToWrite(revision) {
   return {
@@ -24,7 +84,7 @@ function projectedRevisionToWrite(revision) {
     tags: revision.tags || [],
     authorCredits: revision.authorCredits || [],
     metadata: { license: revision.license || null },
-    illustrativeMedia: (revision.illustrativeMedia || []).map((entry) => ({ _id: entry.id, url: entry.url, altText: entry.altText || null })),
+    illustrativeMedia: (revision.illustrativeMedia || []).map((entry) => writableMedia(entry)).filter(Boolean),
     selectionSignals: (revision.selectionSignals || []).map((entry) => ({ definitionId: entry.definitionId, weight: entry.weight })),
     presentationVariants: (revision.presentationVariants || []).map((variant) => ({
       _id: variant.id,
@@ -75,8 +135,15 @@ function newRepresentation(overrides = {}) {
     text: String(overrides.text || ""),
   };
 }
-function newDraft(author = "") {
-  return { namespaceId: "", label: "", author: String(author || "").trim(), license: "", representations: [newRepresentation()] };
+function newDraft(author = "", illustrativeMedia = []) {
+  return {
+    namespaceId: "",
+    label: "",
+    author: String(author || "").trim(),
+    license: "",
+    illustrativeMedia: illustrativeMedia.map((entry) => writableMedia(entry, { includeId: false })).filter(Boolean).slice(0, 1),
+    representations: [newRepresentation()],
+  };
 }
 
 export class ItemAuthoringView extends HTMLElement {
@@ -92,6 +159,10 @@ export class ItemAuthoringView extends HTMLElement {
   namespaceControls = null;
   activeStep = 1;
   activeRepresentationIndex = 0;
+  mediaEditorOpen = false;
+  mediaBusy = false;
+  mediaSuggestionAttempted = false;
+  mediaNotice = null;
   newEditionMode = false;
   draft = newDraft();
   busy = false;
@@ -123,6 +194,64 @@ export class ItemAuthoringView extends HTMLElement {
   firstVariant() { return this.selectedRevision()?.presentationVariants?.[0] || null; }
   firstRepresentation() { return this.firstVariant()?.representations?.[0] || null; }
   defaultAuthor() { return String(this.workspace?.principal?.name || this.context?.name || "").trim(); }
+  currentMedia() { return this.draft.illustrativeMedia?.[0] || null; }
+  wikidataIdentity() {
+    const identities = this.selectedSubject?.externalIdentities || [];
+    return identities.find((entry) => entry.scheme === "wikidata" && entry.role === "canonical")
+      || identities.find((entry) => entry.scheme === "wikidata")
+      || null;
+  }
+
+  async loadSuggestedMedia({ force = false } = {}) {
+    if (this.currentMedia() || (this.mediaSuggestionAttempted && !force)) return;
+    const identity = this.wikidataIdentity();
+    if (!identity) {
+      this.mediaSuggestionAttempted = true;
+      this.mediaNotice = "Questo soggetto non è collegato a Wikidata: puoi comunque aggiungere un'immagine.";
+      return;
+    }
+    this.mediaBusy = true; this.mediaNotice = null; this.render();
+    try {
+      const resolution = await semanticRepository.resolveExternal({
+        scheme: "wikidata",
+        id: identity.id,
+        locale: "it",
+        includeMedia: true,
+      });
+      const candidate = resolution.mediaCandidates?.[0] || null;
+      if (candidate) {
+        this.draft.illustrativeMedia = [writableMedia(candidate, { includeId: false })];
+        this.mediaEditorOpen = false;
+        this.mediaNotice = "Immagine proposta automaticamente da Wikidata e Wikimedia Commons.";
+      } else if (resolution.mediaStatus === "unavailable") {
+        this.mediaNotice = "L'immagine non è disponibile in questo momento. Puoi riprovare o aggiungerne una.";
+      } else {
+        this.mediaNotice = "Wikidata non propone immagini per questo soggetto. Puoi aggiungerne una.";
+      }
+    } catch {
+      this.mediaNotice = "Non è stato possibile cercare un'immagine. La creazione del contenuto può continuare.";
+    } finally {
+      this.mediaSuggestionAttempted = true;
+      this.mediaBusy = false;
+      this.render();
+    }
+  }
+
+  async uploadMediaFile(file) {
+    if (!file) return;
+    const optimized = await optimizedMediaFile(file);
+    const dataBase64 = await fileAsBase64(optimized);
+    const uploaded = await authoringRepository.uploadItemMedia({
+      fileName: file.name,
+      mimeType: optimized.type || file.type,
+      dataBase64,
+      altText: this.currentMedia()?.altText || this.selectedSubject?.preferredLabel || "",
+    });
+    this.draft.illustrativeMedia = [writableMedia(uploaded, { includeId: false })];
+    this.mediaEditorOpen = true;
+    this.mediaSuggestionAttempted = true;
+    this.mediaNotice = "Immagine caricata. Controlla la descrizione prima di salvare.";
+  }
 
   async bootstrap() {
     this.busy = true; this.error = null; this.render();
@@ -131,9 +260,11 @@ export class ItemAuthoringView extends HTMLElement {
       if (this.venueTargetId) {
         this.venueTargetContext = await authoringRepository.venueTargetContext(this.venueTargetId);
         this.selectedSubject = this.venueTargetContext.subject;
+        await this.loadSuggestedMedia();
       }
       if (this.itemId) {
         await this.reloadProjection();
+        await this.loadSuggestedMedia();
         this.activeStep = this.selectedRevision() ? 3 : 2;
       }
     } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile inizializzare l'editor"; }
@@ -168,8 +299,10 @@ export class ItemAuthoringView extends HTMLElement {
       label: revision.label || "",
       author: revision.authorCredits?.[0] || this.defaultAuthor(),
       license: revision.license || "",
+      illustrativeMedia: (revision.illustrativeMedia || []).map((entry) => writableMedia(entry)).filter(Boolean).slice(0, 1),
       representations: representations.length ? representations : [newRepresentation()],
     };
+    if (this.draft.illustrativeMedia.length) this.mediaSuggestionAttempted = true;
   }
 
   async reloadProjection(editionId = null) {
@@ -190,7 +323,8 @@ export class ItemAuthoringView extends HTMLElement {
 
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor()); this.activeRepresentationIndex = 0;
+    const illustrativeMedia = this.draft.illustrativeMedia || [];
+    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = 0;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
     this.activeStep = 2;
@@ -210,6 +344,21 @@ export class ItemAuthoringView extends HTMLElement {
 
   updateDraftField(target) {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+    const mediaField = target.dataset.mediaField;
+    if (mediaField) {
+      const media = this.currentMedia();
+      if (!media || !["url", "altText"].includes(mediaField)) return;
+      if (mediaField === "url" && media.url !== target.value) {
+        media.originalUrl = null;
+        media.mimeType = null;
+        media.width = null;
+        media.height = null;
+        media.source = { provider: "author_url", retrievedAt: new Date().toISOString() };
+        media.rights = null;
+      }
+      media[mediaField] = target.value;
+      return;
+    }
     if (!target.name) return;
     const representationIndex = target.dataset.representationIndex;
     if (representationIndex !== undefined) {
@@ -234,6 +383,15 @@ export class ItemAuthoringView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) target.setCustomValidity("");
     this.updateDraftField(target);
+    const mediaUpload = target.closest("input[data-media-upload]");
+    if (mediaUpload instanceof HTMLInputElement && mediaUpload.files?.[0]) {
+      const file = mediaUpload.files[0];
+      this.mediaBusy = true; this.error = null; this.mediaNotice = "Caricamento dell'immagine in corso…"; this.render();
+      try { await this.uploadMediaFile(file); }
+      catch (error) { this.error = error instanceof Error ? error.message : "Non è stato possibile caricare l'immagine"; }
+      finally { this.mediaBusy = false; this.render(); }
+      return;
+    }
     const namespaceSelect = target.closest("select[data-namespace-select]");
     if (namespaceSelect) {
       this.busy = true; this.error = null; this.render();
@@ -260,6 +418,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.busy = true; this.error = null; this.notice = null; this.render();
     try {
       if (form.matches("[data-create-item]")) {
+        for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
         if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
         if (!this.selectedSubject) throw new Error("Scegli prima di cosa deve parlare il contenuto");
         const item = await authoringRepository.createItem({ primarySubjectId: this.selectedSubject.id || this.selectedSubject._id, ownerType: this.principal.type, ownerId: this.principal.id });
@@ -273,6 +432,15 @@ export class ItemAuthoringView extends HTMLElement {
         for (const representation of this.draft.representations) {
           representation.locale = String(representation.locale || "").trim();
           representation.text = String(representation.text || "").trim();
+        }
+        const media = this.currentMedia();
+        if (media) {
+          media.url = String(media.url || "").trim();
+          media.altText = String(media.altText || "").trim();
+          if (!media.url || !media.altText) {
+            this.mediaEditorOpen = true;
+            throw new Error("Completa l'indirizzo e la descrizione dell'immagine oppure rimuovila.");
+          }
         }
         const incompleteTextIndex = this.draft.representations.findIndex((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].some((value) => !String(value || "").trim()));
         if (incompleteTextIndex >= 0) {
@@ -298,7 +466,7 @@ export class ItemAuthoringView extends HTMLElement {
       namespaceId: this.draft.namespaceId,
       authoredAgainstNamespaceRevisionId: controls.revision.id,
       revision: {
-        label: this.draft.label, authorCredits: [this.draft.author].filter(Boolean), metadata: { license: this.draft.license }, relatedSubjectIds: [], tags: [], illustrativeMedia: [], selectionSignals: [],
+        label: this.draft.label, authorCredits: [this.draft.author].filter(Boolean), metadata: { license: this.draft.license }, relatedSubjectIds: [], tags: [], illustrativeMedia: this.draft.illustrativeMedia.map((entry) => writableMedia(entry, { includeId: false })).filter(Boolean), selectionSignals: [],
         presentationVariants: [{ key: "standard", label: "Standard", semanticFocus: [], presentationAspects: [], knowledgeRequirements: [], representations: this.draft.representations.map((entry) => ({ durationTypeDefinitionId: entry.durationTypeDefinitionId, languageLevelDefinitionId: entry.languageLevelDefinitionId, locale: entry.locale, text: entry.text })) }],
         defaultPresentation: null,
       },
@@ -314,6 +482,7 @@ export class ItemAuthoringView extends HTMLElement {
     const revision = this.selectedRevision(); const editionId = id(this.selectedEdition()?.id); if (!revision || !editionId) throw new Error("Nessuna versione modificabile");
     const payload = projectedRevisionToWrite(revision);
     payload.label = this.draft.label; payload.authorCredits = [this.draft.author].filter(Boolean); payload.metadata = { license: this.draft.license };
+    payload.illustrativeMedia = this.draft.illustrativeMedia.map((entry) => writableMedia(entry)).filter(Boolean);
     const variant = payload.presentationVariants?.[0]; if (!variant) throw new Error("La struttura dei testi non è disponibile");
     variant.representations = this.draft.representations.map((entry) => ({
       ...(entry.id ? { _id: entry.id } : {}),
@@ -347,15 +516,36 @@ export class ItemAuthoringView extends HTMLElement {
     else this.notice = workflowNotice(operationCode);
   }
 
-  onSubjectSelected = (event) => {
+  onSubjectSelected = async (event) => {
     if (this.itemId || !event.detail?.subject) return;
     this.selectedSubject = event.detail.subject;
     this.notice = event.detail.source === "reuse_existing" ? "Identità già presente: è stato riutilizzato il soggetto ArtAround esistente." : "Soggetto selezionato. Puoi continuare.";
     this.render();
+    await this.loadSuggestedMedia();
   };
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    const changeMediaButton = target.closest("button[data-change-media]");
+    if (changeMediaButton) {
+      if (!this.currentMedia()) this.draft.illustrativeMedia = [{ url: "", altText: this.selectedSubject?.preferredLabel || "", source: { provider: "author_url", retrievedAt: new Date().toISOString() }, rights: null }];
+      this.mediaEditorOpen = true; this.error = null; this.render();
+      requestAnimationFrame(() => this.querySelector("[data-media-field='url']")?.focus());
+      return;
+    }
+    const closeMediaButton = target.closest("button[data-close-media-editor]");
+    if (closeMediaButton) { this.mediaEditorOpen = false; this.render(); return; }
+    const removeMediaButton = target.closest("button[data-remove-media]");
+    if (removeMediaButton) {
+      this.draft.illustrativeMedia = [];
+      this.mediaEditorOpen = false;
+      this.mediaSuggestionAttempted = true;
+      this.mediaNotice = "Immagine rimossa dalla bozza.";
+      this.render();
+      return;
+    }
+    const suggestMediaButton = target.closest("button[data-suggest-media]");
+    if (suggestMediaButton) { this.draft.illustrativeMedia = []; await this.loadSuggestedMedia({ force: true }); return; }
     const addTextButton = target.closest("button[data-add-text]");
     if (addTextButton) { this.draft.representations.push(newRepresentation()); this.activeRepresentationIndex = this.draft.representations.length - 1; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${this.activeRepresentationIndex}"] textarea`)?.focus()); return; }
     const removeTextButton = target.closest("button[data-remove-text]");
@@ -409,13 +599,49 @@ export class ItemAuthoringView extends HTMLElement {
     return `<article class="subject-summary"><span class="eyebrow">Soggetto del contenuto</span><h3>${escapeHtml(this.selectedSubject.preferredLabel)}</h3><p>${escapeHtml(this.selectedSubject.description || "Nessuna descrizione disponibile")}</p>${identities ? `<details class="technical-details"><summary>Identità tecnica</summary><p>${escapeHtml(identities)}</p></details>` : ""}</article>`;
   }
 
+  mediaSourceLabel(media) {
+    const labels = {
+      wikimedia_commons: "Proposta da Wikidata · immagine Wikimedia Commons",
+      author_upload: "Caricata dal dispositivo",
+      author_url: "Aggiunta tramite indirizzo web",
+    };
+    return labels[media?.source?.provider] || "Immagine del contenuto";
+  }
+
+  renderMediaEditor(media) {
+    if (!this.mediaEditorOpen) return "";
+    return `<div class="item-media-editor"><label>Indirizzo dell'immagine<input name="mediaUrl" data-media-field="url" inputmode="url" required value="${escapeHtml(media?.url || "")}" placeholder="https://..."></label><label>Descrizione dell'immagine<input name="mediaAltText" data-media-field="altText" required value="${escapeHtml(media?.altText || "")}" placeholder="Descrivi ciò che aiuta a riconoscere il soggetto"><small>Questa descrizione viene letta dalle tecnologie assistive.</small></label><div class="media-upload-row"><label class="button-secondary media-upload">${icon("image", { size: 15 })} Carica dal dispositivo<input type="file" data-media-upload accept="image/jpeg,image/png,image/webp,image/avif"></label><small>JPEG, PNG, WebP o AVIF · i file grandi vengono ottimizzati automaticamente</small><button class="button-secondary" type="button" data-close-media-editor>Chiudi modifica</button></div></div>`;
+  }
+
+  renderMediaCard({ compact = false } = {}) {
+    const media = this.currentMedia();
+    const hasMedia = Boolean(String(media?.url || "").trim());
+    const canSuggest = Boolean(this.wikidataIdentity());
+    if (this.mediaBusy) return `<section class="item-media-card ${compact ? "item-media-card--compact" : ""}" aria-busy="true"><div class="media-placeholder">${icon("image", { size: 24 })}</div><div><span class="eyebrow">Immagine del contenuto · facoltativa</span><h3>Ricerca dell'immagine in corso…</h3><p>Puoi continuare anche se Wikidata non propone alcuna immagine.</p></div></section>`;
+    if (!hasMedia) {
+      return `<section class="item-media-card item-media-card--empty ${compact ? "item-media-card--compact" : ""}"><div class="media-placeholder">${icon("image", { size: 24 })}</div><div class="item-media-copy"><span class="eyebrow">Immagine del contenuto · facoltativa</span><h3>Nessuna immagine selezionata</h3><p>${escapeHtml(this.mediaNotice || "Puoi aggiungere un'immagine che aiuti a riconoscere il soggetto durante la visita.")}</p><div class="item-media-actions"><button class="button-secondary" type="button" data-change-media>${icon("plus", { size: 15 })} Aggiungi immagine</button>${canSuggest ? `<button class="button-secondary" type="button" data-suggest-media>Proponi da Wikidata</button>` : ""}</div>${this.renderMediaEditor(media)}</div></section>`;
+    }
+    const sourceUrl = safeExternalHref(media.source?.pageUrl);
+    const licenseUrl = safeExternalHref(media.rights?.licenseUrl);
+    const attribution = media.rights?.attribution || media.rights?.creator;
+    const rights = [attribution, media.rights?.licenseName].filter(Boolean).join(" · ");
+    return `<section class="item-media-card ${compact ? "item-media-card--compact" : ""}"><figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || "")}" loading="lazy"></figure><div class="item-media-copy"><span class="eyebrow">Immagine del contenuto · facoltativa</span><h3>${escapeHtml(this.mediaSourceLabel(media))}</h3><p>${escapeHtml(media.altText || "Descrizione da completare")}</p>${rights ? `<p class="media-rights">${escapeHtml(rights)}</p>` : ""}<div class="media-links">${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Apri la fonte</a>` : ""}${licenseUrl ? `<a href="${escapeHtml(licenseUrl)}" target="_blank" rel="noreferrer">Vedi la licenza</a>` : ""}</div><div class="item-media-actions"><button class="button-secondary" type="button" data-change-media>${icon("edit", { size: 15 })} Cambia</button><button class="button-secondary" type="button" data-remove-media>${icon("trash", { size: 15 })} Rimuovi</button></div>${this.mediaNotice ? `<p class="media-notice">${escapeHtml(this.mediaNotice)}</p>` : ""}${this.renderMediaEditor(media)}</div></section>`;
+  }
+
+  renderReviewMedia() {
+    const media = this.selectedRevision()?.illustrativeMedia?.[0];
+    if (!media?.url) return `<section class="review-media review-media--empty"><span class="eyebrow">Immagine</span><strong>Nessuna immagine associata</strong><p>Il contenuto resterà utilizzabile anche senza immagine.</p></section>`;
+    const rights = [media.rights?.attribution || media.rights?.creator, media.rights?.licenseName].filter(Boolean).join(" · ");
+    return `<section class="review-media"><figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || "")}" loading="lazy"></figure><div><span class="eyebrow">Immagine mostrata durante la visita</span><strong>${escapeHtml(media.altText || "Descrizione non disponibile")}</strong><p>${escapeHtml(this.mediaSourceLabel(media))}${rights ? ` · ${escapeHtml(rights)}` : ""}</p></div></section>`;
+  }
+
   renderStepOne() {
     if (this.activeStep !== 1) return "";
     const venue = this.venueTargetContext;
     const physicalContext = venue ? `<aside class="context-box"><span class="eyebrow">Oggetto della sede</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L'oggetto serve a precompilare il soggetto. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>` : "";
-    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}<div class="step-actions"><button type="button" data-step="2">Continua al contenuto ${icon("chevron", { size: 15 })}</button></div></section>`;
+    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}${this.renderMediaCard()}<div class="step-actions"><button type="button" data-step="2">Continua al contenuto ${icon("chevron", { size: 15 })}</button></div></section>`;
     const subjectSelection = this.selectedSubject
-      ? `${this.renderSubjectSummary()}<form data-create-item class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></form>`
+      ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}${this.renderMediaCard()}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
       : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>Cerca prima un'identità già esistente; creane una nuova solo se non trovi quella corretta.</p></div></header>${physicalContext}${subjectSelection}</section>`;
   }
@@ -462,7 +688,7 @@ export class ItemAuthoringView extends HTMLElement {
     const heading = `<header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Testi e impostazioni</span><h2>Configura e scrivi il contenuto</h2><p>Scegli le regole editoriali e, per ogni testo, indica durata, livello di linguaggio e lingua.</p></div></header>`;
     if (!controls) return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><p class="note">Scegli le regole editoriali per vedere le durate e i livelli disponibili.</p><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button></div></section>`;
     const creditedTo = this.draft.author || this.defaultAuthor();
-    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note author-credit">Autore assegnato automaticamente: <strong>${escapeHtml(creditedTo)}</strong>, proprietario di questa area di lavoro.</p>${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} Aggiungi un altro testo</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">${this.newEditionMode ? "Salva e vai al controllo" : "Salva modifiche"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note author-credit">Autore assegnato automaticamente: <strong>${escapeHtml(creditedTo)}</strong>, proprietario di questa area di lavoro.</p>${this.renderMediaCard({ compact: true })}${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} Aggiungi un altro testo</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">${this.newEditionMode ? "Salva e vai al controllo" : "Salva modifiche"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
   }
 
   renderMemberships() {
@@ -493,7 +719,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (this.activeStep !== 3 || !this.selectedRevision() || this.newEditionMode) return "";
     const revision = this.selectedRevision(); const integrity = revision.integrity?.status || "needs_review"; const issues = revision.integrity?.issues || []; const operations = this.workflowOperations(); const published = revision.status === "published"; const editAllowed = Boolean(this.availableOperation("item.edit"));
     const statePanel = published ? `<div class="readiness success"><strong>Versione pubblicata</strong><p>La pubblicazione nel Catalogo è un passaggio commerciale separato.</p></div>` : integrity === "valid" ? `<div class="readiness success"><strong>Controllo superato</strong></div>` : `<div class="readiness warning"><strong>Serve un controllo</strong></div>`;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Controllo e pubblicazione</span><h2>Verifica prima di pubblicare</h2></div></header>${this.reviewSummary()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}<div class="workflow-panel"><h3>Azioni disponibili</h3><p class="note">La pubblicazione editoriale non crea automaticamente una scheda nel Marketplace.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div><div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Controllo e pubblicazione</span><h2>Verifica prima di pubblicare</h2></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}<div class="workflow-panel"><h3>Azioni disponibili</h3><p class="note">La pubblicazione editoriale non crea automaticamente una scheda nel Marketplace.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div><div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
   }
   renderEditions() {
     const editions = this.projection?.editions || []; if (editions.length <= 1 && !this.newEditionMode) return "";
@@ -520,6 +746,28 @@ export class ItemAuthoringView extends HTMLElement {
       .representation-summary>div{display:grid;min-width:0;gap:.1rem;padding:.55rem .65rem;border-radius:.55rem;background:#fff}
       .representation-summary dt{color:#60706a;font-size:.72rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
       .representation-summary dd{overflow:hidden;margin:0;color:#173e35;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+      .subject-confirmation{display:grid;gap:1rem}
+      .item-media-card{display:grid;grid-template-columns:minmax(11rem,15rem) minmax(0,1fr);gap:1rem;align-items:start;margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.85rem;background:#f8faf8}
+      .item-media-card figure{overflow:hidden;margin:0;border:1px solid #d4ddd8;border-radius:.7rem;background:#e8eeeb;aspect-ratio:4/3}
+      .item-media-card figure img{display:block;width:100%;height:100%;object-fit:contain}
+      .item-media-copy{display:grid;gap:.38rem;min-width:0}
+      .item-media-copy h3,.item-media-copy p{margin:0}
+      .item-media-card--compact{grid-template-columns:7rem minmax(0,1fr);margin-top:.25rem}
+      .media-placeholder{display:grid;place-items:center;min-height:8rem;border:1px dashed #91a39b;border-radius:.7rem;color:#476159;background:#eef3f0}
+      .item-media-actions,.media-links,.media-upload-row{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+      .item-media-actions{margin-top:.35rem}
+      .media-links a{color:#285f50;font-size:.78rem;font-weight:750}
+      .media-rights,.media-notice{color:#60706a;font-size:.78rem}
+      .item-media-editor{display:grid;gap:.7rem;margin-top:.55rem;padding-top:.75rem;border-top:1px solid #d4ddd8}
+      .item-media-editor label:not(.media-upload){display:grid;gap:.3rem}
+      .item-media-editor small{color:#60706a;font-size:.75rem}
+      .media-upload{position:relative;overflow:hidden;display:inline-flex!important;align-items:center;gap:.4rem;cursor:pointer}
+      .media-upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+      .review-media{display:grid;grid-template-columns:9rem minmax(0,1fr);gap:1rem;align-items:center;margin-top:1rem;padding:1rem;border:1px solid #d9e0dc;border-radius:.75rem;background:#fff}
+      .review-media figure{overflow:hidden;margin:0;border-radius:.6rem;background:#e8eeeb;aspect-ratio:4/3}
+      .review-media img{display:block;width:100%;height:100%;object-fit:contain}
+      .review-media>div{display:grid;gap:.3rem}.review-media strong,.review-media p{margin:0}.review-media--empty{display:grid;grid-template-columns:1fr;gap:.25rem;color:#60706a}
+      @media(max-width:40rem){.item-media-card,.item-media-card--compact,.review-media{grid-template-columns:1fr}.item-media-card--compact figure{max-width:10rem}.media-upload-row{align-items:stretch;flex-direction:column}}
       @media(max-width:32rem){.representation-summary{grid-template-columns:1fr 1fr}.representation-summary>div:last-child{grid-column:1/-1}.representation-compact-actions{justify-content:flex-start}.representation-editor--collapsed>header{display:grid}}
     </style>`;
   }

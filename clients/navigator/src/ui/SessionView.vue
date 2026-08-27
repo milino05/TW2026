@@ -35,6 +35,7 @@ const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
 const actionSheetOpen = ref(false);
 const voiceSheetOpen = ref(false);
+const mediaOpen = ref(false);
 const completionConfirmOpen = ref(false);
 const pendingCompletion = ref<{ action: AvailableAction; channel: InteractionChannel } | null>(null);
 const ttsState = ref<TextToSpeechState>(browserTts.state);
@@ -56,6 +57,19 @@ const nextAction = computed(() => actionOfType(snapshot.value?.availableActions 
 const interactionBusy = computed(() => busyActionId.value !== null || voiceBusy.value);
 const isCompleted = computed(() => ["completed", "abandoned"].includes(snapshot.value?.session.status || ""));
 const isSemantic = computed(() => snapshot.value?.current?.presentation.kind === "semantic_exploration");
+const currentMedia = computed(() => snapshot.value?.current?.illustrativeMedia?.[0] || null);
+const mediaAttribution = computed(() => {
+  const media = currentMedia.value;
+  return [media?.rights?.attribution || media?.rights?.creator, media?.rights?.licenseName].filter(Boolean).join(" · ");
+});
+const mediaSourceUrl = computed(() => {
+  const value = currentMedia.value?.source?.pageUrl;
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch { return null; }
+});
 const hasActionSheetActions = computed(() =>
   actionGroups.value.presentation.length
   + actionGroups.value.semantic.length
@@ -116,7 +130,10 @@ const audioButtonLabel = computed(() => {
 });
 const voiceExamples = computed(() => (snapshot.value?.availableActions || []).slice(0, 3));
 
-watch(() => snapshot.value?.session.runtimeVersion, () => browserTts.stop());
+watch(() => snapshot.value?.session.runtimeVersion, () => {
+  browserTts.stop();
+  mediaOpen.value = false;
+});
 watch(completionConfirmOpen, async (open) => {
   if (!open) return;
   await nextTick();
@@ -152,7 +169,8 @@ onUnmounted(() => {
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
-  if (voiceSheetOpen.value) cancelVoice();
+  if (mediaOpen.value) mediaOpen.value = false;
+  else if (voiceSheetOpen.value) cancelVoice();
   else if (completionConfirmOpen.value) closeCompletionConfirm();
   else actionSheetOpen.value = false;
 }
@@ -160,6 +178,7 @@ function handleKeydown(event: KeyboardEvent) {
 function closeOverlays() {
   actionSheetOpen.value = false;
   voiceSheetOpen.value = false;
+  mediaOpen.value = false;
 }
 
 async function dispatch(action: AvailableAction, channel: InteractionChannel = "button") {
@@ -377,6 +396,16 @@ async function listenControlledVoice() {
           <h1>{{ displayTitle }}</h1>
           <p v-if="displaySubtitle" class="content-label">{{ displaySubtitle }}</p>
 
+          <figure v-if="currentMedia" class="content-media">
+            <button type="button" aria-label="Apri l'immagine a schermo intero" @click="mediaOpen = true">
+              <img :src="currentMedia.url" :alt="currentMedia.altText" :width="currentMedia.width || undefined" :height="currentMedia.height || undefined">
+            </button>
+            <figcaption v-if="mediaAttribution || mediaSourceUrl">
+              <span v-if="mediaAttribution">{{ mediaAttribution }}</span>
+              <a v-if="mediaSourceUrl" :href="mediaSourceUrl" target="_blank" rel="noreferrer">Fonte dell'immagine</a>
+            </figcaption>
+          </figure>
+
           <section class="audio-panel" aria-label="Lettura del contenuto">
             <button
               class="audio-toggle"
@@ -481,6 +510,17 @@ async function listenControlledVoice() {
       >{{ nextAction.label }} →</button>
       <span v-else aria-hidden="true"></span>
     </nav>
+
+    <div v-if="mediaOpen && currentMedia" class="modal-overlay media-overlay" @click.self="mediaOpen = false">
+      <figure class="media-lightbox" role="dialog" aria-modal="true" aria-label="Immagine del contenuto">
+        <button type="button" aria-label="Chiudi immagine" @click="mediaOpen = false">×</button>
+        <img :src="currentMedia.originalUrl || currentMedia.url" :alt="currentMedia.altText">
+        <figcaption>
+          <span>{{ currentMedia.altText }}</span>
+          <small v-if="mediaAttribution">{{ mediaAttribution }}</small>
+        </figcaption>
+      </figure>
+    </div>
 
     <SessionActionSheet
       :open="actionSheetOpen"
@@ -733,6 +773,51 @@ async function listenControlledVoice() {
   font-size: .92rem;
 }
 
+.content-media {
+  overflow: hidden;
+  margin: 1rem 0 0;
+  border: 1px solid var(--navigator-border);
+  border-radius: 1.1rem;
+  background: color-mix(in srgb, var(--navigator-ink) 5%, var(--navigator-surface-raised));
+}
+
+.content-media > button {
+  width: 100%;
+  max-height: 35vh;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.content-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 35vh;
+  object-fit: contain;
+}
+
+.content-media figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  padding: .55rem .7rem;
+  border-top: 1px solid var(--navigator-border);
+  color: var(--navigator-muted);
+  background: var(--navigator-surface-raised);
+  font-size: .68rem;
+}
+
+.content-media figcaption a {
+  flex: 0 0 auto;
+  color: var(--navigator-primary);
+  font-weight: 760;
+}
+
 .audio-panel {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr) auto;
@@ -877,6 +962,59 @@ async function listenControlledVoice() {
   padding-top: 4rem;
   background: rgba(7, 12, 11, .52);
 }
+
+.media-overlay {
+  padding: 1rem;
+  background: color-mix(in srgb, #07110e 88%, transparent);
+}
+
+.media-lightbox {
+  position: relative;
+  width: min(100%, 48rem);
+  max-height: calc(100dvh - 2rem);
+  display: grid;
+  gap: .65rem;
+  margin: auto;
+  padding: .75rem;
+  border-radius: 1rem;
+  background: var(--navigator-surface-raised);
+}
+
+.media-lightbox > button {
+  position: absolute;
+  z-index: 1;
+  top: .9rem;
+  right: .9rem;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--navigator-ink);
+  background: color-mix(in srgb, var(--navigator-surface-raised) 88%, transparent);
+  box-shadow: 0 3px 14px var(--navigator-shadow);
+  font-size: 1.7rem;
+}
+
+.media-lightbox img {
+  width: 100%;
+  max-height: calc(100dvh - 9rem);
+  display: block;
+  object-fit: contain;
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--navigator-ink) 7%, var(--navigator-surface));
+}
+
+.media-lightbox figcaption {
+  display: grid;
+  gap: .18rem;
+  color: var(--navigator-ink);
+  font-size: .82rem;
+}
+
+.media-lightbox figcaption small { color: var(--navigator-muted); }
 
 .voice-sheet,
 .confirm-sheet {

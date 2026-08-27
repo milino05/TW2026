@@ -19,6 +19,9 @@ export const authoringRepository = {
   createItem({ primarySubjectId, ownerType, ownerId }) {
     return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
   },
+  uploadItemMedia(payload) {
+    return apiClient.request("/item-media", { method: "POST", body: JSON.stringify(payload) });
+  },
   projection(itemId, { editionId = null } = {}) {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
     return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}${query}`);

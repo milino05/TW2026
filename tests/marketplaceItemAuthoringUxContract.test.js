@@ -149,6 +149,21 @@ test("il flusso da oggetto fisico preserva la separazione del dominio", () => {
   assert.match(source, /immagine\/i restano nella configurazione della sede/);
 });
 
+test("l'immagine facoltativa è proposta, modificabile e salvata con la revisione", () => {
+  assert.match(source, /loadSuggestedMedia/);
+  assert.match(source, /includeMedia: true/);
+  assert.match(source, /Immagine del contenuto · facoltativa/);
+  assert.match(source, /Proponi da Wikidata/);
+  assert.match(source, /data-change-media/);
+  assert.match(source, /data-remove-media/);
+  assert.match(source, /data-media-upload/);
+  assert.match(source, /ottimizzati automaticamente/);
+  assert.match(source, /optimizedMediaFile/);
+  assert.match(source, /illustrativeMedia: this\.draft\.illustrativeMedia/);
+  assert.match(source, /payload\.illustrativeMedia = this\.draft\.illustrativeMedia/);
+  assert.match(source, /renderReviewMedia\(\)/);
+});
+
 test("il picker subject usa microcopy novice-first senza cambiare il contratto Subject", () => {
   assert.match(pickerSource, /Cerca ciò di cui vuoi parlare/);
   assert.match(pickerSource, /Trova o crea il soggetto corretto/);

@@ -22,6 +22,27 @@ export interface SessionProjection {
     contentEntryId: string;
     role?: string;
     label: string;
+    illustrativeMedia: Array<{
+      id?: string;
+      url: string;
+      originalUrl?: string | null;
+      altText: string;
+      mimeType?: string | null;
+      width?: number | null;
+      height?: number | null;
+      source?: null | {
+        provider?: string | null;
+        wikidataEntityId?: string | null;
+        fileTitle?: string | null;
+        pageUrl?: string | null;
+      };
+      rights?: null | {
+        creator?: string | null;
+        attribution?: string | null;
+        licenseName?: string | null;
+        licenseUrl?: string | null;
+      };
+    }>;
     presentation: {
       text: string;
       locale?: string;
