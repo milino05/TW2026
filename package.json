@@ -17,6 +17,7 @@
     "start": "node index.js",
     "dev:container": "nodemon index.js",
     "seed:users": "node scripts/seedRequiredUsers.js",
+    "migrate:organization-rbac": "node scripts/migrateOrganizationRbac.js",
     "seed:demo": "node scripts/seedExamDataset.js && node scripts/enrichExamPresentationMatrix.js",
     "verify:demo": "node scripts/verifyExamDataset.js && node scripts/verifyExamPresentationMatrix.js",
     "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -not -path './clients/*/node_modules/*' -not -path './clients/*/dist/*' -print0 | xargs -0 -n1 node --check",

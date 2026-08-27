@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -50,8 +51,7 @@ test("consumer projection separa beneficiario personale e organizzazione e manti
       { username: "consumer-buyer", passwordHash: "test-hash" },
     ]);
     const organization = await Organization.create({ name: "Consumer organization", createdBy: buyer._id });
-    buyer.organizationMemberships = [{ organizationId: organization._id, role: "manager", assignedBy: buyer._id }];
-    await buyer.save();
+    await assignStarterRole({ organization, user: buyer, starterKey: "marketplace_manager" });
 
     const visit = await createPublishedVisit({ VisitV2, VisitRevisionV2, seller, title: "Visita consumer" });
     const listing = await marketplace.createListing({

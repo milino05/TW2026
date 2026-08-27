@@ -5,6 +5,9 @@ const mongoose = require("mongoose");
 
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
+const OrganizationRole = require("../models/organizationRole.model");
+const OrganizationMembership = require("../models/organizationMembership.model");
+const OrganizationAuthorizationEvent = require("../models/organizationAuthorizationEvent.model");
 const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
@@ -33,6 +36,7 @@ const { validateEditorialReleaseCoherence } = require("../services/editorialRele
 const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");
 const { computeVisitV2Integrity } = require("../services/visitV2Integrity.service");
 const { assertSelfContainedOffer } = require("../services/marketplaceOfferIntegrity.service");
+const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
 
 const REQUIRED_USERNAMES = Object.freeze(["autore1", "autore2", "visitatore1", "visitatore2"]);
 const REQUIRED_PASSWORD = "12345678";
@@ -185,6 +189,9 @@ async function cleanupDemo() {
   await NamespaceRevision.deleteMany({ _id: IDS.namespaceRevision });
   await Namespace.deleteMany({ _id: IDS.namespace });
   await Subject.deleteMany({ _id: { $in: subjectIds } });
+  await OrganizationAuthorizationEvent.deleteMany({ organizationId: IDS.organization });
+  await OrganizationMembership.deleteMany({ organizationId: IDS.organization });
+  await OrganizationRole.deleteMany({ organizationId: IDS.organization });
   await Organization.deleteMany({ _id: IDS.organization });
 }
 
@@ -199,26 +206,11 @@ async function seedExamDataset() {
     name: "Pinacoteca Nazionale di Bologna — Demo ArtAround",
     description: "Organization dimostrativa associata alla sede reale scelta per il progetto d'esame.",
     createdBy: manager._id,
+    owners: [{ userId: manager._id, grantedBy: manager._id, grantedAt: FIXED_NOW }],
   });
-
-  for (const [username, role] of [["autore1", "manager"], ["autore2", "operator"]]) {
-    const user = users[username];
-    user.organizationMemberships = (user.organizationMemberships || [])
-      .filter((entry) => String(entry.organizationId) !== String(organization._id));
-    user.organizationMemberships.push({
-      organizationId: organization._id,
-      role,
-      assignedBy: manager._id,
-      assignedAt: FIXED_NOW,
-    });
-    await user.save();
-  }
-  for (const username of ["visitatore1", "visitatore2"]) {
-    const user = users[username];
-    user.organizationMemberships = (user.organizationMemberships || [])
-      .filter((entry) => String(entry.organizationId) !== String(organization._id));
-    await user.save();
-  }
+  await ensureStarterRoles({ organizationId: organization._id, actorUserId: manager._id });
+  await replaceMembershipWithStarterRole({ organizationId: organization._id, userId: manager._id, starterKey: "administrator", actorUserId: manager._id, assignedAt: FIXED_NOW });
+  await replaceMembershipWithStarterRole({ organizationId: organization._id, userId: operator._id, starterKey: "contributor", actorUserId: manager._id, assignedAt: FIXED_NOW });
 
   for (const period of PERIODS) {
     await Subject.create({

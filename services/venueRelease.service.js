@@ -3,7 +3,7 @@ const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
-const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
+const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization.service");
 const { projectVenue } = require("./venue.service");
 const {
   markRevisionEdited,
@@ -91,7 +91,7 @@ async function createWorkingReleaseFromPublished({ venue, actorUserId }) {
 }
 
 async function ensureWorkingVenueRelease({ venueId, actorUserId }) {
-  const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   if (!venue.workingReleaseId) return createWorkingReleaseFromPublished({ venue, actorUserId });
   const { release, layout } = await loadReleaseSnapshot(venue.workingReleaseId);
   if (!["draft", "changes_requested", "in_review"].includes(release.status)) throw new AppError("Working VenueRelease in stato non valido", 409);
@@ -102,7 +102,7 @@ async function getVenuePhysicalState({ venueId, view = "published", actorUserId 
   const venue = await findVenueOrFail({ venueId });
   let releaseId;
   if (view === "working") {
-    await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+    await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
     releaseId = venue.workingReleaseId;
   } else if (view === "published") releaseId = venue.publishedReleaseId;
   else throw new AppError("view deve essere published o working", 400);
@@ -159,7 +159,7 @@ async function withdrawVenueReleaseReview({ venueId, actorUserId }) {
 }
 
 async function requestVenueReleaseChanges({ venueId, actorUserId, message }) {
-  const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "manager" });
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.review" });
   if (!venue.workingReleaseId) throw new AppError("Working VenueRelease non disponibile", 404);
   const { release, layout } = await loadReleaseSnapshot(venue.workingReleaseId);
   try { requestChanges(release, actorUserId, message); }
@@ -177,7 +177,7 @@ async function compensateVenueReleasePublish({ venue, release, layout, oldReleas
 }
 
 async function publishVenueRelease({ venueId, actorUserId }) {
-  const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "manager" });
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.publish" });
   if (!venue.workingReleaseId) throw new AppError("Nessuna VenueRelease da pubblicare", 404);
   const { release, layout } = await loadReleaseSnapshot(venue.workingReleaseId);
   const issues = await computeVenueReleaseIssues({ venue, release, layout });

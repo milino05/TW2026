@@ -4,6 +4,7 @@ const Organization = require("../models/organization.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
+const { resolveActorPrincipals } = require("./principalResolution.service");
 const { markRevisionEdited } = require("./revisionWorkflow.service");
 const { normalizeVisitV2Payload, validateVisitV2Payload } = require("./validation/visitV2.validation");
 const { cloneDetachedVisitRevision } = require("./visitV2Copy.service");
@@ -16,8 +17,8 @@ function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {
 function plain(value) { return value?.toObject ? value.toObject() : value || {}; }
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
-async function assertOwnerUsable({ ownerType, ownerId, actorUserId, minimumOrganizationRole = "operator" }) {
-  const actor = await assertCanActForOwner({ actorUserId, ownerType, ownerId, minimumOrganizationRole });
+async function assertOwnerUsable({ ownerType, ownerId, actorUserId, permissionCode = null }) {
+  const actor = await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode });
   if (ownerType === "organization") {
     const organization = await Organization.exists({ _id: ownerId, lifecycleStatus: "active" });
     if (!organization) throw new AppError("Organization owner non disponibile", 404);
@@ -33,8 +34,8 @@ async function findVisitV2OrFail(visitId, { includeTrashed = false } = {}) {
   return visit;
 }
 
-async function assertCanManageVisitV2({ visit, actorUserId, minimumOrganizationRole = "operator" }) {
-  return assertOwnerUsable({ ownerType: visit.ownerType, ownerId: visit.ownerId, actorUserId, minimumOrganizationRole });
+async function assertCanManageVisitV2({ visit, actorUserId, permissionCode = "visit.edit" }) {
+  return assertOwnerUsable({ ownerType: visit.ownerType, ownerId: visit.ownerId, actorUserId, permissionCode });
 }
 
 function revisionSnapshot(revision) {
@@ -117,7 +118,7 @@ async function createVisitV2({ payload, actorUserId }) {
   const normalized = normalizeVisitV2Payload(payload || {});
   const issues = validateVisitV2Payload({ payload: normalized, rawPayload: payload || {}, creating: true });
   if (issues.length) throw new AppError("Payload Visit v2 non valido", 400, issues);
-  await assertOwnerUsable({ ownerType: normalized.ownerType, ownerId: normalized.ownerId, actorUserId });
+  await assertOwnerUsable({ ownerType: normalized.ownerType, ownerId: normalized.ownerId, actorUserId, permissionCode: "visit.create" });
   const sourceAuthorizations = await authorizeVisitEditorialSources({
     editorialSources: normalized.editorialSources || [],
     actorUserId,
@@ -155,7 +156,7 @@ async function createVisitV2({ payload, actorUserId }) {
 
 async function updateVisitV2({ visitId, payload, actorUserId }) {
   const visit = await findVisitV2OrFail(visitId);
-  await assertCanManageVisitV2({ visit, actorUserId });
+  await assertCanManageVisitV2({ visit, actorUserId, permissionCode: "visit.edit" });
   const normalized = normalizeVisitV2Payload(payload || {});
   const issues = validateVisitV2Payload({ payload: normalized, rawPayload: payload || {}, creating: false });
   if (issues.length) throw new AppError("Payload Visit v2 non valido", 400, issues);
@@ -193,7 +194,7 @@ async function updateVisitV2({ visitId, payload, actorUserId }) {
 
 async function getVisitV2({ visitId, actorUserId, view = "working" }) {
   const visit = await findVisitV2OrFail(visitId, { includeTrashed: view === "working" });
-  await assertCanManageVisitV2({ visit, actorUserId });
+  await assertCanManageVisitV2({ visit, actorUserId, permissionCode: "visit.view" });
   const revisionId = view === "published" ? visit.publishedRevisionId : (visit.workingRevisionId || visit.publishedRevisionId);
   if (!revisionId) throw new AppError("Nessuna VisitRevision disponibile", 404);
   const revision = await VisitRevisionV2.findById(revisionId);
@@ -203,7 +204,10 @@ async function getVisitV2({ visitId, actorUserId, view = "working" }) {
 
 async function listManageableVisitsV2({ actorUserId }) {
   const user = await getActiveUserOrFail(actorUserId);
-  const organizationIds = (user.organizationMemberships || []).filter((entry) => ["operator", "manager"].includes(entry.role)).map((entry) => entry.organizationId);
+  const { principals } = await resolveActorPrincipals(actorUserId);
+  const organizationIds = principals
+    .filter((entry) => entry.type === "organization" && entry.effectivePermissions.includes("visit.view"))
+    .map((entry) => entry.id);
   const visits = await VisitV2.find({
     lifecycleStatus: "active",
     $or: [
@@ -221,7 +225,7 @@ async function listManageableVisitsV2({ actorUserId }) {
 }
 
 async function copyVisitV2({ sourceVisitId, sourceRevisionId = null, ownerType, ownerId, title = null, actorUserId }) {
-  await assertOwnerUsable({ ownerType, ownerId, actorUserId });
+  await assertOwnerUsable({ ownerType, ownerId, actorUserId, permissionCode: "visit.create" });
   const sourceVisit = await findVisitV2OrFail(sourceVisitId);
   const access = await assertCapabilitySource({
     actorUserId,
@@ -289,7 +293,7 @@ async function copyVisitV2({ sourceVisitId, sourceRevisionId = null, ownerType, 
 
 async function trashVisitV2({ visitId, actorUserId }) {
   const visit = await findVisitV2OrFail(visitId);
-  await assertCanManageVisitV2({ visit, actorUserId, minimumOrganizationRole: "manager" });
+  await assertCanManageVisitV2({ visit, actorUserId, permissionCode: "visit.lifecycle.manage" });
   visit.lifecycleStatus = "trashed";
   visit.trashedAt = new Date();
   visit.trashedBy = actorUserId;
@@ -299,7 +303,7 @@ async function trashVisitV2({ visitId, actorUserId }) {
 
 async function restoreVisitV2({ visitId, actorUserId }) {
   const visit = await findVisitV2OrFail(visitId, { includeTrashed: true });
-  await assertCanManageVisitV2({ visit, actorUserId, minimumOrganizationRole: "manager" });
+  await assertCanManageVisitV2({ visit, actorUserId, permissionCode: "visit.lifecycle.manage" });
   visit.lifecycleStatus = "active";
   visit.trashedAt = null;
   visit.trashedBy = null;

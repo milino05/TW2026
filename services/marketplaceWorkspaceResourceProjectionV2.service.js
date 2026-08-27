@@ -12,15 +12,22 @@ function workflowState(revision) {
   return { status: revision.status, integrityStatus: revision.integrity?.status || "needs_review" };
 }
 
-function ownedOperations({ published, listing, canManageCommerce = true }) {
-  const operations = [{ code: "open_editor", label: "Apri editor" }];
+function ownedOperations({ published, listing, canManageCommerce = true, canEdit = true }) {
+  const operations = canEdit ? [{ code: "open_editor", label: "Apri editor" }] : [];
   if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Configura offerta e pubblica" });
   if (canManageCommerce && listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
   return operations;
 }
 
-function withWorkflowOperations({ baseOperations, principalType, actorRole, revision }) {
-  return [...baseOperations, ...projectEditorialWorkflowOperations({ ownerType: principalType, actorRole, revision })];
+function workflowCapabilities(principal, resourceType) {
+  if (principal.type === "user") return { edit: true, review: true, publish: true };
+  const permissions = new Set(principal.effectivePermissions || []);
+  const prefix = resourceType === "item_edition" ? "item" : resourceType;
+  return { edit: permissions.has(`${prefix}.edit`), review: permissions.has(`${prefix}.review`), publish: permissions.has(`${prefix}.publish`) };
+}
+
+function withWorkflowOperations({ baseOperations, principal, resourceType, revision }) {
+  return [...baseOperations, ...projectEditorialWorkflowOperations({ ownerType: principal.type, capabilities: workflowCapabilities(principal, resourceType), revision })];
 }
 
 async function listingMapForCandidates(principal, candidates) {
@@ -45,11 +52,12 @@ async function listingMapForCandidates(principal, candidates) {
 }
 
 function projectOwnedCandidate(candidate, { principal, listings }) {
-  const canManageCommerce = principal.type === "user" || principal.role === "manager";
+  const canManageCommerce = principal.type === "user" || (principal.effectivePermissions || []).includes("marketplace.distribution.manage");
+  const capabilities = workflowCapabilities(principal, candidate.resourceType);
   const listing = listings.get(key(candidate.resourceType, candidate._id)) || null;
   if (candidate.resourceType === "item_edition") {
     const revision = candidate.revision || null;
-    const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce });
+    const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce, canEdit: capabilities.edit });
     return {
       ownership: "owned", resourceType: "item_edition", resourceId: candidate._id,
       sourceRef: { resourceType: "item_edition", resourceId: candidate._id },
@@ -59,7 +67,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "item_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principalType: principal.type, actorRole: principal.role, revision }),
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),
     };
   }
   if (candidate.resourceType === "editorial_context") {
@@ -71,12 +79,12 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       state: candidate.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: candidate.publishedReleaseId ? { resourceType: "editorial_release", resourceId: candidate.publishedReleaseId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce }),
+      availableOperations: ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce, canEdit: capabilities.edit }),
     };
   }
   if (candidate.resourceType === "namespace") {
     const revision = candidate.revision || null;
-    const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce });
+    const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce, canEdit: capabilities.edit });
     return {
       ownership: "owned", resourceType: "namespace", resourceId: candidate._id,
       sourceRef: { resourceType: "namespace", resourceId: candidate._id },
@@ -86,11 +94,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principalType: principal.type, actorRole: principal.role, revision }),
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),
     };
   }
   const revision = candidate.revision || null;
-  const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce });
+  const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce, canEdit: capabilities.edit });
   return {
     ownership: "owned", resourceType: "visit", resourceId: candidate._id,
     sourceRef: { resourceType: "visit", resourceId: candidate._id },
@@ -100,7 +108,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
     editorialWorkflow: workflowState(revision),
     publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "visit_revision", resourceId: candidate.publishedRevisionId } : null,
     listing,
-    availableOperations: withWorkflowOperations({ baseOperations, principalType: principal.type, actorRole: principal.role, revision }),
+    availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
   };
 }
 

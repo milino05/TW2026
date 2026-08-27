@@ -33,7 +33,7 @@ Con un contesto operativo attivo, la navigazione user-facing è:
 - **Home**: dashboard contestuale personale o Organization.
 - **Esplora**: discovery globale, con sottosezioni **Catalogo · Organizzazioni · Sedi**. La discovery non modifica il contesto operativo.
 - **Libreria**: risorse owned e licensed utilizzabili dal contesto corrente.
-- **Crea**: nuovi contenuti e Visit, automaticamente owned dal contesto selezionato; nessun selector locale di principal.
+- **Crea**: nuovi contenuti e Visit, automaticamente owned dal contesto selezionato e mostrati soltanto quando le relative capability sono disponibili; nessun selector locale di principal.
 - **Marketplace**: acquisizioni/licenze del beneficiary corrente e vendite del seller corrente, senza selector duplicati.
 - **Account**: preferenze personali, Organization accessibili e strumenti editoriali personali. La creazione Organization è centralizzata nel Context Hub.
 
@@ -44,7 +44,7 @@ La voce **Crea** è attiva per i flussi di creazione; un editor aperto su una ri
 La Home operativa di una Organization, la console privata di gestione e il profilo pubblico sono responsabilità diverse:
 
 - **Home Organization**: lavoro quotidiano nel contesto scelto;
-- **Gestione Organization**: persone, sedi, regole e impostazioni, tramite projection management e `availableOperations[]` backend-authoritative;
+- **Gestione Organization**: panoramica, persone, ruoli, sedi, regole e impostazioni, tramite projection management, `availableSections[]` e `availableOperations[]` backend-authoritative;
 - **Profilo Organization pubblico**: descrizione, Venue pubbliche e pubblicazioni Marketplace dell'Organization, senza funzioni amministrative.
 
 Analogamente, la pagina pubblica di una Venue espone solo lo stato pubblicato e collega al Catalogo filtrato per rilevanza fisica. I contenuti editoriali non diventano proprietà della Venue e possono essere pubblicati da altri User/Organization.
@@ -55,6 +55,7 @@ Analogamente, la pagina pubblica di una Venue espone solo lo stato pubblicato e 
 - `selectedVenueIds[]` resta un filtro fisico transitorio e modificabile.
 - Beneficiary/seller/owner restano concetti distinti nel backend anche quando la UI li deriva dal contesto operativo.
 - `availableOperations[]` resta autorevole; il client non deduce permessi dal contesto.
+- i nomi dei ruoli Organization non sono contratti applicativi: i permessi effettivi sono l'unione live dei ruoli locali e Owner resta un'autorità separata;
 - Navigator → Marketplace può inizializzare la selezione Venue del Catalogo senza determinare l'Organization operativa.
 - La soluzione resta compatibile con 18–27/18–33: teacher/session authority, geolocation/QR e capability future possono usare gli stessi boundary senza trasformare il Context Hub in authorization o physical state.
 

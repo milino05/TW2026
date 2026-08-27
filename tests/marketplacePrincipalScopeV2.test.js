@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -37,8 +38,7 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
       name: "Buyer organization",
       createdBy: buyer._id,
     });
-    buyer.organizationMemberships = [{ organizationId: organization._id, role: "manager", assignedBy: buyer._id }];
-    await buyer.save();
+    await assignStarterRole({ organization, user: buyer, starterKey: "administrator" });
 
     const subject = await Subject.create({ preferredLabel: "Opera principal scope", createdBy: seller._id });
     const durationDefinitionId = "duration-standard";

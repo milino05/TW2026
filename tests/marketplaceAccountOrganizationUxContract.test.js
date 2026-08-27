@@ -52,10 +52,11 @@ test("la creazione Organization è centralizzata nel Context Hub", () => {
   assert.match(contextHub, /accountRepository\.createOrganization/);
 });
 
-test("Organization management è deep-linkabile per Panoramica, Persone, Sedi e Regole", () => {
-  assert.match(organization, /new Set\(\["overview", "people", "venues", "rules"\]\)/);
+test("Organization management è deep-linkabile e capability-adaptive", () => {
+  assert.match(organization, /new Set\(\["overview", "people", "roles", "venues", "rules", "settings"\]\)/);
   assert.match(organization, /sectionRoute/);
-  for (const label of ["Panoramica", "Persone", "Sedi", "Regole editoriali"]) assert.match(organization, new RegExp(label));
+  assert.match(organization, /availableSections/);
+  for (const label of ["Panoramica", "Persone", "Ruoli", "Sedi", "Regole editoriali", "Impostazioni"]) assert.match(organization, new RegExp(label));
 });
 
 test("profilo pubblico e console di gestione sono responsabilità distinte", () => {
@@ -68,16 +69,16 @@ test("profilo pubblico e console di gestione sono responsabilità distinte", () 
 });
 
 test("ruoli e membership restano backend-authoritative", () => {
-  for (const operation of ["organization.member.promote", "organization.member.demote", "organization.member.remove", "organization.member.add", "venue.create", "namespace.create"]) {
+  for (const operation of ["organization.member.roles.update", "organization.member.remove", "organization.member.add", "organization.owner.grant", "organization.role.update", "venue.create", "namespace.create"]) {
     assert.match(organization, new RegExp(operation.replaceAll(".", "\\.")));
   }
   assert.doesNotMatch(organization, /actorRole|organizationCreatedBy|isManager\s*=/);
 });
 
-test("rimozione membro usa conferma inline e non dialoghi nativi", () => {
-  assert.match(organization, /memberRemoval/);
-  assert.match(organization, /data-confirm-member-remove/);
-  assert.match(organization, /data-cancel-member-remove/);
+test("operazioni sensibili usano conferma inline e non dialoghi nativi", () => {
+  assert.match(organization, /confirmation/);
+  assert.match(organization, /data-confirm-action/);
+  assert.match(organization, /data-confirm-cancel/);
   assert.doesNotMatch(organization, /window\.confirm|window\.prompt/);
 });
 
@@ -94,6 +95,14 @@ test("dopo la creazione delle regole si entra subito nell'editor guidato", () =>
     assert.match(source, /created\?\.namespace\?\._id/);
     assert.match(source, /\/namespaces\/editor\?namespaceId=/);
     assert.match(source, /Crea e configura/);
-    assert.match(source, /tutorial e un modello già pronto facoltativo/);
+    assert.match(source, source === profile ? /tutorial e un modello già pronto facoltativo/ : /Crea e configura/);
   }
+});
+
+test("la UI distingue ruoli multipli, Owner e permission builder", () => {
+  assert.match(organization, /roleNames/);
+  assert.match(organization, /owner-badge/);
+  assert.match(organization, /permissionCodes/);
+  assert.match(organization, /Impatto elevato/);
+  assert.doesNotMatch(organization, /manager|operator|actorRole|isManager/);
 });

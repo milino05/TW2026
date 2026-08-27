@@ -22,11 +22,19 @@ async function availableBeneficiaryProjection(actorUserId) {
     ? await Organization.find({ _id: { $in: organizationIds }, lifecycleStatus: "active" }).select("name").lean()
     : [];
   const organizationNameById = new Map(organizations.map((entry) => [id(entry._id), entry.name]));
-  return principals.map((principal) => ({
+  return principals.filter((principal) => principal.type === "user" || [
+    "marketplace.acquire",
+    "marketplace.acquisitions.view",
+  ].some((code) => principal.effectivePermissions.includes(code))).map((principal) => ({
     type: principal.type,
     id: principal.id,
     name: principal.type === "user" ? user.username : (organizationNameById.get(id(principal.id)) || "Organizzazione"),
-    role: principal.role,
+    roles: principal.roles,
+    isOwner: principal.isOwner,
+    availableOperations: principal.type === "user" ? ["marketplace.acquire", "marketplace.acquisitions.view"] : [
+      ...(principal.effectivePermissions.includes("marketplace.acquire") ? ["marketplace.acquire"] : []),
+      ...(principal.effectivePermissions.includes("marketplace.acquisitions.view") ? ["marketplace.acquisitions.view"] : []),
+    ],
   }));
 }
 

@@ -38,7 +38,7 @@ async function createNamespace({ payload, actorUserId }) {
     actorUserId,
     ownerType: normalized.ownerType,
     ownerId: normalized.ownerId,
-    minimumOrganizationRole: "operator",
+    permissionCode: "namespace.create",
   });
 
   const namespace = await Namespace.create({
@@ -71,7 +71,7 @@ async function updateNamespace({ namespaceId, payload, actorUserId }) {
     actorUserId,
     ownerType: namespace.ownerType,
     ownerId: namespace.ownerId,
-    minimumOrganizationRole: "operator",
+    permissionCode: "namespace.edit",
   });
   const normalized = validateMetadata(payload || {}, { creating: false });
   if (Object.prototype.hasOwnProperty.call(normalized, "name")) namespace.name = normalized.name;
@@ -107,7 +107,7 @@ async function forkNamespace({ namespaceId, payload, actorUserId }) {
     actorUserId,
     ownerType: normalized.ownerType,
     ownerId: normalized.ownerId,
-    minimumOrganizationRole: "operator",
+    permissionCode: "namespace.create",
   });
   const access = await assertCanUseNamespaceForFork({
     namespace: source,

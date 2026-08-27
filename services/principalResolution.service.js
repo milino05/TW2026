@@ -1,41 +1,48 @@
 const Organization = require("../models/organization.model");
+const OrganizationMembership = require("../models/organizationMembership.model");
 const AppError = require("../utils/AppError");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
-const { hasOrganizationRole } = require("./organizationAuthorization.service");
+const { effectivePermissionsForMembership } = require("./organizationAuthorization.service");
 
-function sameId(a, b) {
-  return String(a || "") === String(b || "");
-}
+function sameId(a, b) { return String(a || "") === String(b || ""); }
 
 async function resolveActorPrincipals(actorUserId) {
   const user = await getActiveUserOrFail(actorUserId);
-  const membershipIds = (user.organizationMemberships || [])
-    .filter((entry) => ["operator", "manager"].includes(entry.role))
-    .map((entry) => entry.organizationId);
-  const activeOrganizations = membershipIds.length
-    ? await Organization.find({ _id: { $in: membershipIds }, lifecycleStatus: "active" }).select("_id").lean()
+  const memberships = await OrganizationMembership.find({ userId: user._id })
+    .populate("roleAssignments.roleId")
+    .lean();
+  const organizationIds = memberships.map((entry) => entry.organizationId);
+  const activeOrganizations = organizationIds.length
+    ? await Organization.find({ _id: { $in: organizationIds }, lifecycleStatus: "active" }).select("_id owners").lean()
     : [];
-  const activeIds = new Set(activeOrganizations.map((entry) => String(entry._id)));
-  const organizationPrincipals = (user.organizationMemberships || [])
-    .filter((entry) => activeIds.has(String(entry.organizationId)))
-    .map((entry) => ({ type: "organization", id: entry.organizationId, role: entry.role }));
+  const organizationById = new Map(activeOrganizations.map((entry) => [String(entry._id), entry]));
+  const organizationPrincipals = memberships
+    .filter((entry) => organizationById.has(String(entry.organizationId)) && entry.roleAssignments.length > 0)
+    .map((entry) => {
+      const organization = organizationById.get(String(entry.organizationId));
+      return {
+        type: "organization",
+        id: entry.organizationId,
+        roles: entry.roleAssignments.map((assignment) => ({ id: assignment.roleId._id, name: assignment.roleId.name })),
+        isOwner: organization.owners.some((owner) => sameId(owner.userId, user._id)),
+        effectivePermissions: effectivePermissionsForMembership(entry),
+      };
+    });
   return {
     user,
-    principals: [{ type: "user", id: user._id, role: "owner" }, ...organizationPrincipals],
+    principals: [{ type: "user", id: user._id, roles: [], isOwner: true, effectivePermissions: [] }, ...organizationPrincipals],
   };
 }
 
-async function assertCanActForPrincipal({ actorUserId, principalType, principalId, minimumOrganizationRole = "operator" }) {
-  const { user } = await resolveActorPrincipals(actorUserId);
+async function assertCanActForPrincipal({ actorUserId, principalType, principalId, permissionCode = null }) {
+  const { user, principals } = await resolveActorPrincipals(actorUserId);
   if (principalType === "user" && sameId(user._id, principalId)) return user;
-  if (principalType === "organization" && hasOrganizationRole(user, principalId, minimumOrganizationRole)) {
-    const organization = await Organization.exists({ _id: principalId, lifecycleStatus: "active" });
-    if (organization) return user;
-  }
-  throw new AppError("Principal non disponibile per l'actor corrente", 403, [{ code: "PRINCIPAL_AUTHORITY_REQUIRED" }]);
+  const principal = principals.find((entry) => entry.type === "organization" && sameId(entry.id, principalId));
+  if (principal && (!permissionCode || principal.effectivePermissions.includes(permissionCode))) return user;
+  throw new AppError("Principal non disponibile per l'actor corrente", 403, [{
+    code: permissionCode ? "ORGANIZATION_PERMISSION_REQUIRED" : "PRINCIPAL_AUTHORITY_REQUIRED",
+    ...(permissionCode ? { permissionCode } : {}),
+  }]);
 }
 
-module.exports = {
-  resolveActorPrincipals,
-  assertCanActForPrincipal,
-};
+module.exports = { resolveActorPrincipals, assertCanActForPrincipal };

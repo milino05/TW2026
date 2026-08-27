@@ -3,6 +3,7 @@ const path = require("path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -43,8 +44,7 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
 
     const user = await User.create({ username: "venue-v2-test", passwordHash: "test-hash" });
     const organization = await Organization.create({ name: "Museum Foundation", createdBy: user._id });
-    user.organizationMemberships.push({ organizationId: organization._id, role: "manager", assignedBy: user._id });
-    await user.save();
+    await assignStarterRole({ organization, user, starterKey: "administrator" });
     const [subjectA, subjectB] = await Subject.create([
       { preferredLabel: "Opera A", createdBy: user._id },
       { preferredLabel: "Opera B", createdBy: user._id },

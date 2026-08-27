@@ -82,7 +82,7 @@ async function search({ scheme, query, locale = "it", entityKind = "item", limit
   };
 }
 
-async function resolve({ scheme, id, locale = "it" }) {
+async function resolve({ scheme, id, locale = "it", includeMedia = false }) {
   const provider = providerOrFail(scheme);
   let resolution;
   try {
@@ -109,10 +109,23 @@ async function resolve({ scheme, id, locale = "it" }) {
     scheme: provider.scheme,
     ids: [resolution.requestedId, resolution.canonicalId],
   });
+  let mediaCandidates = [];
+  let mediaStatus = includeMedia ? "not_found" : "not_requested";
+  if (includeMedia && typeof provider.mediaCandidates === "function") {
+    try {
+      mediaCandidates = await provider.mediaCandidates({ id: resolution.canonicalId, locale });
+      mediaStatus = mediaCandidates.length ? "available" : "not_found";
+    } catch (error) {
+      if (!(error instanceof SemanticProviderUnavailableError)) throw error;
+      mediaStatus = "unavailable";
+    }
+  }
   return {
     ...resolution,
     provider: provider.descriptor(),
     boundSubjects: boundSubjects.map(projectSubject),
+    mediaStatus,
+    mediaCandidates,
   };
 }
 

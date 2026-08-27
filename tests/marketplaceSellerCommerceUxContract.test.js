@@ -32,7 +32,7 @@ test("vendite derivano il seller dal contesto operativo", () => {
 test("projection commerciale resta backend-authoritative", () => {
   assert.match(service, /getCommercialManagement/);
   assert.match(service, /assertCanActForPrincipal/);
-  assert.match(service, /minimumOrganizationRole:\s*principalType === "organization" \? "manager" : "operator"/);
+  assert.match(service, /permissionCode:\s*principalType === "organization" \? "marketplace\.distribution\.view" : null/);
   assert.match(service, /availableOperations/);
   assert.match(repository, /commerce\(principal = \{\}/);
   assert.match(repository, /principalParams\(principal\)/);

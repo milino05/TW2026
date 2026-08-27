@@ -17,9 +17,9 @@ async function findContextOrFail(editorialContextId) {
   return context;
 }
 
-async function assertCanManageContext(context, actorUserId, minimumOrganizationRole = "operator") {
+async function assertCanManageContext(context, actorUserId, permissionCode = "editorial_context.edit") {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId, minimumOrganizationRole);
+  await assertCanManageContentSpace(contentSpace, actorUserId, permissionCode);
   return contentSpace;
 }
 
@@ -76,7 +76,7 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
   if (shapeIssues.length) throw new AppError("Payload EditorialRelease non valido", 400, shapeIssues);
   const normalized = normalizeEditorialReleasePayload(rawPayload);
   const context = await findContextOrFail(editorialContextId);
-  const contentSpace = await assertCanManageContext(context, actorUserId, "manager");
+  const contentSpace = await assertCanManageContext(context, actorUserId, "editorial_release.publish");
   const dependencyAccess = await assertReleaseDependenciesAuthorized({
     context,
     namespaceRevisionId: normalized.namespaceRevisionId,
@@ -147,7 +147,7 @@ async function getCurrentEditorialRelease({ editorialContextId, actorUserId = nu
   const context = await findContextOrFail(editorialContextId);
   if (requireManagement) {
     if (!actorUserId) throw new AppError("Autenticazione richiesta", 401);
-    await assertCanManageContext(context, actorUserId);
+    await assertCanManageContext(context, actorUserId, "editorial_context.view");
   }
   if (!context.publishedReleaseId) return null;
   const release = await EditorialRelease.findOne({ _id: context.publishedReleaseId, editorialContextId: context._id });
@@ -157,7 +157,7 @@ async function getCurrentEditorialRelease({ editorialContextId, actorUserId = nu
 
 async function listEditorialReleases({ editorialContextId, actorUserId }) {
   const context = await findContextOrFail(editorialContextId);
-  await assertCanManageContext(context, actorUserId);
+  await assertCanManageContext(context, actorUserId, "editorial_context.view");
   return EditorialRelease.find({ editorialContextId: context._id }).sort({ version: -1 });
 }
 

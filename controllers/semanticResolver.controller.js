@@ -24,6 +24,7 @@ async function resolve(req, res, next) {
       scheme: req.query?.scheme || "wikidata",
       id: req.query?.id || "",
       locale: req.query?.locale || "it",
+      includeMedia: ["1", "true"].includes(String(req.query?.includeMedia || "").toLowerCase()),
     }));
   } catch (error) { next(error); }
 }

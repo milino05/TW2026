@@ -42,12 +42,12 @@ async function findNamespaceOrFail(namespaceId) {
   return namespace;
 }
 
-async function assertNamespaceAuthority(namespace, actorUserId, minimumOrganizationRole = "operator") {
+async function assertNamespaceAuthority(namespace, actorUserId, permissionCode = "namespace.edit") {
   return assertCanActForOwner({
     actorUserId,
     ownerType: namespace.ownerType,
     ownerId: namespace.ownerId,
-    minimumOrganizationRole,
+    permissionCode,
   });
 }
 
@@ -126,14 +126,14 @@ async function getPublishedNamespaceRevision({ namespaceId }) {
 
 async function getWorkingNamespaceRevision({ namespaceId, actorUserId, create = false }) {
   const namespace = await findNamespaceOrFail(namespaceId);
-  await assertNamespaceAuthority(namespace, actorUserId, "operator");
+  await assertNamespaceAuthority(namespace, actorUserId, "namespace.edit");
   const revision = await getWorking(namespace, actorUserId, { create });
   return { namespace, revision };
 }
 
 async function updateNamespaceDraft({ namespaceId, actorUserId, payload }) {
   const namespace = await findNamespaceOrFail(namespaceId);
-  await assertNamespaceAuthority(namespace, actorUserId, "operator");
+  await assertNamespaceAuthority(namespace, actorUserId, "namespace.edit");
   const revision = await getWorking(namespace, actorUserId, { create: true });
   let prepared;
   try {
@@ -151,7 +151,7 @@ async function updateNamespaceDraft({ namespaceId, actorUserId, payload }) {
 
 async function evaluateNamespace({ namespaceId, actorUserId, allowInReview = false }) {
   const namespace = await findNamespaceOrFail(namespaceId);
-  await assertNamespaceAuthority(namespace, actorUserId, "operator");
+  await assertNamespaceAuthority(namespace, actorUserId, "namespace.edit");
   const revision = await getWorking(namespace, actorUserId, { create: true });
   if (revision.status === "in_review" && !allowInReview) throw new AppError("Una revisione in_review e bloccata", 409);
   const issues = validateNamespaceRevisionSnapshot(snapshot(revision), { requireCoreScales: true });
@@ -178,7 +178,7 @@ async function requestNamespaceReview({ namespaceId, actorUserId }) {
 async function withdrawNamespaceReview({ namespaceId, actorUserId }) {
   const namespace = await findNamespaceOrFail(namespaceId);
   if (namespace.ownerType !== "organization") throw new AppError("Operazione non applicabile a un Namespace personale", 409);
-  await assertNamespaceAuthority(namespace, actorUserId, "operator");
+  await assertNamespaceAuthority(namespace, actorUserId, "namespace.edit");
   const revision = await getWorking(namespace, actorUserId, { create: false });
   try { withdrawReview(revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -189,7 +189,7 @@ async function withdrawNamespaceReview({ namespaceId, actorUserId }) {
 async function requestNamespaceChanges({ namespaceId, actorUserId, message }) {
   const namespace = await findNamespaceOrFail(namespaceId);
   if (namespace.ownerType !== "organization") throw new AppError("Operazione non applicabile a un Namespace personale", 409);
-  await assertNamespaceAuthority(namespace, actorUserId, "manager");
+  await assertNamespaceAuthority(namespace, actorUserId, "namespace.review");
   const revision = await getWorking(namespace, actorUserId, { create: false });
   try { requestChanges(revision, actorUserId, message); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -217,7 +217,7 @@ async function publishNamespace({ namespaceId, actorUserId }) {
   await assertNamespaceAuthority(
     namespace,
     actorUserId,
-    namespace.ownerType === "organization" ? "manager" : "operator",
+    "namespace.publish",
   );
   const result = await evaluateNamespace({ namespaceId, actorUserId, allowInReview: true });
   const { revision, issues } = result;

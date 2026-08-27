@@ -18,6 +18,21 @@ const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOpera
 
 function id(value) { return String(value?._id || value || ""); }
 
+function projectIllustrativeMedia(media) {
+  if (!media) return null;
+  return {
+    id: media._id,
+    url: media.url,
+    originalUrl: media.originalUrl || null,
+    altText: media.altText || null,
+    mimeType: media.mimeType || null,
+    width: media.width || null,
+    height: media.height || null,
+    source: media.source || null,
+    rights: media.rights || null,
+  };
+}
+
 function collectRevisionSubjectRefs(revision) {
   const refs = [];
   for (const [index, subjectId] of (revision?.relatedSubjectIds || []).entries()) {
@@ -154,11 +169,11 @@ async function ownerSummary(item) {
   return { type: "user", id: item.ownerId, name: user?.username || "Autore" };
 }
 
-async function actorRoleForOwner(item, actorUserId) {
+async function actorAuthorityForOwner(item, actorUserId) {
   const { principals } = await resolveActorPrincipals(actorUserId);
   const principal = principals.find((entry) => entry.type === item.ownerType && id(entry.id) === id(item.ownerId));
   if (!principal) throw new AppError("Principal proprietario non disponibile per l'actor", 403, [{ code: "PRINCIPAL_AUTHORITY_REQUIRED" }]);
-  return principal.role;
+  return principal;
 }
 
 async function projectMemberships({ itemId, actorUserId }) {
@@ -179,12 +194,12 @@ async function projectMemberships({ itemId, actorUserId }) {
 async function getItemAuthoringProjection({ itemId, editionId = null, actorUserId }) {
   const item = await itemService.findItemOrFail(itemId);
   await itemService.assertCanManageItem(item, actorUserId);
-  const [subject, editions, owner, memberships, actorRole] = await Promise.all([
+  const [subject, editions, owner, memberships, actorAuthority] = await Promise.all([
     Subject.findById(item.primarySubjectId).lean(),
     ItemEdition.find({ itemId: item._id }).sort({ createdAt: 1 }).lean(),
     ownerSummary(item),
     projectMemberships({ itemId: item._id, actorUserId }),
-    actorRoleForOwner(item, actorUserId),
+    actorAuthorityForOwner(item, actorUserId),
   ]);
   if (!subject) throw new AppError("Primary Subject dell'Item non disponibile", 409, [{ code: "PRIMARY_SUBJECT_NOT_FOUND" }]);
 
@@ -234,7 +249,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
         authorCredits: revision.authorCredits || [],
         license: revision.metadata?.license || null,
         tags: revision.tags || [],
-        illustrativeMedia: (revision.illustrativeMedia || []).map((media) => ({ id: media._id, url: media.url, altText: media.altText || null })),
+        illustrativeMedia: (revision.illustrativeMedia || []).map(projectIllustrativeMedia).filter(Boolean),
         selectionSignals: (revision.selectionSignals || []).map((signal) => ({
           definitionId: signal.definitionId,
           label: maps.signal.get(signal.definitionId)?.label || signal.definitionId,
@@ -269,7 +284,11 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
 
   const workflowOperations = projectEditorialWorkflowOperations({
     ownerType: item.ownerType,
-    actorRole,
+    capabilities: item.ownerType === "user" ? { edit: true, review: true, publish: true } : {
+      edit: actorAuthority.effectivePermissions.includes("item.edit"),
+      review: actorAuthority.effectivePermissions.includes("item.review"),
+      publish: actorAuthority.effectivePermissions.includes("item.publish"),
+    },
     revision: workflowRevision,
   });
   const editAllowed = Boolean(workflowRevision && workflowRevision.status !== "in_review");
@@ -284,9 +303,10 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
       integrityStatus: selected.revision.integrity?.status || "needs_review",
     } : null,
     availableOperations: [
-      ...(editAllowed ? [{ code: "item.edit", label: "Modifica contenuto" }] : []),
-      { code: "item.create_edition", label: "Crea Edition" },
-      { code: "content_space.membership", label: "Gestisci ContentSpace" },
+      ...(editAllowed ? [{ code: "item.edit", label: "Modifica contenuto" }, { code: "item.create_edition", label: "Crea Edition" }] : []),
+      ...(item.ownerType === "user" || actorAuthority.effectivePermissions.includes("editorial_space.manage")
+        ? [{ code: "content_space.membership", label: "Gestisci ContentSpace" }]
+        : []),
       ...workflowOperations,
     ],
   };

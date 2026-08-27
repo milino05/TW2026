@@ -109,6 +109,13 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       label: "Opera per runtime",
       authorCredits: ["Autore Runtime"],
       metadata: { license: "CC BY" },
+      illustrativeMedia: [{
+        url: "https://upload.wikimedia.org/runtime-thumb.jpg",
+        originalUrl: "https://upload.wikimedia.org/runtime-original.jpg",
+        altText: "Opera runtime vista frontalmente",
+        source: { provider: "wikimedia_commons", wikidataEntityId: "Q42", pageUrl: "https://commons.wikimedia.org/wiki/File:Runtime.jpg" },
+        rights: { creator: "Autore immagine", licenseName: "CC BY 4.0" },
+      }],
       presentationVariants: [{
         _id: variantId,
         key: "standard",
@@ -250,6 +257,8 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     assert.equal(id(started.session.venuePins[0].layoutRevisionId), id(layoutR1._id));
     assert.equal(id(started.current.current.anchor.venueTargetId), id(target._id));
     assert.equal(started.current.current.presentation.text, "Testo breve semplice");
+    assert.equal(started.current.current.illustrativeMedia[0].url, "https://upload.wikimedia.org/runtime-thumb.jpg");
+    assert.equal(started.current.current.illustrativeMedia[0].altText, "Opera runtime vista frontalmente");
     assert.ok(started.current.availableActions.some((entry) => entry.actionId === "presentation.depth.increase"));
     assert.ok(started.current.availableActions.some((entry) => entry.actionId === "navigation.place.find_toilet"));
 

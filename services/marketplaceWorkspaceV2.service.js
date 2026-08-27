@@ -47,7 +47,9 @@ async function availablePrincipalProjection(actorUserId) {
     type: principal.type,
     id: principal.id,
     name: principal.type === "user" ? user.username : (nameById.get(id(principal.id)) || "Organization"),
-    role: principal.role,
+    roles: principal.roles,
+    isOwner: principal.isOwner,
+    effectivePermissions: principal.effectivePermissions,
   }));
 }
 
@@ -77,8 +79,8 @@ async function listingMapForPrincipal(principalType, principalId) {
   }]));
 }
 
-function ownedOperations({ published, listing, canManageCommerce = true }) {
-  const operations = [{ code: "open_editor", label: "Apri editor" }];
+function ownedOperations({ published, listing, canManageCommerce = true, canEdit = true }) {
+  const operations = canEdit ? [{ code: "open_editor", label: "Apri editor" }] : [];
   if (canManageCommerce && published && !listing) operations.push({ code: "create_listing", label: "Configura offerta e pubblica" });
   if (canManageCommerce && listing) operations.push({ code: "manage_distribution", label: "Gestisci distribuzione" });
   return operations;
@@ -92,15 +94,30 @@ function workflowState(revision) {
   };
 }
 
-function withWorkflowOperations({ baseOperations, principalType, actorRole, revision }) {
+function resourceCapabilities(principal, resourceType) {
+  if (principal.type === "user") return { edit: true, review: true, publish: true };
+  const permissions = new Set(principal.effectivePermissions || []);
+  const prefix = resourceType === "item_edition" ? "item" : resourceType;
+  return {
+    edit: permissions.has(`${prefix}.edit`),
+    review: permissions.has(`${prefix}.review`),
+    publish: permissions.has(`${prefix}.publish`),
+  };
+}
+
+function withWorkflowOperations({ baseOperations, principal, resourceType, revision }) {
   return [
     ...baseOperations,
-    ...projectEditorialWorkflowOperations({ ownerType: principalType, actorRole, revision }),
+    ...projectEditorialWorkflowOperations({ ownerType: principal.type, capabilities: resourceCapabilities(principal, resourceType), revision }),
   ];
 }
 
-async function projectOwnedAssets({ principalType, principalId, actorRole, listings }) {
-  const canManageCommerce = principalType === "user" || actorRole === "manager";
+async function projectOwnedAssets({ principal, listings }) {
+  const principalType = principal.type;
+  const principalId = principal.id;
+  const permissions = new Set(principal.effectivePermissions || []);
+  const can = (code) => principalType === "user" || permissions.has(code);
+  const canManageCommerce = can("marketplace.distribution.manage");
   const spaces = await ContentSpace.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).sort({ name: 1 }).lean();
   const items = await ItemV2.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
   const editions = items.length ? await ItemEdition.find({ itemId: { $in: items.map((entry) => entry._id) } }).lean() : [];
@@ -129,9 +146,10 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
 
   const assets = [];
   for (const edition of editions) {
+    if (!can("item.view")) continue;
     const revision = itemRevisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId));
     const listing = listings.get(key("item_edition", edition._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(edition.publishedRevisionId), listing, canManageCommerce });
+    const baseOperations = ownedOperations({ published: Boolean(edition.publishedRevisionId), listing, canManageCommerce, canEdit: can("item.edit") });
     assets.push({
       ownership: "owned",
       resourceType: "item_edition",
@@ -143,10 +161,11 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: edition.publishedRevisionId ? { resourceType: "item_revision", resourceId: edition.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),
     });
   }
   for (const context of contexts) {
+    if (!can("editorial_context.view")) continue;
     const listing = listings.get(key("editorial_context", context._id)) || null;
     assets.push({
       ownership: "owned",
@@ -158,13 +177,14 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
       state: context.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: context.publishedReleaseId ? { resourceType: "editorial_release", resourceId: context.publishedReleaseId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(context.publishedReleaseId), listing, canManageCommerce }),
+      availableOperations: ownedOperations({ published: Boolean(context.publishedReleaseId), listing, canManageCommerce, canEdit: can("editorial_context.edit") }),
     });
   }
   for (const namespace of namespaces) {
+    if (!can("namespace.view")) continue;
     const revision = namespaceRevisionById.get(id(namespace.workingRevisionId || namespace.publishedRevisionId));
     const listing = listings.get(key("namespace", namespace._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing, canManageCommerce });
+    const baseOperations = ownedOperations({ published: Boolean(namespace.publishedRevisionId), listing, canManageCommerce, canEdit: can("namespace.edit") });
     assets.push({
       ownership: "owned",
       resourceType: "namespace",
@@ -176,13 +196,14 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: namespace.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: namespace.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),
     });
   }
   for (const visit of visits) {
+    if (!can("visit.view")) continue;
     const revision = visitRevisionById.get(id(visit.workingRevisionId || visit.publishedRevisionId));
     const listing = listings.get(key("visit", visit._id)) || null;
-    const baseOperations = ownedOperations({ published: Boolean(visit.publishedRevisionId), listing, canManageCommerce });
+    const baseOperations = ownedOperations({ published: Boolean(visit.publishedRevisionId), listing, canManageCommerce, canEdit: can("visit.edit") });
     assets.push({
       ownership: "owned",
       resourceType: "visit",
@@ -195,10 +216,13 @@ async function projectOwnedAssets({ principalType, principalId, actorRole, listi
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: visit.publishedRevisionId ? { resourceType: "visit_revision", resourceId: visit.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principalType, actorRole, revision }),
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
     });
   }
-  return { contentSpaces: spaces.map((space) => ({ id: space._id, name: space.name, description: space.description || "" })), assets };
+  return {
+    contentSpaces: can("editorial_space.view") ? spaces.map((space) => ({ id: space._id, name: space.name, description: space.description || "" })) : [],
+    assets,
+  };
 }
 
 async function actionableRefs(resourceType, resourceId, marketable) {
@@ -273,14 +297,10 @@ async function projectLicensedAssets({ principalType, principalId }) {
 
 async function getCreatorWorkspace({ actorUserId, principalType = "user", principalId = actorUserId }) {
   const { selected, availablePrincipals } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
-  const listings = await listingMapForPrincipal(selected.type, selected.id);
+  const canViewDistribution = selected.type === "user" || selected.effectivePermissions.includes("marketplace.distribution.view");
+  const listings = canViewDistribution ? await listingMapForPrincipal(selected.type, selected.id) : new Map();
   const [owned, licensedAssets] = await Promise.all([
-    projectOwnedAssets({
-      principalType: selected.type,
-      principalId: selected.id,
-      actorRole: selected.role,
-      listings,
-    }),
+    projectOwnedAssets({ principal: selected, listings }),
     projectLicensedAssets({ principalType: selected.type, principalId: selected.id }),
   ]);
   return {
@@ -293,12 +313,12 @@ async function getCreatorWorkspace({ actorUserId, principalType = "user", princi
 }
 
 async function getDistributionDashboard({ actorUserId, principalType = "user", principalId = actorUserId, limit = 20 }) {
-  await assertCanActForPrincipal({
-    actorUserId,
-    principalType,
-    principalId,
-    minimumOrganizationRole: principalType === "organization" ? "manager" : "operator",
-  });
+  const { selected } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
+  const permissions = new Set(selected.effectivePermissions || []);
+  if (selected.type === "organization" && !permissions.has("marketplace.distribution.view")) {
+    throw new AppError("Non disponi del permesso richiesto", 403, [{ code: "ORGANIZATION_PERMISSION_REQUIRED", permissionCode: "marketplace.distribution.view" }]);
+  }
+  const financeVisible = selected.type === "user" || permissions.has("marketplace.finance.view");
   const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
   const [listings, sales] = await Promise.all([
     MarketplaceListing.find({ sellerType: principalType, sellerId: principalId }).lean(),
@@ -314,33 +334,38 @@ async function getDistributionDashboard({ actorUserId, principalType = "user", p
     ? await Adoption.find({ entitlementId: { $in: entitlementIds } }).sort({ adoptedAt: -1 }).lean()
     : [];
   const revenueByCurrency = {};
-  for (const sale of sales) {
-    if (sale.pricingSnapshot?.type !== "paid") continue;
-    const currency = sale.pricingSnapshot.currency || "";
-    revenueByCurrency[currency] = (revenueByCurrency[currency] || 0) + Number(sale.pricingSnapshot.amountMinor || 0);
+  if (financeVisible) {
+    for (const sale of sales) {
+      if (sale.pricingSnapshot?.type !== "paid") continue;
+      const currency = sale.pricingSnapshot.currency || "";
+      revenueByCurrency[currency] = (revenueByCurrency[currency] || 0) + Number(sale.pricingSnapshot.amountMinor || 0);
+    }
   }
   const uniqueBuyers = new Set(sales.map((sale) => key(sale.buyerType, sale.buyerId)));
   const uniqueAdopters = new Set(adoptions.map((adoption) => key(adoption.beneficiaryType, adoption.beneficiaryId)));
   return {
     principal: { type: principalType, id: principalId },
+    capabilities: { financeView: financeVisible },
     summary: {
       listingCount: listings.length,
       publishedListingCount: listings.filter((entry) => entry.status === "published" && activeListingIds.has(id(entry._id))).length,
       activeOfferCount: offers.filter((entry) => entry.status === "active").length,
       salesCount: sales.length,
-      paidSalesCount: sales.filter((entry) => entry.pricingSnapshot?.type === "paid").length,
-      freeAcquisitionCount: sales.filter((entry) => entry.pricingSnapshot?.type === "free").length,
       uniqueBuyers: uniqueBuyers.size,
       adoptionCount: adoptions.length,
       uniqueAdopters: uniqueAdopters.size,
-      revenueByCurrency,
+      ...(financeVisible ? {
+        paidSalesCount: sales.filter((entry) => entry.pricingSnapshot?.type === "paid").length,
+        freeAcquisitionCount: sales.filter((entry) => entry.pricingSnapshot?.type === "free").length,
+        revenueByCurrency,
+      } : {}),
     },
     recentSales: sales.slice(0, safeLimit).map((sale) => ({
       id: sale._id,
       listingId: sale.listingId,
       offerId: sale.offerId,
       buyer: { type: sale.buyerType, id: sale.buyerId },
-      pricing: sale.pricingSnapshot,
+      ...(financeVisible ? { pricing: sale.pricingSnapshot } : {}),
       acquiredAt: sale.acquiredAt,
     })),
     recentAdoptions: adoptions.slice(0, safeLimit).map((adoption) => ({

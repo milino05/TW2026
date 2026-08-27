@@ -18,9 +18,12 @@ npm test
 Con MongoDB disponibile e `MONGO_URI` configurata:
 
 ```bash
+npm run migrate:organization-rbac
 npm run seed:demo
 npm run verify:demo
 ```
+
+Il MongoDB di destinazione deve appartenere a un replica set: le mutazioni Organization RBAC e il relativo audit usano transazioni. Prima del deploy verificare con il gestore dell'ambiente che l'URI fornita includa il nome del replica set; un'istanza standalone non soddisfa il contratto corrente.
 
 `seed:demo` è idempotente rispetto al dataset dimostrativo con ID deterministici. Non cancella genericamente il database: sostituisce soltanto le entità appartenenti al dataset ArtAround d'esame.
 
@@ -76,7 +79,7 @@ Per MongoDB:
 start mongo site2526XX
 ```
 
-Gocker restituisce username, password e il nome host interno, nel formato `mongo_site2526XX`. Conservare queste informazioni: il servizio Mongo è raggiungibile dal container Node all'interno del cluster `tw.cs.unibo.it`.
+Gocker restituisce username, password e il nome host interno, nel formato `mongo_site2526XX`. Conservare queste informazioni: il servizio Mongo è raggiungibile dal container Node all'interno del cluster `tw.cs.unibo.it`. Il servizio deve essere configurato come replica set; includere `replicaSet=<nome>` nella URI restituita.
 
 ### 2. Configurare ArtAround
 
@@ -91,6 +94,8 @@ SESSION_COOKIE_SECURE=true
 ADAPTIVE_CONTRIBUTOR_SECRET=<segreto casuale stabile>
 NAVIGATOR_CONFIG_DIR=<directory lato server, facoltativa>
 ```
+
+Su un database aggiornato da una versione precedente eseguire una sola volta `npm run migrate:organization-rbac` prima del seed/verifier o dell'avvio del nuovo backend.
 
 La forma esatta della URI deve usare i parametri Mongo forniti al proprio sito. Non committare password o secret nel repository.
 

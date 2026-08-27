@@ -195,14 +195,19 @@ async function getVisitAuthoringProjection({ actorUserId, visitId = null, princi
   const workflowOperations = visit && revision
     ? projectEditorialWorkflowOperations({
         ownerType: visit.ownerType,
-        actorRole: workspace.principal.role,
+        capabilities: visit.ownerType === "user" ? { edit: true, review: true, publish: true } : {
+          edit: workspace.principal.effectivePermissions.includes("visit.edit"),
+          review: workspace.principal.effectivePermissions.includes("visit.review"),
+          publish: workspace.principal.effectivePermissions.includes("visit.publish"),
+        },
         revision,
       })
     : [];
   const mayStartOrContinueEdit = Boolean(visit && revision && (
     mayEditEditorialRevision(revision) || revision.status === "published"
   ));
-  const editOperations = mayStartOrContinueEdit
+  const canEdit = workspace.principal.type === "user" || workspace.principal.effectivePermissions.includes("visit.edit");
+  const editOperations = mayStartOrContinueEdit && canEdit
     ? [{ code: "visit.edit", label: revision.status === "published" ? "Crea nuova revisione" : "Modifica visita" }]
     : [];
   return {
@@ -217,7 +222,9 @@ async function getVisitAuthoringProjection({ actorUserId, visitId = null, princi
     } : null,
     availableOperations: visit
       ? [...editOperations, ...workflowOperations]
-      : [{ code: "visit.create", label: "Crea visita" }],
+      : (workspace.principal.type === "user" || workspace.principal.effectivePermissions.includes("visit.create"))
+        ? [{ code: "visit.create", label: "Crea visita" }]
+        : [],
   };
 }
 

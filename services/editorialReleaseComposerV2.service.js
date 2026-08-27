@@ -24,7 +24,7 @@ async function getEditorialReleaseComposer({ editorialContextId, actorUserId }) 
     Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" }).lean(),
   ]);
   if (!contentSpace || !namespace) throw new AppError("Dipendenze EditorialContext non disponibili", 409);
-  await assertCanManageContentSpace(contentSpace, actorUserId, "manager");
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_release.publish");
 
   const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
     namespace,

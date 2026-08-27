@@ -2,8 +2,8 @@ const mongoose = require("mongoose");
 const Venue = require("../models/venue.model");
 const Organization = require("../models/organization.model");
 const AppError = require("../utils/AppError");
-const { assertOrganizationRole } = require("./organizationAuthorization.service");
-const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
+const { assertOrganizationPermission } = require("./organizationAuthorization.service");
+const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization.service");
 const { assertCanUseEditorialContextAsVenuePrimary } = require("./editorialContextUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { normalizeVenuePayload, validateVenuePayload } = require("./validation/venue.validation");
@@ -48,7 +48,7 @@ async function createVenue({ payload, actorUserId }) {
   const normalized = validatedVenuePayload(payload, { creating: true });
   const organization = await Organization.findOne({ _id: normalized.ownerOrganizationId, lifecycleStatus: "active" }).lean();
   if (!organization) throw new AppError("Organization non trovata", 404);
-  await assertOrganizationRole({ userId: actorUserId, organizationId: organization._id, minimumRole: "operator" });
+  await assertOrganizationPermission({ userId: actorUserId, organizationId: organization._id, permissionCode: "venue.create" });
   const primaryUsage = await assertCanUseEditorialContextAsVenuePrimary({
     editorialContextId: normalized.primaryEditorialContextId,
     actorUserId,
@@ -72,11 +72,14 @@ async function createVenue({ payload, actorUserId }) {
 }
 
 async function updateVenue({ venueId, payload, actorUserId }) {
-  const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.profile.manage" });
   const normalized = validatedVenuePayload(payload, { creating: false });
   const previousPrimaryId = venue.primaryEditorialContextId || null;
   const changesPrimary = Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")
     && !sameId(previousPrimaryId, normalized.primaryEditorialContextId || null);
+  if (changesPrimary) {
+    await assertOrganizationPermission({ userId: actorUserId, organizationId: venue.ownerOrganizationId, permissionCode: "venue.primary_context.manage" });
+  }
   const primaryUsage = changesPrimary
     ? await assertCanUseEditorialContextAsVenuePrimary({
         editorialContextId: normalized.primaryEditorialContextId,

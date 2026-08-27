@@ -45,8 +45,11 @@ test("exam dataset seed is idempotent and satisfies the automatic delivery verif
     assert.equal(venue.name, "Pinacoteca Nazionale di Bologna");
     const author1 = await User.findOne({ username: "autore1" }).lean();
     const author2 = await User.findOne({ username: "autore2" }).lean();
-    assert.equal(author1.organizationMemberships.some((entry) => String(entry.organizationId) === String(IDS.organization) && entry.role === "manager"), true);
-    assert.equal(author2.organizationMemberships.some((entry) => String(entry.organizationId) === String(IDS.organization) && entry.role === "operator"), true);
+    const OrganizationMembership = require("../models/organizationMembership.model");
+    const memberships = await OrganizationMembership.find({ organizationId: IDS.organization }).populate("roleAssignments.roleId").lean();
+    const membershipByUser = new Map(memberships.map((entry) => [String(entry.userId), entry]));
+    assert.deepEqual(membershipByUser.get(String(author1._id)).roleAssignments.map((entry) => entry.roleId.name), ["Administrator"]);
+    assert.deepEqual(membershipByUser.get(String(author2._id)).roleAssignments.map((entry) => entry.roleId.name), ["Contributor"]);
 
     const visitor = await User.findOne({ username: "visitatore1" }).lean();
     const freeVisit = seeded.visitRecords.find((entry) => entry.offer.pricing.type === "free");

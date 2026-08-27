@@ -15,8 +15,8 @@ export const semanticRepository = {
   searchExternal({ scheme = "wikidata", query, locale = "it", entityKind = "item", limit = 10 }) {
     return apiClient.request(`/v2/semantic-resolver/search?${queryString({ scheme, query, locale, entityKind, limit })}`);
   },
-  resolveExternal({ scheme = "wikidata", id, locale = "it" }) {
-    return apiClient.request(`/v2/semantic-resolver/resolve?${queryString({ scheme, id, locale })}`);
+  resolveExternal({ scheme = "wikidata", id, locale = "it", includeMedia = false }) {
+    return apiClient.request(`/v2/semantic-resolver/resolve?${queryString({ scheme, id, locale, includeMedia: includeMedia ? 1 : null })}`);
   },
   searchSubjects(search, { limit = 25, match = "label_exact" } = {}) {
     return apiClient.request(`/subjects?${queryString({ search, limit, match })}`);

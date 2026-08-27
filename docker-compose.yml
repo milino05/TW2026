@@ -9,6 +9,7 @@ services:
         hard: 65536
     ports:
       - "27017:27017"
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -17,6 +18,19 @@ services:
       timeout: 5s
       retries: 10
 
+  mongo-init-replica:
+    image: mongo:7
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mongosh --host mongo:27017 --quiet --eval
+        'try { rs.status().ok } catch (error) { rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]}).ok }'
+
   backend:
     build: .
     container_name: artaround-backend
@@ -24,10 +38,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      mongo:
-        condition: service_healthy
+      mongo-init-replica:
+        condition: service_completed_successfully
     environment:
-      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/artaround}
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/artaround?replicaSet=rs0}
       PORT: ${PORT:-8000}
       NODE_ENV: ${NODE_ENV:-development}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
@@ -35,6 +49,7 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       ADAPTIVE_CONTRIBUTOR_SECRET: ${ADAPTIVE_CONTRIBUTOR_SECRET:-development-only-change-me}
       WIKIDATA_API_URL: ${WIKIDATA_API_URL:-https://www.wikidata.org/w/api.php}
+      WIKIMEDIA_COMMONS_API_URL: ${WIKIMEDIA_COMMONS_API_URL:-https://commons.wikimedia.org/w/api.php}
       WIKIDATA_USER_AGENT: ${WIKIDATA_USER_AGENT:-ArtAroundTW2026/1.0 (https://github.com/milino05/TW2026)}
       SEMANTIC_RESOLVER_TIMEOUT_MS: ${SEMANTIC_RESOLVER_TIMEOUT_MS:-5000}
       SEMANTIC_RESOLVER_RETRY_COUNT: ${SEMANTIC_RESOLVER_RETRY_COUNT:-1}
@@ -44,6 +59,10 @@ services:
       SEMANTIC_RESOLVER_SEARCH_CACHE_TTL_MS: ${SEMANTIC_RESOLVER_SEARCH_CACHE_TTL_MS:-120000}
       SEMANTIC_RESOLVER_RESOLVE_CACHE_TTL_MS: ${SEMANTIC_RESOLVER_RESOLVE_CACHE_TTL_MS:-600000}
       NAVIGATOR_CONFIG_DIR: ${NAVIGATOR_CONFIG_DIR:-}
+      ITEM_MEDIA_DIR: ${ITEM_MEDIA_DIR:-/app/uploads/item-media}
+    volumes:
+      - item-media:/app/uploads/item-media
 
 volumes:
   mongo-data:
+  item-media:

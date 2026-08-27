@@ -4,3 +4,4 @@ clients/*/dist/
 npm-debug.log*
 .DS_Store
 coverage/
+uploads/

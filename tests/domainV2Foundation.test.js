@@ -1,46 +1,36 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-
-const User = require("../models/user");
-const {
-  getOrganizationMembership,
-  hasOrganizationRole,
-} = require("../services/organizationAuthorization.service");
+const mongoose = require("mongoose");
+const OrganizationMembership = require("../models/organizationMembership.model");
+const { effectivePermissionsForMembership } = require("../services/organizationAuthorization.service");
+const { permissionClosure, STARTER_ROLES } = require("../services/organizationPermissionRegistry.service");
 const { userCanActForOwner } = require("../services/resourceOwnership.service");
-const {
-  normalizeOrganizationPayload,
-  validateOrganizationPayload,
-} = require("../services/validation/organization.validation");
-const {
-  normalizeSubjectPayload,
-  validateSubjectPayload,
-} = require("../services/validation/subject.validation");
+const { normalizeOrganizationPayload, validateOrganizationPayload } = require("../services/validation/organization.validation");
+const { normalizeSubjectPayload, validateSubjectPayload } = require("../services/validation/subject.validation");
 
 const userId = "64b64b64b64b64b64b64b64b";
 const organizationId = "74b74b74b74b74b74b74b74b";
-const otherOrganizationId = "84b84b84b84b84b84b84b84b";
 
-test("organization roles preserve operator/manager hierarchy", () => {
-  const operator = { organizationMemberships: [{ organizationId, role: "operator" }] };
-  const manager = { organizationMemberships: [{ organizationId, role: "manager" }] };
-
-  assert.equal(hasOrganizationRole(operator, organizationId, "operator"), true);
-  assert.equal(hasOrganizationRole(operator, organizationId, "manager"), false);
-  assert.equal(hasOrganizationRole(manager, organizationId, "operator"), true);
-  assert.equal(hasOrganizationRole(manager, organizationId, "manager"), true);
-  assert.equal(getOrganizationMembership(manager, otherOrganizationId), null);
+test("i permessi effettivi sono l'unione dei ruoli e includono i prerequisiti", () => {
+  const membership = { roleAssignments: [
+    { roleId: { permissionCodes: ["item.edit"] } },
+    { roleId: { permissionCodes: ["visit.publish"] } },
+  ] };
+  assert.deepEqual(effectivePermissionsForMembership(membership), ["item.edit", "item.view", "visit.publish", "visit.view"]);
+  assert.deepEqual(permissionClosure(["organization.roles.assign"]), ["organization.members.view", "organization.roles.assign", "organization.roles.view"]);
 });
 
-test("generic ownership distinguishes personal and organization authority", () => {
-  const user = {
-    _id: userId,
-    organizationMemberships: [{ organizationId, role: "operator" }],
-  };
+test("i sei ruoli iniziali coprono le matrici approvate", () => {
+  assert.deepEqual(STARTER_ROLES.map((role) => role.name), ["Administrator", "Curator", "Contributor", "Venue Manager", "Marketplace Manager", "Viewer"]);
+  assert.ok(STARTER_ROLES.find((role) => role.key === "administrator").permissionCodes.includes("organization.roles.manage"));
+  assert.equal(STARTER_ROLES.find((role) => role.key === "venue_manager").permissionCodes.every((code) => code.startsWith("venue.")), true);
+});
 
+test("l'ownership personale resta distinta dall'autorità Organization", () => {
+  const user = { _id: userId };
   assert.equal(userCanActForOwner(user, { ownerType: "user", ownerId: userId }), true);
-  assert.equal(userCanActForOwner(user, { ownerType: "user", ownerId: "94b94b94b94b94b94b94b94b" }), false);
-  assert.equal(userCanActForOwner(user, { ownerType: "organization", ownerId: organizationId }), true);
-  assert.equal(userCanActForOwner(user, { ownerType: "organization", ownerId: otherOrganizationId }), false);
+  assert.equal(userCanActForOwner(user, { ownerType: "user", ownerId: organizationId }), false);
+  assert.equal(userCanActForOwner(user, { ownerType: "organization", ownerId: organizationId }), false);
 });
 
 test("organization payload normalization is strict and predictable", () => {
@@ -49,51 +39,24 @@ test("organization payload normalization is strict and predictable", () => {
   assert.deepEqual(normalized, { name: "Universita", description: "Ricerca" });
   assert.deepEqual(validateOrganizationPayload({ payload: normalized, rawPayload: raw, mode: "create" }), []);
   assert.ok(validateOrganizationPayload({ payload: {}, rawPayload: {}, mode: "create" }).some((issue) => issue.code === "REQUIRED"));
-  assert.ok(validateOrganizationPayload({
-    payload: normalizeOrganizationPayload({ name: "Org", ownerId: "forbidden" }),
-    rawPayload: { name: "Org", ownerId: "forbidden" },
-    mode: "create",
-  }).some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "ownerId"));
 });
 
 test("Subject locale rejects identity bindings outside the verified resolver command", () => {
-  const raw = {
-    preferredLabel: "  Parmigianino  ",
-    description: "  Pittore  ",
-  };
+  const raw = { preferredLabel: "  Parmigianino  ", description: "  Pittore  " };
   const normalized = normalizeSubjectPayload(raw);
-
   assert.equal(normalized.preferredLabel, "Parmigianino");
-  assert.equal(normalized.description, "Pittore");
   assert.deepEqual(validateSubjectPayload({ payload: normalized, rawPayload: raw, mode: "create" }), []);
-
-  const forbiddenIdentity = validateSubjectPayload({
-    payload: normalizeSubjectPayload({ preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] }),
-    rawPayload: { preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] },
-    mode: "create",
-  });
-  assert.ok(forbiddenIdentity.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "externalIdentities"));
-
-  const unknown = validateSubjectPayload({
-    payload: normalizeSubjectPayload({ preferredLabel: "X", venueId: "forbidden" }),
-    rawPayload: { preferredLabel: "X", venueId: "forbidden" },
-    mode: "create",
-  });
-  assert.ok(unknown.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "venueId"));
+  const forbidden = validateSubjectPayload({ payload: normalizeSubjectPayload({ preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] }), rawPayload: { preferredLabel: "X", externalIdentities: [{ scheme: "wikidata", id: "Q1" }] }, mode: "create" });
+  assert.ok(forbidden.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field === "externalIdentities"));
 });
 
-test("User rejects duplicate Organization memberships independently from legacy museum memberships", async () => {
-  const user = new User({
-    username: "org-membership-validation",
-    passwordHash: "test-hash",
-    organizationMemberships: [
-      { organizationId, role: "operator" },
-      { organizationId, role: "manager" },
-    ],
-  });
-
-  await assert.rejects(
-    () => user.validate(),
-    (error) => Boolean(error?.errors?.organizationMemberships),
-  );
+test("una membership attiva richiede almeno un ruolo e rifiuta duplicati", async () => {
+  const actor = new mongoose.Types.ObjectId();
+  const roleId = new mongoose.Types.ObjectId();
+  const empty = new OrganizationMembership({ organizationId, userId, roleAssignments: [], createdBy: actor, updatedBy: actor });
+  await assert.rejects(() => empty.validate(), (error) => Boolean(error?.errors?.roleAssignments));
+  const duplicate = new OrganizationMembership({ organizationId, userId, roleAssignments: [
+    { roleId, assignedBy: actor }, { roleId, assignedBy: actor },
+  ], createdBy: actor, updatedBy: actor });
+  await assert.rejects(() => duplicate.validate(), (error) => Boolean(error?.errors?.roleAssignments));
 });

@@ -3,7 +3,29 @@ const PresentationVariantV2Schema = require("../schemas/presentationVariantV2.sc
 const IntegrityIssueSchema = require("../schemas/integrityIssue.schema");
 const { Schema } = mongoose;
 const SelectionSignalUseV2Schema = new Schema({ definitionId: { type: String, required: true, trim: true }, weight: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
-const MediaSchema = new Schema({ url: { type: String, required: true, trim: true }, altText: { type: String, trim: true, default: null } }, { _id: true });
+const MediaSourceSchema = new Schema({
+  provider: { type: String, trim: true, default: null },
+  wikidataEntityId: { type: String, trim: true, default: null },
+  fileTitle: { type: String, trim: true, default: null },
+  pageUrl: { type: String, trim: true, default: null },
+  retrievedAt: { type: Date, default: null },
+}, { _id: false });
+const MediaRightsSchema = new Schema({
+  creator: { type: String, trim: true, default: null },
+  attribution: { type: String, trim: true, default: null },
+  licenseName: { type: String, trim: true, default: null },
+  licenseUrl: { type: String, trim: true, default: null },
+}, { _id: false });
+const MediaSchema = new Schema({
+  url: { type: String, required: true, trim: true },
+  originalUrl: { type: String, trim: true, default: null },
+  altText: { type: String, trim: true, default: null },
+  mimeType: { type: String, trim: true, default: null },
+  width: { type: Number, min: 1, default: null },
+  height: { type: Number, min: 1, default: null },
+  source: { type: MediaSourceSchema, default: null },
+  rights: { type: MediaRightsSchema, default: null },
+}, { _id: true });
 const DefaultPresentationV2Schema = new Schema({ variantId: { type: Schema.Types.ObjectId, required: true }, representationId: { type: Schema.Types.ObjectId, required: true } }, { _id: false });
 const RevisionProvenanceSchema = new Schema({ origin: { type: String, enum: ["human", "ai_assisted", "ai_generated", "imported", "forked"], default: "human" }, sourceRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", default: null }, metadata: { type: Schema.Types.Mixed, default: null } }, { _id: false });
 const ReviewEventSchema = new Schema({ action: { type: String, enum: ["review_requested", "review_withdrawn", "changes_requested", "published"], required: true }, actorUserId: { type: Schema.Types.ObjectId, ref: "User", required: true }, at: { type: Date, required: true }, message: { type: String, trim: true, default: null } }, { _id: false });

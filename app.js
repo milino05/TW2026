@@ -18,6 +18,7 @@ const executionPreparationRoutes = require("./routes/executionPreparationsV2.rou
 const marketplaceRoutes = require("./routes/marketplaceV2.routes");
 const navigatorRoutes = require("./routes/navigatorV2.routes");
 const preferenceRoutes = require("./routes/preferences.routes");
+const { configuredMediaRoot } = require("./services/itemMediaUpload.service");
 const { loadCurrentUser } = require("./middlewares/auth");
 const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
@@ -36,6 +37,12 @@ app.use(cors({
 }));
 app.use(requireTrustedOrigin);
 app.use(loadCurrentUser);
+app.use("/uploads/item-media", express.static(configuredMediaRoot(), {
+  immutable: true,
+  maxAge: "30d",
+  fallthrough: false,
+  setHeaders(response) { response.setHeader("X-Content-Type-Options", "nosniff"); },
+}));
 app.get("/ping", (req, res) => res.json({ status: "ok", message: "ArtAround backend attivo", time: new Date() }));
 app.get("/", (req, res) => res.json({
   name: "ArtAround",

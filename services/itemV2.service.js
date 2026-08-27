@@ -44,19 +44,19 @@ async function findItemOrFail(itemId, { includeTrashed = false } = {}) {
   return item;
 }
 
-async function assertCanManageItem(item, actorUserId, minimumOrganizationRole = "operator") {
+async function assertCanManageItem(item, actorUserId, permissionCode = "item.edit") {
   return assertCanActForOwner({
     actorUserId,
     ownerType: item.ownerType,
     ownerId: item.ownerId,
-    minimumOrganizationRole,
+    permissionCode,
   });
 }
 
 async function createItem({ payload, actorUserId }) {
   const issues = validateCreateItemPayload(payload || {});
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
-  await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId });
+  await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId, permissionCode: "item.create" });
   if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404);
   return ItemV2.create({
     primarySubjectId: payload.primarySubjectId,
@@ -284,7 +284,7 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
 async function requestEditionReview({ editionId, actorUserId }) {
   const { edition, item } = await getEditionContext(editionId);
   if (item.ownerType !== "organization") throw new AppError("I contenuti personali non richiedono review manageriale", 409);
-  await assertCanManageItem(item, actorUserId, "operator");
+  await assertCanManageItem(item, actorUserId, "item.edit");
   const revision = await getExistingWorkingRevision(edition);
   try { requestReview(revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -295,7 +295,7 @@ async function requestEditionReview({ editionId, actorUserId }) {
 async function withdrawEditionReview({ editionId, actorUserId }) {
   const { edition, item } = await getEditionContext(editionId);
   if (item.ownerType !== "organization") throw new AppError("Operazione non applicabile a un contenuto personale", 409);
-  await assertCanManageItem(item, actorUserId, "operator");
+  await assertCanManageItem(item, actorUserId, "item.edit");
   const revision = await getExistingWorkingRevision(edition);
   try { withdrawReview(revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -306,7 +306,7 @@ async function withdrawEditionReview({ editionId, actorUserId }) {
 async function requestEditionChanges({ editionId, actorUserId, message }) {
   const { edition, item } = await getEditionContext(editionId);
   if (item.ownerType !== "organization") throw new AppError("Operazione non applicabile a un contenuto personale", 409);
-  await assertCanManageItem(item, actorUserId, "manager");
+  await assertCanManageItem(item, actorUserId, "item.review");
   const revision = await getExistingWorkingRevision(edition);
   try { requestChanges(revision, actorUserId, message); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -319,7 +319,7 @@ async function publishEdition({ editionId, actorUserId }) {
   await assertCanManageItem(
     item,
     actorUserId,
-    item.ownerType === "organization" ? "manager" : "operator",
+    "item.publish",
   );
   const namespaceAccess = await assertCanUseNamespaceForAuthoring({
     namespace,
@@ -350,7 +350,7 @@ async function publishEdition({ editionId, actorUserId }) {
 }
 
 async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, actorUserId }) {
-  await assertCanActForOwner({ actorUserId, ownerType, ownerId });
+  await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "item.create" });
   const sourceItem = await findItemOrFail(sourceItemId);
   const sourceEdition = await ItemEdition.findOne({ _id: sourceEditionId, itemId: sourceItem._id });
   if (!sourceEdition) throw new AppError("ItemEdition sorgente non disponibile", 404);

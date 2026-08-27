@@ -5,6 +5,7 @@ const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
+const OrganizationMembership = require("../models/organizationMembership.model");
 const { normalizeContentSpacePayload, validateContentSpacePayload } = require("./validation/contentSpace.validation");
 
 async function findContentSpaceOrFail({ contentSpaceId, includeTrashed = false }) {
@@ -15,12 +16,12 @@ async function findContentSpaceOrFail({ contentSpaceId, includeTrashed = false }
   return contentSpace;
 }
 
-async function assertCanManageContentSpace(contentSpace, actorUserId, minimumOrganizationRole = "operator") {
+async function assertCanManageContentSpace(contentSpace, actorUserId, permissionCode = "editorial_space.manage") {
   return assertCanActForOwner({
     actorUserId,
     ownerType: contentSpace.ownerType,
     ownerId: contentSpace.ownerId,
-    minimumOrganizationRole,
+    permissionCode,
   });
 }
 
@@ -37,7 +38,7 @@ async function createContentSpace({ payload, actorUserId }) {
     actorUserId,
     ownerType: normalized.ownerType,
     ownerId: normalized.ownerId,
-    minimumOrganizationRole: "operator",
+    permissionCode: "editorial_space.manage",
   });
   return ContentSpace.create({
     name: normalized.name,
@@ -67,11 +68,12 @@ async function listContentSpaces({ actorUserId, ownerType = null, ownerId = null
   if (ownerType && ownerId) {
     if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400);
     if (!mongoose.isValidObjectId(ownerId)) throw new AppError("ownerId non valido", 400);
-    await assertCanActForOwner({ actorUserId, ownerType, ownerId, minimumOrganizationRole: "operator" });
+    await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_space.view" });
     query.ownerType = ownerType;
     query.ownerId = ownerId;
   } else {
-    const organizationIds = (user.organizationMemberships || []).map((membership) => membership.organizationId);
+    const memberships = await OrganizationMembership.find({ userId: user._id }).select("organizationId").lean();
+    const organizationIds = memberships.map((membership) => membership.organizationId);
     query.$or = [
       { ownerType: "user", ownerId: user._id },
       { ownerType: "organization", ownerId: { $in: organizationIds } },

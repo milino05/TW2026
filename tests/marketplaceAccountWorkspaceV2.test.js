@@ -12,6 +12,7 @@ const {
 } = require("../services/marketplaceManagementV2.service");
 
 const mongoUri = process.env.MONGO_URI;
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 function oid() { return new mongoose.Types.ObjectId(); }
 
@@ -26,62 +27,43 @@ async function withFreshDatabase(callback) {
   }
 }
 
-test("Account Workspace projects role-specific Organization operations", () => {
+test("Account Workspace projects permission-specific Organization operations", () => {
   assert.deepEqual(
-    organizationOperations("operator").map((entry) => entry.code),
+    organizationOperations({ effectivePermissions: ["venue.create", "namespace.create"], isOwner: false }).map((entry) => entry.code),
     ["venue.create", "namespace.create"],
   );
   assert.deepEqual(
-    organizationOperations("manager").map((entry) => entry.code),
+    organizationOperations({ effectivePermissions: ["organization.profile.manage", "organization.members.manage", "organization.roles.assign", "venue.create", "namespace.create"], isOwner: false }).map((entry) => entry.code),
     ["organization.update", "organization.member.add", "venue.create", "namespace.create"],
   );
 });
 
-test("Account Workspace never offers destructive membership operations for the creator", () => {
-  const creatorId = oid();
-  assert.deepEqual(memberOperations({
-    actorUserId: creatorId,
-    actorRole: "manager",
-    organizationCreatedBy: creatorId,
-    member: { id: creatorId, role: "manager" },
-  }), []);
-});
-
-test("Account Workspace follows the Organization membership invariants", () => {
-  const creatorId = oid();
-  const otherId = oid();
-  assert.deepEqual(
-    memberOperations({ actorUserId: creatorId, actorRole: "manager", organizationCreatedBy: creatorId, member: { id: otherId, role: "operator" } }).map((entry) => entry.code),
-    ["organization.member.promote", "organization.member.remove"],
-  );
-  assert.deepEqual(
-    memberOperations({ actorUserId: creatorId, actorRole: "manager", organizationCreatedBy: creatorId, member: { id: otherId, role: "manager" } }).map((entry) => entry.code),
-    ["organization.member.demote"],
-  );
-  assert.deepEqual(
-    memberOperations({ actorUserId: otherId, actorRole: "manager", organizationCreatedBy: creatorId, member: { id: oid(), role: "manager" } }),
-    [],
-  );
+test("Account Workspace keeps Owner authority separate from ordinary membership permissions", () => {
+  const authority = { effectivePermissions: ["organization.members.manage", "organization.roles.assign"], isOwner: true };
+  const organization = { owners: [{ userId: oid() }, { userId: oid() }] };
+  assert.deepEqual(memberOperations({ authority, organization, member: { id: oid(), isOwner: false } }).map((entry) => entry.code), [
+    "organization.member.roles.update", "organization.member.remove", "organization.owner.grant",
+  ]);
+  assert.deepEqual(memberOperations({ authority: { ...authority, isOwner: false }, organization, member: { id: oid(), isOwner: true } }).map((entry) => entry.code), ["organization.member.roles.update"]);
 });
 
 test("Management projections expose only workflow operations valid for the current state", () => {
-  const userId = oid();
   const organizationId = oid();
-  const actor = { _id: userId, organizationMemberships: [{ organizationId, role: "manager" }] };
+  const editor = new Set(["namespace.edit", "namespace.review", "namespace.publish"]);
   assert.deepEqual(
     namespaceOperations({
       namespace: { ownerType: "organization", ownerId: organizationId, workingRevisionId: oid() },
       revision: { status: "draft" },
-      actor,
+      permissions: editor,
     }).map((entry) => entry.code),
     ["namespace.update", "namespace.revision.update", "namespace.revision.check", "namespace.revision.request_review"],
   );
   assert.deepEqual(
-    venueOperations({ release: { status: "in_review" }, role: "operator", hasWorking: true }).map((entry) => entry.code),
+    venueOperations({ release: { status: "in_review" }, permissions: new Set(["venue.profile.manage", "venue.physical.edit"]), hasWorking: true }).map((entry) => entry.code),
     ["venue.update", "venue.release.withdraw_review"],
   );
   assert.deepEqual(
-    venueOperations({ release: { status: "in_review" }, role: "manager", hasWorking: true }).map((entry) => entry.code),
+    venueOperations({ release: { status: "in_review" }, permissions: new Set(["venue.profile.manage", "venue.physical.edit", "venue.physical.review", "venue.physical.publish"]), hasWorking: true }).map((entry) => entry.code),
     ["venue.update", "venue.release.withdraw_review", "venue.release.request_changes", "venue.release.publish"],
   );
 });
@@ -100,9 +82,8 @@ test("Account Workspace groups personal and Organization resources without mergi
       { username: "account-operator", passwordHash: "test-hash" },
     ]);
     const organization = await Organization.create({ name: "Musei Civici", description: "Rete museale", createdBy: manager._id });
-    manager.organizationMemberships = [{ organizationId: organization._id, role: "manager", assignedBy: manager._id }];
-    operator.organizationMemberships = [{ organizationId: organization._id, role: "operator", assignedBy: manager._id }];
-    await Promise.all([manager.save(), operator.save()]);
+    await assignStarterRole({ organization, user: manager, starterKey: "administrator" });
+    await assignStarterRole({ organization, user: operator, starterKey: "venue_manager", actorUserId: manager._id });
     await Venue.create({ name: "Pinacoteca", ownerOrganizationId: organization._id, createdBy: manager._id });
 
     const [personalNamespace, organizationNamespace] = await Namespace.create([
@@ -141,7 +122,7 @@ test("Account Workspace groups personal and Organization resources without mergi
 
     const venue = await Venue.findOne({ ownerOrganizationId: organization._id });
     const venueEditor = await getVenueManagementProjection({ venueId: venue._id, actorUserId: operator._id });
-    assert.equal(venueEditor.venue.role, "operator");
+    assert.equal(Object.prototype.hasOwnProperty.call(venueEditor.venue, "role"), false);
     assert.equal(venueEditor.release, null);
     assert.ok(venueEditor.availableOperations.some((entry) => entry.code === "venue.release.ensure"));
   });

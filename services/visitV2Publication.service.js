@@ -11,9 +11,9 @@ const {
   approveReviewAndPublish,
 } = require("./revisionWorkflow.service");
 
-async function loadWorking({ visitId, actorUserId, minimumOrganizationRole = "operator" }) {
+async function loadWorking({ visitId, actorUserId, permissionCode = "visit.edit" }) {
   const visit = await findVisitV2OrFail(visitId);
-  await assertCanManageVisitV2({ visit, actorUserId, minimumOrganizationRole });
+  await assertCanManageVisitV2({ visit, actorUserId, permissionCode });
   const revision = await getWorkingVisitRevisionV2({ visit, actorUserId, createFromPublished: false });
   return { visit, revision };
 }
@@ -54,7 +54,7 @@ async function withdrawVisitV2Review({ visitId, actorUserId }) {
 }
 
 async function requestVisitV2Changes({ visitId, actorUserId, message }) {
-  const { visit, revision } = await loadWorking({ visitId, actorUserId, minimumOrganizationRole: "manager" });
+  const { visit, revision } = await loadWorking({ visitId, actorUserId, permissionCode: "visit.review" });
   if (visit.ownerType !== "organization") throw new AppError("Operazione non applicabile a una Visit personale", 409);
   try { requestChanges(revision, actorUserId, message); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
@@ -78,7 +78,7 @@ async function publishVisitV2({ visitId, actorUserId }) {
   await assertCanManageVisitV2({
     visit: initialVisit,
     actorUserId,
-    minimumOrganizationRole: initialVisit.ownerType === "organization" ? "manager" : "operator",
+    permissionCode: "visit.publish",
   });
   const consistency = await evaluateVisitV2Consistency({ visitId, actorUserId, allowInReview: true });
   const { visit, revision, issues } = consistency;

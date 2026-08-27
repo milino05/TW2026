@@ -3,7 +3,6 @@ import { apiClient } from "./apiClient";
 export interface AuthUser {
   _id: string;
   username: string;
-  organizationMemberships: Array<{ organizationId: string; role: "operator" | "manager" }>;
   status: "active" | "disabled";
 }
 
@@ -15,6 +14,12 @@ interface AuthResponse {
 export const authRepository = {
   me() {
     return apiClient.request<AuthResponse>("/auth/me");
+  },
+  register(username: string, password: string) {
+    return apiClient.request<AuthResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
   },
   login(username: string, password: string) {
     return apiClient.request<AuthResponse>("/auth/login", {

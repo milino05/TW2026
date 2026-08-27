@@ -1,6 +1,6 @@
 const Venue = require("../models/venue.model");
 const AppError = require("../utils/AppError");
-const { assertOrganizationRole } = require("./organizationAuthorization.service");
+const { assertOrganizationPermission } = require("./organizationAuthorization.service");
 
 async function findVenueOrFail({ venueId, includeTrashed = false }) {
   const query = { _id: venueId };
@@ -10,14 +10,10 @@ async function findVenueOrFail({ venueId, includeTrashed = false }) {
   return venue;
 }
 
-async function assertVenueRole({ userId, venueId, minimumRole = "operator" }) {
+async function assertVenuePermission({ userId, venueId, permissionCode }) {
   const venue = await findVenueOrFail({ venueId });
-  const user = await assertOrganizationRole({
-    userId,
-    organizationId: venue.ownerOrganizationId,
-    minimumRole,
-  });
-  return { venue, user };
+  const authority = await assertOrganizationPermission({ userId, organizationId: venue.ownerOrganizationId, permissionCode });
+  return { venue, user: authority.user, authority };
 }
 
-module.exports = { findVenueOrFail, assertVenueRole };
+module.exports = { findVenueOrFail, assertVenuePermission };

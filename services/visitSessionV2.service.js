@@ -101,6 +101,20 @@ function actionContext(entry, anchor) {
   };
 }
 
+function projectIllustrativeMedia(revision) {
+  return (revision?.illustrativeMedia || []).slice(0, 1).map((media) => ({
+    id: media._id,
+    url: media.url,
+    originalUrl: media.originalUrl || null,
+    altText: media.altText || "",
+    mimeType: media.mimeType || null,
+    width: media.width || null,
+    height: media.height || null,
+    source: media.source || null,
+    rights: media.rights || null,
+  }));
+}
+
 async function navigationActions({ session, anchor, entry }) {
   if (!anchor) return [];
   const bundle = await loadPinnedBundle(session, anchor.venueId);
@@ -227,6 +241,7 @@ async function currentSessionProjection({ sessionId, userId }) {
       authorCredits: runtime.revision.authorCredits || [],
       license: runtime.revision.metadata?.license || null,
       provenance: runtime.revision.provenance || null,
+      illustrativeMedia: projectIllustrativeMedia(runtime.revision),
       presentation: { ...runtime.presentation, kind: runtime.kind },
       presentationAspects: runtime.presentationAspects,
       anchor: anchor ? {

@@ -7,6 +7,7 @@ const itemId = validateObjectIdParam("itemId");
 const editionId = validateObjectIdParam("editionId");
 router.get("/items", controller.list);
 router.post("/items", requireAuth, controller.create);
+router.post("/item-media", requireAuth, controller.uploadMedia);
 router.get("/items/:itemId", itemId, controller.get);
 router.post("/items/:itemId/editions", requireAuth, itemId, controller.createEdition);
 router.post("/items/:itemId/fork", requireAuth, itemId, controller.fork);
