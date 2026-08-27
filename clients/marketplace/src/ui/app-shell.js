@@ -49,6 +49,7 @@ export class MarketplaceAppShell extends HTMLElement {
   accountWorkspace = null;
   context = null;
   authChecked = false;
+  authMode = "login";
   busy = false;
   error = null;
   menuOpen = false;
@@ -105,20 +106,29 @@ export class MarketplaceAppShell extends HTMLElement {
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form?.matches("form[data-login]")) return;
+    if (!form?.matches("form[data-auth]")) return;
     event.preventDefault();
     const data = new FormData(form);
     this.busy = true;
     this.error = null;
     this.render();
     try {
-      const response = await authRepository.login(String(data.get("username") || ""), String(data.get("password") || ""));
+      const username = String(data.get("username") || "");
+      const password = String(data.get("password") || "");
+      const response = this.authMode === "register"
+        ? await authRepository.register(username, password)
+        : await authRepository.login(username, password);
       this.user = response.user;
+      this.authMode = "login";
       clearOperatingContext({ silent: true });
       await this.loadAccountWorkspace();
       navigate("/context");
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Accesso non riuscito";
+      this.error = error instanceof Error
+        ? error.message
+        : this.authMode === "register"
+          ? "Registrazione non riuscita"
+          : "Accesso non riuscito";
     } finally {
       this.busy = false;
       this.render();
@@ -127,6 +137,13 @@ export class MarketplaceAppShell extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
+    const authModeButton = target?.closest("button[data-auth-mode]");
+    if (authModeButton) {
+      this.authMode = this.authMode === "register" ? "login" : "register";
+      this.error = null;
+      this.render();
+      return;
+    }
     if (target?.closest("button[data-menu-toggle]")) { this.menuOpen = !this.menuOpen; this.render(); return; }
     if (target?.closest("button[data-change-context]")) { this.menuOpen = false; navigate("/context"); return; }
     const routeLink = target?.closest("a[data-route]");
@@ -137,6 +154,7 @@ export class MarketplaceAppShell extends HTMLElement {
       this.user = null;
       this.accountWorkspace = null;
       this.context = null;
+      this.authMode = "login";
       this.menuOpen = false;
       navigate("/");
       this.render();
@@ -144,7 +162,17 @@ export class MarketplaceAppShell extends HTMLElement {
   };
 
   renderLogin() {
-    return `<main class="login-page"><section class="login-visual"><span class="eyebrow">ArtAround Marketplace</span><h1>Crea contenuti.<br>Progetta visite.</h1><p>Pubblica e condividi esperienze culturali come autore oppure insieme a un'organizzazione.</p><div class="login-features"><span>${icon("book")} Crea contenuti</span><span>${icon("route")} Progetta visite</span><span>${icon("store")} Pubblica e condividi</span></div></section><section class="login-card"><span class="brand-mark" aria-hidden="true"></span><div><span class="eyebrow">Bentornato</span><h2>Accedi ad ArtAround</h2><p>Usa le credenziali del tuo account.</p></div><form data-login><label>Username <input name="username" autocomplete="username" placeholder="Il tuo username" required></label><label>Password <input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required></label><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Accesso in corso…" : "Accedi"}</button></form>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}</section></main>`;
+    const registering = this.authMode === "register";
+    const eyebrow = registering ? "Nuovo account" : "Bentornato";
+    const title = registering ? "Registrati ad ArtAround" : "Accedi ad ArtAround";
+    const description = registering
+      ? "Scegli username e password. Potrai usare le stesse credenziali nei prossimi accessi."
+      : "Usa le credenziali del tuo account.";
+    const submitLabel = registering ? "Registrati" : "Accedi";
+    const busyLabel = registering ? "Creazione account…" : "Accesso in corso…";
+    const switchPrompt = registering ? "Hai già un account?" : "Non hai ancora un account?";
+    const switchLabel = registering ? "Accedi" : "Registrati";
+    return `<main class="login-page"><section class="login-visual"><span class="eyebrow">ArtAround Marketplace</span><h1>Crea contenuti.<br>Progetta visite.</h1><p>Pubblica e condividi esperienze culturali come autore oppure insieme a un'organizzazione.</p><div class="login-features"><span>${icon("book")} Crea contenuti</span><span>${icon("route")} Progetta visite</span><span>${icon("store")} Pubblica e condividi</span></div></section><section class="login-card"><span class="brand-mark" aria-hidden="true"></span><div><span class="eyebrow">${eyebrow}</span><h2>${title}</h2><p>${description}</p></div><form data-auth><label>Username <input name="username" autocomplete="username" placeholder="Il tuo username" required></label><label>Password <input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" minlength="8" maxlength="128" placeholder="••••••••" required></label><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? busyLabel : submitLabel}</button></form>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<div class="button-row"><span class="muted">${switchPrompt}</span><button class="button-secondary small" type="button" data-auth-mode ${this.busy ? "disabled" : ""}>${switchLabel}</button></div></section></main>`;
   }
 
   renderContextIdentity() {
@@ -196,7 +224,11 @@ export class MarketplaceAppShell extends HTMLElement {
           : this.renderRoute(route);
     const showNavigation = Boolean(this.user && this.context && route !== "/context");
     this.innerHTML = `<div class="market-shell">${this.busy ? `<div class="route-progress" role="progressbar" aria-label="Operazione in corso"></div>` : ""}<header class="market-header"><a class="market-brand" data-route href="${this.context ? "/home" : "/context"}"><span class="brand-mark" aria-hidden="true"></span><span class="brand-copy">ArtAround<small>Marketplace</small></span></a>${showNavigation ? this.renderNavigation(route) : this.user ? `<div class="context-hub-account"><span>${icon("user", { size: 16 })} ${escapeHtml(this.user.username)}</span><button class="button-secondary small" type="button" data-logout>Esci</button></div>` : ""}</header>${content}${showNavigation ? `<footer class="market-footer"><span>ArtAround Marketplace</span><span>${escapeHtml(this.context.type === "organization" ? this.context.name : "Area personale")}</span></footer>` : ""}</div>`;
-    document.title = this.user ? `${TITLES[route] || "ArtAround"} · ArtAround` : "Accedi · ArtAround";
+    document.title = this.user
+      ? `${TITLES[route] || "ArtAround"} · ArtAround`
+      : this.authMode === "register"
+        ? "Registrati · ArtAround"
+        : "Accedi · ArtAround";
   }
 }
 
