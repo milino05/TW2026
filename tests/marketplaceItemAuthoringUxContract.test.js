@@ -18,7 +18,7 @@ test("item authoring e picker semantico passano il syntax gate", () => {
 });
 
 test("item authoring espone tre passaggi senza separare contenuto e personalizzazione", () => {
-  for (const label of ["Di cosa parla", "Testi e impostazioni", "Controllo e pubblicazione"]) {
+  for (const label of ["Di cosa parla", "Testi e impostazioni", "Controllo finale"]) {
     assert.match(source, new RegExp(label));
   }
   assert.doesNotMatch(source, /<span class="eyebrow">Personalizzazione<\/span>/);
@@ -37,11 +37,12 @@ test("lo stepper mobile resta compatto e non richiede scorrimento orizzontale", 
   assert.doesNotMatch(source, /authoring-progress\{overflow:auto/);
 });
 
-test("il wizard non permette di saltare la compilazione del contenuto essenziale", () => {
+test("la bozza richiede i dati essenziali ma può essere salvata senza testi", () => {
   assert.match(source, /contentDraftReady\(\)/);
   assert.match(source, /const fieldsReady = \[this\.draft\.label, this\.draft\.author, this\.draft\.license\]/);
   assert.match(source, /const rulesReady = !this\.newEditionMode/);
-  assert.match(source, /const textsReady = this\.draft\.representations\.length > 0/);
+  assert.match(source, /const textsReady = this\.draft\.representations\.every/);
+  assert.doesNotMatch(source, /const textsReady = this\.draft\.representations\.length > 0/);
   assert.match(source, /if \(step === 3\) return Boolean\(this\.selectedRevision\(\) && !this\.newEditionMode\)/);
 });
 
@@ -61,12 +62,14 @@ test("la nuova versione editoriale viene materializzata salvando testi e imposta
   assert.match(source, /authoringRepository\.createEdition\(this\.itemId/);
 });
 
-test("il workflow resta backend-authoritative e non usa prompt nativi", () => {
+test("il controllo finale resta backend-authoritative ed è l'unica azione editoriale", () => {
   assert.match(source, /this\.workflowOperations\(\)/);
   assert.match(source, /this\.availableOperation\(operationCode\)/);
   assert.match(source, /data-workflow-form/);
-  assert.match(source, /name="message"/);
+  assert.match(source, /operation\.code === "workflow\.check"/);
+  assert.match(source, /operationCode !== "workflow\.check"/);
   assert.match(source, /Controlla se è tutto pronto/);
+  assert.doesNotMatch(source, /workflow\.publish/);
   assert.doesNotMatch(source, /window\.prompt\(/);
 });
 
@@ -82,7 +85,7 @@ test("feature parity mantiene versioni, spazi editoriali e dettagli tecnici", ()
 
 test("testi multipli vengono aggiunti e rimossi nella stessa bozza", () => {
   assert.match(source, /function newRepresentation\(overrides = \{\}\)/);
-  assert.match(source, /representations: \[newRepresentation\(\)\]/);
+  assert.match(source, /representations: \[\]/);
   assert.match(source, /data-add-text/);
   assert.match(source, /data-remove-text/);
   assert.match(source, /this\.draft\.representations\.push\(newRepresentation\(\)\)/);
@@ -94,19 +97,29 @@ test("testi multipli vengono aggiunti e rimossi nella stessa bozza", () => {
 });
 
 test("solo il testo selezionato resta espanso mentre gli altri mostrano i dati essenziali", () => {
-  assert.match(source, /activeRepresentationIndex = 0/);
+  assert.match(source, /activeRepresentationIndex = null/);
   assert.match(source, /data-selected="true"/);
   assert.match(source, /data-collapsed-text="\$\{index\}"/);
   assert.match(source, /data-select-text="\$\{index\}"/);
   assert.match(source, /class="representation-summary"/);
   for (const label of ["Durata", "Livello di linguaggio", "Lingua", "Modifica"]) assert.match(source, new RegExp(label));
-  assert.match(source, /this\.activeRepresentationIndex = this\.draft\.representations\.length - 1/);
-  assert.match(source, /this\.activeRepresentationIndex = Math\.min\(index, this\.draft\.representations\.length - 1\)/);
+  assert.doesNotMatch(source, /this\.activeRepresentationIndex = this\.draft\.representations\.length - 1/);
+  assert.match(source, /this\.activeRepresentationIndex = null/);
   assert.match(source, /Completa durata, livello di linguaggio, lingua e testo/);
   assert.match(source, /representation-editor--collapsed\{[^}]*cursor:pointer/);
   assert.match(source, /representation-summary\{display:grid;grid-template-columns:repeat\(3/);
   assert.match(source, /authoring-page\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(source, /authoring-page>\*,\.wizard-step,\.editor-form,\.representation-list,\.representation-editor\{min-width:0\}/);
+});
+
+test("lo stato senza testi è esplicito e l'ultimo testo può essere rimosso", () => {
+  assert.match(source, /Non hai ancora aggiunto nessun testo/);
+  assert.match(source, /Puoi salvare la bozza anche così/);
+  assert.match(source, /Per superare il controllo dovrai aggiungere almeno un testo completo/);
+  assert.match(source, /if \(this\.draft\.representations\[index\]\)/);
+  assert.doesNotMatch(source, /this\.draft\.representations\.length > 1 && this\.draft\.representations\[index\]/);
+  assert.match(source, /if \(!variant\.representations\.length\) payload\.defaultPresentation = null/);
+  assert.match(source, /review-texts--empty/);
 });
 
 test("il riepilogo separa visivamente etichette, valori e testi", () => {
@@ -138,9 +151,15 @@ test("selezione soggetto e validazione hanno feedback italiano", () => {
   assert.match(source, /Seleziona un'opzione prima di continuare/);
 });
 
-test("pubblicazione editoriale e catalogo restano lifecycle distinti", () => {
-  assert.match(source, /La pubblicazione editoriale non crea automaticamente una scheda nel Marketplace/);
-  assert.match(source, /La pubblicazione nel Catalogo è un passaggio commerciale separato/);
+test("il controllo rende il contenuto privato e propone il Marketplace in un dialog separato", () => {
+  assert.match(source, /privateSuccessOpen/);
+  assert.match(source, /result\?\.result\?\.finalized/);
+  assert.match(source, /Il contenuto è corretto e ora è privato/);
+  assert.match(source, /Configura offerta e pubblica/);
+  assert.match(source, /Mantieni privato/);
+  assert.match(source, /role="dialog" aria-modal="true"/);
+  assert.match(source, /resourceType=item_edition/);
+  assert.match(source, /html:has\(\.private-success-overlay\)/);
 });
 
 test("il flusso da oggetto fisico preserva la separazione del dominio", () => {

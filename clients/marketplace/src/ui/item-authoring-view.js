@@ -106,25 +106,8 @@ function projectedRevisionToWrite(revision) {
   };
 }
 
-function workflowNotice(code) {
-  const messages = {
-    "workflow.check": "Controllo completato.",
-    "workflow.request_review": "Contenuto inviato in revisione.",
-    "workflow.withdraw_review": "Contenuto ritirato dalla revisione.",
-    "workflow.request_changes": "Richiesta di modifiche inviata.",
-    "workflow.publish": "Contenuto pubblicato.",
-  };
-  return messages[code] || "Operazione editoriale completata.";
-}
 function workflowLabel(operation) {
-  const labels = {
-    "workflow.check": "Controlla se è tutto pronto",
-    "workflow.request_review": "Invia in revisione",
-    "workflow.withdraw_review": "Ritira dalla revisione",
-    "workflow.request_changes": "Richiedi modifiche",
-    "workflow.publish": operation?.label === "Approva e pubblica" ? "Approva e pubblica" : "Pubblica",
-  };
-  return labels[operation?.code] || operation?.label || "Continua";
+  return operation?.code === "workflow.check" ? "Controlla se è tutto pronto" : operation?.label || "Continua";
 }
 function newRepresentation(overrides = {}) {
   return {
@@ -142,7 +125,7 @@ function newDraft(author = "", illustrativeMedia = []) {
     author: String(author || "").trim(),
     license: "",
     illustrativeMedia: illustrativeMedia.map((entry) => writableMedia(entry, { includeId: false })).filter(Boolean).slice(0, 1),
-    representations: [newRepresentation()],
+    representations: [],
   };
 }
 
@@ -158,7 +141,7 @@ export class ItemAuthoringView extends HTMLElement {
   projection = null;
   namespaceControls = null;
   activeStep = 1;
-  activeRepresentationIndex = 0;
+  activeRepresentationIndex = null;
   mediaEditorOpen = false;
   mediaBusy = false;
   mediaSuggestionAttempted = false;
@@ -168,6 +151,7 @@ export class ItemAuthoringView extends HTMLElement {
   busy = false;
   error = null;
   notice = null;
+  privateSuccessOpen = false;
 
   connectedCallback() {
     this.addEventListener("submit", this.onSubmit);
@@ -187,7 +171,11 @@ export class ItemAuthoringView extends HTMLElement {
     this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
   availableOperation(code) { return (this.projection?.availableOperations || []).find((operation) => operation.code === code) || null; }
-  workflowOperations() { return (this.projection?.availableOperations || []).filter((operation) => isWorkflowOperation(operation.code)); }
+  workflowOperations() {
+    return (this.projection?.availableOperations || [])
+      .filter((operation) => isWorkflowOperation(operation.code))
+      .filter((operation) => operation.code === "workflow.check");
+  }
   selectedRevision() { return this.projection?.selected?.revision || null; }
   selectedEdition() { return this.projection?.selected?.edition || null; }
   selectedNamespace() { return this.projection?.selected?.namespace || null; }
@@ -300,7 +288,7 @@ export class ItemAuthoringView extends HTMLElement {
       author: revision.authorCredits?.[0] || this.defaultAuthor(),
       license: revision.license || "",
       illustrativeMedia: (revision.illustrativeMedia || []).map((entry) => writableMedia(entry)).filter(Boolean).slice(0, 1),
-      representations: representations.length ? representations : [newRepresentation()],
+      representations,
     };
     if (this.draft.illustrativeMedia.length) this.mediaSuggestionAttempted = true;
   }
@@ -324,7 +312,7 @@ export class ItemAuthoringView extends HTMLElement {
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
     const illustrativeMedia = this.draft.illustrativeMedia || [];
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = 0;
+    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
     this.activeStep = 2;
@@ -456,7 +444,11 @@ export class ItemAuthoringView extends HTMLElement {
         await this.executeWorkflow(operationCode, message);
       }
     } catch (error) { this.error = error instanceof Error ? error.message : "Operazione non riuscita"; }
-    finally { this.busy = false; this.render(); }
+    finally {
+      this.busy = false;
+      this.render();
+      if (this.privateSuccessOpen) requestAnimationFrame(() => this.querySelector(".private-success-dialog")?.focus({ preventScroll: true }));
+    }
   };
 
   async createEditionFromDraft() {
@@ -474,7 +466,7 @@ export class ItemAuthoringView extends HTMLElement {
     const variant = created.revision?.presentationVariants?.[0]; const representation = variant?.representations?.[0];
     if (variant?._id && representation?._id) await authoringRepository.updateEdition(created.edition._id, { defaultPresentation: { variantId: variant._id, representationId: representation._id } });
     this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(created.edition._id); await this.reloadAuthoringContext(); this.activeStep = 3;
-    this.notice = "Bozza salvata. Controlla il riepilogo prima della pubblicazione.";
+    this.notice = "Bozza salvata. Controlla il riepilogo quando è tutto pronto.";
   }
 
   async updateEditionFromDraft() {
@@ -491,16 +483,20 @@ export class ItemAuthoringView extends HTMLElement {
       locale: entry.locale,
       text: entry.text,
     }));
+    if (!variant.representations.length) payload.defaultPresentation = null;
     const result = await authoringRepository.updateEdition(editionId, payload);
     await this.ensureDefaultRepresentation(editionId, result.revision);
     await this.reloadProjection(editionId); this.activeStep = 3;
-    this.notice = "Modifiche salvate. Il controllo di consistenza va rieseguito prima della pubblicazione.";
+    this.notice = "Modifiche salvate. Esegui di nuovo il controllo quando il contenuto è pronto.";
   }
 
   async ensureDefaultRepresentation(editionId, revision) {
     const variant = revision?.presentationVariants?.[0]; const representation = variant?.representations?.[0];
     const variantId = id(variant); const representationId = id(representation);
-    if (!variantId || !representationId) return;
+    if (!variantId || !representationId) {
+      if (revision?.defaultPresentation) await authoringRepository.updateEdition(editionId, { defaultPresentation: null });
+      return;
+    }
     const current = revision.defaultPresentation;
     const currentVariant = (revision.presentationVariants || []).find((entry) => id(entry._id || entry.id) === id(current?.variantId));
     const currentStillExists = currentVariant?.representations?.some((entry) => id(entry._id || entry.id) === id(current?.representationId));
@@ -509,11 +505,13 @@ export class ItemAuthoringView extends HTMLElement {
   }
 
   async executeWorkflow(operationCode, message = "") {
+    if (operationCode !== "workflow.check") throw new Error("In questa schermata è disponibile soltanto il controllo finale");
     const editionId = id(this.selectedEdition()?.id); if (!editionId) throw new Error("Versione editoriale non disponibile");
     const result = await marketplaceRepository.executeWorkspaceOperation({ operationCode, sourceRef: { resourceType: "item_edition", resourceId: editionId }, targetPrincipal: { type: this.principal.type, id: this.principal.id }, payload: message ? { message } : {} });
     await this.reloadProjection(editionId); this.activeStep = 3;
-    if (operationCode === "workflow.check") { const issues = result?.result?.issues || []; this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : "Controllo completato: il contenuto è pronto per il passaggio successivo."; }
-    else this.notice = workflowNotice(operationCode);
+    const issues = result?.result?.issues || [];
+    this.privateSuccessOpen = Boolean(result?.result?.finalized && !issues.length);
+    this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : null;
   }
 
   onSubjectSelected = async (event) => {
@@ -526,6 +524,8 @@ export class ItemAuthoringView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    const closePrivateSuccess = target.closest("button[data-close-private-success]");
+    if (closePrivateSuccess) { this.privateSuccessOpen = false; this.render(); return; }
     const changeMediaButton = target.closest("button[data-change-media]");
     if (changeMediaButton) {
       if (!this.currentMedia()) this.draft.illustrativeMedia = [{ url: "", altText: this.selectedSubject?.preferredLabel || "", source: { provider: "author_url", retrievedAt: new Date().toISOString() }, rights: null }];
@@ -547,16 +547,16 @@ export class ItemAuthoringView extends HTMLElement {
     const suggestMediaButton = target.closest("button[data-suggest-media]");
     if (suggestMediaButton) { this.draft.illustrativeMedia = []; await this.loadSuggestedMedia({ force: true }); return; }
     const addTextButton = target.closest("button[data-add-text]");
-    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.activeRepresentationIndex = this.draft.representations.length - 1; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${this.activeRepresentationIndex}"] textarea`)?.focus()); return; }
+    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.notice = "Testo aggiunto. Selezionalo quando vuoi compilarlo."; this.render(); return; }
     const removeTextButton = target.closest("button[data-remove-text]");
-    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations.length > 1 && this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = Math.min(index, this.draft.representations.length - 1); else if (this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
+    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = null; else if (Number.isInteger(this.activeRepresentationIndex) && this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
     const collapsedText = target.closest("[data-collapsed-text]");
     if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
     const stepButton = target.closest("button[data-step]"); if (stepButton) { const step = Number(stepButton.dataset.step); if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.render(); } return; }
     const backButton = target.closest("button[data-back-step]"); if (backButton) { const step = Math.max(1, Number(backButton.dataset.backStep) || 1); if (this.canOpenStep(step)) { this.activeStep = step; this.render(); } return; }
     const newEditionButton = target.closest("button[data-new-edition]");
     if (newEditionButton) { this.busy = true; this.error = null; this.render(); try { await this.prepareNewEdition(); } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aggiungere una nuova versione editoriale"; } finally { this.busy = false; this.render(); } return; }
-    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = 0; this.activeStep = 2; this.render(); return; }
+    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.render(); return; }
     const editionButton = target.closest("button[data-edition-id]");
     if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 3; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
   };
@@ -572,7 +572,7 @@ export class ItemAuthoringView extends HTMLElement {
     const fieldsReady = [this.draft.label, this.draft.author, this.draft.license]
       .every((value) => String(value || "").trim());
     const rulesReady = !this.newEditionMode || Boolean(this.draft.namespaceId && this.namespaceControls);
-    const textsReady = this.draft.representations.length > 0 && this.draft.representations.every((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].every((value) => String(value || "").trim()));
+    const textsReady = this.draft.representations.every((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].every((value) => String(value || "").trim()));
     return Boolean(fieldsReady && rulesReady && textsReady);
   }
   canOpenStep(step) {
@@ -583,7 +583,7 @@ export class ItemAuthoringView extends HTMLElement {
   }
 
   renderProgress() {
-    const stages = [[1, "Di cosa parla"], [2, "Testi e impostazioni"], [3, "Controllo e pubblicazione"]];
+    const stages = [[1, "Di cosa parla"], [2, "Testi e impostazioni"], [3, "Controllo finale"]];
     const currentLabel = stages.find(([step]) => step === this.activeStep)?.[1] || stages[0][1];
     return `<nav class="authoring-progress" aria-label="Passaggi di creazione"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => { const enabled = this.canOpenStep(step); const current = this.activeStep === step; const complete = step === 1 ? Boolean(this.itemId) : step === 2 ? Boolean(this.selectedRevision() && !this.newEditionMode) : this.selectedRevision()?.status === "published"; return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`; }).join("")}</ol></nav>`;
   }
@@ -663,7 +663,8 @@ export class ItemAuthoringView extends HTMLElement {
       `<option value="">Scegli il livello</option>`,
       ...(controls.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`),
     ].join("");
-    this.activeRepresentationIndex = Math.min(Math.max(0, this.activeRepresentationIndex), this.draft.representations.length - 1);
+    if (!Number.isInteger(this.activeRepresentationIndex) || this.activeRepresentationIndex < 0 || this.activeRepresentationIndex >= this.draft.representations.length) this.activeRepresentationIndex = null;
+    if (!this.draft.representations.length) return `<div class="text-empty-state" role="status"><span class="text-empty-state__icon">${icon("edit", { size: 22 })}</span><div><h3>Non hai ancora aggiunto nessun testo</h3><p>Puoi salvare la bozza anche così. Per superare il controllo dovrai aggiungere almeno un testo completo.</p></div></div>`;
     return `<div class="representation-list">${this.draft.representations.map((representation, index) => {
       const active = index === this.activeRepresentationIndex;
       const title = index === 0 ? "Prima versione del testo" : "Versione aggiuntiva";
@@ -672,7 +673,7 @@ export class ItemAuthoringView extends HTMLElement {
       const durationLabel = duration ? `${duration.label}${Number.isFinite(Number(duration.targetSeconds)) ? ` · ${duration.targetSeconds}s` : ""}` : "Da scegliere";
       const languageLabel = language?.label || "Da scegliere";
       const localeLabel = representation.locale || "Da indicare";
-      const removeButton = this.draft.representations.length > 1 ? `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>` : "";
+      const removeButton = `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>`;
       if (!active) return `<article class="representation-editor representation-editor--collapsed" data-representation-index="${index}" data-collapsed-text="${index}"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div><div class="representation-compact-actions"><button class="button-secondary select-text" type="button" data-select-text="${index}" aria-expanded="false">${icon("edit", { size: 15 })} Modifica</button>${removeButton}</div></header><dl class="representation-summary"><div><dt>Durata</dt><dd>${escapeHtml(durationLabel)}</dd></div><div><dt>Livello di linguaggio</dt><dd>${escapeHtml(languageLabel)}</dd></div><div><dt>Lingua</dt><dd>${escapeHtml(localeLabel)}</dd></div></dl></article>`;
       return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings"><label>Durata<select name="durationTypeDefinitionId" data-representation-index="${index}" required>${durationOptions(representation.durationTypeDefinitionId)}</select></label><label>Livello di linguaggio<select name="languageLevelDefinitionId" data-representation-index="${index}" required>${languageOptions(representation.languageLevelDefinitionId)}</select></label><label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
     }).join("")}</div>`;
@@ -685,10 +686,11 @@ export class ItemAuthoringView extends HTMLElement {
     const namespaceChoice = this.newEditionMode
       ? this.renderNamespaceSelector()
       : `<div class="selection-summary"><span>Regole editoriali</span><strong>${escapeHtml(namespaceName || "Non disponibili")}</strong><small>Queste regole determinano le durate e i livelli di linguaggio disponibili.</small></div>`;
-    const heading = `<header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Testi e impostazioni</span><h2>Configura e scrivi il contenuto</h2><p>Scegli le regole editoriali e, per ogni testo, indica durata, livello di linguaggio e lingua.</p></div></header>`;
+    const heading = `<header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Testi e impostazioni</span><h2>Configura e scrivi il contenuto</h2><p>Scegli le regole editoriali. Puoi salvare la bozza senza testi; per superare il controllo servirà almeno un testo completo di durata, livello di linguaggio e lingua.</p></div></header>`;
     if (!controls) return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><p class="note">Scegli le regole editoriali per vedere le durate e i livelli disponibili.</p><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button></div></section>`;
     const creditedTo = this.draft.author || this.defaultAuthor();
-    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note author-credit">Autore assegnato automaticamente: <strong>${escapeHtml(creditedTo)}</strong>, proprietario di questa area di lavoro.</p>${this.renderMediaCard({ compact: true })}${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} Aggiungi un altro testo</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">${this.newEditionMode ? "Salva e vai al controllo" : "Salva modifiche"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
+    const addTextLabel = this.draft.representations.length ? "Aggiungi un altro testo" : "Aggiungi un testo";
+    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note author-credit">Autore assegnato automaticamente: <strong>${escapeHtml(creditedTo)}</strong>, proprietario di questa area di lavoro.</p>${this.renderMediaCard({ compact: true })}${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} ${addTextLabel}</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">${this.newEditionMode ? "Salva e vai al controllo" : "Salva modifiche"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
   }
 
   renderMemberships() {
@@ -708,18 +710,25 @@ export class ItemAuthoringView extends HTMLElement {
   }
   renderReviewTexts() {
     const representations = this.firstVariant()?.representations || [];
-    if (!representations.length) return "";
+    if (!representations.length) return `<section class="review-texts review-texts--empty"><span class="eyebrow">Testi</span><h3>Non hai ancora aggiunto nessun testo</h3><p>La bozza è stata salvata, ma il controllo richiederà almeno un testo completo.</p></section>`;
     return `<section class="review-texts"><header><span class="eyebrow">Testi</span><h3>Durata e livello di linguaggio</h3></header><div>${representations.map((representation, index) => `<article><header><strong>${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</strong><span>${escapeHtml(representation.duration?.label || "Durata non indicata")} · ${escapeHtml(representation.languageComplexity?.label || "Livello non indicato")} · ${escapeHtml(representation.locale || "Lingua non indicata")}</span></header><p>${escapeHtml(representation.text || "-")}</p></article>`).join("")}</div></section>`;
   }
   renderWorkflowOperation(operation) {
-    if (operation.requiresMessage) return `<form data-workflow-form class="workflow-message-form"><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><label>Motivazione<textarea name="message" rows="3" required></textarea></label><button class="button-secondary" type="submit">${escapeHtml(workflowLabel(operation))}</button></form>`;
     return `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit">${operation.code === "workflow.check" ? icon("check", { size: 15 }) : ""}${escapeHtml(workflowLabel(operation))}</button></form>`;
   }
   renderStepThree() {
     if (this.activeStep !== 3 || !this.selectedRevision() || this.newEditionMode) return "";
     const revision = this.selectedRevision(); const integrity = revision.integrity?.status || "needs_review"; const issues = revision.integrity?.issues || []; const operations = this.workflowOperations(); const published = revision.status === "published"; const editAllowed = Boolean(this.availableOperation("item.edit"));
-    const statePanel = published ? `<div class="readiness success"><strong>Versione pubblicata</strong><p>La pubblicazione nel Catalogo è un passaggio commerciale separato.</p></div>` : integrity === "valid" ? `<div class="readiness success"><strong>Controllo superato</strong></div>` : `<div class="readiness warning"><strong>Serve un controllo</strong></div>`;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Controllo e pubblicazione</span><h2>Verifica prima di pubblicare</h2></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}<div class="workflow-panel"><h3>Azioni disponibili</h3><p class="note">La pubblicazione editoriale non crea automaticamente una scheda nel Marketplace.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div><div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
+    const statePanel = published ? `<div class="readiness success"><strong>Contenuto privato e corretto</strong><p>Ha superato i controlli e non è visibile nel Marketplace.</p></div>` : integrity === "valid" ? `<div class="readiness success"><strong>Controllo superato</strong></div>` : `<div class="readiness warning"><strong>Serve un controllo</strong><p>Verificheremo testi, impostazioni e riferimenti prima di rendere il contenuto privato.</p></div>`;
+    const controls = operations.length ? `<div class="workflow-panel"><h3>Controllo finale</h3><p class="note">Se non ci sono problemi, il contenuto verrà salvato come privato nella tua Libreria.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div>` : "";
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica che sia tutto pronto</h2><p>Il controllo non rende il contenuto visibile agli altri utenti.</p></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${controls}<div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
+  }
+
+  renderPrivateSuccessDialog() {
+    if (!this.privateSuccessOpen) return "";
+    const editionId = id(this.selectedEdition()?.id);
+    const marketplaceHref = `/workspace/resource?ownership=owned&resourceType=item_edition&resourceId=${encodeURIComponent(editionId)}`;
+    return `<div class="private-success-overlay"><section class="private-success-dialog" role="dialog" aria-modal="true" aria-labelledby="private-success-title" tabindex="-1"><span class="private-success-icon">${icon("check", { size: 28 })}</span><div><span class="eyebrow">Controlli superati</span><h2 id="private-success-title">Il contenuto è corretto e ora è privato</h2><p>L’item ha superato tutti i controlli. Resta nella tua Libreria e non è ancora visibile agli altri utenti.</p><p>Quando vuoi, puoi configurare un’offerta e pubblicarlo nel Marketplace, oppure mantenerlo privato.</p></div><div class="private-success-actions"><a class="button-link" data-route href="${escapeHtml(marketplaceHref)}">Configura offerta e pubblica ${icon("chevron", { size: 15 })}</a><button class="button-secondary" type="button" data-close-private-success>Mantieni privato</button></div></section></div>`;
   }
   renderEditions() {
     const editions = this.projection?.editions || []; if (editions.length <= 1 && !this.newEditionMode) return "";
@@ -728,7 +737,7 @@ export class ItemAuthoringView extends HTMLElement {
 
   render() {
     const blocked = !this.itemId && this.preflight?.content?.allowed === false;
-    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Tre passaggi: identifica il soggetto, configura e scrivi i testi, quindi controlla il risultato prima della pubblicazione.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}`}</main>`;
+    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Tre passaggi: identifica il soggetto, configura e scrivi i testi, quindi esegui il controllo finale. Il contenuto resterà privato finché non sceglierai di portarlo nel Marketplace.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}`}</main>${this.renderPrivateSuccessDialog()}`;
   }
 
   representationStyles() {
@@ -746,6 +755,9 @@ export class ItemAuthoringView extends HTMLElement {
       .representation-summary>div{display:grid;min-width:0;gap:.1rem;padding:.55rem .65rem;border-radius:.55rem;background:#fff}
       .representation-summary dt{color:#60706a;font-size:.72rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
       .representation-summary dd{overflow:hidden;margin:0;color:#173e35;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+      .text-empty-state{display:flex;align-items:flex-start;gap:.8rem;padding:1rem;border:1px dashed #91a39b;border-radius:.8rem;background:#f8faf8;color:#476159}
+      .text-empty-state__icon{display:grid;place-items:center;flex:0 0 2.5rem;height:2.5rem;border-radius:.65rem;background:#e6eeea;color:#173e35}
+      .text-empty-state h3,.text-empty-state p{margin:0}.text-empty-state p{margin-top:.25rem;color:#60706a}
       .subject-confirmation{display:grid;gap:1rem}
       .item-media-card{display:grid;grid-template-columns:minmax(11rem,15rem) minmax(0,1fr);gap:1rem;align-items:start;margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.85rem;background:#f8faf8}
       .item-media-card figure{overflow:hidden;margin:0;border:1px solid #d4ddd8;border-radius:.7rem;background:#e8eeeb;aspect-ratio:4/3}
@@ -767,8 +779,15 @@ export class ItemAuthoringView extends HTMLElement {
       .review-media figure{overflow:hidden;margin:0;border-radius:.6rem;background:#e8eeeb;aspect-ratio:4/3}
       .review-media img{display:block;width:100%;height:100%;object-fit:contain}
       .review-media>div{display:grid;gap:.3rem}.review-media strong,.review-media p{margin:0}.review-media--empty{display:grid;grid-template-columns:1fr;gap:.25rem;color:#60706a}
+      .review-texts--empty{padding:1rem;border:1px dashed #91a39b;border-radius:.75rem;background:#f8faf8;color:#60706a}.review-texts--empty h3,.review-texts--empty p{margin:0}
+      html:has(.private-success-overlay),body:has(.private-success-overlay){overflow:hidden}
+      .private-success-overlay{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:1rem;overflow:auto;background:rgba(14,35,30,.68);backdrop-filter:blur(2px)}
+      .private-success-dialog{display:grid;width:min(34rem,100%);gap:1rem;padding:1.4rem;border:1px solid #cdd8d2;border-radius:1rem;background:#fff;box-shadow:0 1.5rem 4rem rgba(6,25,20,.3);color:#173e35}
+      .private-success-dialog:focus{outline:3px solid rgba(233,168,68,.55);outline-offset:3px}.private-success-dialog h2,.private-success-dialog p{margin:0}.private-success-dialog>div{display:grid;gap:.65rem}
+      .private-success-icon{display:grid;place-items:center;width:3.2rem;height:3.2rem;border-radius:999px;background:#dceee5;color:#173e35}
+      .private-success-actions{display:flex!important;grid-template-columns:1fr 1fr;gap:.65rem}.private-success-actions>*{justify-content:center}
       @media(max-width:40rem){.item-media-card,.item-media-card--compact,.review-media{grid-template-columns:1fr}.item-media-card--compact figure{max-width:10rem}.media-upload-row{align-items:stretch;flex-direction:column}}
-      @media(max-width:32rem){.representation-summary{grid-template-columns:1fr 1fr}.representation-summary>div:last-child{grid-column:1/-1}.representation-compact-actions{justify-content:flex-start}.representation-editor--collapsed>header{display:grid}}
+      @media(max-width:32rem){.representation-summary{grid-template-columns:1fr 1fr}.representation-summary>div:last-child{grid-column:1/-1}.representation-compact-actions{justify-content:flex-start}.representation-editor--collapsed>header{display:grid}.private-success-actions{align-items:stretch;flex-direction:column}.private-success-actions>*{width:100%}}
     </style>`;
   }
 

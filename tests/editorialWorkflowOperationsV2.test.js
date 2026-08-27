@@ -9,6 +9,17 @@ test("una revisione personale valida espone la pubblicazione diretta", () => {
   assert.deepEqual(codes({ ownerType: "user", revision: revision("draft") }), ["workflow.check", "workflow.publish"]);
 });
 
+test("il flusso contenuti che finalizza come privato espone soltanto il controllo", () => {
+  assert.deepEqual(codes({ ownerType: "user", revision: revision("draft"), finalizePrivatelyOnCheck: true }), ["workflow.check"]);
+  assert.deepEqual(codes({
+    ownerType: "organization",
+    capabilities: { edit: true, review: true, publish: true },
+    revision: revision("draft"),
+    finalizePrivatelyOnCheck: true,
+  }), ["workflow.check"]);
+  assert.deepEqual(codes({ ownerType: "user", revision: revision("published"), finalizePrivatelyOnCheck: true }), []);
+});
+
 test("un editor Organization può inviare in review senza poter pubblicare", () => {
   assert.deepEqual(codes({ ownerType: "organization", capabilities: { edit: true }, revision: revision("draft") }), ["workflow.check", "workflow.request_review"]);
 });

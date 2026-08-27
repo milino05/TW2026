@@ -281,6 +281,36 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
   return { revision, issues };
 }
 
+async function finalizePrivateEdition({ editionId, actorUserId }) {
+  const { edition, item, namespace } = await getEditionContext(editionId);
+  await assertCanManageItem(item, actorUserId, "item.edit");
+  const namespaceAccess = await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: item.ownerType,
+    principalId: item.ownerId,
+  });
+  const revision = await getExistingWorkingRevision(edition);
+  assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
+  if (revision.integrity?.status !== "valid") {
+    throw new AppError("Il contenuto deve superare il controllo prima di diventare privato", 409);
+  }
+  try {
+    publishWithoutReview(revision, actorUserId);
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  const previousId = edition.publishedRevisionId;
+  await revision.save();
+  if (previousId && String(previousId) !== String(revision._id)) {
+    await ItemRevisionV2.updateOne({ _id: previousId, status: "published" }, { $set: { status: "superseded" } });
+  }
+  edition.publishedRevisionId = revision._id;
+  edition.workingRevisionId = null;
+  await edition.save();
+  return { item, edition, revision, finalized: true, visibility: "private" };
+}
+
 async function requestEditionReview({ editionId, actorUserId }) {
   const { edition, item } = await getEditionContext(editionId);
   if (item.ownerType !== "organization") throw new AppError("I contenuti personali non richiedono review manageriale", 409);
@@ -459,6 +489,7 @@ module.exports = {
   createEdition,
   updateEdition,
   checkEditionConsistency,
+  finalizePrivateEdition,
   requestEditionReview,
   withdrawEditionReview,
   requestEditionChanges,

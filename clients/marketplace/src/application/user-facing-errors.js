@@ -37,6 +37,7 @@ const CODE_MESSAGES = Object.freeze({
   INVALID_NUMBER: "Inserisci un numero intero maggiore di zero.",
   INVALID_UUID: "L'identificatore interno non è valido. Rimuovi questa voce e aggiungila di nuovo.",
   EMPTY_ARRAY: "Aggiungi almeno una voce prima di continuare.",
+  EMPTY_REPRESENTATIONS: "Aggiungi almeno un testo completo prima di pubblicare.",
   REQUIRED: "Compila questo campo.",
   INVALID_ENUM: "Scegli uno dei valori disponibili.",
   INVALID_TYPE: "Il valore inserito non è nel formato corretto.",

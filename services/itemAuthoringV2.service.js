@@ -71,16 +71,20 @@ async function validateReferencedSubjects(revision) {
 async function checkEditionConsistency({ editionId, actorUserId }) {
   const result = await itemService.checkEditionConsistency({ editionId, actorUserId });
   const subjectIssues = await validateReferencedSubjects(result.revision);
-  if (!subjectIssues.length) return result;
-  const previousIssues = (result.revision.integrity?.issues || []).filter((issue) => issue.code !== "SUBJECT_REFERENCE_NOT_FOUND");
-  result.revision.integrity = {
-    status: "needs_review",
-    issues: [...previousIssues, ...subjectIssues],
-    checkedAt: new Date(),
-    checkedBy: actorUserId,
-  };
-  await result.revision.save();
-  return { revision: result.revision, issues: result.revision.integrity.issues };
+  if (subjectIssues.length) {
+    const previousIssues = (result.revision.integrity?.issues || []).filter((issue) => issue.code !== "SUBJECT_REFERENCE_NOT_FOUND");
+    result.revision.integrity = {
+      status: "needs_review",
+      issues: [...previousIssues, ...subjectIssues],
+      checkedAt: new Date(),
+      checkedBy: actorUserId,
+    };
+    await result.revision.save();
+    return { revision: result.revision, issues: result.revision.integrity.issues, finalized: false, visibility: "draft" };
+  }
+  if (result.issues.length) return { ...result, finalized: false, visibility: "draft" };
+  const finalized = await itemService.finalizePrivateEdition({ editionId, actorUserId });
+  return { ...finalized, issues: [] };
 }
 
 function projectSubject(subject) {
@@ -290,6 +294,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
       publish: actorAuthority.effectivePermissions.includes("item.publish"),
     },
     revision: workflowRevision,
+    finalizePrivatelyOnCheck: true,
   });
   const editAllowed = Boolean(workflowRevision && workflowRevision.status !== "in_review");
   return {
@@ -299,7 +304,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     selected,
     workspaceMemberships: memberships,
     publicationState: selected?.revision ? {
-      status: selected.revision.status,
+      status: selected.revision.status === "published" ? "private" : selected.revision.status,
       integrityStatus: selected.revision.integrity?.status || "needs_review",
     } : null,
     availableOperations: [

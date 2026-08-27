@@ -125,6 +125,90 @@ test("two independent Items can share a non-physical Subject and ItemAuthoringPr
   });
 });
 
+test("a draft without texts is persisted but fails the publication readiness check", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const itemService = require("../services/itemV2.service");
+    const { checkEditionConsistency } = require("../services/itemAuthoringV2.service");
+
+    const user = await User.create({ username: "textless-draft", passwordHash: "hash" });
+    const subject = await Subject.create({ preferredLabel: "Bozza senza testo", createdBy: user._id });
+    const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
+    const { namespace, revision: namespaceRevision } = await createPublishedNamespace({ userId: user._id });
+
+    const created = await itemService.createEdition({
+      itemId: item._id,
+      actorUserId: user._id,
+      payload: {
+        namespaceId: namespace._id,
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        revision: {
+          label: "Bozza salvabile",
+          authorCredits: ["Autore demo"],
+          metadata: { license: "CC BY" },
+          relatedSubjectIds: [],
+          tags: [],
+          illustrativeMedia: [],
+          selectionSignals: [],
+          presentationVariants: [{ key: "standard", label: "Standard", representations: [] }],
+          defaultPresentation: null,
+        },
+      },
+    });
+
+    assert.equal(created.revision.presentationVariants[0].representations.length, 0);
+    assert.equal(created.revision.defaultPresentation, null);
+
+    const checked = await checkEditionConsistency({ editionId: created.edition._id, actorUserId: user._id });
+    assert.equal(checked.revision.integrity.status, "needs_review");
+    assert.deepEqual(checked.issues.map((issue) => issue.code), ["EMPTY_REPRESENTATIONS"]);
+    await assert.rejects(
+      () => itemService.publishEdition({ editionId: created.edition._id, actorUserId: user._id }),
+      (error) => error?.status === 409,
+    );
+  });
+});
+
+test("a valid content check finalizes the edition as private without a separate publish action", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const ItemEdition = require("../models/itemEdition.model");
+    const { checkEditionConsistency, getItemAuthoringProjection } = require("../services/itemAuthoringV2.service");
+
+    const user = await User.create({ username: "private-after-check", passwordHash: "hash" });
+    const subject = await Subject.create({ preferredLabel: "Contenuto controllato", createdBy: user._id });
+    const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
+    const { namespace, revision: namespaceRevision } = await createPublishedNamespace({ userId: user._id });
+    const { edition, revision } = await createEdition({
+      item,
+      namespace,
+      namespaceRevision,
+      userId: user._id,
+      label: "Contenuto pronto",
+      status: "draft",
+    });
+
+    const checked = await checkEditionConsistency({ editionId: edition._id, actorUserId: user._id });
+    assert.equal(checked.finalized, true);
+    assert.equal(checked.visibility, "private");
+    assert.deepEqual(checked.issues, []);
+    assert.equal(checked.revision.status, "published");
+
+    const storedEdition = await ItemEdition.findById(edition._id).lean();
+    assert.equal(storedEdition.workingRevisionId, null);
+    assert.equal(String(storedEdition.publishedRevisionId), String(revision._id));
+
+    const projection = await getItemAuthoringProjection({ itemId: item._id, editionId: edition._id, actorUserId: user._id });
+    assert.equal(projection.publicationState.status, "private");
+    assert.equal(projection.availableOperations.some((operation) => operation.code === "workflow.publish"), false);
+    assert.equal(projection.availableOperations.some((operation) => operation.code === "workflow.check"), false);
+  });
+});
+
 test("dangling relatedSubject, semanticFocus and knowledgeRequirement keep ItemRevision needs_review and block publish", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
