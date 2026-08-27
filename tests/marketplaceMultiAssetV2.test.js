@@ -79,6 +79,12 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
       label: "Approfondimento rinascimentale acquistabile",
       authorCredits: ["Autore Marketplace"],
       metadata: { license: "CC BY" },
+      illustrativeMedia: [{
+        url: "https://upload.wikimedia.org/marketplace-content.jpg",
+        altText: "Dettaglio dell'opera rinascimentale",
+        width: 1200,
+        height: 900,
+      }],
       presentationVariants: [],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
@@ -164,6 +170,12 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     });
     assert.equal(catalog.total, 1);
     assert.equal(catalog.results[0].asset.type, "item_revision");
+    assert.deepEqual(catalog.results[0].asset.illustrativeMedia, [{
+      url: "https://upload.wikimedia.org/marketplace-content.jpg",
+      altText: "Dettaglio dell'opera rinascimentale",
+      width: 1200,
+      height: 900,
+    }]);
     assert.equal(catalog.results[0].viewerState.alreadyUsable, true);
 
     const history = await listAcquisitionHistory({ actorUserId: buyer._id });

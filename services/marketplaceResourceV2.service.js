@@ -196,6 +196,18 @@ function editorialLicense(resourceType, snapshot) {
   return null;
 }
 
+function illustrativeMedia(resourceType, snapshot) {
+  if (!["item_edition", "item_revision"].includes(resourceType)) return [];
+  const media = (snapshot?.illustrativeMedia || []).find((entry) => entry?.url);
+  if (!media) return [];
+  return [{
+    url: media.url,
+    altText: media.altText || "",
+    width: media.width || null,
+    height: media.height || null,
+  }];
+}
+
 async function resolveMarketableResource({ resourceType, resourceId }) {
   const authority = await resolveResourceAuthority(resourceType, resourceId);
   if (!authority) throw new AppError("Risorsa Marketplace non disponibile", 404, [{ code: "MARKETPLACE_RESOURCE_NOT_FOUND" }]);
@@ -229,6 +241,7 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
       version: snapshot?.version || null,
       versionMode: live ? "live" : "snapshot",
       editorialLicense: editorialLicense(resourceType, snapshot),
+      illustrativeMedia: illustrativeMedia(resourceType, snapshot),
     },
   };
 }

@@ -53,6 +53,21 @@ test("seller projection compone vendita e adozione con dati user-facing", { skip
       }],
       createdBy: seller._id,
     });
+    await MarketplaceOffer.create({
+      listingId: listing._id,
+      label: "Offerta ritirata",
+      pricing: { type: "free" },
+      grants: [{
+        resourceType: "visit",
+        resourceId: visitId,
+        capability: "visit.execute",
+        versionPolicy: "follow_current",
+      }],
+      status: "withdrawn",
+      withdrawnAt: new Date(),
+      withdrawnBy: seller._id,
+      createdBy: seller._id,
+    });
     const acquisition = await MarketplaceAcquisition.create({
       listingId: listing._id,
       offerId: offer._id,
@@ -92,6 +107,8 @@ test("seller projection compone vendita e adozione con dati user-facing", { skip
 
     const projection = await getCommercialManagement({ actorUserId: seller._id });
     assert.equal(projection.listings.length, 1);
+    assert.equal(projection.listings[0].offers.length, 1);
+    assert.equal(projection.listings[0].offers.some((entry) => entry.status === "withdrawn"), false);
     assert.equal(projection.listings[0].offers[0].grants[0].versionBehaviour.label, "Include gli aggiornamenti futuri");
     assert.equal(projection.distribution.summary.salesCount, 1);
     assert.equal(projection.distribution.summary.adoptionCount, 1);

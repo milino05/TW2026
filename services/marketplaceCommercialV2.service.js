@@ -120,7 +120,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
   ]);
   const listingIds = listings.map((entry) => entry._id);
   const [offers, acquisitions] = await Promise.all([
-    listingIds.length ? MarketplaceOffer.find({ listingId: { $in: listingIds } }).sort({ createdAt: -1 }).lean() : [],
+    listingIds.length ? MarketplaceOffer.find({ listingId: { $in: listingIds }, status: "active" }).sort({ createdAt: -1 }).lean() : [],
     listingIds.length ? MarketplaceAcquisition.find({ listingId: { $in: listingIds } }).lean() : [],
   ]);
   const offersByListing = new Map();
