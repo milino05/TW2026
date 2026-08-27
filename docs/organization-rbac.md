@@ -58,4 +58,3 @@ La console Organization espone soltanto le sezioni disponibili tra Panoramica, P
 - creatore → Owner con provenance iniziale.
 
 La migrazione richiede `MONGO_URI` verso un replica set e rimuove `users.organizationMemberships` solo dopo avere completato le transazioni per tutte le Organization.
-
