@@ -3,7 +3,6 @@ import { apiClient } from "./apiClient";
 export interface AuthUser {
   _id: string;
   username: string;
-  organizationMemberships: Array<{ organizationId: string; role: "operator" | "manager" }>;
   status: "active" | "disabled";
 }
 

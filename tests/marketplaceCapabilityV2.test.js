@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 const { capabilitySupportsResource } = require("../config/marketplaceCapabilities");
 
@@ -103,8 +104,7 @@ test("free acquisition concede visit.execute senza trasferire ownership", { skip
     assert.equal(after.basis, "entitlement");
 
     const organization = await Organization.create({ name: "Organization test", createdBy: seller._id });
-    buyer.organizationMemberships = [{ organizationId: organization._id, role: "operator", assignedBy: seller._id }];
-    await buyer.save();
+    await assignStarterRole({ organization, user: buyer, starterKey: "contributor", actorUserId: seller._id });
     const organizationVisit = await createPublishedVisit({
       VisitV2,
       VisitRevisionV2,

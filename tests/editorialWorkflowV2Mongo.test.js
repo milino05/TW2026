@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { assignStarterRole } = require("./helpers/organizationRbac");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -138,13 +139,9 @@ test("Visit publication distingue ownership personale e review Organization", { 
 
     const manager = await User.create({ username: "workflow-manager", passwordHash: "hash" });
     const organization = await Organization.create({ name: "Workflow organization", createdBy: manager._id });
-    manager.organizationMemberships = [{ organizationId: organization._id, role: "manager", assignedBy: manager._id }];
-    await manager.save();
-    const operator = await User.create({
-      username: "workflow-operator",
-      passwordHash: "hash",
-      organizationMemberships: [{ organizationId: organization._id, role: "operator", assignedBy: manager._id }],
-    });
+    await assignStarterRole({ organization, user: manager, starterKey: "administrator" });
+    const operator = await User.create({ username: "workflow-operator", passwordHash: "hash" });
+    await assignStarterRole({ organization, user: operator, starterKey: "contributor", actorUserId: manager._id });
 
     const fixture = await createContentFixture({ manager, organization });
     const personalRelease = await createEditorialSource({

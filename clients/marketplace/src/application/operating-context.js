@@ -12,7 +12,10 @@ function normalizedContext(value) {
     type,
     id,
     name,
-    role: type === "organization" ? text(value?.role) || null : null,
+    roles: type === "organization" && Array.isArray(value?.roles)
+      ? value.roles.map((role) => ({ id: text(role?.id), name: text(role?.name) })).filter((role) => role.id && role.name)
+      : [],
+    isOwner: type === "organization" && value?.isOwner === true,
   };
 }
 
@@ -23,13 +26,15 @@ export function availableOperatingContexts(workspace) {
       type: "user",
       id: String(workspace.account.id),
       name: String(workspace.account.username),
-      role: null,
+      roles: [],
+      isOwner: true,
     },
     ...(workspace.organizations || []).map((organization) => ({
       type: "organization",
       id: String(organization.id),
       name: String(organization.name),
-      role: organization.role || null,
+      roles: organization.roles || [],
+      isOwner: organization.isOwner === true,
     })),
   ];
 }

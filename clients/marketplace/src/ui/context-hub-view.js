@@ -4,7 +4,7 @@ import { accountRepository } from "../infrastructure/http/account-repository.js"
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
-function roleLabel(role) { return role === "manager" ? "Manager" : role === "operator" ? "Operatore" : "Membro"; }
+function roleLabel(roles = []) { return roles.map((role) => role.name).join(" · ") || "Membro"; }
 function hasOperation(operations = [], code) { return operations.some((entry) => entry.code === code); }
 
 export class ArtAroundContextHubView extends HTMLElement {
@@ -45,7 +45,8 @@ export class ArtAroundContextHubView extends HTMLElement {
         type: context.dataset.contextType,
         id: context.dataset.contextId,
         name: context.dataset.contextName,
-        role: context.dataset.contextRole || null,
+        roles: JSON.parse(context.dataset.contextRoles || "[]"),
+        isOwner: context.dataset.contextOwner === "true",
       });
       return;
     }
@@ -69,7 +70,15 @@ export class ArtAroundContextHubView extends HTMLElement {
       const created = await accountRepository.createOrganization({ name, description });
       const organizationId = String(created?.id || created?._id || "");
       if (!organizationId) throw new Error("L'organizzazione è stata creata ma non è stato restituito il suo identificatore");
-      this.choose({ type: "organization", id: organizationId, name: created.name || name, role: "manager" });
+      this.workspace = await accountRepository.workspace();
+      const organization = this.workspace.organizations.find((entry) => String(entry.id) === organizationId);
+      this.choose({
+        type: "organization",
+        id: organizationId,
+        name: organization?.name || created.name || name,
+        roles: organization?.roles || [],
+        isOwner: organization?.isOwner === true,
+      });
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Organizzazione non creata";
       this.busy = false;
@@ -78,7 +87,11 @@ export class ArtAroundContextHubView extends HTMLElement {
   };
 
   renderOrganizationCard(organization) {
-    return `<button class="context-card" type="button" data-context-type="organization" data-context-id="${escapeHtml(organization.id)}" data-context-name="${escapeHtml(organization.name)}" data-context-role="${escapeHtml(organization.role || "")}"><span class="context-card__icon">${icon("building", { size: 24 })}</span><span class="context-card__body"><span class="eyebrow">${escapeHtml(roleLabel(organization.role))}</span><strong>${escapeHtml(organization.name)}</strong><small>${escapeHtml(organization.description || "Gestisci risorse, visite, sedi e pubblicazioni dell'organizzazione.")}</small><span class="context-card__counts">${Number(organization.counts?.venues || 0)} sedi · ${Number(organization.counts?.members || 0)} persone</span></span><span class="context-card__action">Entra ${icon("chevron", { size: 15 })}</span></button>`;
+    const counts = [
+      Number.isFinite(organization.counts?.venues) ? `${organization.counts.venues} sedi` : null,
+      Number.isFinite(organization.counts?.members) ? `${organization.counts.members} persone` : null,
+    ].filter(Boolean).join(" · ");
+    return `<button class="context-card" type="button" data-context-type="organization" data-context-id="${escapeHtml(organization.id)}" data-context-name="${escapeHtml(organization.name)}" data-context-roles="${escapeHtml(JSON.stringify(organization.roles || []))}" data-context-owner="${organization.isOwner === true}"><span class="context-card__icon">${icon("building", { size: 24 })}</span><span class="context-card__body"><span class="context-card__badges"><span class="eyebrow">${escapeHtml(roleLabel(organization.roles))}</span>${organization.isOwner ? `<span class="owner-badge">Owner</span>` : ""}</span><strong>${escapeHtml(organization.name)}</strong><small>${escapeHtml(organization.description || "Gestisci risorse, visite, sedi e pubblicazioni dell'organizzazione.")}</small>${counts ? `<span class="context-card__counts">${escapeHtml(counts)}</span>` : ""}</span><span class="context-card__action">Entra ${icon("chevron", { size: 15 })}</span></button>`;
   }
 
   renderCreateCard() {

@@ -4,17 +4,17 @@ function operation(code, label, extra = {}) {
   return { code, label, ...extra };
 }
 
-function isOrganizationEditor(role) {
-  return role === "operator" || role === "manager";
-}
-
-function projectEditorialWorkflowOperations({ ownerType, actorRole, revision }) {
+function projectEditorialWorkflowOperations({ ownerType, capabilities = {}, revision }) {
   if (!revision) return [];
   const status = revision.status;
   const integrityValid = revision.integrity?.status === "valid";
   const operations = [];
 
-  if (status === "draft") {
+  const canEdit = ownerType === "user" || capabilities.edit === true;
+  const canReview = ownerType === "user" || capabilities.review === true;
+  const canPublish = ownerType === "user" || capabilities.publish === true;
+
+  if (status === "draft" && canEdit) {
     operations.push(operation("workflow.check", "Controlla consistenza"));
   }
 
@@ -25,17 +25,17 @@ function projectEditorialWorkflowOperations({ ownerType, actorRole, revision }) 
     return operations;
   }
 
-  if (ownerType !== "organization" || !isOrganizationEditor(actorRole)) return operations;
+  if (ownerType !== "organization") return operations;
 
-  if (status === "draft" && integrityValid) {
+  if (status === "draft" && integrityValid && canEdit) {
     operations.push(operation("workflow.request_review", "Invia in revisione"));
   }
   if (status === "in_review") {
-    operations.push(operation("workflow.withdraw_review", "Ritira dalla revisione"));
-    if (actorRole === "manager") {
+    if (canEdit) operations.push(operation("workflow.withdraw_review", "Ritira dalla revisione"));
+    if (canReview) {
       operations.push(operation("workflow.request_changes", "Richiedi modifiche", { requiresMessage: true }));
-      if (integrityValid) operations.push(operation("workflow.publish", "Approva e pubblica"));
     }
+    if (canPublish && integrityValid) operations.push(operation("workflow.publish", "Approva e pubblica"));
   }
 
   return operations;

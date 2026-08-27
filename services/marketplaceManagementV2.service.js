@@ -6,34 +6,30 @@ const VenueTarget = require("../models/venueTarget.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
-const { getOrganizationMembership } = require("./organizationAuthorization.service");
-const { assertVenueRole } = require("./venueAuthorization.service");
+const { assertOrganizationPermission } = require("./organizationAuthorization.service");
+const { assertVenuePermission } = require("./venueAuthorization.service");
 const { GLOBAL_PLACE_INTENTS, GLOBAL_ROUTING_ATTRIBUTE_CATALOG } = require("./routingAttributeCatalog.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function operation(code, label, extra = {}) { return { code, label, ...extra }; }
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
 
-function namespaceOperations({ namespace, revision, actor }) {
-  const role = namespace.ownerType === "organization"
-    ? getOrganizationMembership(actor, namespace.ownerId)?.role
-    : "owner";
+function namespaceOperations({ namespace, revision, permissions }) {
+  const can = (code) => namespace.ownerType === "user" || permissions.has(code);
   const status = revision?.status || null;
   const editable = ["draft", "changes_requested"].includes(status);
-  const operations = [operation("namespace.update", "Modifica dettagli")];
-  if (!namespace.workingRevisionId) operations.push(operation("namespace.working.ensure", revision ? "Crea nuova bozza dalla versione pubblicata" : "Crea bozza"));
-  if (editable) {
+  const operations = can("namespace.edit") ? [operation("namespace.update", "Modifica dettagli")] : [];
+  if (!namespace.workingRevisionId && can("namespace.edit")) operations.push(operation("namespace.working.ensure", revision ? "Crea nuova bozza dalla versione pubblicata" : "Crea bozza"));
+  if (editable && can("namespace.edit")) {
     operations.push(operation("namespace.revision.update", "Salva definizioni"));
     operations.push(operation("namespace.revision.check", "Controlla integrità"));
     if (namespace.ownerType === "organization") operations.push(operation("namespace.revision.request_review", "Richiedi revisione"));
     else operations.push(operation("namespace.revision.publish", "Pubblica"));
   }
   if (status === "in_review" && namespace.ownerType === "organization") {
-    operations.push(operation("namespace.revision.withdraw_review", "Ritira dalla revisione"));
-    if (role === "manager") {
-      operations.push(operation("namespace.revision.request_changes", "Richiedi modifiche", { requiresMessage: true }));
-      operations.push(operation("namespace.revision.publish", "Approva e pubblica"));
-    }
+    if (can("namespace.edit")) operations.push(operation("namespace.revision.withdraw_review", "Ritira dalla revisione"));
+    if (can("namespace.review")) operations.push(operation("namespace.revision.request_changes", "Richiedi modifiche", { requiresMessage: true }));
+    if (can("namespace.publish")) operations.push(operation("namespace.revision.publish", "Approva e pubblica"));
   }
   return operations;
 }
@@ -41,12 +37,13 @@ function namespaceOperations({ namespace, revision, actor }) {
 async function getNamespaceManagementProjection({ namespaceId, actorUserId }) {
   const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" }).lean();
   if (!namespace) throw new AppError("Namespace non disponibile", 404);
-  const actor = await assertCanActForOwner({
-    actorUserId,
-    ownerType: namespace.ownerType,
-    ownerId: namespace.ownerId,
-    minimumOrganizationRole: "operator",
-  });
+  let permissions = new Set();
+  if (namespace.ownerType === "organization") {
+    const authority = await assertOrganizationPermission({ userId: actorUserId, organizationId: namespace.ownerId, permissionCode: "namespace.view" });
+    permissions = new Set(authority.effectivePermissions);
+  } else {
+    await assertCanActForOwner({ actorUserId, ownerType: namespace.ownerType, ownerId: namespace.ownerId });
+  }
   const revisionId = namespace.workingRevisionId || namespace.publishedRevisionId;
   const revision = revisionId ? await NamespaceRevision.findById(revisionId).lean() : null;
   if (revisionId && !revision) throw new AppError("NamespaceRevision non disponibile", 409);
@@ -80,30 +77,29 @@ async function getNamespaceManagementProjection({ namespaceId, actorUserId }) {
         selectionSignals: revision.selectionSignals || [],
       },
     } : null,
-    availableOperations: namespaceOperations({ namespace, revision, actor }),
+    availableOperations: namespaceOperations({ namespace, revision, permissions }),
   };
 }
 
-function venueOperations({ release, role, hasWorking }) {
+function venueOperations({ release, permissions, hasWorking }) {
+  const can = (code) => permissions.has(code);
   const status = release?.status || null;
-  const operations = [operation("venue.update", "Modifica dettagli")];
-  if (!hasWorking) operations.push(operation("venue.release.ensure", release ? "Crea nuova bozza dalla release pubblicata" : "Inizia configurazione fisica"));
-  if (["draft", "changes_requested"].includes(status)) {
+  const operations = can("venue.profile.manage") ? [operation("venue.update", "Modifica dettagli")] : [];
+  if (!hasWorking && can("venue.physical.edit")) operations.push(operation("venue.release.ensure", release ? "Crea nuova bozza dalla release pubblicata" : "Inizia configurazione fisica"));
+  if (["draft", "changes_requested"].includes(status) && can("venue.physical.edit")) {
     operations.push(operation("venue.release.update", "Salva configurazione"));
     operations.push(operation("venue.release.check", "Controlla integrità"));
     operations.push(operation("venue.release.request_review", "Richiedi revisione"));
   }
   if (status === "in_review") {
-    operations.push(operation("venue.release.withdraw_review", "Ritira dalla revisione"));
-    if (role === "manager") {
-      operations.push(operation("venue.release.request_changes", "Richiedi modifiche", { requiresMessage: true }));
-      operations.push(operation("venue.release.publish", "Approva e pubblica"));
-    }
+    if (can("venue.physical.edit")) operations.push(operation("venue.release.withdraw_review", "Ritira dalla revisione"));
+    if (can("venue.physical.review")) operations.push(operation("venue.release.request_changes", "Richiedi modifiche", { requiresMessage: true }));
+    if (can("venue.physical.publish")) operations.push(operation("venue.release.publish", "Approva e pubblica"));
   }
   return operations;
 }
 
-function projectTarget(target, subject, role, binding) {
+function projectTarget(target, subject, permissions, binding) {
   return {
     id: target._id,
     label: target.label,
@@ -114,15 +110,15 @@ function projectTarget(target, subject, role, binding) {
       recognitionMedia: (binding.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })),
     } : null,
     availableOperations: [
-      operation("venue.target.update", "Modifica oggetto"),
-      ...(role === "manager" ? [operation("venue.target.trash", "Sposta nel cestino")] : []),
+      ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
+      ...(permissions.has("venue.lifecycle.manage") ? [operation("venue.target.trash", "Sposta nel cestino")] : []),
     ],
   };
 }
 
 async function getVenueManagementProjection({ venueId, actorUserId }) {
-  const { venue, user } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
-  const role = getOrganizationMembership(user, venue.ownerOrganizationId)?.role;
+  const { venue, authority } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
+  const permissions = new Set(authority.effectivePermissions);
   const releaseId = venue.workingReleaseId || venue.publishedReleaseId;
   const release = releaseId ? await VenueRelease.findById(releaseId).lean() : null;
   if (releaseId && !release) throw new AppError("VenueRelease non disponibile", 409);
@@ -142,7 +138,6 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       name: venue.name,
       description: venue.description || "",
       organizationId: venue.ownerOrganizationId,
-      role,
       source,
     },
     release: release ? {
@@ -171,12 +166,12 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       venueTargetPlacements: plain(layout).venueTargetPlacements || [],
       connections: plain(layout).connections || [],
     } : null,
-    targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), role, bindingByTargetId.get(id(target._id)))),
+    targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), permissions, bindingByTargetId.get(id(target._id)))),
     catalogs: {
       placeIntents: [...GLOBAL_PLACE_INTENTS],
       canonicalRoutingAttributes: GLOBAL_ROUTING_ATTRIBUTE_CATALOG.map((entry) => ({ ...entry })),
     },
-    availableOperations: venueOperations({ release, role, hasWorking: Boolean(venue.workingReleaseId) }),
+    availableOperations: venueOperations({ release, permissions, hasWorking: Boolean(venue.workingReleaseId) }),
   };
 }
 

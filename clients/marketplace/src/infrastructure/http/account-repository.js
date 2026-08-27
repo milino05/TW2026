@@ -13,11 +13,29 @@ export const accountRepository = {
   addOrganizationMember(organizationId, payload) {
     return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/members`, { method: "POST", body: JSON.stringify(payload) });
   },
-  updateOrganizationMemberRole(organizationId, userId, role) {
-    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(userId)}/role`, { method: "PUT", body: JSON.stringify({ role }) });
+  updateOrganizationMemberRoles(organizationId, userId, roleIds) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(userId)}/roles`, { method: "PUT", body: JSON.stringify({ roleIds }) });
   },
   removeOrganizationMember(organizationId, userId) {
     return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  },
+  createOrganizationRole(organizationId, payload) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/roles`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateOrganizationRole(organizationId, roleId, payload) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/roles/${encodeURIComponent(roleId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  removeOrganizationRole(organizationId, roleId) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/roles/${encodeURIComponent(roleId)}`, { method: "DELETE" });
+  },
+  grantOrganizationOwner(organizationId, userId) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/owners/${encodeURIComponent(userId)}`, { method: "POST" });
+  },
+  revokeOrganizationOwner(organizationId, userId) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/owners/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  },
+  organizationAuthorizationEvents(organizationId, page = 1) {
+    return apiClient.request(`/organizations/${encodeURIComponent(organizationId)}/authorization-events?page=${encodeURIComponent(page)}`);
   },
   createVenue(payload) {
     return apiClient.request("/venues", { method: "POST", body: JSON.stringify(payload) });

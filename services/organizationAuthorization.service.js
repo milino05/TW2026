@@ -1,48 +1,82 @@
+const Organization = require("../models/organization.model");
+const OrganizationMembership = require("../models/organizationMembership.model");
 const AppError = require("../utils/AppError");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
+const { permissionClosure, permissionsAreSubset } = require("./organizationPermissionRegistry.service");
 
-const ROLE_RANK = Object.freeze({
-  operator: 1,
-  manager: 2,
-});
+function id(value) { return String(value?._id || value || ""); }
 
-function sameId(a, b) {
-  return String(a || "") === String(b || "");
+function effectivePermissionsForMembership(membership) {
+  const codes = (membership?.roleAssignments || []).flatMap((assignment) => (
+    assignment.roleId?.permissionCodes || []
+  ));
+  return permissionClosure(codes);
 }
 
-function getOrganizationMembership(user, organizationId) {
-  return (user?.organizationMemberships || []).find(
-    (membership) => sameId(membership.organizationId, organizationId),
-  ) || null;
+async function resolveOrganizationAuthority({ userId, organizationId, session = null }) {
+  const [user, organization, membership] = await Promise.all([
+    getActiveUserOrFail(userId),
+    Organization.findOne({ _id: organizationId, lifecycleStatus: "active" }).session(session).lean(),
+    OrganizationMembership.findOne({ organizationId, userId })
+      .populate("roleAssignments.roleId")
+      .session(session)
+      .lean(),
+  ]);
+  if (!organization) throw new AppError("Organizzazione non trovata", 404);
+  const isOwner = organization.owners.some((owner) => id(owner.userId) === id(userId));
+  const roleAssignments = (membership?.roleAssignments || []).filter((assignment) => assignment.roleId);
+  return {
+    user,
+    organization,
+    membership: membership ? { ...membership, roleAssignments } : null,
+    roles: roleAssignments.map((assignment) => assignment.roleId),
+    effectivePermissions: effectivePermissionsForMembership({ roleAssignments }),
+    isOwner,
+  };
 }
 
-function hasOrganizationRole(user, organizationId, minimumRole) {
-  const membership = getOrganizationMembership(user, organizationId);
-  return Boolean(
-    membership &&
-      ROLE_RANK[membership.role] &&
-      ROLE_RANK[minimumRole] &&
-      ROLE_RANK[membership.role] >= ROLE_RANK[minimumRole],
-  );
-}
-
-async function assertOrganizationRole({ userId, organizationId, minimumRole }) {
-  if (!ROLE_RANK[minimumRole]) throw new Error(`Ruolo minimo sconosciuto: ${minimumRole}`);
-  const user = await getActiveUserOrFail(userId);
-  if (!hasOrganizationRole(user, organizationId, minimumRole)) {
-    throw new AppError(
-      minimumRole === "manager"
-        ? "E richiesto il ruolo di manager dell'organizzazione"
-        : "E richiesto il ruolo di operator o manager dell'organizzazione",
-      403,
-    );
+async function assertOrganizationMembership({ userId, organizationId, session = null }) {
+  const authority = await resolveOrganizationAuthority({ userId, organizationId, session });
+  if (!authority.membership || authority.roles.length === 0) {
+    throw new AppError("Membership attiva richiesta per questa organizzazione", 403, [{ code: "ORGANIZATION_MEMBERSHIP_REQUIRED" }]);
   }
-  return user;
+  return authority;
+}
+
+async function assertOrganizationPermission({ userId, organizationId, permissionCode, session = null }) {
+  const authority = await assertOrganizationMembership({ userId, organizationId, session });
+  if (!authority.effectivePermissions.includes(permissionCode)) {
+    throw new AppError("Non disponi del permesso richiesto", 403, [{
+      code: "ORGANIZATION_PERMISSION_REQUIRED",
+      permissionCode,
+    }]);
+  }
+  return authority;
+}
+
+async function hasOrganizationPermission({ userId, organizationId, permissionCode }) {
+  try {
+    const authority = await assertOrganizationMembership({ userId, organizationId });
+    return authority.effectivePermissions.includes(permissionCode);
+  } catch (error) {
+    if ([403, 404].includes(error?.status)) return false;
+    throw error;
+  }
+}
+
+function assertDelegationCeiling({ authority, permissionCodes }) {
+  const requested = permissionClosure(permissionCodes);
+  if (!authority.isOwner && !permissionsAreSubset(requested, authority.effectivePermissions)) {
+    throw new AppError("Non puoi delegare permessi che non possiedi", 403, [{ code: "DELEGATION_CEILING_EXCEEDED" }]);
+  }
+  return requested;
 }
 
 module.exports = {
-  ROLE_RANK,
-  getOrganizationMembership,
-  hasOrganizationRole,
-  assertOrganizationRole,
+  effectivePermissionsForMembership,
+  resolveOrganizationAuthority,
+  assertOrganizationMembership,
+  assertOrganizationPermission,
+  hasOrganizationPermission,
+  assertDelegationCeiling,
 };

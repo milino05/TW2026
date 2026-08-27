@@ -85,8 +85,8 @@ Decisione: scartata.
 - sessioni con scadenza e indice TTL MongoDB;
 - controllo dell'Origin sulle richieste mutative;
 - identita ricavata esclusivamente dalla sessione, mai dal body;
-- registrazione libera crea utenti senza membership di museo;
-- le membership da operatore non possono essere autoassegnate tramite registrazione.
+- registrazione libera crea utenti senza membership Organization;
+- ruoli, membership e autorità Owner non possono essere autoassegnati tramite registrazione.
 
 ## Configurazione
 

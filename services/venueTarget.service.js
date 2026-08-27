@@ -2,7 +2,7 @@ const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
-const { assertVenueRole, findVenueOrFail } = require("./venueAuthorization.service");
+const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization.service");
 const { normalizeVenueTargetPayload, validateVenueTargetPayload } = require("./validation/venue.validation");
 
 function validatedTargetPayload(rawPayload, { creating }) {
@@ -21,7 +21,7 @@ async function findVenueTargetOrFail({ venueId, venueTargetId, includeTrashed = 
 }
 
 async function createVenueTarget({ venueId, payload, actorUserId }) {
-  await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   const normalized = validatedTargetPayload(payload, { creating: true });
   const subject = await Subject.exists({ _id: normalized.subjectId });
   if (!subject) throw new AppError("Subject non trovato", 404);
@@ -35,7 +35,7 @@ async function createVenueTarget({ venueId, payload, actorUserId }) {
 }
 
 async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId }) {
-  await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   const target = await findVenueTargetOrFail({ venueId, venueTargetId });
   const normalized = validatedTargetPayload(payload, { creating: false });
   if (Object.prototype.hasOwnProperty.call(normalized, "label")) target.label = normalized.label;
@@ -47,7 +47,7 @@ async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId 
 async function listVenueTargets({ venueId, view = "published", actorUserId = null } = {}) {
   const venue = await findVenueOrFail({ venueId });
   if (view === "all") {
-    await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "operator" });
+    await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
     return VenueTarget.find({ venueId, lifecycleStatus: "active" }).sort({ label: 1, createdAt: 1 }).lean();
   }
   if (view !== "published") throw new AppError("view deve essere published o all", 400);
@@ -61,7 +61,7 @@ async function listVenueTargets({ venueId, view = "published", actorUserId = nul
 }
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
-  const { venue } = await assertVenueRole({ userId: actorUserId, venueId, minimumRole: "manager" });
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
   const target = await findVenueTargetOrFail({ venueId, venueTargetId });
   if (venue.publishedReleaseId) {
     const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();

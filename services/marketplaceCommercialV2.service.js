@@ -21,6 +21,11 @@ const ADOPTION_ACTION_LABELS = Object.freeze({
 });
 
 function id(value) { return String(value?._id || value || ""); }
+function publicPrincipal(principal) {
+  if (!principal) return principal;
+  const { effectivePermissions, ...projected } = principal;
+  return projected;
+}
 
 function versionPolicyOptions(resourceType) {
   if (LIVE_RESOURCE_TYPES.has(resourceType)) {
@@ -97,11 +102,14 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
     actorUserId,
     principalType,
     principalId,
-    minimumOrganizationRole: principalType === "organization" ? "manager" : "operator",
+    permissionCode: principalType === "organization" ? "marketplace.distribution.view" : null,
   });
   const availablePrincipals = (await availablePrincipalProjection(actorUserId))
-    .filter((entry) => entry.type === "user" || entry.role === "manager");
+    .filter((entry) => entry.type === "user" || entry.effectivePermissions.includes("marketplace.distribution.view"));
   const selected = availablePrincipals.find((entry) => entry.type === principalType && id(entry.id) === id(principalId));
+  const selectedPermissions = new Set(selected?.effectivePermissions || []);
+  const canManage = principalType === "user" || selectedPermissions.has("marketplace.distribution.manage");
+  const canViewFinance = principalType === "user" || selectedPermissions.has("marketplace.finance.view");
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(50, Math.max(1, Number(limit) || 10));
   const listingQuery = { sellerType: principalType, sellerId: principalId };
@@ -156,12 +164,12 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
       asset,
       publishedAt: listing.publishedAt,
       withdrawnAt: listing.withdrawnAt,
-      offerConfiguration: {
+      ...(canManage ? { offerConfiguration: {
         resourceRef: { resourceType: listing.resourceType, resourceId: listing.resourceId },
         capabilityOptions: capabilityOptions(listing.resourceType),
         versionPolicyOptions: versionPolicyOptions(listing.resourceType),
         defaultCurrency: "EUR",
-      },
+      } } : {}),
       offers: listingOffers.map((offer) => {
         const offerAcquisitions = acquisitionsByOffer.get(id(offer._id)) || [];
         return {
@@ -182,29 +190,32 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
           })),
           dependencyIntegrity: offer.dependencyIntegrity,
           acquisitionCount: offerAcquisitions.length,
-          revenueByCurrency: revenueFor(offerAcquisitions),
+          ...(canViewFinance ? { revenueByCurrency: revenueFor(offerAcquisitions) } : {}),
           createdAt: offer.createdAt,
           withdrawnAt: offer.withdrawnAt,
-          availableOperations: offer.status === "active"
+          availableOperations: canManage && offer.status === "active"
             ? [{ code: "withdraw_offer", label: "Ritira offerta" }]
             : [],
         };
       }),
       metrics: {
         acquisitionCount: listingAcquisitions.length,
-        paidAcquisitionCount: listingAcquisitions.filter((entry) => entry.pricingSnapshot?.type === "paid").length,
-        freeAcquisitionCount: listingAcquisitions.filter((entry) => entry.pricingSnapshot?.type === "free").length,
-        revenueByCurrency: revenueFor(listingAcquisitions),
+        ...(canViewFinance ? {
+          paidAcquisitionCount: listingAcquisitions.filter((entry) => entry.pricingSnapshot?.type === "paid").length,
+          freeAcquisitionCount: listingAcquisitions.filter((entry) => entry.pricingSnapshot?.type === "free").length,
+          revenueByCurrency: revenueFor(listingAcquisitions),
+        } : {}),
       },
-      availableOperations: [
+      availableOperations: canManage ? [
         ...(["draft", "published"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
         ...(["draft", "published"].includes(listing.status) ? [{ code: "withdraw_listing", label: "Ritira listing" }] : []),
-      ],
+      ] : [],
     });
   }
   return {
-    principal: selected || { type: principalType, id: principalId, name: principalType === "user" ? "Profilo personale" : "Organizzazione" },
-    availablePrincipals,
+    principal: publicPrincipal(selected) || { type: principalType, id: principalId, name: principalType === "user" ? "Profilo personale" : "Organizzazione" },
+    availablePrincipals: availablePrincipals.map(publicPrincipal),
+    capabilities: { manage: canManage, financeView: canViewFinance },
     distribution: await hydrateDistribution(rawDistribution),
     listings: projectedListings,
     page: safePage,

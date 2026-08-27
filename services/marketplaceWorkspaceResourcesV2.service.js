@@ -20,6 +20,12 @@ const {
 } = require("./marketplaceWorkspaceResourceProjectionV2.service");
 
 const OWNED_RESOURCE_TYPES = ["item_edition", "editorial_context", "namespace", "visit"];
+const VIEW_PERMISSION_BY_TYPE = Object.freeze({
+  item_edition: "item.view",
+  editorial_context: "editorial_context.view",
+  namespace: "namespace.view",
+  visit: "visit.view",
+});
 
 function id(value) { return String(value?._id || value || ""); }
 function objectId(value) { return new mongoose.Types.ObjectId(String(value)); }
@@ -44,14 +50,20 @@ function activeEntitlementMatch(principal, now = new Date()) {
     $or: [{ validUntil: null }, { validUntil: { $gt: now } }],
   };
 }
+function visibleOwnedTypes(principal) {
+  if (principal.type === "user") return OWNED_RESOURCE_TYPES;
+  const permissions = new Set(principal.effectivePermissions || []);
+  return OWNED_RESOURCE_TYPES.filter((type) => permissions.has(VIEW_PERMISSION_BY_TYPE[type]));
+}
 
 async function getCreatorWorkspaceContext({ actorUserId, principalType = "user", principalId = actorUserId }) {
   const { selected, availablePrincipals } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
-  const spaces = await ContentSpace.find({
+  const canViewSpaces = selected.type === "user" || selected.effectivePermissions.includes("editorial_space.view");
+  const spaces = canViewSpaces ? await ContentSpace.find({
     ownerType: selected.type,
     ownerId: selected.id,
     lifecycleStatus: "active",
-  }).sort({ name: 1 }).select("name description").lean();
+  }).sort({ name: 1 }).select("name description").lean() : [];
   return {
     principal: selected,
     availablePrincipals,
@@ -137,8 +149,10 @@ const CANDIDATE_FACTORIES = {
 };
 
 async function listOwnedResources({ principal, q, resourceTypes, page, pageSize }) {
-  const types = normalizeTypes(resourceTypes, OWNED_RESOURCE_TYPES);
-  const selectedTypes = types.length ? types : OWNED_RESOURCE_TYPES;
+  const allowedTypes = visibleOwnedTypes(principal);
+  const types = normalizeTypes(resourceTypes, allowedTypes);
+  const selectedTypes = types.length ? types : allowedTypes;
+  if (selectedTypes.length === 0) return { total: 0, results: [] };
   const windowSize = page * pageSize;
   const groups = await Promise.all(selectedTypes.map((type) => CANDIDATE_FACTORIES[type]({ principal, q, windowSize })));
   const total = groups.reduce((sum, group) => sum + group.total, 0);
@@ -146,7 +160,8 @@ async function listOwnedResources({ principal, q, resourceTypes, page, pageSize 
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0) || id(b._id).localeCompare(id(a._id)));
   const offset = (page - 1) * pageSize;
   const candidates = merged.slice(offset, offset + pageSize);
-  const listings = await listingMapForCandidates(principal, candidates);
+  const canViewDistribution = principal.type === "user" || principal.effectivePermissions.includes("marketplace.distribution.view");
+  const listings = canViewDistribution ? await listingMapForCandidates(principal, candidates) : new Map();
   return { total, results: candidates.map((candidate) => projectOwnedCandidate(candidate, { principal, listings })) };
 }
 
@@ -221,13 +236,14 @@ async function getCreatorWorkspaceResourceDetail({
   let asset = null;
 
   if (normalizedOwnership === "owned") {
-    if (!OWNED_RESOURCE_TYPES.includes(resourceType)) {
+    if (!visibleOwnedTypes(selected).includes(resourceType)) {
       throw new AppError("Risorsa non disponibile nel Workspace", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
     }
     const group = await CANDIDATE_FACTORIES[resourceType]({ principal: selected, q: "", windowSize: 1, resourceId });
     const candidate = group.results[0] || null;
     if (candidate) {
-      const listings = await listingMapForCandidates(selected, [candidate]);
+      const canViewDistribution = selected.type === "user" || selected.effectivePermissions.includes("marketplace.distribution.view");
+      const listings = canViewDistribution ? await listingMapForCandidates(selected, [candidate]) : new Map();
       asset = projectOwnedCandidate(candidate, { principal: selected, listings });
     }
   } else {

@@ -44,6 +44,9 @@ test("Create Hub deriva l'owner dal contesto di sessione", () => {
 });
 
 test("Create Hub mostra una sola remediation e non espone la gestione avanzata", () => {
+  assert.match(create, /capabilities\?\.contentCreate/);
+  assert.match(create, /capabilities\?\.visitCreate/);
+  assert.match(create, /capabilities\?\.venueObjectContentCreate/);
   assert.match(create, /if \(!this\.preflight\?\.content\?\.allowed\) return ""/);
   assert.doesNotMatch(create, /blockerCard\(\{ physical:/);
   assert.doesNotMatch(create, /Gestione avanzata/);

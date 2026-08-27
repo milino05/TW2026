@@ -39,6 +39,7 @@ Le variabili d'ambiente sono documentate in `.env.example`. In produzione config
 Con MongoDB attivo e `MONGO_URI` configurata:
 
 ```bash
+npm run migrate:organization-rbac
 npm run seed:demo
 npm run verify:demo
 ```
@@ -46,7 +47,7 @@ npm run verify:demo
 Il seed è deterministico/idempotente per le entità demo e prepara:
 
 - `autore1`, `autore2`, `visitatore1`, `visitatore2`, password `12345678`;
-- `autore1` manager e `autore2` operator della Organization dimostrativa;
+- `autore1` Administrator e Owner, `autore2` Contributor della Organization dimostrativa;
 - Venue reale: **Pinacoteca Nazionale di Bologna**;
 - VenueRelease/LayoutRevision con mappa schematica, routing e facility;
 - 12 VenueTarget/opere;
@@ -117,6 +118,7 @@ I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'
 - `docs/deployment.md` — build, seed e deploy gocker;
 - `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly;
 - `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring.
+- `docs/organization-rbac.md` — ruoli Organization personalizzati, permission registry, Owner, transazioni, audit e migrazione legacy.
 
 ## Principi correnti
 

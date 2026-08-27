@@ -5,7 +5,7 @@ import { icon } from "./icons.js";
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function number(value, fallback = 0.5) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 function checked(value) { return value === true ? "checked" : ""; }
-function roleLabel(role) { return role === "manager" ? "Manager" : "Operatore"; }
+function roleLabel(roles = []) { return roles.map((role) => role.name).join(" · ") || "Membro"; }
 function stateLabel(namespace) { const mode = namespace.state?.mode; const label = mode === "working" ? "Bozza" : mode === "published" ? "Pubblicate" : "Da configurare"; return `${label}${namespace.state?.version ? ` · v${namespace.state.version}` : ""}`; }
 function organizationUrl(organizationId, section = "overview") { const params = new URLSearchParams({ organizationId: String(organizationId), section }); return `/organizations/detail?${params.toString()}`; }
 const ACCOUNT_SECTIONS = new Set(["account-overview", "account-preferences", "account-organizations", "account-rules"]);
@@ -103,7 +103,15 @@ export class ArtAroundProfileView extends HTMLElement {
   };
 
   renderOrganizations(organizations) {
-    const cards = organizations.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("building", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(roleLabel(entry.role))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Nessuna descrizione disponibile.")}</p><dl class="account-counts"><div><dt>Persone</dt><dd>${entry.counts.members}</dd></div><div><dt>Sedi</dt><dd>${entry.counts.venues}</dd></div><div><dt>Regole</dt><dd>${entry.counts.namespaces}</dd></div></dl><div class="account-card-actions"><button type="button" data-organization="${escapeHtml(entry.id)}">Gestisci organizzazione ${icon("chevron", { size: 15 })}</button><button class="button-secondary" type="button" data-organization="${escapeHtml(entry.id)}" data-organization-section="venues">Sedi</button><button class="button-secondary" type="button" data-organization="${escapeHtml(entry.id)}" data-organization-section="rules">Regole editoriali</button></div></article>`).join("");
+    const cards = organizations.map((entry) => {
+      const sections = new Set((entry.availableSections || []).map((section) => section.code));
+      const counts = [
+        Number.isFinite(entry.counts?.members) ? `<div><dt>Persone</dt><dd>${entry.counts.members}</dd></div>` : "",
+        Number.isFinite(entry.counts?.venues) ? `<div><dt>Sedi</dt><dd>${entry.counts.venues}</dd></div>` : "",
+        Number.isFinite(entry.counts?.namespaces) ? `<div><dt>Regole</dt><dd>${entry.counts.namespaces}</dd></div>` : "",
+      ].join("");
+      return `<article class="account-resource-card"><header><span class="resource-mark">${icon("building", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(roleLabel(entry.roles))}</span><h3>${escapeHtml(entry.name)}</h3>${entry.isOwner ? `<span class="owner-badge">Owner</span>` : ""}</div></header><p>${escapeHtml(entry.description || "Nessuna descrizione disponibile.")}</p>${counts ? `<dl class="account-counts">${counts}</dl>` : ""}<div class="account-card-actions"><button type="button" data-organization="${escapeHtml(entry.id)}">Apri organizzazione ${icon("chevron", { size: 15 })}</button>${sections.has("venues") ? `<button class="button-secondary" type="button" data-organization="${escapeHtml(entry.id)}" data-organization-section="venues">Sedi</button>` : ""}${sections.has("rules") ? `<button class="button-secondary" type="button" data-organization="${escapeHtml(entry.id)}" data-organization-section="rules">Regole editoriali</button>` : ""}</div></article>`;
+    }).join("");
     return cards || `<div class="empty-state account-empty">${icon("building", { size: 26 })}<h3>Nessuna organizzazione</h3><p>Puoi crearne una dalla schermata in cui scegli l'area di lavoro.</p></div>`;
   }
 

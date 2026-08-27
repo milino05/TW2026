@@ -43,7 +43,7 @@ Il Navigator apre l’unica applicazione Marketplace tramite link resolver appli
 
 # Punto 7/30 — Visit execution access v2
 
-L’avvio di una VisitSession richiede `visit.execute`, risolto backend-side tramite owner authority oppure Entitlement valido. L’actor viene risolto nei principal User e Organization per cui può agire; per Visit organization-owned, inizialmente `operator` e `manager` possono eseguire come Organization owner. Membership è principal resolution, non entitlement commerciale. La logica comune va centralizzata in `CapabilityAuthorizationService`; `VisitExecutionAccessService` resta boundary application-specific. `startSession()` rivalida sempre. `can execute != must appear in Library`. Nel 18–27 la partecipazione dello studente è authority di Session separata da `visit.execute`.
+L’avvio di una VisitSession richiede `visit.execute`, risolto backend-side tramite owner authority oppure Entitlement valido. L’actor viene risolto nei principal User e Organization per cui può agire; una membership Organization partecipa alla principal resolution tramite i permessi effettivi dei suoi ruoli locali e non è un entitlement commerciale. La logica comune va centralizzata in `CapabilityAuthorizationService`; `VisitExecutionAccessService` resta boundary application-specific. `startSession()` rivalida sempre. `can execute != must appear in Library`. Nel 18–27 la partecipazione dello studente è authority di Session separata da `visit.execute`.
 
 # Punto 8/30 — Version policy dell’esecuzione
 
@@ -229,7 +229,7 @@ La materializzazione non copia o trasferisce ownership di Item, EditorialContext
 
 Ownership e workflow delle Visit dipendono da `ownerType`, senza reintrodurre `official/community`. Una Visit user-owned è gestita direttamente dal proprietario: può creare/modificare la working revision, eseguire integrity check e pubblicare direttamente una revision valida. Non possiede managerial review e la publication personale non produce review/approval metadata fittizi.
 
-Per una Visit organization-owned, `operator` e `manager` possono creare, modificare, controllare e inviare/ritirare una working revision dalla review. Solo il `manager` può richiedere modifiche, pubblicare, trashare o ripristinare. La publication organizzativa richiede una revision `in_review` valida; il percorso diretto `draft -> published` viene rimosso. Non viene imposto che autore e reviewer siano utenti differenti.
+Per una Visit organization-owned, i permission code `visit.create`, `visit.edit`, `visit.review`, `visit.publish` e `visit.lifecycle.manage` governano operazioni indipendenti. La publication organizzativa richiede una revision `in_review` valida; il percorso diretto `draft -> published` viene rimosso. Non viene imposto che autore e reviewer siano utenti differenti.
 
 Una working revision `in_review` non è modificabile; deve essere withdrawn oppure ricevere changes requested. La precedente published revision resta immutabile ed eseguibile mentre una nuova working revision viene preparata.
 

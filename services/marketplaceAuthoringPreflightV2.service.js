@@ -6,6 +6,21 @@ const { getNamespaceAuthoringControls } = require("./namespaceAuthoringV2.servic
 
 function id(value) { return String(value?._id || value || ""); }
 
+function creationCapabilities(principal) {
+  if (principal.type === "user") return { contentCreate: true, visitCreate: true, venueObjectContentCreate: true };
+  const permissions = new Set(principal.effectivePermissions || []);
+  return {
+    contentCreate: permissions.has("item.create"),
+    visitCreate: permissions.has("visit.create"),
+    venueObjectContentCreate: permissions.has("item.create") && permissions.has("venue.view"),
+  };
+}
+
+function publicPrincipal(principal) {
+  const { effectivePermissions, ...projected } = principal;
+  return projected;
+}
+
 function activeEntitlementMatch(principal, now = new Date()) {
   return {
     beneficiaryType: principal.type,
@@ -89,11 +104,17 @@ async function getMarketplaceAuthoringPreflight({
   principalId = actorUserId,
 }) {
   const { selected } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
-  const candidates = await namespaceCandidates(selected);
+  const capabilities = creationCapabilities(selected);
+  const candidates = capabilities.contentCreate ? await namespaceCandidates(selected) : [];
   const { usable, needsConfiguration, unavailableLicensed } = await inspectNamespaces({ candidates, actorUserId, principal: selected });
-  const allowed = usable.length > 0;
+  const allowed = capabilities.contentCreate && usable.length > 0;
   const blockers = [];
-  if (!allowed && needsConfiguration.length) {
+  if (!capabilities.contentCreate) {
+    blockers.push({
+      code: "ITEM_CREATE_PERMISSION_REQUIRED",
+      message: "Il tuo ruolo non consente di creare contenuti in questa organizzazione.",
+    });
+  } else if (!allowed && needsConfiguration.length) {
     blockers.push({
       code: "NAMESPACE_CONTROLS_REQUIRED",
       message: "Le tue regole editoriali devono definire almeno una durata e un livello di linguaggio prima di creare un contenuto.",
@@ -106,7 +127,8 @@ async function getMarketplaceAuthoringPreflight({
   }
 
   return {
-    principal: selected,
+    principal: publicPrincipal(selected),
+    capabilities,
     content: {
       allowed,
       usableNamespaceCount: usable.length,
@@ -116,7 +138,10 @@ async function getMarketplaceAuthoringPreflight({
       unavailableLicensedCount: unavailableLicensed.length,
       blockers,
     },
-    visit: { allowed: true, blockers: [] },
+    visit: {
+      allowed: capabilities.visitCreate,
+      blockers: capabilities.visitCreate ? [] : [{ code: "VISIT_CREATE_PERMISSION_REQUIRED", message: "Il tuo ruolo non consente di creare visite in questa organizzazione." }],
+    },
   };
 }
 

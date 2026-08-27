@@ -266,15 +266,17 @@ Test Slice 9 versionati:
 
 ## Perfezionamento Marketplace — Account, Organization, Namespace e Venue
 
-**Stato: management workspace implementato sul branch locale `codex/marketplace_simo`.**
+**Stato: management workspace capability-based implementato.**
 
 - aggiunta una `MarketplaceAccountWorkspaceProjection` autenticata e backend-authoritative;
 - il profilo è un riepilogo account con preferenze di presentazione, navigazione e apprendimento, Organization e Namespace personali;
 - Organization, Venue e Namespace usano route di gestione dedicate invece di un'unica pagina crescente;
 - la detail projection Organization pagina indipendentemente membri, Venue e Namespace;
-- manager e operator ricevono soltanto le operazioni compatibili con ruolo e invarianti correnti;
-- il Marketplace permette creazione e modifica delle Organization, assegnazione/promozione/rimozione dei membri, creazione e modifica delle Venue e dei Namespace personali o organizzativi;
-- il creatore dell'Organization rimane manager e non riceve operazioni di rimozione o retrocessione;
+- ogni Organization possiede ruoli locali personalizzabili; i permessi effettivi sono l'unione live di più ruoli e il client non usa nomi di ruolo per autorizzare;
+- il Marketplace permette creazione e modifica delle Organization, assegnazione multi-ruolo/rimozione dei membri, gestione Owner, creazione e modifica di Venue e Namespace personali o organizzativi;
+- il creatore riceve atomicamente Owner e `Administrator`; l'ultimo Owner e la membership di un Owner sono protetti da invarianti server-side;
+- il role builder espone il registry platform-level, le dependency closure, i permessi ad alto impatto, il delegation ceiling e il blocco di eliminazione dei ruoli assegnati;
+- tutte le mutazioni RBAC e il relativo audit append-only usano transazioni MongoDB su replica set;
 - il Namespace editor gestisce classi di Subject, relation type, scale di durata e linguaggio, aspetti di presentazione, selection signal, integrità e workflow senza fondere il vocabolario editoriale con la Venue;
 - il Venue editor proietta `VenueRelease` e `LayoutRevision` e gestisce VenueTarget, recognition media, informazioni pre-visita, place type/facility intent, attributi e preset di routing, piani/mappe, luoghi, collocazioni e connessioni;
 - i write continuano a passare dai domain service canonici; le nuove API Marketplace sono projection read-only e backend-authoritative;
@@ -306,7 +308,7 @@ Test Slice 9 versionati:
 - Listing e Offer possono essere ritirate con conferma esplicita; Acquisition ed Entitlement esistenti rimangono validi;
 - dashboard di distribuzione, ricavi simulati, acquisizioni e Adoption restano separati e derivati dai record di dominio;
 - licenza editoriale e grant Marketplace sono mostrati come concetti distinti, senza inferire authorization nel client;
-- le nuove operazioni Organization sono disponibili soltanto ai manager tramite projection backend-authoritative.
+- le operazioni Organization e i dati finanziari sono proiettati rispettivamente da `marketplace.distribution.manage` e `marketplace.finance.view`, senza dipendere dal nome di un ruolo.
 
 Test commerciali aggiunti coprono projection seller, licenza editoriale, storico arricchito, cambio prezzo tramite nuova Offer, immutabilità dello snapshot acquisito, ritiro Offer/Listing e boundary API end-to-end.
 

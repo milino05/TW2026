@@ -75,7 +75,7 @@ async function assertSellerOwnsMarketableResource({ resourceType, resourceId, se
     actorUserId,
     principalType: sellerType,
     principalId: sellerId,
-    minimumOrganizationRole: sellerType === "organization" ? "manager" : "operator",
+    permissionCode: sellerType === "organization" ? "marketplace.distribution.manage" : null,
   });
   const marketable = await resolveMarketableResource({ resourceType, resourceId });
   if (!samePrincipal(marketable.ownerType, marketable.ownerId, sellerType, sellerId)) {
@@ -160,7 +160,7 @@ async function createOffer({ listingId, payload = {}, actorUserId }) {
     actorUserId,
     principalType: listing.sellerType,
     principalId: listing.sellerId,
-    minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
+    permissionCode: listing.sellerType === "organization" ? "marketplace.distribution.manage" : null,
   });
   const validated = await validateOfferGrants({ listing, grants: payload.grants, actorUserId });
   const grants = validated.map((entry) => entry.grant);
@@ -208,7 +208,7 @@ async function withdrawOffer({ offerId, actorUserId }) {
     actorUserId,
     principalType: listing.sellerType,
     principalId: listing.sellerId,
-    minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
+    permissionCode: listing.sellerType === "organization" ? "marketplace.distribution.manage" : null,
   });
   if (offer.status === "withdrawn") return offer.toObject();
   offer.status = "withdrawn";
@@ -239,7 +239,7 @@ async function withdrawListing({ listingId, actorUserId }) {
     actorUserId,
     principalType: listing.sellerType,
     principalId: listing.sellerId,
-    minimumOrganizationRole: listing.sellerType === "organization" ? "manager" : "operator",
+    permissionCode: listing.sellerType === "organization" ? "marketplace.distribution.manage" : null,
   });
   if (listing.status === "withdrawn") return listing.toObject();
   listing.status = "withdrawn";
@@ -293,7 +293,7 @@ async function resolveGrantAtAcquisition(grant) {
 }
 
 async function acquireOffer({ offerId, actorUserId, beneficiaryType = "user", beneficiaryId = actorUserId }) {
-  await assertCanActForPrincipal({ actorUserId, principalType: beneficiaryType, principalId: beneficiaryId });
+  await assertCanActForPrincipal({ actorUserId, principalType: beneficiaryType, principalId: beneficiaryId, permissionCode: beneficiaryType === "organization" ? "marketplace.acquire" : null });
   const offer = await MarketplaceOffer.findOne({ _id: offerId, status: "active" }).lean();
   if (!offer) throw new AppError("MarketplaceOffer non disponibile", 404);
   const listing = await MarketplaceListing.findOne({ _id: offer.listingId, status: "published" }).lean();
@@ -463,7 +463,7 @@ async function getListingDetail({ listingId, actorUserId }) {
 }
 
 async function listAcquisitionHistory({ actorUserId, beneficiaryType = "user", beneficiaryId = actorUserId, page = 1, limit = 20 }) {
-  await assertCanActForPrincipal({ actorUserId, principalType: beneficiaryType, principalId: beneficiaryId });
+  await assertCanActForPrincipal({ actorUserId, principalType: beneficiaryType, principalId: beneficiaryId, permissionCode: beneficiaryType === "organization" ? "marketplace.acquisitions.view" : null });
   const safeLimit = clampLimit(limit);
   const safePage = Math.max(1, Number(page) || 1);
   const query = { buyerType: beneficiaryType, buyerId: beneficiaryId };
