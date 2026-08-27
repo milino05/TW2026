@@ -52,6 +52,12 @@ function providerHttpCode(status) {
   return `http_${Number(status) || 0}`;
 }
 
+function providerNetworkCode(error, timedOut) {
+  if (timedOut) return "timeout";
+  const networkCode = String(error?.cause?.code || error?.code || "").toUpperCase();
+  return ["EAI_AGAIN", "ENOTFOUND"].includes(networkCode) ? "dns_error" : "network_error";
+}
+
 function decodedHtmlEntity(value) {
   const named = { amp: "&", apos: "'", quot: '"', lt: "<", gt: ">", nbsp: " " };
   return String(value || "").replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
@@ -197,7 +203,7 @@ class WikidataProvider {
       if (error instanceof SemanticProviderUnavailableError) throw error;
       const timedOut = error?.name === "AbortError";
       throw new SemanticProviderUnavailableError(timedOut ? `${serviceName} non ha risposto in tempo` : `${serviceName} non raggiungibile`, {
-        providerCode: timedOut ? "timeout" : "network_error",
+        providerCode: providerNetworkCode(error, timedOut),
         retryable: true,
         cause: error,
       });

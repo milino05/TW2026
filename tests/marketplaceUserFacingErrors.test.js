@@ -63,3 +63,25 @@ test("gli errori di rete non espongono il messaggio inglese del browser", async 
       && error.message === "Non è stato possibile contattare il servizio. Controlla la connessione e riprova.",
   );
 });
+
+test("un errore DNS del resolver mantiene una spiegazione operativa", async () => {
+  const { ApiClient, ApiError } = await import(apiClientUrl);
+  const client = new ApiClient("/api", {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        message: "Il server non riesce a risolvere l'indirizzo di Wikidata. Controlla la configurazione DNS e riprova.",
+        errors: [{ code: "PROVIDER_UNAVAILABLE", providerCode: "dns_error", retryable: true }],
+      }),
+      headers: { get: () => null },
+    }),
+  });
+
+  await assert.rejects(
+    () => client.request("/v2/semantic-resolver/search"),
+    (error) => error instanceof ApiError
+      && error.providerCode === "dns_error"
+      && error.message.includes("configurazione DNS"),
+  );
+});

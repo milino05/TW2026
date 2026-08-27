@@ -453,6 +453,32 @@ test("Wikidata retries network and timeout failures but not permanent API errors
   assert.equal(permanentCalls, 1);
 });
 
+test("Wikidata reports DNS failures separately from generic network errors", async () => {
+  const { WikidataProvider } = require("../services/semanticResolver/providers/wikidata.provider");
+  const { SemanticProviderUnavailableError } = require("../services/semanticResolver/providerErrors");
+  let calls = 0;
+  const provider = new WikidataProvider({
+    fetchImpl: async () => {
+      calls += 1;
+      const dnsError = new Error("getaddrinfo EAI_AGAIN www.wikidata.org");
+      dnsError.code = "EAI_AGAIN";
+      const fetchError = new TypeError("fetch failed");
+      fetchError.cause = dnsError;
+      throw fetchError;
+    },
+    sleepImpl: async () => {},
+  });
+
+  await assert.rejects(
+    () => provider.search({ query: "Gioconda" }),
+    (error) => error instanceof SemanticProviderUnavailableError
+      && error.providerCode === "dns_error"
+      && error.retryable === true
+      && error.attempts === 2,
+  );
+  assert.equal(calls, 2);
+});
+
 test("Marketplace ApiClient preserves provider code and Retry-After for the retry UI", async () => {
   const { ApiClient, ApiError } = await marketplaceApiClient();
   const client = new ApiClient("/api", {

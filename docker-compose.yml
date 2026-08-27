@@ -35,6 +35,8 @@ services:
     build: .
     container_name: artaround-backend
     restart: always
+    dns:
+      - ${DOCKER_DNS:-1.1.1.1}
     ports:
       - "8000:8000"
     depends_on:

@@ -23,7 +23,13 @@ function providerOrFail(scheme) {
 
 function unavailableError(error, scheme) {
   if (!(error instanceof SemanticProviderUnavailableError)) return error;
-  return new AppError("Provider semantico temporaneamente non disponibile", 503, [{
+  const providerName = scheme === "wikidata" ? "Wikidata" : "il provider semantico";
+  const messages = {
+    dns_error: `Il server non riesce a risolvere l'indirizzo di ${providerName}. Controlla la configurazione DNS e riprova.`,
+    network_error: `Il server non riesce a raggiungere ${providerName}. Controlla la connessione e riprova.`,
+    timeout: `${providerName} non ha risposto in tempo. Riprova tra poco.`,
+  };
+  return new AppError(messages[error.providerCode] || "Provider semantico temporaneamente non disponibile", 503, [{
     code: "PROVIDER_UNAVAILABLE",
     scheme,
     retryAfterSeconds: error.retryAfterSeconds,
