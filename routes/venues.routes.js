@@ -31,6 +31,7 @@ router.post("/venues/:venueId/working-release/review", requireAuth, venueId, con
 router.delete("/venues/:venueId/working-release/review", requireAuth, venueId, controller.withdrawReleaseReview);
 router.post("/venues/:venueId/working-release/request-changes", requireAuth, venueId, controller.requestReleaseChanges);
 router.post("/venues/:venueId/working-release/publish", requireAuth, venueId, controller.publishRelease);
+router.delete("/venues/:venueId/working-release/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.detachTargetFromWorkingConfiguration);
 router.put("/venues/:venueId/working-release/targets/:venueTargetId/availability", requireAuth, venueId, venueTargetId, controller.setTargetAvailability);
 router.post("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media", requireAuth, venueId, venueTargetId, controller.uploadTargetRecognitionMedia);
 router.delete("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media/:mediaId", requireAuth, venueId, venueTargetId, mediaId, controller.removeTargetRecognitionMedia);
