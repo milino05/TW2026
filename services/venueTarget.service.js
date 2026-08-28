@@ -80,14 +80,18 @@ async function releaseReferencesTarget({ releaseId, venueId, venueTargetId, sess
   return { binding, placement };
 }
 
-async function publishedVisitReferencesTarget({ venueTargetId, session = null }) {
+async function publishedVisitReferenceCounts({ venueTargetIds = [], session = null }) {
+  const targetIds = [...new Map((venueTargetIds || []).map((value) => [id(value), value]).filter(([key]) => key)).values()];
+  const counts = new Map(targetIds.map((value) => [id(value), { count: 0, visitIds: [] }]));
+  if (!targetIds.length) return counts;
+
   let revisionQuery = VisitRevisionV2.find({
     status: "published",
-    "visitAnchors.venueTargetId": venueTargetId,
-  }).select("_id visitId");
+    "visitAnchors.venueTargetId": { $in: targetIds },
+  }).select("_id visitId visitAnchors");
   if (session) revisionQuery = revisionQuery.session(session);
   const revisions = await revisionQuery.lean();
-  if (!revisions.length) return { count: 0, visitIds: [] };
+  if (!revisions.length) return counts;
 
   const revisionIds = revisions.map((entry) => entry._id);
   const candidateVisitIds = revisions.map((entry) => entry.visitId);
@@ -95,10 +99,27 @@ async function publishedVisitReferencesTarget({ venueTargetId, session = null })
     _id: { $in: candidateVisitIds },
     publishedRevisionId: { $in: revisionIds },
     lifecycleStatus: "active",
-  }).select("_id");
+  }).select("_id publishedRevisionId");
   if (session) visitQuery = visitQuery.session(session);
   const visits = await visitQuery.lean();
-  return { count: visits.length, visitIds: visits.map((entry) => entry._id) };
+  const currentRevisionToVisit = new Map(visits.map((entry) => [id(entry.publishedRevisionId), entry._id]));
+
+  for (const revision of revisions) {
+    const visitId = currentRevisionToVisit.get(id(revision._id));
+    if (!visitId) continue;
+    const referenced = new Set((revision.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter((targetId) => counts.has(targetId)));
+    for (const targetId of referenced) {
+      const entry = counts.get(targetId);
+      entry.count += 1;
+      entry.visitIds.push(visitId);
+    }
+  }
+  return counts;
+}
+
+async function publishedVisitReferencesTarget({ venueTargetId, session = null }) {
+  const counts = await publishedVisitReferenceCounts({ venueTargetIds: [venueTargetId], session });
+  return counts.get(id(venueTargetId)) || { count: 0, visitIds: [] };
 }
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
@@ -168,6 +189,7 @@ module.exports = {
   updateVenueTarget,
   listVenueTargets,
   releaseReferencesTarget,
+  publishedVisitReferenceCounts,
   publishedVisitReferencesTarget,
   trashVenueTarget,
 };
