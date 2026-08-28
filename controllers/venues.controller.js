@@ -24,7 +24,6 @@ async function getPhysicalState(req, res, next) { try { res.status(200).json(awa
 async function getPhysicalOnboarding(req, res, next) { try { res.status(200).json(await venuePhysicalOnboardingService.getVenuePhysicalOnboarding({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function initializePhysicalOnboarding(req, res, next) { try { res.status(200).json(await venuePhysicalOnboardingService.initializeVenuePhysicalConfiguration({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function ensureWorkingRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, physicalVocabularyRevisionId: req.body?.physicalVocabularyRevisionId || null, actorUserId: req.user._id })); } catch (error) { next(error); } }
-async function updateWorkingRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.updateWorkingVenueRelease({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function checkRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.checkVenueReleaseConsistency({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function submitReleaseReview(req, res, next) { try { res.status(200).json(await venueReleaseService.submitVenueReleaseReview({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function withdrawReleaseReview(req, res, next) { try { res.status(200).json(await venueReleaseService.withdrawVenueReleaseReview({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
@@ -138,7 +137,7 @@ module.exports = {
   list, get, create, update,
   listTargets, createTarget, updateTarget, trashTarget,
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
-  ensureWorkingRelease, updateWorkingRelease, checkRelease,
+  ensureWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
   detachTargetFromWorkingConfiguration, setTargetAvailability, uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
   addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
