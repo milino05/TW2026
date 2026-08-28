@@ -38,6 +38,19 @@ function workflowCapabilities(principal, resourceType) {
   return { edit: permissions.has(`${prefix}.edit`), review: permissions.has(`${prefix}.review`), publish: permissions.has(`${prefix}.publish`) };
 }
 
+function canRemoveOwnedResource(principal, resourceType) {
+  if (!["item_edition", "namespace"].includes(resourceType)) return false;
+  if (principal.type === "user") return true;
+  const prefix = resourceType === "item_edition" ? "item" : "namespace";
+  return (principal.effectivePermissions || []).includes(`${prefix}.lifecycle.manage`);
+}
+
+function withRemovalOperation(operations, principal, resourceType) {
+  return canRemoveOwnedResource(principal, resourceType)
+    ? [...operations, { code: "remove_resource", label: resourceType === "item_edition" ? "Elimina contenuto" : "Elimina regole editoriali", destructive: true }]
+    : operations;
+}
+
 function withWorkflowOperations({ baseOperations, principal, resourceType, revision }) {
   return [...baseOperations, ...projectEditorialWorkflowOperations({
     ownerType: principal.type,
@@ -84,7 +97,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       editorialWorkflow: itemWorkflowState(revision, listing),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "item_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),
+      availableOperations: withRemovalOperation(
+        withWorkflowOperations({ baseOperations, principal, resourceType: "item_edition", revision }),
+        principal,
+        "item_edition",
+      ),
     };
   }
   if (candidate.resourceType === "editorial_context") {
@@ -111,7 +128,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),
+      availableOperations: withRemovalOperation(
+        withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),
+        principal,
+        "namespace",
+      ),
     };
   }
   if (candidate.resourceType === "physical_vocabulary") {
@@ -146,7 +167,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
 
 async function actionableRefs(resourceType, resourceId, marketable) {
   if (LIVE_RESOURCE_TYPES.has(resourceType)) return { sourceRef: { resourceType, resourceId }, snapshotRef: marketable.snapshotRef || null };
-  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  const authority = await resolveResourceAuthority(resourceType, resourceId, { includeTrashed: true });
   if (!authority) return { sourceRef: null, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "item_revision" && authority.edition) return { sourceRef: { resourceType: "item_edition", resourceId: authority.edition._id }, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "editorial_release" && authority.context) return { sourceRef: { resourceType: "editorial_context", resourceId: authority.context._id }, snapshotRef: { resourceType, resourceId } };
@@ -158,23 +179,38 @@ async function actionableRefs(resourceType, resourceId, marketable) {
 
 async function projectLicensedCandidate(candidate, { skipUnavailable = true } = {}) {
   let marketable;
+  let resolvedResourceType = candidate._id.resourceType;
+  let resolvedResourceId = candidate._id.resourceId;
   try {
-    marketable = await resolveMarketableResource({ resourceType: candidate._id.resourceType, resourceId: candidate._id.resourceId });
+    marketable = await resolveMarketableResource({ resourceType: resolvedResourceType, resourceId: resolvedResourceId });
   } catch (error) {
-    if (skipUnavailable && [404, 409].includes(error?.status)) return null;
-    throw error;
+    if (![404, 409].includes(error?.status)) throw error;
+    for (const snapshotRef of (candidate.baselineSnapshotRefs || []).filter((entry) => entry?.resourceType && entry?.resourceId)) {
+      try {
+        marketable = await resolveMarketableResource({ resourceType: snapshotRef.resourceType, resourceId: snapshotRef.resourceId });
+        resolvedResourceType = snapshotRef.resourceType;
+        resolvedResourceId = snapshotRef.resourceId;
+        break;
+      } catch (snapshotError) {
+        if (![404, 409].includes(snapshotError?.status)) throw snapshotError;
+      }
+    }
+    if (!marketable) {
+      if (skipUnavailable) return null;
+      throw error;
+    }
   }
-  const refs = await actionableRefs(candidate._id.resourceType, candidate._id.resourceId, marketable);
+  const refs = await actionableRefs(resolvedResourceType, resolvedResourceId, marketable);
   const capabilities = candidate.capabilities || [];
   return {
     ownership: "licensed",
-    resourceType: candidate._id.resourceType,
-    resourceId: candidate._id.resourceId,
+    resourceType: resolvedResourceType,
+    resourceId: resolvedResourceId,
     sourceRef: refs.sourceRef,
     snapshotRef: refs.snapshotRef,
     title: marketable.asset.title,
     summary: marketable.asset.summary || "",
-    versionMode: candidate.versionPolicies?.[0] || null,
+    versionMode: resolvedResourceType === candidate._id.resourceType ? (candidate.versionPolicies?.[0] || null) : "pinned",
     capabilities,
     availableOperations: capabilities.map((capability) => ({
       ...EXTERNAL_OPERATION_BY_CAPABILITY[capability], capability, sourceRef: refs.sourceRef, snapshotRef: refs.snapshotRef,
