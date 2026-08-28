@@ -1,3 +1,4 @@
+import type { InteractionChannel } from "../../capabilities";
 import { apiClient } from "./apiClient";
 import type { NavigationProjection, ObstacleCheckProjection } from "./navigationRepository";
 
@@ -84,7 +85,7 @@ export const sessionRepository = {
     sessionId: string,
     actionId: string,
     expectedRuntimeVersion: number,
-    interactionChannel: "button" | "controlled_voice" | "natural_language" = "button",
+    interactionChannel: InteractionChannel = "button",
   ) {
     return apiClient.request<ActionResult>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/actions`, {
       method: "POST",
