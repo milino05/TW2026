@@ -16,17 +16,9 @@ const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service")
 const { runPostCommitAudit } = require("./postCommitAudit.service");
 const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
 const { assertCanAuthorLayoutAgainstRevision, loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
-const { LAYOUT_FIELDS, normalizeWorkingVenueReleasePayload, validateWorkingVenueReleasePayload } = require("./validation/venueRelease.validation");
 
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
 function workflowSnapshot(release) { const source = plain(release); return { status: source.status, review: source.review, publication: source.publication, integrity: source.integrity, updatedBy: source.updatedBy }; }
-
-function validateUpdatePayload(rawPayload) {
-  const normalized = normalizeWorkingVenueReleasePayload(rawPayload || {});
-  const issues = validateWorkingVenueReleasePayload({ payload: normalized, rawPayload: rawPayload || {} });
-  if (issues.length) throw new AppError("Payload VenueRelease non valido", 400, issues);
-  return normalized;
-}
 
 async function loadReleaseSnapshot(releaseId) {
   const release = await VenueRelease.findById(releaseId);
@@ -122,22 +114,6 @@ async function getVenuePhysicalState({ venueId, view = "published", actorUserId 
   const targetIds = (release.targetBindings || []).map((binding) => binding.venueTargetId);
   const targets = await VenueTarget.find({ _id: { $in: targetIds } }).lean();
   return { venue: projectVenue(venue, { includeWorking: view === "working" }), release, layout, physicalVocabulary, physicalVocabularyRevision, targets };
-}
-
-async function updateWorkingVenueRelease({ venueId, payload, actorUserId }) {
-  const normalized = validateUpdatePayload(payload || {});
-  const { venue, release, layout } = await ensureWorkingVenueRelease({ venueId, actorUserId });
-  try { markRevisionEdited(release, actorUserId); }
-  catch (error) { throw new AppError(error.message, 409); }
-  if (Object.prototype.hasOwnProperty.call(normalized, "targetBindings")) release.targetBindings = normalized.targetBindings;
-  if (Object.prototype.hasOwnProperty.call(normalized, "preVisitInformation")) release.preVisitInformation = normalized.preVisitInformation;
-  if (normalized.layout) {
-    for (const field of LAYOUT_FIELDS) if (Object.prototype.hasOwnProperty.call(normalized.layout, field)) layout[field] = normalized.layout[field];
-    layout.updatedBy = actorUserId;
-  }
-  await layout.save();
-  await release.save();
-  return { venue, release, layout };
 }
 
 async function checkVenueReleaseConsistency({ venueId, actorUserId }) {
@@ -240,7 +216,6 @@ async function publishVenueRelease({ venueId, actorUserId }) {
 module.exports = {
   ensureWorkingVenueRelease,
   getVenuePhysicalState,
-  updateWorkingVenueRelease,
   checkVenueReleaseConsistency,
   submitVenueReleaseReview,
   withdrawVenueReleaseReview,
