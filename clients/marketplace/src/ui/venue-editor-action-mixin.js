@@ -49,6 +49,25 @@ export const venueActionMixin = {
       return;
     }
 
+    if (target.closest("[data-cancel-target-removal]")) { this.pendingTargetRemovalId = null; this.error = null; this.render(); return; }
+    const requestTargetRemoval = target.closest("[data-request-target-removal]");
+    if (requestTargetRemoval) {
+      this.pendingTargetRemovalId = requestTargetRemoval.dataset.requestTargetRemoval;
+      this.pendingWorkflow = null;
+      this.error = null;
+      this.render();
+      requestAnimationFrame(() => this.querySelector(`[data-confirm-target-removal="${CSS.escape(this.pendingTargetRemovalId)}"]`)?.focus());
+      return;
+    }
+    const confirmTargetRemoval = target.closest("[data-confirm-target-removal]");
+    if (confirmTargetRemoval) {
+      await this.execute(
+        () => managementRepository.trashVenueTarget(this.id, confirmTargetRemoval.dataset.confirmTargetRemoval),
+        "Oggetto fisico spostato nel cestino.",
+      );
+      return;
+    }
+
     if (target.closest("[data-ensure-release]")) {
       await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Nuova bozza fisica pronta.");
       return;
@@ -86,13 +105,6 @@ export const venueActionMixin = {
     if (detach) {
       if (!window.confirm(`Rimuovere “${detach.dataset.label || "questo oggetto"}” dalla configurazione fisica di lavoro? Verranno rimossi collocazione, disponibilità e immagini di riconoscimento dalla bozza. Il VenueTarget resterà disponibile nell'archivio della sede.`)) return;
       await this.execute(() => managementRepository.detachVenueTarget(this.id, detach.dataset.detachTarget), "Oggetto rimosso dalla configurazione fisica di lavoro.");
-      return;
-    }
-
-    const trash = target.closest("[data-trash-target]");
-    if (trash) {
-      if (!window.confirm(`Spostare “${trash.dataset.label || "questo oggetto"}” nel cestino?`)) return;
-      await this.execute(() => managementRepository.trashVenueTarget(this.id, trash.dataset.trashTarget), "Oggetto spostato nel cestino.");
     }
   },
 
