@@ -27,6 +27,28 @@ export const venueActionMixin = {
       return;
     }
 
+    if (target.closest("[data-cancel-venue-removal]")) { this.pendingVenueRemoval = false; this.error = null; this.render(); return; }
+    if (target.closest("[data-request-venue-removal]")) {
+      this.pendingVenueRemoval = true;
+      this.pendingWorkflow = null;
+      this.error = null;
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-confirm-venue-removal]")?.focus());
+      return;
+    }
+    if (target.closest("[data-confirm-venue-removal]")) {
+      this.busy = true; this.error = null; this.message = null; this.render();
+      try {
+        await managementRepository.trashVenue(this.id);
+        navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues&removed=venue`);
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la sede";
+        this.busy = false;
+        this.render();
+      }
+      return;
+    }
+
     if (target.closest("[data-ensure-release]")) {
       await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Nuova bozza fisica pronta.");
       return;
