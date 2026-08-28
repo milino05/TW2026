@@ -9,13 +9,14 @@ const HISTORY_MODES = ["full", "declared_only", "current_request_only"];
 const ROUTING_OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in"];
 const ROUTING_PRIORITIES = ["required", "preferred", "avoid"];
 const GENERATION_SOURCE_TYPES = ["editorial_context", "editorial_release"];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOP_LEVEL_FIELDS = new Set([
   "venueIds", "editorialSources", "timeBudgetSeconds", "hardTimeBudget",
   "semanticGoals", "relationGoals", "coverageGoal", "historyMode", "knowledge", "audience",
   "depthPreference", "languageComplexityPreference", "locale", "movementPacePreference",
   "observationEmphasis", "visitDensity", "discoveryPreference", "timeRiskTolerance",
   "mustIncludeItemEditionIds", "mustVisitVenueTargetIds", "excludedItemEditionIds",
-  "navigationRequirements", "interVenueTransfers",
+  "routingProfileSelections", "navigationRequirements", "interVenueTransfers",
 ]);
 
 function issue(field, code, message, context = undefined) {
@@ -82,7 +83,7 @@ function validateSemanticGoal(goal, field, errors) {
 }
 function validateRelationGoal(goal, field, errors) {
   if (!goal || typeof goal !== "object" || !RELATION_GOAL_KINDS.includes(goal.kind)) {
-    errors.push(issue(field, "INVALID_RELATION_GOAL", "Relation goal non valido")); return;
+    errors.push(issue(field, "INVALID_RELATION_GOAL", "Relation goal non valido"); return;
   }
   if (!GOAL_PRIORITIES.includes(goal.priority || "preferred")) errors.push(issue(`${field}.priority`, "INVALID_ENUM", "priority non valida"));
   validateFeature(goal.from, `${field}.from`, errors);
@@ -99,6 +100,33 @@ function validateRelationGoal(goal, field, errors) {
     errors.push(issue(`${field}.maxDepth`, "INVALID_NUMBER", "maxDepth deve essere tra 1 e 6"));
   }
   validateUnit(goal.weight === undefined ? 1 : goal.weight, `${field}.weight`, errors);
+}
+function validateRoutingProfileSelections(payload, errors) {
+  if (payload.routingProfileSelections === undefined) return;
+  if (!Array.isArray(payload.routingProfileSelections)) {
+    errors.push(issue("routingProfileSelections", "INVALID_TYPE", "routingProfileSelections deve essere un array"));
+    return;
+  }
+  const selectedVenues = new Set((payload.venueIds || []).map(String));
+  const seenVenues = new Set();
+  payload.routingProfileSelections.forEach((selection, index) => {
+    const field = `routingProfileSelections[${index}]`;
+    if (!selection || typeof selection !== "object" || Array.isArray(selection)) {
+      errors.push(issue(field, "INVALID_ROUTING_PROFILE_SELECTION", "Selezione profilo di percorso non valida"));
+      return;
+    }
+    for (const key of Object.keys(selection)) {
+      if (!["venueId", "routingProfileDefinitionId"].includes(key)) errors.push(issue(`${field}.${key}`, "UNKNOWN_FIELD", `Campo non supportato: ${key}`));
+    }
+    if (!validId(selection.venueId)) errors.push(issue(`${field}.venueId`, "INVALID_OBJECT_ID", "venueId non valido"));
+    else if (!selectedVenues.has(String(selection.venueId))) errors.push(issue(`${field}.venueId`, "OUTSIDE_PHYSICAL_SCOPE", "Il profilo appartiene a una Venue non selezionata"));
+    if (typeof selection.routingProfileDefinitionId !== "string" || !UUID_PATTERN.test(selection.routingProfileDefinitionId)) {
+      errors.push(issue(`${field}.routingProfileDefinitionId`, "INVALID_UUID", "routingProfileDefinitionId deve essere un UUID valido"));
+    }
+    const venueKey = String(selection.venueId || "");
+    if (seenVenues.has(venueKey)) errors.push(issue(`${field}.venueId`, "DUPLICATE_VALUE", "È ammesso un solo profilo di percorso per Venue"));
+    seenVenues.add(venueKey);
+  });
 }
 function validateRoutingRequirement(entry, field, errors) {
   if (!entry || typeof entry !== "object") { errors.push(issue(field, "INVALID_ROUTING_REQUIREMENT", "Routing requirement non valido")); return; }
@@ -142,6 +170,7 @@ function validateGenerationRequestV2(payload = {}) {
       validateUnit(payload.audience.maturity, "audience.maturity", errors);
     }
   }
+  validateRoutingProfileSelections(payload, errors);
   if (payload.navigationRequirements !== undefined && !Array.isArray(payload.navigationRequirements)) errors.push(issue("navigationRequirements", "INVALID_TYPE", "navigationRequirements deve essere un array"));
   (payload.navigationRequirements || []).forEach((entry, index) => validateRoutingRequirement(entry, `navigationRequirements[${index}]`, errors));
   if (payload.interVenueTransfers !== undefined && !Array.isArray(payload.interVenueTransfers)) errors.push(issue("interVenueTransfers", "INVALID_TYPE", "interVenueTransfers deve essere un array"));
