@@ -7,6 +7,10 @@ function queryString(params = {}) {
   }
   return query.toString();
 }
+function body(payload = {}) { return { body: JSON.stringify(payload) }; }
+function visitCommandPath(visitId, suffix) {
+  return `/v2/visits/${encodeURIComponent(visitId)}/commands/${suffix}`;
+}
 
 export const authoringRepository = {
   searchSubjects({ search = "", externalScheme = null, externalId = null, limit = 30 } = {}) {
@@ -71,5 +75,32 @@ export const authoringRepository = {
   },
   updateVisit(visitId, payload) {
     return apiClient.request(`/v2/visits/${encodeURIComponent(visitId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  addVisitContent(visitId, payload) {
+    return apiClient.request(visitCommandPath(visitId, "content"), { method: "POST", ...body(payload) });
+  },
+  addVisitContentToStop(visitId, anchorId, payload) {
+    return apiClient.request(visitCommandPath(visitId, `stops/${encodeURIComponent(anchorId)}/content`), { method: "POST", ...body(payload) });
+  },
+  addVisitStop(visitId, venueTargetId) {
+    return apiClient.request(visitCommandPath(visitId, "stops"), { method: "POST", ...body({ venueTargetId }) });
+  },
+  reorderVisitStop(visitId, anchorId, toIndex) {
+    return apiClient.request(visitCommandPath(visitId, `stops/${encodeURIComponent(anchorId)}/reorder`), { method: "POST", ...body({ toIndex }) });
+  },
+  removeVisitStop(visitId, anchorId) {
+    return apiClient.request(visitCommandPath(visitId, `stops/${encodeURIComponent(anchorId)}`), { method: "DELETE" });
+  },
+  attachVisitContentToStop(visitId, contentEntryId, anchorId) {
+    return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}/stop/${encodeURIComponent(anchorId)}`), { method: "PUT", ...body({}) });
+  },
+  detachVisitContentFromStop(visitId, contentEntryId) {
+    return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}/stop`), { method: "DELETE" });
+  },
+  setVisitContentRole(visitId, contentEntryId, role) {
+    return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}/role`), { method: "PUT", ...body({ role }) });
+  },
+  removeVisitContent(visitId, contentEntryId) {
+    return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}`), { method: "DELETE" });
   },
 };
