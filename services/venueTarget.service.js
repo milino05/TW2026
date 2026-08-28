@@ -1,10 +1,13 @@
+const mongoose = require("mongoose");
 const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
+const LayoutRevision = require("../models/layoutRevision.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization.service");
 const { normalizeVenueTargetPayload, validateVenueTargetPayload } = require("./validation/venue.validation");
 
+function id(value) { return String(value?._id || value || ""); }
 function validatedTargetPayload(rawPayload, { creating }) {
   const normalized = normalizeVenueTargetPayload(rawPayload || {});
   const issues = validateVenueTargetPayload({ payload: normalized, rawPayload: rawPayload || {}, creating });
@@ -60,19 +63,71 @@ async function listVenueTargets({ venueId, view = "published", actorUserId = nul
   return activeIds.map((targetId) => byId.get(String(targetId))).filter(Boolean);
 }
 
+async function releaseReferencesTarget({ releaseId, venueId, venueTargetId, session }) {
+  if (!releaseId) return { binding: false, placement: false };
+  const release = await VenueRelease.findOne({ _id: releaseId, venueId }).select("targetBindings layoutRevisionId").session(session);
+  if (!release) return { binding: false, placement: false };
+  const binding = (release.targetBindings || []).some((entry) => id(entry.venueTargetId) === id(venueTargetId));
+  const placement = release.layoutRevisionId
+    ? Boolean(await LayoutRevision.exists({
+      _id: release.layoutRevisionId,
+      venueId,
+      "venueTargetPlacements.venueTargetId": venueTargetId,
+    }).session(session))
+    : false;
+  return { binding, placement };
+}
+
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
-  const target = await findVenueTargetOrFail({ venueId, venueTargetId });
-  if (venue.publishedReleaseId) {
-    const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
-    const activeBinding = (release?.targetBindings || []).find((binding) => String(binding.venueTargetId) === String(target._id) && binding.availability === "active");
-    if (activeBinding) throw new AppError("Il VenueTarget e ancora attivo nella VenueRelease pubblicata", 409, [{ code: "TARGET_IN_PUBLISHED_RELEASE" }]);
+  try {
+    return await mongoose.connection.transaction(async (session) => {
+      const target = await VenueTarget.findOne({
+        _id: venueTargetId,
+        venueId,
+        lifecycleStatus: "active",
+      }).session(session);
+      if (!target) throw new AppError("VenueTarget non trovato", 404);
+
+      const workingReferences = await releaseReferencesTarget({
+        releaseId: venue.workingReleaseId,
+        venueId,
+        venueTargetId: target._id,
+        session,
+      });
+      if (workingReferences.binding || workingReferences.placement) {
+        throw new AppError("Rimuovi prima l'oggetto dalla configurazione fisica di lavoro", 409, [{
+          code: "TARGET_IN_WORKING_RELEASE",
+          field: "venueTargetId",
+        }]);
+      }
+
+      const publishedReferences = await releaseReferencesTarget({
+        releaseId: venue.publishedReleaseId,
+        venueId,
+        venueTargetId: target._id,
+        session,
+      });
+      if (publishedReferences.binding || publishedReferences.placement) {
+        throw new AppError("L'oggetto appartiene ancora alla configurazione pubblicata. Pubblica prima una nuova release senza questo oggetto", 409, [{
+          code: "TARGET_IN_PUBLISHED_RELEASE",
+          field: "venueTargetId",
+        }]);
+      }
+
+      target.lifecycleStatus = "trashed";
+      target.trashedAt = new Date();
+      target.trashedBy = actorUserId;
+      await target.save({ session });
+      return target;
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError("Spostamento del VenueTarget nel cestino non completato", 500, [{
+      code: "VENUE_TARGET_TRASH_FAILED",
+      message: error.message,
+    }]);
   }
-  target.lifecycleStatus = "trashed";
-  target.trashedAt = new Date();
-  target.trashedBy = actorUserId;
-  await target.save();
-  return target;
 }
 
 module.exports = { findVenueTargetOrFail, createVenueTarget, updateVenueTarget, listVenueTargets, trashVenueTarget };
