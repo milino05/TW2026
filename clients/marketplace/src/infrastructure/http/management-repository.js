@@ -45,6 +45,12 @@ export const managementRepository = {
   physicalVocabularyLifecycle(physicalVocabularyId, action) {
     return apiClient.request(`/physical-vocabularies/${encoded(physicalVocabularyId)}/lifecycle/${action}`, { method: "POST", body: "{}" });
   },
+  venuePhysicalOnboarding(venueId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/physical-onboarding`);
+  },
+  initializeVenuePhysicalOnboarding(venueId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/physical-onboarding`, { method: "POST", body: JSON.stringify(payload) });
+  },
   ensureVenueRelease(venueId, physicalVocabularyRevisionId = null) {
     const body = physicalVocabularyRevisionId ? { physicalVocabularyRevisionId } : {};
     return apiClient.request(`/venues/${encoded(venueId)}/working-release`, { method: "POST", body: JSON.stringify(body) });
