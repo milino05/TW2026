@@ -1,10 +1,16 @@
 import { navigate } from "../application/router.js";
+import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 
-function parseRefs(value) { return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [scheme, id, matchType = "exact"] = line.split("|").map((part) => part.trim()); return { scheme, id, matchType }; }).filter((entry) => entry.scheme && entry.id); }
-function refsText(values = []) { return values.map((entry) => `${entry.scheme}|${entry.id}|${entry.matchType || "exact"}`).join("\n"); }
-function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
-function semanticRefChips(values = [], editable = true) { return values.length ? values.map((entry, index) => `<span class="semantic-ref-chip"><span>${escapeHtml(entry.scheme)} · ${escapeHtml(entry.id)} · ${escapeHtml(entry.matchType || "exact")}</span>${editable ? `<button type="button" data-remove-semantic-ref="${index}" aria-label="Rimuovi mapping ${escapeHtml(entry.id)}">×</button>` : ""}</span>`).join("") : `<span class="muted">Nessun mapping esterno</span>`; }
+function media(value) {
+  return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const separator = line.indexOf("|");
+    return separator < 0
+      ? { url: line, altText: "" }
+      : { url: line.slice(0, separator).trim(), altText: line.slice(separator + 1).trim() };
+  });
+}
+function number(value, fallback = null) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 
 export const venueActionMixin = {
   async onClick(event) {
@@ -12,127 +18,186 @@ export const venueActionMixin = {
     if (!target) return;
 
     const sectionTab = target.closest("[data-venue-section]");
-    if (sectionTab) {
-      this.showSection(sectionTab.dataset.venueSection, { scroll: true });
-      return;
-    }
+    if (sectionTab) { this.showSection(sectionTab.dataset.venueSection, { scroll: true }); return; }
 
     if (target.closest("[data-back]")) {
-      if (this.dirty) {
-        try { this.snapshotDraft(); }
-        catch (error) { this.error = `Correggi prima i dati non validi: ${error.message}`; this.render(); return; }
-        this.leaveConfirmation = true; this.pendingWorkflow = null; this.render();
-      } else navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues`);
-      return;
-    }
-    if (target.closest("[data-cancel-leave]")) { this.leaveConfirmation = false; this.render(); return; }
-    if (target.closest("[data-confirm-leave]")) { navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues`); return; }
-
-    if (target.closest("[data-ensure-release]")) { await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Bozza della configurazione fisica pronta.", { preserveDraft: true }); return; }
-
-    const add = target.closest("[data-add-layout]");
-    if (add) {
-      try { const draft = this.snapshotDraft(); draft.layout[add.dataset.addLayout].push(this.emptyEntry(add.dataset.addLayout)); this.data.layout[add.dataset.addLayout] = draft.layout[add.dataset.addLayout]; this.dirty = true; this.render(); }
-      catch (error) { this.error = `JSON non valido: ${error.message}`; this.render(); }
-      return;
-    }
-    const remove = target.closest("[data-remove-layout]");
-    if (remove) {
-      try { const draft = this.snapshotDraft(); draft.layout[remove.dataset.removeLayout].splice(Number(remove.dataset.index), 1); this.data.layout[remove.dataset.removeLayout] = draft.layout[remove.dataset.removeLayout]; this.dirty = true; this.render(); }
-      catch (error) { this.error = `JSON non valido: ${error.message}`; this.render(); }
+      navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues`);
       return;
     }
 
-    const removeSemanticRef = target.closest("[data-remove-semantic-ref]");
-    if (removeSemanticRef) {
-      const row = removeSemanticRef.closest("[data-layout-row]");
-      const input = row?.querySelector('[name="semanticRefs"]');
-      if (input) { const refs = parseRefs(input.value); refs.splice(Number(removeSemanticRef.dataset.removeSemanticRef), 1); input.value = refsText(refs); row.querySelector("[data-semantic-ref-list]").innerHTML = semanticRefChips(refs, true); this.markDirty(); }
+    if (target.closest("[data-cancel-workflow]")) { this.pendingWorkflow = null; this.workflowMessage = ""; this.render(); return; }
+    if (target.closest("[data-confirm-workflow]") && this.pendingWorkflow) {
+      const code = this.pendingWorkflow;
+      await this.execute(() => this.runWorkflowRequest(code), "Workflow della sede aggiornato.");
+      return;
+    }
+    const workflow = target.closest("[data-workflow]");
+    if (workflow) { await this.performWorkflow(workflow.dataset.workflow); return; }
+
+    const removeFloor = target.closest("[data-remove-floor]");
+    if (removeFloor) {
+      if (!window.confirm("Rimuovere questo piano? L'operazione è consentita solo se non contiene luoghi.")) return;
+      await this.execute(() => managementRepository.removeVenueFloor(this.id, removeFloor.dataset.removeFloor), "Piano rimosso.");
+      return;
+    }
+    const removePlace = target.closest("[data-remove-place]");
+    if (removePlace) {
+      if (!window.confirm("Rimuovere questo luogo? Collegamenti e oggetti devono essere spostati prima.")) return;
+      await this.execute(() => managementRepository.removeVenuePlace(this.id, removePlace.dataset.removePlace), "Luogo rimosso.");
+      return;
+    }
+    const removeConnection = target.closest("[data-remove-connection]");
+    if (removeConnection) {
+      if (!window.confirm("Rimuovere questo collegamento?")) return;
+      await this.execute(() => managementRepository.removeVenueConnection(this.id, removeConnection.dataset.removeConnection), "Collegamento rimosso.");
       return;
     }
 
     const trash = target.closest("[data-trash-target]");
     if (trash) {
-      if (this.dirty) {
-        try { this.snapshotDraft(); }
-        catch (error) { this.error = `Correggi prima i dati non validi: ${error.message}`; this.render(); return; }
-      }
-      this.trashTarget = { id: trash.dataset.trashTarget, label: trash.dataset.label }; this.render(); return;
-    }
-    if (target.closest("[data-cancel-trash]")) { this.trashTarget = null; this.render(); return; }
-    if (target.closest("[data-confirm-trash]") && this.trashTarget) {
-      const current = this.trashTarget;
-      await this.execute(() => managementRepository.trashVenueTarget(this.id, current.id), `${current.label} è stato spostato nel cestino.`, { preserveDraft: true });
-      return;
-    }
-
-    if (target.closest("[data-save-venue]")) { await this.saveAll(); return; }
-
-    if (target.closest("[data-cancel-workflow]")) { this.pendingWorkflow = null; this.workflowMessage = ""; this.render(); return; }
-    if (target.closest("[data-save-and-workflow]") && this.pendingWorkflow) { const code = this.pendingWorkflow; await this.saveAll({ continueWorkflow: code }); return; }
-    if (target.closest("[data-confirm-workflow]") && this.pendingWorkflow) { const code = this.pendingWorkflow; await this.execute(() => this.runWorkflowRequest(code), "Workflow della sede aggiornato."); return; }
-
-    const workflow = target.closest("[data-workflow]");
-    if (workflow) {
-      const code = workflow.dataset.workflow;
-      if (this.dirty) {
-        try { this.snapshotDraft(); }
-        catch (error) { this.error = `Correggi prima i dati non validi: ${error.message}`; this.render(); return; }
-        this.pendingWorkflow = code; this.workflowMessage = ""; this.render(); return;
-      }
-      await this.performWorkflow(code); return;
+      if (!window.confirm(`Spostare “${trash.dataset.label || "questo oggetto"}” nel cestino?`)) return;
+      await this.execute(() => managementRepository.trashVenueTarget(this.id, trash.dataset.trashTarget), "Oggetto spostato nel cestino.");
     }
   },
 
   async onSubmit(event) {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
+    event.preventDefault();
     const data = new FormData(form);
-    if (form.matches("[data-save-venue], [data-venue-metadata], [data-previsit], [data-target-bindings], [data-layout-form]")) { event.preventDefault(); await this.saveAll(); return; }
-    if (form.matches("[data-target-metadata]")) {
-      event.preventDefault();
-      await this.execute(() => managementRepository.updateVenueTarget(this.id, form.dataset.targetMetadata, { label: String(data.get("label") || ""), description: String(data.get("description") || "") }), "Oggetto aggiornato.", { preserveDraft: true });
+
+    if (form.matches("[data-physical-onboarding]")) {
+      const mode = String(data.get("mode") || this.onboarding?.recommendedMode || "starter");
+      const payload = mode === "existing"
+        ? { mode, physicalVocabularyRevisionId: String(data.get("physicalVocabularyRevisionId") || "") }
+        : { mode, name: String(data.get("name") || ""), description: String(data.get("description") || "") };
+      await this.execute(() => managementRepository.initializeVenuePhysicalOnboarding(this.id, payload), "Configurazione fisica iniziale pronta.");
       return;
     }
+
+    if (form.matches("[data-venue-metadata]")) {
+      await this.execute(() => accountRepository.updateVenue(this.id, {
+        name: String(data.get("name") || ""),
+        description: String(data.get("description") || ""),
+      }), "Profilo della sede aggiornato.");
+      return;
+    }
+
+    if (form.matches("[data-previsit]")) {
+      const items = String(data.get("preVisitInformation") || "").split("\n").map((line) => line.trim()).filter(Boolean);
+      await this.execute(() => managementRepository.setVenuePreVisitInformation(this.id, items), "Informazioni pre-visita aggiornate.");
+      return;
+    }
+
+    if (form.matches("[data-target-metadata]")) {
+      await this.execute(() => managementRepository.updateVenueTarget(this.id, form.dataset.targetMetadata, {
+        label: String(data.get("label") || ""),
+        description: String(data.get("description") || ""),
+      }), "Oggetto aggiornato.");
+      return;
+    }
+
+    if (form.matches("[data-target-binding]")) {
+      await this.execute(() => managementRepository.setVenueTargetBinding(this.id, form.dataset.targetBinding, {
+        availability: String(data.get("availability") || "active"),
+        recognitionMedia: media(data.get("recognitionMedia")),
+      }), "Disponibilità e immagini aggiornate.");
+      return;
+    }
+
     if (form.matches("[data-create-target]")) {
-      event.preventDefault();
-      const success = await this.execute(() => managementRepository.createVenueTarget(this.id, { subjectId: String(data.get("subjectId") || ""), label: String(data.get("label") || ""), description: String(data.get("description") || "") }), "Oggetto fisico creato.", { preserveDraft: true });
-      if (success) { this.selectedSubject = null; this.render(); }
+      const success = await this.execute(() => managementRepository.createVenueTarget(this.id, {
+        subjectId: String(data.get("subjectId") || ""),
+        label: String(data.get("label") || ""),
+        description: String(data.get("description") || ""),
+      }), "Oggetto fisico creato.");
+      if (success) this.selectedSubject = null;
+      return;
+    }
+
+    if (form.matches("[data-add-floor]")) {
+      await this.execute(() => managementRepository.addVenueFloor(this.id, { label: String(data.get("label") || "") }), "Piano aggiunto.");
+      return;
+    }
+
+    if (form.matches("[data-calibrate-floor]")) {
+      await this.execute(() => managementRepository.calibrateVenueFloor(this.id, form.dataset.calibrateFloor, {
+        method: "line",
+        distanceMeters: number(data.get("distanceMeters")),
+        line: {
+          from: { x: number(data.get("fromX")), y: number(data.get("fromY")) },
+          to: { x: number(data.get("toX")), y: number(data.get("toY")) },
+        },
+      }), "Piano calibrato.");
+      return;
+    }
+
+    if (form.matches("[data-add-place]")) {
+      await this.execute(() => managementRepository.createVenuePlace(this.id, {
+        floorId: String(data.get("floorId") || ""),
+        placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
+        label: String(data.get("label") || ""),
+        position: { x: number(data.get("x"), 0.5), y: number(data.get("y"), 0.5) },
+      }), "Luogo aggiunto.");
+      return;
+    }
+
+    if (form.matches("[data-place-editor]")) {
+      const placeId = form.dataset.placeEditor;
+      const position = { x: number(data.get("x")), y: number(data.get("y")) };
+      await this.execute(async () => {
+        await managementRepository.updateVenuePlace(this.id, placeId, {
+          label: String(data.get("label") || ""),
+          placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
+        });
+        return managementRepository.moveVenuePlace(this.id, placeId, position);
+      }, "Luogo aggiornato.");
+      return;
+    }
+
+    if (form.matches("[data-add-connection]")) {
+      const metricMode = String(data.get("metricMode") || "manual_override");
+      const payload = {
+        fromPlaceId: String(data.get("fromPlaceId") || ""),
+        toPlaceId: String(data.get("toPlaceId") || ""),
+        connectionTypeDefinitionId: String(data.get("connectionTypeDefinitionId") || "") || null,
+        directionality: String(data.get("directionality") || "bidirectional"),
+        metricMode,
+        additionalDelaySeconds: number(data.get("additionalDelaySeconds"), 0),
+      };
+      if (metricMode !== "geometry_derived") payload.distanceMeters = number(data.get("distanceMeters"));
+      await this.execute(() => managementRepository.createVenueConnection(this.id, payload), "Collegamento aggiunto.");
+      return;
+    }
+
+    if (form.matches("[data-connection-editor]")) {
+      const metricMode = String(data.get("metricMode") || "manual_override");
+      const payload = {
+        connectionTypeDefinitionId: String(data.get("connectionTypeDefinitionId") || "") || null,
+        directionality: String(data.get("directionality") || "bidirectional"),
+        metricMode,
+        additionalDelaySeconds: number(data.get("additionalDelaySeconds"), 0),
+        instructions: { forward: String(data.get("forward") || ""), backward: String(data.get("backward") || "") },
+      };
+      if (metricMode !== "geometry_derived") payload.distanceMeters = number(data.get("distanceMeters"));
+      await this.execute(() => managementRepository.updateVenueConnection(this.id, form.dataset.connectionEditor, payload), "Collegamento aggiornato.");
+      return;
+    }
+
+    if (form.matches("[data-target-placement]")) {
+      await this.execute(() => managementRepository.setVenueTargetPlacement(this.id, form.dataset.targetPlacement, {
+        primaryPlaceId: String(data.get("primaryPlaceId") || ""),
+        placeIds: [],
+      }), "Collocazione dell'oggetto aggiornata.");
     }
   },
 
   onSubjectSelected(event) {
     if (!event.detail?.subject) return;
-    if (this.dirty) {
-      try { this.snapshotDraft(); }
-      catch (error) { this.error = `Correggi prima i dati non validi: ${error.message}`; this.render(); return; }
-    }
     this.selectedSubject = event.detail.subject;
     this.message = event.detail.source === "reuse_existing" ? "Identità esistente riutilizzata." : "Soggetto selezionato per il nuovo oggetto.";
     this.render();
   },
 
-  onSemanticRefSelected(event) {
-    const picker = event.target instanceof Element ? event.target : null;
-    const row = picker?.closest("[data-layout-row]");
-    const input = row?.querySelector('[name="semanticRefs"]');
-    const semanticRef = event.detail?.semanticRef;
-    if (!row || !input || !semanticRef) return;
-    const refs = parseRefs(input.value);
-    const key = `${semanticRef.scheme}::${semanticRef.id}::${semanticRef.matchType}`;
-    if (!refs.some((entry) => `${entry.scheme}::${entry.id}::${entry.matchType}` === key)) refs.push(semanticRef);
-    input.value = refsText(refs);
-    row.querySelector("[data-semantic-ref-list]").innerHTML = semanticRefChips(refs, true);
-    this.markDirty();
-  },
-
-  emptyEntry(field) {
-    if (field === "placeTypes") return { key: "", label: "", description: "", userIntents: [], semanticRefs: [] };
-    if (field === "routingAttributes") return { key: "", label: "", dataType: "boolean", appliesTo: "connection", options: [] };
-    if (field === "routingPresets") return { key: "", label: "", description: "", requirements: [] };
-    if (field === "floors") return { key: "", label: "", map: {} };
-    if (field === "places") return { typeKey: "", label: "", floorKey: "", position: { x: 0.5, y: 0.5 }, attributes: {} };
-    if (field === "venueTargetPlacements") return { venueTargetId: "", primaryPlaceId: "", placeIds: [] };
-    return { fromPlaceId: "", toPlaceId: "", directionality: "bidirectional", distanceMeters: 1, additionalDelaySeconds: 0, attributes: {}, instructions: {} };
-  }
+  onSemanticRefSelected() {},
 };
