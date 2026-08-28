@@ -17,6 +17,7 @@ function id(value) { return String(value?._id || value || ""); }
 function hasOwn(value, key) { return Object.prototype.hasOwnProperty.call(value || {}, key); }
 function finitePositive(value, minimum = 0) { return typeof value === "number" && Number.isFinite(value) && value > minimum; }
 function plain(value) { return value?.toObject ? value.toObject() : value; }
+function lengthConstraintTolerance(distanceMeters) { return Math.max(0.05, Number(distanceMeters) * 0.01); }
 
 function commandError(message, code, field = null, statusCode = 400, extra = {}) {
   throw new AppError(message, statusCode, [{ ...(field ? { field } : {}), code, ...extra }]);
@@ -134,9 +135,10 @@ function connectionMetric({ layout, from, to, payload, current = null }) {
     commandError("Modalita metrica non valida", "INVALID_METRIC_MODE", "metricMode");
   }
   const suppliedGeometry = hasOwn(payload, "geometryPoints");
+  const currentHasGeometry = Boolean(current?.geometry?.points?.length);
   let points = suppliedGeometry
     ? normalizedGeometryPoints(payload.geometryPoints)
-    : (current?.geometry?.points?.length ? current.geometry.points.map((entry) => ({ x: entry.x, y: entry.y })) : []);
+    : (currentHasGeometry ? current.geometry.points.map((entry) => ({ x: entry.x, y: entry.y })) : []);
 
   if (["geometry_derived", "length_constrained"].includes(metricMode)) {
     const floor = assertSameFloor(layout, from, to);
@@ -151,7 +153,22 @@ function connectionMetric({ layout, from, to, payload, current = null }) {
     const requested = Number(hasOwn(payload, "distanceMeters") ? payload.distanceMeters : current?.distanceMeters);
     if (!finitePositive(requested, 0.09)) commandError("La lunghezza richiesta deve essere positiva", "INVALID_DISTANCE", "distanceMeters");
     const straightDistance = distanceMetersForGeometry({ points: straightGeometry(from, to), floor });
-    if (straightDistance > requested + 1e-6) commandError("La lunghezza richiesta e inferiore alla distanza minima fra i due luoghi", "IMPOSSIBLE_LENGTH_CONSTRAINT", "distanceMeters");
+    const tolerance = lengthConstraintTolerance(requested);
+    if (straightDistance > requested + tolerance) commandError("La lunghezza richiesta e inferiore alla distanza minima fra i due luoghi", "IMPOSSIBLE_LENGTH_CONSTRAINT", "distanceMeters");
+    if (!suppliedGeometry && !currentHasGeometry && Math.abs(geometricDistance - requested) > tolerance) {
+      commandError("Disegna una geometria che soddisfi la lunghezza richiesta", "LENGTH_CONSTRAINT_GEOMETRY_REQUIRED", "geometry.points", 409, {
+        requestedDistanceMeters: requested,
+        straightDistanceMeters: straightDistance,
+        toleranceMeters: tolerance,
+      });
+    }
+    if (Math.abs(geometricDistance - requested) > tolerance) {
+      commandError("La geometria disegnata non soddisfa la lunghezza richiesta", "LENGTH_CONSTRAINT_GEOMETRY_MISMATCH", "geometry.points", 409, {
+        requestedDistanceMeters: requested,
+        geometricDistanceMeters: geometricDistance,
+        toleranceMeters: tolerance,
+      });
+    }
     return { metricMode, distanceMeters: requested, geometry: { points } };
   }
 
