@@ -20,6 +20,7 @@ import "./context-release-composer.js";
 import "./profile-view.js";
 import "./organization-view.js";
 import "./namespace-editor-view.js";
+import "./physical-vocabulary-editor-view.js";
 import "./venue-editor-view.js";
 import "./listing-detail-view.js";
 import "./acquisition-history-view.js";
@@ -31,7 +32,8 @@ const TITLES = {
   "/venues": "Musei e sedi", "/venues/public": "Sede", "/venues/editor": "Gestione sede",
   "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
   "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Oggetti della sede",
-  "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/namespaces/editor": "Regole editoriali", "/404": "Pagina non trovata",
+  "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/namespaces/editor": "Regole editoriali",
+  "/physical-vocabularies/editor": "Vocabolario fisico", "/404": "Pagina non trovata",
 };
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -182,7 +184,7 @@ export class MarketplaceAppShell extends HTMLElement {
 
   renderNavigation(route) {
     const creation = authoringIsCreation(route);
-    const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose"].includes(route) || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
+    const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose", "/physical-vocabularies/editor"].includes(route) || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
     const exploreActive = ["/catalog", "/catalog/detail", "/organizations", "/organizations/public", "/venues", "/venues/public"].includes(route);
     return `${this.renderContextIdentity()}<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="${this.menuOpen}" aria-label="Apri navigazione">${icon("menu")}</button><nav class="market-nav" data-open="${this.menuOpen}" aria-label="Navigazione principale"><a data-route href="/home" aria-current="${current(route, ["/", "/home"])}">${icon("home")}<span>Home</span></a><a data-route href="/catalog" aria-current="${exploreActive ? "page" : "false"}">${icon("search")}<span>Esplora</span></a><a data-route href="/workspace" aria-current="${libraryActive ? "page" : "false"}">${icon("workspace")}<span>Libreria</span></a><a class="nav-create" data-route href="/create" aria-current="${creation ? "page" : "false"}">${icon("plus")}<span>Crea</span></a><a data-route href="/acquisitions" aria-current="${current(route, ["/acquisitions", "/workspace/commerce"])}">${icon("store")}<span>Marketplace</span></a><a class="nav-profile" data-route href="/profile" aria-current="${current(route, ["/profile"])}" title="${escapeHtml(this.user.username)}">${icon("user")}<span>Account</span></a><button type="button" data-logout title="Esci">${icon("logout")}<span>Esci</span></button></nav>`;
   }
@@ -206,6 +208,7 @@ export class MarketplaceAppShell extends HTMLElement {
     if (route === "/profile") return "<artaround-profile-view></artaround-profile-view>";
     if (route === "/organizations/detail") return "<artaround-organization-view></artaround-organization-view>";
     if (route === "/namespaces/editor") return "<artaround-namespace-editor-view></artaround-namespace-editor-view>";
+    if (route === "/physical-vocabularies/editor") return "<artaround-physical-vocabulary-editor-view></artaround-physical-vocabulary-editor-view>";
     if (route === "/venues/editor") return "<artaround-venue-editor-view></artaround-venue-editor-view>";
     if (route === "/workspace") return "<artaround-workspace-browser-view></artaround-workspace-browser-view>";
     if (route === "/workspace/resource") return "<artaround-workspace-view></artaround-workspace-view>";
