@@ -19,6 +19,15 @@ export const managementRepository = {
   venue(venueId) {
     return apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
   },
+  venueLifecycleImpact(venueId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/lifecycle-impact`);
+  },
+  trashVenue(venueId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/lifecycle/trash`, { method: "POST", ...body({}) });
+  },
+  restoreVenue(venueId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/lifecycle/restore`, { method: "POST", ...body({}) });
+  },
   ensureNamespaceWorking(namespaceId) {
     return apiClient.request(`/namespaces/${encoded(namespaceId)}/working-revision?create=true`);
   },
