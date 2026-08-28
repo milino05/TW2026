@@ -10,6 +10,8 @@ const workspaceProjector = fs.readFileSync(path.join(root, "services/marketplace
 const presentation = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/presentation.js"), "utf8");
 const controller = fs.readFileSync(path.join(root, "controllers/marketplaceV2.controller.js"), "utf8");
 const routes = fs.readFileSync(path.join(root, "routes/marketplaceV2.routes.js"), "utf8");
+const removal = fs.readFileSync(path.join(root, "services/marketplaceResourceRemovalV2.service.js"), "utf8");
+const view = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-view.js"), "utf8");
 
 test("workspace detail usa projector condiviso e lookup puntuale", () => {
   assert.match(service, /getCreatorWorkspaceResourceDetail/);
@@ -24,6 +26,19 @@ test("workspace detail è esposto come endpoint autenticato con ObjectId validat
   assert.match(controller, /creatorWorkspaceResourceDetail/);
   assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId/);
   assert.match(routes, /resourceId, controller\.creatorWorkspaceResourceDetail/);
+});
+
+test("dettagli e azioni espone una rimozione confermata che preserva lo storico", () => {
+  assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId\/remove/);
+  assert.match(removal, /lifecycleStatus = "trashed"/);
+  assert.match(removal, /status: "withdrawn"/);
+  assert.match(removal, /status: "inactive"/);
+  assert.doesNotMatch(removal, /MarketplaceAcquisition\.(?:delete|update)/);
+  assert.doesNotMatch(removal, /Entitlement\.(?:delete|update)/);
+  assert.doesNotMatch(removal, /Adoption\.(?:delete|update)/);
+  assert.match(view, /data-request-removal/);
+  assert.match(view, /data-confirm-removal/);
+  assert.match(view, /Acquisizioni, diritti già concessi e adozioni resteranno validi/);
 });
 
 test("un contenuto controllato resta privato finché listing e offerta non sono pubblici", () => {

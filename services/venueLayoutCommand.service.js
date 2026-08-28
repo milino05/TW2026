@@ -196,8 +196,9 @@ function recomputeDerivedConnectionsForFloor(layout, floorId) {
 
 async function mutateWorkingLayout({ venueId, actorUserId, mutate }) {
   const ensured = await ensureWorkingVenueRelease({ venueId, actorUserId });
+  let commandResult = null;
   try {
-    return await mongoose.connection.transaction(async (session) => {
+    await mongoose.connection.transaction(async (session) => {
       const release = await VenueRelease.findOne({ _id: ensured.release._id, venueId }).session(session);
       const layout = await LayoutRevision.findOne({ _id: ensured.layout._id, venueId }).session(session);
       if (!release || !layout) commandError("Bozza fisica non disponibile", "WORKING_LAYOUT_NOT_FOUND", null, 409);
@@ -210,13 +211,14 @@ async function mutateWorkingLayout({ venueId, actorUserId, mutate }) {
       layout.updatedBy = actorUserId;
       await layout.save({ session });
       await release.save({ session });
-      return {
+      commandResult = {
         venueId,
         release: { id: release._id, version: release.version, status: release.status, integrity: release.integrity },
         layout: plain(layout),
         result: plain(result),
       };
     });
+    return commandResult;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("Comando Layout non completato", 500, [{ code: "VENUE_LAYOUT_COMMAND_FAILED", message: error.message }]);

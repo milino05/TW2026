@@ -21,8 +21,9 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
     commandError("Nessuna configurazione fisica di lavoro disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
   }
 
+  let commandResult = null;
   try {
-    return await mongoose.connection.transaction(async (session) => {
+    await mongoose.connection.transaction(async (session) => {
       const target = await VenueTarget.findOne({
         _id: venueTargetId,
         venueId,
@@ -51,7 +52,7 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
       await layout.save({ session });
       await release.save({ session });
 
-      return {
+      commandResult = {
         venueId,
         venueTargetId: target._id,
         releaseId: release._id,
@@ -62,6 +63,7 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
         recognitionMediaUrls,
       };
     });
+    return commandResult;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("Rimozione dell'oggetto dalla configurazione non completata", 500, [{

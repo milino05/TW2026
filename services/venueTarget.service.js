@@ -124,8 +124,9 @@ async function publishedVisitReferencesTarget({ venueTargetId, session = null })
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
+  let trashedTarget = null;
   try {
-    return await mongoose.connection.transaction(async (session) => {
+    await mongoose.connection.transaction(async (session) => {
       const target = await VenueTarget.findOne({
         _id: venueTargetId,
         venueId,
@@ -172,8 +173,9 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
       target.trashedAt = new Date();
       target.trashedBy = actorUserId;
       await target.save({ session });
-      return target;
+      trashedTarget = target;
     });
+    return trashedTarget;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("Spostamento del VenueTarget nel cestino non completato", 500, [{

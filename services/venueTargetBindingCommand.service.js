@@ -24,8 +24,9 @@ function optionalText(value, field, maxLength) {
 
 async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate }) {
   const ensured = await ensureWorkingVenueRelease({ venueId, actorUserId });
+  let commandResult = null;
   try {
-    return await mongoose.connection.transaction(async (session) => {
+    await mongoose.connection.transaction(async (session) => {
       const release = await VenueRelease.findOne({ _id: ensured.release._id, venueId }).session(session);
       const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
       if (!release) commandError("Bozza fisica non disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
@@ -40,8 +41,9 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
       const result = await mutate({ release, target, binding, session });
       release.updatedBy = actorUserId;
       await release.save({ session });
-      return { venueId, venueTargetId: target._id, releaseId: release._id, result };
+      commandResult = { venueId, venueTargetId: target._id, releaseId: release._id, result };
     });
+    return commandResult;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("Comando sul binding fisico dell'oggetto non completato", 500, [{ code: "VENUE_TARGET_BINDING_COMMAND_FAILED", message: error.message }]);

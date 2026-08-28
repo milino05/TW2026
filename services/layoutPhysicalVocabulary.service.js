@@ -24,9 +24,12 @@ async function loadPhysicalVocabularyRevisionBundle(
 }
 
 async function assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId }) {
-  const bundle = await loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId, { requireActiveVocabulary: true });
+  const bundle = await loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId);
   if (bundle.physicalVocabulary.ownerType === "organization"
     && id(bundle.physicalVocabulary.ownerId) === id(venue.ownerOrganizationId)) {
+    if (bundle.physicalVocabulary.lifecycleStatus !== "active") {
+      throw new AppError("PhysicalVocabulary non disponibile per nuovo authoring", 409, [{ code: "PHYSICAL_VOCABULARY_NOT_ACTIVE" }]);
+    }
     await assertOrganizationPermission({
       userId: actorUserId,
       organizationId: venue.ownerOrganizationId,
@@ -41,6 +44,9 @@ async function assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevision
     principalType: "organization",
     principalId: venue.ownerOrganizationId,
   });
+  if (bundle.physicalVocabulary.lifecycleStatus !== "active" && access.basis !== "entitlement") {
+    throw new AppError("PhysicalVocabulary non disponibile per nuovo authoring", 409, [{ code: "PHYSICAL_VOCABULARY_NOT_ACTIVE" }]);
+  }
   if (access.resolvedSnapshotRef?.resourceType !== "physical_vocabulary_revision"
     || id(access.resolvedSnapshotRef.resourceId) !== id(bundle.revision._id)) {
     throw new AppError("La licenza non autorizza la revisione fisica selezionata", 403, [{ code: "PHYSICAL_VOCABULARY_REVISION_ACCESS_MISMATCH" }]);

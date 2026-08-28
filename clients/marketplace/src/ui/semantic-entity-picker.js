@@ -1,5 +1,6 @@
 import { semanticRepository } from "../infrastructure/http/semantic-repository.js";
 import { icon } from "./icons.js";
+import { observeReliableSelects } from "./reliable-selects.js";
 import {
   normalizeSemanticQuery,
   searchExternalCandidates,
@@ -38,12 +39,15 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
   get entityKind() { return this.getAttribute("entity-kind") === "property" ? "property" : "item"; }
 
   connectedCallback() {
+    this.stopReliableSelects = observeReliableSelects(this.shadowRoot);
     this.shadowRoot.addEventListener("submit", this.onSubmit);
     this.shadowRoot.addEventListener("click", this.onClick);
     this.render();
   }
 
   disconnectedCallback() {
+    this.stopReliableSelects?.();
+    this.stopReliableSelects = null;
     this.shadowRoot.removeEventListener("submit", this.onSubmit);
     this.shadowRoot.removeEventListener("click", this.onClick);
   }

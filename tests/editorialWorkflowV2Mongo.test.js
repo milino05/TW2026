@@ -59,7 +59,19 @@ async function createContentFixture({ manager, organization }) {
   const venue = await Venue.create({ name: "Venue workflow", ownerOrganizationId: organization._id, createdBy: manager._id });
   const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: manager._id });
   const physical = await createPublishedPhysicalVocabulary({ userId: manager._id });
-  const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, status: "published", createdBy: manager._id, updatedBy: manager._id });
+  const floorId = oid();
+  const placeId = oid();
+  const layout = await LayoutRevision.create({
+    venueId: venue._id,
+    version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorId, label: "Piano terra" }],
+    places: [{ _id: placeId, floorId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala", position: { x: 0.5, y: 0.5 }, attributeValues: [] }],
+    venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [] }],
+    status: "published",
+    createdBy: manager._id,
+    updatedBy: manager._id,
+  });
   const venueRelease = await VenueRelease.create({
     venueId: venue._id,
     version: 1,

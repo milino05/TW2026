@@ -142,7 +142,7 @@ async function loadPhysicalVocabularyForLayout(layout, add) {
     add("layout.authoredAgainstPhysicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_REVISION_NOT_FOUND", "PhysicalVocabularyRevision pinzata non disponibile");
     return { physicalVocabulary: null, revision: null };
   }
-  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: revision.physicalVocabularyId, lifecycleStatus: "active" }).lean();
+  const physicalVocabulary = await PhysicalVocabulary.findById(revision.physicalVocabularyId).lean();
   if (!physicalVocabulary) {
     add("layout.authoredAgainstPhysicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_NOT_AVAILABLE", "PhysicalVocabulary della revisione pinzata non disponibile");
   }

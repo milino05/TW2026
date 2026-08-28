@@ -133,6 +133,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   starterOpen = false;
   pendingWorkflow = null;
   workflowMessage = "";
+  pendingConfirmation = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -227,8 +228,36 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("[data-back]")) {
-      if (this.dirty && !window.confirm("Hai modifiche non salvate. Uscire comunque?")) return;
+      if (this.dirty) {
+        this.pendingConfirmation = {
+          type: "leave",
+          title: "Uscire senza salvare?",
+          detail: "Le modifiche non ancora salvate in questa bozza andranno perse.",
+          confirmLabel: "Esci senza salvare",
+        };
+        this.render();
+        return;
+      }
       navigate(ownerBackUrl(this.data?.physicalVocabulary?.owner)); return;
+    }
+    if (target.closest("[data-confirm-cancel]")) { this.pendingConfirmation = null; this.render(); return; }
+    if (target.closest("[data-confirm-action]") && this.pendingConfirmation) {
+      const confirmation = this.pendingConfirmation;
+      this.pendingConfirmation = null;
+      if (confirmation.type === "leave") { navigate(ownerBackUrl(this.data?.physicalVocabulary?.owner)); return; }
+      if (confirmation.type === "remove-definition") {
+        const definition = this.definition(confirmation.field, confirmation.index);
+        if (!definition || definition.definitionId !== confirmation.definitionId) { this.render(); return; }
+        this.definitions[confirmation.field].splice(confirmation.index, 1);
+        if (confirmation.field === "physicalAttributes") {
+          this.definitions.routingProfiles.forEach((profile) => {
+            profile.requirements = (profile.requirements || []).filter((entry) => entry.physicalAttributeDefinitionId !== confirmation.definitionId);
+          });
+        }
+        this.dirty = true;
+        this.render();
+        return;
+      }
     }
     const sectionButton = target.closest("[data-section]");
     if (sectionButton) { this.goToSection(sectionButton.dataset.section); return; }
@@ -248,10 +277,20 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const remove = target.closest("[data-remove-definition]");
     if (remove) {
       const field = remove.dataset.removeDefinition; const index = Number(remove.dataset.index); const definition = this.definitions[field][index];
-      if (!window.confirm(`Rimuovere “${definitionName(definition)}” dalla bozza?`)) return;
-      this.definitions[field].splice(index, 1);
-      if (field === "physicalAttributes") this.definitions.routingProfiles.forEach((profile) => { profile.requirements = (profile.requirements || []).filter((entry) => entry.physicalAttributeDefinitionId !== definition.definitionId); });
-      this.dirty = true; this.render(); return;
+      if (!definition) return;
+      this.pendingConfirmation = {
+        type: "remove-definition",
+        field,
+        index,
+        definitionId: definition.definitionId,
+        title: `Rimuovere “${definitionName(definition)}”?`,
+        detail: field === "physicalAttributes"
+          ? "La definizione verrà rimossa dalla bozza insieme ai riferimenti presenti nei profili di percorso."
+          : "La definizione verrà rimossa dalla bozza. La modifica diventerà effettiva soltanto al salvataggio.",
+        confirmLabel: "Rimuovi dalla bozza",
+      };
+      this.render();
+      return;
     }
     const addRequirement = target.closest("[data-add-requirement]");
     if (addRequirement) {
@@ -365,11 +404,15 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (!this.pendingWorkflow) return "";
     return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="Richiedi modifiche"><span class="eyebrow">Richiedi modifiche</span><h2>Che cosa deve essere rivisto?</h2><label>Messaggio<textarea rows="4" data-workflow-message-input>${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Invia richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></aside>`;
   }
+  renderPendingConfirmation() {
+    if (!this.pendingConfirmation) return "";
+    return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(this.pendingConfirmation.title)}"><span class="eyebrow">Conferma richiesta</span><h2>${escapeHtml(this.pendingConfirmation.title)}</h2><p>${escapeHtml(this.pendingConfirmation.detail)}</p><div class="button-row"><button type="button" class="danger" data-confirm-action>${escapeHtml(this.pendingConfirmation.confirmLabel)}</button><button type="button" class="button-secondary" data-confirm-cancel>Annulla</button></div></aside>`;
+  }
   renderCurrentSection() { if (this.activeSection === "general") return this.renderGeneral(); if (this.activeSection === "mappings") return this.renderMappings(); return this.renderDefinitionSection(this.activeSection); }
   render() {
     if (!this.data) { this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`; return; }
     const vocabulary = this.data.physicalVocabulary;
-    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}</main>`;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}</main>`;
   }
 }
 

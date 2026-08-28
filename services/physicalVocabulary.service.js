@@ -101,7 +101,7 @@ async function forkPhysicalVocabulary({ physicalVocabularyId, payload, actorUser
   if (Object.prototype.hasOwnProperty.call(payload || {}, "revision") || Object.prototype.hasOwnProperty.call(payload || {}, "applyStarter")) {
     throw new AppError("La revisione del fork deriva dal Physical Vocabulary sorgente", 400, [{ field: "revision", code: "FORBIDDEN_FIELD" }]);
   }
-  const source = await findPhysicalVocabularyOrFail({ physicalVocabularyId });
+  const source = await findPhysicalVocabularyOrFail({ physicalVocabularyId, includeTrashed: true });
   const rawPayload = { ...(payload || {}), name: payload?.name || `${source.name} (fork)` };
   const normalized = validateMetadata(rawPayload, { creating: true });
   await assertCanActForOwner({ actorUserId, ownerType: normalized.ownerType, ownerId: normalized.ownerId, permissionCode: "physical_vocabulary.create" });
@@ -111,6 +111,9 @@ async function forkPhysicalVocabulary({ physicalVocabularyId, payload, actorUser
     principalType: normalized.ownerType,
     principalId: normalized.ownerId,
   });
+  if (source.lifecycleStatus !== "active" && access.basis !== "entitlement") {
+    throw new AppError("Physical Vocabulary non trovato", 404);
+  }
   const sourceRef = access.resolvedSnapshotRef;
   if (sourceRef?.resourceType !== "physical_vocabulary_revision") throw new AppError("Fork senza revisione autorizzata", 409, [{ code: "AUTHORIZED_PHYSICAL_VOCABULARY_REVISION_REQUIRED" }]);
   const sourceRevision = await PhysicalVocabularyRevision.findOne({
