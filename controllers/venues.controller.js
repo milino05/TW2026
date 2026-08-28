@@ -1,6 +1,7 @@
 const venueService = require("../services/venue.service");
 const venueTargetService = require("../services/venueTarget.service");
 const venueReleaseService = require("../services/venueRelease.service");
+const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboarding.service");
 
 async function list(req, res, next) { try { res.status(200).json(await venueService.listVenues({ ownerOrganizationId: req.query?.ownerOrganizationId || null })); } catch (error) { next(error); } }
 async function get(req, res, next) { try { res.status(200).json(await venueService.getVenue({ venueId: req.params.venueId })); } catch (error) { next(error); } }
@@ -13,6 +14,8 @@ async function updateTarget(req, res, next) { try { res.status(200).json(await v
 async function trashTarget(req, res, next) { try { res.status(200).json(await venueTargetService.trashVenueTarget({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
 async function getPhysicalState(req, res, next) { try { res.status(200).json(await venueReleaseService.getVenuePhysicalState({ venueId: req.params.venueId, view: req.query?.view || "published", actorUserId: req.user?._id || null })); } catch (error) { next(error); } }
+async function getPhysicalOnboarding(req, res, next) { try { res.status(200).json(await venuePhysicalOnboardingService.getVenuePhysicalOnboarding({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function initializePhysicalOnboarding(req, res, next) { try { res.status(200).json(await venuePhysicalOnboardingService.initializeVenuePhysicalConfiguration({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function ensureWorkingRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, physicalVocabularyRevisionId: req.body?.physicalVocabularyRevisionId || null, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function updateWorkingRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.updateWorkingVenueRelease({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function checkRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.checkVenueReleaseConsistency({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
@@ -21,4 +24,10 @@ async function withdrawReleaseReview(req, res, next) { try { res.status(200).jso
 async function requestReleaseChanges(req, res, next) { try { res.status(200).json(await venueReleaseService.requestVenueReleaseChanges({ venueId: req.params.venueId, actorUserId: req.user._id, message: req.body?.message })); } catch (error) { next(error); } }
 async function publishRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.publishVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
-module.exports = { list, get, create, update, listTargets, createTarget, updateTarget, trashTarget, getPhysicalState, ensureWorkingRelease, updateWorkingRelease, checkRelease, submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease };
+module.exports = {
+  list, get, create, update,
+  listTargets, createTarget, updateTarget, trashTarget,
+  getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
+  ensureWorkingRelease, updateWorkingRelease, checkRelease,
+  submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
+};
