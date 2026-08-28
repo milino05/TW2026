@@ -10,10 +10,24 @@ function invalid(field, code, message, context = undefined) {
   throw new AppError(message, 400, [{ field, code, ...(context === undefined ? {} : { context }) }]);
 }
 
+function assertAllowedFields(value, allowed, field) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) invalid(`${field}.${key}`, "UNKNOWN_FIELD", `Campo non supportato: ${key}`);
+  }
+}
+
 function normalizeRoutingRequirement(requirement, index = 0, fieldPrefix = "requirements", { semanticOnly = false } = {}) {
   const field = `${fieldPrefix}[${index}]`;
   if (!requirement || typeof requirement !== "object" || Array.isArray(requirement)) {
     invalid(field, "INVALID_ROUTING_REQUIREMENT", `${field} deve essere un oggetto`);
+  }
+  assertAllowedFields(requirement, ["physicalFeatureRef", "operator", "value", "priority", "weight"], field);
+  assertAllowedFields(requirement.physicalFeatureRef, ["kind", "physicalVocabularyId", "definitionId", "semanticRefs"], `${field}.physicalFeatureRef`);
+  if (Array.isArray(requirement.physicalFeatureRef?.semanticRefs)) {
+    requirement.physicalFeatureRef.semanticRefs.forEach((semanticRef, semanticIndex) => {
+      assertAllowedFields(semanticRef, ["scheme", "id", "matchType"], `${field}.physicalFeatureRef.semanticRefs[${semanticIndex}]`);
+    });
   }
   const physicalFeatureRef = normalizePhysicalFeatureRef(requirement.physicalFeatureRef);
   const referenceIssues = validatePhysicalFeatureRef(physicalFeatureRef, `${field}.physicalFeatureRef`);

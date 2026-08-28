@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const { applyPhysicalStarter } = require("../services/physicalVocabularyStarter.service");
 const { normalizeRoutingRequirements } = require("../services/routingPreferenceV2.service");
 const { translateRequirements } = require("../services/physicalExecutionV2.service");
+const { hardConstraintConflict } = require("../services/routingProfileSelectionV2.service");
 
 test("routing preferences persist provider-neutral PhysicalFeatureRef semantics", () => {
   const normalized = normalizeRoutingRequirements([{
@@ -53,6 +54,24 @@ test("routing preferences validate structural operators and values", () => {
     () => normalizeRoutingRequirements([{ physicalFeatureRef: semanticRef, operator: "in", value: [] }]),
     (error) => error?.status === 400 && error?.details?.[0]?.code === "INVALID_ROUTING_VALUE",
   );
+  assert.throws(
+    () => normalizeRoutingRequirements([{ physicalFeatureRef: { ...semanticRef, legacyKey: "stairs" }, value: true }]),
+    (error) => error?.status === 400 && error?.details?.[0]?.code === "UNKNOWN_FIELD",
+  );
+  assert.throws(
+    () => normalizeRoutingRequirements([{ physicalFeatureRef: semanticRef, value: true, canonicalKey: "stairs" }]),
+    (error) => error?.status === 400 && error?.details?.[0]?.code === "UNKNOWN_FIELD",
+  );
+});
+
+test("required routing constraints detect empty intersections before path search", () => {
+  const definitionId = "11111111-1111-4111-8111-111111111111";
+  const required = (operator, value) => ({ physicalAttributeDefinitionId: definitionId, priority: "required", operator, value });
+  assert.ok(hardConstraintConflict([required("gt", 5), required("lte", 5)]));
+  assert.ok(hardConstraintConflict([required("in", [1, 2]), required("gte", 3)]));
+  assert.ok(hardConstraintConflict([required("eq", 2), required("neq", 2)]));
+  assert.equal(hardConstraintConflict([required("gte", 5), required("lte", 5)]), null);
+  assert.equal(hardConstraintConflict([required("in", [1, 2]), required("gt", 1)]), null);
 });
 
 test("a semantic requirement resolves to different local definitionIds without a global canonical key", () => {

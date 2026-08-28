@@ -11,6 +11,18 @@ const { assertVenuePermission } = require("./venueAuthorization.service");
 const { ensureWorkingVenueRelease } = require("./venueRelease.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function assertOnboardingPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AppError("Payload onboarding non valido", 400, [{ field: "payload", code: "INVALID_TYPE" }]);
+  }
+  const allowed = new Set(["mode", "physicalVocabularyRevisionId", "name", "description"]);
+  const issues = Object.keys(payload).filter((key) => !allowed.has(key)).map((field) => ({
+    field,
+    code: "UNKNOWN_FIELD",
+    message: `Campo non supportato: ${field}`,
+  }));
+  if (issues.length) throw new AppError("Payload onboarding non valido", 400, issues);
+}
 function choice({ vocabulary, revision, basis }) {
   return {
     physicalVocabularyId: vocabulary._id,
@@ -70,7 +82,7 @@ async function licensedChoices({ organizationId }) {
   if (!uniqueRevisionIds.length) return [];
   const revisions = await PhysicalVocabularyRevision.find({ _id: { $in: uniqueRevisionIds }, status: { $in: ["published", "superseded"] } }).lean();
   const vocabularyIds = [...new Map(revisions.map((entry) => [id(entry.physicalVocabularyId), entry.physicalVocabularyId])).values()];
-  const vocabularies = await PhysicalVocabulary.find({ _id: { $in: vocabularyIds }, lifecycleStatus: "active" }).lean();
+  const vocabularies = await PhysicalVocabulary.find({ _id: { $in: vocabularyIds } }).lean();
   const vocabularyById = new Map(vocabularies.map((entry) => [id(entry._id), entry]));
   return revisions.map((revision) => {
     const vocabulary = vocabularyById.get(id(revision.physicalVocabularyId));
@@ -117,6 +129,7 @@ async function cleanupCreatedOnboarding({ venueId, physicalVocabulary, revision 
 }
 
 async function initializeVenuePhysicalConfiguration({ venueId, actorUserId, payload = {} }) {
+  assertOnboardingPayload(payload);
   const { venue, authority } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   if (venue.workingReleaseId || venue.publishedReleaseId) return ensureWorkingVenueRelease({ venueId, actorUserId });
   const mode = String(payload.mode || "existing").trim().toLowerCase();

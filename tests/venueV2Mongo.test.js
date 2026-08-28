@@ -64,12 +64,15 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     const floorResult = await layoutCommands.addFloor({
       venueId,
       actorUserId: user._id,
-      payload: {
-        label: "Piano 1",
-        mapAsset: { url: "https://example.test/map.png", mimeType: "image/png", width: 1000, height: 800 },
-      },
+      payload: { label: "Piano 1" },
     });
     const floorId = floorResult.result.floorId;
+    await layoutCommands.setManagedFloorPlan({
+      venueId,
+      floorId,
+      actorUserId: user._id,
+      mapAsset: { url: "https://example.test/map.png", mimeType: "image/png", width: 1000, height: 800 },
+    });
     const placeAResult = await layoutCommands.createPlace({
       venueId,
       actorUserId: user._id,

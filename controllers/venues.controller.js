@@ -92,14 +92,14 @@ async function uploadLayoutFloorPlan(req, res, next) {
     const ensured = await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id });
     const floor = ensured.layout.floors.id(req.params.floorId);
     if (!floor) throw new AppError("Piano non trovato", 404, [{ field: "floorId", code: "FLOOR_NOT_FOUND" }]);
-    const previousUrl = floor.mapAsset?.url || null;
     stored = await venueFloorPlanUploadService.storeVenueFloorPlan({ payload: req.body || {} });
-    const result = await venueLayoutCommandService.updateFloor({
+    const result = await venueLayoutCommandService.setManagedFloorPlan({
       venueId: req.params.venueId,
       floorId: req.params.floorId,
       actorUserId: req.user._id,
-      payload: { mapAsset: stored },
+      mapAsset: stored,
     });
+    const previousUrl = result?.result?.previousMapAssetUrl || null;
     if (previousUrl && previousUrl !== stored.url) {
       await venuePhysicalAssetUsageService.removeVenueFloorPlanIfUnreferenced(previousUrl).catch(() => {});
     }
@@ -112,12 +112,9 @@ async function uploadLayoutFloorPlan(req, res, next) {
 async function calibrateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.calibrateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function removeLayoutFloor(req, res, next) {
   try {
-    const ensured = await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id });
-    const floor = ensured.layout.floors.id(req.params.floorId);
-    if (!floor) throw new AppError("Piano non trovato", 404, [{ field: "floorId", code: "FLOOR_NOT_FOUND" }]);
-    const previousUrl = floor.mapAsset?.url || null;
     const result = await venueLayoutCommandService.removeFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id });
-    if (previousUrl) await venuePhysicalAssetUsageService.removeVenueFloorPlanIfUnreferenced(previousUrl).catch(() => {});
+    const removedUrl = result?.result?.mapAssetUrl || null;
+    if (removedUrl) await venuePhysicalAssetUsageService.removeVenueFloorPlanIfUnreferenced(removedUrl).catch(() => {});
     res.status(200).json(result);
   } catch (error) { next(error); }
 }

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Venue = require("../models/venue.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
@@ -23,6 +24,15 @@ function commandError(message, code, field = null, statusCode = 400, extra = {})
   throw new AppError(message, statusCode, [{ ...(field ? { field } : {}), code, ...extra }]);
 }
 
+function assertAllowedFields(value, allowed, field = "payload") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    commandError(`${field} deve essere un oggetto`, "INVALID_TYPE", field);
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) commandError(`Campo non supportato: ${key}`, "UNKNOWN_FIELD", field === "payload" ? key : `${field}.${key}`);
+  }
+}
+
 function requiredText(value, field, maxLength = 160) {
   const normalized = String(value || "").trim();
   if (!normalized) commandError(`${field} e obbligatorio`, "REQUIRED", field);
@@ -38,6 +48,7 @@ function optionalText(value, field, maxLength = 500) {
 }
 
 function normalizedPoint(value, field = "position") {
+  assertAllowedFields(value, ["x", "y"], field);
   const point = { x: Number(value?.x), y: Number(value?.y) };
   if (!validNormalizedPoint(point)) commandError("Coordinate normalizzate non valide", "INVALID_NORMALIZED_POINT", field);
   return point;
@@ -50,7 +61,7 @@ function normalizedGeometryPoints(values, field = "geometry.points") {
 
 function normalizeMapAsset(value) {
   if (value === null) return null;
-  if (!value || typeof value !== "object" || Array.isArray(value)) commandError("mapAsset non valido", "INVALID_TYPE", "mapAsset");
+  assertAllowedFields(value, ["url", "mimeType", "width", "height", "originalName"], "mapAsset");
   const url = requiredText(value.url, "mapAsset.url", 2000);
   const mimeType = requiredText(value.mimeType, "mapAsset.mimeType", 120).toLowerCase();
   if (!mimeType.startsWith("image/")) commandError("La planimetria deve essere un'immagine", "INVALID_MAP_MIME_TYPE", "mapAsset.mimeType");
@@ -199,6 +210,12 @@ async function mutateWorkingLayout({ venueId, actorUserId, mutate }) {
   let commandResult = null;
   try {
     await mongoose.connection.transaction(async (session) => {
+      const currentVenue = await Venue.findOne({
+        _id: venueId,
+        lifecycleStatus: "active",
+        workingReleaseId: ensured.release._id,
+      }).select("_id workingReleaseId").session(session);
+      if (!currentVenue) commandError("La bozza fisica è cambiata durante il comando", "WORKING_RELEASE_CHANGED", null, 409);
       const release = await VenueRelease.findOne({ _id: ensured.release._id, venueId }).session(session);
       const layout = await LayoutRevision.findOne({ _id: ensured.layout._id, venueId }).session(session);
       if (!release || !layout) commandError("Bozza fisica non disponibile", "WORKING_LAYOUT_NOT_FOUND", null, 409);
@@ -226,27 +243,38 @@ async function mutateWorkingLayout({ venueId, actorUserId, mutate }) {
 }
 
 async function addFloor({ venueId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["label"]);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const floor = layout.floors.create({ label: requiredText(payload.label, "label", 120) });
-    if (hasOwn(payload, "mapAsset")) floor.mapAsset = normalizeMapAsset(payload.mapAsset);
     layout.floors.push(floor);
     return { floorId: floor._id, floor };
   } });
 }
 
 async function updateFloor({ venueId, floorId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["label"]);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const floor = floorById(layout, floorId);
     if (hasOwn(payload, "label")) floor.label = requiredText(payload.label, "label", 120);
-    if (hasOwn(payload, "mapAsset")) {
-      floor.mapAsset = normalizeMapAsset(payload.mapAsset);
-      floor.calibration = null;
-    }
     return { floorId: floor._id, floor };
   } });
 }
 
+async function setManagedFloorPlan({ venueId, floorId, actorUserId, mapAsset }) {
+  if (mapAsset === null || mapAsset === undefined) commandError("Planimetria gestita obbligatoria", "REQUIRED", "mapAsset");
+  const normalizedMapAsset = normalizeMapAsset(mapAsset);
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
+    const floor = floorById(layout, floorId);
+    const previousMapAssetUrl = floor.mapAsset?.url || null;
+    floor.mapAsset = normalizedMapAsset;
+    floor.calibration = null;
+    return { floorId: floor._id, mapAsset: floor.mapAsset, previousMapAssetUrl };
+  } });
+}
+
 async function calibrateFloor({ venueId, floorId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["method", "distanceMeters", "line", "referenceConnectionId"]);
+  if (hasOwn(payload, "line") && payload.line !== null) assertAllowedFields(payload.line, ["from", "to"], "line");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const floor = floorById(layout, floorId);
     if (!floor.mapAsset) commandError("Carica prima una planimetria gestita", "CALIBRATION_MAP_ASSET_REQUIRED", "mapAsset", 409);
@@ -281,17 +309,23 @@ async function removeFloor({ venueId, floorId, actorUserId }) {
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const floor = floorById(layout, floorId);
     if ((layout.places || []).some((place) => id(place.floorId) === id(floor._id))) commandError("Sposta o rimuovi prima i luoghi presenti sul piano", "FLOOR_NOT_EMPTY", "floorId", 409);
+    const mapAssetUrl = floor.mapAsset?.url || null;
     layout.floors.pull(floor._id);
-    return { removedFloorId: floor._id };
+    return { removedFloorId: floor._id, mapAssetUrl };
   } });
 }
 
 async function createPlace({ venueId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["floorId", "placeTypeDefinitionId", "label", "position", "attributeValues"]);
+  if (hasOwn(payload, "attributeValues") && !Array.isArray(payload.attributeValues)) commandError("attributeValues deve essere un array", "INVALID_TYPE", "attributeValues");
+  for (const [index, entry] of (payload.attributeValues || []).entries()) assertAllowedFields(entry, ["physicalAttributeDefinitionId", "value"], `attributeValues[${index}]`);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const floor = floorById(layout, payload.floorId);
     const typeId = String(payload.placeTypeDefinitionId || "");
     if (!maps.placeTypeById.has(typeId)) commandError("Tipo di luogo non presente nel vocabolario pinzato", "UNKNOWN_PLACE_TYPE", "placeTypeDefinitionId");
     const attributeValues = Array.isArray(payload.attributeValues) ? payload.attributeValues : [];
+    const attributeIds = attributeValues.map((entry) => String(entry.physicalAttributeDefinitionId || ""));
+    if (new Set(attributeIds).size !== attributeIds.length) commandError("Una caratteristica fisica non puo essere ripetuta", "DUPLICATE_PHYSICAL_ATTRIBUTE_VALUE", "attributeValues");
     for (const [index, entry] of attributeValues.entries()) {
       assertAttributeValue({ definitionId: entry.physicalAttributeDefinitionId, value: entry.value, target: "place", maps, field: `attributeValues[${index}]` });
     }
@@ -308,6 +342,7 @@ async function createPlace({ venueId, actorUserId, payload = {} }) {
 }
 
 async function movePlace({ venueId, placeId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["position"]);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const place = placeById(layout, placeId);
     const nextPosition = normalizedPoint(payload.position);
@@ -323,6 +358,7 @@ async function movePlace({ venueId, placeId, actorUserId, payload = {} }) {
 }
 
 async function updatePlace({ venueId, placeId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["label", "placeTypeDefinitionId"]);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const place = placeById(layout, placeId);
     if (hasOwn(payload, "label")) place.label = optionalText(payload.label, "label", 160);
@@ -336,6 +372,8 @@ async function updatePlace({ venueId, placeId, actorUserId, payload = {} }) {
 }
 
 async function setPlaceAttribute({ venueId, placeId, definitionId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["value"]);
+  if (!hasOwn(payload, "value")) commandError("value e obbligatorio; usa null per rimuovere la caratteristica", "REQUIRED", "value");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const place = placeById(layout, placeId);
     if (payload.value !== null) assertAttributeValue({ definitionId, value: payload.value, target: "place", maps, field: "value" });
@@ -355,6 +393,11 @@ async function removePlace({ venueId, placeId, actorUserId }) {
 }
 
 async function createConnection({ venueId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, [
+    "fromPlaceId", "toPlaceId", "connectionTypeDefinitionId", "directionality", "metricMode",
+    "distanceMeters", "geometryPoints", "additionalDelaySeconds", "instructions",
+  ]);
+  if (hasOwn(payload, "instructions") && payload.instructions !== null) assertAllowedFields(payload.instructions, ["forward", "backward"], "instructions");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const from = placeById(layout, payload.fromPlaceId);
     const to = placeById(layout, payload.toPlaceId);
@@ -364,13 +407,18 @@ async function createConnection({ venueId, actorUserId, payload = {} }) {
     const directionality = String(payload.directionality || "bidirectional");
     if (!["directed", "bidirectional"].includes(directionality)) commandError("Direzionalita non valida", "INVALID_DIRECTIONALITY", "directionality");
     const metric = connectionMetric({ layout, from, to, payload });
+    let additionalDelaySeconds = 0;
+    if (hasOwn(payload, "additionalDelaySeconds")) {
+      additionalDelaySeconds = Number(payload.additionalDelaySeconds);
+      if (!Number.isFinite(additionalDelaySeconds) || additionalDelaySeconds < 0) commandError("Ritardo aggiuntivo non valido", "INVALID_DELAY", "additionalDelaySeconds");
+    }
     const connection = layout.connections.create({
       fromPlaceId: from._id,
       toPlaceId: to._id,
       directionality,
       connectionTypeDefinitionId,
       ...metric,
-      additionalDelaySeconds: Math.max(0, Number(payload.additionalDelaySeconds) || 0),
+      additionalDelaySeconds,
       instructions: {
         forward: optionalText(payload.instructions?.forward, "instructions.forward", 500),
         backward: optionalText(payload.instructions?.backward, "instructions.backward", 500),
@@ -383,6 +431,11 @@ async function createConnection({ venueId, actorUserId, payload = {} }) {
 }
 
 async function updateConnection({ venueId, connectionId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, [
+    "connectionTypeDefinitionId", "directionality", "metricMode", "distanceMeters", "geometryPoints",
+    "additionalDelaySeconds", "instructions",
+  ]);
+  if (hasOwn(payload, "instructions") && payload.instructions !== null) assertAllowedFields(payload.instructions, ["forward", "backward"], "instructions");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const connection = connectionById(layout, connectionId);
     const from = placeById(layout, connection.fromPlaceId);
@@ -418,6 +471,8 @@ async function updateConnection({ venueId, connectionId, actorUserId, payload = 
 }
 
 async function setConnectionAttribute({ venueId, connectionId, definitionId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["value"]);
+  if (!hasOwn(payload, "value")) commandError("value e obbligatorio; usa null per rimuovere la caratteristica", "REQUIRED", "value");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout, maps }) => {
     const connection = connectionById(layout, connectionId);
     if (payload.value !== null) assertAttributeValue({ definitionId, value: payload.value, target: "connection", maps, field: "value" });
@@ -437,6 +492,8 @@ async function removeConnection({ venueId, connectionId, actorUserId }) {
 }
 
 async function setVenueTargetPlacement({ venueId, venueTargetId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["primaryPlaceId", "placeIds"]);
+  if (hasOwn(payload, "placeIds") && !Array.isArray(payload.placeIds)) commandError("placeIds deve essere un array", "INVALID_TYPE", "placeIds");
   return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
     const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
     if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
@@ -459,6 +516,7 @@ async function setVenueTargetPlacement({ venueId, venueTargetId, actorUserId, pa
 }
 
 async function setPreVisitInformation({ venueId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["items"]);
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ release }) => {
     if (!Array.isArray(payload.items)) commandError("items deve essere un array", "INVALID_TYPE", "items");
     const items = payload.items.map((entry, index) => requiredText(entry, `items[${index}]`, 500));
@@ -470,6 +528,7 @@ async function setPreVisitInformation({ venueId, actorUserId, payload = {} }) {
 module.exports = {
   addFloor,
   updateFloor,
+  setManagedFloorPlan,
   calibrateFloor,
   removeFloor,
   createPlace,

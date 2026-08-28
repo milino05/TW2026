@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
@@ -123,10 +124,14 @@ async function publishedVisitReferencesTarget({ venueTargetId, session = null })
 }
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
-  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
+  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
   let trashedTarget = null;
   try {
     await mongoose.connection.transaction(async (session) => {
+      const currentVenue = await Venue.findOne({ _id: venueId, lifecycleStatus: "active" })
+        .select("_id workingReleaseId publishedReleaseId")
+        .session(session);
+      if (!currentVenue) throw new AppError("Venue non disponibile", 404);
       const target = await VenueTarget.findOne({
         _id: venueTargetId,
         venueId,
@@ -135,7 +140,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
       if (!target) throw new AppError("VenueTarget non trovato", 404);
 
       const workingReferences = await releaseReferencesTarget({
-        releaseId: venue.workingReleaseId,
+        releaseId: currentVenue.workingReleaseId,
         venueId,
         venueTargetId: target._id,
         session,
@@ -148,7 +153,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
       }
 
       const publishedReferences = await releaseReferencesTarget({
-        releaseId: venue.publishedReleaseId,
+        releaseId: currentVenue.publishedReleaseId,
         venueId,
         venueTargetId: target._id,
         session,

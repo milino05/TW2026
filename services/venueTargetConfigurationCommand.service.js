@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
@@ -24,6 +25,12 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
   let commandResult = null;
   try {
     await mongoose.connection.transaction(async (session) => {
+      const currentVenue = await Venue.findOne({ _id: venueId, lifecycleStatus: "active" })
+        .select("_id workingReleaseId")
+        .session(session);
+      if (!currentVenue?.workingReleaseId) {
+        commandError("Nessuna configurazione fisica di lavoro disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
+      }
       const target = await VenueTarget.findOne({
         _id: venueTargetId,
         venueId,
@@ -31,7 +38,7 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
       }).session(session);
       if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
 
-      const release = await VenueRelease.findOne({ _id: venue.workingReleaseId, venueId }).session(session);
+      const release = await VenueRelease.findOne({ _id: currentVenue.workingReleaseId, venueId }).session(session);
       if (!release) commandError("Working VenueRelease non disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
       const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId }).session(session);
       if (!layout) commandError("LayoutRevision di lavoro non disponibile", "WORKING_LAYOUT_NOT_FOUND", null, 409);

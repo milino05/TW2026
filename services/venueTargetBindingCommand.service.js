@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
@@ -8,6 +9,10 @@ const { markRevisionEdited } = require("./revisionWorkflow.service");
 function id(value) { return String(value?._id || value || ""); }
 function commandError(message, code, field = null, statusCode = 400, extra = {}) {
   throw new AppError(message, statusCode, [{ ...(field ? { field } : {}), code, ...extra }]);
+}
+function assertAllowedFields(value, allowed) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) commandError("payload deve essere un oggetto", "INVALID_TYPE", "payload");
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) commandError(`Campo non supportato: ${key}`, "UNKNOWN_FIELD", key);
 }
 function requiredText(value, field, maxLength) {
   const normalized = String(value || "").trim();
@@ -27,6 +32,12 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
   let commandResult = null;
   try {
     await mongoose.connection.transaction(async (session) => {
+      const currentVenue = await Venue.findOne({
+        _id: venueId,
+        lifecycleStatus: "active",
+        workingReleaseId: ensured.release._id,
+      }).select("_id workingReleaseId").session(session);
+      if (!currentVenue) commandError("La bozza fisica è cambiata durante il comando", "WORKING_RELEASE_CHANGED", null, 409);
       const release = await VenueRelease.findOne({ _id: ensured.release._id, venueId }).session(session);
       const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
       if (!release) commandError("Bozza fisica non disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
@@ -51,6 +62,7 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
 }
 
 async function setAvailability({ venueId, venueTargetId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["availability"]);
   return mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate: ({ binding }) => {
     const availability = String(payload.availability || "");
     if (!["active", "unavailable"].includes(availability)) {
@@ -62,6 +74,7 @@ async function setAvailability({ venueId, venueTargetId, actorUserId, payload = 
 }
 
 async function addRecognitionMedia({ venueId, venueTargetId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["url", "altText"]);
   return mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate: ({ binding }) => {
     const url = requiredText(payload.url, "url", 2000);
     if ((binding.recognitionMedia || []).some((entry) => entry.url === url)) {

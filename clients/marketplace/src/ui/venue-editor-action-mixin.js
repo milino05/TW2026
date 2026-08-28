@@ -190,12 +190,27 @@ export const venueActionMixin = {
     }
 
     if (form.matches("[data-create-target]")) {
-      const success = await this.execute(() => managementRepository.createVenueTarget(this.id, {
-        subjectId: String(data.get("subjectId") || ""),
-        label: String(data.get("label") || ""),
-        description: String(data.get("description") || ""),
-      }), "Oggetto fisico creato.");
-      if (success) this.selectedSubject = null;
+      let createdTarget = null;
+      const success = await this.execute(async () => {
+        createdTarget = await managementRepository.createVenueTarget(this.id, {
+          subjectId: String(data.get("subjectId") || ""),
+          label: String(data.get("label") || ""),
+          description: String(data.get("description") || ""),
+        });
+      }, "Oggetto fisico creato.");
+      if (success) {
+        this.selectedSubject = null;
+        const targetId = String(createdTarget?._id || createdTarget?.id || "");
+        if (targetId) {
+          this.pendingMapAction = { type: "place-target", targetId };
+          this.activeSection = "map";
+          this.message = (this.data.layout?.places || []).length
+            ? "Oggetto creato. Seleziona sulla mappa il luogo in cui si trova."
+            : "Oggetto creato. Aggiungi un luogo sulla mappa, poi colloca l’oggetto.";
+          this.render();
+          this.showSection("map", { scroll: true });
+        }
+      }
       return;
     }
 

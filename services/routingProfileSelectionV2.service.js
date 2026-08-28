@@ -91,18 +91,36 @@ function hardConstraintConflict(requirements = []) {
     byAttribute.get(key).push(requirement);
   }
   for (const [definitionId, group] of byAttribute) {
-    const eq = group.filter((entry) => (entry.operator || "eq") === "eq");
-    if (new Set(eq.map((entry) => stableValue(entry.value))).size > 1) return { definitionId, requirements: group };
-    const equalValue = eq.length === 1 ? stableValue(eq[0].value) : null;
-    if (equalValue && group.some((entry) => entry.operator === "neq" && stableValue(entry.value) === equalValue)) return { definitionId, requirements: group };
+    const accepts = (candidate, requirement) => {
+      const operator = requirement.operator || "eq";
+      if (operator === "eq") return stableValue(candidate) === stableValue(requirement.value);
+      if (operator === "neq") return stableValue(candidate) !== stableValue(requirement.value);
+      if (operator === "in") return Array.isArray(requirement.value)
+        && requirement.value.some((value) => stableValue(value) === stableValue(candidate));
+      if (operator === "gte") return Number(candidate) >= Number(requirement.value);
+      if (operator === "lte") return Number(candidate) <= Number(requirement.value);
+      if (operator === "gt") return Number(candidate) > Number(requirement.value);
+      if (operator === "lt") return Number(candidate) < Number(requirement.value);
+      return false;
+    };
+    const finiteSource = group.find((entry) => (entry.operator || "eq") === "eq" || entry.operator === "in");
+    if (finiteSource) {
+      const candidates = finiteSource.operator === "in" ? finiteSource.value : [finiteSource.value];
+      if (!candidates.some((candidate) => group.every((requirement) => accepts(candidate, requirement)))) {
+        return { definitionId, requirements: group };
+      }
+      continue;
+    }
     const numeric = group.filter((entry) => typeof entry.value === "number" && Number.isFinite(entry.value));
-    const lower = numeric.filter((entry) => ["gte", "gt"].includes(entry.operator)).reduce((best, entry) => Math.max(best, Number(entry.value)), -Infinity);
-    const upper = numeric.filter((entry) => ["lte", "lt"].includes(entry.operator)).reduce((best, entry) => Math.min(best, Number(entry.value)), Infinity);
-    if (lower > upper) return { definitionId, requirements: group };
-    const inclusions = group.filter((entry) => entry.operator === "in" && Array.isArray(entry.value));
-    if (inclusions.length > 1) {
-      const intersection = inclusions.slice(1).reduce((values, entry) => values.filter((value) => entry.value.some((candidate) => stableValue(candidate) === stableValue(value))), inclusions[0].value);
-      if (!intersection.length) return { definitionId, requirements: group };
+    const lowerRequirements = numeric.filter((entry) => ["gte", "gt"].includes(entry.operator));
+    const upperRequirements = numeric.filter((entry) => ["lte", "lt"].includes(entry.operator));
+    const lower = lowerRequirements.reduce((best, entry) => Math.max(best, Number(entry.value)), -Infinity);
+    const upper = upperRequirements.reduce((best, entry) => Math.min(best, Number(entry.value)), Infinity);
+    const lowerExclusive = lowerRequirements.some((entry) => Number(entry.value) === lower && entry.operator === "gt");
+    const upperExclusive = upperRequirements.some((entry) => Number(entry.value) === upper && entry.operator === "lt");
+    if (lower > upper || (lower === upper && (lowerExclusive || upperExclusive))) return { definitionId, requirements: group };
+    if (lower === upper && group.some((entry) => entry.operator === "neq" && stableValue(entry.value) === stableValue(lower))) {
+      return { definitionId, requirements: group };
     }
   }
   return null;

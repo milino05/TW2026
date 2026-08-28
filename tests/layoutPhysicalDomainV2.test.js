@@ -35,6 +35,10 @@ test("LayoutRevision pins a PhysicalVocabularyRevision and contains no embedded 
 
 test("Venue physical authoring exposes granular commands and no aggregate rewrite route", () => {
   const routes = fs.readFileSync(path.resolve(__dirname, "../routes/venues.routes.js"), "utf8");
+  const layoutSource = fs.readFileSync(path.resolve(__dirname, "../services/venueLayoutCommand.service.js"), "utf8");
+  const bindingSource = fs.readFileSync(path.resolve(__dirname, "../services/venueTargetBindingCommand.service.js"), "utf8");
+  const detachSource = fs.readFileSync(path.resolve(__dirname, "../services/venueTargetConfigurationCommand.service.js"), "utf8");
+  const targetSource = fs.readFileSync(path.resolve(__dirname, "../services/venueTarget.service.js"), "utf8");
   assert.doesNotMatch(routes, /router\.patch\(\s*["']\/venues\/:venueId\/working-release["']/);
   for (const route of [
     "working-layout/floors",
@@ -46,6 +50,11 @@ test("Venue physical authoring exposes granular commands and no aggregate rewrit
     "addFloor", "calibrateFloor", "createPlace", "movePlace", "createConnection",
     "setConnectionAttribute", "setVenueTargetPlacement", "setPreVisitInformation",
   ]) assert.equal(typeof layoutCommands[command], "function", `${command} command missing`);
+  assert.match(layoutSource, /workingReleaseId: ensured\.release\._id/);
+  assert.match(bindingSource, /workingReleaseId: ensured\.release\._id/);
+  assert.match(detachSource, /Venue\.findOne\(\{ _id: venueId, lifecycleStatus: "active" \}\)/);
+  assert.match(targetSource, /select\("_id workingReleaseId publishedReleaseId"\)/);
+  for (const source of [layoutSource, bindingSource]) assert.match(source, /WORKING_RELEASE_CHANGED/);
 });
 
 test("Floor calibration converts normalized polyline geometry into meters", () => {

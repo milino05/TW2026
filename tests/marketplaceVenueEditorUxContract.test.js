@@ -57,6 +57,14 @@ test("VenueTarget, recognition media e Subject restano nel dominio fisico senza 
   assert.doesNotMatch(source, /createItem|updateItem|itemId\s*:/);
 });
 
+test("la creazione object-first accompagna subito alla collocazione sulla mappa", () => {
+  const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
+  assert.match(actionSource, /createdTarget = await managementRepository\.createVenueTarget/);
+  assert.match(actionSource, /pendingMapAction = \{ type: "place-target", targetId \}/);
+  assert.match(actionSource, /showSection\("map", \{ scroll: true \}\)/);
+  assert.match(actionSource, /Aggiungi un luogo sulla mappa, poi colloca l’oggetto/);
+});
+
 test("Layout authoring usa command granulari e controlli guidati dal PhysicalVocabulary", () => {
   for (const token of [
     "addVenueFloor", "uploadVenueFloorPlan", "calibrateVenueFloor", "createVenuePlace",
