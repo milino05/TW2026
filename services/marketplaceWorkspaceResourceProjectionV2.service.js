@@ -38,16 +38,29 @@ function workflowCapabilities(principal, resourceType) {
   return { edit: permissions.has(`${prefix}.edit`), review: permissions.has(`${prefix}.review`), publish: permissions.has(`${prefix}.publish`) };
 }
 
+function lifecyclePrefix(resourceType) {
+  if (resourceType === "item_edition") return "item";
+  if (resourceType === "namespace") return "namespace";
+  if (resourceType === "physical_vocabulary") return "physical_vocabulary";
+  return null;
+}
+
+function removalLabel(resourceType) {
+  if (resourceType === "item_edition") return "Elimina contenuto";
+  if (resourceType === "namespace") return "Elimina regole editoriali";
+  return "Elimina vocabolario fisico";
+}
+
 function canRemoveOwnedResource(principal, resourceType) {
-  if (!["item_edition", "namespace"].includes(resourceType)) return false;
+  const prefix = lifecyclePrefix(resourceType);
+  if (!prefix) return false;
   if (principal.type === "user") return true;
-  const prefix = resourceType === "item_edition" ? "item" : "namespace";
   return (principal.effectivePermissions || []).includes(`${prefix}.lifecycle.manage`);
 }
 
 function withRemovalOperation(operations, principal, resourceType) {
   return canRemoveOwnedResource(principal, resourceType)
-    ? [...operations, { code: "remove_resource", label: resourceType === "item_edition" ? "Elimina contenuto" : "Elimina regole editoriali", destructive: true }]
+    ? [...operations, { code: "remove_resource", label: removalLabel(resourceType), destructive: true }]
     : operations;
 }
 
@@ -147,7 +160,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "physical_vocabulary_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
-      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "physical_vocabulary", revision }),
+      availableOperations: withRemovalOperation(
+        withWorkflowOperations({ baseOperations, principal, resourceType: "physical_vocabulary", revision }),
+        principal,
+        "physical_vocabulary",
+      ),
     };
   }
   const revision = candidate.revision || null;
