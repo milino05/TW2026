@@ -5,6 +5,7 @@ import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
 import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSectionMixin } from "./venue-editor-section-mixin.js";
 import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
+import { venueSpatialDiagnosticsMixin } from "./venue-editor-spatial-diagnostics-mixin.js";
 
 const SECTIONS = ["overview", "targets", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -107,5 +108,6 @@ Object.assign(
   venueSpatialMixin,
   venueSectionMixin,
   venueMapAuthoringMixin,
+  venueSpatialDiagnosticsMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
