@@ -87,6 +87,7 @@ function optimizeVisitV2({
     if (!routeCache.has(key)) {
       routeCache.set(key, resolveRoute({
         connections: layout.connections || [],
+        places: layout.places || [],
         fromPlaceId: state.currentPlaceId,
         toPlaceId: target.placeId,
         requirements: requirementsByVenue.get(id(target.venueId)) || [],
