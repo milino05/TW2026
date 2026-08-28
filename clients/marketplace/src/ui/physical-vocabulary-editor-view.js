@@ -1,0 +1,461 @@
+import { navigate } from "../application/router.js";
+import { managementRepository } from "../infrastructure/http/management-repository.js";
+import { icon } from "./icons.js";
+
+const SECTIONS = [
+  ["general", "Generale"],
+  ["placeTypes", "Tipi di luogo"],
+  ["connectionTypes", "Tipi di collegamento"],
+  ["physicalAttributes", "Caratteristiche fisiche"],
+  ["routingProfiles", "Profili di percorso"],
+  ["mappings", "Mapping esterni"],
+];
+const DEFINITION_FIELDS = ["placeTypes", "connectionTypes", "physicalAttributes", "routingProfiles"];
+const META = {
+  placeTypes: {
+    title: "Tipi di luogo",
+    singular: "tipo di luogo",
+    question: "Che tipo di spazio può riconoscere una sede?",
+    description: "Definisci categorie riutilizzabili come ingresso, sala, ascensore o servizi. Le sedi useranno queste definizioni senza copiarle.",
+    example: "Ingresso · punto ordinario di accesso alla sede.",
+  },
+  connectionTypes: {
+    title: "Tipi di collegamento",
+    singular: "tipo di collegamento",
+    question: "Come possono essere collegati due luoghi?",
+    description: "Descrivi passaggi, corridoi, porte, rampe, scale e altri collegamenti fisici usati nella mappa.",
+    example: "Corridoio · collegamento interno lineare tra ambienti.",
+  },
+  physicalAttributes: {
+    title: "Caratteristiche fisiche",
+    singular: "caratteristica fisica",
+    question: "Quali fatti fisici servono al routing?",
+    description: "Definisci caratteristiche verificabili di luoghi e collegamenti: gradini, larghezza, superficie, accessibilità e altre proprietà.",
+    example: "Accessibile senza gradini · sì/no/non verificato nel layout.",
+  },
+  routingProfiles: {
+    title: "Profili di percorso",
+    singular: "profilo di percorso",
+    question: "Come deve comportarsi il routing in una situazione ricorrente?",
+    description: "Combina caratteristiche fisiche in preferenze, requisiti o elementi da evitare, senza hardcodare il museo nel motore di routing.",
+    example: "Senza gradini · richiede passaggi compatibili con l'accessibilità selezionata.",
+  },
+};
+const TUTORIAL_STORAGE_KEY = "artaround.physical-vocabulary-editor.tutorial.v1";
+const TUTORIAL_STEPS = [
+  { section: "general", title: "A cosa serve il vocabolario fisico?", body: "È il linguaggio condiviso con cui ArtAround descrive spazi, collegamenti e caratteristiche di una sede. Una Venue adotta una sua revisione pubblicata." },
+  { section: "placeTypes", title: "1. Tipi di luogo", body: "Definiscono che cosa rappresenta un punto sulla mappa: sala, ingresso, servizi, ascensore e così via. Non sono luoghi reali: sono categorie riutilizzabili." },
+  { section: "connectionTypes", title: "2. Tipi di collegamento", body: "Descrivono il modo in cui due luoghi sono connessi: corridoio, porta, rampa, scala. La connessione concreta verrà disegnata nella Venue." },
+  { section: "physicalAttributes", title: "3. Caratteristiche fisiche", body: "Sono fatti verificabili usati dal routing. Un valore assente significa non verificato, non equivale automaticamente a falso." },
+  { section: "routingProfiles", title: "4. Profili di percorso", body: "Raccolgono requisiti e preferenze riutilizzabili. Scegli una caratteristica, il comportamento desiderato e la sua importanza: ArtAround conserva la struttura tecnica." },
+  { section: "mappings", title: "5. Mapping esterni", body: "Alias e riferimenti semantici hanno ruoli diversi. Gli alias aiutano il linguaggio umano; i mapping collegano una definizione a concetti esterni senza creare un'ontologia globale ArtAround." },
+  { section: "general", title: "Controlla e pubblica", body: "Usa lo starter se vuoi una base pronta, personalizza ciò che serve, controlla la consistenza e pubblica. Le Venue useranno una revisione precisa e stabile." },
+];
+const WORKFLOW_ACTION = {
+  "physical_vocabulary.revision.check": "check-consistency",
+  "physical_vocabulary.revision.request_review": "request-review",
+  "physical_vocabulary.revision.withdraw_review": "withdraw-review",
+  "physical_vocabulary.revision.request_changes": "request-changes",
+  "physical_vocabulary.revision.publish": "publish",
+};
+const WORKFLOW_LABEL = {
+  "physical_vocabulary.revision.check": "Controlla consistenza",
+  "physical_vocabulary.revision.request_review": "Invia in revisione",
+  "physical_vocabulary.revision.withdraw_review": "Ritira dalla revisione",
+  "physical_vocabulary.revision.request_changes": "Richiedi modifiche",
+  "physical_vocabulary.revision.publish": "Pubblica",
+};
+const MATCH_LABEL = { exact: "Equivalente", close: "Molto vicino", broader: "Più generale", narrower: "Più specifico" };
+const OPERATOR_LABEL = { eq: "è", neq: "non è", gte: "almeno", lte: "al massimo", gt: "maggiore di", lt: "minore di", in: "è uno di" };
+const PRIORITY_LABEL = { required: "Necessario", preferred: "Preferito", avoid: "Da evitare" };
+
+function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function selected(value, current) { return String(value ?? "") === String(current ?? "") ? "selected" : ""; }
+function checked(value) { return value === true ? "checked" : ""; }
+function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
+function physicalVocabularyId() { return new URLSearchParams(window.location.search).get("physicalVocabularyId"); }
+function uuid() { return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function clone(value) { return globalThis.structuredClone ? structuredClone(value) : JSON.parse(JSON.stringify(value)); }
+function statusLabel(status) { return { draft: "Bozza", in_review: "In revisione", changes_requested: "Modifiche richieste", published: "Pubblicata", superseded: "Superata" }[status] || status || "Da configurare"; }
+function sourceLabel(source) { return source === "working" ? "Bozza di lavoro" : source === "published" ? "Versione pubblicata" : "Non configurato"; }
+function ownerBackUrl(owner) { return owner?.type === "organization" ? `/organizations/detail?organizationId=${encodeURIComponent(owner.id)}&section=physical` : "/profile#account-physical"; }
+function initialSection() { const requested = String(window.location.hash || "").replace(/^#physical-/, ""); return SECTIONS.some(([key]) => key === requested) ? requested : "general"; }
+function localAliases(definition) {
+  const italian = (definition.localizations || []).find((entry) => String(entry.locale).toLowerCase().startsWith("it"));
+  return italian?.aliases || [];
+}
+function replaceAliases(definition, aliases) {
+  const localizations = clone(definition.localizations || []);
+  const index = localizations.findIndex((entry) => String(entry.locale).toLowerCase().startsWith("it"));
+  if (index >= 0) localizations[index] = { ...localizations[index], aliases };
+  else localizations.push({ locale: "it-IT", aliases });
+  definition.localizations = localizations;
+}
+function splitAliases(value) { return String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean); }
+function optionsText(options = []) { return options.map((entry) => `${entry.value} = ${entry.label}`).join("\n"); }
+function parseOptions(value) {
+  return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const separator = line.indexOf("=");
+    if (separator < 0) return { value: line, label: line };
+    return { value: line.slice(0, separator).trim(), label: line.slice(separator + 1).trim() };
+  }).filter((entry) => entry.value && entry.label);
+}
+function valueForInput(value) { return Array.isArray(value) ? value.join(", ") : value === undefined || value === null ? "" : String(value); }
+function parseRequirementValue(raw, attribute, operator) {
+  const value = String(raw ?? "").trim();
+  if (operator === "in") return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (attribute?.dataType === "boolean") return value === "true";
+  if (attribute?.dataType === "number") { const number = Number(value); return Number.isFinite(number) ? number : value; }
+  return value;
+}
+function emptyDefinition(field) {
+  const base = { definitionId: uuid(), key: null, label: "", description: "", localizations: [], semanticRefs: [], metadata: {} };
+  if (field === "physicalAttributes") return { ...base, dataType: "boolean", unit: null, options: [], appliesTo: "both" };
+  if (field === "routingProfiles") return { ...base, requirements: [] };
+  if (field === "placeTypes") base.metadata = { navigationTarget: true };
+  return base;
+}
+function definitionName(definition) { return definition.label || definition.key || "Nuova definizione"; }
+
+export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
+  id = physicalVocabularyId();
+  data = null;
+  definitions = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, []]));
+  activeSection = initialSection();
+  busy = false;
+  error = null;
+  message = null;
+  dirty = false;
+  tutorialOpen = false;
+  tutorialStep = 0;
+  tutorialReturnSection = "general";
+  starterOpen = false;
+  pendingWorkflow = null;
+  workflowMessage = "";
+
+  connectedCallback() {
+    this.addEventListener("click", this.onClick);
+    this.addEventListener("input", this.onInput);
+    this.addEventListener("change", this.onInput);
+    this.addEventListener("submit", this.onSubmit);
+    window.addEventListener("beforeunload", this.onBeforeUnload);
+    this.load();
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener("click", this.onClick);
+    this.removeEventListener("input", this.onInput);
+    this.removeEventListener("change", this.onInput);
+    this.removeEventListener("submit", this.onSubmit);
+    window.removeEventListener("beforeunload", this.onBeforeUnload);
+  }
+
+  onBeforeUnload = (event) => { if (this.dirty) event.preventDefault(); };
+
+  async load({ preserveMessage = true } = {}) {
+    if (!this.id) { this.error = "Vocabolario fisico non specificato"; this.render(); return; }
+    this.busy = true; this.error = null; if (!preserveMessage) this.message = null; this.render();
+    try {
+      this.data = await managementRepository.physicalVocabulary(this.id);
+      const source = this.data.revision?.definitions || {};
+      this.definitions = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, clone(source[field] || [])]));
+      this.dirty = false;
+      if (this.shouldStartTutorial()) this.startTutorial({ remember: true });
+    } catch (error) { this.error = error instanceof Error ? error.message : "Vocabolario fisico non disponibile"; }
+    finally { this.busy = false; this.render(); }
+  }
+
+  async execute(callback, message) {
+    this.busy = true; this.error = null; this.message = null; this.render();
+    try {
+      await callback();
+      this.message = message;
+      await this.load();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Operazione non riuscita";
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  shouldStartTutorial() {
+    if (!this.data?.revision || this.data.revision.version !== 1 || this.data.revision.status !== "draft") return false;
+    if (DEFINITION_FIELDS.some((field) => (this.data.revision.definitions?.[field] || []).length)) return false;
+    try { return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "seen"; } catch { return false; }
+  }
+
+  startTutorial({ remember = false } = {}) {
+    this.tutorialReturnSection = this.activeSection;
+    this.tutorialStep = 0;
+    this.tutorialOpen = true;
+    this.activeSection = TUTORIAL_STEPS[0].section;
+    if (remember) { try { localStorage.setItem(TUTORIAL_STORAGE_KEY, "seen"); } catch { /* tutorial comunque disponibile */ } }
+    this.render();
+  }
+
+  closeTutorial() { this.tutorialOpen = false; this.activeSection = this.tutorialReturnSection || "general"; this.render(); }
+
+  goToSection(section) {
+    if (!SECTIONS.some(([key]) => key === section)) return;
+    this.activeSection = section;
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}#physical-${section}`);
+    this.render();
+  }
+
+  definition(field, index) { return this.definitions[field]?.[Number(index)] || null; }
+
+  onInput = (event) => {
+    const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement ? event.target : null;
+    if (!input?.dataset.collection) return;
+    const definition = this.definition(input.dataset.collection, input.dataset.index);
+    if (!definition) return;
+    const property = input.dataset.property;
+    if (property === "label" || property === "description") definition[property] = input.value;
+    else if (property === "aliases") replaceAliases(definition, splitAliases(input.value));
+    else if (property === "key") definition.key = input.value.trim() || null;
+    else if (property === "navigationTarget") definition.metadata = { ...(definition.metadata || {}), navigationTarget: input.checked };
+    else if (property === "dataType") { definition.dataType = input.value; if (input.value !== "choice") definition.options = []; }
+    else if (property === "appliesTo") definition.appliesTo = input.value;
+    else if (property === "unit") definition.unit = input.value.trim() || null;
+    else if (property === "options") definition.options = parseOptions(input.value);
+    else if (property?.startsWith("requirement.")) {
+      const requirement = definition.requirements?.[Number(input.dataset.requirementIndex)];
+      if (!requirement) return;
+      const requirementProperty = property.split(".")[1];
+      if (requirementProperty === "physicalAttributeDefinitionId" || requirementProperty === "operator" || requirementProperty === "priority") requirement[requirementProperty] = input.value;
+      else if (requirementProperty === "weight") requirement.weight = Math.max(0, Number(input.value) || 0);
+      else if (requirementProperty === "value") {
+        const attribute = this.definitions.physicalAttributes.find((entry) => entry.definitionId === requirement.physicalAttributeDefinitionId);
+        requirement.value = parseRequirementValue(input.value, attribute, requirement.operator);
+      }
+    }
+    this.dirty = true;
+  };
+
+  onClick = async (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest("[data-back]")) {
+      if (this.dirty && !window.confirm("Hai modifiche non salvate. Uscire comunque?")) return;
+      navigate(ownerBackUrl(this.data?.physicalVocabulary?.owner));
+      return;
+    }
+    const sectionButton = target.closest("[data-section]");
+    if (sectionButton) { this.goToSection(sectionButton.dataset.section); return; }
+    if (target.closest("[data-tutorial-start]")) { this.startTutorial(); return; }
+    if (target.closest("[data-tutorial-close]")) { this.closeTutorial(); return; }
+    if (target.closest("[data-tutorial-next]")) {
+      if (this.tutorialStep >= TUTORIAL_STEPS.length - 1) { this.closeTutorial(); return; }
+      this.tutorialStep += 1; this.activeSection = TUTORIAL_STEPS[this.tutorialStep].section; this.render(); return;
+    }
+    if (target.closest("[data-tutorial-prev]")) {
+      this.tutorialStep = Math.max(0, this.tutorialStep - 1); this.activeSection = TUTORIAL_STEPS[this.tutorialStep].section; this.render(); return;
+    }
+    if (target.closest("[data-starter-open]")) { this.starterOpen = true; this.render(); return; }
+    if (target.closest("[data-starter-close]")) { this.starterOpen = false; this.render(); return; }
+    if (target.closest("[data-starter-apply]")) {
+      this.starterOpen = false;
+      await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti.");
+      return;
+    }
+    if (target.closest("[data-working-ensure]")) {
+      await this.execute(() => managementRepository.ensurePhysicalVocabularyWorking(this.id), "Nuova bozza creata dalla versione pubblicata.");
+      return;
+    }
+    const add = target.closest("[data-add-definition]");
+    if (add) { this.definitions[add.dataset.addDefinition].push(emptyDefinition(add.dataset.addDefinition)); this.dirty = true; this.render(); return; }
+    const remove = target.closest("[data-remove-definition]");
+    if (remove) {
+      const field = remove.dataset.removeDefinition;
+      const index = Number(remove.dataset.index);
+      const definition = this.definitions[field][index];
+      if (!window.confirm(`Rimuovere “${definitionName(definition)}” dalla bozza?`)) return;
+      this.definitions[field].splice(index, 1);
+      if (field === "physicalAttributes") {
+        const removedId = definition.definitionId;
+        this.definitions.routingProfiles.forEach((profile) => { profile.requirements = (profile.requirements || []).filter((entry) => entry.physicalAttributeDefinitionId !== removedId); });
+      }
+      this.dirty = true; this.render(); return;
+    }
+    const addRequirement = target.closest("[data-add-requirement]");
+    if (addRequirement) {
+      const profile = this.definition("routingProfiles", addRequirement.dataset.index);
+      const firstAttribute = this.definitions.physicalAttributes[0];
+      if (!profile || !firstAttribute) return;
+      profile.requirements ||= [];
+      profile.requirements.push({ physicalAttributeDefinitionId: firstAttribute.definitionId, operator: "eq", value: firstAttribute.dataType === "boolean" ? true : "", priority: "preferred", weight: 1 });
+      this.dirty = true; this.render(); return;
+    }
+    const removeRequirement = target.closest("[data-remove-requirement]");
+    if (removeRequirement) {
+      const profile = this.definition("routingProfiles", removeRequirement.dataset.index);
+      profile?.requirements?.splice(Number(removeRequirement.dataset.requirementIndex), 1);
+      this.dirty = true; this.render(); return;
+    }
+    const removeMapping = target.closest("[data-remove-mapping]");
+    if (removeMapping) {
+      const definition = this.definition(removeMapping.dataset.collection, removeMapping.dataset.index);
+      definition?.semanticRefs?.splice(Number(removeMapping.dataset.mappingIndex), 1);
+      this.dirty = true; this.render(); return;
+    }
+    const workflow = target.closest("[data-workflow]");
+    if (workflow) {
+      const operation = workflow.dataset.workflow;
+      if (operation === "physical_vocabulary.revision.request_changes") { this.pendingWorkflow = operation; this.render(); return; }
+      await this.runWorkflow(operation);
+      return;
+    }
+    if (target.closest("[data-workflow-cancel]")) { this.pendingWorkflow = null; this.workflowMessage = ""; this.render(); return; }
+    if (target.closest("[data-workflow-confirm]")) { await this.runWorkflow(this.pendingWorkflow, { message: this.workflowMessage }); }
+  };
+
+  onSubmit = async (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form) return;
+    event.preventDefault();
+    const formData = new FormData(form);
+    if (form.matches("[data-metadata-form]")) {
+      await this.execute(() => managementRepository.updatePhysicalVocabulary(this.id, {
+        name: String(formData.get("name") || "").trim(),
+        description: String(formData.get("description") || "").trim(),
+      }), "Dettagli del vocabolario salvati.");
+      return;
+    }
+    if (form.matches("[data-save-definitions]")) {
+      const field = form.dataset.saveDefinitions;
+      await this.execute(() => managementRepository.updatePhysicalVocabularyRevision(this.id, { [field]: this.definitions[field] }), `${META[field].title} salvati.`);
+      return;
+    }
+    if (form.matches("[data-save-mappings]")) {
+      const payload = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, this.definitions[field]]));
+      await this.execute(() => managementRepository.updatePhysicalVocabularyRevision(this.id, payload), "Mapping esterni salvati.");
+      return;
+    }
+    if (form.matches("[data-add-mapping]")) {
+      const field = String(formData.get("collection") || "");
+      const index = Number(formData.get("index"));
+      const definition = this.definition(field, index);
+      const scheme = String(formData.get("scheme") || "").trim().toLowerCase();
+      const id = String(formData.get("id") || "").trim();
+      const matchType = String(formData.get("matchType") || "exact");
+      if (!definition || !scheme || !id) return;
+      definition.semanticRefs ||= [];
+      definition.semanticRefs.push({ scheme, id, matchType });
+      this.dirty = true; form.reset(); this.render();
+    }
+  };
+
+  async runWorkflow(operation, payload = {}) {
+    if (!operation || !WORKFLOW_ACTION[operation]) return;
+    if (this.dirty) { this.error = "Salva le modifiche prima di cambiare stato della revisione."; this.render(); return; }
+    this.pendingWorkflow = null; this.workflowMessage = "";
+    await this.execute(() => managementRepository.physicalVocabularyWorkflow(this.id, WORKFLOW_ACTION[operation], payload), `${WORKFLOW_LABEL[operation] || "Operazione"}: completata.`);
+  }
+
+  operations() { return this.data?.availableOperations || []; }
+  canEdit() { return has(this.operations(), "physical_vocabulary.revision.update"); }
+
+  renderTutorial() {
+    if (!this.tutorialOpen) return "";
+    const step = TUTORIAL_STEPS[this.tutorialStep];
+    return `<aside class="physical-tutorial" role="dialog" aria-modal="true" aria-label="Tutorial vocabolario fisico"><div class="physical-tutorial__progress"><span>Guida ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><button type="button" class="button-secondary small" data-tutorial-close>Chiudi</button></div><div><span class="eyebrow">Tutorial facoltativo</span><h2>${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p></div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-prev ${this.tutorialStep === 0 ? "disabled" : ""}>Indietro</button><button type="button" data-tutorial-next>${this.tutorialStep === TUTORIAL_STEPS.length - 1 ? "Fine" : "Continua"}</button></div></aside>`;
+  }
+
+  renderStarterDialog() {
+    if (!this.starterOpen) return "";
+    return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="Applica configurazione base"><span class="eyebrow">Configurazione base ArtAround</span><h2>Partire da una base pronta?</h2><p>Verranno aggiunti soltanto i tipi, le caratteristiche e i profili mancanti. Le tue definizioni, label, alias e personalizzazioni non vengono sovrascritti.</p><div class="physical-starter-summary"><span>13 tipi di luogo</span><span>8 collegamenti</span><span>9 caratteristiche</span><span>4 profili</span></div><div class="button-row"><button type="button" data-starter-apply>${icon("check", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-starter-close>Continua da zero</button></div></aside>`;
+  }
+
+  renderSectionNav() {
+    const counts = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, this.definitions[field]?.length || 0]));
+    return `<nav class="physical-editor-tabs" aria-label="Sezioni vocabolario fisico">${SECTIONS.map(([key, label]) => `<button type="button" data-section="${key}" aria-current="${this.activeSection === key ? "page" : "false"}"><span>${escapeHtml(label)}</span>${counts[key] !== undefined ? `<small>${counts[key]}</small>` : ""}</button>`).join("")}</nav>`;
+  }
+
+  renderIntegrity() {
+    const integrity = this.data?.revision?.integrity;
+    if (!integrity) return `<div class="physical-integrity physical-integrity--neutral"><strong>Non ancora controllato</strong><p>Esegui il controllo di consistenza prima della pubblicazione.</p></div>`;
+    const issues = integrity.issues || [];
+    const valid = integrity.status === "valid" && !issues.some((entry) => entry.severity !== "warning");
+    return `<div class="physical-integrity ${valid ? "physical-integrity--ok" : "physical-integrity--warning"}"><strong>${valid ? "Vocabolario coerente" : `${issues.length} segnalazioni da verificare`}</strong>${issues.length ? `<ul>${issues.slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code || "Problema di consistenza")}</li>`).join("")}</ul>` : `<p>Le definizioni sono strutturalmente coerenti.</p>`}</div>`;
+  }
+
+  renderWorkflow() {
+    const operations = this.operations().filter((entry) => WORKFLOW_ACTION[entry.code]);
+    if (!operations.length) return "";
+    return `<section class="physical-workflow"><div><span class="eyebrow">Workflow</span><h3>Controllo e pubblicazione</h3><p>La bozza resta modificabile finché non entra in revisione. La pubblicazione crea lo snapshot stabile usato dalle Venue.</p></div><div class="button-row">${operations.map((entry) => `<button type="button" class="${entry.code.includes("request_changes") ? "button-secondary" : ""}" data-workflow="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join("")}</div>${this.pendingWorkflow ? `<div class="physical-workflow-message"><label>Motivo delle modifiche<textarea data-workflow-message rows="3" placeholder="Spiega che cosa deve essere rivisto.">${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Conferma richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></div>` : ""}</section>`;
+  }
+
+  renderGeneral() {
+    const vocabulary = this.data.physicalVocabulary;
+    const revision = this.data.revision;
+    const editableMetadata = has(this.operations(), "physical_vocabulary.update");
+    const canStarter = has(this.operations(), "physical_vocabulary.starter.apply");
+    const canEnsure = has(this.operations(), "physical_vocabulary.working.ensure");
+    const counts = DEFINITION_FIELDS.map((field) => `<div><strong>${this.definitions[field].length}</strong><span>${META[field].title}</span></div>`).join("");
+    return `<section class="physical-editor-section"><div class="physical-overview-grid"><section class="panel physical-overview-copy"><span class="eyebrow">Vocabolario fisico</span><h2>Un linguaggio riutilizzabile per sedi e routing</h2><p>Qui descrivi categorie e caratteristiche fisiche. Le Venue useranno queste definizioni per costruire mappe concrete senza duplicare il vocabolario.</p><div class="physical-count-grid">${counts}</div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-start>${icon("book", { size: 16 })} Riapri tutorial</button>${canStarter ? `<button type="button" data-starter-open>${icon("plus", { size: 16 })} Configurazione base</button>` : ""}</div></section><section class="panel"><span class="eyebrow">Versione</span><h3>${escapeHtml(sourceLabel(vocabulary.source))}${revision ? ` · v${revision.version}` : ""}</h3><p>Stato: <strong>${escapeHtml(statusLabel(revision?.status))}</strong></p>${canEnsure ? `<button type="button" data-working-ensure>Crea nuova bozza</button>` : ""}${this.renderIntegrity()}</section></div><form class="panel physical-metadata-form" data-metadata-form><div class="section-heading compact"><div><h3>Informazioni generali</h3><p>Nome e descrizione identificano il vocabolario nel Marketplace e nelle Venue.</p></div></div><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(vocabulary.name)}" ${editableMetadata ? "" : "disabled"}></label><label>Descrizione<textarea name="description" rows="4" ${editableMetadata ? "" : "disabled"}>${escapeHtml(vocabulary.description || "")}</textarea></label>${editableMetadata ? `<button>${icon("check", { size: 16 })} Salva dettagli</button>` : ""}</form>${this.renderWorkflow()}</section>`;
+  }
+
+  renderRequirement(profileIndex, requirement, requirementIndex, editable) {
+    const attributes = this.definitions.physicalAttributes;
+    const attribute = attributes.find((entry) => entry.definitionId === requirement.physicalAttributeDefinitionId);
+    const valueControl = attribute?.dataType === "boolean"
+      ? `<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.value" ${editable ? "" : "disabled"}><option value="true" ${selected("true", String(requirement.value))}>Sì</option><option value="false" ${selected("false", String(requirement.value))}>No</option></select>`
+      : attribute?.dataType === "choice"
+        ? `<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.value" ${editable ? "" : "disabled"}>${(attribute.options || []).map((option) => `<option value="${escapeHtml(option.value)}" ${selected(option.value, requirement.value)}>${escapeHtml(option.label)}</option>`).join("")}</select>`
+        : `<input data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.value" value="${escapeHtml(valueForInput(requirement.value))}" ${attribute?.dataType === "number" ? `type="number" step="any"` : ""} ${editable ? "" : "disabled"}>`;
+    return `<div class="physical-requirement"><label>Caratteristica<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.physicalAttributeDefinitionId" ${editable ? "" : "disabled"}>${attributes.map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected(entry.definitionId, requirement.physicalAttributeDefinitionId)}>${escapeHtml(definitionName(entry))}</option>`).join("")}</select></label><label>Condizione<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.operator" ${editable ? "" : "disabled"}>${Object.entries(OPERATOR_LABEL).map(([value, label]) => `<option value="${value}" ${selected(value, requirement.operator)}>${escapeHtml(label)}</option>`).join("")}</select></label><label>Valore${valueControl}</label><label>Importanza<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.priority" ${editable ? "" : "disabled"}>${Object.entries(PRIORITY_LABEL).map(([value, label]) => `<option value="${value}" ${selected(value, requirement.priority)}>${escapeHtml(label)}</option>`).join("")}</select></label>${editable ? `<button type="button" class="icon-danger" data-remove-requirement data-index="${profileIndex}" data-requirement-index="${requirementIndex}" aria-label="Rimuovi requisito">×</button>` : ""}</div>`;
+  }
+
+  renderDefinitionCard(field, definition, index, editable) {
+    const aliases = localAliases(definition).join(", ");
+    const special = field === "physicalAttributes"
+      ? `<div class="physical-definition-special"><label>Tipo di valore<select data-collection="${field}" data-index="${index}" data-property="dataType" ${editable ? "" : "disabled"}><option value="boolean" ${selected("boolean", definition.dataType)}>Sì / No / Non verificato</option><option value="number" ${selected("number", definition.dataType)}>Numero</option><option value="string" ${selected("string", definition.dataType)}>Testo</option><option value="choice" ${selected("choice", definition.dataType)}>Scelta da elenco</option></select></label><label>Si applica a<select data-collection="${field}" data-index="${index}" data-property="appliesTo" ${editable ? "" : "disabled"}><option value="place" ${selected("place", definition.appliesTo)}>Luoghi</option><option value="connection" ${selected("connection", definition.appliesTo)}>Collegamenti</option><option value="both" ${selected("both", definition.appliesTo)}>Entrambi</option></select></label>${definition.dataType === "number" ? `<label>Unità di misura<input data-collection="${field}" data-index="${index}" data-property="unit" value="${escapeHtml(definition.unit || "")}" placeholder="Es. cm" ${editable ? "" : "disabled"}></label>` : ""}${definition.dataType === "choice" ? `<label class="wide">Opzioni<textarea rows="3" data-collection="${field}" data-index="${index}" data-property="options" ${editable ? "" : "disabled"}>${escapeHtml(optionsText(definition.options))}</textarea><small>Una riga per opzione: valore = etichetta visibile.</small></label>` : ""}</div>`
+      : field === "routingProfiles"
+        ? `<div class="physical-requirements"><div class="section-heading compact"><div><strong>Regole del profilo</strong><p>Scegli caratteristiche già definite e indica se sono necessarie, preferite o da evitare.</p></div>${editable && this.definitions.physicalAttributes.length ? `<button type="button" class="button-secondary small" data-add-requirement data-index="${index}">${icon("plus", { size: 14 })} Aggiungi regola</button>` : ""}</div>${(definition.requirements || []).map((requirement, requirementIndex) => this.renderRequirement(index, requirement, requirementIndex, editable)).join("") || `<p class="muted">Nessuna regola: il profilo non modifica ancora il routing.</p>`}</div>`
+        : field === "placeTypes"
+          ? `<label class="check physical-navigation-target"><input type="checkbox" data-collection="${field}" data-index="${index}" data-property="navigationTarget" ${checked(definition.metadata?.navigationTarget)} ${editable ? "" : "disabled"}><span>Può essere proposto come destinazione logistica al visitatore</span></label>`
+          : "";
+    return `<article class="physical-definition-card"><header><div><span class="eyebrow">${escapeHtml(META[field].singular)}</span><h3>${escapeHtml(definitionName(definition))}</h3></div>${editable ? `<button type="button" class="icon-danger" data-remove-definition="${field}" data-index="${index}" aria-label="Rimuovi ${escapeHtml(definitionName(definition))}">×</button>` : ""}</header><div class="physical-definition-fields"><label>Nome visibile<input data-collection="${field}" data-index="${index}" data-property="label" value="${escapeHtml(definition.label || "")}" placeholder="Es. ${field === "placeTypes" ? "Ingresso" : field === "connectionTypes" ? "Corridoio" : field === "physicalAttributes" ? "Accessibile senza gradini" : "Percorso accessibile"}" ${editable ? "" : "disabled"}></label><label class="wide">Che cosa significa?<textarea rows="2" data-collection="${field}" data-index="${index}" data-property="description" ${editable ? "" : "disabled"}>${escapeHtml(definition.description || "")}</textarea></label><label class="wide">Parole equivalenti per le persone<input data-collection="${field}" data-index="${index}" data-property="aliases" value="${escapeHtml(aliases)}" placeholder="Es. bagno, toilette, wc" ${editable ? "" : "disabled"}><small>Gli alias aiutano ricerca e linguaggio naturale. Non sono mapping semantici.</small></label></div>${special}<details class="physical-advanced"><summary>Dettagli tecnici e identità stabile</summary><div class="physical-definition-fields"><label>Chiave leggibile opzionale<input data-collection="${field}" data-index="${index}" data-property="key" value="${escapeHtml(definition.key || "")}" ${editable ? "" : "disabled"}></label><label>ID stabile<input value="${escapeHtml(definition.definitionId)}" disabled></label></div></details></article>`;
+  }
+
+  renderDefinitionSection(field) {
+    const meta = META[field];
+    const editable = this.canEdit();
+    const definitions = this.definitions[field] || [];
+    return `<section class="physical-editor-section"><header class="physical-section-intro"><div><span class="eyebrow">${escapeHtml(meta.title)}</span><h2>${escapeHtml(meta.question)}</h2><p>${escapeHtml(meta.description)}</p><p class="physical-example"><strong>Esempio:</strong> ${escapeHtml(meta.example)}</p></div><span class="count">${definitions.length}</span></header><form data-save-definitions="${field}"><div class="physical-definition-grid">${definitions.map((definition, index) => this.renderDefinitionCard(field, definition, index, editable)).join("") || `<div class="empty-state"><h3>Nessuna definizione</h3><p>Aggiungi la prima quando serve oppure usa la configurazione base dalla sezione Generale.</p></div>`}</div>${editable ? `<div class="physical-sticky-actions"><button type="button" class="button-secondary" data-add-definition="${field}">${icon("plus", { size: 16 })} Aggiungi ${escapeHtml(meta.singular)}</button><button type="submit">${icon("check", { size: 16 })} Salva ${escapeHtml(meta.title.toLowerCase())}</button></div>` : ""}</form></section>`;
+  }
+
+  allDefinitions() {
+    return DEFINITION_FIELDS.flatMap((field) => this.definitions[field].map((definition, index) => ({ field, definition, index })));
+  }
+
+  renderMappings() {
+    const editable = this.canEdit();
+    const entries = this.allDefinitions();
+    return `<section class="physical-editor-section"><header class="physical-section-intro"><div><span class="eyebrow">Mapping esterni</span><h2>Collega le definizioni senza renderle globali</h2><p>I riferimenti semantici permettono di riconoscere concetti equivalenti tra vocabolari diversi. Restano separati dagli alias e non cambiano l'identità locale della definizione.</p></div><span class="count">${entries.reduce((sum, entry) => sum + (entry.definition.semanticRefs?.length || 0), 0)}</span></header><form data-save-mappings><div class="physical-mapping-list">${entries.map(({ field, definition, index }) => `<article class="physical-mapping-card"><header><div><small>${escapeHtml(META[field].title)}</small><strong>${escapeHtml(definitionName(definition))}</strong></div></header><div class="semantic-ref-list">${(definition.semanticRefs || []).map((mapping, mappingIndex) => `<span class="semantic-ref-chip"><span>${escapeHtml(mapping.scheme)} · ${escapeHtml(mapping.id)} · ${escapeHtml(MATCH_LABEL[mapping.matchType] || mapping.matchType)}</span>${editable ? `<button type="button" data-remove-mapping data-collection="${field}" data-index="${index}" data-mapping-index="${mappingIndex}" aria-label="Rimuovi mapping">×</button>` : ""}</span>`).join("") || `<span class="muted">Nessun mapping</span>`}</div>${editable ? `<form data-add-mapping class="physical-mapping-add"><input type="hidden" name="collection" value="${field}"><input type="hidden" name="index" value="${index}"><label>Schema<input name="scheme" required placeholder="Es. openstreetmap-tag"></label><label>Identificatore<input name="id" required placeholder="Es. amenity=toilets"></label><label>Relazione<select name="matchType"><option value="exact">Equivalente</option><option value="close">Molto vicino</option><option value="broader">Più generale</option><option value="narrower">Più specifico</option></select></label><button type="submit" class="button-secondary">Aggiungi mapping</button></form>` : ""}</article>`).join("") || `<div class="empty-state"><h3>Nessuna definizione da mappare</h3></div>`}</div>${editable ? `<div class="physical-sticky-actions"><span>Le modifiche ai mapping diventano effettive quando salvi.</span><button type="submit">${icon("check", { size: 16 })} Salva mapping</button></div>` : ""}</form></section>`;
+  }
+
+  renderPendingWorkflowMessage() {
+    if (!this.pendingWorkflow) return "";
+    return `<aside class="physical-dialog" role="dialog" aria-modal="true"><span class="eyebrow">Richiedi modifiche</span><h2>Che cosa deve essere rivisto?</h2><label>Messaggio<textarea rows="4" data-workflow-message-input>${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Invia richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></aside>`;
+  }
+
+  renderCurrentSection() {
+    if (this.activeSection === "general") return this.renderGeneral();
+    if (this.activeSection === "mappings") return this.renderMappings();
+    return this.renderDefinitionSection(this.activeSection);
+  }
+
+  render() {
+    if (!this.data) {
+      this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`;
+      return;
+    }
+    const vocabulary = this.data.physicalVocabulary;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}</main>`;
+    const workflowMessageInput = this.querySelector("[data-workflow-message-input]");
+    workflowMessageInput?.addEventListener("input", () => { this.workflowMessage = workflowMessageInput.value; }, { once: true });
+  }
+}
+
+customElements.define("artaround-physical-vocabulary-editor-view", ArtAroundPhysicalVocabularyEditorView);
