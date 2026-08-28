@@ -33,6 +33,7 @@ router.post("/venues/:venueId/working-release/publish", requireAuth, venueId, co
 
 router.post("/venues/:venueId/working-layout/floors", requireAuth, venueId, controller.addLayoutFloor);
 router.patch("/venues/:venueId/working-layout/floors/:floorId", requireAuth, venueId, floorId, controller.updateLayoutFloor);
+router.post("/venues/:venueId/working-layout/floors/:floorId/map-asset", requireAuth, venueId, floorId, controller.uploadLayoutFloorPlan);
 router.put("/venues/:venueId/working-layout/floors/:floorId/calibration", requireAuth, venueId, floorId, controller.calibrateLayoutFloor);
 router.delete("/venues/:venueId/working-layout/floors/:floorId", requireAuth, venueId, floorId, controller.removeLayoutFloor);
 
