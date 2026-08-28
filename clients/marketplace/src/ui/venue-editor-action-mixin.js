@@ -24,6 +24,7 @@ export const venueActionMixin = {
   async onClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    if (await this.handleMapAuthoringClick?.(event)) return;
 
     const sectionTab = target.closest("[data-venue-section]");
     if (sectionTab) { this.showSection(sectionTab.dataset.venueSection, { scroll: true }); return; }
@@ -78,6 +79,7 @@ export const venueActionMixin = {
     if (!form) return;
     event.preventDefault();
     const data = new FormData(form);
+    if (await this.handleMapAuthoringSubmit?.(form, data)) return;
 
     if (form.matches("[data-physical-onboarding]")) {
       const mode = String(data.get("mode") || this.onboarding?.recommendedMode || "starter");
