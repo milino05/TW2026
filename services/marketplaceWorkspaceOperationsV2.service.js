@@ -4,6 +4,8 @@ const itemService = require("./itemV2.service");
 const itemAuthoring = require("./itemAuthoringV2.service");
 const namespaceService = require("./namespace.service");
 const namespaceRevisionService = require("./namespaceRevision.service");
+const physicalVocabularyService = require("./physicalVocabulary.service");
+const physicalVocabularyRevisionService = require("./physicalVocabularyRevision.service");
 const visitService = require("./visitV2.service");
 const visitPublicationService = require("./visitV2Publication.service");
 const { importEditorialContextSnapshot } = require("./marketplaceContextImportV2.service");
@@ -20,6 +22,7 @@ async function sourceAuthorityOrFail(sourceRef) {
 function workflowTarget(sourceRef, authority) {
   if (sourceRef.resourceType === "item_edition") return { kind: "item_edition", id: authority.edition?._id || authority.resource?._id };
   if (sourceRef.resourceType === "namespace") return { kind: "namespace", id: authority.aggregate?._id || authority.resource?._id };
+  if (sourceRef.resourceType === "physical_vocabulary") return { kind: "physical_vocabulary", id: authority.aggregate?._id || authority.resource?._id };
   if (sourceRef.resourceType === "visit") return { kind: "visit", id: authority.aggregate?._id || authority.resource?._id };
   return null;
 }
@@ -42,6 +45,14 @@ async function executeEditorialWorkflowOperation({ operationCode, sourceRef, aut
     if (operationCode === "workflow.withdraw_review") return namespaceRevisionService.withdrawNamespaceReview({ namespaceId: target.id, actorUserId });
     if (operationCode === "workflow.request_changes") return namespaceRevisionService.requestNamespaceChanges({ namespaceId: target.id, actorUserId, message: payload?.message });
     if (operationCode === "workflow.publish") return namespaceRevisionService.publishNamespace({ namespaceId: target.id, actorUserId });
+  }
+
+  if (target.kind === "physical_vocabulary") {
+    if (operationCode === "workflow.check") return physicalVocabularyRevisionService.evaluatePhysicalVocabulary({ physicalVocabularyId: target.id, actorUserId });
+    if (operationCode === "workflow.request_review") return physicalVocabularyRevisionService.requestPhysicalVocabularyReview({ physicalVocabularyId: target.id, actorUserId });
+    if (operationCode === "workflow.withdraw_review") return physicalVocabularyRevisionService.withdrawPhysicalVocabularyReview({ physicalVocabularyId: target.id, actorUserId });
+    if (operationCode === "workflow.request_changes") return physicalVocabularyRevisionService.requestPhysicalVocabularyChanges({ physicalVocabularyId: target.id, actorUserId, message: payload?.message });
+    if (operationCode === "workflow.publish") return physicalVocabularyRevisionService.publishPhysicalVocabulary({ physicalVocabularyId: target.id, actorUserId });
   }
 
   if (target.kind === "visit") {
@@ -88,6 +99,17 @@ async function executeWorkspaceOperation({ operationCode, sourceRef, targetPrinc
       actorUserId,
     });
     return { operationCode, resultRef: { resourceType: "namespace", resourceId: result.namespace._id } };
+  }
+
+  if (operationCode === "physical_vocabulary.fork") {
+    const physicalVocabulary = sourceRef.resourceType === "physical_vocabulary" ? authority.resource : authority.aggregate;
+    if (!physicalVocabulary) throw new AppError("Physical Vocabulary sorgente non risolvibile", 409);
+    const result = await physicalVocabularyService.forkPhysicalVocabulary({
+      physicalVocabularyId: physicalVocabulary._id,
+      payload: { ownerType, ownerId, name: payload.name || null },
+      actorUserId,
+    });
+    return { operationCode, resultRef: { resourceType: "physical_vocabulary", resourceId: result.physicalVocabulary._id } };
   }
 
   if (operationCode === "visit.copy_detached") {

@@ -4,7 +4,7 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
 
-const DIRECT_OPERATIONS = new Set(["content.fork", "namespace.fork", "visit.copy_detached", "context.import_snapshot"]);
+const DIRECT_OPERATIONS = new Set(["content.fork", "namespace.fork", "physical_vocabulary.fork", "visit.copy_detached", "context.import_snapshot"]);
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function refId(ref) { return String(ref?.resourceId || ""); }
 function refType(ref) { return String(ref?.resourceType || ""); }

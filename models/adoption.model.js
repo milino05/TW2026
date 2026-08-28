@@ -7,6 +7,7 @@ const ADOPTION_ACTIONS = Object.freeze([
   "content_fork",
   "namespace_use",
   "namespace_fork",
+  "physical_vocabulary_fork",
   "context_reference",
   "context_import",
   "context_venue_primary",
@@ -19,6 +20,7 @@ const TARGET_RESOURCE_TYPES = Object.freeze([
   "item_edition",
   "editorial_context",
   "namespace",
+  "physical_vocabulary",
   "visit",
   "venue",
 ]);

@@ -1,5 +1,7 @@
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
@@ -78,6 +80,81 @@ async function getNamespaceManagementProjection({ namespaceId, actorUserId }) {
       },
     } : null,
     availableOperations: namespaceOperations({ namespace, revision, permissions }),
+  };
+}
+
+function physicalVocabularyOperations({ physicalVocabulary, revision, permissions }) {
+  const can = (code) => physicalVocabulary.ownerType === "user" || permissions.has(code);
+  const status = revision?.status || null;
+  const editable = ["draft", "changes_requested"].includes(status);
+  const operations = can("physical_vocabulary.edit")
+    ? [operation("physical_vocabulary.update", "Modifica dettagli")]
+    : [];
+  if (!physicalVocabulary.workingRevisionId && can("physical_vocabulary.edit")) {
+    operations.push(operation("physical_vocabulary.working.ensure", revision ? "Crea nuova bozza dalla versione pubblicata" : "Crea bozza"));
+  }
+  if (editable && can("physical_vocabulary.edit")) {
+    operations.push(operation("physical_vocabulary.revision.update", "Salva definizioni"));
+    operations.push(operation("physical_vocabulary.starter.apply", "Applica starter ArtAround"));
+    operations.push(operation("physical_vocabulary.revision.check", "Controlla integrità"));
+    if (physicalVocabulary.ownerType === "organization") operations.push(operation("physical_vocabulary.revision.request_review", "Richiedi revisione"));
+    else operations.push(operation("physical_vocabulary.revision.publish", "Pubblica"));
+  }
+  if (status === "in_review" && physicalVocabulary.ownerType === "organization") {
+    if (can("physical_vocabulary.edit")) operations.push(operation("physical_vocabulary.revision.withdraw_review", "Ritira dalla revisione"));
+    if (can("physical_vocabulary.review")) operations.push(operation("physical_vocabulary.revision.request_changes", "Richiedi modifiche", { requiresMessage: true }));
+    if (can("physical_vocabulary.publish")) operations.push(operation("physical_vocabulary.revision.publish", "Approva e pubblica"));
+  }
+  if (can("physical_vocabulary.lifecycle.manage")) operations.push(operation("physical_vocabulary.trash", "Sposta nel cestino"));
+  return operations;
+}
+
+async function getPhysicalVocabularyManagementProjection({ physicalVocabularyId, actorUserId }) {
+  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: physicalVocabularyId, lifecycleStatus: "active" }).lean();
+  if (!physicalVocabulary) throw new AppError("Physical Vocabulary non disponibile", 404);
+  let permissions = new Set();
+  if (physicalVocabulary.ownerType === "organization") {
+    const authority = await assertOrganizationPermission({
+      userId: actorUserId,
+      organizationId: physicalVocabulary.ownerId,
+      permissionCode: "physical_vocabulary.view",
+    });
+    permissions = new Set(authority.effectivePermissions);
+  } else {
+    await assertCanActForOwner({ actorUserId, ownerType: physicalVocabulary.ownerType, ownerId: physicalVocabulary.ownerId });
+  }
+  const revisionId = physicalVocabulary.workingRevisionId || physicalVocabulary.publishedRevisionId;
+  const revision = revisionId ? await PhysicalVocabularyRevision.findById(revisionId).lean() : null;
+  if (revisionId && !revision) throw new AppError("PhysicalVocabularyRevision non disponibile", 409);
+  return {
+    physicalVocabulary: {
+      id: physicalVocabulary._id,
+      name: physicalVocabulary.name,
+      description: physicalVocabulary.description || "",
+      owner: { type: physicalVocabulary.ownerType, id: physicalVocabulary.ownerId },
+      source: physicalVocabulary.workingRevisionId ? "working" : (physicalVocabulary.publishedRevisionId ? "published" : "empty"),
+    },
+    revision: revision ? {
+      id: revision._id,
+      version: revision.version,
+      status: revision.status,
+      integrity: {
+        status: revision.integrity?.status || "needs_review",
+        issues: (revision.integrity?.issues || []).map((issue) => ({
+          field: issue.field || "",
+          code: issue.code || "",
+          message: issue.message || "",
+          severity: issue.severity || "error",
+        })),
+      },
+      definitions: {
+        placeTypes: revision.placeTypes || [],
+        connectionTypes: revision.connectionTypes || [],
+        physicalAttributes: revision.physicalAttributes || [],
+        routingProfiles: revision.routingProfiles || [],
+      },
+    } : null,
+    availableOperations: physicalVocabularyOperations({ physicalVocabulary, revision, permissions }),
   };
 }
 
@@ -177,7 +254,9 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
 
 module.exports = {
   namespaceOperations,
+  physicalVocabularyOperations,
   venueOperations,
   getNamespaceManagementProjection,
+  getPhysicalVocabularyManagementProjection,
   getVenueManagementProjection,
 };

@@ -6,16 +6,19 @@ const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
 
-const LIVE_RESOURCE_TYPES = new Set(["item_edition", "editorial_context", "namespace", "visit"]);
-const SNAPSHOT_RESOURCE_TYPES = new Set(["item_revision", "editorial_release", "namespace_revision", "visit_revision"]);
+const LIVE_RESOURCE_TYPES = new Set(["item_edition", "editorial_context", "namespace", "physical_vocabulary", "visit"]);
+const SNAPSHOT_RESOURCE_TYPES = new Set(["item_revision", "editorial_release", "namespace_revision", "physical_vocabulary_revision", "visit_revision"]);
 const LIVE_TO_SNAPSHOT_RESOURCE_TYPE = Object.freeze({
   item_edition: "item_revision",
   editorial_context: "editorial_release",
   namespace: "namespace_revision",
+  physical_vocabulary: "physical_vocabulary_revision",
   visit: "visit_revision",
 });
 
@@ -66,6 +69,18 @@ async function loadNamespaceRevisionAuthority(resourceId) {
   return namespace ? { ...owner(namespace.ownerType, namespace.ownerId), resource: revision, aggregate: namespace } : null;
 }
 
+async function loadPhysicalVocabularyAuthority(resourceId) {
+  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+  return physicalVocabulary ? { ...owner(physicalVocabulary.ownerType, physicalVocabulary.ownerId), resource: physicalVocabulary } : null;
+}
+
+async function loadPhysicalVocabularyRevisionAuthority(resourceId) {
+  const revision = await PhysicalVocabularyRevision.findById(resourceId).lean();
+  if (!revision) return null;
+  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: revision.physicalVocabularyId, lifecycleStatus: "active" }).lean();
+  return physicalVocabulary ? { ...owner(physicalVocabulary.ownerType, physicalVocabulary.ownerId), resource: revision, aggregate: physicalVocabulary } : null;
+}
+
 async function loadVisitAuthority(resourceId) {
   const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
   return visit ? { ...owner(visit.ownerType, visit.ownerId), resource: visit } : null;
@@ -86,6 +101,8 @@ async function resolveResourceAuthority(resourceType, resourceId) {
     case "editorial_release": return loadReleaseAuthority(resourceId);
     case "namespace": return loadNamespaceAuthority(resourceId);
     case "namespace_revision": return loadNamespaceRevisionAuthority(resourceId);
+    case "physical_vocabulary": return loadPhysicalVocabularyAuthority(resourceId);
+    case "physical_vocabulary_revision": return loadPhysicalVocabularyRevisionAuthority(resourceId);
     case "visit": return loadVisitAuthority(resourceId);
     case "visit_revision": return loadVisitRevisionAuthority(resourceId);
     default: return null;
@@ -97,6 +114,7 @@ function publishedSnapshotStatus(resourceType, authority) {
   if (resourceType === "item_revision") return ["published", "superseded"].includes(authority.resource.status);
   if (resourceType === "editorial_release") return authority.resource.integrity?.status === "valid";
   if (resourceType === "namespace_revision") return ["published", "superseded"].includes(authority.resource.status);
+  if (resourceType === "physical_vocabulary_revision") return ["published", "superseded"].includes(authority.resource.status);
   if (resourceType === "visit_revision") return ["published", "superseded"].includes(authority.resource.status);
   return false;
 }
@@ -116,6 +134,11 @@ async function resolveCurrentSnapshotRef(resourceType, authority) {
   if (resourceType === "namespace") {
     return authority.resource.publishedRevisionId
       ? { resourceType: "namespace_revision", resourceId: authority.resource.publishedRevisionId }
+      : null;
+  }
+  if (resourceType === "physical_vocabulary") {
+    return authority.resource.publishedRevisionId
+      ? { resourceType: "physical_vocabulary_revision", resourceId: authority.resource.publishedRevisionId }
       : null;
   }
   if (resourceType === "visit") {
@@ -151,6 +174,11 @@ async function listPublishedSnapshotRefsForLive(resourceType, resourceId) {
       namespaceId: authority.resource._id,
       status: { $in: ["published", "superseded"] },
     }).sort({ version: -1 }).select("_id").lean();
+  } else if (resourceType === "physical_vocabulary") {
+    snapshots = await PhysicalVocabularyRevision.find({
+      physicalVocabularyId: authority.resource._id,
+      status: { $in: ["published", "superseded"] },
+    }).sort({ version: -1 }).select("_id").lean();
   } else if (resourceType === "visit") {
     snapshots = await VisitRevisionV2.find({
       visitId: authority.resource._id,
@@ -165,6 +193,7 @@ async function loadSnapshotProjection(resourceType, snapshotRef, authority) {
   if (resourceType === "item_edition") return ItemRevisionV2.findById(snapshotRef.resourceId).lean();
   if (resourceType === "editorial_context") return EditorialRelease.findById(snapshotRef.resourceId).lean();
   if (resourceType === "namespace") return NamespaceRevision.findById(snapshotRef.resourceId).lean();
+  if (resourceType === "physical_vocabulary") return PhysicalVocabularyRevision.findById(snapshotRef.resourceId).lean();
   if (resourceType === "visit") return VisitRevisionV2.findById(snapshotRef.resourceId).lean();
   return authority.resource;
 }
@@ -181,6 +210,10 @@ function assetText(resourceType, authority, snapshot) {
   if (resourceType === "namespace" || resourceType === "namespace_revision") {
     const namespace = resourceType === "namespace" ? authority.resource : authority.aggregate;
     return { title: namespace?.name || "Namespace", summary: namespace?.description || "" };
+  }
+  if (resourceType === "physical_vocabulary" || resourceType === "physical_vocabulary_revision") {
+    const physicalVocabulary = resourceType === "physical_vocabulary" ? authority.resource : authority.aggregate;
+    return { title: physicalVocabulary?.name || "Vocabolario fisico", summary: physicalVocabulary?.description || "" };
   }
   if (resourceType === "visit" || resourceType === "visit_revision") {
     const revision = resourceType === "visit_revision" ? authority.resource : snapshot;

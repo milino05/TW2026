@@ -23,7 +23,8 @@ test("i permessi effettivi sono l'unione dei ruoli e includono i prerequisiti", 
 test("i sei ruoli iniziali coprono le matrici approvate", () => {
   assert.deepEqual(STARTER_ROLES.map((role) => role.name), ["Administrator", "Curator", "Contributor", "Venue Manager", "Marketplace Manager", "Viewer"]);
   assert.ok(STARTER_ROLES.find((role) => role.key === "administrator").permissionCodes.includes("organization.roles.manage"));
-  assert.equal(STARTER_ROLES.find((role) => role.key === "venue_manager").permissionCodes.every((code) => code.startsWith("venue.")), true);
+  assert.equal(STARTER_ROLES.find((role) => role.key === "venue_manager").permissionCodes.every((code) => code.startsWith("venue.") || code.startsWith("physical_vocabulary.")), true);
+  assert.ok(STARTER_ROLES.find((role) => role.key === "venue_manager").permissionCodes.includes("physical_vocabulary.publish"));
 });
 
 test("l'ownership personale resta distinta dall'autorità Organization", () => {

@@ -1,0 +1,21 @@
+const mongoose = require("mongoose");
+const { Schema } = mongoose;
+
+const PhysicalVocabularySchema = new Schema({
+  name: { type: String, required: true, trim: true },
+  description: { type: String, trim: true, default: null },
+  ownerType: { type: String, enum: ["user", "organization"], required: true, index: true },
+  ownerId: { type: Schema.Types.ObjectId, required: true, index: true },
+  forkedFromPhysicalVocabularyId: { type: Schema.Types.ObjectId, ref: "PhysicalVocabulary", default: null, index: true },
+  forkedFromPhysicalVocabularyRevisionId: { type: Schema.Types.ObjectId, ref: "PhysicalVocabularyRevision", default: null },
+  publishedRevisionId: { type: Schema.Types.ObjectId, ref: "PhysicalVocabularyRevision", default: null, index: true },
+  workingRevisionId: { type: Schema.Types.ObjectId, ref: "PhysicalVocabularyRevision", default: null, index: true },
+  lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
+  trashedAt: { type: Date, default: null },
+  trashedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+}, { timestamps: true });
+
+PhysicalVocabularySchema.index({ ownerType: 1, ownerId: 1, lifecycleStatus: 1, name: 1 });
+
+module.exports = mongoose.model("PhysicalVocabulary", PhysicalVocabularySchema);

@@ -5,6 +5,8 @@ const RESOURCE_TYPES = Object.freeze([
   "editorial_release",
   "namespace",
   "namespace_revision",
+  "physical_vocabulary",
+  "physical_vocabulary_revision",
   "visit",
   "visit_revision",
 ]);
@@ -19,6 +21,8 @@ const CAPABILITY_DEFINITIONS = Object.freeze({
   "context.import_snapshot": ["editorial_context", "editorial_release"],
   "namespace.author": ["namespace", "namespace_revision"],
   "namespace.fork": ["namespace", "namespace_revision"],
+  "physical_vocabulary.author": ["physical_vocabulary", "physical_vocabulary_revision"],
+  "physical_vocabulary.fork": ["physical_vocabulary", "physical_vocabulary_revision"],
   "visit.execute": ["visit", "visit_revision"],
   "visit.copy_detached": ["visit", "visit_revision"],
 });

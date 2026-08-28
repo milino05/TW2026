@@ -28,6 +28,8 @@ const CAPABILITY_LABELS = Object.freeze({
   "context.import_snapshot": "Importa uno snapshot editoriale",
   "namespace.author": "Crea contenuti con questo Namespace",
   "namespace.fork": "Crea un Namespace derivato",
+  "physical_vocabulary.author": "Usa questo vocabolario fisico in una sede",
+  "physical_vocabulary.fork": "Crea un vocabolario fisico derivato",
   "visit.execute": "Esegui questa visita",
   "visit.copy_detached": "Crea una copia indipendente della visita",
 });

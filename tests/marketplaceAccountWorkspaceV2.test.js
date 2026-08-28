@@ -8,6 +8,7 @@ const {
 } = require("../services/marketplaceAccountWorkspaceV2.service");
 const {
   namespaceOperations,
+  physicalVocabularyOperations,
   venueOperations,
 } = require("../services/marketplaceManagementV2.service");
 
@@ -51,6 +52,14 @@ test("Management projections expose only workflow operations valid for the curre
   const organizationId = oid();
   const editor = new Set(["namespace.edit", "namespace.review", "namespace.publish"]);
   assert.deepEqual(
+    physicalVocabularyOperations({
+      physicalVocabulary: { ownerType: "organization", ownerId: organizationId, workingRevisionId: oid() },
+      revision: { status: "in_review" },
+      permissions: new Set(["physical_vocabulary.view", "physical_vocabulary.publish"]),
+    }).map((entry) => entry.code),
+    ["physical_vocabulary.revision.publish"],
+  );
+  assert.deepEqual(
     namespaceOperations({
       namespace: { ownerType: "organization", ownerId: organizationId, workingRevisionId: oid() },
       revision: { status: "draft" },
@@ -75,6 +84,8 @@ test("Account Workspace groups personal and Organization resources without mergi
     const Venue = require("../models/venue.model");
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
+    const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+    const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
     const { getMarketplaceAccountWorkspace, getMarketplaceOrganizationDetail } = require("../services/marketplaceAccountWorkspaceV2.service");
 
     const [manager, operator] = await User.create([
@@ -100,12 +111,27 @@ test("Account Workspace groups personal and Organization resources without mergi
     organizationNamespace.workingRevisionId = revision._id;
     await organizationNamespace.save();
 
+    const [personalPhysicalVocabulary, organizationPhysicalVocabulary] = await PhysicalVocabulary.create([
+      { name: "Spazi personali", ownerType: "user", ownerId: manager._id, createdBy: manager._id },
+      { name: "Spazi museali", ownerType: "organization", ownerId: organization._id, createdBy: manager._id },
+    ]);
+    const physicalRevision = await PhysicalVocabularyRevision.create({
+      physicalVocabularyId: organizationPhysicalVocabulary._id,
+      version: 1,
+      status: "draft",
+      createdBy: manager._id,
+      updatedBy: manager._id,
+    });
+    organizationPhysicalVocabulary.workingRevisionId = physicalRevision._id;
+    await organizationPhysicalVocabulary.save();
+
     const projection = await getMarketplaceAccountWorkspace({ actorUserId: manager._id });
     assert.equal(projection.account.username, "account-manager");
     assert.equal(projection.personalNamespaces.length, 1);
     assert.equal(String(projection.personalNamespaces[0].id), String(personalNamespace._id));
+    assert.equal(String(projection.personalPhysicalVocabularies[0].id), String(personalPhysicalVocabulary._id));
     assert.equal(projection.organizations.length, 1);
-    assert.deepEqual(projection.organizations[0].counts, { members: 2, venues: 1, namespaces: 1 });
+    assert.deepEqual(projection.organizations[0].counts, { members: 2, venues: 1, namespaces: 1, physicalVocabularies: 1 });
 
     const detail = await getMarketplaceOrganizationDetail({ actorUserId: manager._id, organizationId: organization._id, limit: 1 });
     assert.equal(detail.members.total, 2);
@@ -113,12 +139,18 @@ test("Account Workspace groups personal and Organization resources without mergi
     assert.equal(detail.venues.results[0].name, "Pinacoteca");
     assert.equal(detail.namespaces.results[0].name, "Vocabolario museale");
     assert.equal(detail.namespaces.results[0].state.mode, "working");
+    assert.equal(detail.physicalVocabularies.results[0].name, "Spazi museali");
+    assert.equal(detail.physicalVocabularies.results[0].state.mode, "working");
 
-    const { getNamespaceManagementProjection, getVenueManagementProjection } = require("../services/marketplaceManagementV2.service");
+    const { getNamespaceManagementProjection, getPhysicalVocabularyManagementProjection, getVenueManagementProjection } = require("../services/marketplaceManagementV2.service");
     const namespaceEditor = await getNamespaceManagementProjection({ namespaceId: organizationNamespace._id, actorUserId: manager._id });
     assert.equal(namespaceEditor.namespace.source, "working");
     assert.equal(namespaceEditor.revision.status, "draft");
     assert.ok(namespaceEditor.availableOperations.some((entry) => entry.code === "namespace.revision.update"));
+    const physicalVocabularyEditor = await getPhysicalVocabularyManagementProjection({ physicalVocabularyId: organizationPhysicalVocabulary._id, actorUserId: manager._id });
+    assert.equal(physicalVocabularyEditor.physicalVocabulary.source, "working");
+    assert.equal(physicalVocabularyEditor.revision.status, "draft");
+    assert.ok(physicalVocabularyEditor.availableOperations.some((entry) => entry.code === "physical_vocabulary.starter.apply"));
 
     const venue = await Venue.findOne({ ownerOrganizationId: organization._id });
     const venueEditor = await getVenueManagementProjection({ venueId: venue._id, actorUserId: operator._id });
