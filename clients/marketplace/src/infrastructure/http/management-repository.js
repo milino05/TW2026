@@ -61,6 +61,9 @@ export const managementRepository = {
   venueWorkflow(venueId, action, { method = "POST", payload = {} } = {}) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/${action}`, { method, ...(method === "DELETE" ? {} : body(payload)) });
   },
+  detachVenueTarget(venueId, targetId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}`, { method: "DELETE" });
+  },
   setVenueTargetAvailability(venueId, targetId, availability) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}/availability`, { method: "PUT", ...body({ availability }) });
   },
