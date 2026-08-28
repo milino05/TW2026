@@ -11,10 +11,19 @@ const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
 const { assertVenuePermission } = require("./venueAuthorization.service");
 const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function operation(code, label, extra = {}) { return { code, label, ...extra }; }
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
+function projectedIssue(issue) {
+  return {
+    field: issue?.field || "",
+    code: issue?.code || "",
+    message: issue?.message || "",
+    severity: issue?.severity || "error",
+  };
+}
 
 function namespaceOperations({ namespace, revision, permissions }) {
   const can = (code) => namespace.ownerType === "user" || permissions.has(code);
@@ -63,12 +72,7 @@ async function getNamespaceManagementProjection({ namespaceId, actorUserId }) {
       status: revision.status,
       integrity: {
         status: revision.integrity?.status || "needs_review",
-        issues: (revision.integrity?.issues || []).map((issue) => ({
-          field: issue.field || "",
-          code: issue.code || "",
-          message: issue.message || "",
-          severity: issue.severity || "error",
-        })),
+        issues: (revision.integrity?.issues || []).map(projectedIssue),
       },
       definitions: {
         subjectClasses: revision.subjectClasses || [],
@@ -140,12 +144,7 @@ async function getPhysicalVocabularyManagementProjection({ physicalVocabularyId,
       status: revision.status,
       integrity: {
         status: revision.integrity?.status || "needs_review",
-        issues: (revision.integrity?.issues || []).map((issue) => ({
-          field: issue.field || "",
-          code: issue.code || "",
-          message: issue.message || "",
-          severity: issue.severity || "error",
-        })),
+        issues: (revision.integrity?.issues || []).map(projectedIssue),
       },
       definitions: {
         placeTypes: revision.placeTypes || [],
@@ -179,12 +178,17 @@ function venueOperations({ release, permissions, hasWorking }) {
 function projectTarget(target, subject, permissions, binding) {
   return {
     id: target._id,
+    publicCode: target.publicCode,
     label: target.label,
     description: target.description || "",
     subject: subject ? { id: subject._id, label: subject.preferredLabel, description: subject.description || "" } : { id: target.subjectId, missing: true },
     binding: binding ? {
       availability: binding.availability || "active",
-      recognitionMedia: (binding.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })),
+      recognitionMedia: (binding.recognitionMedia || []).map((media) => ({
+        id: media._id,
+        url: media.url,
+        altText: media.altText || "",
+      })),
     } : null,
     availableOperations: [
       ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
@@ -209,6 +213,16 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
   const subjectById = new Map(subjects.map((subject) => [id(subject._id), subject]));
   const bindingByTargetId = new Map((release?.targetBindings || []).map((binding) => [id(binding.venueTargetId), binding]));
   const source = venue.workingReleaseId ? "working" : (venue.publishedReleaseId ? "published" : "empty");
+  const liveIssues = venue.workingReleaseId && release && layout
+    ? await computeVenueReleaseIssues({ venue, release, layout })
+    : [];
+  const physicalVocabulary = vocabularyBundle?.physicalVocabulary || null;
+  const canManagePinnedVocabulary = Boolean(physicalVocabulary && (
+    (physicalVocabulary.ownerType === "organization"
+      && id(physicalVocabulary.ownerId) === id(venue.ownerOrganizationId)
+      && permissions.has("physical_vocabulary.view"))
+    || (physicalVocabulary.ownerType === "user" && id(physicalVocabulary.ownerId) === id(actorUserId))
+  ));
 
   return {
     venue: {
@@ -224,13 +238,12 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       status: release.status,
       integrity: {
         status: release.integrity?.status || "needs_review",
-        issues: (release.integrity?.issues || []).map((issue) => ({
-          field: issue.field || "",
-          code: issue.code || "",
-          message: issue.message || "",
-          severity: issue.severity || "error",
-        })),
+        issues: (release.integrity?.issues || []).map(projectedIssue),
       },
+      liveIntegrity: venue.workingReleaseId ? {
+        status: liveIssues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid",
+        issues: liveIssues.map(projectedIssue),
+      } : null,
       preVisitInformation: release.preVisitInformation || [],
     } : null,
     layout: layout ? {
@@ -243,11 +256,12 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       connections: plain(layout).connections || [],
     } : null,
     physicalVocabulary: vocabularyBundle ? {
-      id: vocabularyBundle.physicalVocabulary._id,
-      name: vocabularyBundle.physicalVocabulary.name,
+      id: physicalVocabulary._id,
+      name: physicalVocabulary.name,
       revisionId: vocabularyBundle.revision._id,
       version: vocabularyBundle.revision.version,
       status: vocabularyBundle.revision.status,
+      canManage: canManagePinnedVocabulary,
       definitions: {
         placeTypes: plain(vocabularyBundle.revision).placeTypes || [],
         connectionTypes: plain(vocabularyBundle.revision).connectionTypes || [],
