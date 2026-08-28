@@ -10,20 +10,13 @@ const WORKFLOW_CONFIG = {
   "venue.release.publish": ["publish", {}],
 };
 
-function media(value) {
-  return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
-    const separator = line.indexOf("|");
-    return separator < 0
-      ? { url: line, altText: "" }
-      : { url: line.slice(0, separator).trim(), altText: line.slice(separator + 1).trim() };
-  });
-}
 function number(value, fallback = null) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 
 export const venueActionMixin = {
   async onClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    if (await this.handleTargetMediaClick?.(event)) return;
     if (await this.handleMapAuthoringClick?.(event)) return;
 
     const sectionTab = target.closest("[data-venue-section]");
@@ -80,6 +73,7 @@ export const venueActionMixin = {
     event.preventDefault();
     const data = new FormData(form);
     if (await this.handleMapAuthoringSubmit?.(form, data)) return;
+    if (await this.handleTargetMediaSubmit?.(form, data)) return;
 
     if (form.matches("[data-physical-onboarding]")) {
       const mode = String(data.get("mode") || this.onboarding?.recommendedMode || "starter");
@@ -112,11 +106,12 @@ export const venueActionMixin = {
       return;
     }
 
-    if (form.matches("[data-target-binding]")) {
-      await this.execute(() => managementRepository.setVenueTargetBinding(this.id, form.dataset.targetBinding, {
-        availability: String(data.get("availability") || "active"),
-        recognitionMedia: media(data.get("recognitionMedia")),
-      }), "Disponibilità e immagini aggiornate.");
+    if (form.matches("[data-target-availability]")) {
+      await this.execute(() => managementRepository.setVenueTargetAvailability(
+        this.id,
+        form.dataset.targetAvailability,
+        String(data.get("availability") || "active"),
+      ), "Disponibilità dell'oggetto aggiornata.");
       return;
     }
 
@@ -135,53 +130,18 @@ export const venueActionMixin = {
       return;
     }
 
-    if (form.matches("[data-calibrate-floor]")) {
-      await this.execute(() => managementRepository.calibrateVenueFloor(this.id, form.dataset.calibrateFloor, {
-        method: "line",
-        distanceMeters: number(data.get("distanceMeters")),
-        line: {
-          from: { x: number(data.get("fromX")), y: number(data.get("fromY")) },
-          to: { x: number(data.get("toX")), y: number(data.get("toY")) },
-        },
-      }), "Piano calibrato.");
-      return;
-    }
-
-    if (form.matches("[data-add-place]")) {
-      await this.execute(() => managementRepository.createVenuePlace(this.id, {
-        floorId: String(data.get("floorId") || ""),
-        placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
+    if (form.matches("[data-floor-metadata]")) {
+      await this.execute(() => managementRepository.updateVenueFloor(this.id, form.dataset.floorMetadata, {
         label: String(data.get("label") || ""),
-        position: { x: number(data.get("x"), 0.5), y: number(data.get("y"), 0.5) },
-      }), "Luogo aggiunto.");
+      }), "Nome del piano aggiornato.");
       return;
     }
 
     if (form.matches("[data-place-editor]")) {
-      const placeId = form.dataset.placeEditor;
-      const position = { x: number(data.get("x")), y: number(data.get("y")) };
-      await this.execute(async () => {
-        await managementRepository.updateVenuePlace(this.id, placeId, {
-          label: String(data.get("label") || ""),
-          placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
-        });
-        return managementRepository.moveVenuePlace(this.id, placeId, position);
-      }, "Luogo aggiornato.");
-      return;
-    }
-
-    if (form.matches("[data-add-connection]")) {
-      const metricMode = String(data.get("metricMode") || "manual_override");
-      const payload = {
-        fromPlaceId: String(data.get("fromPlaceId") || ""),
-        toPlaceId: String(data.get("toPlaceId") || ""),
-        connectionTypeDefinitionId: String(data.get("connectionTypeDefinitionId") || "") || null,
-        directionality: String(data.get("directionality") || "bidirectional"),
-        metricMode,
-        additionalDelaySeconds: number(data.get("additionalDelaySeconds"), 0),
-      };
-      if (metricMode !== "geometry_derived") payload.distanceMeters = number(data.get("distanceMeters"));
-      await this.execute(() => managementRepository.createVenueConnection(this.id, payload), "Collegamento aggiunto.");
+      await this.execute(() => managementRepository.updateVenuePlace(this.id, form.dataset.placeEditor, {
+        label: String(data.get("label") || ""),
+        placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
+      }), "Luogo aggiornato.");
       return;
     }
 
@@ -196,14 +156,6 @@ export const venueActionMixin = {
       };
       if (metricMode !== "geometry_derived") payload.distanceMeters = number(data.get("distanceMeters"));
       await this.execute(() => managementRepository.updateVenueConnection(this.id, form.dataset.connectionEditor, payload), "Collegamento aggiornato.");
-      return;
-    }
-
-    if (form.matches("[data-target-placement]")) {
-      await this.execute(() => managementRepository.setVenueTargetPlacement(this.id, form.dataset.targetPlacement, {
-        primaryPlaceId: String(data.get("primaryPlaceId") || ""),
-        placeIds: [],
-      }), "Collocazione dell'oggetto aggiornata.");
     }
   },
 
