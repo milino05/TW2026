@@ -11,6 +11,8 @@ const NamespaceSchema = new Schema({
   publishedRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", default: null, index: true },
   workingRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", default: null, index: true },
   lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
+  trashedAt: { type: Date, default: null },
+  trashedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
 }, { timestamps: true });
 
