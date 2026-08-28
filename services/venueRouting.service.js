@@ -17,6 +17,7 @@ function routeBetweenVenueTargets({ layoutRevision, fromVenueTargetId, toVenueTa
   if (!fromPlaceId || !toPlaceId) throw new AppError("VenueTarget non posizionato nella LayoutRevision", 409);
   const route = resolveRoute({
     connections: layoutRevision.connections || [],
+    places: layoutRevision.places || [],
     fromPlaceId,
     toPlaceId,
     requirements,
