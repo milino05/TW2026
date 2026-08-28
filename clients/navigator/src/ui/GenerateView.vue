@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import { useConfiguredVenueStore } from "../application/stores";
+import ReliableSelect from "./ReliableSelect.vue";
 import {
   generatorRepository,
   type GenerationNavigationRequirement,
@@ -43,6 +44,21 @@ const choiceRoutingPriorities = ref<Record<string, "preferred" | "required" | "a
 const busy = ref(true);
 const generating = ref(false);
 const error = ref<string | null>(null);
+
+const booleanRoutingOptions = [
+  { value: "", label: "Nessuna preferenza" },
+  { value: "preferred:true", label: "Preferisci: sì" },
+  { value: "preferred:false", label: "Preferisci: no" },
+  { value: "avoid:true", label: "Evita: sì" },
+  { value: "avoid:false", label: "Evita: no" },
+  { value: "required:true", label: "Necessario: sì" },
+  { value: "required:false", label: "Necessario: no" },
+];
+const routingPriorityOptions = [
+  { value: "preferred", label: "Preferenza" },
+  { value: "avoid", label: "Evita" },
+  { value: "required", label: "Necessario" },
+];
 
 function sourceKey(source: GenerationSourceRef) {
   return `${source.resourceType}:${source.resourceId}`;
@@ -92,6 +108,20 @@ const routingProfilesByVenue = computed(() => options.value?.controls.navigation
 const selectedSourceCount = computed(() => selectedSourceKeys.value.length);
 const selectedRoutingProfileCount = computed(() => Object.values(selectedRoutingProfiles.value).filter(Boolean).length);
 const additionalVenueCount = computed(() => selectedVenueIds.value.filter((id) => id !== venueId.value).length);
+
+function routingProfileOptions(group: GenerationOptionsProjection["controls"]["navigation"]["profilesByVenue"][number]) {
+  return [
+    { value: "", label: "Nessun profilo specifico" },
+    ...group.profiles.map((profile) => ({ value: profile.definitionId, label: profile.label })),
+  ];
+}
+
+function choiceControlOptions(control: GenerationOptionsProjection["controls"]["navigation"]["requirements"][number]) {
+  return [
+    { value: "", label: "Nessuna preferenza" },
+    ...(control.options || []).map((option) => ({ value: option.value, label: option.label })),
+  ];
+}
 
 function reconcileRoutingProfiles(projection: GenerationOptionsProjection) {
   const selectedVenues = new Set(projection.physicalScope.selectedVenueIds.map(String));
@@ -436,10 +466,12 @@ async function generate() {
         <section v-for="group in routingProfilesByVenue" :key="group.venueId" class="routing-profile-group">
           <label>
             <strong>{{ venueLabel(group.venueId) }}</strong>
-            <select v-model="selectedRoutingProfiles[group.venueId]" :disabled="generating">
-              <option value="">Nessun profilo specifico</option>
-              <option v-for="profile in group.profiles" :key="profile.definitionId" :value="profile.definitionId">{{ profile.label }}</option>
-            </select>
+            <ReliableSelect
+              v-model="selectedRoutingProfiles[group.venueId]"
+              :options="routingProfileOptions(group)"
+              :label="`Profilo di percorso per ${venueLabel(group.venueId)}`"
+              :disabled="generating"
+            />
           </label>
           <template v-if="selectedProfile(group)">
             <p>{{ selectedProfile(group)?.description }}</p>
@@ -457,15 +489,7 @@ async function generate() {
           <div v-for="control in routingControls" :key="control.key" class="routing-row">
             <label v-if="control.dataType === 'boolean'">
               {{ control.label }}
-              <select v-model="booleanRoutingChoices[control.key]" :disabled="generating">
-                <option value="">Nessuna preferenza</option>
-                <option value="preferred:true">Preferisci: sì</option>
-                <option value="preferred:false">Preferisci: no</option>
-                <option value="avoid:true">Evita: sì</option>
-                <option value="avoid:false">Evita: no</option>
-                <option value="required:true">Necessario: sì</option>
-                <option value="required:false">Necessario: no</option>
-              </select>
+              <ReliableSelect v-model="booleanRoutingChoices[control.key]" :options="booleanRoutingOptions" :label="control.label" :disabled="generating" />
             </label>
             <template v-else-if="control.dataType === 'number'">
               <label>
@@ -474,28 +498,17 @@ async function generate() {
               </label>
               <label>
                 Importanza
-                <select v-model="numericRoutingPriorities[control.key]" :disabled="generating">
-                  <option value="preferred">Preferenza</option>
-                  <option value="avoid">Evita</option>
-                  <option value="required">Necessario</option>
-                </select>
+                <ReliableSelect v-model="numericRoutingPriorities[control.key]" :options="routingPriorityOptions" label="Importanza" :disabled="generating" />
               </label>
             </template>
             <template v-else-if="control.dataType === 'choice'">
               <label>
                 {{ control.label }}
-                <select v-model="choiceRoutingValues[control.key]" :disabled="generating">
-                  <option value="">Nessuna preferenza</option>
-                  <option v-for="option in control.options" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </select>
+                <ReliableSelect v-model="choiceRoutingValues[control.key]" :options="choiceControlOptions(control)" :label="control.label" :disabled="generating" />
               </label>
               <label>
                 Importanza
-                <select v-model="choiceRoutingPriorities[control.key]" :disabled="generating">
-                  <option value="preferred">Preferenza</option>
-                  <option value="avoid">Evita</option>
-                  <option value="required">Necessario</option>
-                </select>
+                <ReliableSelect v-model="choiceRoutingPriorities[control.key]" :options="routingPriorityOptions" label="Importanza" :disabled="generating" />
               </label>
             </template>
           </div>
