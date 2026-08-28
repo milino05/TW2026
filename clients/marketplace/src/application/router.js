@@ -40,6 +40,30 @@ function parseLogicalUrl(path) {
   }
 }
 
+function routeFeedback(pathname, search) {
+  const params = new URLSearchParams(search || "");
+  if (pathname === "/organizations/detail" && params.get("removed") === "venue") {
+    return "Sede rimossa. Release, layout e storico restano conservati; la sede non è più disponibile nelle superfici attive.";
+  }
+  return null;
+}
+
+function showRouteFeedback(message) {
+  if (!message) return;
+  const shell = document.querySelector(".market-shell");
+  if (!shell) return;
+  const previous = shell.querySelector("[data-route-feedback]");
+  previous?.remove();
+  const feedback = document.createElement("p");
+  feedback.dataset.routeFeedback = "true";
+  feedback.className = "feedback-success route-feedback";
+  feedback.setAttribute("role", "status");
+  feedback.textContent = message;
+  const header = shell.querySelector(".market-header");
+  if (header?.nextSibling) shell.insertBefore(feedback, header.nextSibling);
+  else shell.append(feedback);
+}
+
 export function currentRoute() {
   const pathname = stripBase(window.location.pathname);
   return ROUTES.has(pathname) ? pathname : "/404";
@@ -51,6 +75,7 @@ export function navigate(path) {
   const deployedPath = pathname === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${pathname}`;
   window.history.pushState({}, "", `${deployedPath}${parsed.search}${parsed.hash}`);
   window.dispatchEvent(new PopStateEvent("popstate"));
+  showRouteFeedback(routeFeedback(pathname, parsed.search));
 }
 
 export { BASE_PATH };
