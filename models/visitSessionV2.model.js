@@ -102,6 +102,11 @@ const PauseIntervalSchema = new Schema({
   endedAt: { type: Date, default: null },
 }, { _id: false });
 
+const RoutingProfileSelectionSchema = new Schema({
+  venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
+  routingProfileDefinitionId: { type: String, trim: true, required: true },
+}, { _id: false });
+
 const VisitSessionV2Schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   sourceType: { type: String, enum: ["visit", "generated_plan"], required: true, index: true },
@@ -115,6 +120,7 @@ const VisitSessionV2Schema = new Schema({
   runtimeVersion: { type: Number, min: 1, default: 1, required: true },
   navigationSnapshot: {
     movementPacePreference: { type: Number, min: 0, max: 1, default: 0.5 },
+    routingProfileSelections: { type: [RoutingProfileSelectionSchema], default: [] },
     requirements: { type: [Schema.Types.Mixed], default: [] },
   },
   sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
@@ -139,6 +145,12 @@ VisitSessionV2Schema.pre("validate", function validateSource(next) {
     const key = String(pin.venueId || "");
     if (venueIds.has(key)) { this.invalidate("venuePins", "Una Venue puo essere pinzata una sola volta per Session"); break; }
     venueIds.add(key);
+  }
+  const profileVenueIds = new Set();
+  for (const selection of this.navigationSnapshot?.routingProfileSelections || []) {
+    const venueId = String(selection.venueId || "");
+    if (profileVenueIds.has(venueId)) { this.invalidate("navigationSnapshot.routingProfileSelections", "È ammesso un solo profilo di percorso per Venue"); break; }
+    profileVenueIds.add(venueId);
   }
   next();
 });
