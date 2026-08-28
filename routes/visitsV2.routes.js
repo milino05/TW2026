@@ -7,6 +7,8 @@ const router = express.Router();
 const visitId = validateObjectIdParam("visitId");
 const anchorId = validateObjectIdParam("anchorId");
 const contentEntryId = validateObjectIdParam("contentEntryId");
+const fromAnchorId = validateObjectIdParam("fromAnchorId");
+const toAnchorId = validateObjectIdParam("toAnchorId");
 
 router.use(requireAuth);
 router.route("/v2/visits")
@@ -27,6 +29,13 @@ router.put("/v2/visits/:visitId/commands/content/:contentEntryId/stop/:anchorId"
 router.delete("/v2/visits/:visitId/commands/content/:contentEntryId/stop", visitId, contentEntryId, controller.detachContentFromStop);
 router.put("/v2/visits/:visitId/commands/content/:contentEntryId/role", visitId, contentEntryId, controller.setContentRole);
 router.delete("/v2/visits/:visitId/commands/content/:contentEntryId", visitId, contentEntryId, controller.removeContentFromVisit);
+router.put(
+  "/v2/visits/:visitId/commands/transfers/:fromAnchorId/:toAnchorId",
+  visitId,
+  fromAnchorId,
+  toAnchorId,
+  controller.setInterVenueTransfer,
+);
 
 router.post("/v2/visits/:visitId/copy", visitId, controller.copy);
 router.post("/v2/visits/:visitId/check", visitId, controller.check);
