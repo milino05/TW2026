@@ -7,6 +7,7 @@ import {
   generatorRepository,
   type GenerationNavigationRequirement,
   type GenerationOptionsProjection,
+  type GenerationRoutingProfileSelection,
   type GenerationSourceRef,
   type GenerationSubjectOption,
   type GenerationSubjectSearchResponse,
@@ -33,9 +34,10 @@ const subjectSearchMeta = ref<GenerationSubjectSearchResponse["resolver"] | null
 const subjectSearchWarnings = ref<GenerationSubjectSearchResponse["warnings"]>([]);
 const selectedSubjectIds = ref<string[]>([]);
 const searchingSubjects = ref(false);
+const selectedRoutingProfiles = ref<Record<string, string>>({});
 const booleanRoutingChoices = ref<Record<string, string>>({});
 const numericRoutingValues = ref<Record<string, number | string | null>>({});
-const numericRoutingPriorities = ref<Record<string, "preferred" | "required">>({});
+const numericRoutingPriorities = ref<Record<string, "preferred" | "required" | "avoid">>({});
 const choiceRoutingValues = ref<Record<string, string>>({});
 const choiceRoutingPriorities = ref<Record<string, "preferred" | "required" | "avoid">>({});
 const busy = ref(true);
@@ -59,9 +61,9 @@ function selectedSources(): GenerationSourceRef[] {
     .filter((source) => selected.has(sourceKey(source)));
 }
 
-function venueLabel(venueId: string) {
+function venueLabel(targetVenueId: string) {
   for (const organization of options.value?.physicalScope.organizations || []) {
-    const venue = organization.venues.find((entry) => entry.id === venueId);
+    const venue = organization.venues.find((entry) => entry.id === targetVenueId);
     if (venue) return venue.name;
   }
   return "Sede";
@@ -86,8 +88,24 @@ const selectedVenuePairs = computed(() => {
 });
 
 const routingControls = computed(() => options.value?.controls.navigation.requirements || []);
+const routingProfilesByVenue = computed(() => options.value?.controls.navigation.profilesByVenue || []);
 const selectedSourceCount = computed(() => selectedSourceKeys.value.length);
+const selectedRoutingProfileCount = computed(() => Object.values(selectedRoutingProfiles.value).filter(Boolean).length);
 const additionalVenueCount = computed(() => selectedVenueIds.value.filter((id) => id !== venueId.value).length);
+
+function reconcileRoutingProfiles(projection: GenerationOptionsProjection) {
+  const selectedVenues = new Set(projection.physicalScope.selectedVenueIds.map(String));
+  const availableByVenue = new Map(projection.controls.navigation.profilesByVenue.map((entry) => [
+    String(entry.venueId),
+    new Set(entry.profiles.map((profile) => profile.definitionId)),
+  ]));
+  const next: Record<string, string> = {};
+  for (const [targetVenueId, profileId] of Object.entries(selectedRoutingProfiles.value)) {
+    if (!selectedVenues.has(targetVenueId)) continue;
+    if (profileId && availableByVenue.get(targetVenueId)?.has(profileId)) next[targetVenueId] = profileId;
+  }
+  selectedRoutingProfiles.value = next;
+}
 
 async function loadOptions({ preserveSources = false } = {}) {
   busy.value = true;
@@ -97,6 +115,7 @@ async function loadOptions({ preserveSources = false } = {}) {
     const projection = await generatorRepository.options(selectedVenueIds.value);
     options.value = projection;
     selectedVenueIds.value = [...projection.physicalScope.selectedVenueIds];
+    reconcileRoutingProfiles(projection);
     const available = new Set(allSources(projection).map((entry) => sourceKey(entry.sourceRef)));
     if (preserveSources && sourceTouched.value) {
       selectedSourceKeys.value = [...previous].filter((key) => available.has(key));
@@ -152,18 +171,31 @@ async function searchSubjects() {
   }
 }
 
+function routingProfileSelections(): GenerationRoutingProfileSelection[] {
+  const selectedVenues = new Set(selectedVenueIds.value.map(String));
+  return Object.entries(selectedRoutingProfiles.value)
+    .filter(([targetVenueId, profileId]) => selectedVenues.has(targetVenueId) && Boolean(profileId))
+    .map(([targetVenueId, routingProfileDefinitionId]) => ({ venueId: targetVenueId, routingProfileDefinitionId }));
+}
+
+function selectedProfile(group: GenerationOptionsProjection["controls"]["navigation"]["profilesByVenue"][number]) {
+  const selectedId = selectedRoutingProfiles.value[String(group.venueId)] || "";
+  return group.profiles.find((profile) => profile.definitionId === selectedId) || null;
+}
+
 function routingRequirements(): GenerationNavigationRequirement[] {
   const requirements: GenerationNavigationRequirement[] = [];
   for (const control of routingControls.value) {
     if (control.dataType === "boolean") {
       const choice = booleanRoutingChoices.value[control.key] || "";
       if (!choice) continue;
-      const [priority, rawValue] = choice.split(":");
+      const [rawPriority, rawValue] = choice.split(":");
+      const priority = rawPriority === "required" || rawPriority === "avoid" ? rawPriority : "preferred";
       requirements.push({
         physicalFeatureRef: control.physicalFeatureRef,
         operator: control.recommendedOperator || "eq",
         value: rawValue === "true",
-        priority: priority === "required" ? "required" : "preferred",
+        priority,
         weight: 1,
       });
       continue;
@@ -225,6 +257,7 @@ async function generate() {
   generating.value = true;
   try {
     const navigationRequirements = routingRequirements();
+    const profileSelections = routingProfileSelections();
     const semanticGoals = selectedSubjectIds.value.map((subjectId) => ({
       feature: { kind: "subject" as const, subjectId },
       priority: "preferred" as const,
@@ -240,6 +273,7 @@ async function generate() {
       languageComplexityPreference: complexityPreference.value,
       locale: locale.value.trim() || "it-IT",
       movementPacePreference: movementPacePreference.value,
+      ...(profileSelections.length ? { routingProfileSelections: profileSelections } : {}),
       ...(navigationRequirements.length ? { navigationRequirements } : {}),
       historyMode: "full",
       ...(transfers.length ? { interVenueTransfers: transfers } : {}),
@@ -396,51 +430,76 @@ async function generate() {
         </label>
       </fieldset>
 
-      <fieldset v-if="routingControls.length" class="form-section">
+      <fieldset v-if="routingProfilesByVenue.length || routingControls.length" class="form-section">
         <legend><span>4</span> Percorso e accessibilità</legend>
-        <p>Indica solo i vincoli rilevanti. Un requisito necessario blocca la generazione se una sede non può rispettarlo; una preferenza può produrre un avviso.</p>
-        <div v-for="control in routingControls" :key="control.key" class="routing-row">
-          <label v-if="control.dataType === 'boolean'">
-            {{ control.label }}
-            <select v-model="booleanRoutingChoices[control.key]" :disabled="generating">
-              <option value="">Nessuna preferenza</option>
-              <option value="preferred:true">Preferisci: sì</option>
-              <option value="preferred:false">Preferisci: no</option>
-              <option value="required:true">Necessario: sì</option>
-              <option value="required:false">Necessario: no</option>
+        <p>Scegli, se ti è utile, il profilo preparato da ciascuna sede. Ogni profilo appartiene al vocabolario fisico della singola Venue e non viene unificato per nome tra musei diversi.</p>
+        <section v-for="group in routingProfilesByVenue" :key="group.venueId" class="routing-profile-group">
+          <label>
+            <strong>{{ venueLabel(group.venueId) }}</strong>
+            <select v-model="selectedRoutingProfiles[group.venueId]" :disabled="generating">
+              <option value="">Nessun profilo specifico</option>
+              <option v-for="profile in group.profiles" :key="profile.definitionId" :value="profile.definitionId">{{ profile.label }}</option>
             </select>
           </label>
-          <template v-else-if="control.dataType === 'number'">
-            <label>
-              {{ control.label }}<span v-if="control.unit"> · {{ control.unit }}</span>
-              <input v-model.number="numericRoutingValues[control.key]" type="number" min="0" step="1" :disabled="generating">
-            </label>
-            <label>
-              Importanza
-              <select v-model="numericRoutingPriorities[control.key]" :disabled="generating">
-                <option value="preferred">Preferenza</option>
-                <option value="required">Necessario</option>
-              </select>
-            </label>
+          <template v-if="selectedProfile(group)">
+            <p>{{ selectedProfile(group)?.description }}</p>
+            <ul v-if="selectedProfile(group)?.requirements.length" class="profile-requirements">
+              <li v-for="requirement in selectedProfile(group)?.requirements" :key="`${requirement.label}-${requirement.operator}-${JSON.stringify(requirement.value)}-${requirement.priority}`">
+                <strong>{{ requirement.label }}</strong> · {{ requirement.priority === "required" ? "necessario" : requirement.priority === "avoid" ? "da evitare" : "preferito" }}
+              </li>
+            </ul>
           </template>
-          <template v-else-if="control.dataType === 'choice'">
-            <label>
+        </section>
+
+        <details v-if="routingControls.length" class="advanced-options routing-advanced">
+          <summary>Esigenze di percorso avanzate</summary>
+          <p>Usa questi controlli solo quando un profilo non descrive abbastanza bene la tua esigenza. I requisiti necessari possono rendere una route non disponibile; le preferenze producono warning quando non sono supportate.</p>
+          <div v-for="control in routingControls" :key="control.key" class="routing-row">
+            <label v-if="control.dataType === 'boolean'">
               {{ control.label }}
-              <select v-model="choiceRoutingValues[control.key]" :disabled="generating">
+              <select v-model="booleanRoutingChoices[control.key]" :disabled="generating">
                 <option value="">Nessuna preferenza</option>
-                <option v-for="option in control.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                <option value="preferred:true">Preferisci: sì</option>
+                <option value="preferred:false">Preferisci: no</option>
+                <option value="avoid:true">Evita: sì</option>
+                <option value="avoid:false">Evita: no</option>
+                <option value="required:true">Necessario: sì</option>
+                <option value="required:false">Necessario: no</option>
               </select>
             </label>
-            <label>
-              Importanza
-              <select v-model="choiceRoutingPriorities[control.key]" :disabled="generating">
-                <option value="preferred">Preferenza</option>
-                <option value="avoid">Evita</option>
-                <option value="required">Necessario</option>
-              </select>
-            </label>
-          </template>
-        </div>
+            <template v-else-if="control.dataType === 'number'">
+              <label>
+                {{ control.label }}<span v-if="control.unit"> · {{ control.unit }}</span>
+                <input v-model.number="numericRoutingValues[control.key]" type="number" step="any" :disabled="generating">
+              </label>
+              <label>
+                Importanza
+                <select v-model="numericRoutingPriorities[control.key]" :disabled="generating">
+                  <option value="preferred">Preferenza</option>
+                  <option value="avoid">Evita</option>
+                  <option value="required">Necessario</option>
+                </select>
+              </label>
+            </template>
+            <template v-else-if="control.dataType === 'choice'">
+              <label>
+                {{ control.label }}
+                <select v-model="choiceRoutingValues[control.key]" :disabled="generating">
+                  <option value="">Nessuna preferenza</option>
+                  <option v-for="option in control.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label>
+                Importanza
+                <select v-model="choiceRoutingPriorities[control.key]" :disabled="generating">
+                  <option value="preferred">Preferenza</option>
+                  <option value="avoid">Evita</option>
+                  <option value="required">Necessario</option>
+                </select>
+              </label>
+            </template>
+          </div>
+        </details>
       </fieldset>
       </div>
 
@@ -452,6 +511,7 @@ async function generate() {
           <div><dt>Durata</dt><dd>{{ timeBudgetMinutes }} min</dd></div>
           <div><dt>Contenuti</dt><dd>{{ selectedSourceCount }} sorgenti</dd></div>
           <div><dt>Interessi</dt><dd>{{ selectedSubjectIds.length || "Nessuno" }}</dd></div>
+          <div v-if="selectedRoutingProfileCount"><dt>Profili</dt><dd>{{ selectedRoutingProfileCount }}</dd></div>
           <div v-if="additionalVenueCount"><dt>Altre sedi</dt><dd>{{ additionalVenueCount }}</dd></div>
         </dl>
         <button class="primary-action" type="submit" :disabled="generating || !selectedVenueIds.length || !selectedSourceKeys.length">
@@ -656,6 +716,27 @@ fieldset {
   color: var(--navigator-muted);
   line-height: 1.5;
 }
+.routing-profile-group {
+  display: grid;
+  gap: .65rem;
+  padding: 1rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .9rem;
+  background: color-mix(in srgb, var(--navigator-primary) 4%, var(--navigator-surface-raised));
+}
+.routing-profile-group label { display: grid; gap: .45rem; }
+.routing-profile-group select {
+  width: 100%;
+  min-height: 46px;
+  padding: .7rem .8rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .75rem;
+  color: var(--navigator-ink);
+  background: var(--navigator-surface-raised);
+}
+.routing-profile-group p { margin: 0; color: var(--navigator-muted); line-height: 1.5; }
+.profile-requirements { margin: 0; padding-left: 1.2rem; color: var(--navigator-muted); font-size: .88rem; }
+.routing-advanced { margin-top: .25rem; }
 .field-label,
 .range-control,
 .inline-control label,
