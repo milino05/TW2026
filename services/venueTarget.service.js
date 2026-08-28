@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
+const VisitV2 = require("../models/visitV2.model");
+const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization.service");
@@ -78,6 +80,27 @@ async function releaseReferencesTarget({ releaseId, venueId, venueTargetId, sess
   return { binding, placement };
 }
 
+async function publishedVisitReferencesTarget({ venueTargetId, session = null }) {
+  let revisionQuery = VisitRevisionV2.find({
+    status: "published",
+    "visitAnchors.venueTargetId": venueTargetId,
+  }).select("_id visitId");
+  if (session) revisionQuery = revisionQuery.session(session);
+  const revisions = await revisionQuery.lean();
+  if (!revisions.length) return { count: 0, visitIds: [] };
+
+  const revisionIds = revisions.map((entry) => entry._id);
+  const candidateVisitIds = revisions.map((entry) => entry.visitId);
+  let visitQuery = VisitV2.find({
+    _id: { $in: candidateVisitIds },
+    publishedRevisionId: { $in: revisionIds },
+    lifecycleStatus: "active",
+  }).select("_id");
+  if (session) visitQuery = visitQuery.session(session);
+  const visits = await visitQuery.lean();
+  return { count: visits.length, visitIds: visits.map((entry) => entry._id) };
+}
+
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
   try {
@@ -115,6 +138,15 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
         }]);
       }
 
+      const visitReferences = await publishedVisitReferencesTarget({ venueTargetId: target._id, session });
+      if (visitReferences.count) {
+        throw new AppError("L'oggetto è ancora usato da una visita pubblicata. Aggiorna prima la visita", 409, [{
+          code: "TARGET_IN_PUBLISHED_VISIT",
+          field: "venueTargetId",
+          context: { publishedVisitCount: visitReferences.count, visitIds: visitReferences.visitIds },
+        }]);
+      }
+
       target.lifecycleStatus = "trashed";
       target.trashedAt = new Date();
       target.trashedBy = actorUserId;
@@ -130,4 +162,12 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
   }
 }
 
-module.exports = { findVenueTargetOrFail, createVenueTarget, updateVenueTarget, listVenueTargets, trashVenueTarget };
+module.exports = {
+  findVenueTargetOrFail,
+  createVenueTarget,
+  updateVenueTarget,
+  listVenueTargets,
+  releaseReferencesTarget,
+  publishedVisitReferencesTarget,
+  trashVenueTarget,
+};
