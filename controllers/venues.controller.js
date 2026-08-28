@@ -3,6 +3,8 @@ const venueTargetService = require("../services/venueTarget.service");
 const venueReleaseService = require("../services/venueRelease.service");
 const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboarding.service");
 const venueLayoutCommandService = require("../services/venueLayoutCommand.service");
+const venueFloorPlanUploadService = require("../services/venueFloorPlanUpload.service");
+const AppError = require("../utils/AppError");
 
 async function list(req, res, next) { try { res.status(200).json(await venueService.listVenues({ ownerOrganizationId: req.query?.ownerOrganizationId || null })); } catch (error) { next(error); } }
 async function get(req, res, next) { try { res.status(200).json(await venueService.getVenue({ venueId: req.params.venueId })); } catch (error) { next(error); } }
@@ -27,6 +29,29 @@ async function publishRelease(req, res, next) { try { res.status(200).json(await
 
 async function addLayoutFloor(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.addFloor({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function updateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function uploadLayoutFloorPlan(req, res, next) {
+  let stored = null;
+  try {
+    const ensured = await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id });
+    const floor = ensured.layout.floors.id(req.params.floorId);
+    if (!floor) throw new AppError("Piano non trovato", 404, [{ field: "floorId", code: "FLOOR_NOT_FOUND" }]);
+    const previousUrl = floor.mapAsset?.url || null;
+    stored = await venueFloorPlanUploadService.storeVenueFloorPlan({ payload: req.body || {} });
+    const result = await venueLayoutCommandService.updateFloor({
+      venueId: req.params.venueId,
+      floorId: req.params.floorId,
+      actorUserId: req.user._id,
+      payload: { mapAsset: stored },
+    });
+    if (previousUrl && previousUrl !== stored.url) {
+      await venueFloorPlanUploadService.removeVenueFloorPlan(previousUrl).catch(() => {});
+    }
+    res.status(200).json(result);
+  } catch (error) {
+    if (stored?.url) await venueFloorPlanUploadService.removeVenueFloorPlan(stored.url).catch(() => {});
+    next(error);
+  }
+}
 async function calibrateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.calibrateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function removeLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function createLayoutPlace(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.createPlace({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
@@ -48,7 +73,7 @@ module.exports = {
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, updateWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
-  addLayoutFloor, updateLayoutFloor, calibrateLayoutFloor, removeLayoutFloor,
+  addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
   createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
   createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
   setLayoutTargetPlacement, setLayoutTargetBinding, setPreVisitInformation,
