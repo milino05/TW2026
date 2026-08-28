@@ -18,6 +18,8 @@ router.patch("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, ve
 router.delete("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.trashTarget);
 
 router.get("/venues/:venueId/physical-state", venueId, controller.getPhysicalState);
+router.get("/venues/:venueId/physical-onboarding", requireAuth, venueId, controller.getPhysicalOnboarding);
+router.post("/venues/:venueId/physical-onboarding", requireAuth, venueId, controller.initializePhysicalOnboarding);
 router.post("/venues/:venueId/working-release", requireAuth, venueId, controller.ensureWorkingRelease);
 router.patch("/venues/:venueId/working-release", requireAuth, venueId, controller.updateWorkingRelease);
 router.post("/venues/:venueId/working-release/check-consistency", requireAuth, venueId, controller.checkRelease);
