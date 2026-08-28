@@ -46,6 +46,7 @@ router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.mar
 router.get("/v2/marketplace/workspace/context", controller.creatorWorkspaceContext);
 router.get("/v2/marketplace/workspace/resources", controller.creatorWorkspaceResources);
 router.get("/v2/marketplace/workspace/resources/:resourceType/:resourceId", resourceId, controller.creatorWorkspaceResourceDetail);
+router.post("/v2/marketplace/workspace/resources/:resourceType/:resourceId/remove", resourceId, controller.removeCreatorWorkspaceResource);
 router.get("/v2/marketplace/workspace", controller.creatorWorkspace);
 router.get("/v2/marketplace/distribution", controller.distributionDashboard);
 router.post("/v2/marketplace/workspace/operations", controller.workspaceOperation);
