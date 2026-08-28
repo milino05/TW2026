@@ -9,6 +9,10 @@ router.get("/v2/visit-sessions/:sessionId/current", requireAuth, validateSession
 router.get("/v2/visit-sessions/:sessionId/map", requireAuth, validateSessionId, controller.map);
 router.post("/v2/visit-sessions/:sessionId/actions", requireAuth, validateSessionId, controller.dispatchAction);
 
+// Location providers resolve external observations to the logical position pinned by the Session.
+// Resolving a public code does not mutate or reposition the Session by itself.
+router.post("/v2/visit-sessions/:sessionId/location/resolve-public-code", requireAuth, validateSessionId, controller.resolvePublicLocation);
+
 // Telemetry/observations are not runtime Actions and remain explicit application boundaries.
 router.post("/v2/visit-sessions/:sessionId/content-entries/experience", requireAuth, validateSessionId, controller.contentExperience);
 router.post("/v2/visit-sessions/:sessionId/visit-anchors/observation", requireAuth, validateSessionId, controller.targetObservation);
