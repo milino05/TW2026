@@ -200,7 +200,7 @@ async function listLicensedResources({ principal, q, resourceTypes, page, pageSi
     pipeline.push({ $match: { $or: [{ "listing.title": regex }, { "listing.summary": regex }] } });
   }
   pipeline.push(
-    { $group: { _id: { resourceType: "$resourceType", resourceId: "$resourceId" }, capabilities: { $addToSet: "$capability" }, versionPolicies: { $addToSet: "$versionPolicy" }, updatedAt: { $max: "$updatedAt" } } },
+    { $group: { _id: { resourceType: "$resourceType", resourceId: "$resourceId" }, capabilities: { $addToSet: "$capability" }, versionPolicies: { $addToSet: "$versionPolicy" }, baselineSnapshotRefs: { $addToSet: "$baselineSnapshotRef" }, updatedAt: { $max: "$updatedAt" } } },
     { $sort: { updatedAt: -1, "_id.resourceId": -1 } },
     { $facet: { results: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }], total: [{ $count: "value" }] } },
   );
@@ -270,12 +270,13 @@ async function getCreatorWorkspaceResourceDetail({
       ...activeEntitlementMatch(selected),
       resourceType,
       resourceId,
-    }).select("capability versionPolicy").lean();
+    }).select("capability versionPolicy baselineSnapshotRef").lean();
     if (entitlements.length) {
       const candidate = {
         _id: { resourceType, resourceId },
         capabilities: [...new Set(entitlements.map((entry) => entry.capability))],
         versionPolicies: [...new Set(entitlements.map((entry) => entry.versionPolicy))],
+        baselineSnapshotRefs: entitlements.map((entry) => entry.baselineSnapshotRef).filter(Boolean),
       };
       asset = await projectLicensedCandidate(candidate, { skipUnavailable: false });
     }
