@@ -59,11 +59,57 @@ function attributeValue(raw, dataType) {
   }
   return text;
 }
+function connectionContext(layout, connectionId) {
+  const connection = (layout?.connections || []).find((entry) => id(entry._id) === id(connectionId));
+  if (!connection) return null;
+  const from = (layout?.places || []).find((entry) => id(entry._id) === id(connection.fromPlaceId));
+  const to = (layout?.places || []).find((entry) => id(entry._id) === id(connection.toPlaceId));
+  if (!from || !to) return null;
+  return { connection, from, to };
+}
+function actionGeometryPoints(layout, action) {
+  const context = connectionContext(layout, action?.connectionId);
+  if (!context) return [];
+  return [
+    { x: Number(context.from.position?.x), y: Number(context.from.position?.y) },
+    ...(action.waypoints || []).map((point) => ({ x: Number(point.x), y: Number(point.y) })),
+    { x: Number(context.to.position?.x), y: Number(context.to.position?.y) },
+  ];
+}
+function geometryDistanceMeters(points, floor) {
+  const width = Number(floor?.mapAsset?.width);
+  const height = Number(floor?.mapAsset?.height);
+  const scale = Number(floor?.calibration?.metersPerPixel);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(scale) || scale <= 0 || points.length < 2) return null;
+  let pixels = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const from = points[index - 1];
+    const to = points[index];
+    pixels += Math.hypot((to.x - from.x) * width, (to.y - from.y) * height);
+  }
+  return pixels * scale;
+}
+function lengthTolerance(distanceMeters) { return Math.max(0.05, Number(distanceMeters) * 0.01); }
 
 export const venueMapAuthoringMixin = {
   cancelMapAction({ render = true } = {}) {
     this.pendingMapAction = null;
     if (render) this.render();
+  },
+
+  geometryAuthoringState() {
+    const action = this.pendingMapAction;
+    if (action?.type !== "geometry") return null;
+    const context = connectionContext(this.data.layout, action.connectionId);
+    if (!context) return null;
+    const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(action.floorId));
+    const points = actionGeometryPoints(this.data.layout, action);
+    const measuredDistanceMeters = geometryDistanceMeters(points, floor);
+    const requestedDistanceMeters = action.metricMode === "length_constrained" ? Number(action.distanceMeters) : null;
+    const toleranceMeters = requestedDistanceMeters ? lengthTolerance(requestedDistanceMeters) : null;
+    const constraintSatisfied = action.metricMode !== "length_constrained"
+      || (Number.isFinite(measuredDistanceMeters) && Math.abs(measuredDistanceMeters - requestedDistanceMeters) <= toleranceMeters);
+    return { ...context, floor, points, measuredDistanceMeters, requestedDistanceMeters, toleranceMeters, constraintSatisfied };
   },
 
   async handleMapAuthoringClick(event) {
@@ -79,8 +125,10 @@ export const venueMapAuthoringMixin = {
 
     const floorTab = target.closest("[data-select-floor]");
     if (floorTab) {
-      this.selectedFloorId = floorTab.dataset.selectFloor;
-      if (this.pendingMapAction?.type === "calibrate" && id(this.pendingMapAction.floorId) !== id(this.selectedFloorId)) this.pendingMapAction = null;
+      const nextFloorId = floorTab.dataset.selectFloor;
+      const action = this.pendingMapAction;
+      if (["calibrate", "geometry", "create-place", "move-place"].includes(action?.type) && id(action.floorId) !== id(nextFloorId)) this.pendingMapAction = null;
+      this.selectedFloorId = nextFloorId;
       this.render();
       return true;
     }
@@ -97,6 +145,58 @@ export const venueMapAuthoringMixin = {
       if (tool.dataset.mapTool === "connect") this.pendingMapAction = { type: "connect", fromPlaceId: null, toPlaceId: null };
       if (tool.dataset.mapTool === "calibrate") this.pendingMapAction = { type: "calibrate", floorId, points: [] };
       this.render();
+      return true;
+    }
+
+    const geometryEditor = target.closest("[data-edit-connection-geometry]");
+    if (geometryEditor) {
+      const context = connectionContext(this.data.layout, geometryEditor.dataset.editConnectionGeometry);
+      if (!context || id(context.from.floorId) !== id(context.to.floorId)) return true;
+      const floorId = id(context.from.floorId);
+      const existing = (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y }));
+      this.selectedFloorId = floorId;
+      this.pendingMapAction = {
+        type: "geometry",
+        connectionId: id(context.connection._id),
+        floorId,
+        metricMode: context.connection.metricMode,
+        distanceMeters: context.connection.distanceMeters,
+        waypoints: existing,
+      };
+      this.render();
+      return true;
+    }
+
+    if (target.closest("[data-geometry-undo]")) {
+      const action = this.pendingMapAction;
+      if (action?.type === "geometry") action.waypoints = (action.waypoints || []).slice(0, -1);
+      this.render();
+      return true;
+    }
+
+    if (target.closest("[data-geometry-clear]")) {
+      const action = this.pendingMapAction;
+      if (action?.type === "geometry") action.waypoints = [];
+      this.render();
+      return true;
+    }
+
+    if (target.closest("[data-save-geometry]")) {
+      const action = this.pendingMapAction;
+      const state = this.geometryAuthoringState();
+      if (action?.type !== "geometry" || !state) return true;
+      if (!state.constraintSatisfied) {
+        this.error = "La geometria deve rispettare la lunghezza richiesta prima di poter essere salvata.";
+        this.render();
+        return true;
+      }
+      const payload = { metricMode: action.metricMode, geometryPoints: state.points };
+      if (action.metricMode !== "geometry_derived") payload.distanceMeters = Number(action.distanceMeters);
+      const success = await this.execute(
+        () => managementRepository.updateVenueConnection(this.id, action.connectionId, payload),
+        action.metricMode === "length_constrained" ? "Percorso salvato con la lunghezza vincolata." : "Geometria del collegamento aggiornata.",
+      );
+      if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
 
@@ -132,13 +232,14 @@ export const venueMapAuthoringMixin = {
       }
       if (action?.type === "place-target") {
         const targetId = action.targetId;
-        await this.execute(
+        const success = await this.execute(
           () => managementRepository.setVenueTargetPlacement(this.id, targetId, { primaryPlaceId: placeId, placeIds: [] }),
           "Oggetto collocato sulla mappa.",
         );
-        this.pendingMapAction = null;
+        if (success) { this.pendingMapAction = null; this.render(); }
         return true;
       }
+      if (action?.type === "geometry") return true;
       this.selectedMapPlaceId = placeId;
       this.render();
       return true;
@@ -159,21 +260,28 @@ export const venueMapAuthoringMixin = {
         label: action.label,
         position: point,
       };
-      await this.execute(() => managementRepository.createVenuePlace(this.id, payload), "Luogo aggiunto sulla mappa.");
-      this.pendingMapAction = null;
+      const success = await this.execute(() => managementRepository.createVenuePlace(this.id, payload), "Luogo aggiunto sulla mappa.");
+      if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
 
     if (action.type === "move-place") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
-      await this.execute(() => managementRepository.moveVenuePlace(this.id, action.placeId, point), "Posizione del luogo aggiornata.");
-      this.pendingMapAction = null;
+      const success = await this.execute(() => managementRepository.moveVenuePlace(this.id, action.placeId, point), "Posizione del luogo aggiornata.");
+      if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
 
     if (action.type === "calibrate") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
       action.points = [...(action.points || []), point].slice(0, 2);
+      this.render();
+      return true;
+    }
+
+    if (action.type === "geometry") {
+      if (id(action.floorId) !== id(surfaceFloorId)) return true;
+      action.waypoints = [...(action.waypoints || []), point].slice(0, 40);
       this.render();
       return true;
     }
@@ -209,7 +317,27 @@ export const venueMapAuthoringMixin = {
       };
       if (metricMode !== "geometry_derived") payload.distanceMeters = Number(data.get("distanceMeters"));
       const success = await this.execute(() => managementRepository.createVenueConnection(this.id, payload), "Collegamento aggiunto alla mappa.");
-      if (success) this.pendingMapAction = null;
+      if (success) { this.pendingMapAction = null; this.render(); }
+      return true;
+    }
+
+    if (form.matches("[data-length-constraint-authoring]")) {
+      const context = connectionContext(this.data.layout, form.dataset.lengthConstraintAuthoring);
+      const distanceMeters = Number(data.get("distanceMeters"));
+      if (!context || !Number.isFinite(distanceMeters) || distanceMeters <= 0) return true;
+      if (id(context.from.floorId) !== id(context.to.floorId)) throw new Error("La lunghezza vincolata richiede un collegamento sullo stesso piano.");
+      const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(context.from.floorId));
+      if (!floor?.mapAsset || !floor?.calibration) throw new Error("Calibra prima la planimetria del piano.");
+      this.selectedFloorId = id(context.from.floorId);
+      this.pendingMapAction = {
+        type: "geometry",
+        connectionId: id(context.connection._id),
+        floorId: id(context.from.floorId),
+        metricMode: "length_constrained",
+        distanceMeters,
+        waypoints: (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y })),
+      };
+      this.render();
       return true;
     }
 
@@ -221,7 +349,7 @@ export const venueMapAuthoringMixin = {
         distanceMeters: Number(data.get("distanceMeters")),
         line: { from: action.points[0], to: action.points[1] },
       }), "Piano calibrato dalla mappa.");
-      if (success) this.pendingMapAction = null;
+      if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
 
