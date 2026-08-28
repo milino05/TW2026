@@ -59,7 +59,7 @@ function renderConfigurationState(target, editable, hasRelease) {
   if (configuration.includedInWorkingConfiguration) {
     return `<aside class="venue-target-configuration-state"><div><strong>Incluso nella configurazione di lavoro</strong><small>${configuration.placed ? "L'oggetto è collocato nella mappa." : "Manca ancora una collocazione valida nella mappa."}</small></div>${editable && canDetach ? `<button class="button-secondary small" type="button" data-detach-target="${escapeHtml(target.id)}" data-label="${escapeHtml(target.label)}">Rimuovi dalla configurazione</button>` : ""}</aside>`;
   }
-  if (configuration.source === "published" || configuration.includedInPublishedConfiguration && !editable) {
+  if (configuration.source === "published" || (configuration.includedInPublishedConfiguration && !editable)) {
     return `<aside class="venue-target-configuration-state published"><div><strong>Incluso nella configurazione pubblicata</strong><small>Questa è la versione attiva della sede. Crea una nuova bozza fisica per modificarne collocazione, disponibilità o immagini di riconoscimento.</small></div></aside>`;
   }
   const publishedNote = configuration.includedInPublishedConfiguration || configuration.publishedReferenced
