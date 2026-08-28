@@ -9,6 +9,7 @@ const {
 } = require("./layoutGeometry.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function lengthConstraintTolerance(distanceMeters) { return Math.max(0.05, Number(distanceMeters) * 0.01); }
 
 function valueMatchesDefinition(definition, value) {
   if (!definition || value === null || value === undefined) return false;
@@ -80,9 +81,14 @@ function validateConnectionGeometry({ connection, index, placeById, floorById, a
     add(`${field}.distanceMeters`, "DERIVED_DISTANCE_MISMATCH", "La distanza geometry_derived deve coincidere con la geometria calibrata");
   }
   if (connection.metricMode === "length_constrained") {
+    const requested = Number(connection.distanceMeters);
+    const tolerance = lengthConstraintTolerance(requested);
     const straightDistance = distanceMetersForGeometry({ points: [from.position, to.position], floor });
-    if (straightDistance > connection.distanceMeters && !nearlyEqual(straightDistance, connection.distanceMeters)) {
+    if (straightDistance > requested + tolerance) {
       add(`${field}.distanceMeters`, "IMPOSSIBLE_LENGTH_CONSTRAINT", "La distanza richiesta e inferiore alla distanza geometrica minima fra gli endpoint");
+    }
+    if (Math.abs(geometricDistance - requested) > tolerance) {
+      add(`${field}.geometry.points`, "LENGTH_CONSTRAINT_GEOMETRY_MISMATCH", "La polilinea non soddisfa la lunghezza vincolata dichiarata");
     }
   }
 }
