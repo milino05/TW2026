@@ -21,6 +21,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   lifecycleImpact = null;
   canManageLifecycle = false;
   pendingVenueRemoval = false;
+  pendingTargetRemovalId = null;
   busy = false;
   error = null;
   message = null;
@@ -83,6 +84,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
       await this.refreshServerState();
       this.pendingWorkflow = null;
       this.workflowMessage = "";
+      this.pendingTargetRemovalId = null;
       this.message = message;
       return true;
     } catch (error) {
