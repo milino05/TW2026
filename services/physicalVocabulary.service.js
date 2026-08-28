@@ -22,10 +22,12 @@ function validateMetadata(rawPayload, { creating }) {
   return normalized;
 }
 
-async function findPhysicalVocabularyOrFail({ physicalVocabularyId, includeTrashed = false }) {
+async function findPhysicalVocabularyOrFail({ physicalVocabularyId, includeTrashed = false, session = null }) {
   const query = { _id: physicalVocabularyId };
   if (!includeTrashed) query.lifecycleStatus = "active";
-  const physicalVocabulary = await PhysicalVocabulary.findOne(query);
+  let lookup = PhysicalVocabulary.findOne(query);
+  if (session) lookup = lookup.session(session);
+  const physicalVocabulary = await lookup;
   if (!physicalVocabulary) throw new AppError("Physical Vocabulary non trovato", 404);
   return physicalVocabulary;
 }
@@ -148,24 +150,24 @@ async function forkPhysicalVocabulary({ physicalVocabularyId, payload, actorUser
   }
 }
 
-async function trashPhysicalVocabulary({ physicalVocabularyId, actorUserId }) {
-  const physicalVocabulary = await findPhysicalVocabularyOrFail({ physicalVocabularyId });
+async function trashPhysicalVocabulary({ physicalVocabularyId, actorUserId, session = null, now = new Date() }) {
+  const physicalVocabulary = await findPhysicalVocabularyOrFail({ physicalVocabularyId, session });
   await assertCanActForOwner({ actorUserId, ownerType: physicalVocabulary.ownerType, ownerId: physicalVocabulary.ownerId, permissionCode: "physical_vocabulary.lifecycle.manage" });
   physicalVocabulary.lifecycleStatus = "trashed";
-  physicalVocabulary.trashedAt = new Date();
+  physicalVocabulary.trashedAt = now;
   physicalVocabulary.trashedBy = actorUserId;
-  await physicalVocabulary.save();
+  await physicalVocabulary.save(session ? { session } : undefined);
   return physicalVocabulary;
 }
 
-async function restorePhysicalVocabulary({ physicalVocabularyId, actorUserId }) {
-  const physicalVocabulary = await findPhysicalVocabularyOrFail({ physicalVocabularyId, includeTrashed: true });
+async function restorePhysicalVocabulary({ physicalVocabularyId, actorUserId, session = null }) {
+  const physicalVocabulary = await findPhysicalVocabularyOrFail({ physicalVocabularyId, includeTrashed: true, session });
   await assertCanActForOwner({ actorUserId, ownerType: physicalVocabulary.ownerType, ownerId: physicalVocabulary.ownerId, permissionCode: "physical_vocabulary.lifecycle.manage" });
   if (physicalVocabulary.lifecycleStatus !== "trashed") throw new AppError("Il Physical Vocabulary non e nel cestino", 409);
   physicalVocabulary.lifecycleStatus = "active";
   physicalVocabulary.trashedAt = null;
   physicalVocabulary.trashedBy = null;
-  await physicalVocabulary.save();
+  await physicalVocabulary.save(session ? { session } : undefined);
   return physicalVocabulary;
 }
 
