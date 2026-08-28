@@ -130,7 +130,7 @@ test("Venue layout commands preserve ids, pinned vocabulary semantics and metric
 
     await assert.rejects(
       commands.removePlace({ venueId: venue.id, placeId: placeA, actorUserId: user._id }),
-      (error) => error.statusCode === 409 && error.details?.some((detail) => detail.code === "PLACE_HAS_CONNECTIONS"),
+      (error) => error.status === 409 && error.details?.some((detail) => detail.code === "PLACE_HAS_CONNECTIONS"),
     );
   });
 });
