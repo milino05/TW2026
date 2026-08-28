@@ -61,6 +61,9 @@ export const managementRepository = {
   venueWorkflow(venueId, action, { method = "POST", payload = {} } = {}) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/${action}`, { method, ...(method === "DELETE" ? {} : body(payload)) });
   },
+  setVenueTargetAvailability(venueId, targetId, availability) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}/availability`, { method: "PUT", ...body({ availability }) });
+  },
   uploadVenueTargetRecognitionMedia(venueId, targetId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}/recognition-media`, { method: "POST", ...body(payload) });
   },
@@ -111,9 +114,6 @@ export const managementRepository = {
   },
   setVenueTargetPlacement(venueId, targetId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/targets/${encoded(targetId)}/placement`, { method: "PUT", ...body(payload) });
-  },
-  setVenueTargetBinding(venueId, targetId, payload) {
-    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/targets/${encoded(targetId)}/binding`, { method: "PUT", ...body(payload) });
   },
   setVenuePreVisitInformation(venueId, items) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/pre-visit-information`, { method: "PUT", ...body({ items }) });
