@@ -1,6 +1,7 @@
 const visitService = require("../services/visitV2.service");
 const publicationService = require("../services/visitV2Publication.service");
 const authoringCommandService = require("../services/visitAuthoringCommandV2.service");
+const authoringLogisticsCommandService = require("../services/visitAuthoringLogisticsCommandV2.service");
 
 async function list(req, res, next) { try { res.status(200).json(await visitService.listManageableVisitsV2({ actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function create(req, res, next) { try { res.status(201).json(await visitService.createVisitV2({ payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
@@ -100,6 +101,18 @@ async function reorderVisitStop(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
+async function setInterVenueTransfer(req, res, next) {
+  try {
+    res.status(200).json(await authoringLogisticsCommandService.setInterVenueTransfer({
+      visitId: req.params.visitId,
+      actorUserId: req.user._id,
+      fromAnchorId: req.params.fromAnchorId,
+      toAnchorId: req.params.toAnchorId,
+      estimatedTransferSeconds: req.body?.estimatedTransferSeconds,
+      instructionOverride: req.body?.instructionOverride || null,
+    }));
+  } catch (error) { next(error); }
+}
 
 module.exports = {
   list,
@@ -123,4 +136,5 @@ module.exports = {
   addVisitStop,
   removeVisitStop,
   reorderVisitStop,
+  setInterVenueTransfer,
 };
