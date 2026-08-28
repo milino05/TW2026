@@ -56,6 +56,7 @@ function initialVenueSection() {
 
 export class ArtAroundVenueEditorView extends HTMLElement {
   data = null;
+  onboarding = null;
   busy = false;
   error = null;
   message = null;
@@ -88,10 +89,16 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     window.removeEventListener("beforeunload", this.onBeforeUnload);
   }
 
+  async refreshServerState() {
+    this.data = await managementRepository.venue(this.id);
+    const needsSetup = !this.data?.release && !this.data?.layout && has(this.data?.availableOperations, "venue.release.ensure");
+    this.onboarding = needsSetup ? await managementRepository.venuePhysicalOnboarding(this.id) : null;
+  }
+
   async load() {
     if (!this.id) { this.error = "Sede non specificata"; this.render(); return; }
     this.busy = true; this.error = null; this.render();
-    try { this.data = await managementRepository.venue(this.id); }
+    try { await this.refreshServerState(); }
     catch (error) { this.error = error instanceof Error ? error.message : "Sede non disponibile"; }
     finally { this.busy = false; this.render(); }
   }
@@ -105,8 +112,8 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.busy = true; this.error = null; this.message = null; this.render();
     try {
       await callback();
-      this.data = await managementRepository.venue(this.id);
-      if (draft) { this.applyDraft(draft); this.dirty = true; }
+      await this.refreshServerState();
+      if (draft && !this.onboarding?.required) { this.applyDraft(draft); this.dirty = true; }
       else this.dirty = false;
       this.leaveConfirmation = false; this.pendingWorkflow = null; this.workflowMessage = ""; this.trashTarget = null;
       this.message = message;
@@ -117,6 +124,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
 
   onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
   onSectionKeyDown = (event) => {
+    if (this.onboarding?.required) return;
     const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
     const tabs = [...this.querySelectorAll("[data-venue-section]")];
@@ -129,6 +137,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   onInput = (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    if (target.closest("[data-physical-onboarding]")) return;
     if (target.matches("[data-workflow-message]")) {
       this.workflowMessage = target.value;
       const button = this.querySelector("[data-confirm-workflow], [data-save-and-workflow]");
@@ -144,7 +153,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     const indicator = this.querySelector("[data-dirty-indicator]");
     if (indicator) { indicator.dataset.tone = "warning"; indicator.innerHTML = `${icon("warning", { size: 14 })} Modifiche non salvate`; }
   }
-
 }
 
 Object.assign(ArtAroundVenueEditorView.prototype, venueDraftMixin, venueActionMixin, venueTargetsMixin, venueSpatialMixin, venueRoutingMixin, venueSectionMixin);
