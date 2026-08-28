@@ -21,6 +21,7 @@ const navigatorRoutes = require("./routes/navigatorV2.routes");
 const preferenceRoutes = require("./routes/preferences.routes");
 const { configuredMediaRoot } = require("./services/itemMediaUpload.service");
 const { configuredFloorPlanRoot } = require("./services/venueFloorPlanUpload.service");
+const { configuredRecognitionMediaRoot } = require("./services/venueRecognitionMediaUpload.service");
 const { loadCurrentUser } = require("./middlewares/auth");
 const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
@@ -46,6 +47,12 @@ app.use("/uploads/item-media", express.static(configuredMediaRoot(), {
   setHeaders(response) { response.setHeader("X-Content-Type-Options", "nosniff"); },
 }));
 app.use("/uploads/venue-floor-plans", express.static(configuredFloorPlanRoot(), {
+  immutable: true,
+  maxAge: "30d",
+  fallthrough: false,
+  setHeaders(response) { response.setHeader("X-Content-Type-Options", "nosniff"); },
+}));
+app.use("/uploads/venue-recognition-media", express.static(configuredRecognitionMediaRoot(), {
   immutable: true,
   maxAge: "30d",
   fallthrough: false,
