@@ -4,6 +4,7 @@ import { venueActionMixin } from "./venue-editor-action-mixin.js";
 import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
 import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSectionMixin } from "./venue-editor-section-mixin.js";
+import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
 
 const SECTIONS = ["overview", "targets", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -24,12 +25,16 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   pendingWorkflow = null;
   workflowMessage = "";
   activeSection = initialVenueSection();
+  selectedFloorId = null;
+  selectedMapPlaceId = null;
+  pendingMapAction = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
     this.addEventListener("keydown", this.onSectionKeyDown);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
+    this.addEventListener("change", this.onChange);
     this.addEventListener("subject-selected", this.onSubjectSelected);
     this.load();
   }
@@ -39,11 +44,14 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("keydown", this.onSectionKeyDown);
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("input", this.onInput);
+    this.removeEventListener("change", this.onChange);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
 
   async refreshServerState() {
     this.data = await managementRepository.venue(this.id);
+    const floorIds = new Set((this.data?.layout?.floors || []).map((floor) => String(floor._id)));
+    if (!floorIds.has(String(this.selectedFloorId || ""))) this.selectedFloorId = [...floorIds][0] || null;
     const needsSetup = !this.data?.release && !this.data?.layout && has(this.data?.availableOperations, "venue.release.ensure");
     this.onboarding = needsSetup ? await managementRepository.venuePhysicalOnboarding(this.id) : null;
   }
@@ -92,5 +100,12 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   };
 }
 
-Object.assign(ArtAroundVenueEditorView.prototype, venueActionMixin, venueTargetsMixin, venueSpatialMixin, venueSectionMixin);
+Object.assign(
+  ArtAroundVenueEditorView.prototype,
+  venueActionMixin,
+  venueTargetsMixin,
+  venueSpatialMixin,
+  venueSectionMixin,
+  venueMapAuthoringMixin,
+);
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
