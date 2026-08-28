@@ -49,6 +49,9 @@ export const accountRepository = {
   updateNamespace(namespaceId, payload) {
     return apiClient.request(`/namespaces/${encodeURIComponent(namespaceId)}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
+  createPhysicalVocabulary(payload) {
+    return apiClient.request("/physical-vocabularies", { method: "POST", body: JSON.stringify(payload) });
+  },
   updatePresentationPreference(payload) {
     return apiClient.request("/users/me/presentation-preference", { method: "PUT", body: JSON.stringify(payload) });
   },
