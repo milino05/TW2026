@@ -54,7 +54,7 @@ export const venueSectionMixin = {
     const targetCount = Number(impact.venueTargetCount || 0);
     const visitCount = Number(impact.publishedVisitCount || 0);
     const visitWarning = visitCount
-      ? `${visitCount} visita${visitCount === 1 ? " pubblicata dipende" : "e pubblicate dipendono"} attualmente da questa sede. Finché la sede resta nel cestino, nuove esecuzioni che la richiedono non potranno partire.`
+      ? `${visitCount} ${visitCount === 1 ? "visita pubblicata dipende" : "visite pubblicate dipendono"} attualmente da questa sede. Finché la sede resta nel cestino, nuove esecuzioni che la richiedono non potranno partire.`
       : "Nessuna visita pubblicata corrente dipende da questa sede.";
     const confirmation = this.pendingVenueRemoval
       ? `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><span class="eyebrow">Conferma richiesta</span><strong>Spostare “${escapeHtml(this.data.venue.name)}” nel cestino?</strong><p>La sede sparirà dalle superfici attive. VenueRelease, LayoutRevision e ${targetCount} oggett${targetCount === 1 ? "o" : "i"} fisic${targetCount === 1 ? "o" : "i"} resteranno conservati come stato storico e potranno tornare disponibili ripristinando la sede.</p><p>${escapeHtml(visitWarning)}</p></div><div class="button-row"><button class="danger" type="button" data-confirm-venue-removal ${this.busy ? "disabled" : ""}>Sposta sede nel cestino</button><button class="button-secondary" type="button" data-cancel-venue-removal ${this.busy ? "disabled" : ""}>Annulla</button></div></section>`

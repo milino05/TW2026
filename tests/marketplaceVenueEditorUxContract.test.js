@@ -109,3 +109,10 @@ test("azioni distruttive e request changes usano conferme inline", () => {
 test("ritorno alla Organization riapre direttamente la sezione Sedi", () => {
   assert.match(source, /section=venues/);
 });
+
+test("l'impatto lifecycle usa singolare e plurale corretti per le visite", () => {
+  const sectionSource = sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"];
+  assert.match(sectionSource, /"visita pubblicata dipende"/);
+  assert.match(sectionSource, /"visite pubblicate dipendono"/);
+  assert.doesNotMatch(sectionSource, /visitae/);
+});
