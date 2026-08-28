@@ -1,21 +1,31 @@
+const mongoose = require("mongoose");
 const AppError = require("../utils/AppError");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function id(value) { return String(value?._id || value || ""); }
 function stableValue(value) { return JSON.stringify(value); }
 function selectionMap(selections = [], { field = "routingProfileSelections" } = {}) {
+  if (!Array.isArray(selections)) {
+    throw new AppError("routingProfileSelections deve essere un array", 400, [{ field, code: "INVALID_TYPE" }]);
+  }
   const result = new Map();
-  for (const [index, selection] of (selections || []).entries()) {
+  for (const [index, selection] of selections.entries()) {
     const venueId = id(selection?.venueId);
-    if (!venueId || !selection?.routingProfileDefinitionId) {
+    const definitionId = String(selection?.routingProfileDefinitionId || "").trim();
+    if (!mongoose.isValidObjectId(venueId) || !UUID_PATTERN.test(definitionId)) {
       throw new AppError("Selezione profilo di percorso non valida", 400, [{ field: `${field}[${index}]`, code: "INVALID_ROUTING_PROFILE_SELECTION" }]);
     }
     if (result.has(venueId)) {
       throw new AppError("È ammesso un solo profilo di percorso per Venue", 400, [{ field: `${field}[${index}].venueId`, code: "DUPLICATE_VALUE" }]);
     }
-    result.set(venueId, selection);
+    result.set(venueId, { venueId, routingProfileDefinitionId: definitionId });
   }
   return result;
+}
+function normalizeRoutingProfileSelections(selections = [], options = {}) {
+  return [...selectionMap(selections, options).values()];
 }
 function profileRequirements({ revision, routingProfileDefinitionId }) {
   const profile = (revision?.routingProfiles || []).find((entry) => entry.definitionId === routingProfileDefinitionId) || null;
@@ -138,6 +148,7 @@ function resolveVenueRoutingRequirements({
 
 module.exports = {
   selectionMap,
+  normalizeRoutingProfileSelections,
   profileRequirements,
   dedupeRequirements,
   hardConstraintConflict,
