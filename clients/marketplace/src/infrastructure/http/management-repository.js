@@ -64,9 +64,6 @@ export const managementRepository = {
   ensureVenueRelease(venueId, physicalVocabularyRevisionId = null) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release`, { method: "POST", ...body(physicalVocabularyRevisionId ? { physicalVocabularyRevisionId } : {}) });
   },
-  updateVenueRelease(venueId, payload) {
-    return apiClient.request(`/venues/${encoded(venueId)}/working-release`, { method: "PATCH", ...body(payload) });
-  },
   venueWorkflow(venueId, action, { method = "POST", payload = {} } = {}) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/${action}`, { method, ...(method === "DELETE" ? {} : body(payload)) });
   },
