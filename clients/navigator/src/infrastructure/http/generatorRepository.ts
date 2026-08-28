@@ -44,6 +44,11 @@ export type GenerationNavigationRequirement = {
   weight?: number;
 };
 
+export type GenerationRoutingProfileSelection = {
+  venueId: string;
+  routingProfileDefinitionId: string;
+};
+
 export interface GenerationOptionsProjection {
   physicalScope: {
     organizations: Array<{
@@ -86,6 +91,21 @@ export interface GenerationOptionsProjection {
     };
     navigation: {
       movementPacePreference: { label: string; minimum: number; maximum: number };
+      profilesByVenue: Array<{
+        venueId: string;
+        physicalVocabularyRevisionId: string;
+        profiles: Array<{
+          definitionId: string;
+          label: string;
+          description: string;
+          requirements: Array<{
+            label: string;
+            operator: string;
+            value: unknown;
+            priority: "required" | "preferred" | "avoid";
+          }>;
+        }>;
+      }>;
       requirements: Array<{
         key: string;
         label: string;
@@ -141,6 +161,7 @@ export interface GenerationRequest {
   languageComplexityPreference?: number;
   locale?: string;
   movementPacePreference?: number;
+  routingProfileSelections?: GenerationRoutingProfileSelection[];
   navigationRequirements?: GenerationNavigationRequirement[];
   historyMode?: "full" | "declared_only" | "current_request_only";
   interVenueTransfers?: Array<{
