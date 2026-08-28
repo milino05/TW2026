@@ -5,6 +5,7 @@ const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboard
 const venueLayoutCommandService = require("../services/venueLayoutCommand.service");
 const venueTargetBindingCommandService = require("../services/venueTargetBindingCommand.service");
 const venueTargetConfigurationCommandService = require("../services/venueTargetConfigurationCommand.service");
+const venuePhysicalAssetUsageService = require("../services/venuePhysicalAssetUsage.service");
 const venueFloorPlanUploadService = require("../services/venueFloorPlanUpload.service");
 const venueRecognitionMediaUploadService = require("../services/venueRecognitionMediaUpload.service");
 const AppError = require("../utils/AppError");
@@ -38,7 +39,7 @@ async function detachTargetFromWorkingConfiguration(req, res, next) {
       actorUserId: req.user._id,
     });
     await Promise.all((result.recognitionMediaUrls || []).map((url) =>
-      venueRecognitionMediaUploadService.removeVenueRecognitionMedia(url).catch(() => false)
+      venuePhysicalAssetUsageService.removeVenueRecognitionMediaIfUnreferenced(url).catch(() => false)
     ));
     res.status(200).json(result);
   } catch (error) { next(error); }
@@ -79,7 +80,7 @@ async function removeTargetRecognitionMedia(req, res, next) {
       actorUserId: req.user._id,
     });
     const removedUrl = result?.result?.url || null;
-    if (removedUrl) await venueRecognitionMediaUploadService.removeVenueRecognitionMedia(removedUrl).catch(() => {});
+    if (removedUrl) await venuePhysicalAssetUsageService.removeVenueRecognitionMediaIfUnreferenced(removedUrl).catch(() => {});
     res.status(200).json(result);
   } catch (error) { next(error); }
 }
@@ -101,7 +102,7 @@ async function uploadLayoutFloorPlan(req, res, next) {
       payload: { mapAsset: stored },
     });
     if (previousUrl && previousUrl !== stored.url) {
-      await venueFloorPlanUploadService.removeVenueFloorPlan(previousUrl).catch(() => {});
+      await venuePhysicalAssetUsageService.removeVenueFloorPlanIfUnreferenced(previousUrl).catch(() => {});
     }
     res.status(200).json(result);
   } catch (error) {
@@ -110,7 +111,17 @@ async function uploadLayoutFloorPlan(req, res, next) {
   }
 }
 async function calibrateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.calibrateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
-async function removeLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function removeLayoutFloor(req, res, next) {
+  try {
+    const ensured = await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id });
+    const floor = ensured.layout.floors.id(req.params.floorId);
+    if (!floor) throw new AppError("Piano non trovato", 404, [{ field: "floorId", code: "FLOOR_NOT_FOUND" }]);
+    const previousUrl = floor.mapAsset?.url || null;
+    const result = await venueLayoutCommandService.removeFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id });
+    if (previousUrl) await venuePhysicalAssetUsageService.removeVenueFloorPlanIfUnreferenced(previousUrl).catch(() => {});
+    res.status(200).json(result);
+  } catch (error) { next(error); }
+}
 async function createLayoutPlace(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.createPlace({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function moveLayoutPlace(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.movePlace({ venueId: req.params.venueId, placeId: req.params.placeId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function updateLayoutPlace(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updatePlace({ venueId: req.params.venueId, placeId: req.params.placeId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
