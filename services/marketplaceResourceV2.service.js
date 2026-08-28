@@ -24,20 +24,21 @@ const LIVE_TO_SNAPSHOT_RESOURCE_TYPE = Object.freeze({
 
 function id(value) { return String(value?._id || value || ""); }
 function owner(ownerType, ownerId) { return { ownerType, ownerId }; }
+function lifecycleQuery(resourceId, includeTrashed) { return includeTrashed ? { _id: resourceId } : { _id: resourceId, lifecycleStatus: "active" }; }
 
-async function loadItemEditionAuthority(resourceId) {
+async function loadItemEditionAuthority(resourceId, { includeTrashed = false } = {}) {
   const edition = await ItemEdition.findById(resourceId).lean();
   if (!edition) return null;
-  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).lean();
+  const item = await ItemV2.findOne(lifecycleQuery(edition.itemId, includeTrashed)).lean();
   return item ? { ...owner(item.ownerType, item.ownerId), resource: edition, aggregate: item } : null;
 }
 
-async function loadItemRevisionAuthority(resourceId) {
+async function loadItemRevisionAuthority(resourceId, { includeTrashed = false } = {}) {
   const revision = await ItemRevisionV2.findById(resourceId).lean();
   if (!revision) return null;
   const edition = await ItemEdition.findById(revision.itemEditionId).lean();
   if (!edition) return null;
-  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).lean();
+  const item = await ItemV2.findOne(lifecycleQuery(edition.itemId, includeTrashed)).lean();
   return item ? { ...owner(item.ownerType, item.ownerId), resource: revision, aggregate: item, edition } : null;
 }
 
@@ -57,27 +58,27 @@ async function loadReleaseAuthority(resourceId) {
   return contentSpace ? { ...owner(contentSpace.ownerType, contentSpace.ownerId), resource: release, context, aggregate: contentSpace } : null;
 }
 
-async function loadNamespaceAuthority(resourceId) {
-  const namespace = await Namespace.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+async function loadNamespaceAuthority(resourceId, { includeTrashed = false } = {}) {
+  const namespace = await Namespace.findOne(lifecycleQuery(resourceId, includeTrashed)).lean();
   return namespace ? { ...owner(namespace.ownerType, namespace.ownerId), resource: namespace } : null;
 }
 
-async function loadNamespaceRevisionAuthority(resourceId) {
+async function loadNamespaceRevisionAuthority(resourceId, { includeTrashed = false } = {}) {
   const revision = await NamespaceRevision.findById(resourceId).lean();
   if (!revision) return null;
-  const namespace = await Namespace.findOne({ _id: revision.namespaceId, lifecycleStatus: "active" }).lean();
+  const namespace = await Namespace.findOne(lifecycleQuery(revision.namespaceId, includeTrashed)).lean();
   return namespace ? { ...owner(namespace.ownerType, namespace.ownerId), resource: revision, aggregate: namespace } : null;
 }
 
-async function loadPhysicalVocabularyAuthority(resourceId) {
-  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+async function loadPhysicalVocabularyAuthority(resourceId, { includeTrashed = false } = {}) {
+  const physicalVocabulary = await PhysicalVocabulary.findOne(lifecycleQuery(resourceId, includeTrashed)).lean();
   return physicalVocabulary ? { ...owner(physicalVocabulary.ownerType, physicalVocabulary.ownerId), resource: physicalVocabulary } : null;
 }
 
-async function loadPhysicalVocabularyRevisionAuthority(resourceId) {
+async function loadPhysicalVocabularyRevisionAuthority(resourceId, { includeTrashed = false } = {}) {
   const revision = await PhysicalVocabularyRevision.findById(resourceId).lean();
   if (!revision) return null;
-  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: revision.physicalVocabularyId, lifecycleStatus: "active" }).lean();
+  const physicalVocabulary = await PhysicalVocabulary.findOne(lifecycleQuery(revision.physicalVocabularyId, includeTrashed)).lean();
   return physicalVocabulary ? { ...owner(physicalVocabulary.ownerType, physicalVocabulary.ownerId), resource: revision, aggregate: physicalVocabulary } : null;
 }
 
@@ -93,16 +94,16 @@ async function loadVisitRevisionAuthority(resourceId) {
   return visit ? { ...owner(visit.ownerType, visit.ownerId), resource: revision, aggregate: visit } : null;
 }
 
-async function resolveResourceAuthority(resourceType, resourceId) {
+async function resolveResourceAuthority(resourceType, resourceId, options = {}) {
   switch (resourceType) {
-    case "item_edition": return loadItemEditionAuthority(resourceId);
-    case "item_revision": return loadItemRevisionAuthority(resourceId);
+    case "item_edition": return loadItemEditionAuthority(resourceId, options);
+    case "item_revision": return loadItemRevisionAuthority(resourceId, options);
     case "editorial_context": return loadContextAuthority(resourceId);
     case "editorial_release": return loadReleaseAuthority(resourceId);
-    case "namespace": return loadNamespaceAuthority(resourceId);
-    case "namespace_revision": return loadNamespaceRevisionAuthority(resourceId);
-    case "physical_vocabulary": return loadPhysicalVocabularyAuthority(resourceId);
-    case "physical_vocabulary_revision": return loadPhysicalVocabularyRevisionAuthority(resourceId);
+    case "namespace": return loadNamespaceAuthority(resourceId, options);
+    case "namespace_revision": return loadNamespaceRevisionAuthority(resourceId, options);
+    case "physical_vocabulary": return loadPhysicalVocabularyAuthority(resourceId, options);
+    case "physical_vocabulary_revision": return loadPhysicalVocabularyRevisionAuthority(resourceId, options);
     case "visit": return loadVisitAuthority(resourceId);
     case "visit_revision": return loadVisitRevisionAuthority(resourceId);
     default: return null;
@@ -151,11 +152,11 @@ async function resolveCurrentSnapshotRef(resourceType, authority) {
     : null;
 }
 
-async function listPublishedSnapshotRefsForLive(resourceType, resourceId) {
+async function listPublishedSnapshotRefsForLive(resourceType, resourceId, { includeTrashed = false } = {}) {
   if (!LIVE_RESOURCE_TYPES.has(resourceType)) {
     throw new AppError("La risorsa non e una lineage live", 400, [{ code: "LIVE_RESOURCE_REQUIRED", resourceType }]);
   }
-  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  const authority = await resolveResourceAuthority(resourceType, resourceId, { includeTrashed });
   if (!authority) throw new AppError("Risorsa Marketplace non disponibile", 404, [{ code: "MARKETPLACE_RESOURCE_NOT_FOUND" }]);
   const snapshotType = LIVE_TO_SNAPSHOT_RESOURCE_TYPE[resourceType];
   let snapshots = [];
@@ -229,11 +230,23 @@ function editorialLicense(resourceType, snapshot) {
   return null;
 }
 
+function illustrativeMedia(resourceType, snapshot) {
+  if (!["item_edition", "item_revision"].includes(resourceType)) return [];
+  const media = (snapshot?.illustrativeMedia || []).find((entry) => entry?.url);
+  if (!media) return [];
+  return [{
+    url: media.url,
+    altText: media.altText || "",
+    width: media.width || null,
+    height: media.height || null,
+  }];
+}
+
 async function resolveMarketableResource({ resourceType, resourceId }) {
-  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  const live = LIVE_RESOURCE_TYPES.has(resourceType);
+  const authority = await resolveResourceAuthority(resourceType, resourceId, { includeTrashed: !live });
   if (!authority) throw new AppError("Risorsa Marketplace non disponibile", 404, [{ code: "MARKETPLACE_RESOURCE_NOT_FOUND" }]);
 
-  const live = LIVE_RESOURCE_TYPES.has(resourceType);
   const snapshotRef = await resolveCurrentSnapshotRef(resourceType, authority);
   if (live && !snapshotRef) {
     throw new AppError("La risorsa live non possiede uno snapshot pubblicato", 409, [{ code: "PUBLISHED_SNAPSHOT_REQUIRED" }]);
@@ -262,6 +275,7 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
       version: snapshot?.version || null,
       versionMode: live ? "live" : "snapshot",
       editorialLicense: editorialLicense(resourceType, snapshot),
+      illustrativeMedia: illustrativeMedia(resourceType, snapshot),
     },
   };
 }
