@@ -20,6 +20,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   onboarding = null;
   lifecycleImpact = null;
   canManageLifecycle = false;
+  pendingVenueRemoval = false;
   busy = false;
   error = null;
   message = null;
