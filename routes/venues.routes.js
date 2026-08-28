@@ -6,6 +6,7 @@ const controller = require("../controllers/venues.controller");
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
+const mediaId = validateObjectIdParam("mediaId");
 const floorId = validateObjectIdParam("floorId");
 const placeId = validateObjectIdParam("placeId");
 const connectionId = validateObjectIdParam("connectionId");
@@ -30,6 +31,8 @@ router.post("/venues/:venueId/working-release/review", requireAuth, venueId, con
 router.delete("/venues/:venueId/working-release/review", requireAuth, venueId, controller.withdrawReleaseReview);
 router.post("/venues/:venueId/working-release/request-changes", requireAuth, venueId, controller.requestReleaseChanges);
 router.post("/venues/:venueId/working-release/publish", requireAuth, venueId, controller.publishRelease);
+router.post("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media", requireAuth, venueId, venueTargetId, controller.uploadTargetRecognitionMedia);
+router.delete("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media/:mediaId", requireAuth, venueId, venueTargetId, mediaId, controller.removeTargetRecognitionMedia);
 
 router.post("/venues/:venueId/working-layout/floors", requireAuth, venueId, controller.addLayoutFloor);
 router.patch("/venues/:venueId/working-layout/floors/:floorId", requireAuth, venueId, floorId, controller.updateLayoutFloor);
