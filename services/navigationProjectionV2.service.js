@@ -3,7 +3,8 @@ const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
-const { loadPinnedBundle, translateRequirements } = require("./physicalExecutionV2.service");
+const { loadPinnedBundle, resolveNavigationRequirementsForVenue } = require("./physicalExecutionV2.service");
+const { selectionMap } = require("./routingProfileSelectionV2.service");
 const { resolvePlannedPath } = require("./graphRouting.service");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -126,6 +127,7 @@ async function projectSessionMap({ sessionId, userId }) {
   const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
   const currentAnchor = logicalAnchorForIndex(plan, session.currentEntryIndex);
   const projectedVenues = [];
+  const profileSelections = selectionMap(session.navigationSnapshot?.routingProfileSelections || []);
 
   for (const pin of session.venuePins || []) {
     const venueId = id(pin.venueId);
@@ -165,7 +167,11 @@ async function projectSessionMap({ sessionId, userId }) {
 
     const route = { overlays: [], floorTransitions: [] };
     const anchors = anchorMap(plan);
-    const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, session.navigationSnapshot?.requirements || []);
+    const translated = resolveNavigationRequirementsForVenue({
+      bundle,
+      globalRequirements: session.navigationSnapshot?.requirements || [],
+      routingProfileSelection: profileSelections.get(venueId) || null,
+    });
     for (const leg of plan.physicalRoute?.legs || []) {
       if (leg.type !== "indoor" || id(leg.venueReleaseId) !== id(pin.venueReleaseId)) continue;
       const from = anchors.get(id(leg.fromAnchorId));
