@@ -36,6 +36,7 @@ function organizationSections(authority) {
     ...(has(authority, "organization.roles.view") ? [{ code: "roles", label: "Ruoli" }] : []),
     ...(has(authority, "venue.view") ? [{ code: "venues", label: "Sedi" }] : []),
     ...(has(authority, "namespace.view") ? [{ code: "rules", label: "Regole editoriali" }] : []),
+    ...(has(authority, "physical_vocabulary.view") ? [{ code: "physical", label: "Vocabolari fisici" }] : []),
     ...(has(authority, "organization.profile.manage") || has(authority, "organization.audit.view") || authority.isOwner
       ? [{ code: "settings", label: "Impostazioni" }]
       : []),
