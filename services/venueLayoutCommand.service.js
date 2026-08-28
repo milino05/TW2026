@@ -456,33 +456,6 @@ async function setVenueTargetPlacement({ venueId, venueTargetId, actorUserId, pa
   } });
 }
 
-async function setVenueTargetBinding({ venueId, venueTargetId, actorUserId, payload = {} }) {
-  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, session }) => {
-    const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
-    if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
-    let binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
-    if (!binding) {
-      release.targetBindings.push({ venueTargetId: target._id, availability: "active", recognitionMedia: [] });
-      binding = release.targetBindings.at(-1);
-    }
-    if (hasOwn(payload, "availability")) {
-      if (!["active", "unavailable"].includes(payload.availability)) commandError("Disponibilita non valida", "INVALID_AVAILABILITY", "availability");
-      binding.availability = payload.availability;
-    }
-    if (hasOwn(payload, "recognitionMedia")) {
-      if (!Array.isArray(payload.recognitionMedia)) commandError("recognitionMedia deve essere un array", "INVALID_TYPE", "recognitionMedia");
-      const seen = new Set();
-      binding.recognitionMedia = payload.recognitionMedia.map((entry, index) => {
-        const url = requiredText(entry?.url, `recognitionMedia[${index}].url`, 2000);
-        if (seen.has(url)) commandError("Immagine di riconoscimento duplicata", "DUPLICATE_RECOGNITION_MEDIA", `recognitionMedia[${index}].url`);
-        seen.add(url);
-        return { url, altText: optionalText(entry?.altText, `recognitionMedia[${index}].altText`, 500) };
-      });
-    }
-    return { venueTargetId: target._id, availability: binding.availability, recognitionMedia: binding.recognitionMedia };
-  } });
-}
-
 async function setPreVisitInformation({ venueId, actorUserId, payload = {} }) {
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ release }) => {
     if (!Array.isArray(payload.items)) commandError("items deve essere un array", "INVALID_TYPE", "items");
@@ -507,6 +480,5 @@ module.exports = {
   setConnectionAttribute,
   removeConnection,
   setVenueTargetPlacement,
-  setVenueTargetBinding,
   setPreVisitInformation,
 };
