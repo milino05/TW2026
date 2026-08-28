@@ -1,8 +1,9 @@
 const venueService = require("../services/venue.service");
+const { assertVenuePermission } = require("../services/venueAuthorization.service");
 
 async function impact(req, res, next) {
   try {
-    await venueService.getVenue({ venueId: req.params.venueId });
+    await assertVenuePermission({ userId: req.user._id, venueId: req.params.venueId, permissionCode: "venue.lifecycle.manage" });
     const value = await venueService.getVenueLifecycleImpact({ venueId: req.params.venueId });
     res.status(200).json(value);
   } catch (error) { next(error); }
