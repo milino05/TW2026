@@ -18,6 +18,8 @@ function has(operations, code) { return (operations || []).some((entry) => entry
 export class ArtAroundVenueEditorView extends HTMLElement {
   data = null;
   onboarding = null;
+  lifecycleImpact = null;
+  canManageLifecycle = false;
   busy = false;
   error = null;
   message = null;
@@ -55,6 +57,14 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     if (!floorIds.has(String(this.selectedFloorId || ""))) this.selectedFloorId = [...floorIds][0] || null;
     const needsSetup = !this.data?.release && !this.data?.layout && has(this.data?.availableOperations, "venue.release.ensure");
     this.onboarding = needsSetup ? await managementRepository.venuePhysicalOnboarding(this.id) : null;
+    this.lifecycleImpact = null;
+    this.canManageLifecycle = false;
+    try {
+      this.lifecycleImpact = await managementRepository.venueLifecycleImpact(this.id);
+      this.canManageLifecycle = true;
+    } catch {
+      // Lifecycle management is a separate backend-authoritative permission boundary.
+    }
   }
 
   async load() {
