@@ -38,10 +38,12 @@ const MarketplaceOfferSchema = new Schema({
     externalRequirements: { type: [DependencyRefSchema], default: [] },
     checkedAt: { type: Date, default: null },
   },
-  status: { type: String, enum: ["active", "withdrawn"], default: "active", index: true },
+  status: { type: String, enum: ["active", "withdrawn", "inactive"], default: "active", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
   withdrawnAt: { type: Date, default: null },
   withdrawnBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  inactivatedAt: { type: Date, default: null },
+  inactivatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
 }, { timestamps: true, collection: "marketplace_offers" });
 
 MarketplaceOfferSchema.pre("validate", function validateOffer(next) {

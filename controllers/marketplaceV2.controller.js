@@ -10,6 +10,7 @@ const management = require("../services/marketplaceManagementV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
 const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
+const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
 
 function projectAcquisitionResult(result) {
   return {
@@ -211,6 +212,18 @@ async function creatorWorkspaceResourceDetail(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function removeCreatorWorkspaceResource(req, res, next) {
+  try {
+    res.status(200).json(await removeOwnedWorkspaceResource({
+      actorUserId: req.user._id,
+      principalType: req.body?.principalType || "user",
+      principalId: req.body?.principalId || req.user._id,
+      resourceType: req.params.resourceType,
+      resourceId: req.params.resourceId,
+    }));
+  } catch (error) { next(error); }
+}
+
 async function marketplaceAccountWorkspace(req, res, next) {
   try { res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id })); }
   catch (error) { next(error); }
@@ -281,6 +294,7 @@ module.exports = {
   creatorWorkspaceContext,
   creatorWorkspaceResources,
   creatorWorkspaceResourceDetail,
+  removeCreatorWorkspaceResource,
   marketplaceAccountWorkspace,
   marketplaceOrganizationDetail,
   marketplaceNamespaceManagement,

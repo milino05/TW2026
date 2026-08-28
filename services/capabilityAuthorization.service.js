@@ -157,6 +157,9 @@ async function resolveCapabilitySource({
     } else if (authority) {
       resolvedSnapshotRef = { resourceType, resourceId: authority.resource._id };
     }
+    if (!resolvedSnapshotRef && exact.entitlement?.baselineSnapshotRef) {
+      resolvedSnapshotRef = exact.entitlement.baselineSnapshotRef;
+    }
     if (!resolvedSnapshotRef && exact.basis === "entitlement") {
       throw new AppError("Snapshot autorizzata non disponibile", 409, [{ code: "AUTHORIZED_SNAPSHOT_UNAVAILABLE" }]);
     }
@@ -167,7 +170,7 @@ async function resolveCapabilitySource({
     return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
   }
 
-  const snapshots = await listPublishedSnapshotRefsForLive(resourceType, resourceId);
+  const snapshots = await listPublishedSnapshotRefsForLive(resourceType, resourceId, { includeTrashed: true });
   if (!snapshots.length) return { ...exact, requestedResourceRef, resolvedSnapshotRef: null };
   const snapshotType = snapshots[0].resourceType;
   if (!capabilitySupportsResource(capability, snapshotType)) {

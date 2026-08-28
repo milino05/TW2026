@@ -6,7 +6,7 @@ const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 async function loadItemEditionAuthority({ itemEditionId }) {
   const edition = await ItemEdition.findById(itemEditionId);
   if (!edition) throw new AppError("ItemEdition non trovata", 404);
-  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" });
+  const item = await ItemV2.findById(edition.itemId);
   if (!item) throw new AppError("Item della Edition non disponibile", 409);
   return { edition, item };
 }
@@ -21,6 +21,9 @@ async function assertCanUseItemEdition({ itemEditionId, actorUserId, capability 
     principalType,
     principalId,
   });
+  if (item.lifecycleStatus !== "active" && access.basis !== "entitlement") {
+    throw new AppError("Item della Edition non disponibile", 409);
+  }
   return { edition, item, access };
 }
 

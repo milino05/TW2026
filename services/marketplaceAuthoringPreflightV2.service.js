@@ -55,7 +55,7 @@ async function namespaceCandidates(principal) {
     : [];
   const licensedNamespaceIds = [...directNamespaceIds, ...revisions.map((entry) => entry.namespaceId)];
   const licensed = licensedNamespaceIds.length
-    ? await Namespace.find({ _id: { $in: licensedNamespaceIds }, lifecycleStatus: "active" }).select("name description").sort({ name: 1 }).lean()
+    ? await Namespace.find({ _id: { $in: licensedNamespaceIds } }).select("name description lifecycleStatus").sort({ name: 1 }).lean()
     : [];
 
   const byId = new Map();

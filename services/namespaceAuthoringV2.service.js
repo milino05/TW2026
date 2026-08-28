@@ -4,7 +4,7 @@ const AppError = require("../utils/AppError");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 
 async function getNamespaceAuthoringControls({ namespaceId, actorUserId, principalType, principalId }) {
-  const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" }).lean();
+  const namespace = await Namespace.findById(namespaceId).lean();
   if (!namespace) throw new AppError("Namespace non disponibile", 404);
   const access = await assertCanUseNamespaceForAuthoring({
     namespace,
@@ -12,6 +12,9 @@ async function getNamespaceAuthoringControls({ namespaceId, actorUserId, princip
     principalType,
     principalId,
   });
+  if (namespace.lifecycleStatus !== "active" && access.basis !== "entitlement") {
+    throw new AppError("Namespace non disponibile", 404);
+  }
   let revisionId = null;
   if (access.basis === "entitlement") {
     if (access.resolvedSnapshotRef?.resourceType !== "namespace_revision") {
