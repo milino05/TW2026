@@ -6,6 +6,9 @@ const controller = require("../controllers/venues.controller");
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
+const floorId = validateObjectIdParam("floorId");
+const placeId = validateObjectIdParam("placeId");
+const connectionId = validateObjectIdParam("connectionId");
 
 router.get("/venues", controller.list);
 router.post("/venues", requireAuth, controller.create);
@@ -27,5 +30,25 @@ router.post("/venues/:venueId/working-release/review", requireAuth, venueId, con
 router.delete("/venues/:venueId/working-release/review", requireAuth, venueId, controller.withdrawReleaseReview);
 router.post("/venues/:venueId/working-release/request-changes", requireAuth, venueId, controller.requestReleaseChanges);
 router.post("/venues/:venueId/working-release/publish", requireAuth, venueId, controller.publishRelease);
+
+router.post("/venues/:venueId/working-layout/floors", requireAuth, venueId, controller.addLayoutFloor);
+router.patch("/venues/:venueId/working-layout/floors/:floorId", requireAuth, venueId, floorId, controller.updateLayoutFloor);
+router.put("/venues/:venueId/working-layout/floors/:floorId/calibration", requireAuth, venueId, floorId, controller.calibrateLayoutFloor);
+router.delete("/venues/:venueId/working-layout/floors/:floorId", requireAuth, venueId, floorId, controller.removeLayoutFloor);
+
+router.post("/venues/:venueId/working-layout/places", requireAuth, venueId, controller.createLayoutPlace);
+router.patch("/venues/:venueId/working-layout/places/:placeId", requireAuth, venueId, placeId, controller.updateLayoutPlace);
+router.patch("/venues/:venueId/working-layout/places/:placeId/position", requireAuth, venueId, placeId, controller.moveLayoutPlace);
+router.put("/venues/:venueId/working-layout/places/:placeId/attributes/:definitionId", requireAuth, venueId, placeId, controller.setLayoutPlaceAttribute);
+router.delete("/venues/:venueId/working-layout/places/:placeId", requireAuth, venueId, placeId, controller.removeLayoutPlace);
+
+router.post("/venues/:venueId/working-layout/connections", requireAuth, venueId, controller.createLayoutConnection);
+router.patch("/venues/:venueId/working-layout/connections/:connectionId", requireAuth, venueId, connectionId, controller.updateLayoutConnection);
+router.put("/venues/:venueId/working-layout/connections/:connectionId/attributes/:definitionId", requireAuth, venueId, connectionId, controller.setLayoutConnectionAttribute);
+router.delete("/venues/:venueId/working-layout/connections/:connectionId", requireAuth, venueId, connectionId, controller.removeLayoutConnection);
+
+router.put("/venues/:venueId/working-layout/targets/:venueTargetId/placement", requireAuth, venueId, venueTargetId, controller.setLayoutTargetPlacement);
+router.put("/venues/:venueId/working-layout/targets/:venueTargetId/binding", requireAuth, venueId, venueTargetId, controller.setLayoutTargetBinding);
+router.put("/venues/:venueId/working-layout/pre-visit-information", requireAuth, venueId, controller.setPreVisitInformation);
 
 module.exports = router;
