@@ -328,7 +328,8 @@ async function createExecutionPreparation({ userId, payload = {} }) {
   const resolved = await resolveExactSource({ userId, payload });
   const draft = normalizedDraft(payload);
   const presentation = normalizePresentationPreference(user.defaultPresentationPreference, draft.presentationPreference);
-  const navigation = normalizeNavigation(user.defaultNavigationPreference, draft);
+  const navigationBaseline = resolved.sourceSnapshot.navigationBaseline || user.defaultNavigationPreference;
+  const navigation = normalizeNavigation(navigationBaseline, draft);
   const state = await calculatePreparationState({ sourceSnapshot: resolved.sourceSnapshot, navigation, presentation });
   const preparation = await ExecutionPreparation.create({
     userId,
