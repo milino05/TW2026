@@ -24,11 +24,15 @@ function resolveNavigationOrigin({ session, plan, explicitOrigin = null, locatio
     };
   }
 
-  if (locationObservation?.venueId && locationObservation?.placeId && locationObservation?.isFresh === true) {
+  const observedLocation = locationObservation?.location || null;
+  if (locationObservation?.isFresh === true && observedLocation?.venueId && observedLocation?.placeId) {
     return {
-      venueId: locationObservation.venueId,
-      placeId: locationObservation.placeId,
+      venueId: observedLocation.venueId,
+      placeId: observedLocation.placeId,
       provenance: "physical_observation",
+      providerId: locationObservation.providerId || null,
+      observedAt: locationObservation.observedAt || null,
+      venueTargetId: observedLocation.venueTargetId || null,
     };
   }
 
