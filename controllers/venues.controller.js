@@ -4,6 +4,7 @@ const venueReleaseService = require("../services/venueRelease.service");
 const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboarding.service");
 const venueLayoutCommandService = require("../services/venueLayoutCommand.service");
 const venueTargetBindingCommandService = require("../services/venueTargetBindingCommand.service");
+const venueTargetConfigurationCommandService = require("../services/venueTargetConfigurationCommand.service");
 const venueFloorPlanUploadService = require("../services/venueFloorPlanUpload.service");
 const venueRecognitionMediaUploadService = require("../services/venueRecognitionMediaUpload.service");
 const AppError = require("../utils/AppError");
@@ -29,6 +30,19 @@ async function withdrawReleaseReview(req, res, next) { try { res.status(200).jso
 async function requestReleaseChanges(req, res, next) { try { res.status(200).json(await venueReleaseService.requestVenueReleaseChanges({ venueId: req.params.venueId, actorUserId: req.user._id, message: req.body?.message })); } catch (error) { next(error); } }
 async function publishRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.publishVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
+async function detachTargetFromWorkingConfiguration(req, res, next) {
+  try {
+    const result = await venueTargetConfigurationCommandService.detachVenueTargetFromWorkingConfiguration({
+      venueId: req.params.venueId,
+      venueTargetId: req.params.venueTargetId,
+      actorUserId: req.user._id,
+    });
+    await Promise.all((result.recognitionMediaUrls || []).map((url) =>
+      venueRecognitionMediaUploadService.removeVenueRecognitionMedia(url).catch(() => false)
+    ));
+    res.status(200).json(result);
+  } catch (error) { next(error); }
+}
 async function setTargetAvailability(req, res, next) {
   try {
     res.status(200).json(await venueTargetBindingCommandService.setAvailability({
@@ -115,7 +129,7 @@ module.exports = {
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, updateWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
-  setTargetAvailability, uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
+  detachTargetFromWorkingConfiguration, setTargetAvailability, uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
   addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
   createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
   createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
