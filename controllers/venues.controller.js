@@ -29,6 +29,16 @@ async function withdrawReleaseReview(req, res, next) { try { res.status(200).jso
 async function requestReleaseChanges(req, res, next) { try { res.status(200).json(await venueReleaseService.requestVenueReleaseChanges({ venueId: req.params.venueId, actorUserId: req.user._id, message: req.body?.message })); } catch (error) { next(error); } }
 async function publishRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.publishVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
+async function setTargetAvailability(req, res, next) {
+  try {
+    res.status(200).json(await venueTargetBindingCommandService.setAvailability({
+      venueId: req.params.venueId,
+      venueTargetId: req.params.venueTargetId,
+      actorUserId: req.user._id,
+      payload: req.body || {},
+    }));
+  } catch (error) { next(error); }
+}
 async function uploadTargetRecognitionMedia(req, res, next) {
   let stored = null;
   try {
@@ -97,7 +107,6 @@ async function updateLayoutConnection(req, res, next) { try { res.status(200).js
 async function setLayoutConnectionAttribute(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setConnectionAttribute({ venueId: req.params.venueId, connectionId: req.params.connectionId, definitionId: req.params.definitionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function removeLayoutConnection(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeConnection({ venueId: req.params.venueId, connectionId: req.params.connectionId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function setLayoutTargetPlacement(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setVenueTargetPlacement({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
-async function setLayoutTargetBinding(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setVenueTargetBinding({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function setPreVisitInformation(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setPreVisitInformation({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 
 module.exports = {
@@ -106,9 +115,9 @@ module.exports = {
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, updateWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
-  uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
+  setTargetAvailability, uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
   addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
   createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
   createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
-  setLayoutTargetPlacement, setLayoutTargetBinding, setPreVisitInformation,
+  setLayoutTargetPlacement, setPreVisitInformation,
 };
