@@ -62,9 +62,15 @@ services:
       SEMANTIC_RESOLVER_RESOLVE_CACHE_TTL_MS: ${SEMANTIC_RESOLVER_RESOLVE_CACHE_TTL_MS:-600000}
       NAVIGATOR_CONFIG_DIR: ${NAVIGATOR_CONFIG_DIR:-}
       ITEM_MEDIA_DIR: ${ITEM_MEDIA_DIR:-/app/uploads/item-media}
+      VENUE_FLOOR_PLAN_DIR: ${VENUE_FLOOR_PLAN_DIR:-/app/uploads/venue-floor-plans}
+      VENUE_RECOGNITION_MEDIA_DIR: ${VENUE_RECOGNITION_MEDIA_DIR:-/app/uploads/venue-recognition-media}
     volumes:
       - item-media:/app/uploads/item-media
+      - venue-floor-plans:/app/uploads/venue-floor-plans
+      - venue-recognition-media:/app/uploads/venue-recognition-media
 
 volumes:
   mongo-data:
   item-media:
+  venue-floor-plans:
+  venue-recognition-media:

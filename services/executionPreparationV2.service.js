@@ -19,9 +19,11 @@ const {
   prepareInitialSessionPlan,
   createInitialSessionPlan,
 } = require("./sessionPlanV2.service");
-const { resolveMovementSpeed } = require("./physicalExecutionV2.service");
+const { resolveMovementSpeed, resolveSessionVenuePins } = require("./physicalExecutionV2.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
-const { normalizeCanonicalRoutingRequirements } = require("./routingPreferenceV2.service");
+const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
+const { normalizeRoutingProfileSelections } = require("./routingProfileSelectionV2.service");
+const { projectExecutionNavigationOptions } = require("./executionNavigationOptionsV2.service");
 const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service");
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
@@ -56,11 +58,15 @@ function normalizeNavigation(stored = {}, draft = {}) {
   const rawRequirements = Array.isArray(draft.navigationRequirements)
     ? draft.navigationRequirements
     : stored?.requirements;
+  const rawProfileSelections = Array.isArray(draft.routingProfileSelections)
+    ? draft.routingProfileSelections
+    : stored?.routingProfileSelections;
   return {
     movementPacePreference: validUnit(draft.movementPacePreference)
       ? Number(draft.movementPacePreference)
       : validUnit(stored?.movementPacePreference) ? Number(stored.movementPacePreference) : 0.5,
-    requirements: normalizeCanonicalRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
+    routingProfileSelections: normalizeRoutingProfileSelections(rawProfileSelections || [], { field: "routingProfileSelections" }),
+    requirements: normalizeRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
   };
 }
 function normalizedDraft(payload = {}) {
@@ -75,8 +81,11 @@ function normalizedDraft(payload = {}) {
     };
   }
   if (validUnit(payload.movementPacePreference)) draft.movementPacePreference = Number(payload.movementPacePreference);
+  if (payload.routingProfileSelections !== undefined) {
+    draft.routingProfileSelections = normalizeRoutingProfileSelections(payload.routingProfileSelections, { field: "routingProfileSelections" });
+  }
   if (payload.navigationRequirements !== undefined) {
-    draft.navigationRequirements = normalizeCanonicalRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
+    draft.navigationRequirements = normalizeRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
   }
   return draft;
 }
@@ -157,7 +166,7 @@ function projectWarning(warning) {
   const messages = {
     PREFERRED_ATTRIBUTE_UNSUPPORTED: "Una preferenza di percorso non e disponibile in una delle sedi.",
   };
-  return { code, message: messages[code] || warning?.message || "La preparazione contiene un avviso di navigazione." };
+  return { code, message: warning?.message || messages[code] || "La preparazione contiene un avviso di navigazione." };
 }
 function buildLogisticsPreview(prepared) {
   const timing = prepared.plan.estimatedTiming || {};
@@ -238,6 +247,23 @@ async function buildPreVisitProjection({ sourceSnapshot, venuePins }) {
   };
 }
 
+async function fallbackPhysicalProjection(sourceSnapshot) {
+  try {
+    const resolved = await resolveSessionVenuePins(sourceSnapshot.sourceAnchors || []);
+    return {
+      venuePins: resolved.venuePins,
+      navigationOptions: await projectExecutionNavigationOptions(resolved.venuePins),
+      preVisit: await buildPreVisitProjection({ sourceSnapshot, venuePins: resolved.venuePins }),
+    };
+  } catch {
+    return {
+      venuePins: [],
+      navigationOptions: { profilesByVenue: [] },
+      preVisit: { visitNotes: sourceSnapshot.explanation?.preVisitNotes || [], venues: [] },
+    };
+  }
+}
+
 async function calculatePreparationState({ sourceSnapshot, navigation, presentation }) {
   try {
     const prepared = await prepareInitialSessionPlan({
@@ -248,6 +274,7 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
     });
     return {
       venuePins: prepared.venuePins,
+      navigationOptions: await projectExecutionNavigationOptions(prepared.venuePins),
       speedMps: prepared.speedMps,
       plan: prepared.plan,
       readiness: await buildReadiness(prepared),
@@ -256,16 +283,15 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
     };
   } catch (error) {
     if (error?.status !== 409) throw error;
+    const fallback = await fallbackPhysicalProjection(sourceSnapshot);
     return {
-      venuePins: [],
+      venuePins: fallback.venuePins,
+      navigationOptions: fallback.navigationOptions,
       speedMps: resolveMovementSpeed(navigation.movementPacePreference),
       plan: null,
       readiness: readinessFromPlanningError(error),
       logisticsPreview: emptyLogisticsPreview(),
-      preVisit: {
-        visitNotes: sourceSnapshot.explanation?.preVisitNotes || [],
-        venues: [],
-      },
+      preVisit: fallback.preVisit,
     };
   }
 }
@@ -285,6 +311,8 @@ function publicProjection(preparation) {
     effectivePresentationPreference: preparation.effectivePresentationPreference || null,
     navigation: {
       movementPacePreference: preparation.navigationSnapshot.movementPacePreference,
+      routingProfileSelections: preparation.navigationSnapshot.routingProfileSelections || [],
+      profilesByVenue: preparation.navigationOptions?.profilesByVenue || [],
     },
     preVisit: preparation.preVisit || { visitNotes: [], venues: [] },
     readiness: preparation.readiness,
@@ -300,7 +328,8 @@ async function createExecutionPreparation({ userId, payload = {} }) {
   const resolved = await resolveExactSource({ userId, payload });
   const draft = normalizedDraft(payload);
   const presentation = normalizePresentationPreference(user.defaultPresentationPreference, draft.presentationPreference);
-  const navigation = normalizeNavigation(user.defaultNavigationPreference, draft);
+  const navigationBaseline = resolved.sourceSnapshot.navigationBaseline || user.defaultNavigationPreference;
+  const navigation = normalizeNavigation(navigationBaseline, draft);
   const state = await calculatePreparationState({ sourceSnapshot: resolved.sourceSnapshot, navigation, presentation });
   const preparation = await ExecutionPreparation.create({
     userId,
@@ -310,6 +339,7 @@ async function createExecutionPreparation({ userId, payload = {} }) {
     preparationDraft: draft,
     effectivePresentationPreference: presentation,
     navigationSnapshot: navigation,
+    navigationOptions: state.navigationOptions,
     venuePins: state.venuePins,
     sessionMovementSpeedMps: state.speedMps,
     adaptivePolicyVersion: policy.version,
@@ -346,6 +376,7 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
       preparationDraft: draft,
       effectivePresentationPreference: presentation,
       navigationSnapshot: navigation,
+      navigationOptions: state.navigationOptions,
       venuePins: state.venuePins,
       sessionMovementSpeedMps: state.speedMps,
       adaptivePolicyVersion: policy.version,

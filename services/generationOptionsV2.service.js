@@ -4,6 +4,7 @@ const Organization = require("../models/organization.model");
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
@@ -12,7 +13,7 @@ const Entitlement = require("../models/entitlement.model");
 const AppError = require("../utils/AppError");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
-const { getRoutingAttributeCatalog } = require("./routingAttributeCatalog.service");
+const { projectRoutingNavigationOptions } = require("./routingProfileV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -41,7 +42,7 @@ async function projectReadyVenues(selectedVenueIds = []) {
   const releaseById = new Map(releases.map((release) => [id(release._id), release]));
   const layoutIds = uniqueIds(releases.map((release) => release.layoutRevisionId));
   const layouts = layoutIds.length
-    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId").lean()
+    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId authoredAgainstPhysicalVocabularyRevisionId").lean()
     : [];
   const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
 
@@ -90,7 +91,24 @@ async function projectReadyVenues(selectedVenueIds = []) {
     organizations: [...grouped.values()],
     selectedVenueIds: selected,
     readyVenues,
+    layoutByVenueId: new Map(readyVenues.map((venue) => {
+      const release = releaseById.get(id(venue.publishedReleaseId));
+      return [id(venue._id), layoutById.get(id(release.layoutRevisionId))];
+    })),
   };
+}
+
+async function projectRoutingControls({ selectedVenueIds, layoutByVenueId }) {
+  if (!selectedVenueIds.length) return { requirements: [], profilesByVenue: [] };
+  const layouts = selectedVenueIds.map((venueId) => layoutByVenueId.get(id(venueId))).filter(Boolean);
+  const revisionIds = uniqueIds(layouts.map((layout) => layout.authoredAgainstPhysicalVocabularyRevisionId));
+  const revisions = await PhysicalVocabularyRevision.find({
+    _id: { $in: revisionIds },
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  }).lean();
+  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+  return projectRoutingNavigationOptions({ selectedVenueIds, layoutByVenueId, revisionById });
 }
 
 async function ownerSummaries(contentSpaces) {
@@ -297,7 +315,7 @@ function chooseDefaultSources({ contentSpaces, selectedVenueIds }) {
 async function getGenerationOptionsProjection({ actorUserId, selectedVenueIds = [] }) {
   const physical = await projectReadyVenues(selectedVenueIds);
   const contentSpaces = await resolveEditorialSourceOptions({ actorUserId, readyVenues: physical.readyVenues });
-  const routing = getRoutingAttributeCatalog();
+  const routing = await projectRoutingControls(physical);
   return {
     physicalScope: {
       organizations: physical.organizations,
@@ -317,12 +335,8 @@ async function getGenerationOptionsProjection({ actorUserId, selectedVenueIds = 
       },
       navigation: {
         movementPacePreference: { label: "Ritmo di movimento", minimum: 0, maximum: 1 },
-        requirements: routing.attributes.map((entry) => ({
-          key: entry.key,
-          label: entry.label,
-          dataType: entry.dataType,
-          unit: entry.unit || null,
-        })),
+        profilesByVenue: routing.profilesByVenue,
+        requirements: routing.requirements,
       },
       semantic: {
         sourceScoped: true,
@@ -337,5 +351,6 @@ module.exports = {
   projectReadyVenues,
   resolveEditorialSourceOptions,
   chooseDefaultSources,
+  projectRoutingControls,
   getGenerationOptionsProjection,
 };

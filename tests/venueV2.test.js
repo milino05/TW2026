@@ -33,7 +33,7 @@ test("VenueTarget is a stable Subject occurrence and same Subject can occur twic
 test("LayoutRevision places VenueTarget rather than Item", () => {
   const placeId = id();
   const layout = new LayoutRevision({
-    venueId: id(), version: 1, createdBy: id(), updatedBy: id(),
+    venueId: id(), version: 1, authoredAgainstPhysicalVocabularyRevisionId: id(), createdBy: id(), updatedBy: id(),
     venueTargetPlacements: [{ venueTargetId: id(), primaryPlaceId: placeId, placeIds: [placeId] }],
   });
   assert.equal(layout.venueTargetPlacements.length, 1);
@@ -56,7 +56,7 @@ test("Venue routing reuses graphRouting on VenueTarget placements", () => {
       { venueTargetId: fromTargetId, primaryPlaceId: fromPlaceId, placeIds: [fromPlaceId] },
       { venueTargetId: toTargetId, primaryPlaceId: toPlaceId, placeIds: [toPlaceId] },
     ],
-    connections: [{ _id: id(), fromPlaceId, toPlaceId, directionality: "bidirectional", distanceMeters: 10, additionalDelaySeconds: 0, attributes: {}, instructions: {} }],
+    connections: [{ _id: id(), fromPlaceId, toPlaceId, directionality: "bidirectional", distanceMeters: 10, additionalDelaySeconds: 0, attributeValues: [], instructions: {} }],
   };
   const route = routeBetweenVenueTargets({ layoutRevision: layout, fromVenueTargetId: fromTargetId, toVenueTargetId: toTargetId });
   assert.equal(route.reachable, true);

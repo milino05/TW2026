@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { assignStarterRole } = require("./helpers/organizationRbac");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -39,7 +40,9 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     const Subject = require("../models/subject.model");
     const { createVenue } = require("../services/venue.service");
     const { createVenueTarget, listVenueTargets } = require("../services/venueTarget.service");
-    const { ensureWorkingVenueRelease, updateWorkingVenueRelease, checkVenueReleaseConsistency, submitVenueReleaseReview, publishVenueRelease, getVenuePhysicalState } = require("../services/venueRelease.service");
+    const { ensureWorkingVenueRelease, checkVenueReleaseConsistency, submitVenueReleaseReview, publishVenueRelease, getVenuePhysicalState } = require("../services/venueRelease.service");
+    const layoutCommands = require("../services/venueLayoutCommand.service");
+    const bindingCommands = require("../services/venueTargetBindingCommand.service");
     const { routeBetweenVenueTargets } = require("../services/venueRouting.service");
 
     const user = await User.create({ username: "venue-v2-test", passwordHash: "test-hash" });
@@ -52,38 +55,54 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
 
     const venue = await createVenue({ payload: { name: "Venue test", ownerOrganizationId: organization._id }, actorUserId: user._id });
     const venueId = venue.id;
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id, ownerType: "organization", ownerId: organization._id });
+    const roomType = physical.placeTypeByKey.get("room");
     const targetA = await createVenueTarget({ venueId, payload: { subjectId: subjectA._id, label: "Opera A in sala" }, actorUserId: user._id });
     const targetB = await createVenueTarget({ venueId, payload: { subjectId: subjectB._id, label: "Opera B in sala" }, actorUserId: user._id });
 
-    const placeA = new mongoose.Types.ObjectId();
-    const placeB = new mongoose.Types.ObjectId();
-    await ensureWorkingVenueRelease({ venueId, actorUserId: user._id });
-    await updateWorkingVenueRelease({
+    await ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId: physical.revision._id, actorUserId: user._id });
+    const floorResult = await layoutCommands.addFloor({
+      venueId,
+      actorUserId: user._id,
+      payload: { label: "Piano 1" },
+    });
+    const floorId = floorResult.result.floorId;
+    await layoutCommands.setManagedFloorPlan({
+      venueId,
+      floorId,
+      actorUserId: user._id,
+      mapAsset: { url: "https://example.test/map.png", mimeType: "image/png", width: 1000, height: 800 },
+    });
+    const placeAResult = await layoutCommands.createPlace({
+      venueId,
+      actorUserId: user._id,
+      payload: { floorId, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", position: { x: 0.1, y: 0.2 } },
+    });
+    const placeBResult = await layoutCommands.createPlace({
+      venueId,
+      actorUserId: user._id,
+      payload: { floorId, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", position: { x: 0.8, y: 0.2 } },
+    });
+    const placeA = placeAResult.result.placeId;
+    const placeB = placeBResult.result.placeId;
+    await layoutCommands.createConnection({
       venueId,
       actorUserId: user._id,
       payload: {
-        targetBindings: [
-          { venueTargetId: targetA._id, availability: "active", recognitionMedia: [{ url: "https://example.test/a.jpg", altText: "Opera A" }] },
-          { venueTargetId: targetB._id, availability: "active", recognitionMedia: [] },
-        ],
-        preVisitInformation: ["Ingresso principale accessibile"],
-        layout: {
-          placeTypes: [{ key: "room", label: "Sala", userIntents: [] }],
-          routingAttributes: [],
-          routingPresets: [],
-          floors: [{ key: "f1", label: "Piano 1", map: { imageUrl: "https://example.test/map.png", width: 1000, height: 800 } }],
-          places: [
-            { _id: placeA, typeKey: "room", label: "Sala A", floorKey: "f1", position: { x: 0.1, y: 0.2 }, attributes: {} },
-            { _id: placeB, typeKey: "room", label: "Sala B", floorKey: "f1", position: { x: 0.8, y: 0.2 }, attributes: {} },
-          ],
-          venueTargetPlacements: [
-            { venueTargetId: targetA._id, primaryPlaceId: placeA, placeIds: [placeA] },
-            { venueTargetId: targetB._id, primaryPlaceId: placeB, placeIds: [placeB] },
-          ],
-          connections: [{ fromPlaceId: placeA, toPlaceId: placeB, directionality: "bidirectional", distanceMeters: 12, additionalDelaySeconds: 0, attributes: {}, instructions: { forward: "Prosegui verso Sala B", backward: "Torna verso Sala A" } }],
-        },
+        fromPlaceId: placeA,
+        toPlaceId: placeB,
+        directionality: "bidirectional",
+        metricMode: "manual_override",
+        distanceMeters: 12,
+        instructions: { forward: "Prosegui verso Sala B", backward: "Torna verso Sala A" },
       },
     });
+    await bindingCommands.setAvailability({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { availability: "active" } });
+    await bindingCommands.setAvailability({ venueId, venueTargetId: targetB._id, actorUserId: user._id, payload: { availability: "active" } });
+    await bindingCommands.addRecognitionMedia({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { url: "https://example.test/a.jpg", altText: "Opera A" } });
+    await layoutCommands.setVenueTargetPlacement({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { primaryPlaceId: placeA, placeIds: [] } });
+    await layoutCommands.setVenueTargetPlacement({ venueId, venueTargetId: targetB._id, actorUserId: user._id, payload: { primaryPlaceId: placeB, placeIds: [] } });
+    await layoutCommands.setPreVisitInformation({ venueId, actorUserId: user._id, payload: { items: ["Ingresso principale accessibile"] } });
 
     const checked = await checkVenueReleaseConsistency({ venueId, actorUserId: user._id });
     assert.equal(checked.release.integrity.status, "valid");
@@ -105,11 +124,7 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
 
     const nextWorking = await ensureWorkingVenueRelease({ venueId, actorUserId: user._id });
     assert.equal(nextWorking.release.version, 2);
-    const movedPlaces = nextWorking.layout.places.map((place) => ({
-      ...(place.toObject ? place.toObject() : place),
-      position: String(place._id) === String(placeA) ? { x: 0.45, y: 0.45 } : place.position,
-    }));
-    await updateWorkingVenueRelease({ venueId, actorUserId: user._id, payload: { layout: { places: movedPlaces } } });
+    await layoutCommands.movePlace({ venueId, placeId: placeA, actorUserId: user._id, payload: { position: { x: 0.45, y: 0.45 } } });
 
     const stillPublished = await getVenuePhysicalState({ venueId, view: "published" });
     const publishedPlaceA = stillPublished.layout.places.find((place) => String(place._id) === String(placeA));

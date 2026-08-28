@@ -5,6 +5,8 @@ const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const EditorialContext = require("../models/editorialContext.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
@@ -32,6 +34,8 @@ const EXTERNAL_OPERATION_BY_CAPABILITY = Object.freeze({
   "context.import_snapshot": { code: "context.import_snapshot", label: "Importa snapshot" },
   "namespace.author": { code: "namespace.author", label: "Crea contenuti con questo Namespace" },
   "namespace.fork": { code: "namespace.fork", label: "Crea Namespace derivato" },
+  "physical_vocabulary.author": { code: "physical_vocabulary.author", label: "Usa in una sede" },
+  "physical_vocabulary.fork": { code: "physical_vocabulary.fork", label: "Crea vocabolario fisico derivato" },
   "visit.execute": { code: "visit.execute", label: "Esegui visita" },
   "visit.copy_detached": { code: "visit.copy_detached", label: "Crea copia indipendente" },
 });
@@ -154,6 +158,13 @@ async function projectOwnedAssets({ principal, listings }) {
     : [];
   const namespaceRevisionById = new Map(namespaceRevisions.map((entry) => [id(entry._id), entry]));
 
+  const physicalVocabularies = await PhysicalVocabulary.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).sort({ name: 1 }).lean();
+  const physicalVocabularyRevisionIds = physicalVocabularies.flatMap((entry) => [entry.workingRevisionId, entry.publishedRevisionId]).filter(Boolean);
+  const physicalVocabularyRevisions = physicalVocabularyRevisionIds.length
+    ? await PhysicalVocabularyRevision.find({ _id: { $in: physicalVocabularyRevisionIds } }).select("status version integrity.status").lean()
+    : [];
+  const physicalVocabularyRevisionById = new Map(physicalVocabularyRevisions.map((entry) => [id(entry._id), entry]));
+
   const visits = await VisitV2.find({ ownerType: principalType, ownerId: principalId, lifecycleStatus: "active" }).lean();
   const visitRevisionIds = visits.flatMap((entry) => [entry.workingRevisionId, entry.publishedRevisionId]).filter(Boolean);
   const visitRevisions = visitRevisionIds.length
@@ -216,6 +227,26 @@ async function projectOwnedAssets({ principal, listings }) {
       availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),
     });
   }
+  for (const physicalVocabulary of physicalVocabularies) {
+    if (!can("physical_vocabulary.view")) continue;
+    const revision = physicalVocabularyRevisionById.get(id(physicalVocabulary.workingRevisionId || physicalVocabulary.publishedRevisionId));
+    const listing = listings.get(key("physical_vocabulary", physicalVocabulary._id)) || null;
+    const baseOperations = ownedOperations({ published: Boolean(physicalVocabulary.publishedRevisionId), listing, canManageCommerce, canEdit: can("physical_vocabulary.edit") });
+    assets.push({
+      ownership: "owned",
+      resourceType: "physical_vocabulary",
+      resourceId: physicalVocabulary._id,
+      sourceRef: { resourceType: "physical_vocabulary", resourceId: physicalVocabulary._id },
+      authoringRef: { resourceType: "physical_vocabulary", resourceId: physicalVocabulary._id },
+      title: physicalVocabulary.name,
+      summary: physicalVocabulary.description || "",
+      state: physicalVocabulary.workingRevisionId ? "working" : (physicalVocabulary.publishedRevisionId ? "published" : "empty"),
+      editorialWorkflow: workflowState(revision),
+      publishedSnapshotRef: physicalVocabulary.publishedRevisionId ? { resourceType: "physical_vocabulary_revision", resourceId: physicalVocabulary.publishedRevisionId } : null,
+      listing,
+      availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "physical_vocabulary", revision }),
+    });
+  }
   for (const visit of visits) {
     if (!can("visit.view")) continue;
     const revision = visitRevisionById.get(id(visit.workingRevisionId || visit.publishedRevisionId));
@@ -259,6 +290,9 @@ async function actionableRefs(resourceType, resourceId, marketable) {
   }
   if (resourceType === "namespace_revision" && authority.aggregate) {
     return { sourceRef: { resourceType: "namespace", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
+  }
+  if (resourceType === "physical_vocabulary_revision" && authority.aggregate) {
+    return { sourceRef: { resourceType: "physical_vocabulary", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
   }
   if (resourceType === "visit_revision" && authority.aggregate) {
     return { sourceRef: { resourceType: "visit", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };

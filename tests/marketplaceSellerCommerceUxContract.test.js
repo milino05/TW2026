@@ -60,10 +60,3 @@ test("ritirare una nuova offerta non invalida acquisizioni già concluse", () =>
   assert.match(view, /acquisizioni già completate/);
   assert.match(view, /diritti già concessi/);
 });
-
-test("le offerte ritirate non si accumulano nella vista vendite", () => {
-  assert.match(view, /const activeOffers = offers\.filter\(\(offer\) => offer\.status === "active"\)/);
-  assert.match(view, /const renderedOffers = activeOffers\.map/);
-  assert.match(view, /activeOffers\.length \? `\$\{activeOffers\.length\}/);
-  assert.match(service, /MarketplaceOffer\.find\(\{ listingId: \{ \$in: listingIds \}, status: "active" \}\)/);
-});

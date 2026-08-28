@@ -26,7 +26,7 @@ Un membro non-Owner può creare/modificare ruoli o assegnarli soltanto se possie
 
 ## Registry e ruoli iniziali
 
-I permission code sono definiti centralmente e raggruppati per governance, spazio editoriale, contenuti, Namespace, contesti editoriali, visite, sedi e Marketplace. Alla creazione vengono materializzati sei ruoli locali:
+I permission code sono definiti centralmente e raggruppati per governance, spazio editoriale, contenuti, Namespace, Physical Vocabulary, contesti editoriali, visite, sedi e Marketplace. Il gruppo Physical Vocabulary comprende consultazione, creazione, modifica, review, pubblicazione e gestione del ciclo di vita. Alla creazione vengono materializzati sei ruoli locali:
 
 1. `Administrator`
 2. `Curator`
@@ -47,7 +47,7 @@ Il registro autorizzativo è append-only e contiene gli eventi di creazione Orga
 
 Il backend autorizza ogni command e proietta `availableSections[]`, `availableOperations[]` e capability user-facing. Il Marketplace non deduce permessi dai nomi dei ruoli.
 
-La console Organization espone soltanto le sezioni disponibili tra Panoramica, Persone, Ruoli, Sedi, Regole editoriali e Impostazioni. La gestione Persone supporta assegnazioni multi-ruolo e Owner; il role builder mostra gruppi, dipendenze e permessi ad alto impatto. Create Hub, Libreria e Vendite omettono azioni e dati non autorizzati. In particolare i dati finanziari richiedono `marketplace.finance.view`, separato dalla sola consultazione della distribuzione.
+La console Organization espone soltanto le sezioni disponibili tra Panoramica, Persone, Ruoli, Sedi, Regole editoriali e Impostazioni. La gestione Persone supporta assegnazioni multi-ruolo e Owner; il role builder mostra gruppi, dipendenze e permessi ad alto impatto, inclusi quelli `physical_vocabulary.*`. Create Hub, Libreria e Vendite omettono azioni e dati non autorizzati. In particolare i dati finanziari richiedono `marketplace.finance.view`, separato dalla sola consultazione della distribuzione.
 
 ## Migrazione legacy
 

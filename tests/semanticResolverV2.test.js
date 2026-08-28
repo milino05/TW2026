@@ -238,23 +238,26 @@ test("Navigator external fallback only returns already-bound Subjects in the sel
   assert.deepEqual(result, ["source-b"]);
 });
 
-test("PlaceType keeps user intents and vocabulary mappings as separate axes", async () => {
-  const LayoutRevision = require("../models/layoutRevision.model");
+test("PlaceType keeps user-facing aliases and semantic mappings as separate axes", async () => {
+  const { randomUUID } = require("node:crypto");
+  const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
   const objectId = () => new mongoose.Types.ObjectId();
-  const revision = new LayoutRevision({
-    venueId: objectId(),
+  const revision = new PhysicalVocabularyRevision({
+    physicalVocabularyId: objectId(),
     version: 1,
     placeTypes: [{
+      definitionId: randomUUID(),
       key: "gallery",
       label: "Sala espositiva",
-      userIntents: ["find_quiet_area"],
+      localizations: [{ locale: "it-IT", aliases: ["galleria"] }],
       semanticRefs: [{ scheme: "wikidata", id: "Q180516", matchType: "close" }],
     }],
     createdBy: objectId(),
     updatedBy: objectId(),
   });
   await revision.validate();
-  assert.deepEqual([...revision.placeTypes[0].userIntents], ["FIND_QUIET_AREA"]);
+  assert.deepEqual([...revision.placeTypes[0].localizations[0].aliases], ["galleria"]);
+  assert.equal(revision.placeTypes[0].userIntents, undefined);
   assert.deepEqual(revision.placeTypes[0].semanticRefs.map((entry) => ({ scheme: entry.scheme, id: entry.id, matchType: entry.matchType })), [
     { scheme: "wikidata", id: "Q180516", matchType: "close" },
   ]);

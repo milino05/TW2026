@@ -18,7 +18,6 @@ const syntaxTargets = [
   "clients/marketplace/src/ui/app-shell.js",
   "clients/marketplace/src/ui/create-hub-view.js",
   "clients/marketplace/src/ui/item-authoring-view.js",
-  "clients/marketplace/src/ui/reliable-selects.js",
   "clients/marketplace/src/ui/venue-target-chooser.js",
   "clients/marketplace/src/ui/workspace-browser-view.js",
   "clients/marketplace/src/ui/workspace-view.js",

@@ -3,6 +3,7 @@ const path = require("path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -113,13 +114,15 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
 
     const venue = await Venue.create({ name: "Generator Venue", ownerOrganizationId: organization._id, primaryEditorialContextId: context._id, createdBy: user._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera fisica", createdBy: user._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+    const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
     const layout = await LayoutRevision.create({
       venueId: venue._id,
       version: 1,
-      placeTypes: [{ key: "room", label: "Sala" }],
-      floors: [{ key: "ground", label: "Piano terra" }],
-      places: [{ _id: placeId, typeKey: "room", label: "Sala 1", floorKey: "ground", position: { x: 0.5, y: 0.5 } }],
+      authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+      floors: [{ _id: floorId, label: "Piano terra" }],
+      places: [{ _id: placeId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala 1", floorId, position: { x: 0.5, y: 0.5 } }],
       venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [placeId] }],
       connections: [],
       status: "published",

@@ -5,6 +5,8 @@ const OrganizationRole = require("../models/organizationRole.model");
 const Venue = require("../models/venue.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
 const { resolveOrganizationAuthority, effectivePermissionsForMembership } = require("./organizationAuthorization.service");
 const { projectPermissionCatalog } = require("./organizationPermissionRegistry.service");
@@ -22,6 +24,7 @@ function organizationOperations(authority) {
   if (has(authority, "organization.roles.manage")) operations.push(operation("organization.role.create", "Crea ruolo"));
   if (has(authority, "venue.create")) operations.push(operation("venue.create", "Crea sede"));
   if (has(authority, "namespace.create")) operations.push(operation("namespace.create", "Crea Namespace"));
+  if (has(authority, "physical_vocabulary.create")) operations.push(operation("physical_vocabulary.create", "Crea vocabolario fisico"));
   if (authority.isOwner) operations.push(operation("organization.owner.manage", "Gestisci Owner", { rootAuthority: true }));
   return operations;
 }
@@ -33,6 +36,7 @@ function organizationSections(authority) {
     ...(has(authority, "organization.roles.view") ? [{ code: "roles", label: "Ruoli" }] : []),
     ...(has(authority, "venue.view") ? [{ code: "venues", label: "Sedi" }] : []),
     ...(has(authority, "namespace.view") ? [{ code: "rules", label: "Regole editoriali" }] : []),
+    ...(has(authority, "physical_vocabulary.view") ? [{ code: "physical", label: "Vocabolari fisici" }] : []),
     ...(has(authority, "organization.profile.manage") || has(authority, "organization.audit.view") || authority.isOwner
       ? [{ code: "settings", label: "Impostazioni" }]
       : []),
@@ -102,6 +106,14 @@ async function revisionMapFor(namespaces) {
   return new Map(revisions.map((revision) => [id(revision._id), revision]));
 }
 
+async function physicalVocabularyRevisionMapFor(physicalVocabularies) {
+  const revisionIds = physicalVocabularies.flatMap((physicalVocabulary) => [physicalVocabulary.workingRevisionId, physicalVocabulary.publishedRevisionId]).filter(Boolean);
+  const revisions = revisionIds.length
+    ? await PhysicalVocabularyRevision.find({ _id: { $in: revisionIds } }).select("version status").lean()
+    : [];
+  return new Map(revisions.map((revision) => [id(revision._id), revision]));
+}
+
 function projectNamespace(namespace, revisionById, authority = null) {
   const canEdit = !authority || has(authority, "namespace.edit");
   return {
@@ -115,16 +127,31 @@ function projectNamespace(namespace, revisionById, authority = null) {
   };
 }
 
+function projectPhysicalVocabulary(physicalVocabulary, revisionById, authority = null) {
+  const canEdit = !authority || has(authority, "physical_vocabulary.edit");
+  return {
+    id: physicalVocabulary._id,
+    name: physicalVocabulary.name,
+    description: physicalVocabulary.description || "",
+    state: namespaceState(physicalVocabulary, revisionById),
+    availableOperations: canEdit
+      ? [operation("physical_vocabulary.update", "Modifica dettagli"), operation("physical_vocabulary.edit", "Apri editor")]
+      : [operation("physical_vocabulary.view", "Visualizza")],
+  };
+}
+
 async function getMarketplaceAccountWorkspace({ actorUserId }) {
   const actor = await getActiveUserOrFail(actorUserId);
   const memberships = await OrganizationMembership.find({ userId: actor._id }).populate("roleAssignments.roleId").lean();
   const organizationIds = memberships.map((entry) => entry.organizationId);
-  const [organizations, personalNamespaces] = await Promise.all([
+  const [organizations, personalNamespaces, personalPhysicalVocabularies] = await Promise.all([
     organizationIds.length ? Organization.find({ _id: { $in: organizationIds }, lifecycleStatus: "active" }).sort({ name: 1 }).lean() : [],
     Namespace.find({ ownerType: "user", ownerId: actor._id, lifecycleStatus: "active" }).sort({ name: 1 }).lean(),
+    PhysicalVocabulary.find({ ownerType: "user", ownerId: actor._id, lifecycleStatus: "active" }).sort({ name: 1 }).lean(),
   ]);
   const membershipByOrganization = new Map(memberships.map((entry) => [id(entry.organizationId), entry]));
   const revisionById = await revisionMapFor(personalNamespaces);
+  const physicalVocabularyRevisionById = await physicalVocabularyRevisionMapFor(personalPhysicalVocabularies);
 
   const projectedOrganizations = await Promise.all(organizations.map(async (organization) => {
     const membership = membershipByOrganization.get(id(organization._id));
@@ -144,6 +171,9 @@ async function getMarketplaceAccountWorkspace({ actorUserId }) {
         : null,
       has(authority, "namespace.view")
         ? Namespace.countDocuments({ ownerType: "organization", ownerId: organization._id, lifecycleStatus: "active" }).then((value) => { counts.namespaces = value; })
+        : null,
+      has(authority, "physical_vocabulary.view")
+        ? PhysicalVocabulary.countDocuments({ ownerType: "organization", ownerId: organization._id, lifecycleStatus: "active" }).then((value) => { counts.physicalVocabularies = value; })
         : null,
     ]);
     return {
@@ -170,6 +200,7 @@ async function getMarketplaceAccountWorkspace({ actorUserId }) {
       availableOperations: [operation("organization.create", "Crea organizzazione")],
     },
     personalNamespaces: personalNamespaces.map((namespace) => projectNamespace(namespace, revisionById)),
+    personalPhysicalVocabularies: personalPhysicalVocabularies.map((physicalVocabulary) => projectPhysicalVocabulary(physicalVocabulary, physicalVocabularyRevisionById)),
     organizations: projectedOrganizations,
   };
 }
@@ -201,6 +232,7 @@ async function getMarketplaceOrganizationDetail({
   memberPage: rawMemberPage,
   venuePage: rawVenuePage,
   namespacePage: rawNamespacePage,
+  physicalVocabularyPage: rawPhysicalVocabularyPage,
   limit: rawLimit,
 }) {
   const authority = await resolveOrganizationAuthority({ userId: actorUserId, organizationId });
@@ -209,16 +241,19 @@ async function getMarketplaceOrganizationDetail({
   const memberPage = pageValue(rawMemberPage);
   const venuePage = pageValue(rawVenuePage);
   const namespacePage = pageValue(rawNamespacePage);
+  const physicalVocabularyPage = pageValue(rawPhysicalVocabularyPage);
   const pageSize = limitValue(rawLimit);
 
   const canViewMembers = has(authority, "organization.members.view");
   const canViewVenues = has(authority, "venue.view");
   const canViewNamespaces = has(authority, "namespace.view");
+  const canViewPhysicalVocabularies = has(authority, "physical_vocabulary.view");
   const memberQuery = { organizationId: organization._id };
   const venueQuery = { ownerOrganizationId: organization._id, lifecycleStatus: "active" };
   const namespaceQuery = { ownerType: "organization", ownerId: organization._id, lifecycleStatus: "active" };
+  const physicalVocabularyQuery = { ownerType: "organization", ownerId: organization._id, lifecycleStatus: "active" };
 
-  const [memberships, memberTotal, venues, venueTotal, namespaces, namespaceTotal, roles] = await Promise.all([
+  const [memberships, memberTotal, venues, venueTotal, namespaces, namespaceTotal, physicalVocabularies, physicalVocabularyTotal, roles] = await Promise.all([
     canViewMembers
       ? OrganizationMembership.find(memberQuery).populate("userId", "username status").populate("roleAssignments.roleId", "name permissionCodes").sort({ createdAt: 1 }).skip((memberPage - 1) * pageSize).limit(pageSize).lean()
       : [],
@@ -227,9 +262,12 @@ async function getMarketplaceOrganizationDetail({
     canViewVenues ? Venue.countDocuments(venueQuery) : 0,
     canViewNamespaces ? Namespace.find(namespaceQuery).sort({ name: 1 }).skip((namespacePage - 1) * pageSize).limit(pageSize).lean() : [],
     canViewNamespaces ? Namespace.countDocuments(namespaceQuery) : 0,
+    canViewPhysicalVocabularies ? PhysicalVocabulary.find(physicalVocabularyQuery).sort({ name: 1 }).skip((physicalVocabularyPage - 1) * pageSize).limit(pageSize).lean() : [],
+    canViewPhysicalVocabularies ? PhysicalVocabulary.countDocuments(physicalVocabularyQuery) : 0,
     roleProjection({ organizationId, authority }),
   ]);
   const revisionById = await revisionMapFor(namespaces);
+  const physicalVocabularyRevisionById = await physicalVocabularyRevisionMapFor(physicalVocabularies);
   const projectedMembers = memberships.filter((membership) => membership.userId?.status === "active").map((membership) => {
     const member = {
       id: membership.userId._id,
@@ -267,6 +305,12 @@ async function getMarketplaceOrganizationDetail({
       ],
     })), venuePage, pageSize, venueTotal),
     namespaces: paged(namespaces.map((namespace) => projectNamespace(namespace, revisionById, authority)), namespacePage, pageSize, namespaceTotal),
+    physicalVocabularies: paged(
+      physicalVocabularies.map((physicalVocabulary) => projectPhysicalVocabulary(physicalVocabulary, physicalVocabularyRevisionById, authority)),
+      physicalVocabularyPage,
+      pageSize,
+      physicalVocabularyTotal,
+    ),
     settings: {
       canManageProfile: has(authority, "organization.profile.manage"),
       canViewAudit: has(authority, "organization.audit.view"),

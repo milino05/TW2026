@@ -47,6 +47,18 @@ const GROUPS = Object.freeze([
     ],
   },
   {
+    code: "physical_vocabulary",
+    label: "Vocabolari fisici",
+    permissions: [
+      ["physical_vocabulary.view", "Visualizzare vocabolari fisici"],
+      ["physical_vocabulary.create", "Creare vocabolari fisici"],
+      ["physical_vocabulary.edit", "Modificare vocabolari fisici"],
+      ["physical_vocabulary.review", "Revisionare vocabolari fisici", true],
+      ["physical_vocabulary.publish", "Pubblicare vocabolari fisici", true],
+      ["physical_vocabulary.lifecycle.manage", "Gestire il ciclo di vita dei vocabolari fisici", true],
+    ],
+  },
+  {
     code: "editorial",
     label: "Contesti editoriali e grafo semantico",
     permissions: [
@@ -112,6 +124,11 @@ const DEPENDENCIES = Object.freeze({
   "namespace.review": ["namespace.view"],
   "namespace.publish": ["namespace.view"],
   "namespace.lifecycle.manage": ["namespace.view"],
+  "physical_vocabulary.create": ["physical_vocabulary.view"],
+  "physical_vocabulary.edit": ["physical_vocabulary.view"],
+  "physical_vocabulary.review": ["physical_vocabulary.view"],
+  "physical_vocabulary.publish": ["physical_vocabulary.view"],
+  "physical_vocabulary.lifecycle.manage": ["physical_vocabulary.view"],
   "editorial_context.create": ["editorial_context.view"],
   "editorial_context.edit": ["editorial_context.view"],
   "semantic_graph.edit": ["editorial_context.view"],
@@ -177,7 +194,7 @@ const STARTER_ROLES = Object.freeze([
     name: "Curator",
     description: "Cura, revisione e pubblicazione del patrimonio editoriale.",
     permissionCodes: [
-      ...byPrefix(["editorial_space.", "item.", "namespace.", "editorial_context.", "semantic_graph.", "editorial_release.", "visit."]),
+      ...byPrefix(["editorial_space.", "item.", "namespace.", "physical_vocabulary.", "editorial_context.", "semantic_graph.", "editorial_release.", "visit."]),
       "venue.view",
       "venue.primary_context.manage",
     ],
@@ -187,7 +204,7 @@ const STARTER_ROLES = Object.freeze([
     name: "Contributor",
     description: "Creazione e modifica di contenuti e visite senza pubblicazione.",
     permissionCodes: [
-      "editorial_space.view", "item.view", "item.create", "item.edit", "namespace.view",
+      "editorial_space.view", "item.view", "item.create", "item.edit", "namespace.view", "physical_vocabulary.view",
       "editorial_context.view", "visit.view", "visit.create", "visit.edit",
     ],
   },
@@ -195,14 +212,14 @@ const STARTER_ROLES = Object.freeze([
     key: "venue_manager",
     name: "Venue Manager",
     description: "Gestione completa delle sedi e della loro configurazione fisica.",
-    permissionCodes: byPrefix(["venue."]),
+    permissionCodes: byPrefix(["venue.", "physical_vocabulary."]),
   },
   {
     key: "marketplace_manager",
     name: "Marketplace Manager",
     description: "Acquisizione e distribuzione delle risorse nel Marketplace.",
     permissionCodes: [
-      "item.view", "namespace.view", "editorial_context.view", "visit.view",
+      "item.view", "namespace.view", "physical_vocabulary.view", "editorial_context.view", "visit.view",
       ...byPrefix(["marketplace."]),
     ],
   },
@@ -211,7 +228,7 @@ const STARTER_ROLES = Object.freeze([
     name: "Viewer",
     description: "Consultazione in sola lettura.",
     permissionCodes: [
-      "editorial_space.view", "item.view", "namespace.view", "editorial_context.view",
+      "editorial_space.view", "item.view", "namespace.view", "physical_vocabulary.view", "editorial_context.view",
       "visit.view", "venue.view",
     ],
   },

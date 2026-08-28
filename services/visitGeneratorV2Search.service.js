@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
+const { interVenueRequirementOutcome } = require("./physicalExecutionV2.service");
 const { id, relationCoherence } = require("./federatedSemanticGraphV2.service");
 
 function newObjectId() { return new mongoose.Types.ObjectId(); }
@@ -25,6 +26,20 @@ function pruneBeam(states, requiredCount, width) {
   }
   return [...bestByKey.values()].sort((a, b) => compareStates(a, b, requiredCount)).slice(0, width);
 }
+function warningKey(warning) {
+  return [
+    warning?.code || "NAVIGATION_WARNING",
+    id(warning?.fromVenueId),
+    id(warning?.toVenueId),
+    warning?.priority || "",
+    JSON.stringify(warning?.physicalFeatureRef || null),
+  ].join("::");
+}
+function mergeWarnings(current = [], added = []) {
+  const result = new Map(current.map((warning) => [warningKey(warning), warning]));
+  for (const warning of added || []) result.set(warningKey(warning), warning);
+  return [...result.values()];
+}
 
 function optimizeVisitV2({
   options,
@@ -33,6 +48,7 @@ function optimizeVisitV2({
   layoutByVenue,
   requirementsByVenue = new Map(),
   transferByPair = new Map(),
+  interVenueRequirements = [],
   requiredSemanticKeys = [],
 }) {
   const mustIncludeEditions = new Set((context.mustIncludeItemEditionIds || []).map(id));
@@ -74,19 +90,34 @@ function optimizeVisitV2({
   }
 
   function routeBetween(state, target) {
-    if (!state.currentTargetId) return { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [] };
+    if (!state.currentTargetId) return { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [], warnings: [] };
     if (id(state.currentVenueId) !== id(target.venueId)) {
       const transfer = transferByPair.get(transferKey(state.currentVenueId, target.venueId));
       if (!transfer) return { reachable: false };
-      return { reachable: true, type: "inter_venue", estimatedSeconds: Number(transfer.estimatedSeconds), preferencePenalty: 0, path: [], instruction: transfer.instruction || null };
+      const verification = interVenueRequirementOutcome({
+        requirements: interVenueRequirements,
+        fromVenueId: state.currentVenueId,
+        toVenueId: target.venueId,
+      });
+      if (verification.blockers.length) return { reachable: false, blockers: verification.blockers };
+      return {
+        reachable: true,
+        type: "inter_venue",
+        estimatedSeconds: Number(transfer.estimatedSeconds),
+        preferencePenalty: 0,
+        path: [],
+        instruction: transfer.instruction || null,
+        warnings: verification.warnings,
+      };
     }
-    if (id(state.currentTargetId) === id(target.venueTargetId)) return { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [] };
+    if (id(state.currentTargetId) === id(target.venueTargetId)) return { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [], warnings: [] };
     const layout = layoutByVenue.get(id(target.venueId));
     if (!layout) return { reachable: false };
     const key = `${id(layout._id)}:${id(state.currentPlaceId)}>${id(target.placeId)}`;
     if (!routeCache.has(key)) {
       routeCache.set(key, resolveRoute({
         connections: layout.connections || [],
+        places: layout.places || [],
         fromPlaceId: state.currentPlaceId,
         toPlaceId: target.placeId,
         requirements: requirementsByVenue.get(id(target.venueId)) || [],
@@ -95,7 +126,7 @@ function optimizeVisitV2({
       }));
     }
     const route = routeCache.get(key);
-    return { ...route, type: "indoor" };
+    return { ...route, type: "indoor", warnings: [] };
   }
 
   function emptyState() {
@@ -111,6 +142,7 @@ function optimizeVisitV2({
       entries: [],
       anchors: [],
       legs: [],
+      physicalWarnings: [],
       elapsedSeconds: 0,
       contentSeconds: 0,
       observationSeconds: 0,
@@ -140,7 +172,7 @@ function optimizeVisitV2({
   function appendOption(state, option) {
     const itemId = id(option.item._id);
     if (state.selectedItemIds.has(itemId)) return null;
-    let route = { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [] };
+    let route = { reachable: true, type: null, estimatedSeconds: 0, preferencePenalty: 0, path: [], warnings: [] };
     let createsAnchor = false, deliveryAnchorId = state.currentAnchorId, observationSeconds = 0;
     if (option.target) {
       const targetId = id(option.target.venueTargetId);
@@ -199,6 +231,7 @@ function optimizeVisitV2({
       selectedItemIds, visitedTargetIds, hardCoverage, hardCovered: hardCoverage.size,
       currentTargetId, currentVenueId, currentPlaceId, currentAnchorId,
       entries: [...state.entries, { _id: entryId, option, deliveryAnchorId }], anchors, legs,
+      physicalWarnings: mergeWarnings(state.physicalWarnings, route.warnings || []),
       elapsedSeconds: nextElapsed,
       contentSeconds: state.contentSeconds + Number(option.targetSeconds || 0),
       observationSeconds: state.observationSeconds + observationSeconds,

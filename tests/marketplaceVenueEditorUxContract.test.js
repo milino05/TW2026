@@ -7,11 +7,11 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const files = [
   "clients/marketplace/src/ui/venue-editor-view.js",
-  "clients/marketplace/src/ui/venue-editor-draft-mixin.js",
   "clients/marketplace/src/ui/venue-editor-action-mixin.js",
   "clients/marketplace/src/ui/venue-editor-targets-mixin.js",
   "clients/marketplace/src/ui/venue-editor-spatial-mixin.js",
-  "clients/marketplace/src/ui/venue-editor-routing-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-spatial-diagnostics-mixin.js",
   "clients/marketplace/src/ui/venue-editor-section-mixin.js",
 ];
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
@@ -27,14 +27,15 @@ test("Sedi e spazi fisici passa il syntax gate", () => {
 
 test("i moduli dichiarano le dipendenze di runtime che usano", () => {
   assert.match(sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"], /import \{ navigate \}/);
-  assert.match(sources["clients/marketplace/src/ui/venue-editor-draft-mixin.js"], /function parseRefs/);
+  assert.match(sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"], /managementRepository/);
+  assert.match(sources["clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js"], /managementRepository/);
   assert.match(sources["clients/marketplace/src/ui/venue-editor-targets-mixin.js"], /function has/);
-  assert.match(sources["clients/marketplace/src/ui/venue-editor-spatial-mixin.js"], /function pretty/);
+  assert.match(sources["clients/marketplace/src/ui/venue-editor-spatial-mixin.js"], /physicalDefinitions/);
   assert.match(sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"], /const SECTIONS =/);
 });
 
-test("Venue editor espone le sei sezioni user-facing approvate", () => {
-  for (const label of ["Panoramica", "Oggetti esposti", "Informazioni visitatori", "Mappa e luoghi", "Percorsi", "Pubblicazione"]) assert.match(source, new RegExp(label));
+test("Venue editor espone la IA user-facing approvata", () => {
+  for (const label of ["Panoramica", "Oggetti", "Spazi e mappa", "Informazioni visitatori", "Pubblicazione"]) assert.match(source, new RegExp(label));
 });
 
 test("Venue editor mostra una sezione alla volta con tab accessibili e deep link", () => {
@@ -51,16 +52,28 @@ test("Venue editor mostra una sezione alla volta con tab accessibili e deep link
 });
 
 test("VenueTarget, recognition media e Subject restano nel dominio fisico senza diventare Item", () => {
-  for (const token of ["createVenueTarget", "updateVenueTarget", "trashVenueTarget", "subjectId", "recognitionMedia", "targetBindings"]) assert.match(source, new RegExp(token));
+  for (const token of ["createVenueTarget", "updateVenueTarget", "trashVenueTarget", "subjectId", "recognitionMedia", "configuration", "binding"]) assert.match(source, new RegExp(token));
   assert.match(source, /non crea un Item/);
   assert.doesNotMatch(source, /createItem|updateItem|itemId\s*:/);
 });
 
-test("LayoutRevision preserva piani luoghi collocazioni connessioni e routing avanzato", () => {
-  for (const token of ["placeTypes", "routingAttributes", "routingPresets", "floors", "places", "venueTargetPlacements", "connections"]) assert.match(source, new RegExp(token));
-  assert.match(source, /Attributi tecnici del luogo/);
-  assert.match(source, /Configurazione routing avanzata/);
-  assert.match(source, /Requisiti strutturati/);
+test("la creazione object-first accompagna subito alla collocazione sulla mappa", () => {
+  const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
+  assert.match(actionSource, /createdTarget = await managementRepository\.createVenueTarget/);
+  assert.match(actionSource, /pendingMapAction = \{ type: "place-target", targetId \}/);
+  assert.match(actionSource, /showSection\("map", \{ scroll: true \}\)/);
+  assert.match(actionSource, /Aggiungi un luogo sulla mappa, poi colloca l’oggetto/);
+});
+
+test("Layout authoring usa command granulari e controlli guidati dal PhysicalVocabulary", () => {
+  for (const token of [
+    "addVenueFloor", "uploadVenueFloorPlan", "calibrateVenueFloor", "createVenuePlace",
+    "moveVenuePlace", "createVenueConnection", "updateVenueConnection", "setVenueTargetPlacement",
+  ]) assert.match(source, new RegExp(token));
+  assert.match(source, /Editor visuale/);
+  assert.match(source, /Caratteristiche fisiche/);
+  assert.match(source, /Non verificato/);
+  assert.doesNotMatch(source, /routingAttributes|routingPresets|canonicalKey|snapshotDraft|captureDraft|applyDraft|preserveDraft/);
 });
 
 test("mappa resta una projection fisica e non introduce posizionamento automatico", () => {
@@ -69,33 +82,37 @@ test("mappa resta una projection fisica e non introduce posizionamento automatic
   assert.doesNotMatch(source, /navigator\.geolocation|getCurrentPosition|watchPosition|teleport|QRScanner/);
 });
 
-test("workflow resta backend-authoritative e senza dialoghi nativi", () => {
+test("workflow e comandi distruttivi restano backend-authoritative e senza dialoghi nativi", () => {
   for (const operation of ["venue.release.check", "venue.release.request_review", "venue.release.withdraw_review", "venue.release.request_changes", "venue.release.publish"]) assert.match(source, new RegExp(operation.replaceAll(".", "\\.")));
   assert.match(source, /availableOperations/);
   assert.doesNotMatch(source, /window\.confirm|window\.prompt/);
   assert.match(source, /data-workflow-message/);
 });
 
-test("dirty state protegge il draft tra sezioni e durante mutazioni dei VenueTarget", () => {
-  assert.match(source, /beforeunload/);
-  assert.match(source, /captureDraft/);
-  assert.match(source, /applyDraft/);
-  assert.match(source, /snapshotDraft/);
-  assert.match(source, /preserveDraft/);
-  assert.match(source, /preVisitInformation: draft\.preVisitInformation/);
-  assert.match(source, /targetBindings: draft\.targetBindings/);
-  assert.match(source, /layout: draft\.layout/);
-  assert.match(source, /data-confirm-leave/);
+test("autosave salva ogni azione discreta sul server senza mega snapshot frontend", () => {
+  assert.match(source, /async execute\(callback, message\)/);
+  assert.match(source, /await callback\(\)[\s\S]*refreshServerState/);
+  assert.match(source, /Aggiornamento…/);
+  assert.match(source, /feedback-success/);
+  assert.doesNotMatch(source, /beforeunload|snapshotDraft|captureDraft|applyDraft|preserveDraft|updateVenueRelease/);
 });
 
 test("azioni distruttive e request changes usano conferme inline", () => {
-  assert.match(source, /trashTarget/);
-  assert.match(source, /data-confirm-trash/);
-  assert.match(source, /data-cancel-trash/);
+  assert.match(source, /data-confirm-venue-removal/);
+  assert.match(source, /data-cancel-venue-removal/);
+  assert.match(source, /data-confirm-target-removal/);
+  assert.match(source, /data-cancel-target-removal/);
   assert.match(source, /pendingWorkflow/);
   assert.match(source, /data-confirm-workflow/);
 });
 
 test("ritorno alla Organization riapre direttamente la sezione Sedi", () => {
   assert.match(source, /section=venues/);
+});
+
+test("l'impatto lifecycle usa singolare e plurale corretti per le visite", () => {
+  const sectionSource = sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"];
+  assert.match(sectionSource, /"visita pubblicata dipende"/);
+  assert.match(sectionSource, /"visite pubblicate dipendono"/);
+  assert.doesNotMatch(sectionSource, /visitae/);
 });

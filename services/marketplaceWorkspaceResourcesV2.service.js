@@ -6,6 +6,8 @@ const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const EditorialContext = require("../models/editorialContext.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Entitlement = require("../models/entitlement.model");
@@ -19,11 +21,12 @@ const {
   projectLicensedCandidate,
 } = require("./marketplaceWorkspaceResourceProjectionV2.service");
 
-const OWNED_RESOURCE_TYPES = ["item_edition", "editorial_context", "namespace", "visit"];
+const OWNED_RESOURCE_TYPES = ["item_edition", "editorial_context", "namespace", "physical_vocabulary", "visit"];
 const VIEW_PERMISSION_BY_TYPE = Object.freeze({
   item_edition: "item.view",
   editorial_context: "editorial_context.view",
   namespace: "namespace.view",
+  physical_vocabulary: "physical_vocabulary.view",
   visit: "visit.view",
 });
 
@@ -126,6 +129,21 @@ async function namespaceCandidates({ principal, q, windowSize, resourceId = null
   return facetCandidates(Namespace, pipeline, { windowSize });
 }
 
+async function physicalVocabularyCandidates({ principal, q, windowSize, resourceId = null }) {
+  const regex = q ? new RegExp(escapeRegex(q), "i") : null;
+  const match = { ownerType: principal.type, ownerId: principal.id, lifecycleStatus: "active" };
+  if (resourceId) match._id = objectId(resourceId);
+  const pipeline = [{ $match: match }];
+  if (regex) pipeline.push({ $match: { $or: [{ name: regex }, { description: regex }] } });
+  pipeline.push(
+    { $addFields: { currentRevisionId: { $ifNull: ["$workingRevisionId", "$publishedRevisionId"] } } },
+    { $lookup: { from: PhysicalVocabularyRevision.collection.name, localField: "currentRevisionId", foreignField: "_id", as: "revision" } },
+    { $unwind: { path: "$revision", preserveNullAndEmptyArrays: true } },
+    { $project: { _id: 1, name: 1, description: 1, workingRevisionId: 1, publishedRevisionId: 1, revision: 1, updatedAt: 1, resourceType: { $literal: "physical_vocabulary" } } },
+  );
+  return facetCandidates(PhysicalVocabulary, pipeline, { windowSize });
+}
+
 async function visitCandidates({ principal, q, windowSize, resourceId = null }) {
   const regex = q ? new RegExp(escapeRegex(q), "i") : null;
   const match = { ownerType: principal.type, ownerId: principal.id, lifecycleStatus: "active" };
@@ -145,6 +163,7 @@ const CANDIDATE_FACTORIES = {
   item_edition: itemCandidates,
   editorial_context: contextCandidates,
   namespace: namespaceCandidates,
+  physical_vocabulary: physicalVocabularyCandidates,
   visit: visitCandidates,
 };
 

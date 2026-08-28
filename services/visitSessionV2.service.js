@@ -3,13 +3,13 @@ const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
-const { ACTION_DEFINITIONS, navigationActionDefinition, publicAction } = require("../config/runtimeActions");
+const { ACTION_DEFINITIONS, physicalNavigationActionDefinition, publicAction } = require("../config/runtimeActions");
 const { estimateConnectionSeconds } = require("./graphRouting.service");
 const { computeTransitionReliability, computePhysicalObservationReliability, computeContentExperienceReliability } = require("./adaptiveLearning.service");
 const { recordContentExposure, recordVenueTargetObservation } = require("./learningV2.service");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { findAdjacentPresentation, resolvePresentationText, id } = require("./presentationRuntimeV2.service");
-const { loadPinnedBundle, routeToIntentInSession } = require("./physicalExecutionV2.service");
+const { loadPinnedBundle, routeToPhysicalFeatureInSession } = require("./physicalExecutionV2.service");
 const { nextPhysicalLeg } = require("./navigationProjectionV2.service");
 const { resolveNavigationOrigin } = require("./navigationOriginV2.service");
 const {
@@ -118,21 +118,24 @@ function projectIllustrativeMedia(revision) {
 async function navigationActions({ session, anchor, entry }) {
   if (!anchor) return [];
   const bundle = await loadPinnedBundle(session, anchor.venueId);
-  const typeByKey = new Map((bundle.layout.placeTypes || []).map((type) => [type.key, type]));
-  const intents = new Map();
+  const definitionsById = new Map((bundle.physicalVocabularyRevision.placeTypes || []).map((definition) => [definition.definitionId, definition]));
+  const availableDefinitionIds = new Set();
   for (const place of bundle.layout.places || []) {
-    const type = typeByKey.get(place.typeKey);
-    for (const intent of type?.userIntents || []) {
-      const normalized = String(intent || "").trim().toUpperCase();
-      if (normalized && !intents.has(normalized)) intents.set(normalized, type?.label || null);
-    }
+    const definition = definitionsById.get(place.placeTypeDefinitionId);
+    if (definition?.metadata?.navigationTarget === true) availableDefinitionIds.add(definition.definitionId);
   }
   const result = [];
-  for (const [intent, label] of intents) {
+  for (const definitionId of availableDefinitionIds) {
+    const definition = definitionsById.get(definitionId);
+    const physicalFeatureRef = {
+      kind: "local",
+      physicalVocabularyId: bundle.physicalVocabulary._id,
+      definitionId,
+    };
     try {
-      await routeToIntentInSession({ session, venueId: anchor.venueId, fromPlaceId: anchor.placeId, intent });
-      result.push(descriptor(navigationActionDefinition(intent, label), {
-        serverInput: { intent },
+      await routeToPhysicalFeatureInSession({ session, venueId: anchor.venueId, fromPlaceId: anchor.placeId, physicalFeatureRef });
+      result.push(descriptor(physicalNavigationActionDefinition(definition), {
+        serverInput: { physicalFeatureRef },
         context: actionContext(entry, anchor),
       }));
     } catch (error) {
@@ -414,10 +417,10 @@ async function recordTransitionV2({ sessionId, userId, payload = {} }) {
   return { observation: session.transitionObservations.at(-1), sessionMovementSpeedMps: session.sessionMovementSpeedMps };
 }
 
-async function routeToIntentV2({ sessionId, userId, intent }) {
+async function routeToPhysicalFeatureV2({ sessionId, userId, physicalFeatureRef }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId });
   const origin = resolveNavigationOrigin({ session, plan });
-  return routeToIntentInSession({ session, venueId: origin.venueId, fromPlaceId: origin.placeId, intent });
+  return routeToPhysicalFeatureInSession({ session, venueId: origin.venueId, fromPlaceId: origin.placeId, physicalFeatureRef });
 }
 
 async function pauseSessionV2({ sessionId, userId }) {
@@ -490,7 +493,7 @@ module.exports = {
   recordContentEntryExperience,
   recordVenueTargetObservationV2,
   recordTransitionV2,
-  routeToIntentV2,
+  routeToPhysicalFeatureV2,
   pauseSessionV2,
   resumeSessionV2,
   completeSessionV2,

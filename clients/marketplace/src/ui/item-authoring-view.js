@@ -129,22 +129,6 @@ function newDraft(author = "", illustrativeMedia = []) {
   };
 }
 
-function normalizedWorkingDraft(value, defaultAuthor = "") {
-  const source = value && typeof value === "object" ? value : {};
-  return {
-    namespaceId: String(source.namespaceId || ""),
-    label: String(source.label || ""),
-    author: String(source.author || defaultAuthor || "").trim(),
-    license: String(source.license || ""),
-    illustrativeMedia: (Array.isArray(source.illustrativeMedia) ? source.illustrativeMedia : [])
-      .map((entry) => writableMedia(entry, { includeId: false }))
-      .filter(Boolean)
-      .slice(0, 1),
-    representations: (Array.isArray(source.representations) ? source.representations : [])
-      .map((entry) => newRepresentation(entry)),
-  };
-}
-
 export class ItemAuthoringView extends HTMLElement {
   context = readOperatingContext();
   workspace = null;
@@ -199,75 +183,6 @@ export class ItemAuthoringView extends HTMLElement {
   firstRepresentation() { return this.firstVariant()?.representations?.[0] || null; }
   defaultAuthor() { return String(this.workspace?.principal?.name || this.context?.name || "").trim(); }
   currentMedia() { return this.draft.illustrativeMedia?.[0] || null; }
-  workingDraftStorageKey() {
-    const principalType = String(this.principal?.type || "");
-    const principalId = id(this.principal?.id);
-    if (!this.itemId || !principalType || !principalId) return "";
-    return `artaround:item-authoring-draft:v1:${encodeURIComponent(principalType)}:${encodeURIComponent(principalId)}:${encodeURIComponent(this.itemId)}`;
-  }
-  persistWorkingDraft() {
-    if (!this.itemId || ![2, 3].includes(this.activeStep)) return;
-    const key = this.workingDraftStorageKey(); if (!key) return;
-    const isNewWorkingDraft = this.newEditionMode || !this.selectedRevision();
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify({
-        version: 1,
-        activeStep: this.activeStep,
-        mode: isNewWorkingDraft ? "new" : "edit",
-        editionId: isNewWorkingDraft ? null : id(this.selectedEdition()?.id),
-        revisionId: isNewWorkingDraft ? null : id(this.selectedRevision()?.id),
-        activeRepresentationIndex: Number.isInteger(this.activeRepresentationIndex) ? this.activeRepresentationIndex : null,
-        mediaEditorOpen: Boolean(this.mediaEditorOpen),
-        draft: normalizedWorkingDraft(this.draft, this.defaultAuthor()),
-      }));
-    } catch {
-      // Il salvataggio locale è un aiuto al refresh e non deve bloccare l'editor.
-    }
-  }
-  readWorkingDraft() {
-    const key = this.workingDraftStorageKey(); if (!key) return null;
-    try {
-      const value = JSON.parse(window.sessionStorage.getItem(key) || "null");
-      return value?.version === 1 && ["new", "edit"].includes(value.mode) ? value : null;
-    } catch { return null; }
-  }
-  clearWorkingDraft() {
-    const key = this.workingDraftStorageKey(); if (!key) return;
-    try { window.sessionStorage.removeItem(key); } catch { /* Ignora storage non disponibile. */ }
-  }
-  async restoreWorkingDraft() {
-    const stored = this.readWorkingDraft(); if (!stored) return false;
-    if (stored.mode === "edit") {
-      const revision = this.selectedRevision();
-      const sameEdition = id(this.selectedEdition()?.id) === String(stored.editionId || "");
-      const sameRevision = id(revision?.id) === String(stored.revisionId || "");
-      if (!revision || !sameEdition || !sameRevision) { this.clearWorkingDraft(); return false; }
-      this.newEditionMode = false;
-      this.namespaceControls = null;
-      this.draft = normalizedWorkingDraft(stored.draft, this.defaultAuthor());
-    } else {
-      const choices = this.usableNamespaceChoices({ excludeUsed: true });
-      this.newEditionMode = true;
-      this.namespaceControls = null;
-      this.draft = normalizedWorkingDraft(stored.draft, this.defaultAuthor());
-      const selectedNamespaceId = this.draft.namespaceId;
-      const namespaceStillAvailable = choices.some((entry) => entry.id === selectedNamespaceId);
-      this.activeStep = 2;
-      if (namespaceStillAvailable) await this.selectNamespace(selectedNamespaceId);
-      else {
-        this.draft.namespaceId = "";
-        if (choices.length === 1) await this.selectNamespace(choices[0].id);
-      }
-    }
-    const restoredIndex = Number(stored.activeRepresentationIndex);
-    this.activeRepresentationIndex = Number.isInteger(restoredIndex) && this.draft.representations[restoredIndex] ? restoredIndex : null;
-    this.mediaEditorOpen = Boolean(stored.mediaEditorOpen && this.currentMedia());
-    this.mediaSuggestionAttempted = Boolean(this.currentMedia());
-    this.activeStep = Number(stored.activeStep) === 3 && this.generalDetailsReady() ? 3 : 2;
-    this.notice = "Bozza ripristinata dopo l'aggiornamento della pagina.";
-    this.persistWorkingDraft();
-    return true;
-  }
   wikidataIdentity() {
     const identities = this.selectedSubject?.externalIdentities || [];
     return identities.find((entry) => entry.scheme === "wikidata" && entry.role === "canonical")
@@ -281,7 +196,6 @@ export class ItemAuthoringView extends HTMLElement {
     if (!identity) {
       this.mediaSuggestionAttempted = true;
       this.mediaNotice = "Questo soggetto non è collegato a Wikidata: puoi comunque aggiungere un'immagine.";
-      this.persistWorkingDraft();
       return;
     }
     this.mediaBusy = true; this.mediaNotice = null; this.render();
@@ -307,7 +221,6 @@ export class ItemAuthoringView extends HTMLElement {
     } finally {
       this.mediaSuggestionAttempted = true;
       this.mediaBusy = false;
-      this.persistWorkingDraft();
       this.render();
     }
   }
@@ -326,7 +239,6 @@ export class ItemAuthoringView extends HTMLElement {
     this.mediaEditorOpen = true;
     this.mediaSuggestionAttempted = true;
     this.mediaNotice = "Immagine caricata. Controlla la descrizione prima di salvare.";
-    this.persistWorkingDraft();
   }
 
   async bootstrap() {
@@ -341,11 +253,7 @@ export class ItemAuthoringView extends HTMLElement {
       if (this.itemId) {
         await this.reloadProjection();
         await this.loadSuggestedMedia();
-        const restored = await this.restoreWorkingDraft();
-        if (!restored) {
-          if (this.selectedRevision()) this.activeStep = 4;
-          else await this.prepareNewEdition();
-        }
+        this.activeStep = this.selectedRevision() ? 3 : 2;
       }
     } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile inizializzare l'editor"; }
     finally { this.busy = false; this.render(); }
@@ -404,15 +312,15 @@ export class ItemAuthoringView extends HTMLElement {
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
     const illustrativeMedia = this.draft.illustrativeMedia || [];
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null; this.activeStep = 2;
+    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
-    this.persistWorkingDraft();
+    this.activeStep = 2;
   }
 
   async selectNamespace(namespaceId) {
     this.draft.namespaceId = String(namespaceId || ""); this.namespaceControls = null;
-    if (!this.draft.namespaceId) { this.persistWorkingDraft(); return; }
+    if (!this.draft.namespaceId) return;
     this.namespaceControls = await authoringRepository.namespaceControls(this.draft.namespaceId, this.principal);
     const durationIds = new Set((this.namespaceControls?.controls?.durationTypes || []).map((entry) => entry.definitionId));
     const languageIds = new Set((this.namespaceControls?.controls?.languageLevels || []).map((entry) => entry.definitionId));
@@ -420,7 +328,6 @@ export class ItemAuthoringView extends HTMLElement {
       if (!durationIds.has(representation.durationTypeDefinitionId)) representation.durationTypeDefinitionId = "";
       if (!languageIds.has(representation.languageLevelDefinitionId)) representation.languageLevelDefinitionId = "";
     }
-    this.persistWorkingDraft();
   }
 
   updateDraftField(target) {
@@ -449,11 +356,9 @@ export class ItemAuthoringView extends HTMLElement {
     }
     if (Object.prototype.hasOwnProperty.call(this.draft, target.name)) this.draft[target.name] = target.value;
   }
-
   onInput = (event) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) event.target.setCustomValidity("");
     this.updateDraftField(event.target);
-    this.persistWorkingDraft();
   };
 
   onInvalid = (event) => {
@@ -466,7 +371,6 @@ export class ItemAuthoringView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) target.setCustomValidity("");
     this.updateDraftField(target);
-    this.persistWorkingDraft();
     const mediaUpload = target.closest("input[data-media-upload]");
     if (mediaUpload instanceof HTMLInputElement && mediaUpload.files?.[0]) {
       const file = mediaUpload.files[0];
@@ -509,21 +413,23 @@ export class ItemAuthoringView extends HTMLElement {
         this.itemId = item._id || item.id;
         const url = new URL(window.location.href); url.search = ""; url.searchParams.set("itemId", this.itemId); window.history.replaceState({}, "", url);
         await this.reloadProjection(); await this.prepareNewEdition();
-        this.notice = "Soggetto confermato. Ora completa le informazioni generali.";
-      } else if (form.matches("[data-content-details]")) {
-        for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
-        this.normalizeAndValidateGeneralDetails();
-        this.activeStep = 3;
-        this.persistWorkingDraft();
-        this.notice = "Informazioni generali completate. Ora scegli le regole editoriali e aggiungi i testi.";
+        this.notice = "Soggetto confermato. Ora scrivi il contenuto.";
       } else if (form.matches("[data-content-draft]")) {
         for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
-        this.normalizeAndValidateGeneralDetails();
+        for (const key of ["label", "license"]) this.draft[key] = String(this.draft[key] || "").trim();
         for (const representation of this.draft.representations) {
           representation.locale = String(representation.locale || "").trim();
           representation.text = String(representation.text || "").trim();
         }
-        this.persistWorkingDraft();
+        const media = this.currentMedia();
+        if (media) {
+          media.url = String(media.url || "").trim();
+          media.altText = String(media.altText || "").trim();
+          if (!media.url || !media.altText) {
+            this.mediaEditorOpen = true;
+            throw new Error("Completa l'indirizzo e la descrizione dell'immagine oppure rimuovila.");
+          }
+        }
         const incompleteTextIndex = this.draft.representations.findIndex((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].some((value) => !String(value || "").trim()));
         if (incompleteTextIndex >= 0) {
           this.activeRepresentationIndex = incompleteTextIndex;
@@ -559,8 +465,7 @@ export class ItemAuthoringView extends HTMLElement {
     });
     const variant = created.revision?.presentationVariants?.[0]; const representation = variant?.representations?.[0];
     if (variant?._id && representation?._id) await authoringRepository.updateEdition(created.edition._id, { defaultPresentation: { variantId: variant._id, representationId: representation._id } });
-    this.clearWorkingDraft();
-    this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(created.edition._id); await this.reloadAuthoringContext(); this.activeStep = 4;
+    this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(created.edition._id); await this.reloadAuthoringContext(); this.activeStep = 3;
     this.notice = "Bozza salvata. Controlla il riepilogo quando è tutto pronto.";
   }
 
@@ -581,8 +486,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (!variant.representations.length) payload.defaultPresentation = null;
     const result = await authoringRepository.updateEdition(editionId, payload);
     await this.ensureDefaultRepresentation(editionId, result.revision);
-    this.clearWorkingDraft();
-    await this.reloadProjection(editionId); this.activeStep = 4;
+    await this.reloadProjection(editionId); this.activeStep = 3;
     this.notice = "Modifiche salvate. Esegui di nuovo il controllo quando il contenuto è pronto.";
   }
 
@@ -604,7 +508,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (operationCode !== "workflow.check") throw new Error("In questa schermata è disponibile soltanto il controllo finale");
     const editionId = id(this.selectedEdition()?.id); if (!editionId) throw new Error("Versione editoriale non disponibile");
     const result = await marketplaceRepository.executeWorkspaceOperation({ operationCode, sourceRef: { resourceType: "item_edition", resourceId: editionId }, targetPrincipal: { type: this.principal.type, id: this.principal.id }, payload: message ? { message } : {} });
-    await this.reloadProjection(editionId); this.activeStep = 4;
+    await this.reloadProjection(editionId); this.activeStep = 3;
     const issues = result?.result?.issues || [];
     this.privateSuccessOpen = Boolean(result?.result?.finalized && !issues.length);
     this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : null;
@@ -620,56 +524,41 @@ export class ItemAuthoringView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
-    const representationChoice = target.closest("button[data-representation-choice]");
-    if (representationChoice) {
-      const index = Number(representationChoice.dataset.representationIndex);
-      const field = representationChoice.dataset.representationChoice;
-      const representation = this.draft.representations[index];
-      if (representation && ["durationTypeDefinitionId", "languageLevelDefinitionId"].includes(field)) {
-        representation[field] = representationChoice.dataset.value || "";
-        this.error = null;
-        this.persistWorkingDraft();
-        this.render();
-        requestAnimationFrame(() => this.querySelector(`details[data-representation-choice-menu="${field}"][data-representation-index="${index}"] summary`)?.focus({ preventScroll: true }));
-      }
-      return;
-    }
     const closePrivateSuccess = target.closest("button[data-close-private-success]");
     if (closePrivateSuccess) { this.privateSuccessOpen = false; this.render(); return; }
     const changeMediaButton = target.closest("button[data-change-media]");
     if (changeMediaButton) {
       if (!this.currentMedia()) this.draft.illustrativeMedia = [{ url: "", altText: this.selectedSubject?.preferredLabel || "", source: { provider: "author_url", retrievedAt: new Date().toISOString() }, rights: null }];
-      this.mediaEditorOpen = true; this.error = null; this.persistWorkingDraft(); this.render();
+      this.mediaEditorOpen = true; this.error = null; this.render();
       requestAnimationFrame(() => this.querySelector("[data-media-field='url']")?.focus());
       return;
     }
     const closeMediaButton = target.closest("button[data-close-media-editor]");
-    if (closeMediaButton) { this.mediaEditorOpen = false; this.persistWorkingDraft(); this.render(); return; }
+    if (closeMediaButton) { this.mediaEditorOpen = false; this.render(); return; }
     const removeMediaButton = target.closest("button[data-remove-media]");
     if (removeMediaButton) {
       this.draft.illustrativeMedia = [];
       this.mediaEditorOpen = false;
       this.mediaSuggestionAttempted = true;
       this.mediaNotice = "Immagine rimossa dalla bozza.";
-      this.persistWorkingDraft();
       this.render();
       return;
     }
     const suggestMediaButton = target.closest("button[data-suggest-media]");
     if (suggestMediaButton) { this.draft.illustrativeMedia = []; await this.loadSuggestedMedia({ force: true }); return; }
     const addTextButton = target.closest("button[data-add-text]");
-    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.notice = "Testo aggiunto. Selezionalo quando vuoi compilarlo."; this.persistWorkingDraft(); this.render(); return; }
+    if (addTextButton) { this.draft.representations.push(newRepresentation()); this.error = null; this.notice = "Testo aggiunto. Selezionalo quando vuoi compilarlo."; this.render(); return; }
     const removeTextButton = target.closest("button[data-remove-text]");
-    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = null; else if (Number.isInteger(this.activeRepresentationIndex) && this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.persistWorkingDraft(); this.render(); } return; }
+    if (removeTextButton) { const index = Number(removeTextButton.dataset.removeText); if (this.draft.representations[index]) { this.draft.representations.splice(index, 1); if (this.activeRepresentationIndex === index) this.activeRepresentationIndex = null; else if (Number.isInteger(this.activeRepresentationIndex) && this.activeRepresentationIndex > index) this.activeRepresentationIndex -= 1; this.notice = "Testo rimosso dalla bozza. Salva il contenuto per confermare la modifica."; this.render(); } return; }
     const collapsedText = target.closest("[data-collapsed-text]");
-    if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.persistWorkingDraft(); this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
-    const stepButton = target.closest("button[data-step]"); if (stepButton) { const step = Number(stepButton.dataset.step); if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.persistWorkingDraft(); this.render(); } return; }
-    const backButton = target.closest("button[data-back-step]"); if (backButton) { const step = Math.max(1, Number(backButton.dataset.backStep) || 1); if (this.canOpenStep(step)) { this.activeStep = step; this.persistWorkingDraft(); this.render(); } return; }
+    if (collapsedText) { const index = Number(collapsedText.dataset.collapsedText); if (this.draft.representations[index]) { this.activeRepresentationIndex = index; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector(`[data-representation-index="${index}"]`)?.focus({ preventScroll: true })); } return; }
+    const stepButton = target.closest("button[data-step]"); if (stepButton) { const step = Number(stepButton.dataset.step); if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.render(); } return; }
+    const backButton = target.closest("button[data-back-step]"); if (backButton) { const step = Math.max(1, Number(backButton.dataset.backStep) || 1); if (this.canOpenStep(step)) { this.activeStep = step; this.render(); } return; }
     const newEditionButton = target.closest("button[data-new-edition]");
     if (newEditionButton) { this.busy = true; this.error = null; this.render(); try { await this.prepareNewEdition(); } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aggiungere una nuova versione editoriale"; } finally { this.busy = false; this.render(); } return; }
-    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.persistWorkingDraft(); this.render(); return; }
+    const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.render(); return; }
     const editionButton = target.closest("button[data-edition-id]");
-    if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 4; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
+    if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 3; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
   };
 
   remediationHref() {
@@ -679,45 +568,24 @@ export class ItemAuthoringView extends HTMLElement {
     return "/profile#account-rules";
   }
 
-  normalizeAndValidateGeneralDetails() {
-    this.draft.label = String(this.draft.label || "").trim();
-    this.draft.author = String(this.draft.author || this.defaultAuthor()).trim();
-    this.draft.license = String(this.draft.license || "").trim();
-    if (!this.draft.label || !this.draft.license) throw new Error("Completa titolo e licenza prima di continuare.");
-    const media = this.currentMedia();
-    if (!media) return;
-    media.url = String(media.url || "").trim();
-    media.altText = String(media.altText || "").trim();
-    if (!media.url || !media.altText) {
-      this.activeStep = 2;
-      this.mediaEditorOpen = true;
-      throw new Error("Completa l'indirizzo e la descrizione dell'immagine oppure rimuovila.");
-    }
-  }
-  generalDetailsReady() {
-    const fieldsReady = [this.draft.label, this.draft.license]
-      .every((value) => String(value || "").trim());
-    const media = this.currentMedia();
-    const mediaReady = !media || [media.url, media.altText].every((value) => String(value || "").trim());
-    return Boolean(fieldsReady && mediaReady);
-  }
   contentDraftReady() {
+    const fieldsReady = [this.draft.label, this.draft.author, this.draft.license]
+      .every((value) => String(value || "").trim());
     const rulesReady = !this.newEditionMode || Boolean(this.draft.namespaceId && this.namespaceControls);
     const textsReady = this.draft.representations.every((entry) => [entry.durationTypeDefinitionId, entry.languageLevelDefinitionId, entry.locale, entry.text].every((value) => String(value || "").trim()));
-    return Boolean(this.generalDetailsReady() && rulesReady && textsReady);
+    return Boolean(fieldsReady && rulesReady && textsReady);
   }
   canOpenStep(step) {
     if (step === 1) return true;
     if (step === 2) return Boolean(this.itemId);
-    if (step === 3) return Boolean(this.itemId && this.generalDetailsReady());
-    if (step === 4) return Boolean(this.selectedRevision() && !this.newEditionMode);
+    if (step === 3) return Boolean(this.selectedRevision() && !this.newEditionMode);
     return false;
   }
 
   renderProgress() {
-    const stages = [[1, "Di cosa parla"], [2, "Informazioni generali"], [3, "Regole e testi"], [4, "Controllo finale"]];
+    const stages = [[1, "Di cosa parla"], [2, "Testi e impostazioni"], [3, "Controllo finale"]];
     const currentLabel = stages.find(([step]) => step === this.activeStep)?.[1] || stages[0][1];
-    return `<nav class="authoring-progress" aria-label="Passaggi di creazione"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => { const enabled = this.canOpenStep(step); const current = this.activeStep === step; const complete = step === 1 ? Boolean(this.itemId) : step === 2 ? this.generalDetailsReady() : step === 3 ? Boolean(this.selectedRevision() && !this.newEditionMode) : this.selectedRevision()?.status === "published"; return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`; }).join("")}</ol></nav>`;
+    return `<nav class="authoring-progress" aria-label="Passaggi di creazione"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => { const enabled = this.canOpenStep(step); const current = this.activeStep === step; const complete = step === 1 ? Boolean(this.itemId) : step === 2 ? Boolean(this.selectedRevision() && !this.newEditionMode) : this.selectedRevision()?.status === "published"; return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`; }).join("")}</ol></nav>`;
   }
 
   renderPrerequisiteBlocker() {
@@ -771,9 +639,9 @@ export class ItemAuthoringView extends HTMLElement {
     if (this.activeStep !== 1) return "";
     const venue = this.venueTargetContext;
     const physicalContext = venue ? `<aside class="context-box"><span class="eyebrow">Oggetto della sede</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L'oggetto serve a precompilare il soggetto. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>` : "";
-    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}<div class="step-actions"><button type="button" data-step="2">Continua alle informazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
+    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}${this.renderMediaCard()}<div class="step-actions"><button type="button" data-step="2">Continua al contenuto ${icon("chevron", { size: 15 })}</button></div></section>`;
     const subjectSelection = this.selectedSubject
-      ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
+      ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}${this.renderMediaCard()}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
       : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>Cerca prima un'identità già esistente; creane una nuova solo se non trovi quella corretta.</p></div></header>${physicalContext}${subjectSelection}</section>`;
   }
@@ -787,13 +655,14 @@ export class ItemAuthoringView extends HTMLElement {
 
   personalizationControls() { return this.newEditionMode ? this.namespaceControls?.controls || null : this.selectedNamespace()?.revision || null; }
   renderRepresentationEditors(controls) {
-    const choiceMenu = ({ index, field, label, selected, placeholder, options }) => {
-      const labelId = `representation-${index}-${field}-label`;
-      const selectedOption = options.find((entry) => entry.value === selected);
-      return `<div class="representation-choice"><span class="representation-choice__label" id="${labelId}">${escapeHtml(label)}</span><input type="hidden" name="${field}" data-representation-index="${index}" value="${escapeHtml(selected)}"><details name="representation-choice" data-representation-choice-menu="${field}" data-representation-index="${index}"><summary aria-labelledby="${labelId}"><span>${escapeHtml(selectedOption?.label || placeholder)}</span></summary><div class="representation-choice__options" role="listbox" aria-labelledby="${labelId}">${options.map((entry) => `<button class="representation-choice__option" type="button" role="option" aria-selected="${entry.value === selected}" data-representation-choice="${field}" data-representation-index="${index}" data-value="${escapeHtml(entry.value)}"><span>${escapeHtml(entry.label)}</span>${entry.value === selected ? icon("check", { size: 15 }) : ""}</button>`).join("")}</div></details></div>`;
-    };
-    const durationOptions = (controls.durationTypes || []).map((entry) => ({ value: entry.definitionId, label: `${entry.label} · ${entry.targetSeconds}s` }));
-    const languageOptions = (controls.languageLevels || []).map((entry) => ({ value: entry.definitionId, label: entry.label }));
+    const durationOptions = (selected = "") => [
+      `<option value="">Scegli la durata</option>`,
+      ...(controls.durationTypes || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)} · ${entry.targetSeconds}s</option>`),
+    ].join("");
+    const languageOptions = (selected = "") => [
+      `<option value="">Scegli il livello</option>`,
+      ...(controls.languageLevels || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected === entry.definitionId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`),
+    ].join("");
     if (!Number.isInteger(this.activeRepresentationIndex) || this.activeRepresentationIndex < 0 || this.activeRepresentationIndex >= this.draft.representations.length) this.activeRepresentationIndex = null;
     if (!this.draft.representations.length) return `<div class="text-empty-state" role="status"><span class="text-empty-state__icon">${icon("edit", { size: 22 })}</span><div><h3>Non hai ancora aggiunto nessun testo</h3><p>Puoi salvare la bozza anche così. Per superare il controllo dovrai aggiungere almeno un testo completo.</p></div></div>`;
     return `<div class="representation-list">${this.draft.representations.map((representation, index) => {
@@ -806,27 +675,22 @@ export class ItemAuthoringView extends HTMLElement {
       const localeLabel = representation.locale || "Da indicare";
       const removeButton = `<button class="button-secondary remove-text" type="button" data-remove-text="${index}" aria-label="Rimuovi il testo ${index + 1}">${icon("trash", { size: 15 })} Rimuovi</button>`;
       if (!active) return `<article class="representation-editor representation-editor--collapsed" data-representation-index="${index}" data-collapsed-text="${index}"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div><div class="representation-compact-actions"><button class="button-secondary select-text" type="button" data-select-text="${index}" aria-expanded="false">${icon("edit", { size: 15 })} Modifica</button>${removeButton}</div></header><dl class="representation-summary"><div><dt>Durata</dt><dd>${escapeHtml(durationLabel)}</dd></div><div><dt>Livello di linguaggio</dt><dd>${escapeHtml(languageLabel)}</dd></div><div><dt>Lingua</dt><dd>${escapeHtml(localeLabel)}</dd></div></dl></article>`;
-      return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings">${choiceMenu({ index, field: "durationTypeDefinitionId", label: "Durata", selected: representation.durationTypeDefinitionId, placeholder: "Scegli la durata", options: durationOptions })}${choiceMenu({ index, field: "languageLevelDefinitionId", label: "Livello di linguaggio", selected: representation.languageLevelDefinitionId, placeholder: "Scegli il livello", options: languageOptions })}<label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
+      return `<article class="representation-editor" data-representation-index="${index}" data-selected="true" tabindex="-1"><header><div><span class="eyebrow">${index === 0 ? "Testo principale" : `Testo ${index + 1}`}</span><h3>${title}</h3></div>${removeButton}</header><div class="representation-settings"><label>Durata<select name="durationTypeDefinitionId" data-representation-index="${index}" required>${durationOptions(representation.durationTypeDefinitionId)}</select></label><label>Livello di linguaggio<select name="languageLevelDefinitionId" data-representation-index="${index}" required>${languageOptions(representation.languageLevelDefinitionId)}</select></label><label>Lingua<input name="locale" data-representation-index="${index}" required value="${escapeHtml(representation.locale)}" placeholder="es. it-IT"></label></div><label>Testo<textarea name="text" data-representation-index="${index}" rows="8" required>${escapeHtml(representation.text)}</textarea></label></article>`;
     }).join("")}</div>`;
   }
 
   renderStepTwo() {
     if (this.activeStep !== 2 || !this.itemId) return "";
-    const heading = `<header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Informazioni generali</span><h2>Presenta il contenuto</h2><p>Queste informazioni non dipendono dalle regole editoriali e saranno comuni a tutti i testi.</p></div></header>`;
-    return `<section class="wizard-step panel">${heading}<form data-content-details class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label>${this.renderMediaCard({ compact: true })}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">Continua a regole e testi ${icon("chevron", { size: 15 })}</button></div></form></section>`;
-  }
-
-  renderStepThree() {
-    if (this.activeStep !== 3 || !this.itemId || !this.generalDetailsReady()) return "";
     const controls = this.personalizationControls();
     const namespaceName = this.newEditionMode ? this.namespaceControls?.namespace?.name : this.selectedNamespace()?.name;
     const namespaceChoice = this.newEditionMode
       ? this.renderNamespaceSelector()
       : `<div class="selection-summary"><span>Regole editoriali</span><strong>${escapeHtml(namespaceName || "Non disponibili")}</strong><small>Queste regole determinano le durate e i livelli di linguaggio disponibili.</small></div>`;
-    const heading = `<header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Regole editoriali e testi</span><h2>Configura e scrivi i testi</h2><p>Le regole editoriali determinano le durate e i livelli di linguaggio disponibili. Puoi salvare la bozza senza testi; per superare il controllo ne servirà almeno uno completo.</p></div></header>`;
-    if (!controls) return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><p class="note">Scegli le regole editoriali per vedere le durate e i livelli disponibili.</p><div class="step-actions"><button class="button-secondary" type="button" data-back-step="2">Indietro</button></div></section>`;
+    const heading = `<header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Testi e impostazioni</span><h2>Configura e scrivi il contenuto</h2><p>Scegli le regole editoriali. Puoi salvare la bozza senza testi; per superare il controllo servirà almeno un testo completo di durata, livello di linguaggio e lingua.</p></div></header>`;
+    if (!controls) return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><p class="note">Scegli le regole editoriali per vedere le durate e i livelli disponibili.</p><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button></div></section>`;
+    const creditedTo = this.draft.author || this.defaultAuthor();
     const addTextLabel = this.draft.representations.length ? "Aggiungi un altro testo" : "Aggiungi un testo";
-    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form">${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} ${addTextLabel}</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="2">Indietro</button><button type="submit">${this.newEditionMode ? "Salva bozza e vai al controllo" : "Salva modifiche e vai al controllo"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form"><label>Titolo del contenuto<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note author-credit">Autore assegnato automaticamente: <strong>${escapeHtml(creditedTo)}</strong>, proprietario di questa area di lavoro.</p>${this.renderMediaCard({ compact: true })}${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} ${addTextLabel}</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">${this.newEditionMode ? "Salva e vai al controllo" : "Salva modifiche"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
   }
 
   renderMemberships() {
@@ -852,12 +716,12 @@ export class ItemAuthoringView extends HTMLElement {
   renderWorkflowOperation(operation) {
     return `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit">${operation.code === "workflow.check" ? icon("check", { size: 15 }) : ""}${escapeHtml(workflowLabel(operation))}</button></form>`;
   }
-  renderStepFour() {
-    if (this.activeStep !== 4 || !this.selectedRevision() || this.newEditionMode) return "";
+  renderStepThree() {
+    if (this.activeStep !== 3 || !this.selectedRevision() || this.newEditionMode) return "";
     const revision = this.selectedRevision(); const integrity = revision.integrity?.status || "needs_review"; const issues = revision.integrity?.issues || []; const operations = this.workflowOperations(); const published = revision.status === "published"; const editAllowed = Boolean(this.availableOperation("item.edit"));
     const statePanel = published ? `<div class="readiness success"><strong>Contenuto privato e corretto</strong><p>Ha superato i controlli e non è visibile nel Marketplace.</p></div>` : integrity === "valid" ? `<div class="readiness success"><strong>Controllo superato</strong></div>` : `<div class="readiness warning"><strong>Serve un controllo</strong><p>Verificheremo testi, impostazioni e riferimenti prima di rendere il contenuto privato.</p></div>`;
     const controls = operations.length ? `<div class="workflow-panel"><h3>Controllo finale</h3><p class="note">Se non ci sono problemi, il contenuto verrà salvato come privato nella tua Libreria.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div>` : "";
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica che sia tutto pronto</h2><p>Il controllo non rende il contenuto visibile agli altri utenti.</p></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${controls}<div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica che sia tutto pronto</h2><p>Il controllo non rende il contenuto visibile agli altri utenti.</p></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${controls}<div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
   }
 
   renderPrivateSuccessDialog() {
@@ -873,7 +737,7 @@ export class ItemAuthoringView extends HTMLElement {
 
   render() {
     const blocked = !this.itemId && this.preflight?.content?.allowed === false;
-    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Quattro passaggi: identifica il soggetto, completa le informazioni generali, scegli regole e testi, quindi esegui il controllo finale. Il contenuto resterà privato finché non sceglierai di portarlo nel Marketplace.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}`}</main>${this.renderPrivateSuccessDialog()}`;
+    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Tre passaggi: identifica il soggetto, configura e scrivi i testi, quindi esegui il controllo finale. Il contenuto resterà privato finché non sceglierai di portarlo nel Marketplace.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}`}</main>${this.renderPrivateSuccessDialog()}`;
   }
 
   representationStyles() {
@@ -885,15 +749,6 @@ export class ItemAuthoringView extends HTMLElement {
       .representation-editor--collapsed{gap:.65rem;padding:.8rem 1rem;cursor:pointer;background:#f8faf8;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}
       .representation-editor--collapsed:hover{border-color:#91a39b;background:#f1f6f3;box-shadow:0 .35rem 1rem rgba(16,40,33,.06)}
       .representation-editor--collapsed>header{align-items:center}
-      .representation-choice{position:relative;display:grid;gap:.38rem;min-width:0;color:#173e35}
-      .representation-choice__label{font-size:.86rem;font-weight:650}
-      .representation-choice details{position:relative;border-radius:.55rem}
-      .representation-choice details[open]>summary{margin-bottom:0;border-color:#173e35;box-shadow:0 0 0 3px rgba(233,168,68,.3)}
-      .representation-choice summary{display:flex;min-height:2.7rem;align-items:center;justify-content:space-between;gap:.6rem;border:1px solid #91a39b;border-radius:.55rem;padding:.62rem .72rem;background:#fff;list-style:none;font-weight:500;cursor:pointer}
-      .representation-choice summary::-webkit-details-marker{display:none}.representation-choice summary::marker{content:""}.representation-choice summary::after{content:"⌄";font-size:1rem;font-weight:800;line-height:1;transition:transform .15s ease}.representation-choice details[open]>summary::after{transform:rotate(180deg)}
-      .representation-choice__options{position:absolute;z-index:40;top:calc(100% + .35rem);right:0;left:0;display:grid;gap:.2rem;padding:.3rem;border:1px solid #c4d0ca;border-radius:.6rem;background:#fff;box-shadow:0 .8rem 2rem rgba(16,40,33,.16)}
-      .representation-choice__option{display:flex;width:100%;min-height:2.45rem;align-items:center;justify-content:space-between;gap:.5rem;border:0;padding:.55rem .65rem;background:#fff;color:#173e35;text-align:left;box-shadow:none;transform:none}
-      .representation-choice__option:hover:not(:disabled),.representation-choice__option[aria-selected="true"]{background:#eef4f1;color:#173e35;box-shadow:none;transform:none}
       .representation-compact-actions{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}
       .representation-compact-actions button{min-height:2.3rem;padding:.45rem .65rem}
       .representation-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin:0}
@@ -937,7 +792,7 @@ export class ItemAuthoringView extends HTMLElement {
   }
 
   styles() {
-    return `<style>:host{display:block}.authoring-page{display:grid;gap:1rem;max-width:68rem;margin:auto;padding:2rem 1rem 5rem}.authoring-progress ol{display:grid;grid-template-columns:repeat(4,minmax(8rem,1fr));gap:.55rem;min-width:32rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#173e35}.authoring-progress button:hover:not(:disabled){background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button{border-color:#173e35;background:#173e35;color:#fff}.authoring-progress li[data-current=true] button:hover:not(:disabled){background:#245448;color:#fff}.authoring-progress li[data-complete=true]:not([data-current=true]) button{border-color:#91a39b;background:#f1f6f3;color:#173e35}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button>span{background:#fff;color:#173e35}.authoring-progress li[data-complete=true]:not([data-current=true]) button>span{background:#173e35;color:#fff}.authoring-progress button:disabled{color:#536760;opacity:.72}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem}.step-number{display:grid;place-items:center;flex:0 0 2rem;height:2rem;border-radius:999px;background:#173e35;color:white}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.rules-choice{max-width:52rem;margin-top:1rem}.selection-summary{display:grid;gap:.3rem}.selection-summary small{color:#60706a}.representation-list{display:grid;gap:1rem}.representation-editor{display:grid;gap:.9rem;padding:1rem;border:1px solid #ccd6d1;border-radius:.8rem;background:#fbfcfb}.representation-editor>header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.representation-editor h3{margin:.2rem 0 0}.representation-settings{display:grid;grid-template-columns:1fr 1fr minmax(8rem,.65fr);gap:.8rem}.add-text{justify-self:start}.step-actions,.workflow-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin-top:1rem}.subject-summary,.context-box,.selection-summary,.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1rem}.review-grid article{display:grid;gap:.35rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem;background:#f8faf8}.review-grid article span{color:#60706a;font-size:.9rem}.review-texts{display:grid;gap:.75rem;margin-top:1rem}.review-texts>header h3{margin:.2rem 0}.review-texts>div{display:grid;gap:.75rem}.review-texts article{display:grid;gap:.65rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem}.review-texts article header{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.review-texts article header span{color:#60706a}.review-texts article p{margin:0;white-space:pre-wrap}.membership-fieldset,.technical-details{margin-top:1rem;padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem}.membership-grid{display:grid;gap:.65rem}.membership{display:grid;grid-template-columns:auto 1fr;gap:.5rem}.membership span{display:grid;gap:.2rem}.edition-tabs{display:flex;gap:.5rem;flex-wrap:wrap}.note{color:#60706a}@media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.68rem}.representation-settings,.review-grid{grid-template-columns:1fr}}@media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}.step-actions>*{width:100%}.representation-editor>header{display:grid}.remove-text{justify-self:start}}</style>`;
+    return `<style>:host{display:block}.authoring-page{display:grid;gap:1rem;max-width:68rem;margin:auto;padding:2rem 1rem 5rem}.authoring-progress ol{display:grid;grid-template-columns:repeat(3,minmax(9rem,1fr));gap:.55rem;min-width:32rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#173e35}.authoring-progress button:hover:not(:disabled){background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button{border-color:#173e35;background:#173e35;color:#fff}.authoring-progress li[data-current=true] button:hover:not(:disabled){background:#245448;color:#fff}.authoring-progress li[data-complete=true]:not([data-current=true]) button{border-color:#91a39b;background:#f1f6f3;color:#173e35}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button>span{background:#fff;color:#173e35}.authoring-progress li[data-complete=true]:not([data-current=true]) button>span{background:#173e35;color:#fff}.authoring-progress button:disabled{color:#536760;opacity:.72}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem}.step-number{display:grid;place-items:center;flex:0 0 2rem;height:2rem;border-radius:999px;background:#173e35;color:white}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.rules-choice{max-width:52rem;margin-top:1rem}.selection-summary{display:grid;gap:.3rem}.selection-summary small{color:#60706a}.representation-list{display:grid;gap:1rem}.representation-editor{display:grid;gap:.9rem;padding:1rem;border:1px solid #ccd6d1;border-radius:.8rem;background:#fbfcfb}.representation-editor>header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.representation-editor h3{margin:.2rem 0 0}.representation-settings{display:grid;grid-template-columns:1fr 1fr minmax(8rem,.65fr);gap:.8rem}.add-text{justify-self:start}.step-actions,.workflow-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin-top:1rem}.subject-summary,.context-box,.selection-summary,.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1rem}.review-grid article{display:grid;gap:.35rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem;background:#f8faf8}.review-grid article span{color:#60706a;font-size:.9rem}.review-texts{display:grid;gap:.75rem;margin-top:1rem}.review-texts>header h3{margin:.2rem 0}.review-texts>div{display:grid;gap:.75rem}.review-texts article{display:grid;gap:.65rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem}.review-texts article header{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.review-texts article header span{color:#60706a}.review-texts article p{margin:0;white-space:pre-wrap}.membership-fieldset,.technical-details{margin-top:1rem;padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem}.membership-grid{display:grid;gap:.65rem}.membership{display:grid;grid-template-columns:auto 1fr;gap:.5rem}.membership span{display:grid;gap:.2rem}.edition-tabs{display:flex;gap:.5rem;flex-wrap:wrap}.note{color:#60706a}@media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(3,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.72rem}.representation-settings,.review-grid{grid-template-columns:1fr}}@media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}.step-actions>*{width:100%}.representation-editor>header{display:grid}.remove-text{justify-self:start}}</style>`;
   }
 }
 customElements.define("artaround-item-authoring-view", ItemAuthoringView);

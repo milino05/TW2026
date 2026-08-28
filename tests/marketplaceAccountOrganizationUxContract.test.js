@@ -53,7 +53,7 @@ test("la creazione Organization è centralizzata nel Context Hub", () => {
 });
 
 test("Organization management è deep-linkabile e capability-adaptive", () => {
-  assert.match(organization, /new Set\(\["overview", "people", "roles", "venues", "rules", "settings"\]\)/);
+  assert.match(organization, /new Set\(\["overview", "people", "roles", "venues", "rules", "physical", "settings"\]\)/);
   assert.match(organization, /sectionRoute/);
   assert.match(organization, /availableSections/);
   for (const label of ["Panoramica", "Persone", "Ruoli", "Sedi", "Regole editoriali", "Impostazioni"]) assert.match(organization, new RegExp(label));

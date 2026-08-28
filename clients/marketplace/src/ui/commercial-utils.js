@@ -35,6 +35,7 @@ export function marketplaceResourceLabel(resourceType) {
   if (["visit", "visit_revision"].includes(resourceType)) return "Visita";
   if (["editorial_context", "editorial_release"].includes(resourceType)) return "Raccolta editoriale";
   if (["namespace", "namespace_revision"].includes(resourceType)) return "Regole editoriali";
+  if (["physical_vocabulary", "physical_vocabulary_revision"].includes(resourceType)) return "Vocabolario fisico";
   return "Risorsa";
 }
 

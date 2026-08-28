@@ -3,6 +3,7 @@ const path = require("path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -54,7 +55,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       recordContentEntryExperience,
       recordVenueTargetObservationV2,
       recordTransitionV2,
-      routeToIntentV2,
+      routeToPhysicalFeatureV2,
     } = require("../services/visitSessionV2.service");
     const { dispatchAction } = require("../services/actionDispatcherV2.service");
     const {
@@ -153,24 +154,31 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
 
     const venue = await Venue.create({ name: "Runtime Venue", ownerOrganizationId: organization._id, primaryEditorialContextId: context._id, createdBy: user._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera fisica", createdBy: user._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+    const roomType = physical.placeTypeByKey.get("room");
+    const toiletsType = physical.placeTypeByKey.get("toilets");
+    const toiletsFeatureRef = {
+      kind: "local",
+      physicalVocabularyId: physical.physicalVocabulary._id,
+      definitionId: toiletsType.definitionId,
+    };
+    const toiletsActionId = `navigation.place.${toiletsType.definitionId}`;
 
+    const floorR1 = new mongoose.Types.ObjectId();
     const targetPlaceR1 = new mongoose.Types.ObjectId();
     const toiletPlaceR1 = new mongoose.Types.ObjectId();
     const connectionR1 = new mongoose.Types.ObjectId();
     const layoutR1 = await LayoutRevision.create({
       venueId: venue._id,
       version: 1,
-      placeTypes: [
-        { key: "gallery", label: "Sala", userIntents: [] },
-        { key: "toilet", label: "Toilette", userIntents: ["FIND_TOILET"] },
-      ],
-      floors: [{ key: "ground", label: "Piano terra", map: { imageUrl: "/maps/runtime-r1-ground.svg", width: 1000, height: 800 } }],
+      authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+      floors: [{ _id: floorR1, label: "Piano terra", mapAsset: { url: "/maps/runtime-r1-ground.svg", mimeType: "image/svg+xml", width: 1000, height: 800 } }],
       places: [
-        { _id: targetPlaceR1, typeKey: "gallery", label: "Sala A", floorKey: "ground", position: { x: 0.1, y: 0.1 } },
-        { _id: toiletPlaceR1, typeKey: "toilet", label: "Toilette R1", floorKey: "ground", position: { x: 0.4, y: 0.1 } },
+        { _id: targetPlaceR1, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", floorId: floorR1, position: { x: 0.1, y: 0.1 } },
+        { _id: toiletPlaceR1, placeTypeDefinitionId: toiletsType.definitionId, label: "Toilette R1", floorId: floorR1, position: { x: 0.4, y: 0.1 } },
       ],
       venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: targetPlaceR1, placeIds: [targetPlaceR1] }],
-      connections: [{ _id: connectionR1, fromPlaceId: targetPlaceR1, toPlaceId: toiletPlaceR1, directionality: "bidirectional", distanceMeters: 10, additionalDelaySeconds: 0, attributes: {} }],
+      connections: [{ _id: connectionR1, fromPlaceId: targetPlaceR1, toPlaceId: toiletPlaceR1, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 10, additionalDelaySeconds: 0, attributeValues: [] }],
       status: "published",
       createdBy: user._id,
       updatedBy: user._id,
@@ -260,7 +268,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     assert.equal(started.current.current.illustrativeMedia[0].url, "https://upload.wikimedia.org/runtime-thumb.jpg");
     assert.equal(started.current.current.illustrativeMedia[0].altText, "Opera runtime vista frontalmente");
     assert.ok(started.current.availableActions.some((entry) => entry.actionId === "presentation.depth.increase"));
-    assert.ok(started.current.availableActions.some((entry) => entry.actionId === "navigation.place.find_toilet"));
+    assert.ok(started.current.availableActions.some((entry) => entry.actionId === toiletsActionId));
 
     const deeper = await dispatchAction({
       sessionId,
@@ -279,21 +287,19 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
 
     const targetPlaceR2 = new mongoose.Types.ObjectId();
     const toiletPlaceR2 = new mongoose.Types.ObjectId();
+    const floorR2 = new mongoose.Types.ObjectId();
     const layoutR2 = await LayoutRevision.create({
       venueId: venue._id,
       version: 2,
       basedOnRevisionId: layoutR1._id,
-      placeTypes: [
-        { key: "gallery", label: "Sala", userIntents: [] },
-        { key: "toilet", label: "Toilette", userIntents: ["FIND_TOILET"] },
-      ],
-      floors: [{ key: "ground", label: "Piano terra", map: { imageUrl: "/maps/runtime-r2-ground.svg", width: 1000, height: 800 } }],
+      authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+      floors: [{ _id: floorR2, label: "Piano terra", mapAsset: { url: "/maps/runtime-r2-ground.svg", mimeType: "image/svg+xml", width: 1000, height: 800 } }],
       places: [
-        { _id: targetPlaceR2, typeKey: "gallery", label: "Sala B", floorKey: "ground", position: { x: 0.7, y: 0.2 } },
-        { _id: toiletPlaceR2, typeKey: "toilet", label: "Toilette R2", floorKey: "ground", position: { x: 0.9, y: 0.2 } },
+        { _id: targetPlaceR2, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", floorId: floorR2, position: { x: 0.7, y: 0.2 } },
+        { _id: toiletPlaceR2, placeTypeDefinitionId: toiletsType.definitionId, label: "Toilette R2", floorId: floorR2, position: { x: 0.9, y: 0.2 } },
       ],
       venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: targetPlaceR2, placeIds: [targetPlaceR2] }],
-      connections: [{ fromPlaceId: targetPlaceR2, toPlaceId: toiletPlaceR2, directionality: "bidirectional", distanceMeters: 6, additionalDelaySeconds: 0, attributes: {} }],
+      connections: [{ fromPlaceId: targetPlaceR2, toPlaceId: toiletPlaceR2, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 6, additionalDelaySeconds: 0, attributeValues: [] }],
       status: "published",
       createdBy: user._id,
       updatedBy: user._id,
@@ -326,7 +332,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
 
     const afterMove = await currentSessionProjection({ sessionId, userId: user._id });
     assert.equal(id(afterMove.current.anchor.venueTargetId), id(target._id), "existing Session keeps its logical anchor while routing remains pinned to R1");
-    const route = await routeToIntentV2({ sessionId, userId: user._id, intent: "FIND_TOILET" });
+    const route = await routeToPhysicalFeatureV2({ sessionId, userId: user._id, physicalFeatureRef: toiletsFeatureRef });
     assert.equal(id(route.venueReleaseId), id(releaseR1._id));
     assert.equal(id(route.layoutRevisionId), id(layoutR1._id));
     assert.equal(id(route.destination._id), id(toiletPlaceR1));

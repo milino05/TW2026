@@ -28,6 +28,10 @@ const {
 } = require("./visitGeneratorV2Semantics.service");
 const { optimizeVisitV2, transferKey } = require("./visitGeneratorV2Search.service");
 const { validateGenerationRequestV2 } = require("./validation/generationV2.validation");
+const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
+const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
+const { assertRequirementScope, routingBlockerDetails } = require("./physicalExecutionV2.service");
 const {
   resolveGenerationSources,
   resolvePrimaryDefaultGenerationSources,
@@ -40,23 +44,25 @@ function resolveMovementSpeed(preference = 0.5) {
   const calm = policy.coldStart.paceFactors.calm, fast = policy.coldStart.paceFactors.fast;
   return Math.max(policy.movement.minSpeedMps, Math.min(policy.movement.maxSpeedMps, policy.coldStart.movementSpeedMps * (calm + (fast - calm) * p)));
 }
-function translateRequirements(layoutRevision, requirements = []) {
-  const attrs = layoutRevision.routingAttributes || [];
-  const byLocal = new Map(attrs.map((entry) => [entry.key, entry]));
-  const byCanonical = new Map(attrs.filter((entry) => entry.canonicalKey).map((entry) => [entry.canonicalKey, entry]));
-  const translated = [], warnings = [], unsupportedRequired = [];
-  for (const requirement of requirements) {
-    const local = byLocal.get(requirement.attributeKey) || byCanonical.get(requirement.attributeKey);
-    if (!local) {
-      if ((requirement.priority || "preferred") === "required") unsupportedRequired.push(requirement.attributeKey);
-      else warnings.push({ code: "PREFERRED_ATTRIBUTE_UNSUPPORTED", attributeKey: requirement.attributeKey });
-    } else translated.push({ ...requirement, attributeKey: local.key });
-  }
-  return { requirements: translated, warnings, unsupportedRequired };
+function translateRequirements(physicalVocabularyRevision, physicalVocabulary, requirements = []) {
+  return translateRoutingRequirements({ requirements, physicalVocabulary, revision: physicalVocabularyRevision });
+}
+function assertProfileSelectionsInsideScope(profileSelections, venueIds) {
+  const allowed = new Set(venueIds.map(String));
+  const outside = [...profileSelections.keys()].filter((venueId) => !allowed.has(venueId));
+  if (!outside.length) return;
+  throw new AppError("Un profilo di percorso appartiene a una Venue non selezionata", 409, outside.map((venueId) => ({
+    field: "routingProfileSelections",
+    code: "ROUTING_PROFILE_OUTSIDE_PHYSICAL_SCOPE",
+    context: { venueId },
+  })));
 }
 
 async function loadPhysicalScope(request) {
   const venueIds = uniqueIds(request.venueIds);
+  assertRequirementScope({ requirements: request.navigationRequirements || [], venueCount: venueIds.length });
+  const profileSelections = selectionMap(request.routingProfileSelections || []);
+  assertProfileSelectionsInsideScope(profileSelections, venueIds);
   const venues = await Venue.find({ _id: { $in: venueIds }, lifecycleStatus: "active" }).lean();
   if (venues.length !== venueIds.length) throw new AppError("Una o piu Venue del PhysicalScope non sono disponibili", 409);
   const venueById = mapById(venues), bundles = [], warnings = [];
@@ -67,12 +73,26 @@ async function loadPhysicalScope(request) {
     if (!release || release.integrity?.status !== "valid") throw new AppError("La VenueRelease pubblicata non e utilizzabile", 409, [{ field: "venueIds", code: "VENUE_RELEASE_INVALID", context: { venueId } }]);
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non trovata", 409, [{ field: "venueIds", code: "LAYOUT_REVISION_MISSING", context: { venueId } }]);
-    const translated = translateRequirements(layout, request.navigationRequirements || []);
-    if (translated.unsupportedRequired.length) {
-      throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, translated.unsupportedRequired.map((attributeKey) => ({ field: "navigationRequirements", code: "REQUIRED_ATTRIBUTE_UNSUPPORTED", message: attributeKey, context: { venueId } })));
+    const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
+    const translated = resolveVenueRoutingRequirements({
+      globalRequirements: request.navigationRequirements || [],
+      routingProfileSelection: profileSelections.get(venueId) || null,
+      physicalVocabulary,
+      revision: physicalVocabularyRevision,
+    });
+    if (translated.blockers.length) {
+      throw new AppError("Una Venue non supporta la configurazione di routing richiesta", 409, routingBlockerDetails(translated.blockers, { venueId, field: "navigationRequirements" }));
     }
     warnings.push(...translated.warnings.map((entry) => ({ ...entry, venueId: venue._id })));
-    bundles.push({ venue, release, layout, requirements: translated.requirements });
+    bundles.push({
+      venue,
+      release,
+      layout,
+      physicalVocabulary,
+      physicalVocabularyRevision,
+      requirements: translated.requirements,
+      selectedRoutingProfile: translated.selectedProfile,
+    });
   }
 
   const activeBindingRows = bundles.flatMap((bundle) => (bundle.release.targetBindings || [])
@@ -385,6 +405,7 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
     layoutByVenue: data.physicalScope.layoutByVenue,
     requirementsByVenue: data.physicalScope.requirementsByVenue,
     transferByPair: data.physicalScope.transferByPair,
+    interVenueRequirements: request.navigationRequirements || [],
     requiredSemanticKeys: data.goals.requiredKeys,
   });
   const mustEditions = new Set((request.mustIncludeItemEditionIds || []).map(id)), mustTargets = new Set((request.mustVisitVenueTargetIds || []).map(id));
@@ -410,7 +431,7 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
       reasons: buildReasons(option),
     };
   });
-  const warnings = [...data.physicalScope.warnings, ...data.editorialScope.warnings, ...data.goals.warnings];
+  const warnings = [...data.physicalScope.warnings, ...(best.physicalWarnings || []), ...data.editorialScope.warnings, ...data.goals.warnings];
   const document = {
     userId,
     requestSnapshot: {
@@ -429,6 +450,7 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
       knowledge: request.knowledge || [],
       historyMode: request.historyMode || "full",
       effectiveMovementSpeedMps: context.effectiveMovementSpeedMps,
+      routingProfileSelections: request.routingProfileSelections || [],
       navigationRequirements: request.navigationRequirements || [],
     },
     sourceEditorialReleaseIds: data.editorialScope.sourceEditorialReleaseIds,

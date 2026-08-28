@@ -3,14 +3,15 @@ const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
-const { loadPinnedBundle, translateRequirements } = require("./physicalExecutionV2.service");
+const { loadPinnedBundle, resolveNavigationRequirementsForVenue } = require("./physicalExecutionV2.service");
+const { selectionMap } = require("./routingProfileSelectionV2.service");
 const { resolvePlannedPath } = require("./graphRouting.service");
-const { getCanonicalAttribute, isDeclaredObstacle } = require("./routingAttributeCatalog.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function opaqueId(seed) { return crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 16); }
 function placeMap(layout) { return new Map((layout?.places || []).map((place) => [id(place._id), place])); }
 function anchorMap(plan) { return new Map((plan?.visitAnchors || []).map((anchor) => [id(anchor._id), anchor])); }
+function placeTypeMap(revision) { return new Map((revision?.placeTypes || []).map((definition) => [definition.definitionId, definition])); }
 
 function logicalAnchorForIndex(plan, index) {
   const anchors = anchorMap(plan);
@@ -28,6 +29,7 @@ function nextPhysicalLeg(plan, currentAnchor) {
 
 function projectPathGeometry(layout, path = []) {
   const places = placeMap(layout);
+  const connections = new Map((layout?.connections || []).map((connection) => [id(connection._id), connection]));
   const overlays = [];
   const floorTransitions = [];
   const instructions = [];
@@ -35,19 +37,20 @@ function projectPathGeometry(layout, path = []) {
     const from = places.get(id(edge.fromPlaceId));
     const to = places.get(id(edge.toPlaceId));
     if (!from || !to) continue;
+    const connection = connections.get(id(edge.connectionId));
     if (edge.instruction) instructions.push(edge.instruction);
-    if (from.floorKey === to.floorKey) {
+    if (id(from.floorId) === id(to.floorId)) {
+      const authoredPoints = connection?.geometry?.points?.length >= 2
+        ? connection.geometry.points.map((point) => ({ x: point.x, y: point.y }))
+        : [from.position, to.position].map((point) => ({ x: point.x, y: point.y }));
       overlays.push({
-        floorKey: from.floorKey,
-        points: [
-          { x: from.position.x, y: from.position.y },
-          { x: to.position.x, y: to.position.y },
-        ],
+        floorId: from.floorId,
+        points: edge.direction === "backward" ? authoredPoints.reverse() : authoredPoints,
       });
     } else {
       floorTransitions.push({
-        fromFloorKey: from.floorKey,
-        toFloorKey: to.floorKey,
+        fromFloorId: from.floorId,
+        toFloorId: to.floorId,
         from: { x: from.position.x, y: from.position.y },
         to: { x: to.position.x, y: to.position.y },
         instruction: edge.instruction || null,
@@ -60,9 +63,9 @@ function projectPathGeometry(layout, path = []) {
 function warningProjection(warnings = []) {
   return warnings.map((warning) => ({
     code: warning.code || "NAVIGATION_WARNING",
-    message: warning.code === "PREFERRED_ATTRIBUTE_UNSUPPORTED"
+    message: warning.message || (warning.code === "PREFERRED_ATTRIBUTE_UNSUPPORTED"
       ? "Una preferenza di percorso non è supportata in questa sede."
-      : "Il percorso contiene un avviso di navigazione.",
+      : "Il percorso contiene un avviso di navigazione."),
   }));
 }
 
@@ -74,12 +77,12 @@ async function assessPreparedMapReadiness({ plan, venuePins = [] }) {
   for (const pin of venuePins) {
     const bundle = await loadPinnedBundle(pseudoSession, pin.venueId);
     const places = placeMap(bundle.layout);
-    const requiredFloorKeys = new Set();
+    const requiredFloorIds = new Set();
 
     for (const anchor of plan.visitAnchors || []) {
       if (id(anchor.venueId) !== id(pin.venueId)) continue;
       const place = places.get(id(anchor.placeId));
-      if (place?.floorKey) requiredFloorKeys.add(place.floorKey);
+      if (place?.floorId) requiredFloorIds.add(id(place.floorId));
     }
 
     const connectionById = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
@@ -90,19 +93,19 @@ async function assessPreparedMapReadiness({ plan, venuePins = [] }) {
         if (!connection) continue;
         const from = places.get(id(connection.fromPlaceId));
         const to = places.get(id(connection.toPlaceId));
-        if (from?.floorKey) requiredFloorKeys.add(from.floorKey);
-        if (to?.floorKey) requiredFloorKeys.add(to.floorKey);
+        if (from?.floorId) requiredFloorIds.add(id(from.floorId));
+        if (to?.floorId) requiredFloorIds.add(id(to.floorId));
       }
     }
 
-    const floorByKey = new Map((bundle.layout.floors || []).map((floor) => [floor.key, floor]));
-    for (const floorKey of requiredFloorKeys) {
-      const floor = floorByKey.get(floorKey);
-      if (floor?.map?.imageUrl) continue;
+    const floorById = new Map((bundle.layout.floors || []).map((floor) => [id(floor._id), floor]));
+    for (const floorId of requiredFloorIds) {
+      const floor = floorById.get(floorId);
+      if (floor?.mapAsset?.url) continue;
       blockers.push({
         code: "NAVIGATOR_MAP_ASSET_MISSING",
-        message: `La mappa necessaria per ${floor?.label || floorKey} non è disponibile.`,
-        context: { venueId: pin.venueId, floorKey },
+        message: `La mappa necessaria per ${floor?.label || floorId} non è disponibile.`,
+        context: { venueId: pin.venueId, floorId },
       });
     }
   }
@@ -124,13 +127,14 @@ async function projectSessionMap({ sessionId, userId }) {
   const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
   const currentAnchor = logicalAnchorForIndex(plan, session.currentEntryIndex);
   const projectedVenues = [];
+  const profileSelections = selectionMap(session.navigationSnapshot?.routingProfileSelections || []);
 
   for (const pin of session.venuePins || []) {
     const venueId = id(pin.venueId);
     const venue = venueById.get(venueId);
     const bundle = await loadPinnedBundle(session, venueId);
     const places = placeMap(bundle.layout);
-    const typeByKey = new Map((bundle.layout.placeTypes || []).map((type) => [type.key, type]));
+    const typeById = placeTypeMap(bundle.physicalVocabularyRevision);
     const stops = (plan.visitAnchors || []).filter((anchor) => id(anchor.venueId) === venueId).map((anchor, index) => {
       const place = places.get(id(anchor.placeId));
       if (!place) return null;
@@ -138,28 +142,36 @@ async function projectSessionMap({ sessionId, userId }) {
         visitAnchorId: anchor._id,
         venueTargetId: anchor.venueTargetId,
         label: targetById.get(id(anchor.venueTargetId))?.label || `Tappa ${index + 1}`,
-        floorKey: place.floorKey,
+        floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },
         order: (plan.visitAnchors || []).findIndex((value) => id(value._id) === id(anchor._id)) + 1,
       };
     }).filter(Boolean);
 
     const facilities = (bundle.layout.places || []).flatMap((place) => {
-      const type = typeByKey.get(place.typeKey);
-      if (!(type?.userIntents || []).length) return [];
+      const type = typeById.get(place.placeTypeDefinitionId);
+      if (type?.metadata?.navigationTarget !== true) return [];
       return [{
         id: `facility-${opaqueId(`${venueId}|${id(place._id)}`)}`,
-        label: place.label,
+        label: place.label || type.label,
         category: type.label,
-        userIntents: [...type.userIntents],
-        floorKey: place.floorKey,
+        physicalFeatureRef: {
+          kind: "local",
+          physicalVocabularyId: bundle.physicalVocabulary._id,
+          definitionId: type.definitionId,
+        },
+        floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },
       }];
     });
 
     const route = { overlays: [], floorTransitions: [] };
     const anchors = anchorMap(plan);
-    const translated = translateRequirements(bundle.layout, session.navigationSnapshot?.requirements || []);
+    const translated = resolveNavigationRequirementsForVenue({
+      bundle,
+      globalRequirements: session.navigationSnapshot?.requirements || [],
+      routingProfileSelection: profileSelections.get(venueId) || null,
+    });
     for (const leg of plan.physicalRoute?.legs || []) {
       if (leg.type !== "indoor" || id(leg.venueReleaseId) !== id(pin.venueReleaseId)) continue;
       const from = anchors.get(id(leg.fromAnchorId));
@@ -167,6 +179,7 @@ async function projectSessionMap({ sessionId, userId }) {
       if (!from || !to) continue;
       const resolved = resolvePlannedPath({
         connections: bundle.layout.connections || [],
+        places: bundle.layout.places || [],
         pathConnectionIds: leg.path || [],
         fromPlaceId: from.placeId,
         toPlaceId: to.placeId,
@@ -192,22 +205,25 @@ async function projectSessionMap({ sessionId, userId }) {
       name: venue?.name || "Sede",
       description: venue?.description || "",
       floors: (bundle.layout.floors || []).map((floor) => ({
-        key: floor.key,
+        id: floor._id,
         label: floor.label,
         map: {
-          available: Boolean(floor.map?.imageUrl),
-          imageUrl: floor.map?.imageUrl || null,
-          width: floor.map?.width || null,
-          height: floor.map?.height || null,
+          available: Boolean(floor.mapAsset?.url),
+          imageUrl: floor.mapAsset?.url || null,
+          width: floor.mapAsset?.width || null,
+          height: floor.mapAsset?.height || null,
         },
       })),
       stops,
       facilities,
       route,
-      warnings: (bundle.layout.floors || []).filter((floor) => !floor.map?.imageUrl).map((floor) => ({
-        code: "MAP_ASSET_MISSING",
-        message: `Mappa non disponibile per ${floor.label}.`,
-      })),
+      warnings: [
+        ...(bundle.layout.floors || []).filter((floor) => !floor.mapAsset?.url).map((floor) => ({
+          code: "MAP_ASSET_MISSING",
+          message: `Mappa non disponibile per ${floor.label}.`,
+        })),
+        ...warningProjection(translated.warnings || []),
+      ],
     });
   }
 
@@ -226,15 +242,16 @@ async function projectSessionMap({ sessionId, userId }) {
 async function projectNavigationRoute({ sessionId, userId, routeResult }) {
   const { session } = await getCurrentSessionPlanV2({ sessionId, userId });
   const bundle = await loadPinnedBundle(session, routeResult.venueId);
-  const type = (bundle.layout.placeTypes || []).find((entry) => entry.key === routeResult.destination.typeKey) || null;
+  const type = placeTypeMap(bundle.physicalVocabularyRevision).get(routeResult.destination.placeTypeDefinitionId) || null;
   const geometry = projectPathGeometry(bundle.layout, routeResult.path || []);
   return {
     destination: {
       kind: "venue_place",
       venueId: routeResult.venueId,
       label: routeResult.destination.label,
-      category: type?.label || routeResult.destination.typeKey,
-      floorKey: routeResult.destination.floorKey,
+      category: type?.label || "Destinazione",
+      physicalFeatureRef: routeResult.physicalFeatureRef || null,
+      floorId: routeResult.destination.floorId,
       position: {
         x: routeResult.destination.position.x,
         y: routeResult.destination.position.y,
@@ -251,6 +268,24 @@ async function projectNavigationRoute({ sessionId, userId, routeResult }) {
   };
 }
 
+function collectObstacleEvidence({ entity, definitionById, obstacles, locationKind }) {
+  let evidence = false;
+  for (const attributeValue of entity?.attributeValues || []) {
+    const definition = definitionById.get(attributeValue.physicalAttributeDefinitionId);
+    if (definition?.metadata?.obstacleIndicator !== true) continue;
+    evidence = true;
+    if (attributeValue.value !== definition.metadata.obstacleWhen) continue;
+    const key = `${definition.definitionId}:${locationKind}`;
+    obstacles.set(key, {
+      code: "DECLARED_PHYSICAL_OBSTACLE",
+      physicalAttributeDefinitionId: definition.definitionId,
+      label: definition.label,
+      message: `${definition.label}: possibile ostacolo dichiarato ${locationKind === "place" ? "in un luogo" : "su un collegamento"} del prossimo percorso.`,
+    });
+  }
+  return evidence;
+}
+
 async function projectNextRouteObstacles({ sessionId, userId }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId });
   const currentAnchor = logicalAnchorForIndex(plan, session.currentEntryIndex);
@@ -265,32 +300,26 @@ async function projectNextRouteObstacles({ sessionId, userId }) {
   }
 
   const bundle = await loadPinnedBundle(session, currentAnchor.venueId);
-  const connectionById = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
-  const localDefinitionByKey = new Map((bundle.layout.routingAttributes || []).map((definition) => [definition.key, definition]));
+  const connections = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
+  const places = placeMap(bundle.layout);
+  const definitionById = new Map((bundle.physicalVocabularyRevision.physicalAttributes || []).map((definition) => [definition.definitionId, definition]));
   const obstacles = new Map();
-  let canonicalEvidence = false;
+  let declaredEvidence = false;
   for (const connectionId of leg.path || []) {
-    const connection = connectionById.get(id(connectionId));
+    const connection = connections.get(id(connectionId));
     if (!connection) continue;
-    for (const [localKey, value] of Object.entries(connection.attributes || {})) {
-      const localDefinition = localDefinitionByKey.get(localKey);
-      const canonical = getCanonicalAttribute(localDefinition?.canonicalKey);
-      if (!canonical) continue;
-      canonicalEvidence = true;
-      if (!isDeclaredObstacle(canonical, value)) continue;
-      obstacles.set(canonical.key, {
-        code: canonical.key,
-        label: localDefinition?.label || canonical.label,
-        message: `${localDefinition?.label || canonical.label}: possibile ostacolo dichiarato sul prossimo percorso.`,
-      });
+    declaredEvidence = collectObstacleEvidence({ entity: connection, definitionById, obstacles, locationKind: "connection" }) || declaredEvidence;
+    for (const placeId of [connection.fromPlaceId, connection.toPlaceId]) {
+      const place = places.get(id(placeId));
+      declaredEvidence = collectObstacleEvidence({ entity: place, definitionById, obstacles, locationKind: "place" }) || declaredEvidence;
     }
   }
   return {
-    verified: canonicalEvidence,
+    verified: declaredEvidence,
     obstacles: [...obstacles.values()],
-    message: canonicalEvidence
+    message: declaredEvidence
       ? (obstacles.size ? "Sono presenti ostacoli dichiarati sul prossimo percorso." : "Non risultano ostacoli dichiarati sul prossimo percorso.")
-      : "La sede non fornisce dati canonici sufficienti per verificare gli ostacoli del prossimo percorso.",
+      : "La sede non fornisce caratteristiche fisiche sufficienti per verificare gli ostacoli del prossimo percorso.",
   };
 }
 

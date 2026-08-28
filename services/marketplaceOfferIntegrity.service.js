@@ -14,7 +14,7 @@ function samePrincipal(aType, aId, bType, bId) {
 }
 
 async function snapshotDependencies(ref) {
-  if (ref.resourceType === "namespace_revision") return [];
+  if (["namespace_revision", "physical_vocabulary_revision"].includes(ref.resourceType)) return [];
 
   if (ref.resourceType === "item_revision") {
     const revision = await ItemRevisionV2.findById(ref.resourceId).lean();

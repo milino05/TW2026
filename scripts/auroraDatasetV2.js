@@ -22,6 +22,8 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VisitV2 = require("../models/visitV2.model");
@@ -41,6 +43,7 @@ const { acquireOffer } = require("../services/marketplaceV2.service");
 const { listNavigatorLibrary, listNavigatorMuseums } = require("../services/navigatorVisitV2.service");
 const { ensureRequiredUsers } = require("./examDatasetV2");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
+const { createDemoPhysicalVocabulary, physicalAttributeValues } = require("./demoPhysicalVocabulary");
 
 const AURORA_VENUE_ID = "64a12f680000000000000002";
 const AURORA_MAP_URL = "/maps/museo-aurora-demo.svg";
@@ -61,6 +64,8 @@ const IDS = Object.freeze({
   editorialContext: auroraId("editorial_context"),
   graphRevision: auroraId("graph_revision"),
   editorialRelease: auroraId("editorial_release"),
+  physicalVocabulary: auroraId("physical_vocabulary"),
+  physicalVocabularyRevision: auroraId("physical_vocabulary_revision"),
   layoutRevision: auroraId("layout_revision"),
   venueRelease: auroraId("venue_release"),
 });
@@ -198,6 +203,8 @@ async function cleanupAuroraDataset() {
   await VisitV2.deleteMany({ _id: { $in: ids.visitIds } });
   await VenueRelease.deleteMany({ _id: IDS.venueRelease });
   await LayoutRevision.deleteMany({ _id: IDS.layoutRevision });
+  await PhysicalVocabularyRevision.deleteMany({ _id: IDS.physicalVocabularyRevision });
+  await PhysicalVocabulary.deleteMany({ _id: IDS.physicalVocabulary });
   await VenueTarget.deleteMany({ _id: { $in: ids.targetIds } });
   await Venue.deleteMany({ _id: IDS.venue });
   await EditorialRelease.deleteMany({ _id: IDS.editorialRelease });
@@ -530,6 +537,30 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
   editorialContext.publishedReleaseId = editorialRelease._id;
   await editorialContext.save();
 
+  const physical = await createDemoPhysicalVocabulary({
+    physicalVocabularyId: IDS.physicalVocabulary,
+    revisionId: IDS.physicalVocabularyRevision,
+    organizationId: organization._id,
+    userId: manager._id,
+    name: "Museo Aurora — Vocabolario fisico",
+    now: FIXED_NOW,
+  });
+  const floorId = auroraId("floor:piano-terra");
+  const placeTypeId = (key) => physical.placeTypeByKey.get(key).definitionId;
+  const connectionTypeId = (key) => physical.connectionTypeByKey.get(key).definitionId;
+  const placeAttributes = (sensoryLoad, quietArea) => physicalAttributeValues(physical.physicalAttributeByKey, {
+    sensory_load: sensoryLoad,
+    quiet_area: quietArea,
+  });
+  const connectionAttributes = (overrides = {}) => physicalAttributeValues(physical.physicalAttributeByKey, {
+    step_free: true,
+    minimum_width_cm: 120,
+    sensory_load: "low",
+    has_steps: false,
+    narrow_passage: false,
+    ...overrides,
+  });
+
   const venue = await Venue.create({
     _id: IDS.venue,
     name: "Museo Civico Aurora",
@@ -563,31 +594,23 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
   const workPlaceIds = WORKS.map((work) => auroraId(`place:work:${work.key}`));
   const workPositions = [[0.15, 0.25], [0.31, 0.20], [0.48, 0.25], [0.66, 0.20], [0.83, 0.28], [0.82, 0.48], [0.65, 0.55], [0.48, 0.50], [0.31, 0.55], [0.14, 0.46]];
   const places = [
-    { _id: placeIds.entrance, typeKey: "entrance", label: "Ingresso Aurora", floorKey: "piano-terra", position: { x: 0.05, y: 0.78 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.info, typeKey: "info", label: "Informazioni", floorKey: "piano-terra", position: { x: 0.15, y: 0.80 }, attributes: { low_sensory_load: true, quiet_area: false } },
+    { _id: placeIds.entrance, placeTypeDefinitionId: placeTypeId("entrance"), label: "Ingresso Aurora", floorId, position: { x: 0.05, y: 0.78 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.info, placeTypeDefinitionId: placeTypeId("information_point"), label: "Informazioni", floorId, position: { x: 0.15, y: 0.80 }, attributeValues: placeAttributes("low", false) },
     ...WORKS.map((work, index) => ({
       _id: workPlaceIds[index],
-      typeKey: "gallery",
+      placeTypeDefinitionId: placeTypeId("room"),
       label: work.title,
-      floorKey: "piano-terra",
+      floorId,
       position: { x: workPositions[index][0], y: workPositions[index][1] },
-      attributes: { low_sensory_load: true, quiet_area: index === 6 || index === 9 },
+      attributeValues: placeAttributes("low", index === 6 || index === 9),
     })),
-    { _id: placeIds.toilet, typeKey: "toilet", label: "Servizi accessibili", floorKey: "piano-terra", position: { x: 0.30, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.elevator, typeKey: "elevator", label: "Ascensore", floorKey: "piano-terra", position: { x: 0.41, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.stairs, typeKey: "stairs", label: "Scale", floorKey: "piano-terra", position: { x: 0.50, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.bar, typeKey: "bar", label: "Caffetteria Aurora", floorKey: "piano-terra", position: { x: 0.61, y: 0.82 }, attributes: { low_sensory_load: false, quiet_area: false } },
-    { _id: placeIds.shop, typeKey: "shop", label: "Bookshop", floorKey: "piano-terra", position: { x: 0.74, y: 0.82 }, attributes: { low_sensory_load: false, quiet_area: false } },
-    { _id: placeIds.exit, typeKey: "exit", label: "Uscita", floorKey: "piano-terra", position: { x: 0.92, y: 0.78 }, attributes: { low_sensory_load: true, quiet_area: false } },
+    { _id: placeIds.toilet, placeTypeDefinitionId: placeTypeId("toilets"), label: "Servizi accessibili", floorId, position: { x: 0.30, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.elevator, placeTypeDefinitionId: placeTypeId("elevator"), label: "Ascensore", floorId, position: { x: 0.41, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.stairs, placeTypeDefinitionId: placeTypeId("stairs"), label: "Scale", floorId, position: { x: 0.50, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.bar, placeTypeDefinitionId: placeTypeId("cafe"), label: "Caffetteria Aurora", floorId, position: { x: 0.61, y: 0.82 }, attributeValues: placeAttributes("high", false) },
+    { _id: placeIds.shop, placeTypeDefinitionId: placeTypeId("shop"), label: "Bookshop", floorId, position: { x: 0.74, y: 0.82 }, attributeValues: placeAttributes("high", false) },
+    { _id: placeIds.exit, placeTypeDefinitionId: placeTypeId("exit"), label: "Uscita", floorId, position: { x: 0.92, y: 0.78 }, attributeValues: placeAttributes("low", false) },
   ];
-  const connectionAttributes = {
-    step_free: true,
-    minimum_width_cm: 120,
-    low_sensory_load: true,
-    stairs: false,
-    elevator: false,
-    narrow_passage: false,
-  };
   const routeNodes = [placeIds.entrance, ...workPlaceIds, placeIds.exit];
   const connections = [];
   for (let index = 0; index < routeNodes.length - 1; index += 1) {
@@ -596,8 +619,10 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
       fromPlaceId: routeNodes[index],
       toPlaceId: routeNodes[index + 1],
       directionality: "bidirectional",
+      connectionTypeDefinitionId: connectionTypeId("passage"),
+      metricMode: "manual_override",
       distanceMeters: 14 + (index % 3) * 4,
-      attributes: connectionAttributes,
+      attributeValues: connectionAttributes(),
       instructions: { forward: "Prosegui verso la tappa successiva del percorso Aurora.", backward: "Torna verso la tappa precedente." },
     });
   }
@@ -614,12 +639,12 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
       fromPlaceId: placeIds.entrance,
       toPlaceId: target,
       directionality: "bidirectional",
+      connectionTypeDefinitionId: connectionTypeId(key === "stairs" ? "stairs" : key === "elevator" ? "elevator" : "passage"),
+      metricMode: "manual_override",
       distanceMeters: distance,
-      attributes: key === "stairs"
-        ? { ...connectionAttributes, step_free: false, stairs: true }
-        : key === "elevator"
-          ? { ...connectionAttributes, elevator: true }
-          : connectionAttributes,
+      attributeValues: key === "stairs"
+        ? connectionAttributes({ step_free: false, has_steps: true })
+        : connectionAttributes(),
       instructions: { forward: `Raggiungi ${key} dall'ingresso Aurora.`, backward: "Rientra verso l'ingresso." },
     });
   }
@@ -628,36 +653,8 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     _id: IDS.layoutRevision,
     venueId: venue._id,
     version: 1,
-    placeTypes: [
-      { key: "gallery", label: "Sala espositiva", description: "Nodo espositivo del percorso." },
-      { key: "entrance", label: "Ingresso", userIntents: ["FIND_ENTRANCE"] },
-      { key: "exit", label: "Uscita", userIntents: ["FIND_EXIT"] },
-      { key: "toilet", label: "Servizi", userIntents: ["FIND_TOILET"] },
-      { key: "elevator", label: "Ascensore", userIntents: ["FIND_ELEVATOR"] },
-      { key: "stairs", label: "Scale", userIntents: ["FIND_STAIRS"] },
-      { key: "bar", label: "Bar", userIntents: ["FIND_BAR"] },
-      { key: "shop", label: "Bookshop", userIntents: ["FIND_SHOP"] },
-      { key: "info", label: "Informazioni", userIntents: ["FIND_INFO"] },
-    ],
-    routingAttributes: [
-      { key: "step_free", label: "Senza gradini", dataType: "boolean", canonicalKey: "step_free", appliesTo: "connection" },
-      { key: "minimum_width_cm", label: "Larghezza minima", dataType: "number", unit: "cm", canonicalKey: "minimum_width_cm", appliesTo: "connection" },
-      { key: "low_sensory_load", label: "Basso carico sensoriale", dataType: "boolean", canonicalKey: "low_sensory_load", appliesTo: "both" },
-      { key: "stairs", label: "Presenza di scale", dataType: "boolean", canonicalKey: "stairs", appliesTo: "connection" },
-      { key: "elevator", label: "Uso ascensore", dataType: "boolean", canonicalKey: "elevator", appliesTo: "connection" },
-      { key: "narrow_passage", label: "Passaggio stretto", dataType: "boolean", canonicalKey: "narrow_passage", appliesTo: "connection" },
-      { key: "quiet_area", label: "Area tranquilla", dataType: "boolean", canonicalKey: "quiet_area", appliesTo: "place" },
-    ],
-    routingPresets: [{
-      key: "accessible",
-      label: "Percorso accessibile",
-      description: "Evita gradini e richiede una larghezza minima di 90 cm.",
-      requirements: [
-        { attributeKey: "step_free", operator: "eq", value: true, priority: "required", weight: 1 },
-        { attributeKey: "minimum_width_cm", operator: "gte", value: 90, priority: "required", weight: 1 },
-      ],
-    }],
-    floors: [{ key: "piano-terra", label: "Piano terra", map: { imageUrl: AURORA_MAP_URL, width: 1200, height: 700 } }],
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorId, label: "Piano terra", mapAsset: { url: AURORA_MAP_URL, mimeType: "image/svg+xml", width: 1200, height: 700, originalName: "museo-aurora-demo.svg" } }],
     places,
     venueTargetPlacements: targets.map((target, index) => ({
       venueTargetId: target._id,

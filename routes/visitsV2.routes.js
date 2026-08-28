@@ -5,6 +5,10 @@ const controller = require("../controllers/visitsV2.controller");
 
 const router = express.Router();
 const visitId = validateObjectIdParam("visitId");
+const anchorId = validateObjectIdParam("anchorId");
+const contentEntryId = validateObjectIdParam("contentEntryId");
+const fromAnchorId = validateObjectIdParam("fromAnchorId");
+const toAnchorId = validateObjectIdParam("toAnchorId");
 
 router.use(requireAuth);
 router.route("/v2/visits")
@@ -15,6 +19,23 @@ router.route("/v2/visits/:visitId")
   .all(visitId)
   .get(controller.get)
   .patch(controller.update);
+
+router.post("/v2/visits/:visitId/commands/content", visitId, controller.addContentToVisit);
+router.post("/v2/visits/:visitId/commands/stops", visitId, controller.addVisitStop);
+router.post("/v2/visits/:visitId/commands/stops/:anchorId/content", visitId, anchorId, controller.addContentToStop);
+router.post("/v2/visits/:visitId/commands/stops/:anchorId/reorder", visitId, anchorId, controller.reorderVisitStop);
+router.delete("/v2/visits/:visitId/commands/stops/:anchorId", visitId, anchorId, controller.removeVisitStop);
+router.put("/v2/visits/:visitId/commands/content/:contentEntryId/stop/:anchorId", visitId, contentEntryId, anchorId, controller.attachContentToStop);
+router.delete("/v2/visits/:visitId/commands/content/:contentEntryId/stop", visitId, contentEntryId, controller.detachContentFromStop);
+router.put("/v2/visits/:visitId/commands/content/:contentEntryId/role", visitId, contentEntryId, controller.setContentRole);
+router.delete("/v2/visits/:visitId/commands/content/:contentEntryId", visitId, contentEntryId, controller.removeContentFromVisit);
+router.put(
+  "/v2/visits/:visitId/commands/transfers/:fromAnchorId/:toAnchorId",
+  visitId,
+  fromAnchorId,
+  toAnchorId,
+  controller.setInterVenueTransfer,
+);
 
 router.post("/v2/visits/:visitId/copy", visitId, controller.copy);
 router.post("/v2/visits/:visitId/check", visitId, controller.check);

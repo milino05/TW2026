@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -115,8 +116,43 @@ async function createFixture() {
     { venueId: venueA._id, subjectId: subjects[1]._id, label: "Target A2", createdBy: user._id },
     { venueId: venueB._id, subjectId: subjects[2]._id, label: "Target B1", createdBy: user._id },
   ]);
-  const layoutA = await LayoutRevision.create({ venueId: venueA._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
-  const layoutB = await LayoutRevision.create({ venueId: venueB._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
+  const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+  const floorA = oid();
+  const floorB = oid();
+  const placeA1 = oid();
+  const placeA2 = oid();
+  const placeB1 = oid();
+  const indoorConnection = oid();
+  const roomTypeId = physical.placeTypeByKey.get("room").definitionId;
+  const layoutA = await LayoutRevision.create({
+    venueId: venueA._id,
+    version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorA, label: "Piano terra" }],
+    places: [
+      { _id: placeA1, floorId: floorA, placeTypeDefinitionId: roomTypeId, label: "Sala A1", position: { x: 0.2, y: 0.5 }, attributeValues: [] },
+      { _id: placeA2, floorId: floorA, placeTypeDefinitionId: roomTypeId, label: "Sala A2", position: { x: 0.8, y: 0.5 }, attributeValues: [] },
+    ],
+    venueTargetPlacements: [
+      { venueTargetId: targetA1._id, primaryPlaceId: placeA1, placeIds: [] },
+      { venueTargetId: targetA2._id, primaryPlaceId: placeA2, placeIds: [] },
+    ],
+    connections: [{ _id: indoorConnection, fromPlaceId: placeA1, toPlaceId: placeA2, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 20, additionalDelaySeconds: 0, attributeValues: [] }],
+    status: "published",
+    createdBy: user._id,
+    updatedBy: user._id,
+  });
+  const layoutB = await LayoutRevision.create({
+    venueId: venueB._id,
+    version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorB, label: "Piano terra" }],
+    places: [{ _id: placeB1, floorId: floorB, placeTypeDefinitionId: roomTypeId, label: "Sala B1", position: { x: 0.5, y: 0.5 }, attributeValues: [] }],
+    venueTargetPlacements: [{ venueTargetId: targetB1._id, primaryPlaceId: placeB1, placeIds: [] }],
+    status: "published",
+    createdBy: user._id,
+    updatedBy: user._id,
+  });
   const releaseA = await VenueRelease.create({
     venueId: venueA._id,
     version: 1,
@@ -147,7 +183,6 @@ async function createFixture() {
   const anchorA1 = oid();
   const anchorA2 = oid();
   const anchorB1 = oid();
-  const indoorConnection = oid();
   const plan = await GeneratedVisitPlanV2.create({
     userId: user._id,
     status: "accepted",
@@ -191,9 +226,9 @@ async function createFixture() {
       reasons: [{ source: "test", message: "fixture", confidence: 1 }],
     }],
     visitAnchors: [
-      { _id: anchorA1, venueTargetId: targetA1._id, venueId: venueA._id, placeId: oid(), estimatedObservationSeconds: 20 },
-      { _id: anchorA2, venueTargetId: targetA2._id, venueId: venueA._id, placeId: oid(), estimatedObservationSeconds: 15 },
-      { _id: anchorB1, venueTargetId: targetB1._id, venueId: venueB._id, placeId: oid(), estimatedObservationSeconds: 25 },
+      { _id: anchorA1, venueTargetId: targetA1._id, venueId: venueA._id, placeId: placeA1, estimatedObservationSeconds: 20 },
+      { _id: anchorA2, venueTargetId: targetA2._id, venueId: venueA._id, placeId: placeA2, estimatedObservationSeconds: 15 },
+      { _id: anchorB1, venueTargetId: targetB1._id, venueId: venueB._id, placeId: placeB1, estimatedObservationSeconds: 25 },
     ],
     physicalRoute: { legs: [
       {

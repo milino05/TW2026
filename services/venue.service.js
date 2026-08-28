@@ -1,5 +1,8 @@
 const mongoose = require("mongoose");
 const Venue = require("../models/venue.model");
+const VenueTarget = require("../models/venueTarget.model");
+const VisitV2 = require("../models/visitV2.model");
+const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Organization = require("../models/organization.model");
 const AppError = require("../utils/AppError");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
@@ -118,4 +121,84 @@ async function getVenue({ venueId }) {
   return projectVenue(venue);
 }
 
-module.exports = { projectVenue, createVenue, updateVenue, listVenues, getVenue };
+async function getVenueLifecycleImpact({ venueId, session = null }) {
+  let targetQuery = VenueTarget.find({ venueId }).select("_id");
+  if (session) targetQuery = targetQuery.session(session);
+  const targets = await targetQuery.lean();
+  const targetIds = targets.map((entry) => entry._id);
+  if (!targetIds.length) return { venueTargetCount: 0, publishedVisitCount: 0 };
+
+  let revisionQuery = VisitRevisionV2.find({
+    status: "published",
+    "visitAnchors.venueTargetId": { $in: targetIds },
+  }).select("_id visitId");
+  if (session) revisionQuery = revisionQuery.session(session);
+  const revisions = await revisionQuery.lean();
+  if (!revisions.length) return { venueTargetCount: targetIds.length, publishedVisitCount: 0 };
+
+  const revisionIds = revisions.map((entry) => entry._id);
+  const visitIds = revisions.map((entry) => entry.visitId);
+  let visitQuery = VisitV2.find({
+    _id: { $in: visitIds },
+    publishedRevisionId: { $in: revisionIds },
+    lifecycleStatus: "active",
+  }).select("_id");
+  if (session) visitQuery = visitQuery.session(session);
+  const visits = await visitQuery.lean();
+  return { venueTargetCount: targetIds.length, publishedVisitCount: visits.length };
+}
+
+async function trashVenue({ venueId, actorUserId }) {
+  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
+  const session = await mongoose.startSession();
+  let result = null;
+  try {
+    await session.withTransaction(async () => {
+      const current = await Venue.findOne({ _id: venue._id, lifecycleStatus: "active" }).session(session);
+      if (!current) throw new AppError("Venue non disponibile", 404);
+      const impact = await getVenueLifecycleImpact({ venueId: current._id, session });
+      const now = new Date();
+      current.lifecycleStatus = "trashed";
+      current.trashedAt = now;
+      current.trashedBy = actorUserId;
+      await current.save({ session });
+      result = {
+        venue: projectVenue(current, { includeWorking: true }),
+        removedAt: now,
+        impact,
+      };
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function restoreVenue({ venueId, actorUserId }) {
+  const venue = await Venue.findById(venueId);
+  if (!venue) throw new AppError("Venue non disponibile", 404);
+  await assertOrganizationPermission({
+    userId: actorUserId,
+    organizationId: venue.ownerOrganizationId,
+    permissionCode: "venue.lifecycle.manage",
+  });
+  if (venue.lifecycleStatus !== "trashed") throw new AppError("La Venue non e nel cestino", 409);
+  const organization = await Organization.findOne({ _id: venue.ownerOrganizationId, lifecycleStatus: "active" }).lean();
+  if (!organization) throw new AppError("L'Organization proprietaria non e attiva", 409, [{ code: "VENUE_OWNER_ORGANIZATION_NOT_ACTIVE" }]);
+  venue.lifecycleStatus = "active";
+  venue.trashedAt = null;
+  venue.trashedBy = null;
+  await venue.save();
+  return { venue: projectVenue(venue, { includeWorking: true }) };
+}
+
+module.exports = {
+  projectVenue,
+  createVenue,
+  updateVenue,
+  listVenues,
+  getVenue,
+  getVenueLifecycleImpact,
+  trashVenue,
+  restoreVenue,
+};

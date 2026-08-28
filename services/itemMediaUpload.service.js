@@ -17,14 +17,21 @@ function configuredMediaRoot() {
     : path.join(__dirname, "..", "uploads", "item-media");
 }
 
-function decodePayload(payload = {}) {
+function decodePayload(payload = {}, {
+  maxBytes = MAX_MEDIA_BYTES,
+  allowedMimeTypes = null,
+  maxBytesMessage = null,
+} = {}) {
   const mimeType = String(payload.mimeType || "").trim().toLowerCase();
   const type = MEDIA_TYPES[mimeType];
-  if (!type) {
+  const allowed = Array.isArray(allowedMimeTypes) ? new Set(allowedMimeTypes) : null;
+  if (!type || (allowed && !allowed.has(mimeType))) {
     throw new AppError("Formato immagine non supportato", 400, [{
       field: "mimeType",
       code: "UNSUPPORTED_MEDIA_TYPE",
-      message: "Usa un'immagine JPEG, PNG, WebP o AVIF",
+      message: allowed
+        ? `Usa uno dei formati supportati: ${[...allowed].join(", ")}`
+        : "Usa un'immagine JPEG, PNG, WebP o AVIF",
     }]);
   }
   const encoded = String(payload.dataBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
@@ -35,11 +42,11 @@ function decodePayload(payload = {}) {
   if (!buffer.length || !type.signature(buffer)) {
     throw new AppError("Il contenuto del file non corrisponde al formato indicato", 400, [{ field: "dataBase64", code: "INVALID_IMAGE_SIGNATURE" }]);
   }
-  if (buffer.length > MAX_MEDIA_BYTES) {
+  if (buffer.length > maxBytes) {
     throw new AppError("L'immagine è troppo grande", 413, [{
       field: "dataBase64",
       code: "MEDIA_TOO_LARGE",
-      message: "Scegli un'immagine di massimo 700 KB",
+      message: maxBytesMessage || `Scegli un'immagine di massimo ${Math.floor(maxBytes / 1024)} KB`,
     }]);
   }
   return { buffer, mimeType, extension: type.extension };

@@ -78,36 +78,20 @@ const ACTION_DEFINITIONS = Object.freeze({
   }),
 });
 
-const NAVIGATION_INTENT_LABELS = Object.freeze({
-  FIND_EXIT: "Trova l'uscita",
-  FIND_EMERGENCY_EXIT: "Trova un'uscita di emergenza",
-  FIND_TOILET: "Trova una toilette",
-  FIND_BAR: "Trova il bar",
-  FIND_SHOP: "Trova il negozio",
-  FIND_ELEVATOR: "Trova un ascensore",
-  FIND_STAIRS: "Trova le scale",
-  FIND_ENTRANCE: "Trova l'ingresso",
-});
-
-const NAVIGATION_VOICE_ALIASES = Object.freeze({
-  FIND_EXIT: ["dov'è l'uscita", "trova l'uscita"],
-  FIND_EMERGENCY_EXIT: ["dov'è l'uscita di emergenza", "uscita di emergenza"],
-  FIND_TOILET: ["dov'è il bagno", "dov'è la toilette", "trova una toilette"],
-  FIND_BAR: ["dov'è il bar", "trova il bar"],
-  FIND_SHOP: ["dov'è il negozio", "trova il negozio"],
-  FIND_ELEVATOR: ["dov'è l'ascensore", "trova un ascensore"],
-  FIND_STAIRS: ["dove sono le scale", "trova le scale"],
-  FIND_ENTRANCE: ["dov'è l'ingresso", "trova l'ingresso"],
-});
-
-function navigationActionDefinition(intent, fallbackLabel = null) {
-  const normalized = String(intent || "").trim().toUpperCase();
+function physicalNavigationActionDefinition(definition) {
+  const terms = [...new Set([
+    definition?.label,
+    ...(definition?.localizations || []).flatMap((localization) => [localization.label, ...(localization.aliases || [])]),
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
   return {
-    actionId: `navigation.place.${normalized.toLowerCase()}`,
-    type: "NAVIGATE_TO_PLACE_INTENT",
+    actionId: `navigation.place.${definition.definitionId}`,
+    type: "NAVIGATE_TO_PHYSICAL_FEATURE",
     family: "navigation",
-    label: NAVIGATION_INTENT_LABELS[normalized] || fallbackLabel || "Trova un servizio",
-    controlledVoiceAliases: NAVIGATION_VOICE_ALIASES[normalized] || [],
+    label: `Trova ${definition.label}`,
+    controlledVoiceAliases: terms.flatMap((term) => {
+      const spokenTerm = term.toLocaleLowerCase("it-IT");
+      return [`trova ${spokenTerm}`, `dov'è ${spokenTerm}`];
+    }),
   };
 }
 
@@ -123,6 +107,6 @@ function publicAction(definition) {
 
 module.exports = {
   ACTION_DEFINITIONS,
-  navigationActionDefinition,
+  physicalNavigationActionDefinition,
   publicAction,
 };

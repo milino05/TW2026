@@ -1,3 +1,5 @@
+import type { LocationObservation } from "../domain/location";
+
 export interface VoiceActionOption {
   actionId: string;
   label: string;
@@ -7,6 +9,23 @@ export interface VoiceActionOption {
 export interface VoiceActionMatch<T extends VoiceActionOption = VoiceActionOption> {
   transcript: string;
   action: T | null;
+}
+
+export interface ActionIntentMatch<T extends VoiceActionOption = VoiceActionOption> {
+  input: string;
+  action: T | null;
+}
+
+export interface ActionIntentResolverCapability {
+  readonly supported: boolean;
+  resolve<T extends VoiceActionOption>(input: string, actions: T[], locale?: string): Promise<ActionIntentMatch<T>>;
+}
+
+export interface LocationCapability {
+  readonly providerId: string;
+  readonly supported: boolean;
+  observe(): Promise<LocationObservation | null>;
+  stop?(): void;
 }
 
 export type TextToSpeechState = "idle" | "speaking" | "paused";

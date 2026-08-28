@@ -1,6 +1,11 @@
 import { apiClient } from "./apiClient";
 import type { SessionProjection } from "./sessionRepository";
 
+export type RoutingProfileSelection = {
+  venueId: string;
+  routingProfileDefinitionId: string;
+};
+
 export interface ExecutionPreparationProjection {
   id: string;
   version: number;
@@ -17,7 +22,25 @@ export interface ExecutionPreparationProjection {
     languageComplexityPreference: number | null;
     locale: string | null;
   };
-  navigation: { movementPacePreference: number };
+  navigation: {
+    movementPacePreference: number;
+    routingProfileSelections: RoutingProfileSelection[];
+    profilesByVenue: Array<{
+      venueId: string;
+      physicalVocabularyRevisionId: string;
+      profiles: Array<{
+        definitionId: string;
+        label: string;
+        description: string;
+        requirements: Array<{
+          label: string;
+          operator: string;
+          value: unknown;
+          priority: "required" | "preferred" | "avoid";
+        }>;
+      }>;
+    }>;
+  };
   preVisit: {
     visitNotes: string[];
     venues: Array<{
@@ -58,6 +81,7 @@ export interface PreparationUpdate {
     locale?: string;
   };
   movementPacePreference?: number;
+  routingProfileSelections?: RoutingProfileSelection[];
 }
 
 interface StartPreparationResponse {

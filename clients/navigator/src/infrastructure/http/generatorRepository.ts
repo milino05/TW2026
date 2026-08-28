@@ -35,11 +35,18 @@ export type GenerationSemanticGoal = {
 };
 
 export type GenerationNavigationRequirement = {
-  attributeKey: string;
+  physicalFeatureRef:
+    | { kind: "local"; physicalVocabularyId: string; definitionId: string }
+    | { kind: "semantic"; semanticRefs: Array<{ scheme: string; id: string; matchType: "exact" | "close" | "broader" | "narrower" }> };
   operator: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "in";
   value: boolean | number | string | string[];
-  priority: "required" | "preferred";
+  priority: "required" | "preferred" | "avoid";
   weight?: number;
+};
+
+export type GenerationRoutingProfileSelection = {
+  venueId: string;
+  routingProfileDefinitionId: string;
 };
 
 export interface GenerationOptionsProjection {
@@ -84,12 +91,30 @@ export interface GenerationOptionsProjection {
     };
     navigation: {
       movementPacePreference: { label: string; minimum: number; maximum: number };
+      profilesByVenue: Array<{
+        venueId: string;
+        physicalVocabularyRevisionId: string;
+        profiles: Array<{
+          definitionId: string;
+          label: string;
+          description: string;
+          requirements: Array<{
+            label: string;
+            operator: string;
+            value: unknown;
+            priority: "required" | "preferred" | "avoid";
+          }>;
+        }>;
+      }>;
       requirements: Array<{
         key: string;
         label: string;
         dataType: "boolean" | "number" | string;
         unit: string | null;
+        description: string;
+        options: Array<{ value: string; label: string }>;
         recommendedOperator?: "eq" | "gte" | "lte";
+        physicalFeatureRef: GenerationNavigationRequirement["physicalFeatureRef"];
       }>;
     };
     semantic: { sourceScoped: boolean; message: string };
@@ -136,6 +161,7 @@ export interface GenerationRequest {
   languageComplexityPreference?: number;
   locale?: string;
   movementPacePreference?: number;
+  routingProfileSelections?: GenerationRoutingProfileSelection[];
   navigationRequirements?: GenerationNavigationRequirement[];
   historyMode?: "full" | "declared_only" | "current_request_only";
   interVenueTransfers?: Array<{

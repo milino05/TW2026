@@ -4,17 +4,22 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
 const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForPrincipal } = require("./principalResolution.service");
+const { trashPhysicalVocabulary } = require("./physicalVocabulary.service");
 
-const REMOVABLE_RESOURCE_TYPES = Object.freeze(["item_edition", "namespace"]);
+const REMOVABLE_RESOURCE_TYPES = Object.freeze(["item_edition", "namespace", "physical_vocabulary"]);
 
 function id(value) { return String(value?._id || value || ""); }
 function sameId(a, b) { return id(a) === id(b); }
 function lifecyclePermission(resourceType) {
-  return resourceType === "item_edition" ? "item.lifecycle.manage" : "namespace.lifecycle.manage";
+  if (resourceType === "item_edition") return "item.lifecycle.manage";
+  if (resourceType === "namespace") return "namespace.lifecycle.manage";
+  return "physical_vocabulary.lifecycle.manage";
 }
 function reference(resourceType, resourceIds) {
   const ids = (resourceIds || []).filter(Boolean);
@@ -73,6 +78,28 @@ async function namespaceRemovalTarget({ resourceId, principal, actorUserId, now,
   };
 }
 
+async function physicalVocabularyRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
+  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session).lean();
+  if (!physicalVocabulary) throw new AppError("Vocabolario fisico non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
+  assertOwnership(physicalVocabulary, principal);
+  const revisionIds = await PhysicalVocabularyRevision.find({ physicalVocabularyId: physicalVocabulary._id }).distinct("_id").session(session);
+  await trashPhysicalVocabulary({ physicalVocabularyId: physicalVocabulary._id, actorUserId, session, now });
+  return {
+    aggregateType: "physical_vocabulary",
+    aggregateId: physicalVocabulary._id,
+    references: [
+      reference("physical_vocabulary", [physicalVocabulary._id]),
+      reference("physical_vocabulary_revision", revisionIds),
+    ].filter(Boolean),
+  };
+}
+
+async function removalTarget(args) {
+  if (args.resourceType === "item_edition") return itemRemovalTarget(args);
+  if (args.resourceType === "namespace") return namespaceRemovalTarget(args);
+  return physicalVocabularyRemovalTarget(args);
+}
+
 async function removeOwnedWorkspaceResource({
   actorUserId,
   principalType = "user",
@@ -81,7 +108,7 @@ async function removeOwnedWorkspaceResource({
   resourceId,
 }) {
   if (!REMOVABLE_RESOURCE_TYPES.includes(resourceType)) {
-    throw new AppError("Puoi rimuovere soltanto contenuti o regole editoriali", 400, [{
+    throw new AppError("Puoi rimuovere soltanto contenuti, regole editoriali o vocabolari fisici", 400, [{
       field: "resourceType",
       code: "INVALID_ENUM",
       allowedValues: REMOVABLE_RESOURCE_TYPES,
@@ -99,9 +126,7 @@ async function removeOwnedWorkspaceResource({
   try {
     await session.withTransaction(async () => {
       const now = new Date();
-      const target = resourceType === "item_edition"
-        ? await itemRemovalTarget({ resourceId, principal, actorUserId, now, session })
-        : await namespaceRemovalTarget({ resourceId, principal, actorUserId, now, session });
+      const target = await removalTarget({ resourceType, resourceId, principal, actorUserId, now, session });
 
       const directListings = await MarketplaceListing.find({
         $or: listingReferenceFilter(target.references),

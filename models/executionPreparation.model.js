@@ -21,8 +21,14 @@ const PresentationPreferenceSchema = new Schema({
   locale: { type: String, trim: true, default: null },
 }, { _id: false });
 
+const RoutingProfileSelectionSchema = new Schema({
+  venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
+  routingProfileDefinitionId: { type: String, trim: true, required: true },
+}, { _id: false });
+
 const NavigationSnapshotSchema = new Schema({
   movementPacePreference: { type: Number, min: 0, max: 1, required: true },
+  routingProfileSelections: { type: [RoutingProfileSelectionSchema], default: [] },
   requirements: { type: [Schema.Types.Mixed], default: [] },
 }, { _id: false });
 
@@ -34,6 +40,7 @@ const ExecutionPreparationSchema = new Schema({
   preparationDraft: { type: Schema.Types.Mixed, default: {} },
   effectivePresentationPreference: { type: PresentationPreferenceSchema, default: null },
   navigationSnapshot: { type: NavigationSnapshotSchema, required: true },
+  navigationOptions: { type: Schema.Types.Mixed, default: () => ({ profilesByVenue: [] }) },
   venuePins: { type: [VenuePinSchema], default: [] },
   sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
@@ -55,6 +62,15 @@ ExecutionPreparationSchema.pre("validate", function validateSource(next) {
   }
   if (this.readiness?.status === "ready" && !this.preparedPlanCandidate) {
     this.invalidate("preparedPlanCandidate", "Una preparation ready richiede un candidate plan");
+  }
+  const profileVenueIds = new Set();
+  for (const selection of this.navigationSnapshot?.routingProfileSelections || []) {
+    const venueId = String(selection.venueId || "");
+    if (profileVenueIds.has(venueId)) {
+      this.invalidate("navigationSnapshot.routingProfileSelections", "È ammesso un solo profilo di percorso per Venue");
+      break;
+    }
+    profileVenueIds.add(venueId);
   }
   next();
 });

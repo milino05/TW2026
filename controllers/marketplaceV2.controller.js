@@ -237,6 +237,7 @@ async function marketplaceOrganizationDetail(req, res, next) {
       memberPage: req.query?.memberPage,
       venuePage: req.query?.venuePage,
       namespacePage: req.query?.namespacePage,
+      physicalVocabularyPage: req.query?.physicalVocabularyPage,
       limit: req.query?.limit,
     }));
   } catch (error) { next(error); }
@@ -244,6 +245,11 @@ async function marketplaceOrganizationDetail(req, res, next) {
 
 async function marketplaceNamespaceManagement(req, res, next) {
   try { res.status(200).json(await management.getNamespaceManagementProjection({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+
+async function marketplacePhysicalVocabularyManagement(req, res, next) {
+  try { res.status(200).json(await management.getPhysicalVocabularyManagementProjection({ physicalVocabularyId: req.params.physicalVocabularyId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
 
@@ -298,6 +304,7 @@ module.exports = {
   marketplaceAccountWorkspace,
   marketplaceOrganizationDetail,
   marketplaceNamespaceManagement,
+  marketplacePhysicalVocabularyManagement,
   marketplaceVenueManagement,
   distributionDashboard,
   workspaceOperation,

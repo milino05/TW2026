@@ -188,3 +188,115 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
     assert.equal(preflight.content.usableNamespaces[0].source, "licensed");
   });
 });
+
+test("rimuovere un PhysicalVocabulary preserva snapshot e fork già acquisito", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Organization = require("../models/organization.model");
+    const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+    const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
+    const Venue = require("../models/venue.model");
+    const LayoutRevision = require("../models/layoutRevision.model");
+    const VenueRelease = require("../models/venueRelease.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
+    const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
+    const Entitlement = require("../models/entitlement.model");
+    const marketplace = require("../services/marketplaceV2.service");
+    const physicalVocabularyService = require("../services/physicalVocabulary.service");
+    const revisionService = require("../services/physicalVocabularyRevision.service");
+    const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
+    const { resolveCapabilitySource } = require("../services/capabilityAuthorization.service");
+    const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");
+
+    const [owner, buyer] = await users(User, "physical-vocabulary");
+    const created = await physicalVocabularyService.createPhysicalVocabulary({
+      actorUserId: owner._id,
+      payload: {
+        name: "Vocabolario fisico da rimuovere",
+        ownerType: "user",
+        ownerId: owner._id,
+        applyStarter: true,
+      },
+    });
+    await revisionService.evaluatePhysicalVocabulary({ physicalVocabularyId: created.physicalVocabulary._id, actorUserId: owner._id });
+    const published = await revisionService.publishPhysicalVocabulary({ physicalVocabularyId: created.physicalVocabulary._id, actorUserId: owner._id });
+
+    const livePublication = await publishedListingWithOffer({
+      MarketplaceListing,
+      MarketplaceOffer,
+      owner,
+      resourceType: "physical_vocabulary",
+      resourceId: created.physicalVocabulary._id,
+      capability: "physical_vocabulary.fork",
+    });
+    const snapshotPublication = await publishedListingWithOffer({
+      MarketplaceListing,
+      MarketplaceOffer,
+      owner,
+      resourceType: "physical_vocabulary_revision",
+      resourceId: published.revision._id,
+      capability: "physical_vocabulary.fork",
+      versionPolicy: "pinned",
+    });
+    const acquired = await marketplace.acquireOffer({ offerId: livePublication.offer._id, actorUserId: buyer._id });
+    const entitlement = acquired.entitlements[0];
+
+    const result = await removeOwnedWorkspaceResource({
+      actorUserId: owner._id,
+      resourceType: "physical_vocabulary",
+      resourceId: created.physicalVocabulary._id,
+    });
+    assert.equal(result.lifecycleStatus, "trashed");
+    assert.equal(result.withdrawnListingCount, 2);
+    assert.equal(result.inactiveOfferCount, 2);
+    assert.equal((await PhysicalVocabulary.findById(created.physicalVocabulary._id).lean()).lifecycleStatus, "trashed");
+    assert.equal(await PhysicalVocabularyRevision.countDocuments({ physicalVocabularyId: created.physicalVocabulary._id }), 1);
+    assert.equal((await MarketplaceListing.findById(livePublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(livePublication.offer._id).lean()).status, "inactive");
+    assert.equal((await MarketplaceListing.findById(snapshotPublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(snapshotPublication.offer._id).lean()).status, "inactive");
+    assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
+    assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
+
+    const organization = await Organization.create({ name: "Owner dello snapshot fisico", createdBy: owner._id });
+    const venue = await Venue.create({ name: "Venue con pin storico", ownerOrganizationId: organization._id, createdBy: owner._id });
+    const layout = await LayoutRevision.create({
+      venueId: venue._id,
+      version: 1,
+      authoredAgainstPhysicalVocabularyRevisionId: published.revision._id,
+      status: "published",
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    const venueRelease = await VenueRelease.create({
+      venueId: venue._id,
+      version: 1,
+      layoutRevisionId: layout._id,
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
+      publication: { publishedAt: new Date(), publishedBy: owner._id },
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    const pinnedIssues = await computeVenueReleaseIssues({ venue, release: venueRelease, layout });
+    assert.equal(pinnedIssues.some((issue) => issue.code === "PHYSICAL_VOCABULARY_NOT_AVAILABLE"), false);
+
+    const access = await resolveCapabilitySource({
+      actorUserId: buyer._id,
+      capability: "physical_vocabulary.fork",
+      resourceType: "physical_vocabulary",
+      resourceId: created.physicalVocabulary._id,
+    });
+    assert.equal(access.allowed, true);
+    assert.equal(String(access.resolvedSnapshotRef.resourceId), String(published.revision._id));
+
+    const forked = await physicalVocabularyService.forkPhysicalVocabulary({
+      physicalVocabularyId: created.physicalVocabulary._id,
+      actorUserId: buyer._id,
+      payload: { ownerType: "user", ownerId: buyer._id, name: "Fork da snapshot acquisita" },
+    });
+    assert.equal(String(forked.physicalVocabulary.forkedFromPhysicalVocabularyRevisionId), String(published.revision._id));
+    assert.equal(forked.revision.placeTypes.length, published.revision.placeTypes.length);
+  });
+});

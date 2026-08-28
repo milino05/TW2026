@@ -3,6 +3,7 @@ const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const AppError = require("../utils/AppError");
 const { findVisitV2OrFail, assertCanManageVisitV2, getWorkingVisitRevisionV2 } = require("./visitV2.service");
 const { computeVisitV2Integrity } = require("./visitV2Integrity.service");
+const { projectVisitAuthoringRouteReview } = require("./visitAuthoringRouteReviewV2.service");
 const {
   requestReview,
   withdrawReview,
@@ -18,20 +19,62 @@ async function loadWorking({ visitId, actorUserId, permissionCode = "visit.edit"
   return { visit, revision };
 }
 
+function routeIssue(issue, field = "routeReview") {
+  const context = Object.fromEntries(Object.entries(issue || {}).filter(([key, value]) => (
+    !["code", "message", "severity"].includes(key) && value !== undefined
+  )));
+  return {
+    field,
+    code: issue.code || "VISIT_ROUTE_NOT_READY",
+    message: issue.message || "Il percorso della visita non è verificabile.",
+    severity: issue.severity === "warning" ? "warning" : "error",
+    ...(Object.keys(context).length ? { context } : {}),
+  };
+}
+function issueSignature(issue) {
+  const context = issue.context || {};
+  return [
+    issue.code,
+    issue.field,
+    context.anchorId || context.fromAnchorId || "",
+    context.toAnchorId || "",
+    context.venueId || "",
+  ].join("::");
+}
+function mergeIssues(...groups) {
+  const merged = [];
+  const seen = new Set();
+  for (const issue of groups.flat()) {
+    const signature = issueSignature(issue);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    merged.push(issue);
+  }
+  return merged;
+}
+
 async function evaluateVisitV2Consistency({ visitId, actorUserId, allowInReview = false }) {
   const { visit, revision } = await loadWorking({ visitId, actorUserId });
   if (revision.status === "in_review" && !allowInReview) throw new AppError("Ritirare la richiesta di review prima di ricontrollare", 409);
-  const result = await computeVisitV2Integrity(revision.toObject());
-  const blocking = result.issues.some((entry) => entry.severity !== "warning");
+  const [domainIntegrity, routeReview] = await Promise.all([
+    computeVisitV2Integrity(revision.toObject()),
+    projectVisitAuthoringRouteReview(revision.toObject()),
+  ]);
+  const routeIssues = [
+    ...(routeReview.blockers || []).map((entry) => routeIssue(entry)),
+    ...(routeReview.warnings || []).map((entry) => routeIssue(entry)),
+  ];
+  const issues = mergeIssues(domainIntegrity.issues || [], routeIssues);
+  const blocking = issues.some((entry) => entry.severity !== "warning");
   revision.integrity = {
     status: blocking ? "needs_review" : "valid",
-    issues: result.issues,
+    issues,
     checkedAt: new Date(),
     checkedBy: actorUserId,
   };
   revision.updatedBy = actorUserId;
   await revision.save();
-  return { visit, revision, ...result };
+  return { visit, revision, ...domainIntegrity, issues, routeReview };
 }
 
 async function requestVisitV2Review({ visitId, actorUserId }) {

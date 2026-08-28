@@ -10,6 +10,7 @@ const marketplaceCatalog = require("./marketplaceCatalogV2.service");
 const { getCreatorWorkspace } = require("./marketplaceWorkspaceV2.service");
 const { projectEditorialWorkflowOperations, mayEditEditorialRevision } = require("./editorialWorkflowOperationsV2.service");
 const { assertCanComposeEditorialRelease } = require("./visitEditorialUsageAuthorization.service");
+const { projectVisitAuthoringRouteReview } = require("./visitAuthoringRouteReviewV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -41,6 +42,22 @@ function sourceOptionsFromWorkspace(workspace) {
     add(asset, "licensed");
   }
   return options.sort((a, b) => a.name.localeCompare(b.name, "it"));
+}
+
+function enrichRouteReview(routeReview, stops) {
+  const stopById = new Map((stops || []).map((stop) => [id(stop.id), stop]));
+  return {
+    ...routeReview,
+    legs: (routeReview?.legs || []).map((leg) => {
+      const from = stopById.get(id(leg.fromAnchorId));
+      const to = stopById.get(id(leg.toAnchorId));
+      return {
+        ...leg,
+        fromStop: from ? { id: from.id, label: from.label, venue: from.venue } : null,
+        toStop: to ? { id: to.id, label: to.label, venue: to.venue } : null,
+      };
+    }),
+  };
 }
 
 async function hydrateVisitRevision(revision) {
@@ -79,6 +96,57 @@ async function hydrateVisitRevision(revision) {
   const venueById = new Map(venues.map((entry) => [id(entry), entry]));
   const anchorById = new Map((revision.visitAnchors || []).map((entry) => [id(entry._id), entry]));
 
+  const projectedAnchors = (revision.visitAnchors || []).map((anchor, index) => {
+    const target = targetById.get(id(anchor.venueTargetId));
+    const venue = target ? venueById.get(id(target.venueId)) : null;
+    return {
+      id: anchor._id,
+      order: index,
+      venueTargetId: anchor.venueTargetId,
+      label: target?.label || "Target non disponibile",
+      subjectId: target?.subjectId || null,
+      venue: target ? { id: target.venueId, name: venue?.name || "Venue" } : null,
+    };
+  });
+  const projectedEntries = (revision.contentEntries || []).map((entry, index) => {
+    const itemRevision = itemRevisionById.get(id(entry.itemRevisionId));
+    const item = itemById.get(id(entry.itemId));
+    const anchor = entry.deliveryAnchorId ? anchorById.get(id(entry.deliveryAnchorId)) : null;
+    const target = anchor ? targetById.get(id(anchor.venueTargetId)) : null;
+    const venue = target ? venueById.get(id(target.venueId)) : null;
+    return {
+      id: entry._id,
+      order: index,
+      editorialSourceId: entry.editorialSourceId,
+      itemId: entry.itemId,
+      itemEditionId: entry.itemEditionId,
+      itemRevisionId: entry.itemRevisionId,
+      primarySubjectId: item?.primarySubjectId || null,
+      label: itemRevision?.label || "Contenuto non disponibile",
+      authorCredits: itemRevision?.authorCredits || [],
+      license: itemRevision?.metadata?.license || null,
+      deliveryAnchorId: entry.deliveryAnchorId || null,
+      deliveryTarget: target ? {
+        id: target._id,
+        label: target.label,
+        subjectId: target.subjectId,
+        venue: { id: target.venueId, name: venue?.name || "Venue" },
+      } : null,
+      role: entry.role || "recommended",
+    };
+  });
+  const entriesByAnchor = new Map(projectedAnchors.map((anchor) => [id(anchor.id), []]));
+  const contextualEntries = [];
+  for (const entry of projectedEntries) {
+    if (entry.deliveryAnchorId && entriesByAnchor.has(id(entry.deliveryAnchorId))) entriesByAnchor.get(id(entry.deliveryAnchorId)).push(entry);
+    else contextualEntries.push(entry);
+  }
+  const stops = projectedAnchors.map((anchor) => ({
+    ...anchor,
+    contents: entriesByAnchor.get(id(anchor.id)) || [],
+  }));
+  const routeReview = enrichRouteReview(await projectVisitAuthoringRouteReview(revision), stops);
+
   return {
     id: revision._id,
     version: revision.version,
@@ -105,44 +173,13 @@ async function hydrateVisitRevision(revision) {
         version: release?.version || null,
       };
     }),
-    anchors: (revision.visitAnchors || []).map((anchor) => {
-      const target = targetById.get(id(anchor.venueTargetId));
-      const venue = target ? venueById.get(id(target.venueId)) : null;
-      return {
-        id: anchor._id,
-        venueTargetId: anchor.venueTargetId,
-        label: target?.label || "Target non disponibile",
-        subjectId: target?.subjectId || null,
-        venue: target ? { id: target.venueId, name: venue?.name || "Venue" } : null,
-      };
-    }),
-    entries: (revision.contentEntries || []).map((entry, index) => {
-      const itemRevision = itemRevisionById.get(id(entry.itemRevisionId));
-      const item = itemById.get(id(entry.itemId));
-      const anchor = entry.deliveryAnchorId ? anchorById.get(id(entry.deliveryAnchorId)) : null;
-      const target = anchor ? targetById.get(id(anchor.venueTargetId)) : null;
-      const venue = target ? venueById.get(id(target.venueId)) : null;
-      return {
-        id: entry._id,
-        order: index,
-        editorialSourceId: entry.editorialSourceId,
-        itemId: entry.itemId,
-        itemEditionId: entry.itemEditionId,
-        itemRevisionId: entry.itemRevisionId,
-        primarySubjectId: item?.primarySubjectId || null,
-        label: itemRevision?.label || "Contenuto non disponibile",
-        authorCredits: itemRevision?.authorCredits || [],
-        license: itemRevision?.metadata?.license || null,
-        deliveryAnchorId: entry.deliveryAnchorId || null,
-        deliveryTarget: target ? {
-          id: target._id,
-          label: target.label,
-          subjectId: target.subjectId,
-          venue: { id: target.venueId, name: venue?.name || "Venue" },
-        } : null,
-        role: entry.role || "recommended",
-      };
-    }),
+    // Raw projections remain temporarily available to non-stop-centric consumers. The
+    // Marketplace Visit editor consumes stops/contextualEntries instead of rewriting them.
+    anchors: projectedAnchors,
+    entries: projectedEntries,
+    stops,
+    contextualEntries,
+    routeReview,
     presentationBaseline: revision.presentationBaseline ? {
       depthPreference: revision.presentationBaseline.depthPreference ?? null,
       languageComplexityPreference: revision.presentationBaseline.languageComplexityPreference ?? null,
@@ -325,6 +362,7 @@ async function searchVisitAuthoringContent({
 
 module.exports = {
   sourceOptionsFromWorkspace,
+  hydrateVisitRevision,
   getVisitAuthoringProjection,
   searchVisitAuthoringContent,
 };

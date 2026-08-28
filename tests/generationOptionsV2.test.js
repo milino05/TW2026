@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -55,9 +56,11 @@ async function createReadyVenue({ userId, organizationId, primaryEditorialContex
     primaryEditorialContextId,
     createdBy: userId,
   });
+  const physical = await createPublishedPhysicalVocabulary({ userId });
   const layout = await LayoutRevision.create({
     venueId: venue._id,
     version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
     status: "published",
     createdBy: userId,
     updatedBy: userId,

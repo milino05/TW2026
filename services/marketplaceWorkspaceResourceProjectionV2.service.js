@@ -38,16 +38,29 @@ function workflowCapabilities(principal, resourceType) {
   return { edit: permissions.has(`${prefix}.edit`), review: permissions.has(`${prefix}.review`), publish: permissions.has(`${prefix}.publish`) };
 }
 
+function lifecyclePrefix(resourceType) {
+  if (resourceType === "item_edition") return "item";
+  if (resourceType === "namespace") return "namespace";
+  if (resourceType === "physical_vocabulary") return "physical_vocabulary";
+  return null;
+}
+
+function removalLabel(resourceType) {
+  if (resourceType === "item_edition") return "Elimina contenuto";
+  if (resourceType === "namespace") return "Elimina regole editoriali";
+  return "Elimina vocabolario fisico";
+}
+
 function canRemoveOwnedResource(principal, resourceType) {
-  if (!["item_edition", "namespace"].includes(resourceType)) return false;
+  const prefix = lifecyclePrefix(resourceType);
+  if (!prefix) return false;
   if (principal.type === "user") return true;
-  const prefix = resourceType === "item_edition" ? "item" : "namespace";
   return (principal.effectivePermissions || []).includes(`${prefix}.lifecycle.manage`);
 }
 
 function withRemovalOperation(operations, principal, resourceType) {
   return canRemoveOwnedResource(principal, resourceType)
-    ? [...operations, { code: "remove_resource", label: resourceType === "item_edition" ? "Elimina contenuto" : "Elimina regole editoriali", destructive: true }]
+    ? [...operations, { code: "remove_resource", label: removalLabel(resourceType), destructive: true }]
     : operations;
 }
 
@@ -135,6 +148,25 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       ),
     };
   }
+  if (candidate.resourceType === "physical_vocabulary") {
+    const revision = candidate.revision || null;
+    const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce, canEdit: capabilities.edit });
+    return {
+      ownership: "owned", resourceType: "physical_vocabulary", resourceId: candidate._id,
+      sourceRef: { resourceType: "physical_vocabulary", resourceId: candidate._id },
+      authoringRef: { resourceType: "physical_vocabulary", resourceId: candidate._id },
+      title: candidate.name, summary: candidate.description || "",
+      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
+      editorialWorkflow: workflowState(revision),
+      publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "physical_vocabulary_revision", resourceId: candidate.publishedRevisionId } : null,
+      listing,
+      availableOperations: withRemovalOperation(
+        withWorkflowOperations({ baseOperations, principal, resourceType: "physical_vocabulary", revision }),
+        principal,
+        "physical_vocabulary",
+      ),
+    };
+  }
   const revision = candidate.revision || null;
   const baseOperations = ownedOperations({ published: Boolean(candidate.publishedRevisionId), listing, canManageCommerce, canEdit: capabilities.edit });
   return {
@@ -152,11 +184,12 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
 
 async function actionableRefs(resourceType, resourceId, marketable) {
   if (LIVE_RESOURCE_TYPES.has(resourceType)) return { sourceRef: { resourceType, resourceId }, snapshotRef: marketable.snapshotRef || null };
-  const authority = await resolveResourceAuthority(resourceType, resourceId);
+  const authority = await resolveResourceAuthority(resourceType, resourceId, { includeTrashed: true });
   if (!authority) return { sourceRef: null, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "item_revision" && authority.edition) return { sourceRef: { resourceType: "item_edition", resourceId: authority.edition._id }, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "editorial_release" && authority.context) return { sourceRef: { resourceType: "editorial_context", resourceId: authority.context._id }, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "namespace_revision" && authority.aggregate) return { sourceRef: { resourceType: "namespace", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
+  if (resourceType === "physical_vocabulary_revision" && authority.aggregate) return { sourceRef: { resourceType: "physical_vocabulary", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
   if (resourceType === "visit_revision" && authority.aggregate) return { sourceRef: { resourceType: "visit", resourceId: authority.aggregate._id }, snapshotRef: { resourceType, resourceId } };
   return { sourceRef: null, snapshotRef: { resourceType, resourceId } };
 }

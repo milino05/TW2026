@@ -8,7 +8,7 @@ const {
   changePresentationComplexityV2,
   openSemanticPresentationV2,
   returnFromSemanticPresentationV2,
-  routeToIntentV2,
+  routeToPhysicalFeatureV2,
   pauseSessionV2,
   resumeSessionV2,
   completeSessionV2,
@@ -104,8 +104,8 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
       const completed = await completeSessionV2({ sessionId, userId });
       return { type: "completion", learning: completed.learning };
     }
-    case "NAVIGATE_TO_PLACE_INTENT": {
-      const routeResult = await routeToIntentV2({ sessionId, userId, intent: descriptor.serverInput?.intent });
+    case "NAVIGATE_TO_PHYSICAL_FEATURE": {
+      const routeResult = await routeToPhysicalFeatureV2({ sessionId, userId, physicalFeatureRef: descriptor.serverInput?.physicalFeatureRef });
       return {
         type: "navigation_requested",
         navigation: await projectNavigationRoute({ sessionId, userId, routeResult }),

@@ -43,9 +43,9 @@ La publication di una Visit non congela `VenueRelease`, `LayoutRevision`, Place,
 
 ## VenueRelease e LayoutRevision
 
-La Venue appartiene a una Organization. Una working `VenueRelease` incorpora il riferimento a una working `LayoutRevision`; `venue.physical.edit`, `venue.physical.review` e `venue.physical.publish` governano separatamente il workflow. La publication richiede una release `in_review` integra.
+La Venue appartiene a una Organization. Una working `VenueRelease` incorpora il riferimento a una working `LayoutRevision`; `venue.physical.edit`, `venue.physical.review` e `venue.physical.publish` governano separatamente il workflow. La publication richiede una release `in_review` integra. Ogni Layout pinna con `authoredAgainstPhysicalVocabularyRevisionId` la revisione del vocabolario fisico usata durante l'authoring.
 
-Il consistency check verifica, tra l'altro, PlaceType, routing attribute/canonicalKey, floor, Place, Connection, VenueTarget placement e target binding. Alla publication `Venue.publishedReleaseId` viene aggiornato e il Layout associato diventa `published`; gli snapshot precedenti vengono marcati `superseded`.
+Il consistency check verifica, tra l'altro, stabilita e accessibilita del `PhysicalVocabularyRevision` pinzato, esistenza dei `definitionId`, tipi e applicabilita degli attributi, Floor e calibrazione, geometria e metrica delle Connection, VenueTarget placement e target binding. Alla publication `Venue.publishedReleaseId` viene aggiornato e il Layout associato diventa `published`; gli snapshot precedenti vengono marcati `superseded`. Cambiare revisione del vocabolario richiede una nuova bozza di Layout e non modifica retroattivamente gli snapshot pubblicati.
 
 ## EditorialRelease
 

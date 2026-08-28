@@ -1,5 +1,6 @@
 const AppError = require("../utils/AppError");
 const { resolveRoute } = require("./graphRouting.service");
+const { resolvePhysicalFeatureRef, requireSingleResolution } = require("./physicalVocabularyResolver.service");
 
 function venueTargetPlacementMap(layoutRevision) {
   return new Map((layoutRevision?.venueTargetPlacements || []).map((placement) => [String(placement.venueTargetId), placement]));
@@ -16,6 +17,7 @@ function routeBetweenVenueTargets({ layoutRevision, fromVenueTargetId, toVenueTa
   if (!fromPlaceId || !toPlaceId) throw new AppError("VenueTarget non posizionato nella LayoutRevision", 409);
   const route = resolveRoute({
     connections: layoutRevision.connections || [],
+    places: layoutRevision.places || [],
     fromPlaceId,
     toPlaceId,
     requirements,
@@ -26,11 +28,14 @@ function routeBetweenVenueTargets({ layoutRevision, fromVenueTargetId, toVenueTa
   return { fromPlaceId, toPlaceId, ...route };
 }
 
-function placesForIntent(layoutRevision, intent) {
-  const normalizedIntent = String(intent || "").trim().toUpperCase();
-  if (!normalizedIntent) return [];
-  const typeKeys = new Set((layoutRevision?.placeTypes || []).filter((type) => (type.userIntents || []).includes(normalizedIntent)).map((type) => type.key));
-  return (layoutRevision?.places || []).filter((place) => typeKeys.has(place.typeKey));
+function placesForPhysicalFeature({ layoutRevision, physicalVocabulary, physicalVocabularyRevision, physicalFeatureRef }) {
+  const resolution = resolvePhysicalFeatureRef({
+    reference: physicalFeatureRef,
+    physicalVocabulary,
+    revision: physicalVocabularyRevision,
+  });
+  const { definition } = requireSingleResolution(resolution, { expectedFamily: "placeTypes" });
+  return (layoutRevision?.places || []).filter((place) => place.placeTypeDefinitionId === definition.definitionId);
 }
 
-module.exports = { venueTargetPlacementMap, resolveVenueTargetPrimaryPlace, routeBetweenVenueTargets, placesForIntent };
+module.exports = { venueTargetPlacementMap, resolveVenueTargetPrimaryPlace, routeBetweenVenueTargets, placesForPhysicalFeature };

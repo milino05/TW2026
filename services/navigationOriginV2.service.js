@@ -1,6 +1,19 @@
 const AppError = require("../utils/AppError");
 
 function id(value) { return String(value?._id || value || ""); }
+const DEFAULT_OBSERVATION_MAX_AGE_MS = 30_000;
+
+function isFreshLocationObservation(observation, { now = new Date(), maxAgeMs = DEFAULT_OBSERVATION_MAX_AGE_MS } = {}) {
+  const observedAt = Date.parse(String(observation?.observedAt || ""));
+  const currentTime = now instanceof Date ? now.getTime() : Number(now);
+  const age = currentTime - observedAt;
+  return Number.isFinite(observedAt)
+    && Number.isFinite(currentTime)
+    && Number.isFinite(maxAgeMs)
+    && maxAgeMs >= 0
+    && age >= 0
+    && age <= maxAgeMs;
+}
 
 function anchorMap(plan) {
   return new Map((plan?.visitAnchors || []).map((anchor) => [id(anchor._id), anchor]));
@@ -15,7 +28,14 @@ function logicalAnchorForIndex(plan, index) {
   return null;
 }
 
-function resolveNavigationOrigin({ session, plan, explicitOrigin = null, locationObservation = null } = {}) {
+function resolveNavigationOrigin({
+  session,
+  plan,
+  explicitOrigin = null,
+  locationObservation = null,
+  now = new Date(),
+  observationMaxAgeMs = DEFAULT_OBSERVATION_MAX_AGE_MS,
+} = {}) {
   if (explicitOrigin?.venueId && explicitOrigin?.placeId) {
     return {
       venueId: explicitOrigin.venueId,
@@ -24,11 +44,15 @@ function resolveNavigationOrigin({ session, plan, explicitOrigin = null, locatio
     };
   }
 
-  if (locationObservation?.venueId && locationObservation?.placeId && locationObservation?.isFresh === true) {
+  const observedLocation = locationObservation?.location || null;
+  if (isFreshLocationObservation(locationObservation, { now, maxAgeMs: observationMaxAgeMs }) && observedLocation?.venueId && observedLocation?.placeId) {
     return {
-      venueId: locationObservation.venueId,
-      placeId: locationObservation.placeId,
+      venueId: observedLocation.venueId,
+      placeId: observedLocation.placeId,
       provenance: "physical_observation",
+      providerId: locationObservation.providerId || null,
+      observedAt: locationObservation.observedAt || null,
+      venueTargetId: observedLocation.venueTargetId || null,
     };
   }
 
@@ -49,6 +73,8 @@ function resolveNavigationOrigin({ session, plan, explicitOrigin = null, locatio
 }
 
 module.exports = {
+  DEFAULT_OBSERVATION_MAX_AGE_MS,
+  isFreshLocationObservation,
   logicalAnchorForIndex,
   resolveNavigationOrigin,
 };

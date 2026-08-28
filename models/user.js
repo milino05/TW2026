@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const PhysicalFeatureRefSchema = require("../schemas/physicalFeatureRef.schema");
 const { Schema } = mongoose;
 
 const AbstractPreferenceSchema = new Schema({
@@ -7,10 +8,10 @@ const AbstractPreferenceSchema = new Schema({
 }, { _id: false });
 
 const RoutingRequirementSchema = new Schema({
-  attributeKey: { type: String, required: true, trim: true, lowercase: true },
+  physicalFeatureRef: { type: PhysicalFeatureRefSchema, required: true },
   operator: { type: String, enum: ["eq", "neq", "gte", "lte", "gt", "lt", "in"], default: "eq" },
   value: { type: Schema.Types.Mixed, required: true },
-  priority: { type: String, enum: ["required", "preferred"], default: "preferred" },
+  priority: { type: String, enum: ["required", "preferred", "avoid"], default: "preferred" },
   weight: { type: Number, min: 0, default: 1 },
 }, { _id: false });
 

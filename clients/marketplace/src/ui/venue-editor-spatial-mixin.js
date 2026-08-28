@@ -1,27 +1,226 @@
+import { icon } from "./icons.js";
+
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
-function pretty(value) { return JSON.stringify(value ?? {}, null, 2); }
-function refsText(values = []) { return values.map((entry) => `${entry.scheme}|${entry.id}|${entry.matchType || "exact"}`).join("\n"); }
-function semanticRefChips(values = [], editable = true) { return values.length ? values.map((entry, index) => `<span class="semantic-ref-chip"><span>${escapeHtml(entry.scheme)} · ${escapeHtml(entry.id)} · ${escapeHtml(entry.matchType || "exact")}</span>${editable ? `<button type="button" data-remove-semantic-ref="${index}" aria-label="Rimuovi mapping ${escapeHtml(entry.id)}">×</button>` : ""}</span>`).join("") : `<span class="muted">Nessun mapping esterno</span>`; }
+function selected(value, current) { return String(value ?? "") === String(current ?? "") ? "selected" : ""; }
+function id(value) { return String(value?._id || value?.id || value || ""); }
+function pct(value) { return Math.max(0, Math.min(100, Number(value ?? .5) * 100)); }
+function metricLabel(connection) {
+  if (connection.metricMode === "geometry_derived") return "Distanza dalla geometria calibrata";
+  if (connection.metricMode === "length_constrained") return "Lunghezza vincolata";
+  return "Distanza manuale";
+}
+function valueForAttribute(entity, definitionId) {
+  return (entity.attributeValues || []).find((entry) => String(entry.physicalAttributeDefinitionId) === String(definitionId))?.value;
+}
+function attributeInput(definition, current) {
+  if (definition.dataType === "boolean") {
+    return `<select name="value"><option value="" ${current === undefined || current === null ? "selected" : ""}>Non verificato</option><option value="true" ${current === true ? "selected" : ""}>Sì</option><option value="false" ${current === false ? "selected" : ""}>No</option></select>`;
+  }
+  if (definition.dataType === "choice") {
+    const options = (definition.options || []).map((entry) => `<option value="${escapeHtml(entry.value)}" ${selected(entry.value, current)}>${escapeHtml(entry.label)}</option>`).join("");
+    return `<select name="value"><option value="">Non verificato</option>${options}</select>`;
+  }
+  if (definition.dataType === "number") {
+    return `<input name="value" type="number" step="any" value="${current === undefined || current === null ? "" : escapeHtml(current)}" placeholder="Non verificato">`;
+  }
+  return `<input name="value" value="${current === undefined || current === null ? "" : escapeHtml(current)}" placeholder="Non verificato">`;
+}
+function attributeEditors({ definitions, entity, entityType, entityId }) {
+  const applicable = (definitions.physicalAttributes || []).filter((definition) => [entityType, "both"].includes(definition.appliesTo));
+  if (!applicable.length) return "";
+  return `<details class="venue-physical-attributes"><summary>Caratteristiche fisiche</summary><div class="venue-attribute-list">${applicable.map((definition) => {
+    const current = valueForAttribute(entity, definition.definitionId);
+    return `<form data-physical-attribute data-entity-type="${escapeHtml(entityType)}" data-entity-id="${escapeHtml(entityId)}" data-definition-id="${escapeHtml(definition.definitionId)}" data-data-type="${escapeHtml(definition.dataType)}" class="venue-attribute-row"><label><span>${escapeHtml(definition.label)}</span><small>${escapeHtml(definition.description || (definition.unit ? `Unità: ${definition.unit}` : "Valore fisico usato dal routing"))}</small>${attributeInput(definition, current)}</label><button class="button-secondary small" type="submit">Salva</button></form>`;
+  }).join("")}</div></details>`;
+}
+function attributeDisplayValue(definition, value) {
+  if (value === undefined || value === null) return "Non verificato";
+  if (definition.dataType === "boolean") return value ? "Sì" : "No";
+  if (definition.dataType === "choice") return (definition.options || []).find((entry) => entry.value === value)?.label || String(value);
+  if (definition.dataType === "number") return `${value}${definition.unit ? ` ${definition.unit}` : ""}`;
+  return String(value);
+}
+function attributeSummary({ definitions, entity, entityType }) {
+  const applicable = (definitions.physicalAttributes || []).filter((definition) => [entityType, "both"].includes(definition.appliesTo));
+  const authored = applicable.filter((definition) => valueForAttribute(entity, definition.definitionId) !== undefined);
+  if (!authored.length) return "";
+  return `<details class="venue-physical-attributes"><summary>Caratteristiche fisiche</summary><dl class="venue-attribute-summary">${authored.map((definition) => `<div><dt>${escapeHtml(definition.label)}</dt><dd>${escapeHtml(attributeDisplayValue(definition, valueForAttribute(entity, definition.definitionId)))}</dd></div>`).join("")}</dl></details>`;
+}
+
 export const venueSpatialMixin = {
-  renderPlaceTypes(values, editable) {
-    const intents = this.data.catalogs.placeIntents.join(", ");
-    return values.map((entry, index) => `<article class="venue-layout-card" data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo tipo di luogo")}</strong>${this.rowControls("placeTypes", index, editable)}</header><div class="venue-fields"><label>Nome visibile<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Chiave tecnica<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label class="wide">Descrizione<input name="description" value="${escapeHtml(entry.description || "")}"></label><label class="wide">Intenti utente<input name="userIntents" value="${escapeHtml((entry.userIntents || []).join(", "))}" list="place-intents" title="${escapeHtml(intents)}"><small>Usati per richieste come uscita, toilette, bar o scale; non sono identità semantiche.</small></label><div class="wide semantic-mappings"><strong>Mapping esterni</strong><div data-semantic-ref-list>${semanticRefChips(entry.semanticRefs || [], editable)}</div>${editable ? `<artaround-semantic-entity-picker mode="mapping" entity-kind="item"></artaround-semantic-entity-picker><details><summary>Inserimento provider-neutral</summary><textarea name="semanticRefs" rows="3" placeholder="schema|ID|exact">${escapeHtml(refsText(entry.semanticRefs || []))}</textarea></details>` : `<textarea name="semanticRefs" hidden>${escapeHtml(refsText(entry.semanticRefs || []))}</textarea>`}</div></div></article>`).join("");
+  physicalDefinitions() { return this.data.physicalVocabulary?.definitions || { placeTypes: [], connectionTypes: [], physicalAttributes: [], routingProfiles: [] }; },
+
+  activeFloorId() {
+    const floors = this.data.layout?.floors || [];
+    const ids = new Set(floors.map((floor) => id(floor._id)));
+    return ids.has(id(this.selectedFloorId)) ? id(this.selectedFloorId) : (ids.values().next().value || null);
   },
 
-  renderFloors(values, editable) {
-    return values.map((entry, index) => `<article class="venue-layout-card" data-layout-row><header><strong>${escapeHtml(entry.label || "Nuovo piano")}</strong>${this.rowControls("floors", index, editable)}</header><div class="venue-fields"><label>Nome del piano<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Chiave tecnica<input name="key" value="${escapeHtml(entry.key || "")}" required></label><label class="wide">Immagine della mappa<input name="imageUrl" value="${escapeHtml(entry.map?.imageUrl || "")}" placeholder="https://..."></label><label>Larghezza immagine (px)<input type="number" min="1" name="width" value="${entry.map?.width || ""}"></label><label>Altezza immagine (px)<input type="number" min="1" name="height" value="${entry.map?.height || ""}"></label></div></article>`).join("");
+  activeFloor() {
+    const floorId = this.activeFloorId();
+    return (this.data.layout?.floors || []).find((floor) => id(floor._id) === id(floorId)) || null;
   },
 
-  renderPlaces(values, editable) {
-    const typeOptions = this.data.layout.placeTypes.map((entry) => `<option value="${escapeHtml(entry.key)}">${escapeHtml(entry.label)}</option>`).join("");
-    const floorOptions = this.data.layout.floors.map((entry) => `<option value="${escapeHtml(entry.key)}">${escapeHtml(entry.label)}</option>`).join("");
-    return values.map((entry, index) => `<article class="venue-layout-card" data-layout-row><input type="hidden" name="_id" value="${escapeHtml(entry._id || "")}"><header><strong>${escapeHtml(entry.label || "Nuovo luogo")}</strong>${this.rowControls("places", index, editable)}</header><div class="venue-fields"><label>Nome del luogo<input name="label" value="${escapeHtml(entry.label || "")}" required></label><label>Tipo<select name="typeKey"><option value="${escapeHtml(entry.typeKey || "")}">${escapeHtml(entry.typeKey || "Scegli")}</option>${typeOptions}</select></label><label>Piano<select name="floorKey"><option value="${escapeHtml(entry.floorKey || "")}">${escapeHtml(entry.floorKey || "Scegli")}</option>${floorOptions}</select></label><label>Posizione X (0–1)<input type="number" min="0" max="1" step="0.01" name="x" value="${entry.position?.x ?? 0.5}"></label><label>Posizione Y (0–1)<input type="number" min="0" max="1" step="0.01" name="y" value="${entry.position?.y ?? 0.5}"></label><details class="wide venue-advanced"><summary>Attributi tecnici del luogo</summary><textarea name="attributes" rows="4">${escapeHtml(pretty(entry.attributes || {}))}</textarea></details></div></article>`).join("");
+  renderMapActionStatus() {
+    const action = this.pendingMapAction;
+    if (!action) return `<p class="venue-map-instruction">Seleziona uno strumento oppure un luogo per modificarne la posizione.</p>`;
+    if (action.type === "create-place") return `<p class="venue-map-instruction active"><strong>Posiziona “${escapeHtml(action.label || "nuovo luogo")}”</strong> · fai clic nel punto corretto della mappa.</p>`;
+    if (action.type === "move-place") return `<p class="venue-map-instruction active"><strong>Sposta luogo</strong> · fai clic sulla nuova posizione.</p>`;
+    if (action.type === "place-target") return `<p class="venue-map-instruction active"><strong>Colloca oggetto</strong> · seleziona sulla mappa il luogo in cui si trova.</p>`;
+    if (action.type === "connect") {
+      const count = Number(Boolean(action.fromPlaceId)) + Number(Boolean(action.toPlaceId));
+      return `<p class="venue-map-instruction active"><strong>Collega luoghi</strong> · ${count === 0 ? "seleziona il primo luogo" : count === 1 ? "ora seleziona il secondo luogo, anche su un altro piano" : "configura il collegamento nel pannello sotto la mappa"}.</p>`;
+    }
+    if (action.type === "calibrate") return `<p class="venue-map-instruction active"><strong>Calibra planimetria</strong> · ${(action.points || []).length === 0 ? "seleziona il primo estremo di una distanza nota" : (action.points || []).length === 1 ? "seleziona il secondo estremo" : "inserisci la distanza reale nel pannello sotto la mappa"}.</p>`;
+    if (action.type === "geometry") return `<p class="venue-map-instruction active"><strong>Disegna il percorso</strong> · ogni clic aggiunge un punto intermedio; ingresso e uscita restano agganciati ai Place.</p>`;
+    return "";
   },
 
-  renderPlacements(values, editable) {
-    const targetOptions = this.data.targets.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`).join("");
-    const placeOptions = this.data.layout.places.filter((entry) => entry._id).map((entry) => `<option value="${escapeHtml(entry._id)}">${escapeHtml(entry.label)}</option>`).join("");
-    return values.map((entry, index) => `<article class="venue-layout-card" data-layout-row><header><strong>Collocazione oggetto</strong>${this.rowControls("venueTargetPlacements", index, editable)}</header><div class="venue-fields"><label>Oggetto<select name="venueTargetId"><option value="${escapeHtml(entry.venueTargetId || "")}">Selezione corrente</option>${targetOptions}</select></label><label>Luogo principale<select name="primaryPlaceId"><option value="${escapeHtml(entry.primaryPlaceId || "")}">Selezione corrente</option>${placeOptions}</select></label><label class="wide">Altri Place ID <input name="placeIds" value="${escapeHtml((entry.placeIds || []).join(", "))}"><small>Opzione avanzata per oggetti che occupano più luoghi.</small></label></div></article>`).join("");
+  renderMapPreview(editable) {
+    const layout = this.data.layout;
+    const floors = layout?.floors || [];
+    const places = layout?.places || [];
+    const connections = layout?.connections || [];
+    if (!floors.length) return `<div class="venue-map-preview empty-state"><h3>Nessun piano</h3><p>Aggiungi il primo piano per iniziare a modellare la sede.</p></div>`;
+    const floor = this.activeFloor();
+    const floorId = id(floor?._id);
+    const floorPlaces = places.filter((place) => id(place.floorId) === floorId);
+    const byId = new Map(floorPlaces.map((place) => [id(place._id), place]));
+    const placementCountByPlace = new Map();
+    for (const placement of layout.venueTargetPlacements || []) {
+      const placeId = id(placement.primaryPlaceId);
+      placementCountByPlace.set(placeId, (placementCountByPlace.get(placeId) || 0) + 1);
+    }
+    const floorTabs = floors.map((entry) => `<button type="button" data-select-floor="${escapeHtml(id(entry._id))}" aria-pressed="${id(entry._id) === floorId}">${escapeHtml(entry.label)}</button>`).join("");
+    const geometryState = this.geometryAuthoringState?.();
+    const editingConnectionId = geometryState && id(geometryState.floor?._id) === floorId ? id(geometryState.connection._id) : null;
+    const lines = connections.map((connection) => {
+      if (editingConnectionId && id(connection._id) === editingConnectionId) return "";
+      const from = byId.get(id(connection.fromPlaceId));
+      const to = byId.get(id(connection.toPlaceId));
+      if (!from || !to) return "";
+      const points = connection.geometry?.points?.length ? connection.geometry.points : [from.position, to.position];
+      return `<polyline points="${points.map((point) => `${pct(point.x)},${pct(point.y)}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>`;
+    }).join("");
+    const geometryOverlay = geometryState && id(geometryState.floor?._id) === floorId
+      ? `<g class="map-geometry-preview"><polyline points="${geometryState.points.map((point) => `${pct(point.x)},${pct(point.y)}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>${geometryState.points.slice(1, -1).map((point) => `<circle cx="${pct(point.x)}" cy="${pct(point.y)}" r="1.1"></circle>`).join("")}</g>`
+      : "";
+    const calibration = this.pendingMapAction?.type === "calibrate" && id(this.pendingMapAction.floorId) === floorId ? this.pendingMapAction.points || [] : [];
+    const calibrationOverlay = calibration.length
+      ? `<g class="map-calibration-preview">${calibration.length === 2 ? `<line x1="${pct(calibration[0].x)}" y1="${pct(calibration[0].y)}" x2="${pct(calibration[1].x)}" y2="${pct(calibration[1].y)}"></line>` : ""}${calibration.map((point) => `<circle cx="${pct(point.x)}" cy="${pct(point.y)}" r="1.2"></circle>`).join("")}</g>`
+      : "";
+    const nodes = floorPlaces.map((place, index) => {
+      const selectedPlace = id(this.selectedMapPlaceId) === id(place._id);
+      const endpoint = [this.pendingMapAction?.fromPlaceId, this.pendingMapAction?.toPlaceId].some((value) => id(value) === id(place._id))
+        || (geometryState && [geometryState.from, geometryState.to].some((entry) => id(entry?._id) === id(place._id)));
+      const objectCount = placementCountByPlace.get(id(place._id)) || 0;
+      const label = `${place.label || `Luogo ${index + 1}`}${objectCount ? `, ${objectCount} oggett${objectCount === 1 ? "o" : "i"}` : ""}`;
+      return `<button class="map-place-node${selectedPlace ? " selected" : ""}${endpoint ? " endpoint" : ""}" type="button" data-map-place="${escapeHtml(id(place._id))}" style="left:${pct(place.position?.x)}%;top:${pct(place.position?.y)}%" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span>${index + 1}</span>${objectCount ? `<small>${objectCount}</small>` : ""}</button>`;
+    }).join("");
+    const ratio = floor?.mapAsset?.width && floor?.mapAsset?.height ? `${floor.mapAsset.width}/${floor.mapAsset.height}` : "10/7";
+    const toolbar = editable ? `<div class="venue-map-toolbar"><button class="button-secondary" type="button" data-map-tool="connect" ${places.length < 2 ? "disabled" : ""}>${icon("link", { size: 15 })} Collega luoghi</button><button class="button-secondary" type="button" data-map-tool="calibrate" ${floor?.mapAsset ? "" : "disabled"}>${icon("ruler", { size: 15 })} Calibra scala</button>${this.pendingMapAction ? `<button class="button-secondary" type="button" data-cancel-map-action>Annulla operazione</button>` : ""}</div>` : "";
+    return `<div class="venue-map-preview"><div class="venue-map-heading"><div><span class="eyebrow">Editor visuale</span><h3>${escapeHtml(floor.label)}</h3><p>${floor.mapAsset ? "Usa la planimetria come riferimento per modellare il grafo fisico." : "Puoi iniziare anche senza immagine e aggiungere la planimetria in seguito."}</p><small>La mappa è una proiezione della configurazione fisica. Non rappresenta né calcola la posizione attuale del visitatore.</small></div><span class="count">${floorPlaces.length} luoghi</span></div><div class="venue-floor-tabs" role="group" aria-label="Piano visualizzato">${floorTabs}</div>${toolbar}${this.renderMapActionStatus()}<div class="map-canvas map-canvas--authoring" data-map-surface data-floor-id="${escapeHtml(floorId)}" style="--map-ratio:${ratio}">${floor.mapAsset?.url ? `<img src="${escapeHtml(floor.mapAsset.url)}" alt="Planimetria ${escapeHtml(floor.label)}" draggable="false">` : `<div class="map-canvas-placeholder"><strong>Nessuna planimetria</strong><span>La griglia resta utilizzabile per impostare la struttura logica.</span></div>`}<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}${geometryOverlay}${calibrationOverlay}</svg>${nodes}</div></div>`;
   },
 
+  renderCalibrationComposer(editable) {
+    const action = this.pendingMapAction;
+    if (!editable || action?.type !== "calibrate" || action.points?.length !== 2) return "";
+    const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(action.floorId));
+    return `<section class="venue-map-composer"><div><span class="eyebrow">Calibrazione</span><h3>Distanza reale sulla planimetria</h3><p>Hai indicato i due estremi sulla mappa. Inserisci soltanto la distanza che conosci nel mondo reale.</p></div><form data-calibration-distance class="venue-inline-form"><label>Distanza reale (m)<input name="distanceMeters" type="number" min="0.01" step="0.01" required autofocus></label><button type="submit">${icon("check", { size: 15 })} Calibra ${escapeHtml(floor?.label || "piano")}</button></form></section>`;
+  },
+
+  renderGeometryComposer(editable) {
+    if (!editable) return "";
+    const state = this.geometryAuthoringState?.();
+    if (!state) return "";
+    const measured = Number.isFinite(state.measuredDistanceMeters) ? `${state.measuredDistanceMeters.toFixed(2)} m` : "Scala non disponibile";
+    const constrained = this.pendingMapAction.metricMode === "length_constrained";
+    const derived = this.pendingMapAction.metricMode === "geometry_derived";
+    const canSave = constrained ? state.constraintSatisfied : (!derived || Number.isFinite(state.measuredDistanceMeters));
+    const constraint = constrained
+      ? `<div class="venue-geometry-metric ${state.constraintSatisfied ? "valid" : "invalid"}"><span>Lunghezza richiesta</span><strong>${state.requestedDistanceMeters.toFixed(2)} m</strong><small>${state.constraintSatisfied ? "Vincolo soddisfatto" : `Disegnata: ${measured} · tolleranza ±${state.toleranceMeters.toFixed(2)} m`}</small></div>`
+      : `<div class="venue-geometry-metric"><span>Lunghezza disegnata</span><strong>${measured}</strong><small>${derived ? "Questa misura diventerà la distanza di routing." : "La distanza di routing manuale resta separata dalla forma disegnata."}</small></div>`;
+    return `<section class="venue-map-composer venue-geometry-composer"><div><span class="eyebrow">Geometria del collegamento</span><h3>${escapeHtml(state.from.label || "Luogo")} → ${escapeHtml(state.to.label || "Luogo")}</h3><p>ArtAround non inventa curve: aggiungi sulla mappa solo i punti necessari a seguire il percorso reale.</p>${constraint}</div><div class="venue-geometry-actions"><span class="count">${Math.max(0, state.points.length - 2)} punti intermedi</span><div class="button-row"><button class="button-secondary" type="button" data-geometry-undo ${state.points.length <= 2 ? "disabled" : ""}>Annulla ultimo punto</button><button class="button-secondary" type="button" data-geometry-clear ${state.points.length <= 2 ? "disabled" : ""}>Linea diretta</button><button type="button" data-save-geometry ${canSave ? "" : "disabled"}>${icon("check", { size: 15 })} Salva percorso</button></div></div></section>`;
+  },
+
+  renderFloors(editable) {
+    const floors = this.data.layout?.floors || [];
+    const cards = floors.map((floor) => `<article class="venue-command-card${id(floor._id) === id(this.activeFloorId()) ? " selected" : ""}"><header><div><span class="eyebrow">Piano</span><h3>${escapeHtml(floor.label)}</h3></div><button class="button-secondary small" type="button" data-select-floor="${escapeHtml(id(floor._id))}">Apri sulla mappa</button></header><dl class="venue-command-facts"><div><dt>Planimetria</dt><dd>${floor.mapAsset ? `${floor.mapAsset.width}×${floor.mapAsset.height}px` : "Non caricata"}</dd></div><div><dt>Scala</dt><dd>${floor.calibration ? "Calibrata" : "Da calibrare"}</dd></div></dl>${editable ? `<label class="venue-floor-plan-upload"><span>${floor.mapAsset ? "Sostituisci planimetria" : "Carica planimetria"}</span><small>JPEG, PNG o WebP · massimo 4 MB. Dimensioni e riferimento sono ricavati automaticamente.</small><input type="file" accept="image/jpeg,image/png,image/webp" data-floor-plan-input data-floor-id="${escapeHtml(id(floor._id))}"></label><button class="danger small" type="button" data-remove-floor="${escapeHtml(id(floor._id))}">Rimuovi piano</button>` : ""}</article>`).join("");
+    return `<section class="venue-command-block"><div class="section-heading compact"><div><h3>Piani e planimetrie</h3><p>Carica il file del piano: ArtAround lo gestisce e collega al Layout senza URL o dimensioni manuali.</p></div><span class="count">${floors.length}</span></div><div class="venue-command-grid">${cards || `<div class="empty-state compact"><h4>Nessun piano</h4></div>`}</div>${editable ? `<form data-add-floor class="venue-inline-create"><label>Nome del piano<input name="label" required placeholder="Es. Piano terra"></label><button>${icon("plus", { size: 15 })} Aggiungi piano</button></form>` : ""}</section>`;
+  },
+
+  renderPlaces(editable) {
+    const layout = this.data.layout;
+    const floor = this.activeFloor();
+    const floorId = id(floor?._id);
+    const places = (layout?.places || []).filter((place) => id(place.floorId) === floorId);
+    const definitions = this.physicalDefinitions();
+    const typeById = new Map(definitions.placeTypes.map((type) => [String(type.definitionId), type]));
+    const cards = places.map((place) => `<article class="venue-command-card${id(this.selectedMapPlaceId) === id(place._id) ? " selected" : ""}"><header><div><span class="eyebrow">${escapeHtml(typeById.get(String(place.placeTypeDefinitionId))?.label || "Tipo non disponibile")}</span><h3>${escapeHtml(place.label || "Luogo senza nome")}</h3></div>${editable ? `<button class="danger small" type="button" data-remove-place="${escapeHtml(id(place._id))}">Rimuovi</button>` : ""}</header><p class="note">${escapeHtml(floor?.label || "Piano")}</p>${editable ? `<div class="button-row"><button class="button-secondary small" type="button" data-position-place="${escapeHtml(id(place._id))}">${icon("pin", { size: 14 })} Sposta sulla mappa</button></div><details><summary>Nome e tipo</summary><form data-place-editor="${escapeHtml(id(place._id))}" class="venue-inline-form"><label>Nome<input name="label" value="${escapeHtml(place.label || "")}"></label><label>Tipo<select name="placeTypeDefinitionId">${definitions.placeTypes.map((type) => `<option value="${escapeHtml(type.definitionId)}" ${selected(type.definitionId, place.placeTypeDefinitionId)}>${escapeHtml(type.label)}</option>`).join("")}</select></label><button>${icon("check", { size: 15 })} Salva</button></form></details>${attributeEditors({ definitions, entity: place, entityType: "place", entityId: id(place._id) })}` : attributeSummary({ definitions, entity: place, entityType: "place" })}</article>`).join("");
+    const create = editable && floor && definitions.placeTypes.length ? `<form data-place-positioning class="venue-inline-create"><div class="venue-form-intro"><strong>Nuovo luogo su ${escapeHtml(floor.label)}</strong><small>Scegli nome e tipo; la posizione verrà indicata con un clic sulla mappa.</small></div><label>Nome<input name="label" placeholder="Es. Sala 1"></label><label>Tipo<select name="placeTypeDefinitionId" required>${definitions.placeTypes.map((type) => `<option value="${escapeHtml(type.definitionId)}">${escapeHtml(type.label)}</option>`).join("")}</select></label><button>${icon("pin", { size: 15 })} Posiziona sulla mappa</button></form>` : "";
+    return `<section class="venue-command-block"><div class="section-heading compact"><div><h3>Luoghi · ${escapeHtml(floor?.label || "nessun piano")}</h3><p>Ogni Place è un punto del grafo fisico e usa un tipo definito dal PhysicalVocabulary.</p></div><span class="count">${places.length}</span></div>${create}<div class="venue-command-grid">${cards || `<div class="empty-state compact"><h4>Nessun luogo su questo piano</h4><p>Usa “Posiziona sulla mappa” per aggiungere il primo.</p></div>`}</div></section>`;
+  },
+
+  renderConnectionComposer(editable) {
+    const action = this.pendingMapAction;
+    if (!editable || action?.type !== "connect") return "";
+    const places = this.data.layout?.places || [];
+    const byId = new Map(places.map((place) => [id(place._id), place]));
+    const from = byId.get(id(action.fromPlaceId));
+    const to = byId.get(id(action.toPlaceId));
+    if (!from || !to) return `<section class="venue-map-composer"><div><span class="eyebrow">Nuovo collegamento</span><h3>${from ? `Da ${escapeHtml(from.label || "luogo selezionato")}` : "Seleziona due luoghi sulla mappa"}</h3><p>${from ? "Puoi cambiare piano e scegliere il secondo luogo." : "Gli endpoint non vengono scelti tramite ID o menu tecnici."}</p></div></section>`;
+    const definitions = this.physicalDefinitions();
+    const sameFloor = id(from.floorId) === id(to.floorId);
+    const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(from.floorId));
+    const calibrated = sameFloor && Boolean(floor?.calibration);
+    const metricOptions = calibrated
+      ? `<option value="geometry_derived">Dalla geometria calibrata</option><option value="manual_override">Distanza manuale</option>`
+      : `<option value="manual_override">Distanza manuale</option>`;
+    return `<section class="venue-map-composer"><div><span class="eyebrow">Nuovo collegamento</span><h3>${escapeHtml(from.label || "Luogo")} → ${escapeHtml(to.label || "Luogo")}</h3><p>${sameFloor ? "Gli estremi sono stati scelti visualmente sullo stesso piano. Dopo la creazione puoi ridisegnare la polyline." : "Collegamento tra piani: la distanza resta esplicita e non viene inventata dalla geometria 2D."}</p></div><form data-connection-composer class="venue-inline-create"><label>Tipo<select name="connectionTypeDefinitionId"><option value="">Senza tipo specifico</option>${definitions.connectionTypes.map((type) => `<option value="${escapeHtml(type.definitionId)}">${escapeHtml(type.label)}</option>`).join("")}</select></label><label>Direzione<select name="directionality"><option value="bidirectional">Entrambe le direzioni</option><option value="directed">Solo da → a</option></select></label><label>Misurazione<select name="metricMode">${metricOptions}</select></label><label>Distanza (m)<input name="distanceMeters" type="number" min="0.1" step="0.1" value="1"></label><label>Ritardo aggiuntivo (s)<input name="additionalDelaySeconds" type="number" min="0" step="1" value="0"></label><button>${icon("plus", { size: 15 })} Crea collegamento</button></form></section>`;
+  },
+
+  renderConnections(editable) {
+    const layout = this.data.layout;
+    const places = layout?.places || [];
+    const connections = layout?.connections || [];
+    const definitions = this.physicalDefinitions();
+    const placeById = new Map(places.map((place) => [id(place._id), place]));
+    const floorById = new Map((layout?.floors || []).map((floor) => [id(floor._id), floor]));
+    const connectionTypeById = new Map(definitions.connectionTypes.map((type) => [String(type.definitionId), type]));
+    const cards = connections.map((connection) => {
+      const from = placeById.get(id(connection.fromPlaceId));
+      const to = placeById.get(id(connection.toPlaceId));
+      const sameFloor = from && to && id(from.floorId) === id(to.floorId);
+      const floor = sameFloor ? floorById.get(id(from.floorId)) : null;
+      const calibrated = Boolean(floor?.calibration);
+      const metricOptions = calibrated
+        ? `<option value="manual_override" ${selected("manual_override", connection.metricMode)}>Distanza manuale</option><option value="geometry_derived" ${selected("geometry_derived", connection.metricMode)}>Dalla geometria calibrata</option>${connection.metricMode === "length_constrained" ? `<option value="length_constrained" selected>Lunghezza vincolata</option>` : ""}`
+        : `<option value="manual_override" selected>Distanza manuale</option>`;
+      const geometryControls = editable && sameFloor ? `<div class="venue-connection-geometry-tools"><button class="button-secondary small" type="button" data-edit-connection-geometry="${escapeHtml(id(connection._id))}">${icon("route", { size: 14 })} Ridisegna percorso</button>${calibrated ? `<form data-length-constraint-authoring="${escapeHtml(id(connection._id))}" class="venue-length-constraint"><label>Lunghezza obiettivo (m)<input name="distanceMeters" type="number" min="0.1" step="0.01" value="${Number(connection.distanceMeters || 1).toFixed(2)}" required></label><button class="button-secondary small" type="submit">${icon("ruler", { size: 14 })} Vincola e disegna</button></form>` : ""}</div>` : "";
+      return `<article class="venue-command-card"><header><div><span class="eyebrow">${escapeHtml(connectionTypeById.get(String(connection.connectionTypeDefinitionId))?.label || "Collegamento")}</span><h3>${escapeHtml(from?.label || "?")} → ${escapeHtml(to?.label || "?")}</h3></div>${editable ? `<button class="danger small" type="button" data-remove-connection="${escapeHtml(id(connection._id))}">Rimuovi</button>` : ""}</header><p>${escapeHtml(metricLabel(connection))} · ${Number(connection.distanceMeters || 0).toFixed(1)} m · ${connection.directionality === "directed" ? "una direzione" : "bidirezionale"}</p>${!sameFloor ? `<p class="note">${escapeHtml(floorById.get(id(from?.floorId))?.label || "Piano")} ↕ ${escapeHtml(floorById.get(id(to?.floorId))?.label || "Piano")}</p>` : ""}${geometryControls}${editable ? `<details><summary>Tipo, direzione e istruzioni</summary><form data-connection-editor="${escapeHtml(id(connection._id))}" class="venue-inline-form"><label>Tipo<select name="connectionTypeDefinitionId"><option value="">Senza tipo specifico</option>${definitions.connectionTypes.map((type) => `<option value="${escapeHtml(type.definitionId)}" ${selected(type.definitionId, connection.connectionTypeDefinitionId)}>${escapeHtml(type.label)}</option>`).join("")}</select></label><label>Direzione<select name="directionality"><option value="bidirectional" ${selected("bidirectional", connection.directionality)}>Entrambe</option><option value="directed" ${selected("directed", connection.directionality)}>Solo da → a</option></select></label><label>Misurazione<select name="metricMode">${metricOptions}</select></label><label>Distanza (m)<input name="distanceMeters" type="number" min="0.1" step="0.1" value="${connection.distanceMeters || ""}" ${connection.metricMode === "geometry_derived" ? "readonly" : ""}></label><label>Ritardo aggiuntivo (s)<input name="additionalDelaySeconds" type="number" min="0" step="1" value="${connection.additionalDelaySeconds || 0}"></label><label>Istruzione andata<input name="forward" value="${escapeHtml(connection.instructions?.forward || "")}"></label><label>Istruzione ritorno<input name="backward" value="${escapeHtml(connection.instructions?.backward || "")}"></label><button>${icon("check", { size: 15 })} Salva collegamento</button></form></details>${attributeEditors({ definitions, entity: connection, entityType: "connection", entityId: id(connection._id) })}` : attributeSummary({ definitions, entity: connection, entityType: "connection" })}</article>`;
+    }).join("");
+    return `<section class="venue-command-block"><div class="section-heading compact"><div><h3>Collegamenti</h3><p>Gli estremi e la geometria si authorizzano sulla mappa; metrica e caratteristiche restano validate dal backend.</p></div><span class="count">${connections.length}</span></div>${this.renderConnectionComposer(editable)}<div class="venue-command-grid">${cards || `<div class="empty-state compact"><h4>Nessun collegamento</h4><p>Usa “Collega luoghi” sopra la mappa.</p></div>`}</div></section>`;
+  },
+
+  renderTargetPlacements(editable) {
+    const places = this.data.layout?.places || [];
+    const targets = this.data.targets || [];
+    if (!targets.length) return "";
+    const placeById = new Map(places.map((place) => [id(place._id), place]));
+    const floorById = new Map((this.data.layout?.floors || []).map((floor) => [id(floor._id), floor]));
+    const placementByTarget = new Map((this.data.layout?.venueTargetPlacements || []).map((placement) => [id(placement.venueTargetId), placement]));
+    const cards = targets.map((target) => {
+      const placement = placementByTarget.get(id(target.id));
+      const place = placeById.get(id(placement?.primaryPlaceId));
+      const floor = place ? floorById.get(id(place.floorId)) : null;
+      return `<article class="venue-command-card"><header><div><span class="eyebrow">Oggetto</span><h3>${escapeHtml(target.label)}</h3></div></header><p>${place ? `${escapeHtml(place.label || "Luogo")} · ${escapeHtml(floor?.label || "Piano")}` : "Da collocare"}</p>${editable && places.length ? `<div class="button-row">${floor ? `<button class="button-secondary small" type="button" data-select-floor="${escapeHtml(id(floor._id))}">Mostra piano</button>` : ""}<button type="button" data-place-target="${escapeHtml(id(target.id))}">${icon("pin", { size: 14 })} ${place ? "Sposta sulla mappa" : "Colloca sulla mappa"}</button></div>` : ""}</article>`;
+    }).join("");
+    return `<section class="venue-command-block"><div class="section-heading compact"><div><h3>Collocazione degli oggetti</h3><p>Il VenueTarget resta distinto dal Place: qui indichi soltanto dove l'oggetto si trova fisicamente.</p></div></div><div class="venue-command-grid">${cards}</div></section>`;
+  },
+
+  renderMapAndPlaces(editable) {
+    if (!this.data.layout) return `<section class="venue-section" id="venue-map"><div class="empty-state"><h3>Nessun Layout disponibile</h3><p>Completa prima la configurazione iniziale della sede.</p></div></section>`;
+    const vocabulary = this.data.physicalVocabulary;
+    return `<section class="venue-section" id="venue-map"><div class="section-heading"><div><span class="eyebrow">Spazi e mappa</span><h2>Modello fisico della sede</h2><p>Piani, luoghi, collegamenti e collocazioni sono dati logistici: non diventano Item.</p></div></div>${vocabulary ? `<aside class="venue-vocabulary-context"><span class="eyebrow">PhysicalVocabulary pinzato</span><strong>${escapeHtml(vocabulary.name)}</strong><small>v${vocabulary.version} · revisione ${escapeHtml(vocabulary.status)}</small><button class="button-secondary small" type="button" data-edit-physical-vocabulary="${escapeHtml(vocabulary.id)}">Gestisci vocabolario fisico</button></aside>` : ""}${this.renderMapPreview(editable)}${this.renderCalibrationComposer(editable)}${this.renderGeometryComposer(editable)}${this.renderFloors(editable)}${this.renderPlaces(editable)}${this.renderConnections(editable)}${this.renderTargetPlacements(editable)}</section>`;
+  },
 };

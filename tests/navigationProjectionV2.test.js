@@ -37,33 +37,31 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     const { deriveRuntimeActions, currentSessionProjection } = require("../services/visitSessionV2.service");
     const { dispatchAction } = require("../services/actionDispatcherV2.service");
     const { projectSessionMap } = require("../services/navigationProjectionV2.service");
+    const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
     const user = await User.create({ username: "navigation-projection-user", passwordHash: "test-hash" });
     const organization = await Organization.create({ name: "Navigation projection org", createdBy: user._id });
     const venue = await Venue.create({ name: "Navigation projection Venue", ownerOrganizationId: organization._id, createdBy: user._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+    const roomType = physical.placeTypeByKey.get("room");
+    const hasSteps = physical.physicalAttributeByKey.get("has_steps");
 
+    const floorId = new mongoose.Types.ObjectId();
     const firstPlaceId = new mongoose.Types.ObjectId();
     const secondPlaceId = new mongoose.Types.ObjectId();
     const connectionId = new mongoose.Types.ObjectId();
     const layout = await LayoutRevision.create({
       venueId: venue._id,
       version: 1,
-      placeTypes: [{ key: "gallery", label: "Sala", userIntents: [] }],
-      routingAttributes: [{
-        key: "stairs_here",
-        label: "Scale sul percorso",
-        dataType: "boolean",
-        canonicalKey: "stairs",
-        appliesTo: "connection",
-      }],
+      authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{
-        key: "ground",
+        _id: floorId,
         label: "Piano terra",
-        map: { imageUrl: "/maps/navigation-test.svg", width: 1200, height: 800 },
+        mapAsset: { url: "/maps/navigation-test.svg", mimeType: "image/svg+xml", width: 1200, height: 800 },
       }],
       places: [
-        { _id: firstPlaceId, typeKey: "gallery", label: "Sala A", floorKey: "ground", position: { x: 0.2, y: 0.3 } },
-        { _id: secondPlaceId, typeKey: "gallery", label: "Sala B", floorKey: "ground", position: { x: 0.8, y: 0.3 } },
+        { _id: firstPlaceId, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", floorId, position: { x: 0.2, y: 0.3 } },
+        { _id: secondPlaceId, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", floorId, position: { x: 0.8, y: 0.3 } },
       ],
       venueTargetPlacements: [],
       connections: [{
@@ -71,9 +69,10 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
         fromPlaceId: firstPlaceId,
         toPlaceId: secondPlaceId,
         directionality: "bidirectional",
+        metricMode: "manual_override",
         distanceMeters: 25,
         additionalDelaySeconds: 0,
-        attributes: { stairs_here: true },
+        attributeValues: [{ physicalAttributeDefinitionId: hasSteps.definitionId, value: true }],
         instructions: { forward: "Prosegui verso Sala B" },
       }],
       status: "published",
@@ -203,7 +202,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     const map = await projectSessionMap({ sessionId: session._id, userId: user._id });
     assert.equal(map.venues[0].floors[0].map.imageUrl, "/maps/navigation-test.svg");
     assert.equal(map.logicalCurrentStop.visitAnchorId.toString(), firstAnchorId.toString());
-    assert.equal(map.venues[0].route.overlays[0].floorKey, "ground");
+    assert.equal(map.venues[0].route.overlays[0].floorId.toString(), floorId.toString());
     const serializedMap = JSON.stringify(map);
     assert.equal(serializedMap.includes("placeId"), false);
     assert.equal(serializedMap.includes("connectionId"), false);
@@ -220,7 +219,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     });
     assert.equal(result.effect.type, "obstacle_check");
     assert.equal(result.effect.obstacleCheck.verified, true);
-    assert.deepEqual(result.effect.obstacleCheck.obstacles.map((entry) => entry.code), ["stairs"]);
+    assert.deepEqual(result.effect.obstacleCheck.obstacles.map((entry) => entry.code), ["DECLARED_PHYSICAL_OBSTACLE"]);
     assert.match(result.effect.obstacleCheck.message, /ostacoli dichiarati/);
     assert.equal(result.runtime.session.runtimeVersion, 2);
 

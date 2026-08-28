@@ -4,13 +4,13 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
 
-const DIRECT_OPERATIONS = new Set(["content.fork", "namespace.fork", "visit.copy_detached", "context.import_snapshot"]);
+const DIRECT_OPERATIONS = new Set(["content.fork", "namespace.fork", "physical_vocabulary.fork", "visit.copy_detached", "context.import_snapshot"]);
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function refId(ref) { return String(ref?.resourceId || ""); }
 function refType(ref) { return String(ref?.resourceType || ""); }
 function isWorkflowOperation(code) { return String(code || "").startsWith("workflow."); }
 function initialState() { const params = new URLSearchParams(window.location.search); return { ownership: params.get("ownership") === "licensed" ? "licensed" : "owned", resourceType: params.get("resourceType") || "", resourceId: params.get("resourceId") || "" }; }
-function authoringHref(ref) { const resourceType = refType(ref); const resourceId = refId(ref); if (!resourceType || !resourceId) return null; if (resourceType === "item") return `/workspace/item-authoring?itemId=${encodeURIComponent(resourceId)}`; if (resourceType === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(resourceId)}`; if (resourceType === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(resourceId)}`; if (resourceType === "editorial_context") return `/workspace/context-compose?editorialContextId=${encodeURIComponent(resourceId)}`; return null; }
+function authoringHref(ref) { const resourceType = refType(ref); const resourceId = refId(ref); if (!resourceType || !resourceId) return null; if (resourceType === "item") return `/workspace/item-authoring?itemId=${encodeURIComponent(resourceId)}`; if (resourceType === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(resourceId)}`; if (resourceType === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(resourceId)}`; if (resourceType === "physical_vocabulary") return `/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(resourceId)}`; if (resourceType === "editorial_context") return `/workspace/context-compose?editorialContextId=${encodeURIComponent(resourceId)}`; return null; }
 
 export class ArtAroundWorkspaceView extends HTMLElement {
   context = readOperatingContext();
@@ -47,7 +47,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
       this.busy = true; this.error = null; this.message = null; this.render();
       try {
         await marketplaceRepository.removeWorkspaceResource(principal, { resourceType: asset.resourceType, resourceId: asset.resourceId });
-        const removed = asset.resourceType === "namespace" ? "namespace" : "content";
+        const removed = asset.resourceType === "namespace" ? "namespace" : asset.resourceType === "physical_vocabulary" ? "physical_vocabulary" : "content";
         navigate(`/workspace?removed=${removed}`);
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la risorsa";
@@ -104,12 +104,14 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   renderRemoval(asset) {
     const allowed = asset.ownership === "owned" && (asset.availableOperations || []).some((operation) => operation.code === "remove_resource");
     if (!allowed) return "";
-    const content = asset.resourceType === "item_edition";
-    const subject = content ? "contenuto" : "regole editoriali";
-    const consequence = content
+    const kind = asset.resourceType === "item_edition" ? "content" : asset.resourceType === "namespace" ? "namespace" : "physical";
+    const subject = kind === "content" ? "contenuto" : kind === "namespace" ? "regole editoriali" : "vocabolario fisico";
+    const consequence = kind === "content"
       ? "Il contenuto e tutte le sue versioni editoriali non compariranno più nella tua Libreria."
-      : "Le regole editoriali non compariranno più nella tua Libreria e non saranno disponibili per nuovi contenuti.";
-    const confirmation = this.pendingRemoval ? `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><span class="eyebrow">Conferma richiesta</span><strong>Eliminare ${subject} “${escapeHtml(asset.title)}”?</strong><p>${consequence} Le pubblicazioni verranno ritirate e le offerte rese inattive. Acquisizioni, diritti già concessi e adozioni resteranno validi.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-removal ${this.busy ? "disabled" : ""}>Elimina ${subject}</button><button class="button-secondary" type="button" data-cancel-removal ${this.busy ? "disabled" : ""}>Annulla</button></div></section>` : "";
+      : kind === "namespace"
+        ? "Le regole editoriali non compariranno più nella tua Libreria e non saranno disponibili per nuovi contenuti."
+        : "Il vocabolario fisico non comparirà più nella tua Libreria e non potrà essere scelto per nuovo authoring di sedi. Le revision già pinzate da Layout pubblicati o già acquisite restano snapshot storiche utilizzabili.";
+    const confirmation = this.pendingRemoval ? `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><span class="eyebrow">Conferma richiesta</span><strong>Eliminare ${subject} “${escapeHtml(asset.title)}”?</strong><p>${consequence} Le pubblicazioni Marketplace verranno ritirate e le offerte rese inattive. Acquisizioni, diritti già concessi e adozioni resteranno validi.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-removal ${this.busy ? "disabled" : ""}>Elimina ${subject}</button><button class="button-secondary" type="button" data-cancel-removal ${this.busy ? "disabled" : ""}>Annulla</button></div></section>` : "";
     return `<section class="panel resource-danger-zone"><span class="eyebrow">Operazione sensibile</span><h2>Elimina dall’account</h2><p>${consequence}</p><p class="note">Chi ha già acquisito la risorsa continuerà a usare la snapshot autorizzata. Lo storico commerciale non verrà cancellato.</p>${confirmation || `<button class="danger" type="button" data-request-removal>${icon("trash", { size: 15 })} Elimina ${subject}</button>`}</section>`;
   }
 
