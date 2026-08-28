@@ -3,6 +3,7 @@ import { clearOperatingContext, contextKindLabel, OPERATING_CONTEXT_CHANGED, rea
 import { authRepository } from "../infrastructure/http/auth-repository.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { icon } from "./icons.js";
+import { observeReliableSelects } from "./reliable-selects.js";
 import "./context-hub-view.js";
 import "./home-view.js";
 import "./catalog-view.js";
@@ -57,6 +58,7 @@ export class MarketplaceAppShell extends HTMLElement {
   menuOpen = false;
 
   connectedCallback() {
+    this.stopReliableSelects = observeReliableSelects(this);
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     window.addEventListener("popstate", this.onRouteChanged);
@@ -65,6 +67,8 @@ export class MarketplaceAppShell extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.stopReliableSelects?.();
+    this.stopReliableSelects = null;
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
     window.removeEventListener("popstate", this.onRouteChanged);
