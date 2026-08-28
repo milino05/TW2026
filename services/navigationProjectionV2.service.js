@@ -62,9 +62,9 @@ function projectPathGeometry(layout, path = []) {
 function warningProjection(warnings = []) {
   return warnings.map((warning) => ({
     code: warning.code || "NAVIGATION_WARNING",
-    message: warning.code === "PREFERRED_ATTRIBUTE_UNSUPPORTED"
+    message: warning.message || (warning.code === "PREFERRED_ATTRIBUTE_UNSUPPORTED"
       ? "Una preferenza di percorso non è supportata in questa sede."
-      : "Il percorso contiene un avviso di navigazione.",
+      : "Il percorso contiene un avviso di navigazione."),
   }));
 }
 
@@ -173,6 +173,7 @@ async function projectSessionMap({ sessionId, userId }) {
       if (!from || !to) continue;
       const resolved = resolvePlannedPath({
         connections: bundle.layout.connections || [],
+        places: bundle.layout.places || [],
         pathConnectionIds: leg.path || [],
         fromPlaceId: from.placeId,
         toPlaceId: to.placeId,
@@ -210,10 +211,13 @@ async function projectSessionMap({ sessionId, userId }) {
       stops,
       facilities,
       route,
-      warnings: (bundle.layout.floors || []).filter((floor) => !floor.mapAsset?.url).map((floor) => ({
-        code: "MAP_ASSET_MISSING",
-        message: `Mappa non disponibile per ${floor.label}.`,
-      })),
+      warnings: [
+        ...(bundle.layout.floors || []).filter((floor) => !floor.mapAsset?.url).map((floor) => ({
+          code: "MAP_ASSET_MISSING",
+          message: `Mappa non disponibile per ${floor.label}.`,
+        })),
+        ...warningProjection(translated.warnings || []),
+      ],
     });
   }
 
@@ -258,6 +262,24 @@ async function projectNavigationRoute({ sessionId, userId, routeResult }) {
   };
 }
 
+function collectObstacleEvidence({ entity, definitionById, obstacles, locationKind }) {
+  let evidence = false;
+  for (const attributeValue of entity?.attributeValues || []) {
+    const definition = definitionById.get(attributeValue.physicalAttributeDefinitionId);
+    if (definition?.metadata?.obstacleIndicator !== true) continue;
+    evidence = true;
+    if (attributeValue.value !== definition.metadata.obstacleWhen) continue;
+    const key = `${definition.definitionId}:${locationKind}`;
+    obstacles.set(key, {
+      code: "DECLARED_PHYSICAL_OBSTACLE",
+      physicalAttributeDefinitionId: definition.definitionId,
+      label: definition.label,
+      message: `${definition.label}: possibile ostacolo dichiarato ${locationKind === "place" ? "in un luogo" : "su un collegamento"} del prossimo percorso.`,
+    });
+  }
+  return evidence;
+}
+
 async function projectNextRouteObstacles({ sessionId, userId }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId });
   const currentAnchor = logicalAnchorForIndex(plan, session.currentEntryIndex);
@@ -272,30 +294,24 @@ async function projectNextRouteObstacles({ sessionId, userId }) {
   }
 
   const bundle = await loadPinnedBundle(session, currentAnchor.venueId);
-  const connectionById = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
+  const connections = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
+  const places = placeMap(bundle.layout);
   const definitionById = new Map((bundle.physicalVocabularyRevision.physicalAttributes || []).map((definition) => [definition.definitionId, definition]));
   const obstacles = new Map();
-  let canonicalEvidence = false;
+  let declaredEvidence = false;
   for (const connectionId of leg.path || []) {
-    const connection = connectionById.get(id(connectionId));
+    const connection = connections.get(id(connectionId));
     if (!connection) continue;
-    for (const attributeValue of connection.attributeValues || []) {
-      const definition = definitionById.get(attributeValue.physicalAttributeDefinitionId);
-      if (definition?.metadata?.obstacleIndicator !== true) continue;
-      canonicalEvidence = true;
-      if (attributeValue.value !== definition.metadata.obstacleWhen) continue;
-      obstacles.set(definition.definitionId, {
-        code: "DECLARED_PHYSICAL_OBSTACLE",
-        physicalAttributeDefinitionId: definition.definitionId,
-        label: definition.label,
-        message: `${definition.label}: possibile ostacolo dichiarato sul prossimo percorso.`,
-      });
+    declaredEvidence = collectObstacleEvidence({ entity: connection, definitionById, obstacles, locationKind: "connection" }) || declaredEvidence;
+    for (const placeId of [connection.fromPlaceId, connection.toPlaceId]) {
+      const place = places.get(id(placeId));
+      declaredEvidence = collectObstacleEvidence({ entity: place, definitionById, obstacles, locationKind: "place" }) || declaredEvidence;
     }
   }
   return {
-    verified: canonicalEvidence,
+    verified: declaredEvidence,
     obstacles: [...obstacles.values()],
-    message: canonicalEvidence
+    message: declaredEvidence
       ? (obstacles.size ? "Sono presenti ostacoli dichiarati sul prossimo percorso." : "Non risultano ostacoli dichiarati sul prossimo percorso.")
       : "La sede non fornisce caratteristiche fisiche sufficienti per verificare gli ostacoli del prossimo percorso.",
   };
