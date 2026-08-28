@@ -31,6 +31,7 @@ router.post("/venues/:venueId/working-release/review", requireAuth, venueId, con
 router.delete("/venues/:venueId/working-release/review", requireAuth, venueId, controller.withdrawReleaseReview);
 router.post("/venues/:venueId/working-release/request-changes", requireAuth, venueId, controller.requestReleaseChanges);
 router.post("/venues/:venueId/working-release/publish", requireAuth, venueId, controller.publishRelease);
+router.put("/venues/:venueId/working-release/targets/:venueTargetId/availability", requireAuth, venueId, venueTargetId, controller.setTargetAvailability);
 router.post("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media", requireAuth, venueId, venueTargetId, controller.uploadTargetRecognitionMedia);
 router.delete("/venues/:venueId/working-release/targets/:venueTargetId/recognition-media/:mediaId", requireAuth, venueId, venueTargetId, mediaId, controller.removeTargetRecognitionMedia);
 
@@ -52,7 +53,6 @@ router.put("/venues/:venueId/working-layout/connections/:connectionId/attributes
 router.delete("/venues/:venueId/working-layout/connections/:connectionId", requireAuth, venueId, connectionId, controller.removeLayoutConnection);
 
 router.put("/venues/:venueId/working-layout/targets/:venueTargetId/placement", requireAuth, venueId, venueTargetId, controller.setLayoutTargetPlacement);
-router.put("/venues/:venueId/working-layout/targets/:venueTargetId/binding", requireAuth, venueId, venueTargetId, controller.setLayoutTargetBinding);
 router.put("/venues/:venueId/working-layout/pre-visit-information", requireAuth, venueId, controller.setPreVisitInformation);
 
 module.exports = router;
