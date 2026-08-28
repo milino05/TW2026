@@ -1,5 +1,6 @@
 const physicalVocabularyService = require("../services/physicalVocabulary.service");
 const physicalVocabularyRevisionService = require("../services/physicalVocabularyRevision.service");
+const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
 
 async function create(req, res, next) {
   try { res.status(201).json(await physicalVocabularyService.createPhysicalVocabulary({ payload: req.body || {}, actorUserId: req.user._id })); }
@@ -103,8 +104,18 @@ async function publish(req, res, next) {
 }
 
 async function trash(req, res, next) {
-  try { res.status(200).json(await physicalVocabularyService.trashPhysicalVocabulary({ physicalVocabularyId: req.params.physicalVocabularyId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
+  try {
+    const physicalVocabulary = await physicalVocabularyService.findPhysicalVocabularyOrFail({
+      physicalVocabularyId: req.params.physicalVocabularyId,
+    });
+    res.status(200).json(await removeOwnedWorkspaceResource({
+      actorUserId: req.user._id,
+      principalType: physicalVocabulary.ownerType,
+      principalId: physicalVocabulary.ownerId,
+      resourceType: "physical_vocabulary",
+      resourceId: physicalVocabulary._id,
+    }));
+  } catch (error) { next(error); }
 }
 
 async function restore(req, res, next) {
