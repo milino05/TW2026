@@ -60,6 +60,13 @@ export const venueActionMixin = {
       return;
     }
 
+    const detach = target.closest("[data-detach-target]");
+    if (detach) {
+      if (!window.confirm(`Rimuovere “${detach.dataset.label || "questo oggetto"}” dalla configurazione fisica di lavoro? Verranno rimossi collocazione, disponibilità e immagini di riconoscimento dalla bozza. Il VenueTarget resterà disponibile nell'archivio della sede.`)) return;
+      await this.execute(() => managementRepository.detachVenueTarget(this.id, detach.dataset.detachTarget), "Oggetto rimosso dalla configurazione fisica di lavoro.");
+      return;
+    }
+
     const trash = target.closest("[data-trash-target]");
     if (trash) {
       if (!window.confirm(`Spostare “${trash.dataset.label || "questo oggetto"}” nel cestino?`)) return;
