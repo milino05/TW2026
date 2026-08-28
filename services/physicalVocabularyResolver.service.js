@@ -174,6 +174,7 @@ function translateRoutingRequirements({
     }
     translated.push({
       physicalAttributeDefinitionId: definition.definitionId,
+      appliesTo: definition.appliesTo || "connection",
       operator,
       value: requirement.value,
       priority: requirement.priority || "preferred",
