@@ -61,6 +61,12 @@ export const managementRepository = {
   venueWorkflow(venueId, action, { method = "POST", payload = {} } = {}) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-release/${action}`, { method, ...(method === "DELETE" ? {} : body(payload)) });
   },
+  uploadVenueTargetRecognitionMedia(venueId, targetId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}/recognition-media`, { method: "POST", ...body(payload) });
+  },
+  removeVenueTargetRecognitionMedia(venueId, targetId, mediaId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-release/targets/${encoded(targetId)}/recognition-media/${encoded(mediaId)}`, { method: "DELETE" });
+  },
   addVenueFloor(venueId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/floors`, { method: "POST", ...body(payload) });
   },
