@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { assignStarterRole } = require("./helpers/organizationRbac");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -52,12 +53,15 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
 
     const venue = await createVenue({ payload: { name: "Venue test", ownerOrganizationId: organization._id }, actorUserId: user._id });
     const venueId = venue.id;
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id, ownerType: "organization", ownerId: organization._id });
+    const roomType = physical.placeTypeByKey.get("room");
     const targetA = await createVenueTarget({ venueId, payload: { subjectId: subjectA._id, label: "Opera A in sala" }, actorUserId: user._id });
     const targetB = await createVenueTarget({ venueId, payload: { subjectId: subjectB._id, label: "Opera B in sala" }, actorUserId: user._id });
 
     const placeA = new mongoose.Types.ObjectId();
     const placeB = new mongoose.Types.ObjectId();
-    await ensureWorkingVenueRelease({ venueId, actorUserId: user._id });
+    const floorId = new mongoose.Types.ObjectId();
+    await ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId: physical.revision._id, actorUserId: user._id });
     await updateWorkingVenueRelease({
       venueId,
       actorUserId: user._id,
@@ -68,19 +72,16 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
         ],
         preVisitInformation: ["Ingresso principale accessibile"],
         layout: {
-          placeTypes: [{ key: "room", label: "Sala", userIntents: [] }],
-          routingAttributes: [],
-          routingPresets: [],
-          floors: [{ key: "f1", label: "Piano 1", map: { imageUrl: "https://example.test/map.png", width: 1000, height: 800 } }],
+          floors: [{ _id: floorId, label: "Piano 1", mapAsset: { url: "https://example.test/map.png", mimeType: "image/png", width: 1000, height: 800 } }],
           places: [
-            { _id: placeA, typeKey: "room", label: "Sala A", floorKey: "f1", position: { x: 0.1, y: 0.2 }, attributes: {} },
-            { _id: placeB, typeKey: "room", label: "Sala B", floorKey: "f1", position: { x: 0.8, y: 0.2 }, attributes: {} },
+            { _id: placeA, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", floorId, position: { x: 0.1, y: 0.2 }, attributeValues: [] },
+            { _id: placeB, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", floorId, position: { x: 0.8, y: 0.2 }, attributeValues: [] },
           ],
           venueTargetPlacements: [
             { venueTargetId: targetA._id, primaryPlaceId: placeA, placeIds: [placeA] },
             { venueTargetId: targetB._id, primaryPlaceId: placeB, placeIds: [placeB] },
           ],
-          connections: [{ fromPlaceId: placeA, toPlaceId: placeB, directionality: "bidirectional", distanceMeters: 12, additionalDelaySeconds: 0, attributes: {}, instructions: { forward: "Prosegui verso Sala B", backward: "Torna verso Sala A" } }],
+          connections: [{ fromPlaceId: placeA, toPlaceId: placeB, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 12, additionalDelaySeconds: 0, attributeValues: [], instructions: { forward: "Prosegui verso Sala B", backward: "Torna verso Sala A" } }],
         },
       },
     });

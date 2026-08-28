@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const { hasOwn, isPlainObject, trimIfString } = require("./validation.utils");
 
-const LAYOUT_FIELDS = ["placeTypes", "routingAttributes", "routingPresets", "floors", "places", "venueTargetPlacements", "connections"];
+const LAYOUT_FIELDS = ["floors", "places", "venueTargetPlacements", "connections"];
 
 function normalizeRecognitionMedia(values) {
   if (!Array.isArray(values)) return values;

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { validatePhysicalFeatureRef } = require("./physicalVocabulary.validation");
 
 const FEATURE_KINDS = ["subject", "canonical", "subject_class", "relation_type", "presentation_aspect", "selection_signal"];
 const GOAL_PRIORITIES = ["required", "preferred", "avoid"];
@@ -6,7 +7,7 @@ const RELATION_GOAL_KINDS = ["relationship", "follow_relation", "compare"];
 const COVERAGE_GOALS = ["balanced", "all", "custom"];
 const HISTORY_MODES = ["full", "declared_only", "current_request_only"];
 const ROUTING_OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in"];
-const ROUTING_PRIORITIES = ["required", "preferred"];
+const ROUTING_PRIORITIES = ["required", "preferred", "avoid"];
 const GENERATION_SOURCE_TYPES = ["editorial_context", "editorial_release"];
 const TOP_LEVEL_FIELDS = new Set([
   "venueIds", "editorialSources", "timeBudgetSeconds", "hardTimeBudget",
@@ -101,7 +102,10 @@ function validateRelationGoal(goal, field, errors) {
 }
 function validateRoutingRequirement(entry, field, errors) {
   if (!entry || typeof entry !== "object") { errors.push(issue(field, "INVALID_ROUTING_REQUIREMENT", "Routing requirement non valido")); return; }
-  if (!entry.attributeKey) errors.push(issue(`${field}.attributeKey`, "REQUIRED", "attributeKey e obbligatoria"));
+  for (const key of Object.keys(entry)) {
+    if (!["physicalFeatureRef", "operator", "value", "priority", "weight"].includes(key)) errors.push(issue(`${field}.${key}`, "UNKNOWN_FIELD", `Campo non supportato: ${key}`));
+  }
+  errors.push(...validatePhysicalFeatureRef(entry.physicalFeatureRef, `${field}.physicalFeatureRef`));
   if (entry.operator !== undefined && !ROUTING_OPERATORS.includes(entry.operator)) errors.push(issue(`${field}.operator`, "INVALID_ENUM", "operator non valido"));
   if (entry.priority !== undefined && !ROUTING_PRIORITIES.includes(entry.priority)) errors.push(issue(`${field}.priority`, "INVALID_ENUM", "priority non valida"));
   if (entry.value === undefined) errors.push(issue(`${field}.value`, "REQUIRED", "value e obbligatorio"));

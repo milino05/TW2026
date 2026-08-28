@@ -31,14 +31,14 @@ else {
 requirePattern("scripts/examDatasetV2.js", /REQUIRED_USERNAMES[\s\S]*autore1[\s\S]*autore2[\s\S]*visitatore1[\s\S]*visitatore2/, "Four required accounts in exam seed");
 requirePattern("scripts/examDatasetV2.js", /const WORKS[\s\S]*const VISIT_DEFINITIONS/, "Exam works and visit definitions");
 requirePattern("scripts/examDatasetV2.js", /validateNamespaceRevisionSnapshot[\s\S]*validatePresentationAgainstNamespace[\s\S]*validateEditorialReleaseCoherence[\s\S]*computeVenueReleaseIssues[\s\S]*computeVisitV2Integrity[\s\S]*assertSelfContainedOffer/, "Domain consistency checks in exam seed");
-requirePattern("scripts/examDatasetV2.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Elevator and stairs facilities in exam seed");
+requirePattern("scripts/examDatasetV2.js", /placeTypeId\("elevator"\)[\s\S]*placeTypeId\("stairs"\)/, "Elevator and stairs physical features in exam seed");
 requirePattern("scripts/examDatasetV2.js", /async function verifyExamDataset/, "Automatic exam dataset verifier");
 requirePattern("tests/examDatasetV2.test.js", /seedExamDataset[\s\S]*verifyExamDataset/, "Exam seed integration test functions");
 requirePattern("tests/examDatasetV2.test.js", /acquireOffer[\s\S]*listNavigatorLibrary/, "Marketplace to Navigator E2E test");
 requirePattern("tests/examDatasetV2.test.js", /idempotent/i, "Exam seed idempotence test");
 
-requirePattern("services/routingAttributeCatalog.service.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Canonical elevator and stairs intents");
-requirePattern("tests/routingCatalogFacilities.test.js", /FIND_ELEVATOR[\s\S]*FIND_STAIRS/, "Facility intent regression test");
+requirePattern("config/physicalVocabularyStarter.js", /key:\s*"elevator"[\s\S]*key:\s*"stairs"/, "Starter elevator and stairs physical features");
+requirePattern("tests/routingCatalogFacilities.test.js", /elevatorDefinition[\s\S]*stairsDefinition/, "Vocabulary-driven facility action regression test");
 
 requirePattern("services/visitAuthoringV2.service.js", /getVisitAuthoringProjection[\s\S]*searchVisitAuthoringContent/, "Visit authoring projection and scalable search");
 requirePattern("services/visitAuthoringV2.service.js", /mayEditEditorialRevision\(revision\)\s*\|\|\s*revision\.status\s*===\s*["']published["']/, "Published Visit edit through a new working revision");

@@ -70,28 +70,28 @@ Completato su `main`:
 
 - formalizzati `NavigationPreparationResolverV2` e `NavigationOriginResolverV2` riusando il planner/routing esistente;
 - l'origine 18–24 resta `logical_anchor`; il resolver è predisposto a `explicit > fresh physical observation > logical_anchor` senza aggiornare automaticamente il progress della Visit;
-- unificato il catalogo globale dei routing attribute nel preesistente `routingAttributeCatalog.service.js`; eliminato il catalogo parallelo introdotto durante lo slice;
-- default utente e override transienti accettano soltanto canonical routing requirements validati per tipo, operatore, priorità e valore;
-- ogni `canonicalKey` può essere mappata al massimo da un routing attribute locale per LayoutRevision;
-- i requirement globali vengono tradotti esclusivamente tramite `canonicalKey`, mai per coincidenza con il key locale;
+- il successivo redesign fisico ha eliminato il catalogo globale: ogni `LayoutRevision` pinna un `PhysicalVocabularyRevision` e usa i relativi `definitionId` locali;
+- default utente e override transienti accettano `PhysicalFeatureRef`, operatori, priorità e valori tipizzati;
+- i default persistenti richiedono riferimenti semantici provider-neutral; i riferimenti locali restano confinati alla revisione fisica adottata;
+- i requirement globali vengono tradotti tramite `semanticRefs` esatte verso gli attributi locali, mai per coincidenza di key o label;
 - `MapProjection` backend-side da VenueRelease/LayoutRevision pinzate con floor, asset, coordinate normalizzate, Visit stop, facility, route overlay e floor/inter-Venue transitions;
 - il Navigator non riceve Place ID, Connection ID, LayoutRevision ID o routing graph come contratto cartografico;
 - la tappa corrente è evidenziata come stato logico della Visit, non come posizione fisica automatica dell'utente;
 - una floor realmente necessaria alla Visit senza map asset produce `NAVIGATOR_MAP_ASSET_MISSING` e blocca la preparation Navigator senza invalidare la LayoutRevision come dominio fisico;
 - `NavigationProjection` typed per le destination logistiche materializzate dalle Action runtime;
 - `navigation.obstacles.next_route` è una Action separata, presente soltanto quando esiste un prossimo physical leg;
-- obstacle checking usa esclusivamente routing metadata con canonicalKey dichiarata; in assenza di evidenza canonica restituisce stato non verificabile invece di inventare assenza di ostacoli;
+- obstacle checking usa i metadati delle definizioni fisiche pinzate; in assenza di evidenza restituisce stato non verificabile invece di inventare assenza di ostacoli;
 - TTS browser legge esattamente `current.presentation.text`, la stessa stringa mostrata;
 - controlled voice esegue exact matching locale soltanto su label/aliases delle `AvailableAction` correnti e invia lo stesso ActionRequest dei bottoni; il transcript non viene inviato al backend;
 - in assenza di speech recognition restano disponibili i bottoni equivalenti;
 - il Navigator mostra MapProjection, NavigationProjection e risultato della obstacle query senza ricostruire routing client-side;
-- legacy checker impedisce il ritorno del catalogo routing duplicato e dei command endpoint precedenti.
+- legacy checker impedisce il ritorno del catalogo routing globale e dei command endpoint precedenti.
 
 Test Slice 4:
 
-- validazione canonical routing requirements e rifiuto dei key LayoutRevision-local usati come default globale;
-- un key locale uguale a un canonical key non viene interpretato globalmente senza `canonicalKey` esplicita;
-- duplicate mapping della stessa `canonicalKey` viene rifiutato dall'integrità VenueRelease;
+- validazione dei routing requirement con `PhysicalFeatureRef` e rifiuto dei riferimenti locali usati come default globale persistente;
+- una key o label locale non viene interpretata come identità federata senza una `semanticRef` esplicita;
+- una risoluzione semantica assente o ambigua produce blocker o warning secondo la priorità;
 - una preparation su floor necessaria senza map asset è `blocked` con `NAVIGATOR_MAP_ASSET_MISSING`;
 - MapProjection non serializza `placeId`, `connectionId` o `layoutRevisionId`;
 - obstacle Action via controlled voice usa metadata canonici, incrementa `runtimeVersion` e registra l'InteractionEvent;

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -115,8 +116,9 @@ async function createFixture() {
     { venueId: venueA._id, subjectId: subjects[1]._id, label: "Target A2", createdBy: user._id },
     { venueId: venueB._id, subjectId: subjects[2]._id, label: "Target B1", createdBy: user._id },
   ]);
-  const layoutA = await LayoutRevision.create({ venueId: venueA._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
-  const layoutB = await LayoutRevision.create({ venueId: venueB._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
+  const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+  const layoutA = await LayoutRevision.create({ venueId: venueA._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, status: "published", createdBy: user._id, updatedBy: user._id });
+  const layoutB = await LayoutRevision.create({ venueId: venueB._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, status: "published", createdBy: user._id, updatedBy: user._id });
   const releaseA = await VenueRelease.create({
     venueId: venueA._id,
     version: 1,

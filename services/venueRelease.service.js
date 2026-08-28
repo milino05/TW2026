@@ -15,6 +15,7 @@ const {
 const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
 const { runPostCommitAudit } = require("./postCommitAudit.service");
 const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
+const { assertCanAuthorLayoutAgainstRevision, loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { LAYOUT_FIELDS, normalizeWorkingVenueReleasePayload, validateWorkingVenueReleasePayload } = require("./validation/venueRelease.validation");
 
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
@@ -35,7 +36,7 @@ async function loadReleaseSnapshot(releaseId) {
   return { release, layout };
 }
 
-async function createWorkingReleaseFromPublished({ venue, actorUserId }) {
+async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevisionId = null, actorUserId }) {
   let version = 1;
   let basedOnReleaseId = null;
   let targetBindings = [];
@@ -50,19 +51,25 @@ async function createWorkingReleaseFromPublished({ venue, actorUserId }) {
     basedOnReleaseId = published._id;
     targetBindings = published.targetBindings || [];
     preVisitInformation = published.preVisitInformation || [];
+  } else {
+    if (!physicalVocabularyRevisionId) {
+      throw new AppError("Seleziona un Physical Vocabulary prima di configurare la sede", 409, [{
+        field: "physicalVocabularyRevisionId",
+        code: "PHYSICAL_VOCABULARY_REVISION_REQUIRED",
+      }]);
+    }
+    await assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId });
   }
 
   const layout = await LayoutRevision.create({
     ...(sourceLayout ? {
-      placeTypes: sourceLayout.placeTypes,
-      routingAttributes: sourceLayout.routingAttributes,
-      routingPresets: sourceLayout.routingPresets,
+      authoredAgainstPhysicalVocabularyRevisionId: sourceLayout.authoredAgainstPhysicalVocabularyRevisionId,
       floors: sourceLayout.floors,
       places: sourceLayout.places,
       venueTargetPlacements: sourceLayout.venueTargetPlacements,
       connections: sourceLayout.connections,
       basedOnRevisionId: sourceLayout._id,
-    } : {}),
+    } : { authoredAgainstPhysicalVocabularyRevisionId: physicalVocabularyRevisionId }),
     venueId: venue._id,
     version,
     status: "draft",
@@ -90,10 +97,13 @@ async function createWorkingReleaseFromPublished({ venue, actorUserId }) {
   }
 }
 
-async function ensureWorkingVenueRelease({ venueId, actorUserId }) {
+async function ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId = null, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
-  if (!venue.workingReleaseId) return createWorkingReleaseFromPublished({ venue, actorUserId });
+  if (!venue.workingReleaseId) return createWorkingReleaseFromPublished({ venue, physicalVocabularyRevisionId, actorUserId });
   const { release, layout } = await loadReleaseSnapshot(venue.workingReleaseId);
+  if (physicalVocabularyRevisionId && String(physicalVocabularyRevisionId) !== String(layout.authoredAgainstPhysicalVocabularyRevisionId)) {
+    throw new AppError("La working release usa gia un'altra revisione del vocabolario fisico", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
+  }
   if (!["draft", "changes_requested", "in_review"].includes(release.status)) throw new AppError("Working VenueRelease in stato non valido", 409);
   return { venue, release, layout };
 }
@@ -108,9 +118,10 @@ async function getVenuePhysicalState({ venueId, view = "published", actorUserId 
   else throw new AppError("view deve essere published o working", 400);
   if (!releaseId) throw new AppError(view === "published" ? "VenueRelease pubblicata non disponibile" : "Working VenueRelease non disponibile", 404);
   const { release, layout } = await loadReleaseSnapshot(releaseId);
+  const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout);
   const targetIds = (release.targetBindings || []).map((binding) => binding.venueTargetId);
   const targets = await VenueTarget.find({ _id: { $in: targetIds } }).lean();
-  return { venue: projectVenue(venue, { includeWorking: view === "working" }), release, layout, targets };
+  return { venue: projectVenue(venue, { includeWorking: view === "working" }), release, layout, physicalVocabulary, physicalVocabularyRevision, targets };
 }
 
 async function updateWorkingVenueRelease({ venueId, payload, actorUserId }) {

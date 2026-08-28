@@ -23,6 +23,8 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
+const PhysicalVocabulary = require("../models/physicalVocabulary.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VisitV2 = require("../models/visitV2.model");
@@ -37,6 +39,7 @@ const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity
 const { computeVisitV2Integrity } = require("../services/visitV2Integrity.service");
 const { assertSelfContainedOffer } = require("../services/marketplaceOfferIntegrity.service");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
+const { createDemoPhysicalVocabulary, physicalAttributeValues } = require("./demoPhysicalVocabulary");
 
 const REQUIRED_USERNAMES = Object.freeze(["autore1", "autore2", "visitatore1", "visitatore2"]);
 const REQUIRED_PASSWORD = "12345678";
@@ -59,6 +62,8 @@ const IDS = Object.freeze({
   editorialContext: demoId("editorial_context"),
   graphRevision: demoId("graph_revision"),
   editorialRelease: demoId("editorial_release"),
+  physicalVocabulary: demoId("physical_vocabulary"),
+  physicalVocabularyRevision: demoId("physical_vocabulary_revision"),
   layoutRevision: demoId("layout_revision"),
   venueRelease: demoId("venue_release"),
 });
@@ -174,6 +179,8 @@ async function cleanupDemo() {
   await VisitV2.deleteMany({ _id: { $in: visitIds } });
   await VenueRelease.deleteMany({ _id: IDS.venueRelease });
   await LayoutRevision.deleteMany({ _id: IDS.layoutRevision });
+  await PhysicalVocabularyRevision.deleteMany({ _id: IDS.physicalVocabularyRevision });
+  await PhysicalVocabulary.deleteMany({ _id: IDS.physicalVocabulary });
   await VenueTarget.deleteMany({ _id: { $in: targetIds } });
   await Venue.deleteMany({ _id: IDS.venue });
   await EditorialRelease.deleteMany({ _id: IDS.editorialRelease });
@@ -484,6 +491,30 @@ async function seedExamDataset() {
   editorialContext.publishedReleaseId = editorialRelease._id;
   await editorialContext.save();
 
+  const physical = await createDemoPhysicalVocabulary({
+    physicalVocabularyId: IDS.physicalVocabulary,
+    revisionId: IDS.physicalVocabularyRevision,
+    organizationId: organization._id,
+    userId: manager._id,
+    name: "Pinacoteca Bologna — Vocabolario fisico",
+    now: FIXED_NOW,
+  });
+  const floorId = demoId("floor:piano-1");
+  const placeTypeId = (key) => physical.placeTypeByKey.get(key).definitionId;
+  const connectionTypeId = (key) => physical.connectionTypeByKey.get(key).definitionId;
+  const placeAttributes = (sensoryLoad, quietArea) => physicalAttributeValues(physical.physicalAttributeByKey, {
+    sensory_load: sensoryLoad,
+    quiet_area: quietArea,
+  });
+  const connectionAttributes = (overrides = {}) => physicalAttributeValues(physical.physicalAttributeByKey, {
+    step_free: true,
+    minimum_width_cm: 120,
+    sensory_load: "low",
+    has_steps: false,
+    narrow_passage: false,
+    ...overrides,
+  });
+
   const venue = await Venue.create({
     _id: IDS.venue,
     name: "Pinacoteca Nazionale di Bologna",
@@ -517,24 +548,16 @@ async function seedExamDataset() {
   const workPlaceIds = WORKS.map((work) => demoId(`place:work:${work.key}`));
   const workPositions = [[0.16,0.25],[0.30,0.20],[0.44,0.25],[0.58,0.20],[0.72,0.25],[0.84,0.34],[0.78,0.50],[0.64,0.55],[0.50,0.50],[0.36,0.55],[0.22,0.50],[0.12,0.42]];
   const places = [
-    { _id: placeIds.entrance, typeKey: "entrance", label: "Ingresso principale", floorKey: "piano-1", position: { x: 0.05, y: 0.75 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.info, typeKey: "info", label: "Informazioni", floorKey: "piano-1", position: { x: 0.13, y: 0.78 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    ...WORKS.map((work, index) => ({ _id: workPlaceIds[index], typeKey: "gallery", label: work.title, floorKey: "piano-1", position: { x: workPositions[index][0], y: workPositions[index][1] }, attributes: { low_sensory_load: true, quiet_area: true } })),
-    { _id: placeIds.toilet, typeKey: "toilet", label: "Servizi igienici accessibili", floorKey: "piano-1", position: { x: 0.30, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.elevator, typeKey: "elevator", label: "Ascensore", floorKey: "piano-1", position: { x: 0.39, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.stairs, typeKey: "stairs", label: "Scale", floorKey: "piano-1", position: { x: 0.46, y: 0.82 }, attributes: { low_sensory_load: true, quiet_area: false } },
-    { _id: placeIds.bar, typeKey: "bar", label: "Punto ristoro demo", floorKey: "piano-1", position: { x: 0.56, y: 0.82 }, attributes: { low_sensory_load: false, quiet_area: false } },
-    { _id: placeIds.shop, typeKey: "shop", label: "Bookshop", floorKey: "piano-1", position: { x: 0.70, y: 0.82 }, attributes: { low_sensory_load: false, quiet_area: false } },
-    { _id: placeIds.exit, typeKey: "exit", label: "Uscita", floorKey: "piano-1", position: { x: 0.90, y: 0.75 }, attributes: { low_sensory_load: true, quiet_area: false } },
+    { _id: placeIds.entrance, placeTypeDefinitionId: placeTypeId("entrance"), label: "Ingresso principale", floorId, position: { x: 0.05, y: 0.75 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.info, placeTypeDefinitionId: placeTypeId("information_point"), label: "Informazioni", floorId, position: { x: 0.13, y: 0.78 }, attributeValues: placeAttributes("low", false) },
+    ...WORKS.map((work, index) => ({ _id: workPlaceIds[index], placeTypeDefinitionId: placeTypeId("room"), label: work.title, floorId, position: { x: workPositions[index][0], y: workPositions[index][1] }, attributeValues: placeAttributes("low", true) })),
+    { _id: placeIds.toilet, placeTypeDefinitionId: placeTypeId("toilets"), label: "Servizi igienici accessibili", floorId, position: { x: 0.30, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.elevator, placeTypeDefinitionId: placeTypeId("elevator"), label: "Ascensore", floorId, position: { x: 0.39, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.stairs, placeTypeDefinitionId: placeTypeId("stairs"), label: "Scale", floorId, position: { x: 0.46, y: 0.82 }, attributeValues: placeAttributes("low", false) },
+    { _id: placeIds.bar, placeTypeDefinitionId: placeTypeId("cafe"), label: "Punto ristoro demo", floorId, position: { x: 0.56, y: 0.82 }, attributeValues: placeAttributes("high", false) },
+    { _id: placeIds.shop, placeTypeDefinitionId: placeTypeId("shop"), label: "Bookshop", floorId, position: { x: 0.70, y: 0.82 }, attributeValues: placeAttributes("high", false) },
+    { _id: placeIds.exit, placeTypeDefinitionId: placeTypeId("exit"), label: "Uscita", floorId, position: { x: 0.90, y: 0.75 }, attributeValues: placeAttributes("low", false) },
   ];
-  const connectionAttributes = {
-    step_free: true,
-    minimum_width_cm: 120,
-    low_sensory_load: true,
-    stairs: false,
-    elevator: false,
-    narrow_passage: false,
-  };
   const routeNodes = [placeIds.entrance, ...workPlaceIds, placeIds.exit];
   const connections = [];
   for (let index = 0; index < routeNodes.length - 1; index += 1) {
@@ -543,8 +566,10 @@ async function seedExamDataset() {
       fromPlaceId: routeNodes[index],
       toPlaceId: routeNodes[index + 1],
       directionality: "bidirectional",
+      connectionTypeDefinitionId: connectionTypeId("passage"),
+      metricMode: "manual_override",
       distanceMeters: 18 + (index % 3) * 4,
-      attributes: connectionAttributes,
+      attributeValues: connectionAttributes(),
       instructions: { forward: "Prosegui verso la tappa successiva del percorso demo.", backward: "Torna verso la tappa precedente del percorso demo." },
     });
   }
@@ -561,12 +586,12 @@ async function seedExamDataset() {
       fromPlaceId: placeIds.entrance,
       toPlaceId: target,
       directionality: "bidirectional",
+      connectionTypeDefinitionId: connectionTypeId(key === "stairs" ? "stairs" : key === "elevator" ? "elevator" : "passage"),
+      metricMode: "manual_override",
       distanceMeters: distance,
-      attributes: key === "stairs"
-        ? { ...connectionAttributes, step_free: false, stairs: true }
-        : key === "elevator"
-          ? { ...connectionAttributes, elevator: true }
-          : connectionAttributes,
+      attributeValues: key === "stairs"
+        ? connectionAttributes({ step_free: false, has_steps: true })
+        : connectionAttributes(),
       instructions: { forward: `Raggiungi ${key} dal nodo di ingresso demo.`, backward: "Rientra verso l'ingresso demo." },
     });
   }
@@ -575,36 +600,8 @@ async function seedExamDataset() {
     _id: IDS.layoutRevision,
     venueId: venue._id,
     version: 1,
-    placeTypes: [
-      { key: "gallery", label: "Sala espositiva", description: "Nodo espositivo del percorso." },
-      { key: "entrance", label: "Ingresso", userIntents: ["FIND_ENTRANCE"] },
-      { key: "exit", label: "Uscita", userIntents: ["FIND_EXIT"] },
-      { key: "toilet", label: "Servizi", userIntents: ["FIND_TOILET"] },
-      { key: "elevator", label: "Ascensore", userIntents: ["FIND_ELEVATOR"] },
-      { key: "stairs", label: "Scale", userIntents: ["FIND_STAIRS"] },
-      { key: "bar", label: "Bar", userIntents: ["FIND_BAR"] },
-      { key: "shop", label: "Bookshop", userIntents: ["FIND_SHOP"] },
-      { key: "info", label: "Informazioni", userIntents: ["FIND_INFO"] },
-    ],
-    routingAttributes: [
-      { key: "step_free", label: "Senza gradini", dataType: "boolean", canonicalKey: "step_free", appliesTo: "connection" },
-      { key: "minimum_width_cm", label: "Larghezza minima", dataType: "number", unit: "cm", canonicalKey: "minimum_width_cm", appliesTo: "connection" },
-      { key: "low_sensory_load", label: "Basso carico sensoriale", dataType: "boolean", canonicalKey: "low_sensory_load", appliesTo: "both" },
-      { key: "stairs", label: "Presenza di scale", dataType: "boolean", canonicalKey: "stairs", appliesTo: "connection" },
-      { key: "elevator", label: "Uso ascensore", dataType: "boolean", canonicalKey: "elevator", appliesTo: "connection" },
-      { key: "narrow_passage", label: "Passaggio stretto", dataType: "boolean", canonicalKey: "narrow_passage", appliesTo: "connection" },
-      { key: "quiet_area", label: "Area tranquilla", dataType: "boolean", canonicalKey: "quiet_area", appliesTo: "place" },
-    ],
-    routingPresets: [{
-      key: "accessible",
-      label: "Percorso accessibile",
-      description: "Evita gradini e richiede larghezza minima di 90 cm.",
-      requirements: [
-        { attributeKey: "step_free", operator: "eq", value: true, priority: "required", weight: 1 },
-        { attributeKey: "minimum_width_cm", operator: "gte", value: 90, priority: "required", weight: 1 },
-      ],
-    }],
-    floors: [{ key: "piano-1", label: "Percorso demo", map: { imageUrl: DEMO_MAP_URL, width: 1200, height: 700 } }],
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorId, label: "Percorso demo", mapAsset: { url: DEMO_MAP_URL, mimeType: "image/svg+xml", width: 1200, height: 700, originalName: "pinacoteca-bologna-demo.svg" } }],
     places,
     venueTargetPlacements: targets.map((target, index) => ({ venueTargetId: target._id, primaryPlaceId: workPlaceIds[index], placeIds: [workPlaceIds[index]] })),
     connections,
@@ -767,10 +764,12 @@ async function verifyExamDataset() {
   for (const targetId of targetIds) {
     if (!placementIds.has(targetId)) add("TARGET_NOT_PLACED", "Target demo attivo privo di placement", { targetId });
   }
-  if (!(layout?.floors || []).some((floor) => floor.map?.imageUrl)) add("MAP_ASSET_MISSING", "La LayoutRevision demo non contiene una mappa visualizzabile");
-  const facilityIntents = new Set((layout?.placeTypes || []).flatMap((entry) => entry.userIntents || []));
-  for (const intent of ["FIND_ENTRANCE", "FIND_EXIT", "FIND_TOILET", "FIND_ELEVATOR", "FIND_STAIRS", "FIND_BAR", "FIND_SHOP", "FIND_INFO"]) {
-    if (!facilityIntents.has(intent)) add("FACILITY_INTENT_MISSING", `Intent facility mancante: ${intent}`);
+  if (!(layout?.floors || []).some((floor) => floor.mapAsset?.url)) add("MAP_ASSET_MISSING", "La LayoutRevision demo non contiene una mappa visualizzabile");
+  const physicalRevision = await PhysicalVocabularyRevision.findById(layout?.authoredAgainstPhysicalVocabularyRevisionId).lean();
+  const placeTypeById = new Map((physicalRevision?.placeTypes || []).map((definition) => [definition.definitionId, definition]));
+  const placedFeatureKeys = new Set((layout?.places || []).map((place) => placeTypeById.get(place.placeTypeDefinitionId)?.key).filter(Boolean));
+  for (const key of ["entrance", "exit", "toilets", "elevator", "stairs", "cafe", "shop", "information_point"]) {
+    if (!placedFeatureKeys.has(key)) add("PHYSICAL_FEATURE_MISSING", `Destinazione fisica mancante: ${key}`);
   }
   if (venue && venueRelease && layout) {
     const issues = await computeVenueReleaseIssues({ venue, release: venueRelease, layout });

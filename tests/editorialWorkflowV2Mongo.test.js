@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { assignStarterRole } = require("./helpers/organizationRbac");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -57,7 +58,8 @@ async function createContentFixture({ manager, organization }) {
 
   const venue = await Venue.create({ name: "Venue workflow", ownerOrganizationId: organization._id, createdBy: manager._id });
   const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: manager._id });
-  const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, status: "published", createdBy: manager._id, updatedBy: manager._id });
+  const physical = await createPublishedPhysicalVocabulary({ userId: manager._id });
+  const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, status: "published", createdBy: manager._id, updatedBy: manager._id });
   const venueRelease = await VenueRelease.create({
     venueId: venue._id,
     version: 1,

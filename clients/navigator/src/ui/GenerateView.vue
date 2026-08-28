@@ -36,6 +36,8 @@ const searchingSubjects = ref(false);
 const booleanRoutingChoices = ref<Record<string, string>>({});
 const numericRoutingValues = ref<Record<string, number | string | null>>({});
 const numericRoutingPriorities = ref<Record<string, "preferred" | "required">>({});
+const choiceRoutingValues = ref<Record<string, string>>({});
+const choiceRoutingPriorities = ref<Record<string, "preferred" | "required" | "avoid">>({});
 const busy = ref(true);
 const generating = ref(false);
 const error = ref<string | null>(null);
@@ -158,7 +160,7 @@ function routingRequirements(): GenerationNavigationRequirement[] {
       if (!choice) continue;
       const [priority, rawValue] = choice.split(":");
       requirements.push({
-        attributeKey: control.key,
+        physicalFeatureRef: control.physicalFeatureRef,
         operator: control.recommendedOperator || "eq",
         value: rawValue === "true",
         priority: priority === "required" ? "required" : "preferred",
@@ -172,10 +174,22 @@ function routingRequirements(): GenerationNavigationRequirement[] {
       const value = Number(rawValue);
       if (!Number.isFinite(value)) continue;
       requirements.push({
-        attributeKey: control.key,
+        physicalFeatureRef: control.physicalFeatureRef,
         operator: control.recommendedOperator || "gte",
         value,
         priority: numericRoutingPriorities.value[control.key] || "preferred",
+        weight: 1,
+      });
+      continue;
+    }
+    if (control.dataType === "choice") {
+      const value = choiceRoutingValues.value[control.key];
+      if (!value) continue;
+      requirements.push({
+        physicalFeatureRef: control.physicalFeatureRef,
+        operator: "eq",
+        value,
+        priority: choiceRoutingPriorities.value[control.key] || "preferred",
         weight: 1,
       });
     }
@@ -405,6 +419,23 @@ async function generate() {
               Importanza
               <select v-model="numericRoutingPriorities[control.key]" :disabled="generating">
                 <option value="preferred">Preferenza</option>
+                <option value="required">Necessario</option>
+              </select>
+            </label>
+          </template>
+          <template v-else-if="control.dataType === 'choice'">
+            <label>
+              {{ control.label }}
+              <select v-model="choiceRoutingValues[control.key]" :disabled="generating">
+                <option value="">Nessuna preferenza</option>
+                <option v-for="option in control.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label>
+              Importanza
+              <select v-model="choiceRoutingPriorities[control.key]" :disabled="generating">
+                <option value="preferred">Preferenza</option>
+                <option value="avoid">Evita</option>
                 <option value="required">Necessario</option>
               </select>
             </label>

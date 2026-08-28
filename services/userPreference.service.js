@@ -10,7 +10,7 @@ const policy = require("../config/adaptivePolicy");
 const { contributorHash } = require("./contributorIdentity.service");
 const { removeUserLearningV2 } = require("./learningV2.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
-const { normalizeCanonicalRoutingRequirements } = require("./routingPreferenceV2.service");
+const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
 
 function unit(value, field) {
   const number = Number(value);
@@ -34,7 +34,7 @@ function normalizeNavigationPreference(payload = {}) {
     : unit(payload.movementPacePreference, "movementPacePreference");
   return {
     movementPacePreference,
-    requirements: normalizeCanonicalRoutingRequirements(payload.requirements, { field: "requirements" }),
+    requirements: normalizeRoutingRequirements(payload.requirements, { field: "requirements", semanticOnly: true }),
   };
 }
 

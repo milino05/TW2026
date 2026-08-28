@@ -73,8 +73,12 @@ Le route sono montate sotto `/api`:
 
 La lettura dei metadata di una singola risorsa e della revisione pubblicata e pubblica. Elenco, working revision e command richiedono autenticazione; ownership e RBAC determinano poi l'autorizzazione effettiva.
 
-## Integrazione Marketplace e confine della tranche
+## Integrazione Marketplace e layout fisici
 
 Marketplace riconosce `physical_vocabulary` e `physical_vocabulary_revision` come risorse distribuibili. Listing, offerte, acquisizione, capability di fork, Adoption e Creator Workspace usano snapshot pubblicati e non copie implicite.
 
-Questa tranche introduce il dominio, le API e l'integrazione commerciale minima. Non effettua ancora il passaggio distruttivo di Venue/Layout, editor fisico, visite, routing o Navigator a `PhysicalVocabularyRevision`: quel lavoro deve avvenire nel successivo hard cutover, senza adattatori permanenti o doppie fonti di verita.
+Ogni `LayoutRevision` pinna una sola `PhysicalVocabularyRevision` tramite `authoredAgainstPhysicalVocabularyRevisionId`. Il layout non contiene copie di `placeTypes`, `routingAttributes` o `routingPresets`: Place, Connection e valori tipizzati riferiscono i `definitionId` della revisione pinzata. Il cambio di vocabolario apre quindi una nuova linea di authoring del layout e non reinterpreta snapshot gia pubblicati.
+
+Le preferenze fisiche riutilizzabili usano `PhysicalFeatureRef`. Un riferimento locale identifica direttamente una definizione quando il vocabolario e gia noto; un riferimento semantico consente al backend di risolvere la stessa feature in vocabolari diversi tramite `semanticRefs`. Requirement `required` non risolvibili bloccano la preparation, mentre requirement soft producono warning e non vengono scartati silenziosamente.
+
+Il routing e il Navigator consumano sempre la revisione fisica pinzata. Il motore del grafo rimane generico: valuta gli `attributeValues` locali dopo che il resolver ha tradotto i riferimenti fisici e non dipende da chiavi canoniche globali o da nomi hardcoded.

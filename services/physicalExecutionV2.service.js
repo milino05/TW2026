@@ -6,7 +6,9 @@ const VenueTargetObservationProfile = require("../models/venueTargetObservationP
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
-const { placesForIntent } = require("./venueRouting.service");
+const { placesForPhysicalFeature } = require("./venueRouting.service");
+const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const { translateRoutingRequirements, describePhysicalFeatureRef } = require("./physicalVocabularyResolver.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -15,19 +17,8 @@ function resolveMovementSpeed(preference = 0.5) {
   const calm = policy.coldStart.paceFactors.calm, fast = policy.coldStart.paceFactors.fast;
   return Math.max(policy.movement.minSpeedMps, Math.min(policy.movement.maxSpeedMps, policy.coldStart.movementSpeedMps * (calm + (fast - calm) * p)));
 }
-function translateRequirements(layoutRevision, requirements = []) {
-  const attrs = layoutRevision.routingAttributes || [];
-  const byCanonical = new Map(attrs.filter((entry) => entry.canonicalKey).map((entry) => [String(entry.canonicalKey).trim().toLowerCase(), entry]));
-  const translated = [], warnings = [], unsupportedRequired = [];
-  for (const requirement of requirements || []) {
-    const canonicalKey = String(requirement.attributeKey || "").trim().toLowerCase();
-    const definition = byCanonical.get(canonicalKey);
-    if (!definition) {
-      if ((requirement.priority || "preferred") === "required") unsupportedRequired.push(canonicalKey);
-      else warnings.push({ code: "PREFERRED_ATTRIBUTE_UNSUPPORTED", attributeKey: canonicalKey });
-    } else translated.push({ ...requirement, attributeKey: definition.key });
-  }
-  return { requirements: translated, warnings, unsupportedRequired };
+function translateRequirements(vocabularyRevision, physicalVocabulary, requirements = []) {
+  return translateRoutingRequirements({ requirements, physicalVocabulary, revision: vocabularyRevision });
 }
 
 async function resolveSessionVenuePins(sourceAnchors = []) {
@@ -48,6 +39,7 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
     if (!release || release.integrity?.status !== "valid") throw new AppError("VenueRelease corrente non utilizzabile", 409, [{ code: "VENUE_RELEASE_INVALID", context: { venueId } }]);
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non disponibile", 409);
+    const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
     const activeTargets = new Set((release.targetBindings || []).filter((entry) => entry.availability === "active").map((entry) => id(entry.venueTargetId)));
     const placementByTarget = new Map((layout.venueTargetPlacements || []).map((entry) => [id(entry.venueTargetId), entry]));
     for (const target of targets.filter((entry) => id(entry.venueId) === venueId)) {
@@ -56,7 +48,7 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
     }
     const pin = { venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id };
     venuePins.push(pin);
-    bundleByVenueId.set(venueId, { venue, release, layout, placementByTarget });
+    bundleByVenueId.set(venueId, { venue, release, layout, physicalVocabulary, physicalVocabularyRevision, placementByTarget });
   }
   return { venuePins, targetById, bundleByVenueId };
 }
@@ -67,8 +59,8 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
   const profileByTarget = new Map(profiles.map((entry) => [id(entry.venueTargetId), entry]));
   const warnings = [], requirementsByVenue = new Map();
   for (const [venueId, bundle] of resolved.bundleByVenueId) {
-    const translated = translateRequirements(bundle.layout, navigation.requirements || []);
-    if (translated.unsupportedRequired.length) throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, translated.unsupportedRequired.map((attributeKey) => ({ field: "navigation.requirements", code: "REQUIRED_ATTRIBUTE_UNSUPPORTED", message: attributeKey, context: { venueId } })));
+    const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, navigation.requirements || []);
+    if (translated.unsupportedRequired.length) throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, translated.unsupportedRequired.map((reference) => ({ field: "navigation.requirements", code: "REQUIRED_ATTRIBUTE_UNSUPPORTED", message: describePhysicalFeatureRef(reference), context: { venueId, physicalFeatureRef: reference } })));
     warnings.push(...translated.warnings.map((entry) => ({ ...entry, venueId: bundle.venue._id })));
     requirementsByVenue.set(venueId, translated.requirements);
   }
@@ -115,22 +107,41 @@ async function loadPinnedBundle(session, venueId) {
     LayoutRevision.findOne({ _id: pin.layoutRevisionId, venueId: pin.venueId }).lean(),
   ]);
   if (!release || !layout) throw new AppError("Snapshot fisica pinzata dalla Session non disponibile", 409);
-  return { pin, release, layout };
+  const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
+  return { pin, release, layout, physicalVocabulary, physicalVocabularyRevision };
 }
 
-async function routeToIntentInSession({ session, venueId, fromPlaceId, intent }) {
+async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, physicalFeatureRef }) {
   const bundle = await loadPinnedBundle(session, venueId);
-  const destinations = placesForIntent(bundle.layout, intent);
-  if (!destinations.length) throw new AppError("La Venue non dichiara una destinazione per questo intento", 404);
-  const translated = translateRequirements(bundle.layout, session.navigationSnapshot?.requirements || []);
+  const destinations = placesForPhysicalFeature({
+    layoutRevision: bundle.layout,
+    physicalVocabulary: bundle.physicalVocabulary,
+    physicalVocabularyRevision: bundle.physicalVocabularyRevision,
+    physicalFeatureRef,
+  });
+  if (!destinations.length) throw new AppError("La Venue non contiene una destinazione per la caratteristica fisica richiesta", 404);
+  const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, session.navigationSnapshot?.requirements || []);
   if (translated.unsupportedRequired.length) throw new AppError("Snapshot fisica non supporta un requisito obbligatorio", 409);
   const candidates = destinations.map((destination) => ({ destination, route: resolveRoute({ connections: bundle.layout.connections || [], fromPlaceId, toPlaceId: destination._id, requirements: translated.requirements, speedMps: session.sessionMovementSpeedMps, learnedResidualByConnection: {} }) })).filter((entry) => entry.route.reachable);
-  if (!candidates.length) throw new AppError("Nessuna destinazione raggiungibile per questo intento", 409);
+  if (!candidates.length) throw new AppError("Nessuna destinazione raggiungibile per la caratteristica fisica richiesta", 409);
   const fastest = Math.min(...candidates.map((entry) => entry.route.estimatedSeconds));
   const acceptable = candidates.filter((entry) => entry.route.estimatedSeconds <= fastest * (1 + policy.routing.maxPreferredDetourRatio));
   acceptable.sort((a, b) => (a.route.preferencePenalty || 0) - (b.route.preferencePenalty || 0) || a.route.estimatedSeconds - b.route.estimatedSeconds);
   const best = acceptable[0];
-  return { venueId: bundle.pin.venueId, venueReleaseId: bundle.pin.venueReleaseId, layoutRevisionId: bundle.pin.layoutRevisionId, intent: String(intent || "").trim().toUpperCase(), destination: best.destination, warnings: translated.warnings, ...best.route };
+  return {
+    venueId: bundle.pin.venueId,
+    venueReleaseId: bundle.pin.venueReleaseId,
+    layoutRevisionId: bundle.pin.layoutRevisionId,
+    requestedPhysicalFeatureRef: physicalFeatureRef,
+    physicalFeatureRef: {
+      kind: "local",
+      physicalVocabularyId: bundle.physicalVocabulary._id,
+      definitionId: best.destination.placeTypeDefinitionId,
+    },
+    destination: best.destination,
+    warnings: translated.warnings,
+    ...best.route,
+  };
 }
 
-module.exports = { id, resolveMovementSpeed, translateRequirements, resolveSessionVenuePins, materializeSessionPhysicalPlan, loadPinnedBundle, routeToIntentInSession };
+module.exports = { id, resolveMovementSpeed, translateRequirements, resolveSessionVenuePins, materializeSessionPhysicalPlan, loadPinnedBundle, routeToPhysicalFeatureInSession };

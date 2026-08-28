@@ -131,19 +131,22 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
+    const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
     const owner = await User.create({ username: "prep-map-owner", passwordHash: "test-hash" });
     const organization = await Organization.create({ name: "Map readiness org", createdBy: owner._id });
     const subject = await Subject.create({ preferredLabel: "Map subject", createdBy: owner._id });
     const venue = await Venue.create({ name: "Map readiness Venue", ownerOrganizationId: organization._id, createdBy: owner._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Map target", createdBy: owner._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: owner._id });
+    const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
     const layout = await LayoutRevision.create({
       venueId: venue._id,
       version: 1,
-      placeTypes: [{ key: "gallery", label: "Sala", userIntents: [] }],
-      floors: [{ key: "ground", label: "Piano terra" }],
-      places: [{ _id: placeId, typeKey: "gallery", label: "Sala mappa", floorKey: "ground", position: { x: 0.5, y: 0.5 } }],
+      authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+      floors: [{ _id: floorId, label: "Piano terra" }],
+      places: [{ _id: placeId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala mappa", floorId, position: { x: 0.5, y: 0.5 } }],
       venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [placeId] }],
       connections: [],
       status: "published",

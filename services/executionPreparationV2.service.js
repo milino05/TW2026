@@ -21,7 +21,7 @@ const {
 } = require("./sessionPlanV2.service");
 const { resolveMovementSpeed } = require("./physicalExecutionV2.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
-const { normalizeCanonicalRoutingRequirements } = require("./routingPreferenceV2.service");
+const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
 const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service");
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
@@ -60,7 +60,7 @@ function normalizeNavigation(stored = {}, draft = {}) {
     movementPacePreference: validUnit(draft.movementPacePreference)
       ? Number(draft.movementPacePreference)
       : validUnit(stored?.movementPacePreference) ? Number(stored.movementPacePreference) : 0.5,
-    requirements: normalizeCanonicalRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
+    requirements: normalizeRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
   };
 }
 function normalizedDraft(payload = {}) {
@@ -76,7 +76,7 @@ function normalizedDraft(payload = {}) {
   }
   if (validUnit(payload.movementPacePreference)) draft.movementPacePreference = Number(payload.movementPacePreference);
   if (payload.navigationRequirements !== undefined) {
-    draft.navigationRequirements = normalizeCanonicalRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
+    draft.navigationRequirements = normalizeRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
   }
   return draft;
 }

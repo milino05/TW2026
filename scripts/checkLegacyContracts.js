@@ -78,7 +78,7 @@ function rejectPattern(file, pattern, label, { ignoreComments = false } = {}) {
 }
 
 roots.forEach(walk);
-for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js', 'config/globalRoutingAttributes.js']) {
+for (const obsolete of ['services/relationView.utils.js', 'schemas/relation.schema.js', 'config/globalRoutingAttributes.js', 'services/routingAttributeCatalog.service.js']) {
   if (fs.existsSync(obsolete)) {
     console.error(`Obsolete architecture file still present: ${obsolete}`);
     failed = true;
@@ -98,7 +98,9 @@ rejectFields('models/semanticEdgeV2.model.js', ['museumId', 'sourceItemId', 'sou
 rejectFields('models/editorialRelease.model.js', ['ownerType', 'ownerId', 'venueId', 'visibility', 'discoverability'], 'EditorialRelease');
 rejectFields('models/venue.model.js', ['museumId', 'contentSpaceId', 'namespaceId', 'itemId'], 'Venue');
 rejectFields('models/venueTarget.model.js', ['museumId', 'itemId', 'itemRevisionId', 'contentSpaceId'], 'VenueTarget');
-rejectFields('models/layoutRevision.model.js', ['museumId', 'itemPlacements', 'itemId'], 'LayoutRevision v2');
+rejectFields('models/layoutRevision.model.js', [
+  'museumId', 'itemPlacements', 'itemId', 'placeTypes', 'routingAttributes', 'routingPresets', 'typeKey', 'floorKey', 'attributes',
+], 'LayoutRevision v2');
 rejectFields('models/venueRelease.model.js', ['museumId', 'itemId', 'itemRevisionId', 'namespaceId', 'contentSpaceId'], 'VenueRelease');
 rejectFields('models/visitV2.model.js', ['kind', 'ownerMuseumId', 'museumId', 'visibility', 'discoverability'], 'Visit v2 scaffold');
 rejectFields('models/visitRevisionV2.model.js', [

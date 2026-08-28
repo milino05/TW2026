@@ -9,18 +9,14 @@ const PhysicalFeatureRefSchema = new Schema({
   semanticRefs: { type: [SemanticRefSchema], default: [] },
 }, { _id: false });
 
-PhysicalFeatureRefSchema.pre("validate", function validateReference(next) {
-  if (this.kind === "local") {
-    if (!this.physicalVocabularyId) this.invalidate("physicalVocabularyId", "Un riferimento locale richiede physicalVocabularyId");
-    if (!this.definitionId) this.invalidate("definitionId", "Un riferimento locale richiede definitionId");
-    if (this.semanticRefs?.length) this.invalidate("semanticRefs", "Un riferimento locale non contiene semanticRefs");
+PhysicalFeatureRefSchema.pre("validate", function validateShape(next) {
+  if (this.kind === "local" && (!this.physicalVocabularyId || !this.definitionId || this.semanticRefs.length)) {
+    return next(new Error("PhysicalFeatureRef local non valido"));
   }
-  if (this.kind === "semantic") {
-    if (this.physicalVocabularyId) this.invalidate("physicalVocabularyId", "Un riferimento semantico non pinna un PhysicalVocabulary");
-    if (this.definitionId) this.invalidate("definitionId", "Un riferimento semantico non contiene definitionId locale");
-    if (!this.semanticRefs?.length) this.invalidate("semanticRefs", "Un riferimento semantico richiede almeno una semanticRef");
+  if (this.kind === "semantic" && (this.physicalVocabularyId || this.definitionId || !this.semanticRefs.length)) {
+    return next(new Error("PhysicalFeatureRef semantic non valido"));
   }
-  next();
+  return next();
 });
 
 module.exports = PhysicalFeatureRefSchema;

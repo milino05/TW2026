@@ -3,6 +3,7 @@ const path = require("path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -96,7 +97,8 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
 
     const venue = await Venue.create({ name: "Venue", ownerOrganizationId: organization._id, createdBy: user._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: user._id });
-    const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, status: "published", createdBy: user._id, updatedBy: user._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+    const layout = await LayoutRevision.create({ venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, status: "published", createdBy: user._id, updatedBy: user._id });
     const venueRelease = await VenueRelease.create({
       venueId: venue._id,
       version: 1,

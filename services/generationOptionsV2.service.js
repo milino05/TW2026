@@ -4,6 +4,7 @@ const Organization = require("../models/organization.model");
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
+const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
@@ -12,7 +13,6 @@ const Entitlement = require("../models/entitlement.model");
 const AppError = require("../utils/AppError");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
-const { getRoutingAttributeCatalog } = require("./routingAttributeCatalog.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -41,7 +41,7 @@ async function projectReadyVenues(selectedVenueIds = []) {
   const releaseById = new Map(releases.map((release) => [id(release._id), release]));
   const layoutIds = uniqueIds(releases.map((release) => release.layoutRevisionId));
   const layouts = layoutIds.length
-    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId").lean()
+    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId authoredAgainstPhysicalVocabularyRevisionId").lean()
     : [];
   const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
 
@@ -90,7 +90,79 @@ async function projectReadyVenues(selectedVenueIds = []) {
     organizations: [...grouped.values()],
     selectedVenueIds: selected,
     readyVenues,
+    layoutByVenueId: new Map(readyVenues.map((venue) => {
+      const release = releaseById.get(id(venue.publishedReleaseId));
+      return [id(venue._id), layoutById.get(id(release.layoutRevisionId))];
+    })),
   };
+}
+
+function routingControl(definition, physicalFeatureRef, key) {
+  return {
+    key,
+    label: definition.label,
+    description: definition.description || "",
+    dataType: definition.dataType,
+    unit: definition.unit || null,
+    options: definition.options || [],
+    recommendedOperator: definition.metadata?.recommendedOperator || (definition.dataType === "number" ? "gte" : "eq"),
+    physicalFeatureRef,
+  };
+}
+
+function semanticSignature(reference) {
+  return `${String(reference?.scheme || "").trim().toLowerCase()}::${String(reference?.id || "").trim()}`;
+}
+
+async function projectRoutingControls({ selectedVenueIds, layoutByVenueId }) {
+  if (!selectedVenueIds.length) return [];
+  const layouts = selectedVenueIds.map((venueId) => layoutByVenueId.get(id(venueId))).filter(Boolean);
+  const revisionIds = uniqueIds(layouts.map((layout) => layout.authoredAgainstPhysicalVocabularyRevisionId));
+  const revisions = await PhysicalVocabularyRevision.find({
+    _id: { $in: revisionIds },
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  }).lean();
+  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+  const selectedRevisions = layouts.map((layout) => revisionById.get(id(layout.authoredAgainstPhysicalVocabularyRevisionId))).filter(Boolean);
+  if (selectedRevisions.length !== selectedVenueIds.length) return [];
+
+  if (selectedRevisions.length === 1) {
+    const revision = selectedRevisions[0];
+    return (revision.physicalAttributes || [])
+      .filter((definition) => ["connection", "both"].includes(definition.appliesTo))
+      .map((definition) => routingControl(definition, {
+        kind: "local",
+        physicalVocabularyId: revision.physicalVocabularyId,
+        definitionId: definition.definitionId,
+      }, definition.definitionId));
+  }
+
+  const indexes = selectedRevisions.map((revision) => {
+    const index = new Map();
+    for (const definition of revision.physicalAttributes || []) {
+      if (!["connection", "both"].includes(definition.appliesTo)) continue;
+      const semanticRef = (definition.semanticRefs || [])[0];
+      if (!semanticRef) continue;
+      const signature = semanticSignature(semanticRef);
+      index.set(signature, index.has(signature) ? null : { definition, semanticRef });
+    }
+    return index;
+  });
+  const controls = [];
+  for (const [signature, first] of indexes[0]) {
+    if (!first) continue;
+    const matches = indexes.map((index) => index.get(signature));
+    if (matches.some((match) => !match)) continue;
+    const compatible = matches.every(({ definition }) => definition.dataType === first.definition.dataType
+      && (definition.unit || null) === (first.definition.unit || null));
+    if (!compatible) continue;
+    controls.push(routingControl(first.definition, {
+      kind: "semantic",
+      semanticRefs: [first.semanticRef],
+    }, signature));
+  }
+  return controls;
 }
 
 async function ownerSummaries(contentSpaces) {
@@ -297,7 +369,7 @@ function chooseDefaultSources({ contentSpaces, selectedVenueIds }) {
 async function getGenerationOptionsProjection({ actorUserId, selectedVenueIds = [] }) {
   const physical = await projectReadyVenues(selectedVenueIds);
   const contentSpaces = await resolveEditorialSourceOptions({ actorUserId, readyVenues: physical.readyVenues });
-  const routing = getRoutingAttributeCatalog();
+  const routingControls = await projectRoutingControls(physical);
   return {
     physicalScope: {
       organizations: physical.organizations,
@@ -317,12 +389,7 @@ async function getGenerationOptionsProjection({ actorUserId, selectedVenueIds = 
       },
       navigation: {
         movementPacePreference: { label: "Ritmo di movimento", minimum: 0, maximum: 1 },
-        requirements: routing.attributes.map((entry) => ({
-          key: entry.key,
-          label: entry.label,
-          dataType: entry.dataType,
-          unit: entry.unit || null,
-        })),
+        requirements: routingControls,
       },
       semantic: {
         sourceScoped: true,
@@ -337,5 +404,6 @@ module.exports = {
   projectReadyVenues,
   resolveEditorialSourceOptions,
   chooseDefaultSources,
+  projectRoutingControls,
   getGenerationOptionsProjection,
 };

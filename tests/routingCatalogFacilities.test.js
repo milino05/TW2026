@@ -1,20 +1,20 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { getRoutingAttributeCatalog } = require("../services/routingAttributeCatalog.service");
-const { navigationActionDefinition } = require("../config/runtimeActions");
+const { applyPhysicalStarter } = require("../services/physicalVocabularyStarter.service");
+const { physicalNavigationActionDefinition } = require("../config/runtimeActions");
 
-test("canonical facility catalog includes elevator and stairs with controlled voice actions", () => {
-  const catalog = getRoutingAttributeCatalog();
-  assert.equal(catalog.placeIntents.includes("FIND_ELEVATOR"), true);
-  assert.equal(catalog.placeIntents.includes("FIND_STAIRS"), true);
+test("PhysicalVocabulary starter derives elevator and stairs controlled voice actions", () => {
+  const starter = applyPhysicalStarter({}).snapshot;
+  const elevatorDefinition = starter.placeTypes.find((definition) => definition.key === "elevator");
+  const stairsDefinition = starter.placeTypes.find((definition) => definition.key === "stairs");
 
-  const elevator = navigationActionDefinition("FIND_ELEVATOR");
-  const stairs = navigationActionDefinition("FIND_STAIRS");
-  assert.equal(elevator.actionId, "navigation.place.find_elevator");
-  assert.equal(elevator.label, "Trova un ascensore");
-  assert.ok(elevator.controlledVoiceAliases.includes("dov'è l'ascensore"));
-  assert.equal(stairs.actionId, "navigation.place.find_stairs");
-  assert.equal(stairs.label, "Trova le scale");
-  assert.ok(stairs.controlledVoiceAliases.includes("dove sono le scale"));
+  const elevator = physicalNavigationActionDefinition(elevatorDefinition);
+  const stairs = physicalNavigationActionDefinition(stairsDefinition);
+  assert.equal(elevator.actionId, `navigation.place.${elevatorDefinition.definitionId}`);
+  assert.equal(elevator.label, "Trova Ascensore");
+  assert.ok(elevator.controlledVoiceAliases.includes("dov'è ascensore"));
+  assert.equal(stairs.actionId, `navigation.place.${stairsDefinition.definitionId}`);
+  assert.equal(stairs.label, "Trova Scale");
+  assert.ok(stairs.controlledVoiceAliases.includes("trova scala"));
 });

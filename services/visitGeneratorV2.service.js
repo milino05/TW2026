@@ -28,6 +28,9 @@ const {
 } = require("./visitGeneratorV2Semantics.service");
 const { optimizeVisitV2, transferKey } = require("./visitGeneratorV2Search.service");
 const { validateGenerationRequestV2 } = require("./validation/generationV2.validation");
+const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const { describePhysicalFeatureRef } = require("./physicalVocabularyResolver.service");
+const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const {
   resolveGenerationSources,
   resolvePrimaryDefaultGenerationSources,
@@ -40,19 +43,8 @@ function resolveMovementSpeed(preference = 0.5) {
   const calm = policy.coldStart.paceFactors.calm, fast = policy.coldStart.paceFactors.fast;
   return Math.max(policy.movement.minSpeedMps, Math.min(policy.movement.maxSpeedMps, policy.coldStart.movementSpeedMps * (calm + (fast - calm) * p)));
 }
-function translateRequirements(layoutRevision, requirements = []) {
-  const attrs = layoutRevision.routingAttributes || [];
-  const byLocal = new Map(attrs.map((entry) => [entry.key, entry]));
-  const byCanonical = new Map(attrs.filter((entry) => entry.canonicalKey).map((entry) => [entry.canonicalKey, entry]));
-  const translated = [], warnings = [], unsupportedRequired = [];
-  for (const requirement of requirements) {
-    const local = byLocal.get(requirement.attributeKey) || byCanonical.get(requirement.attributeKey);
-    if (!local) {
-      if ((requirement.priority || "preferred") === "required") unsupportedRequired.push(requirement.attributeKey);
-      else warnings.push({ code: "PREFERRED_ATTRIBUTE_UNSUPPORTED", attributeKey: requirement.attributeKey });
-    } else translated.push({ ...requirement, attributeKey: local.key });
-  }
-  return { requirements: translated, warnings, unsupportedRequired };
+function translateRequirements(physicalVocabularyRevision, physicalVocabulary, requirements = []) {
+  return translateRoutingRequirements({ requirements, physicalVocabulary, revision: physicalVocabularyRevision });
 }
 
 async function loadPhysicalScope(request) {
@@ -67,12 +59,13 @@ async function loadPhysicalScope(request) {
     if (!release || release.integrity?.status !== "valid") throw new AppError("La VenueRelease pubblicata non e utilizzabile", 409, [{ field: "venueIds", code: "VENUE_RELEASE_INVALID", context: { venueId } }]);
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non trovata", 409, [{ field: "venueIds", code: "LAYOUT_REVISION_MISSING", context: { venueId } }]);
-    const translated = translateRequirements(layout, request.navigationRequirements || []);
+    const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
+    const translated = translateRequirements(physicalVocabularyRevision, physicalVocabulary, request.navigationRequirements || []);
     if (translated.unsupportedRequired.length) {
-      throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, translated.unsupportedRequired.map((attributeKey) => ({ field: "navigationRequirements", code: "REQUIRED_ATTRIBUTE_UNSUPPORTED", message: attributeKey, context: { venueId } })));
+      throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, translated.unsupportedRequired.map((reference) => ({ field: "navigationRequirements", code: "REQUIRED_ATTRIBUTE_UNSUPPORTED", message: describePhysicalFeatureRef(reference), context: { venueId, physicalFeatureRef: reference } })));
     }
     warnings.push(...translated.warnings.map((entry) => ({ ...entry, venueId: venue._id })));
-    bundles.push({ venue, release, layout, requirements: translated.requirements });
+    bundles.push({ venue, release, layout, physicalVocabulary, physicalVocabularyRevision, requirements: translated.requirements });
   }
 
   const activeBindingRows = bundles.flatMap((bundle) => (bundle.release.targetBindings || [])

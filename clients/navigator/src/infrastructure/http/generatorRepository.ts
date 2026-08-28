@@ -35,10 +35,12 @@ export type GenerationSemanticGoal = {
 };
 
 export type GenerationNavigationRequirement = {
-  attributeKey: string;
+  physicalFeatureRef:
+    | { kind: "local"; physicalVocabularyId: string; definitionId: string }
+    | { kind: "semantic"; semanticRefs: Array<{ scheme: string; id: string; matchType: "exact" | "close" | "broader" | "narrower" }> };
   operator: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "in";
   value: boolean | number | string | string[];
-  priority: "required" | "preferred";
+  priority: "required" | "preferred" | "avoid";
   weight?: number;
 };
 
@@ -89,7 +91,10 @@ export interface GenerationOptionsProjection {
         label: string;
         dataType: "boolean" | "number" | string;
         unit: string | null;
+        description: string;
+        options: Array<{ value: string; label: string }>;
         recommendedOperator?: "eq" | "gte" | "lte";
+        physicalFeatureRef: GenerationNavigationRequirement["physicalFeatureRef"];
       }>;
     };
     semantic: { sourceScoped: boolean; message: string };

@@ -10,7 +10,7 @@ const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
 const { assertVenuePermission } = require("./venueAuthorization.service");
-const { GLOBAL_PLACE_INTENTS, GLOBAL_ROUTING_ATTRIBUTE_CATALOG } = require("./routingAttributeCatalog.service");
+const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function operation(code, label, extra = {}) { return { code, label, ...extra }; }
@@ -201,6 +201,7 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
   if (releaseId && !release) throw new AppError("VenueRelease non disponibile", 409);
   const layout = release ? await LayoutRevision.findById(release.layoutRevisionId).lean() : null;
   if (release && !layout) throw new AppError("LayoutRevision non disponibile", 409);
+  const vocabularyBundle = layout ? await loadLayoutPhysicalVocabulary(layout) : null;
   const targets = await VenueTarget.find({ venueId: venue._id, lifecycleStatus: "active" }).sort({ label: 1 }).lean();
   const subjects = targets.length
     ? await Subject.find({ _id: { $in: targets.map((target) => target.subjectId) } }).select("preferredLabel description").lean()
@@ -235,19 +236,26 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
     layout: layout ? {
       id: layout._id,
       version: layout.version,
-      placeTypes: plain(layout).placeTypes || [],
-      routingAttributes: plain(layout).routingAttributes || [],
-      routingPresets: plain(layout).routingPresets || [],
+      authoredAgainstPhysicalVocabularyRevisionId: layout.authoredAgainstPhysicalVocabularyRevisionId,
       floors: plain(layout).floors || [],
       places: plain(layout).places || [],
       venueTargetPlacements: plain(layout).venueTargetPlacements || [],
       connections: plain(layout).connections || [],
     } : null,
+    physicalVocabulary: vocabularyBundle ? {
+      id: vocabularyBundle.physicalVocabulary._id,
+      name: vocabularyBundle.physicalVocabulary.name,
+      revisionId: vocabularyBundle.revision._id,
+      version: vocabularyBundle.revision.version,
+      status: vocabularyBundle.revision.status,
+      definitions: {
+        placeTypes: plain(vocabularyBundle.revision).placeTypes || [],
+        connectionTypes: plain(vocabularyBundle.revision).connectionTypes || [],
+        physicalAttributes: plain(vocabularyBundle.revision).physicalAttributes || [],
+        routingProfiles: plain(vocabularyBundle.revision).routingProfiles || [],
+      },
+    } : null,
     targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), permissions, bindingByTargetId.get(id(target._id)))),
-    catalogs: {
-      placeIntents: [...GLOBAL_PLACE_INTENTS],
-      canonicalRoutingAttributes: GLOBAL_ROUTING_ATTRIBUTE_CATALOG.map((entry) => ({ ...entry })),
-    },
     availableOperations: venueOperations({ release, permissions, hasWorking: Boolean(venue.workingReleaseId) }),
   };
 }
