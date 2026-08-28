@@ -21,7 +21,7 @@
     "seed:demo": "node scripts/seedExamDataset.js && node scripts/enrichExamPresentationMatrix.js",
     "verify:demo": "node scripts/verifyExamDataset.js && node scripts/verifyExamPresentationMatrix.js",
     "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -not -path './clients/*/node_modules/*' -not -path './clients/*/dist/*' -print0 | xargs -0 -n1 node --check",
-    "check:legacy": "node scripts/checkLegacyContracts.js && node scripts/checkSlice6Contracts.js && node scripts/checkSlice7Contracts.js && node scripts/checkSlice8Contracts.js && node scripts/checkSlice9Contracts.js",
+    "check:legacy": "node scripts/checkLegacyContracts.js && node scripts/checkPhysicalDomainContracts.js && node scripts/checkSlice6Contracts.js && node scripts/checkSlice7Contracts.js && node scripts/checkSlice8Contracts.js && node scripts/checkSlice9Contracts.js",
     "check:hygiene": "node scripts/checkRepositoryHygiene.js",
     "check:backend": "npm run check:syntax && npm run check:legacy && npm run check:hygiene",
     "check:navigator": "npm --prefix clients/navigator run check",
