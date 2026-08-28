@@ -180,7 +180,16 @@ function translateRoutingRequirements({
       weight: requirement.weight ?? 1,
     });
   }
-  return { requirements: translated, warnings, blockers };
+  return {
+    requirements: translated,
+    warnings,
+    blockers,
+    // Required requirements are also exposed as refs because generation currently builds
+    // its field-specific AppError context at the orchestration boundary.
+    unsupportedRequired: blockers
+      .filter((issue) => issue.priority === "required")
+      .map((issue) => issue.reference),
+  };
 }
 
 function requireSingleResolution(result, { expectedFamily = null } = {}) {
