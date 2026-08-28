@@ -52,9 +52,6 @@ export const managementRepository = {
   physicalVocabularyWorkflow(physicalVocabularyId, action, payload = {}) {
     return apiClient.request(`/physical-vocabularies/${encoded(physicalVocabularyId)}/working-revision/${action}`, { method: "POST", ...body(payload) });
   },
-  physicalVocabularyLifecycle(physicalVocabularyId, action) {
-    return apiClient.request(`/physical-vocabularies/${encoded(physicalVocabularyId)}/lifecycle/${action}`, { method: "POST", ...body({}) });
-  },
   venuePhysicalOnboarding(venueId) {
     return apiClient.request(`/venues/${encoded(venueId)}/physical-onboarding`);
   },
