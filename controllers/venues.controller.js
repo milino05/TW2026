@@ -3,7 +3,9 @@ const venueTargetService = require("../services/venueTarget.service");
 const venueReleaseService = require("../services/venueRelease.service");
 const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboarding.service");
 const venueLayoutCommandService = require("../services/venueLayoutCommand.service");
+const venueTargetBindingCommandService = require("../services/venueTargetBindingCommand.service");
 const venueFloorPlanUploadService = require("../services/venueFloorPlanUpload.service");
+const venueRecognitionMediaUploadService = require("../services/venueRecognitionMediaUpload.service");
 const AppError = require("../utils/AppError");
 
 async function list(req, res, next) { try { res.status(200).json(await venueService.listVenues({ ownerOrganizationId: req.query?.ownerOrganizationId || null })); } catch (error) { next(error); } }
@@ -26,6 +28,37 @@ async function submitReleaseReview(req, res, next) { try { res.status(200).json(
 async function withdrawReleaseReview(req, res, next) { try { res.status(200).json(await venueReleaseService.withdrawVenueReleaseReview({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function requestReleaseChanges(req, res, next) { try { res.status(200).json(await venueReleaseService.requestVenueReleaseChanges({ venueId: req.params.venueId, actorUserId: req.user._id, message: req.body?.message })); } catch (error) { next(error); } }
 async function publishRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.publishVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+
+async function uploadTargetRecognitionMedia(req, res, next) {
+  let stored = null;
+  try {
+    await venueReleaseService.ensureWorkingVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id });
+    stored = await venueRecognitionMediaUploadService.storeVenueRecognitionMedia({ payload: req.body || {} });
+    const result = await venueTargetBindingCommandService.addRecognitionMedia({
+      venueId: req.params.venueId,
+      venueTargetId: req.params.venueTargetId,
+      actorUserId: req.user._id,
+      payload: stored,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (stored?.url) await venueRecognitionMediaUploadService.removeVenueRecognitionMedia(stored.url).catch(() => {});
+    next(error);
+  }
+}
+async function removeTargetRecognitionMedia(req, res, next) {
+  try {
+    const result = await venueTargetBindingCommandService.removeRecognitionMedia({
+      venueId: req.params.venueId,
+      venueTargetId: req.params.venueTargetId,
+      mediaId: req.params.mediaId,
+      actorUserId: req.user._id,
+    });
+    const removedUrl = result?.result?.url || null;
+    if (removedUrl) await venueRecognitionMediaUploadService.removeVenueRecognitionMedia(removedUrl).catch(() => {});
+    res.status(200).json(result);
+  } catch (error) { next(error); }
+}
 
 async function addLayoutFloor(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.addFloor({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function updateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
@@ -73,6 +106,7 @@ module.exports = {
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, updateWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
+  uploadTargetRecognitionMedia, removeTargetRecognitionMedia,
   addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
   createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
   createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
