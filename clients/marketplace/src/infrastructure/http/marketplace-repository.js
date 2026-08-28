@@ -62,6 +62,12 @@ export const marketplaceRepository = {
     params.set("ownership", ownership);
     return apiClient.request(`/v2/marketplace/workspace/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}?${params.toString()}`);
   },
+  removeWorkspaceResource(principal = {}, { resourceType, resourceId } = {}) {
+    return apiClient.request(`/v2/marketplace/workspace/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/remove`, {
+      method: "POST",
+      body: JSON.stringify({ principalType: principal.principalType, principalId: principal.principalId }),
+    });
+  },
   authoringPreflight(principal = {}) {
     return apiClient.request(`/v2/marketplace/authoring/preflight?${principalParams(principal).toString()}`);
   },
