@@ -2,19 +2,30 @@ const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+const ContentSpace = require("../models/contentSpace.model");
+const EditorialContext = require("../models/editorialContext.model");
+const EditorialRelease = require("../models/editorialRelease.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+const VisitV2 = require("../models/visitV2.model");
+const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
 const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForPrincipal } = require("./principalResolution.service");
 
-const REMOVABLE_RESOURCE_TYPES = Object.freeze(["item_edition", "namespace"]);
+const REMOVABLE_RESOURCE_TYPES = Object.freeze(["item_edition", "editorial_context", "namespace", "visit"]);
 
 function id(value) { return String(value?._id || value || ""); }
 function sameId(a, b) { return id(a) === id(b); }
 function lifecyclePermission(resourceType) {
-  return resourceType === "item_edition" ? "item.lifecycle.manage" : "namespace.lifecycle.manage";
+  return {
+    item_edition: "item.lifecycle.manage",
+    editorial_context: "editorial_context.lifecycle.manage",
+    namespace: "namespace.lifecycle.manage",
+    visit: "visit.lifecycle.manage",
+  }[resourceType];
 }
 function reference(resourceType, resourceIds) {
   const ids = (resourceIds || []).filter(Boolean);
@@ -73,6 +84,77 @@ async function namespaceRemovalTarget({ resourceId, principal, actorUserId, now,
   };
 }
 
+async function currentContextGraphRevisionId(context, session = null) {
+  if (context?.workingGraphRevisionId) return context.workingGraphRevisionId;
+  if (!context?.publishedReleaseId) return null;
+  const query = EditorialRelease.findOne({
+    _id: context.publishedReleaseId,
+    editorialContextId: context._id,
+  }).select("graphRevisionId").lean();
+  if (session) query.session(session);
+  return (await query)?.graphRevisionId || null;
+}
+
+async function countActiveContextConnections(context, session = null) {
+  const graphRevisionId = await currentContextGraphRevisionId(context, session);
+  if (!graphRevisionId) return 0;
+  const query = SemanticEdgeV2.countDocuments({ graphRevisionId });
+  if (session) query.session(session);
+  return query;
+}
+
+async function editorialContextRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
+  const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session);
+  if (!context) throw new AppError("Raccolta editoriale non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
+  const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).session(session).lean();
+  if (!contentSpace) throw new AppError("Spazio editoriale della raccolta non disponibile", 409, [{ code: "CONTENT_SPACE_NOT_FOUND" }]);
+  assertOwnership(contentSpace, principal);
+  const [releaseIds, affectedConnectionCount] = await Promise.all([
+    EditorialRelease.find({ editorialContextId: context._id }).distinct("_id").session(session),
+    countActiveContextConnections(context, session),
+  ]);
+  context.lifecycleStatus = "trashed";
+  context.trashedAt = now;
+  context.trashedBy = actorUserId;
+  await context.save({ session });
+  return {
+    aggregateType: "editorial_context",
+    aggregateId: context._id,
+    affectedConnectionCount,
+    references: [reference("editorial_context", [context._id]), reference("editorial_release", releaseIds)].filter(Boolean),
+  };
+}
+
+async function visitRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
+  const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session);
+  if (!visit) throw new AppError("Visita non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
+  assertOwnership(visit, principal);
+  const revisionIds = await VisitRevisionV2.find({ visitId: visit._id }).distinct("_id").session(session);
+  visit.lifecycleStatus = "trashed";
+  visit.trashedAt = now;
+  visit.trashedBy = actorUserId;
+  await visit.save({ session });
+  return {
+    aggregateType: "visit",
+    aggregateId: visit._id,
+    references: [reference("visit", [visit._id]), reference("visit_revision", revisionIds)].filter(Boolean),
+  };
+}
+
+async function getOwnedWorkspaceRemovalImpact({ resourceType, resourceId }) {
+  if (resourceType !== "editorial_context") return { affectedConnectionCount: 0 };
+  const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+  if (!context) return { affectedConnectionCount: 0 };
+  return { affectedConnectionCount: await countActiveContextConnections(context) };
+}
+
+async function removalTarget(args) {
+  if (args.resourceType === "item_edition") return itemRemovalTarget(args);
+  if (args.resourceType === "editorial_context") return editorialContextRemovalTarget(args);
+  if (args.resourceType === "namespace") return namespaceRemovalTarget(args);
+  return visitRemovalTarget(args);
+}
+
 async function removeOwnedWorkspaceResource({
   actorUserId,
   principalType = "user",
@@ -81,7 +163,7 @@ async function removeOwnedWorkspaceResource({
   resourceId,
 }) {
   if (!REMOVABLE_RESOURCE_TYPES.includes(resourceType)) {
-    throw new AppError("Puoi rimuovere soltanto contenuti o regole editoriali", 400, [{
+    throw new AppError("Questo tipo di risorsa non può essere eliminato dall’account", 400, [{
       field: "resourceType",
       code: "INVALID_ENUM",
       allowedValues: REMOVABLE_RESOURCE_TYPES,
@@ -99,9 +181,7 @@ async function removeOwnedWorkspaceResource({
   try {
     await session.withTransaction(async () => {
       const now = new Date();
-      const target = resourceType === "item_edition"
-        ? await itemRemovalTarget({ resourceId, principal, actorUserId, now, session })
-        : await namespaceRemovalTarget({ resourceId, principal, actorUserId, now, session });
+      const target = await removalTarget({ resourceType, resourceId, principal, actorUserId, now, session });
 
       const directListings = await MarketplaceListing.find({
         $or: listingReferenceFilter(target.references),
@@ -136,6 +216,7 @@ async function removeOwnedWorkspaceResource({
         aggregateType: target.aggregateType,
         aggregateId: target.aggregateId,
         lifecycleStatus: "trashed",
+        affectedConnectionCount: Number(target.affectedConnectionCount || 0),
         withdrawnListingCount: Number(listingResult.modifiedCount || 0),
         inactiveOfferCount: Number(offerResult.modifiedCount || 0),
         removedAt: now,
@@ -147,4 +228,8 @@ async function removeOwnedWorkspaceResource({
   }
 }
 
-module.exports = { REMOVABLE_RESOURCE_TYPES, removeOwnedWorkspaceResource };
+module.exports = {
+  REMOVABLE_RESOURCE_TYPES,
+  getOwnedWorkspaceRemovalImpact,
+  removeOwnedWorkspaceResource,
+};

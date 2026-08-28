@@ -14,7 +14,7 @@ function authoringHref(ref) { const resourceType = refType(ref); const resourceI
 
 export class ArtAroundWorkspaceView extends HTMLElement {
   context = readOperatingContext();
-  detail = null; busy = false; error = null; message = null; pendingOperation = null; pendingRemoval = false; state = initialState();
+  detail = null; busy = false; error = null; message = null; pendingOperation = null; pendingRemoval = false; removalAcknowledged = false; state = initialState();
   connectedCallback() { this.addEventListener("click", this.onClick); this.load(); }
   disconnectedCallback() { this.removeEventListener("click", this.onClick); }
   principal() { return operatingPrincipal(this.context); }
@@ -38,8 +38,9 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("button[data-workspace-back]")) { this.backToWorkspace(); return; }
-    if (target?.closest("button[data-cancel-removal]")) { this.pendingRemoval = false; this.error = null; this.render(); return; }
-    if (target?.closest("button[data-request-removal]")) { this.pendingRemoval = true; this.pendingOperation = null; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector("button[data-confirm-removal]")?.focus()); return; }
+    if (target?.closest("button[data-cancel-removal]")) { this.pendingRemoval = false; this.removalAcknowledged = false; this.error = null; this.render(); return; }
+    if (target?.matches("input[data-removal-ack]")) { this.removalAcknowledged = target.checked; this.render(); requestAnimationFrame(() => this.querySelector("input[data-removal-ack]")?.focus()); return; }
+    if (target?.closest("button[data-request-removal]")) { this.pendingRemoval = true; this.removalAcknowledged = false; this.pendingOperation = null; this.error = null; this.render(); requestAnimationFrame(() => (this.querySelector("input[data-removal-ack]") || this.querySelector("button[data-confirm-removal]"))?.focus()); return; }
     if (target?.closest("button[data-confirm-removal]")) {
       const principal = this.principal();
       const asset = this.detail?.asset;
@@ -47,7 +48,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
       this.busy = true; this.error = null; this.message = null; this.render();
       try {
         await marketplaceRepository.removeWorkspaceResource(principal, { resourceType: asset.resourceType, resourceId: asset.resourceId });
-        const removed = asset.resourceType === "namespace" ? "namespace" : "content";
+        const removed = { item_edition: "content", editorial_context: "collection", namespace: "namespace", visit: "visit" }[asset.resourceType] || "resource";
         navigate(`/workspace?removed=${removed}`);
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la risorsa";
@@ -104,12 +105,21 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   renderRemoval(asset) {
     const allowed = asset.ownership === "owned" && (asset.availableOperations || []).some((operation) => operation.code === "remove_resource");
     if (!allowed) return "";
-    const content = asset.resourceType === "item_edition";
-    const subject = content ? "contenuto" : "regole editoriali";
-    const consequence = content
-      ? "Il contenuto e tutte le sue versioni editoriali non compariranno più nella tua Libreria."
-      : "Le regole editoriali non compariranno più nella tua Libreria e non saranno disponibili per nuovi contenuti.";
-    const confirmation = this.pendingRemoval ? `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><span class="eyebrow">Conferma richiesta</span><strong>Eliminare ${subject} “${escapeHtml(asset.title)}”?</strong><p>${consequence} Le pubblicazioni verranno ritirate e le offerte rese inattive. Acquisizioni, diritti già concessi e adozioni resteranno validi.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-removal ${this.busy ? "disabled" : ""}>Elimina ${subject}</button><button class="button-secondary" type="button" data-cancel-removal ${this.busy ? "disabled" : ""}>Annulla</button></div></section>` : "";
+    const copy = {
+      item_edition: { subject: "contenuto", consequence: "Il contenuto e tutte le sue versioni editoriali non compariranno più nella tua Libreria." },
+      editorial_context: { subject: "raccolta editoriale", consequence: "La raccolta non comparirà più nella tua Libreria e non potrà essere usata per nuove visite o nuove pubblicazioni." },
+      namespace: { subject: "regole editoriali", consequence: "Le regole editoriali non compariranno più nella tua Libreria e non saranno disponibili per nuovi contenuti." },
+      visit: { subject: "visita", consequence: "La visita e tutte le sue versioni non compariranno più nella tua Libreria e non potranno essere pubblicate nuovamente." },
+    }[asset.resourceType];
+    if (!copy) return "";
+    const { subject, consequence } = copy;
+    const collection = asset.resourceType === "editorial_context";
+    const connectionCount = Number(asset.removalImpact?.affectedConnectionCount || 0);
+    const connectionWarning = connectionCount > 0
+      ? `Questa raccolta contiene <strong>${connectionCount} ${connectionCount === 1 ? "collegamento attivo" : "collegamenti attivi"}</strong> tra contenuti. Non saranno più disponibili e, se serviranno ancora, dovranno essere ricreati manualmente.`
+      : "Gli eventuali collegamenti del grafo della raccolta non saranno più disponibili e, se serviranno ancora, dovranno essere ricreati manualmente.";
+    const criticalWarning = collection ? `<div class="resource-removal-critical"><span>${icon("warning", { size: 24 })}</span><div><strong>Attenzione: puoi perdere molti collegamenti</strong><p>${connectionWarning}</p><p>I contenuti collegati non verranno eliminati, ma il loro collegamento editoriale sì.</p></div></div><label class="resource-removal-ack"><input type="checkbox" data-removal-ack ${this.removalAcknowledged ? "checked" : ""}><span>Ho capito che i collegamenti dovranno essere ricreati manualmente.</span></label>` : "";
+    const confirmation = this.pendingRemoval ? `<section class="confirmation-panel resource-removal-confirmation ${collection ? "resource-removal-confirmation--critical" : ""}" role="alert"><div><span class="eyebrow">${collection ? "Operazione ad alto impatto" : "Conferma richiesta"}</span><strong>Eliminare ${subject} “${escapeHtml(asset.title)}”?</strong><p>${consequence} Le pubblicazioni verranno ritirate e le offerte rese inattive. Acquisizioni, diritti già concessi e adozioni resteranno validi.</p>${criticalWarning}</div><div class="button-row"><button class="danger" type="button" data-confirm-removal ${this.busy || (collection && !this.removalAcknowledged) ? "disabled" : ""}>Elimina ${subject}</button><button class="button-secondary" type="button" data-cancel-removal ${this.busy ? "disabled" : ""}>Annulla</button></div></section>` : "";
     return `<section class="panel resource-danger-zone"><span class="eyebrow">Operazione sensibile</span><h2>Elimina dall’account</h2><p>${consequence}</p><p class="note">Chi ha già acquisito la risorsa continuerà a usare la snapshot autorizzata. Lo storico commerciale non verrà cancellato.</p>${confirmation || `<button class="danger" type="button" data-request-removal>${icon("trash", { size: 15 })} Elimina ${subject}</button>`}</section>`;
   }
 

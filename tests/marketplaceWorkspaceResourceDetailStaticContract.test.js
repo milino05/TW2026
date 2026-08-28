@@ -39,6 +39,11 @@ test("dettagli e azioni espone una rimozione confermata che preserva lo storico"
   assert.match(view, /data-request-removal/);
   assert.match(view, /data-confirm-removal/);
   assert.match(view, /Acquisizioni, diritti già concessi e adozioni resteranno validi/);
+  assert.match(removal, /"editorial_context"/);
+  assert.match(removal, /"visit"/);
+  assert.match(view, /puoi perdere molti collegamenti/);
+  assert.match(view, /dovranno essere ricreati manualmente/);
+  assert.match(view, /data-removal-ack/);
 });
 
 test("un contenuto controllato resta privato finché listing e offerta non sono pubblici", () => {

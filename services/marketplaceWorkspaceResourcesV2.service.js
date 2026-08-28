@@ -13,6 +13,7 @@ const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model")
 const MarketplaceListing = require("../models/marketplaceListing.model");
 const AppError = require("../utils/AppError");
 const { resolveSelectedPrincipal } = require("./marketplaceWorkspaceV2.service");
+const { getOwnedWorkspaceRemovalImpact } = require("./marketplaceResourceRemovalV2.service");
 const {
   listingMapForCandidates,
   projectOwnedCandidate,
@@ -245,6 +246,9 @@ async function getCreatorWorkspaceResourceDetail({
       const canViewDistribution = selected.type === "user" || selected.effectivePermissions.includes("marketplace.distribution.view");
       const listings = canViewDistribution ? await listingMapForCandidates(selected, [candidate]) : new Map();
       asset = projectOwnedCandidate(candidate, { principal: selected, listings });
+      if ((asset.availableOperations || []).some((operation) => operation.code === "remove_resource")) {
+        asset.removalImpact = await getOwnedWorkspaceRemovalImpact({ resourceType, resourceId });
+      }
     }
   } else {
     const entitlements = await Entitlement.find({

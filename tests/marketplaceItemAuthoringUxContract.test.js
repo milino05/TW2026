@@ -17,8 +17,8 @@ test("item authoring e picker semantico passano il syntax gate", () => {
   }
 });
 
-test("item authoring espone quattro passaggi separando informazioni generali da regole e testi", () => {
-  for (const label of ["Di cosa parla", "Informazioni generali", "Regole e testi", "Controllo finale"]) {
+test("item authoring espone cinque passaggi includendo i collegamenti facoltativi", () => {
+  for (const label of ["Di cosa parla", "Informazioni generali", "Regole e testi", "Collegamenti", "Controllo finale"]) {
     assert.match(source, new RegExp(label));
   }
   assert.doesNotMatch(source, /<span class="eyebrow">Personalizzazione<\/span>/);
@@ -32,7 +32,7 @@ test("lo stepper mobile resta compatto e non richiede scorrimento orizzontale", 
   assert.match(source, /authoring-progress__summary/);
   assert.match(source, /Passaggio \$\{this\.activeStep\} di \$\{stages\.length\}/);
   assert.match(source, /aria-label="Passaggio \$\{step\}: \$\{escapeHtml\(label\)\}"/);
-  assert.match(source, /authoring-progress ol\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);min-width:0\}/);
+  assert.match(source, /authoring-progress ol\{grid-template-columns:repeat\(5,minmax\(0,1fr\)\);min-width:0\}/);
   assert.match(source, /authoring-progress button strong\{display:none\}/);
   assert.doesNotMatch(source, /authoring-progress\{overflow:auto/);
 });
@@ -45,6 +45,7 @@ test("la bozza richiede i dati essenziali ma può essere salvata senza testi", (
   assert.match(source, /const textsReady = this\.draft\.representations\.every/);
   assert.doesNotMatch(source, /const textsReady = this\.draft\.representations\.length > 0/);
   assert.match(source, /if \(step === 4\) return Boolean\(this\.selectedRevision\(\) && !this\.newEditionMode\)/);
+  assert.match(source, /if \(step === 5\) return Boolean\(this\.selectedRevision\(\) && !this\.newEditionMode\)/);
 });
 
 test("titolo, licenza e immagine precedono regole editoriali e testi", () => {
@@ -68,6 +69,21 @@ test("la nuova versione editoriale viene materializzata salvando testi e imposta
   assert.match(source, /this\.activeStep = 4/);
   assert.match(source, /if \(this\.newEditionMode\) await this\.createEditionFromDraft\(\)/);
   assert.match(source, /authoringRepository\.createEdition\(this\.itemId/);
+});
+
+test("lo step collegamenti parte vuoto, ricerca il target e usa le relazioni delle regole", () => {
+  assert.match(source, /<span class="step-number">4<\/span>/);
+  assert.match(source, /Non hai ancora aggiunto nessun collegamento/);
+  assert.match(source, /data-add-connection/);
+  assert.match(source, /data-connection-search/);
+  assert.match(source, /data-connection-target-id/);
+  assert.match(source, /name="relationTypeDefinitionId" data-connection-relation/);
+  assert.match(source, /name="weight" type="number" min="0" max="10"/);
+  assert.match(source, /name="provenanceOrigin"/);
+  assert.match(source, /name="note"/);
+  assert.match(source, /authoringRepository\.createItemConnection/);
+  assert.match(source, /authoringRepository\.removeItemConnection/);
+  assert.match(source, /I collegamenti sono facoltativi/);
 });
 
 test("il controllo finale resta backend-authoritative ed è l'unica azione editoriale", () => {
@@ -138,7 +154,7 @@ test("il refresh ripristina informazioni, regole editoriali e bozza degli step d
   assert.match(source, /window\.sessionStorage\.getItem/);
   assert.match(source, /async restoreWorkingDraft\(\)/);
   assert.match(source, /const restored = await this\.restoreWorkingDraft\(\)/);
-  assert.match(source, /if \(this\.selectedRevision\(\)\) this\.activeStep = 4;\s*else await this\.prepareNewEdition\(\)/);
+  assert.match(source, /if \(this\.selectedRevision\(\)\) this\.activeStep = 5;\s*else await this\.prepareNewEdition\(\)/);
   assert.match(source, /!\[2, 3\]\.includes\(this\.activeStep\)/);
   assert.match(source, /activeStep: this\.activeStep/);
   assert.match(source, /Number\(stored\.activeStep\) === 3 && this\.generalDetailsReady\(\) \? 3 : 2/);

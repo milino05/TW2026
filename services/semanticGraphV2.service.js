@@ -96,7 +96,12 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId);
   const { namespace, namespaceRevision } = await resolveNamespaceRevision(context, normalized.authoredAgainstNamespaceRevisionId);
-  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
 
   if (normalized.basedOnRevisionId) {
     const base = await SemanticGraphRevision.findOne({ _id: normalized.basedOnRevisionId, editorialContextId: context._id });

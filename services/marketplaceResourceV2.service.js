@@ -39,17 +39,17 @@ async function loadItemRevisionAuthority(resourceId, { includeTrashed = false } 
   return item ? { ...owner(item.ownerType, item.ownerId), resource: revision, aggregate: item, edition } : null;
 }
 
-async function loadContextAuthority(resourceId) {
-  const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+async function loadContextAuthority(resourceId, { includeTrashed = false } = {}) {
+  const context = await EditorialContext.findOne(lifecycleQuery(resourceId, includeTrashed)).lean();
   if (!context) return null;
   const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).lean();
   return contentSpace ? { ...owner(contentSpace.ownerType, contentSpace.ownerId), resource: context, aggregate: contentSpace } : null;
 }
 
-async function loadReleaseAuthority(resourceId) {
+async function loadReleaseAuthority(resourceId, { includeTrashed = false } = {}) {
   const release = await EditorialRelease.findById(resourceId).lean();
   if (!release) return null;
-  const context = await EditorialContext.findOne({ _id: release.editorialContextId, lifecycleStatus: "active" }).lean();
+  const context = await EditorialContext.findOne(lifecycleQuery(release.editorialContextId, includeTrashed)).lean();
   if (!context) return null;
   const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).lean();
   return contentSpace ? { ...owner(contentSpace.ownerType, contentSpace.ownerId), resource: release, context, aggregate: contentSpace } : null;
@@ -67,15 +67,15 @@ async function loadNamespaceRevisionAuthority(resourceId, { includeTrashed = fal
   return namespace ? { ...owner(namespace.ownerType, namespace.ownerId), resource: revision, aggregate: namespace } : null;
 }
 
-async function loadVisitAuthority(resourceId) {
-  const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
+async function loadVisitAuthority(resourceId, { includeTrashed = false } = {}) {
+  const visit = await VisitV2.findOne(lifecycleQuery(resourceId, includeTrashed)).lean();
   return visit ? { ...owner(visit.ownerType, visit.ownerId), resource: visit } : null;
 }
 
-async function loadVisitRevisionAuthority(resourceId) {
+async function loadVisitRevisionAuthority(resourceId, { includeTrashed = false } = {}) {
   const revision = await VisitRevisionV2.findById(resourceId).lean();
   if (!revision) return null;
-  const visit = await VisitV2.findOne({ _id: revision.visitId, lifecycleStatus: "active" }).lean();
+  const visit = await VisitV2.findOne(lifecycleQuery(revision.visitId, includeTrashed)).lean();
   return visit ? { ...owner(visit.ownerType, visit.ownerId), resource: revision, aggregate: visit } : null;
 }
 
@@ -83,12 +83,12 @@ async function resolveResourceAuthority(resourceType, resourceId, options = {}) 
   switch (resourceType) {
     case "item_edition": return loadItemEditionAuthority(resourceId, options);
     case "item_revision": return loadItemRevisionAuthority(resourceId, options);
-    case "editorial_context": return loadContextAuthority(resourceId);
-    case "editorial_release": return loadReleaseAuthority(resourceId);
+    case "editorial_context": return loadContextAuthority(resourceId, options);
+    case "editorial_release": return loadReleaseAuthority(resourceId, options);
     case "namespace": return loadNamespaceAuthority(resourceId, options);
     case "namespace_revision": return loadNamespaceRevisionAuthority(resourceId, options);
-    case "visit": return loadVisitAuthority(resourceId);
-    case "visit_revision": return loadVisitRevisionAuthority(resourceId);
+    case "visit": return loadVisitAuthority(resourceId, options);
+    case "visit_revision": return loadVisitRevisionAuthority(resourceId, options);
     default: return null;
   }
 }

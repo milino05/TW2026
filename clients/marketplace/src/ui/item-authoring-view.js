@@ -109,6 +109,15 @@ function projectedRevisionToWrite(revision) {
 function workflowLabel(operation) {
   return operation?.code === "workflow.check" ? "Controlla se è tutto pronto" : operation?.label || "Continua";
 }
+function connectionOriginLabel(origin) {
+  return {
+    human: "Inserito manualmente",
+    ai_assisted: "Suggerito con assistenza automatica",
+    ai_generated: "Generato automaticamente",
+    imported: "Importato",
+    forked: "Ereditato da una copia",
+  }[origin] || "Inserito manualmente";
+}
 function newRepresentation(overrides = {}) {
   return {
     id: id(overrides.id || overrides._id),
@@ -156,6 +165,13 @@ export class ItemAuthoringView extends HTMLElement {
   venueTargetContext = null;
   projection = null;
   namespaceControls = null;
+  connectionsProjection = null;
+  connectionEditorOpen = false;
+  connectionScopeKey = "";
+  connectionRelationTypeId = "";
+  connectionTargetQuery = "";
+  connectionTargets = [];
+  selectedConnectionTarget = null;
   activeStep = 1;
   activeRepresentationIndex = null;
   mediaEditorOpen = false;
@@ -199,6 +215,9 @@ export class ItemAuthoringView extends HTMLElement {
   firstRepresentation() { return this.firstVariant()?.representations?.[0] || null; }
   defaultAuthor() { return String(this.workspace?.principal?.name || this.context?.name || "").trim(); }
   currentMedia() { return this.draft.illustrativeMedia?.[0] || null; }
+  selectedConnectionRelation() {
+    return (this.connectionsProjection?.relationTypes || []).find((entry) => entry.definitionId === this.connectionRelationTypeId) || null;
+  }
   workingDraftStorageKey() {
     const principalType = String(this.principal?.type || "");
     const principalId = id(this.principal?.id);
@@ -343,7 +362,7 @@ export class ItemAuthoringView extends HTMLElement {
         await this.loadSuggestedMedia();
         const restored = await this.restoreWorkingDraft();
         if (!restored) {
-          if (this.selectedRevision()) this.activeStep = 4;
+          if (this.selectedRevision()) this.activeStep = 5;
           else await this.prepareNewEdition();
         }
       }
@@ -394,6 +413,18 @@ export class ItemAuthoringView extends HTMLElement {
       throw new Error("Questo contenuto appartiene a un'altra area di lavoro. Cambia area prima di modificarlo.");
     }
     this.hydrateDraftFromProjection();
+    if (this.selectedEdition()?.id && this.selectedRevision()) await this.reloadConnections();
+    else this.connectionsProjection = null;
+  }
+
+  async reloadConnections() {
+    const editionId = id(this.selectedEdition()?.id);
+    if (!this.itemId || !editionId) { this.connectionsProjection = null; return; }
+    this.connectionsProjection = await authoringRepository.itemConnections(this.itemId, editionId);
+    const scopes = this.connectionsProjection?.scopes || [];
+    if (!scopes.some((entry) => entry.key === this.connectionScopeKey)) {
+      this.connectionScopeKey = this.connectionsProjection?.defaultScopeKey || "";
+    }
   }
 
   usableNamespaceChoices({ excludeUsed = false } = {}) {
@@ -404,7 +435,7 @@ export class ItemAuthoringView extends HTMLElement {
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
     const illustrativeMedia = this.draft.illustrativeMedia || [];
-    this.newEditionMode = true; this.namespaceControls = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null; this.activeStep = 2;
+    this.newEditionMode = true; this.namespaceControls = null; this.connectionsProjection = null; this.draft = newDraft(this.defaultAuthor(), illustrativeMedia); this.activeRepresentationIndex = null; this.activeStep = 2;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (choices.length === 1) await this.selectNamespace(choices[0].id);
     this.persistWorkingDraft();
@@ -484,6 +515,20 @@ export class ItemAuthoringView extends HTMLElement {
       finally { this.busy = false; this.render(); }
       return;
     }
+    const connectionScope = target.closest("select[data-connection-scope]");
+    if (connectionScope) {
+      this.connectionScopeKey = connectionScope.value;
+      this.error = null;
+      this.render();
+      return;
+    }
+    const connectionRelation = target.closest("select[data-connection-relation]");
+    if (connectionRelation) {
+      this.connectionRelationTypeId = connectionRelation.value;
+      this.error = null;
+      this.render();
+      return;
+    }
     const membership = target.closest("input[data-content-space-id]");
     if (!membership) return;
     membership.disabled = true; this.error = null;
@@ -501,7 +546,38 @@ export class ItemAuthoringView extends HTMLElement {
     event.preventDefault(); const data = new FormData(form);
     this.busy = true; this.error = null; this.notice = null; this.render();
     try {
-      if (form.matches("[data-create-item]")) {
+      if (form.matches("[data-connection-search]")) {
+        const query = String(data.get("connectionTargetQuery") || "").trim();
+        this.connectionTargetQuery = query;
+        const result = await authoringRepository.searchItemConnectionTargets(this.itemId, {
+          editionId: id(this.selectedEdition()?.id),
+          q: query,
+          limit: 20,
+        });
+        this.connectionTargets = result.results || [];
+        if (!this.connectionTargets.some((entry) => id(entry.id) === id(this.selectedConnectionTarget?.id))) this.selectedConnectionTarget = null;
+      } else if (form.matches("[data-connection-form]")) {
+        if (!this.selectedConnectionTarget) throw new Error("Cerca e seleziona il contenuto da collegare.");
+        this.connectionsProjection = await authoringRepository.createItemConnection(this.itemId, {
+          editionId: id(this.selectedEdition()?.id),
+          scopeKey: String(data.get("scopeKey") || ""),
+          relationTypeDefinitionId: String(data.get("relationTypeDefinitionId") || ""),
+          targetItemId: id(this.selectedConnectionTarget.id),
+          sourceSubjectClassDefinitionId: String(data.get("sourceSubjectClassDefinitionId") || "") || null,
+          targetSubjectClassDefinitionId: String(data.get("targetSubjectClassDefinitionId") || "") || null,
+          weight: Number(data.get("weight") || 5),
+          provenanceOrigin: String(data.get("provenanceOrigin") || "human"),
+          note: String(data.get("note") || "").trim(),
+        });
+        this.connectionScopeKey = this.connectionsProjection?.defaultScopeKey || "";
+        this.connectionEditorOpen = false;
+        this.connectionRelationTypeId = "";
+        this.connectionTargetQuery = "";
+        this.connectionTargets = [];
+        this.selectedConnectionTarget = null;
+        this.notice = "Collegamento aggiunto.";
+        this.activeStep = 4;
+      } else if (form.matches("[data-create-item]")) {
         for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
         if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
         if (!this.selectedSubject) throw new Error("Scegli prima di cosa deve parlare il contenuto");
@@ -561,7 +637,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (variant?._id && representation?._id) await authoringRepository.updateEdition(created.edition._id, { defaultPresentation: { variantId: variant._id, representationId: representation._id } });
     this.clearWorkingDraft();
     this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(created.edition._id); await this.reloadAuthoringContext(); this.activeStep = 4;
-    this.notice = "Bozza salvata. Controlla il riepilogo quando è tutto pronto.";
+    this.notice = "Bozza salvata. Ora puoi aggiungere collegamenti facoltativi.";
   }
 
   async updateEditionFromDraft() {
@@ -583,7 +659,7 @@ export class ItemAuthoringView extends HTMLElement {
     await this.ensureDefaultRepresentation(editionId, result.revision);
     this.clearWorkingDraft();
     await this.reloadProjection(editionId); this.activeStep = 4;
-    this.notice = "Modifiche salvate. Esegui di nuovo il controllo quando il contenuto è pronto.";
+    this.notice = "Modifiche salvate. Ora puoi controllare i collegamenti.";
   }
 
   async ensureDefaultRepresentation(editionId, revision) {
@@ -604,7 +680,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (operationCode !== "workflow.check") throw new Error("In questa schermata è disponibile soltanto il controllo finale");
     const editionId = id(this.selectedEdition()?.id); if (!editionId) throw new Error("Versione editoriale non disponibile");
     const result = await marketplaceRepository.executeWorkspaceOperation({ operationCode, sourceRef: { resourceType: "item_edition", resourceId: editionId }, targetPrincipal: { type: this.principal.type, id: this.principal.id }, payload: message ? { message } : {} });
-    await this.reloadProjection(editionId); this.activeStep = 4;
+    await this.reloadProjection(editionId); this.activeStep = 5;
     const issues = result?.result?.issues || [];
     this.privateSuccessOpen = Boolean(result?.result?.finalized && !issues.length);
     this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : null;
@@ -620,6 +696,48 @@ export class ItemAuthoringView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    const addConnection = target.closest("button[data-add-connection]");
+    if (addConnection) {
+      this.connectionEditorOpen = true;
+      this.connectionScopeKey ||= this.connectionsProjection?.defaultScopeKey || "";
+      this.error = null;
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-connection-relation]")?.focus({ preventScroll: true }));
+      return;
+    }
+    const cancelConnection = target.closest("button[data-cancel-connection]");
+    if (cancelConnection) {
+      this.connectionEditorOpen = false;
+      this.connectionRelationTypeId = "";
+      this.connectionTargetQuery = "";
+      this.connectionTargets = [];
+      this.selectedConnectionTarget = null;
+      this.error = null;
+      this.render();
+      return;
+    }
+    const selectConnectionTarget = target.closest("button[data-connection-target-id]");
+    if (selectConnectionTarget) {
+      this.selectedConnectionTarget = this.connectionTargets.find((entry) => id(entry.id) === selectConnectionTarget.dataset.connectionTargetId) || null;
+      this.error = null;
+      this.render();
+      return;
+    }
+    const removeConnection = target.closest("button[data-remove-connection]");
+    if (removeConnection) {
+      this.busy = true; this.error = null; this.notice = null; this.render();
+      try {
+        this.connectionsProjection = await authoringRepository.removeItemConnection(this.itemId, {
+          editionId: id(this.selectedEdition()?.id),
+          connectionId: removeConnection.dataset.removeConnection,
+          contextId: removeConnection.dataset.contextId,
+        });
+        this.connectionScopeKey = this.connectionsProjection?.defaultScopeKey || "";
+        this.notice = "Collegamento rimosso.";
+      } catch (error) { this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere il collegamento"; }
+      finally { this.busy = false; this.render(); }
+      return;
+    }
     const representationChoice = target.closest("button[data-representation-choice]");
     if (representationChoice) {
       const index = Number(representationChoice.dataset.representationIndex);
@@ -669,7 +787,7 @@ export class ItemAuthoringView extends HTMLElement {
     if (newEditionButton) { this.busy = true; this.error = null; this.render(); try { await this.prepareNewEdition(); } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aggiungere una nuova versione editoriale"; } finally { this.busy = false; this.render(); } return; }
     const editButton = target.closest("button[data-edit-content]"); if (editButton) { this.newEditionMode = false; this.hydrateDraftFromProjection(); this.activeRepresentationIndex = null; this.activeStep = 2; this.persistWorkingDraft(); this.render(); return; }
     const editionButton = target.closest("button[data-edition-id]");
-    if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 4; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
+    if (editionButton) { this.busy = true; this.error = null; this.render(); try { this.newEditionMode = false; this.namespaceControls = null; await this.reloadProjection(editionButton.dataset.editionId); this.activeStep = 5; } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile aprire la versione editoriale"; } finally { this.busy = false; this.render(); } }
   };
 
   remediationHref() {
@@ -711,13 +829,14 @@ export class ItemAuthoringView extends HTMLElement {
     if (step === 2) return Boolean(this.itemId);
     if (step === 3) return Boolean(this.itemId && this.generalDetailsReady());
     if (step === 4) return Boolean(this.selectedRevision() && !this.newEditionMode);
+    if (step === 5) return Boolean(this.selectedRevision() && !this.newEditionMode);
     return false;
   }
 
   renderProgress() {
-    const stages = [[1, "Di cosa parla"], [2, "Informazioni generali"], [3, "Regole e testi"], [4, "Controllo finale"]];
+    const stages = [[1, "Di cosa parla"], [2, "Informazioni generali"], [3, "Regole e testi"], [4, "Collegamenti"], [5, "Controllo finale"]];
     const currentLabel = stages.find(([step]) => step === this.activeStep)?.[1] || stages[0][1];
-    return `<nav class="authoring-progress" aria-label="Passaggi di creazione"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => { const enabled = this.canOpenStep(step); const current = this.activeStep === step; const complete = step === 1 ? Boolean(this.itemId) : step === 2 ? this.generalDetailsReady() : step === 3 ? Boolean(this.selectedRevision() && !this.newEditionMode) : this.selectedRevision()?.status === "published"; return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`; }).join("")}</ol></nav>`;
+    return `<nav class="authoring-progress" aria-label="Passaggi di creazione"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => { const enabled = this.canOpenStep(step); const current = this.activeStep === step; const complete = step === 1 ? Boolean(this.itemId) : step === 2 ? this.generalDetailsReady() : [3, 4].includes(step) ? Boolean(this.selectedRevision() && !this.newEditionMode) : this.selectedRevision()?.status === "published"; return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`; }).join("")}</ol></nav>`;
   }
 
   renderPrerequisiteBlocker() {
@@ -826,7 +945,47 @@ export class ItemAuthoringView extends HTMLElement {
     const heading = `<header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Regole editoriali e testi</span><h2>Configura e scrivi i testi</h2><p>Le regole editoriali determinano le durate e i livelli di linguaggio disponibili. Puoi salvare la bozza senza testi; per superare il controllo ne servirà almeno uno completo.</p></div></header>`;
     if (!controls) return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><p class="note">Scegli le regole editoriali per vedere le durate e i livelli disponibili.</p><div class="step-actions"><button class="button-secondary" type="button" data-back-step="2">Indietro</button></div></section>`;
     const addTextLabel = this.draft.representations.length ? "Aggiungi un altro testo" : "Aggiungi un testo";
-    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form">${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} ${addTextLabel}</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="2">Indietro</button><button type="submit">${this.newEditionMode ? "Salva bozza e vai al controllo" : "Salva modifiche e vai al controllo"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel">${heading}<div class="rules-choice">${namespaceChoice}</div><form data-content-draft class="editor-form">${this.renderRepresentationEditors(controls)}<button class="button-secondary add-text" type="button" data-add-text>${icon("plus", { size: 15 })} ${addTextLabel}</button><div class="step-actions"><button class="button-secondary" type="button" data-back-step="2">Indietro</button><button type="submit">${this.newEditionMode ? "Salva bozza e vai ai collegamenti" : "Salva modifiche e vai ai collegamenti"} ${icon("chevron", { size: 15 })}</button></div></form>${this.renderMemberships()}${this.renderTechnicalPresentation()}</section>`;
+  }
+
+  renderConnectionTargetSearch() {
+    const results = this.connectionTargets || [];
+    const selectedId = id(this.selectedConnectionTarget?.id);
+    const resultList = this.connectionTargetQuery.length >= 2
+      ? results.length
+        ? `<div class="connection-target-results">${results.map((entry) => `<article data-selected="${id(entry.id) === selectedId}">${entry.image?.url ? `<img src="${escapeHtml(entry.image.url)}" alt="" loading="lazy">` : `<span class="connection-target-placeholder">${icon("catalog", { size: 20 })}</span>`}<div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.subject?.label || "Soggetto non indicato")}</small></div><button class="button-secondary" type="button" data-connection-target-id="${escapeHtml(id(entry.id))}">${id(entry.id) === selectedId ? `${icon("check", { size: 15 })} Selezionato` : "Seleziona"}</button></article>`).join("")}</div>`
+        : `<p class="connection-search-empty">Nessun altro contenuto con queste regole corrisponde alla ricerca.</p>`
+      : `<p class="note">Scrivi almeno due caratteri: i contenuti disponibili compariranno solo dopo la ricerca.</p>`;
+    return `<section class="connection-target-picker"><div><span class="eyebrow">Contenuto da collegare</span><h3>Scegli il contenuto di arrivo</h3><p>Il contenuto che stai modificando rimane automaticamente quello di partenza.</p></div><form data-connection-search class="connection-search"><label class="sr-only" for="connection-target-query">Cerca un contenuto</label><input id="connection-target-query" name="connectionTargetQuery" required minlength="2" value="${escapeHtml(this.connectionTargetQuery)}" placeholder="Cerca per titolo o soggetto…"><button class="button-secondary" type="submit">${icon("search", { size: 15 })} Cerca</button></form>${resultList}</section>`;
+  }
+
+  renderConnectionEditor() {
+    if (!this.connectionEditorOpen) return "";
+    const scopes = this.connectionsProjection?.scopes || [];
+    const relations = this.connectionsProjection?.relationTypes || [];
+    const relation = this.selectedConnectionRelation();
+    if (!relations.length) return `<section class="connection-editor"><div class="empty-state compact"><h3>Queste regole editoriali non definiscono relazioni</h3><p>Aggiungi almeno una relazione alle regole editoriali prima di creare un collegamento.</p></div><button class="button-secondary" type="button" data-cancel-connection>Annulla</button></section>`;
+    const scopeField = scopes.length > 1
+      ? `<label>Ambito editoriale<select name="scopeKey" data-connection-scope required><option value="">Scegli dove usare il collegamento</option>${scopes.map((entry) => `<option value="${escapeHtml(entry.key)}" ${entry.key === this.connectionScopeKey ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}</select><small>Separa collegamenti che appartengono a raccolte editoriali diverse.</small></label>`
+      : `<input type="hidden" name="scopeKey" value="${escapeHtml(this.connectionScopeKey || scopes[0]?.key || "")}">${scopes[0] ? `<div class="selection-summary"><span>Ambito editoriale</span><strong>${escapeHtml(scopes[0].label)}</strong><small>${escapeHtml(scopes[0].description || "")}</small></div>` : ""}`;
+    const relationOptions = [`<option value="">Scegli il tipo di collegamento</option>`, ...relations.map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${entry.definitionId === this.connectionRelationTypeId ? "selected" : ""}>${escapeHtml(entry.label)}</option>`)].join("");
+    const classField = (name, label, values) => values?.length > 1
+      ? `<label>${escapeHtml(label)}<select name="${name}" required><option value="">Scegli il tipo</option>${values.map((entry) => `<option value="${escapeHtml(entry.definitionId)}">${escapeHtml(entry.label)}</option>`).join("")}</select></label>`
+      : "";
+    const relationHelp = relation ? `<aside class="connection-relation-help"><strong>${escapeHtml(relation.label)}</strong><p>${escapeHtml(relation.description || "Collega semanticamente i soggetti dei due contenuti.")}</p><small>${relation.directionality === "symmetric" ? "Il collegamento vale in entrambe le direzioni." : "Il collegamento va dal contenuto corrente a quello selezionato."}</small></aside>` : "";
+    const selectedTarget = this.selectedConnectionTarget ? `<article class="selected-connection-target"><span>${icon("check", { size: 16 })}</span><div><strong>${escapeHtml(this.selectedConnectionTarget.title)}</strong><small>${escapeHtml(this.selectedConnectionTarget.subject?.label || "")}</small></div></article>` : "";
+    return `<section class="connection-editor"><header><span class="eyebrow">Nuovo collegamento</span><h3>Descrivi come sono collegati</h3></header>${this.renderConnectionTargetSearch()}${selectedTarget}<form data-connection-form class="editor-form">${scopeField}<label>Tipo di collegamento<select name="relationTypeDefinitionId" data-connection-relation required>${relationOptions}</select><small>Le possibilità arrivano direttamente dalle regole editoriali scelte.</small></label>${relationHelp}<div class="connection-class-grid">${classField("sourceSubjectClassDefinitionId", "Tipo del contenuto di partenza", relation?.domain)}${classField("targetSubjectClassDefinitionId", "Tipo del contenuto collegato", relation?.range)}</div><details class="connection-advanced"><summary>Importanza, provenienza e nota</summary><div><label>Importanza<input name="weight" type="number" min="0" max="10" step="1" value="5"><small>Da 0 a 10: indica quanto questo legame deve pesare nell’esplorazione.</small></label><label>Provenienza<select name="provenanceOrigin"><option value="human">Inserito manualmente</option><option value="ai_assisted">Suggerito con assistenza automatica</option><option value="ai_generated">Generato automaticamente</option><option value="imported">Importato</option><option value="forked">Ereditato da una copia</option></select></label><label>Nota facoltativa<textarea name="note" rows="3" maxlength="1000" placeholder="Aggiungi il contesto utile a comprendere il collegamento"></textarea></label></div></details><div class="step-actions"><button class="button-secondary" type="button" data-cancel-connection>Annulla</button><button type="submit" ${this.selectedConnectionTarget && relation && (this.connectionScopeKey || scopes.length === 1) ? "" : "disabled"}>${icon("plus", { size: 15 })} Conferma</button></div></form></section>`;
+  }
+
+  renderConnections({ review = false } = {}) {
+    const connections = this.connectionsProjection?.connections || [];
+    if (!connections.length) return `<div class="connection-empty-state" role="status"><span>${icon("link", { size: 24 })}</span><div><h3>Non hai ancora aggiunto nessun collegamento</h3><p>I collegamenti sono facoltativi. Potrai aggiungerli anche in seguito.</p></div></div>`;
+    return `<div class="connection-list">${connections.map((connection) => `<article><div class="connection-direction"><span>${icon("link", { size: 18 })}</span><small>Dal contenuto corrente</small></div><div class="connection-copy"><span class="eyebrow">${escapeHtml(connection.relationType?.label || "Collegamento")}</span><h3>${escapeHtml(connection.targetContent?.title || connection.targetSubject?.label || "Contenuto collegato")}</h3><p>${escapeHtml(connection.targetContent?.subject?.label || connection.targetSubject?.label || "")}</p><div class="connection-meta"><span>Importanza ${escapeHtml(connection.weight)}</span><span>${escapeHtml(connectionOriginLabel(connection.provenance?.origin))}</span><span>${escapeHtml(connection.scopeLabel || "Ambito editoriale")}</span></div>${connection.note ? `<p class="connection-note">${escapeHtml(connection.note)}</p>` : ""}</div>${review ? "" : `<button class="button-secondary" type="button" data-remove-connection="${escapeHtml(id(connection.id))}" data-context-id="${escapeHtml(id(connection.contextId))}">${icon("trash", { size: 15 })} Rimuovi</button>`}</article>`).join("")}</div>`;
+  }
+
+  renderStepFour() {
+    if (this.activeStep !== 4 || !this.selectedRevision() || this.newEditionMode) return "";
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Collegamenti</span><h2>Collega questo contenuto ad altri contenuti</h2><p>Scegli una relazione prevista dalle regole editoriali. Questo passaggio è facoltativo.</p></div></header>${this.renderConnections()}${this.renderConnectionEditor()}${this.connectionEditorOpen ? "" : `<button class="button-secondary add-connection" type="button" data-add-connection>${icon("plus", { size: 15 })} Aggiungi collegamento</button>`}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="3">Indietro</button><button type="button" data-step="5">Continua al controllo ${icon("chevron", { size: 15 })}</button></div></section>`;
   }
 
   renderMemberships() {
@@ -852,12 +1011,12 @@ export class ItemAuthoringView extends HTMLElement {
   renderWorkflowOperation(operation) {
     return `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit">${operation.code === "workflow.check" ? icon("check", { size: 15 }) : ""}${escapeHtml(workflowLabel(operation))}</button></form>`;
   }
-  renderStepFour() {
-    if (this.activeStep !== 4 || !this.selectedRevision() || this.newEditionMode) return "";
+  renderStepFive() {
+    if (this.activeStep !== 5 || !this.selectedRevision() || this.newEditionMode) return "";
     const revision = this.selectedRevision(); const integrity = revision.integrity?.status || "needs_review"; const issues = revision.integrity?.issues || []; const operations = this.workflowOperations(); const published = revision.status === "published"; const editAllowed = Boolean(this.availableOperation("item.edit"));
     const statePanel = published ? `<div class="readiness success"><strong>Contenuto privato e corretto</strong><p>Ha superato i controlli e non è visibile nel Marketplace.</p></div>` : integrity === "valid" ? `<div class="readiness success"><strong>Controllo superato</strong></div>` : `<div class="readiness warning"><strong>Serve un controllo</strong><p>Verificheremo testi, impostazioni e riferimenti prima di rendere il contenuto privato.</p></div>`;
     const controls = operations.length ? `<div class="workflow-panel"><h3>Controllo finale</h3><p class="note">Se non ci sono problemi, il contenuto verrà salvato come privato nella tua Libreria.</p><div class="workflow-actions">${operations.map((operation) => this.renderWorkflowOperation(operation)).join("")}</div></div>` : "";
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica che sia tutto pronto</h2><p>Il controllo non rende il contenuto visibile agli altri utenti.</p></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${controls}<div class="step-actions">${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">5</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica che sia tutto pronto</h2><p>Il controllo non rende il contenuto visibile agli altri utenti.</p></div></header>${this.reviewSummary()}${this.renderReviewMedia()}${this.renderReviewTexts()}<section class="review-connections"><header><span class="eyebrow">Collegamenti</span><h3>Contenuti collegati</h3></header>${this.renderConnections({ review: true })}</section>${statePanel}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${controls}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="4">Indietro ai collegamenti</button>${editAllowed ? `<button class="button-secondary" type="button" data-edit-content>${icon("edit", { size: 15 })} Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.preflight?.content?.allowed && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>${icon("plus", { size: 15 })} Aggiungi versione editoriale</button>` : ""}</div>${this.renderTechnicalPresentation()}</section>`;
   }
 
   renderPrivateSuccessDialog() {
@@ -873,7 +1032,7 @@ export class ItemAuthoringView extends HTMLElement {
 
   render() {
     const blocked = !this.itemId && this.preflight?.content?.allowed === false;
-    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Quattro passaggi: identifica il soggetto, completa le informazioni generali, scegli regole e testi, quindi esegui il controllo finale. Il contenuto resterà privato finché non sceglierai di portarlo nel Marketplace.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}`}</main>${this.renderPrivateSuccessDialog()}`;
+    this.innerHTML = `${this.styles()}${this.representationStyles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${this.itemId ? "/workspace" : "/create"}">${icon("arrowLeft", { size: 15 })} ${this.itemId ? "Libreria" : "Crea"}</a><span>/</span><span>Contenuto</span></nav><header class="page-header"><div><span class="eyebrow">Crea contenuto</span><h1>${this.itemId ? "Contenuto" : "Nuovo contenuto"}</h1><p>Cinque passaggi: identifica il soggetto, completa le informazioni generali, scegli regole e testi, aggiungi eventuali collegamenti e infine esegui il controllo. Il contenuto resterà privato finché non sceglierai di portarlo nel Marketplace.</p></div></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}${this.renderStepFive()}`}</main>${this.renderPrivateSuccessDialog()}`;
   }
 
   representationStyles() {
@@ -925,19 +1084,24 @@ export class ItemAuthoringView extends HTMLElement {
       .review-media img{display:block;width:100%;height:100%;object-fit:contain}
       .review-media>div{display:grid;gap:.3rem}.review-media strong,.review-media p{margin:0}.review-media--empty{display:grid;grid-template-columns:1fr;gap:.25rem;color:#60706a}
       .review-texts--empty{padding:1rem;border:1px dashed #91a39b;border-radius:.75rem;background:#f8faf8;color:#60706a}.review-texts--empty h3,.review-texts--empty p{margin:0}
+      .connection-empty-state{display:flex;align-items:flex-start;gap:.85rem;margin-top:1rem;padding:1rem;border:1px dashed #91a39b;border-radius:.8rem;background:#f8faf8;color:#476159}.connection-empty-state>span{display:grid;place-items:center;flex:0 0 2.6rem;height:2.6rem;border-radius:.7rem;background:#e6eeea;color:#173e35}.connection-empty-state h3,.connection-empty-state p{margin:0}.connection-empty-state p{margin-top:.25rem;color:#60706a}
+      .add-connection{margin-top:1rem}.connection-editor{display:grid;gap:1rem;margin-top:1rem;padding:1rem;border:1px solid #b9c9c1;border-radius:.85rem;background:#f8faf8}.connection-editor>header h3,.connection-editor>header span,.connection-target-picker h3,.connection-target-picker p{margin:0}.connection-target-picker{display:grid;gap:.75rem;padding-bottom:1rem;border-bottom:1px solid #d4ddd8}.connection-target-picker>div{display:grid;gap:.25rem}.connection-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem}.connection-target-results{display:grid;gap:.5rem}.connection-target-results article{display:grid;grid-template-columns:3rem minmax(0,1fr) auto;gap:.7rem;align-items:center;padding:.65rem;border:1px solid #d4ddd8;border-radius:.7rem;background:#fff}.connection-target-results article[data-selected="true"]{border-color:#568173;box-shadow:0 0 0 2px rgba(23,62,53,.08)}.connection-target-results img,.connection-target-placeholder{width:3rem;height:3rem;border-radius:.55rem;background:#e6eeea;object-fit:cover}.connection-target-placeholder{display:grid;place-items:center}.connection-target-results article>div,.selected-connection-target>div{display:grid;min-width:0;gap:.15rem}.connection-target-results small,.selected-connection-target small{overflow:hidden;color:#60706a;text-overflow:ellipsis;white-space:nowrap}.connection-search-empty{padding:.75rem;border-radius:.65rem;background:#fff;color:#60706a}.selected-connection-target{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.6rem;align-items:center;padding:.75rem;border-radius:.7rem;background:#e7f3ed}.selected-connection-target>span{display:grid;place-items:center;width:2rem;height:2rem;border-radius:999px;background:#173e35;color:#fff}
+      .connection-relation-help{display:grid;gap:.25rem;padding:.8rem;border-left:3px solid #568173;border-radius:.2rem .65rem .65rem .2rem;background:#edf4f0}.connection-relation-help p,.connection-relation-help small{margin:0;color:#60706a}.connection-class-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}.connection-class-grid:empty{display:none}.connection-advanced{padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem}.connection-advanced>div{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem}.connection-advanced label:last-child{grid-column:1/-1}
+      .connection-list{display:grid;gap:.7rem;margin-top:1rem}.connection-list>article{display:grid;grid-template-columns:8rem minmax(0,1fr) auto;gap:.85rem;align-items:start;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#fff}.connection-direction{display:grid;justify-items:start;gap:.35rem;color:#476159}.connection-direction>span{display:grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:.65rem;background:#e6eeea;color:#173e35}.connection-copy{display:grid;min-width:0;gap:.25rem}.connection-copy h3,.connection-copy p{margin:0}.connection-copy>p{color:#60706a}.connection-meta{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.25rem}.connection-meta span{padding:.25rem .5rem;border-radius:999px;background:#edf2ef;color:#476159;font-size:.72rem;font-weight:700}.connection-note{margin-top:.4rem!important;padding:.55rem .65rem;border-radius:.55rem;background:#f7f9f8;color:#476159!important}.review-connections{display:grid;gap:.15rem;margin-top:1rem}.review-connections>header h3{margin:.15rem 0}.review-connections .connection-list{margin-top:.6rem}
       html:has(.private-success-overlay),body:has(.private-success-overlay){overflow:hidden}
       .private-success-overlay{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:1rem;overflow:auto;background:rgba(14,35,30,.68);backdrop-filter:blur(2px)}
       .private-success-dialog{display:grid;width:min(34rem,100%);gap:1rem;padding:1.4rem;border:1px solid #cdd8d2;border-radius:1rem;background:#fff;box-shadow:0 1.5rem 4rem rgba(6,25,20,.3);color:#173e35}
       .private-success-dialog:focus{outline:3px solid rgba(233,168,68,.55);outline-offset:3px}.private-success-dialog h2,.private-success-dialog p{margin:0}.private-success-dialog>div{display:grid;gap:.65rem}
       .private-success-icon{display:grid;place-items:center;width:3.2rem;height:3.2rem;border-radius:999px;background:#dceee5;color:#173e35}
       .private-success-actions{display:flex!important;grid-template-columns:1fr 1fr;gap:.65rem}.private-success-actions>*{justify-content:center}
-      @media(max-width:40rem){.item-media-card,.item-media-card--compact,.review-media{grid-template-columns:1fr}.item-media-card--compact figure{max-width:10rem}.media-upload-row{align-items:stretch;flex-direction:column}}
+      @media(max-width:48rem){.connection-list>article{grid-template-columns:1fr}.connection-direction{grid-template-columns:auto 1fr;align-items:center}.connection-target-results article{grid-template-columns:2.7rem minmax(0,1fr)}.connection-target-results article>button{grid-column:1/-1}.connection-class-grid,.connection-advanced>div{grid-template-columns:1fr}.connection-advanced label:last-child{grid-column:auto}}
+      @media(max-width:40rem){.item-media-card,.item-media-card--compact,.review-media,.connection-search{grid-template-columns:1fr}.item-media-card--compact figure{max-width:10rem}.media-upload-row{align-items:stretch;flex-direction:column}}
       @media(max-width:32rem){.representation-summary{grid-template-columns:1fr 1fr}.representation-summary>div:last-child{grid-column:1/-1}.representation-compact-actions{justify-content:flex-start}.representation-editor--collapsed>header{display:grid}.private-success-actions{align-items:stretch;flex-direction:column}.private-success-actions>*{width:100%}}
     </style>`;
   }
 
   styles() {
-    return `<style>:host{display:block}.authoring-page{display:grid;gap:1rem;max-width:68rem;margin:auto;padding:2rem 1rem 5rem}.authoring-progress ol{display:grid;grid-template-columns:repeat(4,minmax(8rem,1fr));gap:.55rem;min-width:32rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#173e35}.authoring-progress button:hover:not(:disabled){background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button{border-color:#173e35;background:#173e35;color:#fff}.authoring-progress li[data-current=true] button:hover:not(:disabled){background:#245448;color:#fff}.authoring-progress li[data-complete=true]:not([data-current=true]) button{border-color:#91a39b;background:#f1f6f3;color:#173e35}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button>span{background:#fff;color:#173e35}.authoring-progress li[data-complete=true]:not([data-current=true]) button>span{background:#173e35;color:#fff}.authoring-progress button:disabled{color:#536760;opacity:.72}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem}.step-number{display:grid;place-items:center;flex:0 0 2rem;height:2rem;border-radius:999px;background:#173e35;color:white}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.rules-choice{max-width:52rem;margin-top:1rem}.selection-summary{display:grid;gap:.3rem}.selection-summary small{color:#60706a}.representation-list{display:grid;gap:1rem}.representation-editor{display:grid;gap:.9rem;padding:1rem;border:1px solid #ccd6d1;border-radius:.8rem;background:#fbfcfb}.representation-editor>header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.representation-editor h3{margin:.2rem 0 0}.representation-settings{display:grid;grid-template-columns:1fr 1fr minmax(8rem,.65fr);gap:.8rem}.add-text{justify-self:start}.step-actions,.workflow-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin-top:1rem}.subject-summary,.context-box,.selection-summary,.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1rem}.review-grid article{display:grid;gap:.35rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem;background:#f8faf8}.review-grid article span{color:#60706a;font-size:.9rem}.review-texts{display:grid;gap:.75rem;margin-top:1rem}.review-texts>header h3{margin:.2rem 0}.review-texts>div{display:grid;gap:.75rem}.review-texts article{display:grid;gap:.65rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem}.review-texts article header{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.review-texts article header span{color:#60706a}.review-texts article p{margin:0;white-space:pre-wrap}.membership-fieldset,.technical-details{margin-top:1rem;padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem}.membership-grid{display:grid;gap:.65rem}.membership{display:grid;grid-template-columns:auto 1fr;gap:.5rem}.membership span{display:grid;gap:.2rem}.edition-tabs{display:flex;gap:.5rem;flex-wrap:wrap}.note{color:#60706a}@media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.68rem}.representation-settings,.review-grid{grid-template-columns:1fr}}@media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}.step-actions>*{width:100%}.representation-editor>header{display:grid}.remove-text{justify-self:start}}</style>`;
+    return `<style>:host{display:block}.authoring-page{display:grid;gap:1rem;max-width:68rem;margin:auto;padding:2rem 1rem 5rem}.authoring-progress ol{display:grid;grid-template-columns:repeat(5,minmax(7rem,1fr));gap:.55rem;min-width:35rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#173e35}.authoring-progress button:hover:not(:disabled){background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button{border-color:#173e35;background:#173e35;color:#fff}.authoring-progress li[data-current=true] button:hover:not(:disabled){background:#245448;color:#fff}.authoring-progress li[data-complete=true]:not([data-current=true]) button{border-color:#91a39b;background:#f1f6f3;color:#173e35}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:#edf2ef;color:#173e35}.authoring-progress li[data-current=true] button>span{background:#fff;color:#173e35}.authoring-progress li[data-complete=true]:not([data-current=true]) button>span{background:#173e35;color:#fff}.authoring-progress button:disabled{color:#536760;opacity:.72}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem}.step-number{display:grid;place-items:center;flex:0 0 2rem;height:2rem;border-radius:999px;background:#173e35;color:white}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.rules-choice{max-width:52rem;margin-top:1rem}.selection-summary{display:grid;gap:.3rem}.selection-summary small{color:#60706a}.representation-list{display:grid;gap:1rem}.representation-editor{display:grid;gap:.9rem;padding:1rem;border:1px solid #ccd6d1;border-radius:.8rem;background:#fbfcfb}.representation-editor>header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.representation-editor h3{margin:.2rem 0 0}.representation-settings{display:grid;grid-template-columns:1fr 1fr minmax(8rem,.65fr);gap:.8rem}.add-text{justify-self:start}.step-actions,.workflow-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin-top:1rem}.subject-summary,.context-box,.selection-summary,.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1rem}.review-grid article{display:grid;gap:.35rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem;background:#f8faf8}.review-grid article span{color:#60706a;font-size:.9rem}.review-texts{display:grid;gap:.75rem;margin-top:1rem}.review-texts>header h3{margin:.2rem 0}.review-texts>div{display:grid;gap:.75rem}.review-texts article{display:grid;gap:.65rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.75rem}.review-texts article header{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.review-texts article header span{color:#60706a}.review-texts article p{margin:0;white-space:pre-wrap}.membership-fieldset,.technical-details{margin-top:1rem;padding:.75rem;border:1px dashed #91a39b;border-radius:.7rem}.membership-grid{display:grid;gap:.65rem}.membership{display:grid;grid-template-columns:auto 1fr;gap:.5rem}.membership span{display:grid;gap:.2rem}.edition-tabs{display:flex;gap:.5rem;flex-wrap:wrap}.note{color:#60706a}@media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(5,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}.representation-settings,.review-grid{grid-template-columns:1fr}}@media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}.step-actions>*{width:100%}.representation-editor>header{display:grid}.remove-text{justify-self:start}}</style>`;
   }
 }
 customElements.define("artaround-item-authoring-view", ItemAuthoringView);

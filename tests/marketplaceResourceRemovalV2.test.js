@@ -188,3 +188,190 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
     assert.equal(preflight.content.usableNamespaces[0].source, "licensed");
   });
 });
+
+test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo, release e diritti acquisiti", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Subject = require("../models/subject.model");
+    const Namespace = require("../models/namespace.model");
+    const NamespaceRevision = require("../models/namespaceRevision.model");
+    const ContentSpace = require("../models/contentSpace.model");
+    const EditorialContext = require("../models/editorialContext.model");
+    const EditorialRelease = require("../models/editorialRelease.model");
+    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
+    const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
+    const Entitlement = require("../models/entitlement.model");
+    const { Adoption } = require("../models/adoption.model");
+    const marketplace = require("../services/marketplaceV2.service");
+    const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
+    const { listCreatorWorkspaceResources, getCreatorWorkspaceResourceDetail } = require("../services/marketplaceWorkspaceResourcesV2.service");
+    const { resolveCapabilitySource } = require("../services/capabilityAuthorization.service");
+
+    const [owner, buyer] = await users(User, "context");
+    const { namespace, revision: namespaceRevision } = await publishedNamespace({ Namespace, NamespaceRevision, owner, name: "Regole collegamenti" });
+    const space = await ContentSpace.create({ name: "Collegamenti personali", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
+    const context = await EditorialContext.create({
+      contentSpaceId: space._id,
+      namespaceId: namespace._id,
+      displayName: "Collegamenti personali",
+      shortDescription: "Raccolta da eliminare",
+      createdBy: owner._id,
+    });
+    const graph = await SemanticGraphRevision.create({
+      editorialContextId: context._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      createdBy: owner._id,
+    });
+    const [source, targetOne, targetTwo] = await Subject.create([
+      { preferredLabel: "Sorgente", createdBy: owner._id },
+      { preferredLabel: "Destinazione uno", createdBy: owner._id },
+      { preferredLabel: "Destinazione due", createdBy: owner._id },
+    ]);
+    await SemanticEdgeV2.create([
+      { graphRevisionId: graph._id, sourceSubjectId: source._id, targetSubjectId: targetOne._id, relationTypeDefinitionId: "related", weight: 5 },
+      { graphRevisionId: graph._id, sourceSubjectId: source._id, targetSubjectId: targetTwo._id, relationTypeDefinitionId: "related", weight: 5 },
+    ]);
+    const release = await EditorialRelease.create({
+      editorialContextId: context._id,
+      version: 1,
+      namespaceRevisionId: namespaceRevision._id,
+      graphRevisionId: graph._id,
+      itemBindings: [],
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
+      releasedAt: new Date(),
+      releasedBy: owner._id,
+    });
+    context.workingGraphRevisionId = graph._id;
+    context.publishedReleaseId = release._id;
+    await context.save();
+
+    const livePublication = await publishedListingWithOffer({
+      MarketplaceListing, MarketplaceOffer, owner,
+      resourceType: "editorial_context", resourceId: context._id, capability: "context.generate", versionPolicy: "follow_current",
+    });
+    const snapshotPublication = await publishedListingWithOffer({
+      MarketplaceListing, MarketplaceOffer, owner,
+      resourceType: "editorial_release", resourceId: release._id, capability: "context.generate", versionPolicy: "pinned",
+    });
+    const acquired = await marketplace.acquireOffer({ offerId: livePublication.offer._id, actorUserId: buyer._id });
+    const entitlement = acquired.entitlements[0];
+    await Adoption.create({
+      beneficiaryType: "user", beneficiaryId: buyer._id, entitlementId: entitlement._id,
+      sourceResourceRef: { resourceType: "editorial_context", resourceId: context._id },
+      sourceSnapshotRef: { resourceType: "editorial_release", resourceId: release._id },
+      action: "context_reference", adoptedBy: buyer._id,
+    });
+
+    const detail = await getCreatorWorkspaceResourceDetail({
+      actorUserId: owner._id, ownership: "owned", resourceType: "editorial_context", resourceId: context._id,
+    });
+    assert.equal(detail.asset.removalImpact.affectedConnectionCount, 2);
+
+    const result = await removeOwnedWorkspaceResource({
+      actorUserId: owner._id, resourceType: "editorial_context", resourceId: context._id,
+    });
+    assert.equal(result.affectedConnectionCount, 2);
+    assert.equal(result.withdrawnListingCount, 2);
+    assert.equal(result.inactiveOfferCount, 2);
+    assert.equal((await EditorialContext.findById(context._id).lean()).lifecycleStatus, "trashed");
+    assert.equal((await ContentSpace.findById(space._id).lean()).lifecycleStatus, "active");
+    assert.equal((await Namespace.findById(namespace._id).lean()).lifecycleStatus, "active");
+    assert.equal(await SemanticEdgeV2.countDocuments({ graphRevisionId: graph._id }), 2);
+    assert.equal(await EditorialRelease.countDocuments({ _id: release._id }), 1);
+    assert.equal((await MarketplaceListing.findById(livePublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(livePublication.offer._id).lean()).status, "inactive");
+    assert.equal((await MarketplaceListing.findById(snapshotPublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(snapshotPublication.offer._id).lean()).status, "inactive");
+    assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
+    assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
+    assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
+
+    const owned = await listCreatorWorkspaceResources({ actorUserId: owner._id, ownership: "owned", resourceTypes: ["editorial_context"] });
+    assert.equal(owned.total, 0);
+    const licensed = await listCreatorWorkspaceResources({ actorUserId: buyer._id, ownership: "licensed" });
+    assert.equal(licensed.results.length, 1);
+    assert.equal(licensed.results[0].resourceType, "editorial_release");
+    const access = await resolveCapabilitySource({
+      actorUserId: buyer._id, capability: "context.generate", resourceType: "editorial_context", resourceId: context._id,
+    });
+    assert.equal(access.allowed, true);
+    assert.equal(String(access.resolvedSnapshotRef.resourceId), String(release._id));
+  });
+});
+
+test("rimuovere una visita conserva la revisione e i diritti già acquisiti", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const VisitV2 = require("../models/visitV2.model");
+    const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
+    const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
+    const Entitlement = require("../models/entitlement.model");
+    const { Adoption } = require("../models/adoption.model");
+    const marketplace = require("../services/marketplaceV2.service");
+    const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
+    const { listCreatorWorkspaceResources } = require("../services/marketplaceWorkspaceResourcesV2.service");
+    const { resolveCapabilitySource } = require("../services/capabilityAuthorization.service");
+
+    const [owner, buyer] = await users(User, "visit");
+    const visit = await VisitV2.create({ ownerType: "user", ownerId: owner._id, createdBy: owner._id });
+    const revision = await VisitRevisionV2.create({
+      visitId: visit._id,
+      version: 1,
+      title: "Visita da eliminare",
+      description: "Snapshot da conservare",
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
+      publication: { publishedAt: new Date(), publishedBy: owner._id },
+      createdBy: owner._id,
+      updatedBy: owner._id,
+    });
+    visit.publishedRevisionId = revision._id;
+    await visit.save();
+    const livePublication = await publishedListingWithOffer({
+      MarketplaceListing, MarketplaceOffer, owner,
+      resourceType: "visit", resourceId: visit._id, capability: "visit.execute", versionPolicy: "follow_current",
+    });
+    const snapshotPublication = await publishedListingWithOffer({
+      MarketplaceListing, MarketplaceOffer, owner,
+      resourceType: "visit_revision", resourceId: revision._id, capability: "visit.execute", versionPolicy: "pinned",
+    });
+    const acquired = await marketplace.acquireOffer({ offerId: livePublication.offer._id, actorUserId: buyer._id });
+    const entitlement = acquired.entitlements[0];
+    await Adoption.create({
+      beneficiaryType: "user", beneficiaryId: buyer._id, entitlementId: entitlement._id,
+      sourceResourceRef: { resourceType: "visit", resourceId: visit._id },
+      sourceSnapshotRef: { resourceType: "visit_revision", resourceId: revision._id },
+      action: "visit_copy", adoptedBy: buyer._id,
+    });
+
+    const result = await removeOwnedWorkspaceResource({ actorUserId: owner._id, resourceType: "visit", resourceId: visit._id });
+    assert.equal(result.withdrawnListingCount, 2);
+    assert.equal(result.inactiveOfferCount, 2);
+    assert.equal((await VisitV2.findById(visit._id).lean()).lifecycleStatus, "trashed");
+    assert.equal(await VisitRevisionV2.countDocuments({ _id: revision._id }), 1);
+    assert.equal((await MarketplaceListing.findById(livePublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(livePublication.offer._id).lean()).status, "inactive");
+    assert.equal((await MarketplaceListing.findById(snapshotPublication.listing._id).lean()).status, "withdrawn");
+    assert.equal((await MarketplaceOffer.findById(snapshotPublication.offer._id).lean()).status, "inactive");
+    assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
+    assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
+    assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
+
+    const owned = await listCreatorWorkspaceResources({ actorUserId: owner._id, ownership: "owned", resourceTypes: ["visit"] });
+    assert.equal(owned.total, 0);
+    const licensed = await listCreatorWorkspaceResources({ actorUserId: buyer._id, ownership: "licensed" });
+    assert.equal(licensed.results.length, 1);
+    assert.equal(licensed.results[0].resourceType, "visit_revision");
+    const access = await resolveCapabilitySource({
+      actorUserId: buyer._id, capability: "visit.execute", resourceType: "visit", resourceId: visit._id,
+    });
+    assert.equal(access.allowed, true);
+    assert.equal(String(access.resolvedSnapshotRef.resourceId), String(revision._id));
+  });
+});

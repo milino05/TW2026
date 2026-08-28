@@ -8,6 +8,7 @@ const commercial = require("../services/marketplaceCommercialV2.service");
 const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
 const management = require("../services/marketplaceManagementV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
+const itemConnections = require("../services/itemConnectionAuthoringV2.service");
 const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
@@ -71,6 +72,51 @@ async function itemAuthoringProjection(req, res, next) {
     res.status(200).json(await itemAuthoring.getItemAuthoringProjection({
       itemId: req.params.itemId,
       editionId: req.query?.editionId || null,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function itemConnectionAuthoring(req, res, next) {
+  try {
+    res.status(200).json(await itemConnections.getItemConnectionAuthoring({
+      itemId: req.params.itemId,
+      editionId: req.query?.editionId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function itemConnectionTargets(req, res, next) {
+  try {
+    res.status(200).json(await itemConnections.searchItemConnectionTargets({
+      itemId: req.params.itemId,
+      editionId: req.query?.editionId,
+      query: req.query?.q,
+      limit: req.query?.limit,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function createItemConnection(req, res, next) {
+  try {
+    res.status(201).json(await itemConnections.createItemConnection({
+      itemId: req.params.itemId,
+      editionId: req.body?.editionId,
+      payload: req.body || {},
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function removeItemConnection(req, res, next) {
+  try {
+    res.status(200).json(await itemConnections.removeItemConnection({
+      itemId: req.params.itemId,
+      editionId: req.query?.editionId,
+      connectionId: req.params.connectionId,
+      contextId: req.query?.contextId,
       actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
@@ -281,6 +327,10 @@ module.exports = {
   venueSelector,
   detail,
   itemAuthoringProjection,
+  itemConnectionAuthoring,
+  itemConnectionTargets,
+  createItemConnection,
+  removeItemConnection,
   namespaceAuthoringControls,
   venueTargetAuthoringContext,
   createListing,

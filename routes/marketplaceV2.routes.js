@@ -10,6 +10,7 @@ const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
 const itemId = validateObjectIdParam("itemId");
+const connectionId = validateObjectIdParam("connectionId");
 const namespaceId = validateObjectIdParam("namespaceId");
 const organizationId = validateObjectIdParam("organizationId");
 const editorialContextId = validateObjectIdParam("editorialContextId");
@@ -29,6 +30,10 @@ router.get("/v2/marketplace/discovery/venues/:venueId", venueId, discoveryContro
 router.get("/v2/marketplace/authoring/preflight", preflightController.authoringPreflight);
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
+router.get("/v2/marketplace/item-authoring/:itemId/connections", itemId, controller.itemConnectionAuthoring);
+router.get("/v2/marketplace/item-authoring/:itemId/connection-targets", itemId, controller.itemConnectionTargets);
+router.post("/v2/marketplace/item-authoring/:itemId/connections", itemId, controller.createItemConnection);
+router.delete("/v2/marketplace/item-authoring/:itemId/connections/:connectionId", itemId, connectionId, controller.removeItemConnection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/release-composer", editorialContextId, authoringController.editorialReleaseComposer);
 router.get("/v2/marketplace/visit-authoring/new", authoringController.newVisitAuthoring);

@@ -39,15 +39,21 @@ function workflowCapabilities(principal, resourceType) {
 }
 
 function canRemoveOwnedResource(principal, resourceType) {
-  if (!["item_edition", "namespace"].includes(resourceType)) return false;
+  if (!["item_edition", "editorial_context", "namespace", "visit"].includes(resourceType)) return false;
   if (principal.type === "user") return true;
-  const prefix = resourceType === "item_edition" ? "item" : "namespace";
+  const prefix = resourceType === "item_edition" ? "item" : resourceType;
   return (principal.effectivePermissions || []).includes(`${prefix}.lifecycle.manage`);
 }
 
 function withRemovalOperation(operations, principal, resourceType) {
+  const labels = {
+    item_edition: "Elimina contenuto",
+    editorial_context: "Elimina raccolta editoriale",
+    namespace: "Elimina regole editoriali",
+    visit: "Elimina visita",
+  };
   return canRemoveOwnedResource(principal, resourceType)
-    ? [...operations, { code: "remove_resource", label: resourceType === "item_edition" ? "Elimina contenuto" : "Elimina regole editoriali", destructive: true }]
+    ? [...operations, { code: "remove_resource", label: labels[resourceType], destructive: true }]
     : operations;
 }
 
@@ -113,7 +119,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       state: candidate.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: candidate.publishedReleaseId ? { resourceType: "editorial_release", resourceId: candidate.publishedReleaseId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce, canEdit: capabilities.edit }),
+      availableOperations: withRemovalOperation(
+        ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce, canEdit: capabilities.edit }),
+        principal,
+        "editorial_context",
+      ),
     };
   }
   if (candidate.resourceType === "namespace") {
@@ -146,7 +156,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
     editorialWorkflow: workflowState(revision),
     publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "visit_revision", resourceId: candidate.publishedRevisionId } : null,
     listing,
-    availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
+    availableOperations: withRemovalOperation(
+      withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
+      principal,
+      "visit",
+    ),
   };
 }
 
