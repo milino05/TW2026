@@ -1,6 +1,7 @@
 const service = require("../services/visitSessionV2.service");
 const actions = require("../services/actionDispatcherV2.service");
 const navigation = require("../services/navigationProjectionV2.service");
+const publicLocation = require("../services/sessionPublicLocationV2.service");
 
 async function current(req, res, next) {
   try {
@@ -20,6 +21,16 @@ async function dispatchAction(req, res, next) {
       sessionId: req.params.sessionId,
       userId: req.user._id,
       payload: req.body || {},
+    }));
+  } catch (error) { next(error); }
+}
+
+async function resolvePublicLocation(req, res, next) {
+  try {
+    res.json(await publicLocation.resolvePublicCodeLocation({
+      sessionId: req.params.sessionId,
+      userId: req.user._id,
+      publicCode: req.body?.publicCode,
     }));
   } catch (error) { next(error); }
 }
@@ -46,6 +57,7 @@ module.exports = {
   current,
   map,
   dispatchAction,
+  resolvePublicLocation,
   contentExperience,
   targetObservation,
   transition,
