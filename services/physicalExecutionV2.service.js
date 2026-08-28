@@ -9,6 +9,7 @@ const { resolveRoute } = require("./graphRouting.service");
 const { placesForPhysicalFeature } = require("./venueRouting.service");
 const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
+const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -31,6 +32,7 @@ function routingBlockerDetails(blockers = [], { venueId = null, field = "navigat
       reason: blocker.reason || null,
       physicalFeatureRef: blocker.physicalFeatureRef || null,
       ...(blocker.actualFamily ? { actualFamily: blocker.actualFamily } : {}),
+      ...(blocker.physicalAttributeDefinitionId ? { physicalAttributeDefinitionId: blocker.physicalAttributeDefinitionId } : {}),
     },
   }));
 }
@@ -71,6 +73,23 @@ function interVenueRequirementOutcome({ requirements = [], fromVenueId, toVenueI
   }));
   return { blockers, warnings };
 }
+function assertProfileSelectionScope(profileSelections, bundleByVenueId) {
+  const unknown = [...profileSelections.keys()].filter((venueId) => !bundleByVenueId.has(venueId));
+  if (!unknown.length) return;
+  throw new AppError("Un profilo di percorso appartiene a una Venue fuori dallo scope fisico", 409, unknown.map((venueId) => ({
+    field: "routingProfileSelections",
+    code: "ROUTING_PROFILE_OUTSIDE_PHYSICAL_SCOPE",
+    context: { venueId },
+  })));
+}
+function resolveNavigationRequirementsForVenue({ bundle, globalRequirements = [], routingProfileSelection = null }) {
+  return resolveVenueRoutingRequirements({
+    globalRequirements,
+    routingProfileSelection,
+    physicalVocabulary: bundle.physicalVocabulary,
+    revision: bundle.physicalVocabularyRevision,
+  });
+}
 
 async function resolveSessionVenuePins(sourceAnchors = []) {
   const targetIds = uniqueIds(sourceAnchors.map((entry) => entry.venueTargetId));
@@ -107,12 +126,18 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
 async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHints = new Map(), navigation = {} }) {
   const resolved = await resolveSessionVenuePins(sourceAnchors);
   assertRequirementScope({ requirements: navigation.requirements || [], venueCount: resolved.bundleByVenueId.size });
+  const profileSelections = selectionMap(navigation.routingProfileSelections || []);
+  assertProfileSelectionScope(profileSelections, resolved.bundleByVenueId);
   const profiles = sourceAnchors.length ? await VenueTargetObservationProfile.find({ venueTargetId: { $in: sourceAnchors.map((entry) => entry.venueTargetId) } }).lean() : [];
   const profileByTarget = new Map(profiles.map((entry) => [id(entry.venueTargetId), entry]));
   const warnings = [], requirementsByVenue = new Map();
   for (const [venueId, bundle] of resolved.bundleByVenueId) {
-    const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, navigation.requirements || []);
-    if (translated.blockers.length) throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, routingBlockerDetails(translated.blockers, { venueId }));
+    const translated = resolveNavigationRequirementsForVenue({
+      bundle,
+      globalRequirements: navigation.requirements || [],
+      routingProfileSelection: profileSelections.get(venueId) || null,
+    });
+    if (translated.blockers.length) throw new AppError("Una Venue non supporta la configurazione di routing richiesta", 409, routingBlockerDetails(translated.blockers, { venueId }));
     warnings.push(...translated.warnings.map((entry) => ({ ...entry, venueId: bundle.venue._id })));
     requirementsByVenue.set(venueId, translated.requirements);
   }
@@ -163,8 +188,13 @@ async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, 
   const bundle = await loadPinnedBundle(session, venueId);
   const destinations = placesForPhysicalFeature({ layoutRevision: bundle.layout, physicalVocabulary: bundle.physicalVocabulary, physicalVocabularyRevision: bundle.physicalVocabularyRevision, physicalFeatureRef });
   if (!destinations.length) throw new AppError("La Venue non contiene una destinazione per la caratteristica fisica richiesta", 404);
-  const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, session.navigationSnapshot?.requirements || []);
-  if (translated.blockers.length) throw new AppError("Snapshot fisica non supporta un requisito obbligatorio", 409, routingBlockerDetails(translated.blockers, { venueId }));
+  const profileSelections = selectionMap(session.navigationSnapshot?.routingProfileSelections || []);
+  const translated = resolveNavigationRequirementsForVenue({
+    bundle,
+    globalRequirements: session.navigationSnapshot?.requirements || [],
+    routingProfileSelection: profileSelections.get(id(venueId)) || null,
+  });
+  if (translated.blockers.length) throw new AppError("Snapshot fisica non supporta la configurazione di routing richiesta", 409, routingBlockerDetails(translated.blockers, { venueId }));
   const candidates = destinations.map((destination) => ({
     destination,
     route: resolveRoute({ connections: bundle.layout.connections || [], places: bundle.layout.places || [], fromPlaceId, toPlaceId: destination._id, requirements: translated.requirements, speedMps: session.sessionMovementSpeedMps, learnedResidualByConnection: {} }),
@@ -193,6 +223,7 @@ module.exports = {
   routingBlockerDetails,
   assertRequirementScope,
   interVenueRequirementOutcome,
+  resolveNavigationRequirementsForVenue,
   resolveSessionVenuePins,
   materializeSessionPhysicalPlan,
   loadPinnedBundle,
