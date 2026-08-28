@@ -7,6 +7,7 @@ import { navigatorVisitRepository, type NavigatorVisitDetail } from "../infrastr
 import {
   executionPreparationRepository,
   type ExecutionPreparationProjection,
+  type RoutingProfileSelection,
 } from "../infrastructure/http/executionPreparationRepository";
 
 const route = useRoute();
@@ -23,6 +24,7 @@ const error = ref<string | null>(null);
 const depthPreference = ref(0.5);
 const complexityPreference = ref(0.5);
 const movementPacePreference = ref(0.5);
+const selectedRoutingProfiles = ref<Record<string, string>>({});
 const venueId = computed(() => String(route.params.venueId || ""));
 
 const canStart = computed(() => Boolean(
@@ -53,10 +55,32 @@ function minutes(seconds: number) {
   return Math.max(0, Math.ceil(seconds / 60));
 }
 
+function preparationVenueLabel(targetVenueId: string) {
+  return preparation.value?.preVisit.venues.find((venue) => String(venue.id) === String(targetVenueId))?.name || "Sede";
+}
+
+function selectedProfile(group: ExecutionPreparationProjection["navigation"]["profilesByVenue"][number]) {
+  const selectedId = selectedRoutingProfiles.value[String(group.venueId)] || "";
+  return group.profiles.find((profile) => profile.definitionId === selectedId) || null;
+}
+
+function routingProfileSelections(): RoutingProfileSelection[] {
+  const availableByVenue = new Map((preparation.value?.navigation.profilesByVenue || []).map((group) => [
+    String(group.venueId),
+    new Set(group.profiles.map((profile) => profile.definitionId)),
+  ]));
+  return Object.entries(selectedRoutingProfiles.value)
+    .filter(([targetVenueId, profileId]) => Boolean(profileId) && availableByVenue.get(targetVenueId)?.has(profileId))
+    .map(([targetVenueId, routingProfileDefinitionId]) => ({ venueId: targetVenueId, routingProfileDefinitionId }));
+}
+
 function syncPreparationControls(value: ExecutionPreparationProjection) {
   depthPreference.value = value.effectivePresentationPreference?.depthPreference ?? 0.5;
   complexityPreference.value = value.effectivePresentationPreference?.languageComplexityPreference ?? 0.5;
   movementPacePreference.value = value.navigation.movementPacePreference;
+  selectedRoutingProfiles.value = Object.fromEntries(
+    (value.navigation.routingProfileSelections || []).map((selection) => [String(selection.venueId), selection.routingProfileDefinitionId]),
+  );
 }
 
 onMounted(async () => {
@@ -75,7 +99,7 @@ onMounted(async () => {
 });
 
 async function updatePreparation() {
-  if (!preparation.value || preparation.value.status !== "active") return;
+  if (!preparation.value || preparation.value.status !== "active" || updating.value) return;
   updating.value = true;
   error.value = null;
   try {
@@ -85,6 +109,7 @@ async function updatePreparation() {
         languageComplexityPreference: complexityPreference.value,
       },
       movementPacePreference: movementPacePreference.value,
+      routingProfileSelections: routingProfileSelections(),
     });
     syncPreparationControls(preparation.value);
   } catch (cause) {
@@ -168,7 +193,7 @@ async function start() {
             <div class="section-intro">
               <p class="eyebrow">Adatta la visita</p>
               <h2 id="preparation-title">Personalizza l’esperienza</h2>
-              <p>Regola il racconto e il ritmo: la durata stimata verrà ricalcolata.</p>
+              <p>Regola racconto e percorso: durata, readiness e logistica vengono ricalcolati dal backend.</p>
             </div>
             <div class="preparation-controls">
               <label>
@@ -181,6 +206,31 @@ async function start() {
                 <input v-model.number="complexityPreference" type="range" min="0" max="1" step="0.1">
                 <small>Adatta il lessico al livello che preferisci.</small>
               </label>
+
+              <section v-if="preparation.navigation.profilesByVenue.length" class="routing-profile-section">
+                <div class="routing-profile-intro">
+                  <strong>Profilo di percorso</strong>
+                  <small>I profili sono definiti separatamente da ciascuna sede e non vengono confrontati per nome.</small>
+                </div>
+                <article v-for="group in preparation.navigation.profilesByVenue" :key="group.venueId" class="routing-profile-card">
+                  <label>
+                    <span><strong>{{ preparationVenueLabel(group.venueId) }}</strong></span>
+                    <select v-model="selectedRoutingProfiles[group.venueId]" :disabled="updating || starting" @change="updatePreparation">
+                      <option value="">Nessun profilo specifico</option>
+                      <option v-for="profile in group.profiles" :key="profile.definitionId" :value="profile.definitionId">{{ profile.label }}</option>
+                    </select>
+                  </label>
+                  <template v-if="selectedProfile(group)">
+                    <p>{{ selectedProfile(group)?.description }}</p>
+                    <ul v-if="selectedProfile(group)?.requirements.length">
+                      <li v-for="requirement in selectedProfile(group)?.requirements" :key="`${requirement.label}-${requirement.operator}-${JSON.stringify(requirement.value)}-${requirement.priority}`">
+                        {{ requirement.label }} · {{ requirement.priority === "required" ? "necessario" : requirement.priority === "avoid" ? "da evitare" : "preferito" }}
+                      </li>
+                    </ul>
+                  </template>
+                </article>
+              </section>
+
               <label>
                 <span><strong>Ritmo di spostamento</strong><output>{{ movementPaceLabel }}</output></span>
                 <input v-model.number="movementPacePreference" type="range" min="0" max="1" step="0.1">
@@ -401,7 +451,7 @@ async function start() {
   display: grid;
   gap: 0;
 }
-.preparation-controls label {
+.preparation-controls > label {
   display: grid;
   gap: .55rem;
   padding: 1.1rem 0;
@@ -411,6 +461,33 @@ async function start() {
 .preparation-controls output { color: var(--navigator-primary); font-size: .82rem; font-weight: 750; }
 .preparation-controls input { width: 100%; accent-color: var(--navigator-brand-primary); cursor: pointer; }
 .preparation-controls small { color: var(--navigator-muted); line-height: 1.4; }
+.routing-profile-section {
+  display: grid;
+  gap: .8rem;
+  padding: 1.1rem 0;
+  border-top: 1px solid var(--navigator-border);
+}
+.routing-profile-intro { display: grid; gap: .35rem; }
+.routing-profile-card {
+  display: grid;
+  gap: .55rem;
+  padding: .9rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--navigator-brand-primary) 5%, var(--navigator-surface-raised));
+}
+.routing-profile-card label { display: grid; gap: .5rem; }
+.routing-profile-card select {
+  width: 100%;
+  min-height: 46px;
+  padding: .65rem .75rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .7rem;
+  color: var(--navigator-ink);
+  background: var(--navigator-surface-raised);
+}
+.routing-profile-card p { margin: 0; color: var(--navigator-muted); line-height: 1.45; }
+.routing-profile-card ul { margin: 0; padding-left: 1.15rem; color: var(--navigator-muted); font-size: .8rem; line-height: 1.45; }
 .update-estimate {
   justify-self: start;
   margin-top: .6rem;
