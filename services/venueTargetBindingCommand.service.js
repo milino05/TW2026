@@ -44,8 +44,19 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError("Comando sul riconoscimento dell'oggetto non completato", 500, [{ code: "VENUE_TARGET_BINDING_COMMAND_FAILED", message: error.message }]);
+    throw new AppError("Comando sul binding fisico dell'oggetto non completato", 500, [{ code: "VENUE_TARGET_BINDING_COMMAND_FAILED", message: error.message }]);
   }
+}
+
+async function setAvailability({ venueId, venueTargetId, actorUserId, payload = {} }) {
+  return mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate: ({ binding }) => {
+    const availability = String(payload.availability || "");
+    if (!["active", "unavailable"].includes(availability)) {
+      commandError("Disponibilita non valida", "INVALID_AVAILABILITY", "availability");
+    }
+    binding.availability = availability;
+    return { availability };
+  } });
 }
 
 async function addRecognitionMedia({ venueId, venueTargetId, actorUserId, payload = {} }) {
@@ -70,4 +81,4 @@ async function removeRecognitionMedia({ venueId, venueTargetId, mediaId, actorUs
   } });
 }
 
-module.exports = { addRecognitionMedia, removeRecognitionMedia };
+module.exports = { setAvailability, addRecognitionMedia, removeRecognitionMedia };
