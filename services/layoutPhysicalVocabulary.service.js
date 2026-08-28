@@ -6,11 +6,17 @@ const { assertCanUsePhysicalVocabularyForAuthoring } = require("./physicalVocabu
 
 function id(value) { return String(value?._id || value || ""); }
 
-async function loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId, { requireStable = false } = {}) {
+async function loadPhysicalVocabularyRevisionBundle(
+  physicalVocabularyRevisionId,
+  { requireStable = false, requireActiveVocabulary = false } = {},
+) {
   const revision = await PhysicalVocabularyRevision.findById(physicalVocabularyRevisionId);
   if (!revision) throw new AppError("PhysicalVocabularyRevision non disponibile", 404, [{ code: "PHYSICAL_VOCABULARY_REVISION_NOT_FOUND" }]);
-  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: revision.physicalVocabularyId, lifecycleStatus: "active" });
+  const physicalVocabulary = await PhysicalVocabulary.findById(revision.physicalVocabularyId);
   if (!physicalVocabulary) throw new AppError("PhysicalVocabulary non disponibile", 409, [{ code: "PHYSICAL_VOCABULARY_NOT_AVAILABLE" }]);
+  if (requireActiveVocabulary && physicalVocabulary.lifecycleStatus !== "active") {
+    throw new AppError("PhysicalVocabulary non disponibile per nuovo authoring", 409, [{ code: "PHYSICAL_VOCABULARY_NOT_ACTIVE" }]);
+  }
   if (requireStable && (!["published", "superseded"].includes(revision.status) || revision.integrity?.status !== "valid")) {
     throw new AppError("PhysicalVocabularyRevision non utilizzabile come snapshot stabile", 409, [{ code: "PHYSICAL_VOCABULARY_REVISION_NOT_STABLE" }]);
   }
@@ -18,7 +24,7 @@ async function loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId
 }
 
 async function assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId }) {
-  const bundle = await loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId);
+  const bundle = await loadPhysicalVocabularyRevisionBundle(physicalVocabularyRevisionId, { requireActiveVocabulary: true });
   if (bundle.physicalVocabulary.ownerType === "organization"
     && id(bundle.physicalVocabulary.ownerId) === id(venue.ownerOrganizationId)) {
     await assertOrganizationPermission({
