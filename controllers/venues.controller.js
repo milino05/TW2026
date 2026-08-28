@@ -2,6 +2,7 @@ const venueService = require("../services/venue.service");
 const venueTargetService = require("../services/venueTarget.service");
 const venueReleaseService = require("../services/venueRelease.service");
 const venuePhysicalOnboardingService = require("../services/venuePhysicalOnboarding.service");
+const venueLayoutCommandService = require("../services/venueLayoutCommand.service");
 
 async function list(req, res, next) { try { res.status(200).json(await venueService.listVenues({ ownerOrganizationId: req.query?.ownerOrganizationId || null })); } catch (error) { next(error); } }
 async function get(req, res, next) { try { res.status(200).json(await venueService.getVenue({ venueId: req.params.venueId })); } catch (error) { next(error); } }
@@ -24,10 +25,31 @@ async function withdrawReleaseReview(req, res, next) { try { res.status(200).jso
 async function requestReleaseChanges(req, res, next) { try { res.status(200).json(await venueReleaseService.requestVenueReleaseChanges({ venueId: req.params.venueId, actorUserId: req.user._id, message: req.body?.message })); } catch (error) { next(error); } }
 async function publishRelease(req, res, next) { try { res.status(200).json(await venueReleaseService.publishVenueRelease({ venueId: req.params.venueId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
+async function addLayoutFloor(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.addFloor({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function updateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function calibrateLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.calibrateFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function removeLayoutFloor(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeFloor({ venueId: req.params.venueId, floorId: req.params.floorId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function createLayoutPlace(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.createPlace({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function moveLayoutPlace(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.movePlace({ venueId: req.params.venueId, placeId: req.params.placeId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function updateLayoutPlace(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updatePlace({ venueId: req.params.venueId, placeId: req.params.placeId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function setLayoutPlaceAttribute(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setPlaceAttribute({ venueId: req.params.venueId, placeId: req.params.placeId, definitionId: req.params.definitionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function removeLayoutPlace(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removePlace({ venueId: req.params.venueId, placeId: req.params.placeId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function createLayoutConnection(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.createConnection({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function updateLayoutConnection(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateConnection({ venueId: req.params.venueId, connectionId: req.params.connectionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function setLayoutConnectionAttribute(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setConnectionAttribute({ venueId: req.params.venueId, connectionId: req.params.connectionId, definitionId: req.params.definitionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function removeLayoutConnection(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeConnection({ venueId: req.params.venueId, connectionId: req.params.connectionId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function setLayoutTargetPlacement(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setVenueTargetPlacement({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function setLayoutTargetBinding(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setVenueTargetBinding({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function setPreVisitInformation(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setPreVisitInformation({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+
 module.exports = {
   list, get, create, update,
   listTargets, createTarget, updateTarget, trashTarget,
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, updateWorkingRelease, checkRelease,
   submitReleaseReview, withdrawReleaseReview, requestReleaseChanges, publishRelease,
+  addLayoutFloor, updateLayoutFloor, calibrateLayoutFloor, removeLayoutFloor,
+  createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
+  createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
+  setLayoutTargetPlacement, setLayoutTargetBinding, setPreVisitInformation,
 };
