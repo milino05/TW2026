@@ -67,20 +67,25 @@ export const venueTargetsMixin = {
 
   async handleTargetMediaSubmit(form, data) {
     if (!form.matches("[data-recognition-media-upload]")) return false;
-    const file = data.get("file");
-    if (!(file instanceof File) || !file.size) throw new Error("Scegli un'immagine da caricare.");
-    const optimized = await optimizedRecognitionMedia(file);
-    const dataBase64 = await fileAsBase64(optimized);
-    await this.execute(() => managementRepository.uploadVenueTargetRecognitionMedia(
-      this.id,
-      form.dataset.recognitionMediaUpload,
-      {
-        fileName: optimized.name || file.name,
-        mimeType: optimized.type || file.type,
-        dataBase64,
-        altText: String(data.get("altText") || "").trim(),
-      },
-    ), "Immagine di riconoscimento caricata.");
+    try {
+      const file = data.get("file");
+      if (!(file instanceof File) || !file.size) throw new Error("Scegli un'immagine da caricare.");
+      const optimized = await optimizedRecognitionMedia(file);
+      const dataBase64 = await fileAsBase64(optimized);
+      await this.execute(() => managementRepository.uploadVenueTargetRecognitionMedia(
+        this.id,
+        form.dataset.recognitionMediaUpload,
+        {
+          fileName: optimized.name || file.name,
+          mimeType: optimized.type || file.type,
+          dataBase64,
+          altText: String(data.get("altText") || "").trim(),
+        },
+      ), "Immagine di riconoscimento caricata.");
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Caricamento dell'immagine di riconoscimento non riuscito";
+      this.render();
+    }
     return true;
   },
 
