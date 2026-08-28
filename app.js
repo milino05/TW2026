@@ -20,6 +20,7 @@ const marketplaceRoutes = require("./routes/marketplaceV2.routes");
 const navigatorRoutes = require("./routes/navigatorV2.routes");
 const preferenceRoutes = require("./routes/preferences.routes");
 const { configuredMediaRoot } = require("./services/itemMediaUpload.service");
+const { configuredFloorPlanRoot } = require("./services/venueFloorPlanUpload.service");
 const { loadCurrentUser } = require("./middlewares/auth");
 const { configuredOrigins, requireTrustedOrigin } = require("./middlewares/originGuard");
 const errorHandler = require("./middlewares/errorHandler");
@@ -28,7 +29,7 @@ const AppError = require("./utils/AppError");
 const app = express();
 const allowedOrigins = configuredOrigins();
 app.enable("trust proxy");
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "6mb" }));
 app.use(cors({
   credentials: true,
   origin(origin, callback) {
@@ -39,6 +40,12 @@ app.use(cors({
 app.use(requireTrustedOrigin);
 app.use(loadCurrentUser);
 app.use("/uploads/item-media", express.static(configuredMediaRoot(), {
+  immutable: true,
+  maxAge: "30d",
+  fallthrough: false,
+  setHeaders(response) { response.setHeader("X-Content-Type-Options", "nosniff"); },
+}));
+app.use("/uploads/venue-floor-plans", express.static(configuredFloorPlanRoot(), {
   immutable: true,
   maxAge: "30d",
   fallthrough: false,
