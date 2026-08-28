@@ -22,6 +22,7 @@ const ROUTES = new Set([
   "/workspace/context-compose",
   "/profile",
   "/namespaces/editor",
+  "/physical-vocabularies/editor",
 ]);
 
 function stripBase(pathname) {
