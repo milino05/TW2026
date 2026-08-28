@@ -67,6 +67,9 @@ export const managementRepository = {
   updateVenueFloor(venueId, floorId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/floors/${encoded(floorId)}`, { method: "PATCH", ...body(payload) });
   },
+  uploadVenueFloorPlan(venueId, floorId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/floors/${encoded(floorId)}/map-asset`, { method: "POST", ...body(payload) });
+  },
   calibrateVenueFloor(venueId, floorId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/floors/${encoded(floorId)}/calibration`, { method: "PUT", ...body(payload) });
   },
