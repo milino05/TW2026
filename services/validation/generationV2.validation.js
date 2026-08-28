@@ -83,7 +83,8 @@ function validateSemanticGoal(goal, field, errors) {
 }
 function validateRelationGoal(goal, field, errors) {
   if (!goal || typeof goal !== "object" || !RELATION_GOAL_KINDS.includes(goal.kind)) {
-    errors.push(issue(field, "INVALID_RELATION_GOAL", "Relation goal non valido"); return;
+    errors.push(issue(field, "INVALID_RELATION_GOAL", "Relation goal non valido"));
+    return;
   }
   if (!GOAL_PRIORITIES.includes(goal.priority || "preferred")) errors.push(issue(`${field}.priority`, "INVALID_ENUM", "priority non valida"));
   validateFeature(goal.from, `${field}.from`, errors);

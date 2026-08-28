@@ -8,46 +8,50 @@ const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/visit-authoring-view.js");
 const shellPath = path.join(root, "clients/marketplace/src/ui/app-shell.js");
 const servicePath = path.join(root, "services/visitAuthoringV2.service.js");
+const commandPath = path.join(root, "services/visitAuthoringCommandV2.service.js");
 const view = fs.readFileSync(viewPath, "utf8");
 const shell = fs.readFileSync(shellPath, "utf8");
 const service = fs.readFileSync(servicePath, "utf8");
+const commands = fs.readFileSync(commandPath, "utf8");
 
 test("visit authoring boundary passa il syntax gate", () => {
-  for (const target of [viewPath, shellPath, servicePath]) {
+  for (const target of [viewPath, shellPath, servicePath, commandPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
 });
 
-test("visit authoring espone i sei passaggi novice-first", () => {
-  for (const label of ["Informazioni principali", "Contenuti", "Tappe", "Impostazioni", "Logistica", "Riepilogo e pubblicazione"]) assert.match(view, new RegExp(label));
+test("visit authoring espone i sei passaggi stop-centric", () => {
+  for (const label of ["Informazioni", "Contenuti", "Tappe", "Impostazioni", "Percorso", "Pubblicazione"]) assert.match(view, new RegExp(label));
   assert.match(view, /aria-label="Passaggi di creazione della visita"/);
   assert.match(view, /aria-current="\$\{current \? "step" : "false"\}"/);
 });
 
-test("contenuti e tappe sono due decisioni distinte", () => {
+test("contenuti persistenti e tappe restano distinti dietro una UX stop-centric", () => {
   assert.match(view, /data-add-content/);
-  assert.match(view, /deliveryAnchorId:\s*null/);
-  assert.match(view, /data-add-anchor/);
-  assert.match(view, /data-entry-anchor/);
-  assert.match(view, /Le tappe fisiche vengono gestite nel passaggio successivo/);
-  assert.match(view, /Le tappe sono oggetti fisici della sede/);
-  assert.doesNotMatch(view, /ensureReferences/);
-  assert.doesNotMatch(view, /matchingTarget\(result\)/);
+  assert.match(view, /activeContentStopId/);
+  assert.match(view, /addVisitContentToStop/);
+  assert.match(view, /data-attach-contextual/);
+  assert.match(view, /data-detach-content/);
+  assert.match(view, /I contenuti restano entità editoriali separate/);
+  assert.doesNotMatch(view, /ensureReferences|matchingTarget\(result\)/);
 });
 
-test("la projection rende persistente il suggerimento Subject -> VenueTarget", () => {
+test("l'inferenza Subject -> VenueTarget resta backend-authoritative e non indovina ambiguità", () => {
   assert.match(service, /ItemV2\.find\([\s\S]*primarySubjectId/);
   assert.match(service, /primarySubjectId:\s*item\?\.primarySubjectId\s*\|\|\s*null/);
-  assert.match(view, /suggestedTargets\(\)/);
-  assert.match(view, /entry\.primarySubjectId/);
+  assert.match(commands, /publishedOccurrenceCandidates/);
+  assert.match(commands, /VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED/);
+  assert.match(commands, /ensureAnchorForTarget/);
+  assert.match(view, /pendingOccurrence/);
+  assert.match(view, /data-occurrence-target/);
 });
 
-test("sequenza e ruoli mantengono feature parity con microcopy accessibile", () => {
-  assert.match(view, /data-move-entry/);
-  assert.match(view, /Sposta prima/);
-  assert.match(view, /Sposta dopo/);
-  assert.match(view, /data-remove-entry/);
+test("sequenza delle tappe, ruoli e contenuti mantengono controlli accessibili", () => {
+  assert.match(view, /data-move-stop/);
+  assert.match(view, /aria-label="Sposta prima"/);
+  assert.match(view, /aria-label="Sposta dopo"/);
+  assert.match(view, /data-remove-content/);
   assert.match(view, /value="core"[\s\S]*Essenziale/);
   assert.match(view, /value="recommended"[\s\S]*Consigliato/);
   assert.match(view, /value="optional"[\s\S]*Facoltativo/);
@@ -56,11 +60,11 @@ test("sequenza e ruoli mantengono feature parity con microcopy accessibile", () 
 });
 
 test("rimozione tappe protegge contenuti e route hint", () => {
-  assert.match(view, /anchorRemovalBlockers\(anchorId\)/);
-  assert.match(view, /entry\.deliveryAnchorId/);
-  assert.match(view, /hint\.fromAnchorId/);
-  assert.match(view, /hint\.toAnchorId/);
-  assert.match(view, /data-remove-anchor/);
+  assert.match(view, /data-remove-stop/);
+  assert.match(view, /restano nella visita come contestuali/);
+  assert.match(commands, /deliveryAnchorId:\s*null/);
+  assert.match(commands, /hint\.fromAnchorId/);
+  assert.match(commands, /hint\.toAnchorId/);
 });
 
 test("logistica e contenuti restano domini separati nella stessa UX", () => {

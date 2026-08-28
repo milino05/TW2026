@@ -1,15 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const mongoose = require("mongoose");
 const LayoutRevision = require("../models/layoutRevision.model");
+const layoutCommands = require("../services/venueLayoutCommand.service");
 const {
   deriveMetersPerPixel,
   distanceMetersForGeometry,
 } = require("../services/layoutGeometry.service");
-const {
-  normalizeWorkingVenueReleasePayload,
-  validateWorkingVenueReleasePayload,
-} = require("../services/validation/venueRelease.validation");
 
 function oid() { return new mongoose.Types.ObjectId(); }
 
@@ -34,17 +33,19 @@ test("LayoutRevision pins a PhysicalVocabularyRevision and contains no embedded 
   assert.equal(layout.routingPresets, undefined);
 });
 
-test("VenueRelease update contract rejects legacy Layout vocabulary fields", () => {
-  const rawPayload = { layout: { placeTypes: [], routingAttributes: [], routingPresets: [] } };
-  const issues = validateWorkingVenueReleasePayload({
-    payload: normalizeWorkingVenueReleasePayload(rawPayload),
-    rawPayload,
-  });
-  assert.deepEqual(issues.map((entry) => entry.field), [
-    "layout.placeTypes",
-    "layout.routingAttributes",
-    "layout.routingPresets",
-  ]);
+test("Venue physical authoring exposes granular commands and no aggregate rewrite route", () => {
+  const routes = fs.readFileSync(path.resolve(__dirname, "../routes/venues.routes.js"), "utf8");
+  assert.doesNotMatch(routes, /router\.patch\(\s*["']\/venues\/:venueId\/working-release["']/);
+  for (const route of [
+    "working-layout/floors",
+    "working-layout/places",
+    "working-layout/connections",
+    "working-layout/targets/:venueTargetId/placement",
+  ]) assert.match(routes, new RegExp(route.replaceAll("/", "\\/")));
+  for (const command of [
+    "addFloor", "calibrateFloor", "createPlace", "movePlace", "createConnection",
+    "setConnectionAttribute", "setVenueTargetPlacement", "setPreVisitInformation",
+  ]) assert.equal(typeof layoutCommands[command], "function", `${command} command missing`);
 });
 
 test("Floor calibration converts normalized polyline geometry into meters", () => {

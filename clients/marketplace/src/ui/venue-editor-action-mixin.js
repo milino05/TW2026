@@ -13,11 +13,44 @@ const WORKFLOW_CONFIG = {
 function number(value, fallback = null) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 
 export const venueActionMixin = {
+  requestDestructiveAction(action) {
+    this.pendingDestructiveAction = action;
+    this.pendingWorkflow = null;
+    this.error = null;
+    this.render();
+    requestAnimationFrame(() => this.querySelector("[data-confirm-destructive-action]")?.focus());
+  },
+
+  destructiveActionRequest(action) {
+    if (action.type === "floor") return () => managementRepository.removeVenueFloor(this.id, action.id);
+    if (action.type === "place") return () => managementRepository.removeVenuePlace(this.id, action.id);
+    if (action.type === "connection") return () => managementRepository.removeVenueConnection(this.id, action.id);
+    if (action.type === "target_detach") return () => managementRepository.detachVenueTarget(this.id, action.id);
+    if (action.type === "recognition_media") {
+      return () => managementRepository.removeVenueTargetRecognitionMedia(this.id, action.targetId, action.mediaId);
+    }
+    return null;
+  },
+
   async onClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (await this.handleTargetMediaClick?.(event)) return;
     if (await this.handleMapAuthoringClick?.(event)) return;
+
+    if (target.closest("[data-cancel-destructive-action]")) {
+      this.pendingDestructiveAction = null;
+      this.error = null;
+      this.render();
+      return;
+    }
+    if (target.closest("[data-confirm-destructive-action]") && this.pendingDestructiveAction) {
+      const action = this.pendingDestructiveAction;
+      const request = this.destructiveActionRequest(action);
+      if (!request) { this.pendingDestructiveAction = null; this.render(); return; }
+      await this.execute(request, action.successMessage || "Configurazione fisica aggiornata.");
+      return;
+    }
 
     const sectionTab = target.closest("[data-venue-section]");
     if (sectionTab) { this.showSection(sectionTab.dataset.venueSection, { scroll: true }); return; }
@@ -84,27 +117,27 @@ export const venueActionMixin = {
 
     const removeFloor = target.closest("[data-remove-floor]");
     if (removeFloor) {
-      if (!window.confirm("Rimuovere questo piano? L'operazione è consentita solo se non contiene luoghi.")) return;
-      await this.execute(() => managementRepository.removeVenueFloor(this.id, removeFloor.dataset.removeFloor), "Piano rimosso.");
+      const label = removeFloor.closest("article")?.querySelector("h3")?.textContent?.trim() || "questo piano";
+      this.requestDestructiveAction({ type: "floor", id: removeFloor.dataset.removeFloor, title: `Rimuovere “${label}”?`, description: "Il piano può essere rimosso soltanto se non contiene luoghi.", confirmLabel: "Rimuovi piano", successMessage: "Piano rimosso." });
       return;
     }
     const removePlace = target.closest("[data-remove-place]");
     if (removePlace) {
-      if (!window.confirm("Rimuovere questo luogo? Collegamenti e oggetti devono essere spostati prima.")) return;
-      await this.execute(() => managementRepository.removeVenuePlace(this.id, removePlace.dataset.removePlace), "Luogo rimosso.");
+      const label = removePlace.closest("article")?.querySelector("h3")?.textContent?.trim() || "questo luogo";
+      this.requestDestructiveAction({ type: "place", id: removePlace.dataset.removePlace, title: `Rimuovere “${label}”?`, description: "Collegamenti e oggetti associati devono essere spostati prima.", confirmLabel: "Rimuovi luogo", successMessage: "Luogo rimosso." });
       return;
     }
     const removeConnection = target.closest("[data-remove-connection]");
     if (removeConnection) {
-      if (!window.confirm("Rimuovere questo collegamento?")) return;
-      await this.execute(() => managementRepository.removeVenueConnection(this.id, removeConnection.dataset.removeConnection), "Collegamento rimosso.");
+      const label = removeConnection.closest("article")?.querySelector("h3")?.textContent?.trim() || "questo collegamento";
+      this.requestDestructiveAction({ type: "connection", id: removeConnection.dataset.removeConnection, title: `Rimuovere “${label}”?`, description: "Il collegamento non sarà più disponibile nel grafo della bozza.", confirmLabel: "Rimuovi collegamento", successMessage: "Collegamento rimosso." });
       return;
     }
 
     const detach = target.closest("[data-detach-target]");
     if (detach) {
-      if (!window.confirm(`Rimuovere “${detach.dataset.label || "questo oggetto"}” dalla configurazione fisica di lavoro? Verranno rimossi collocazione, disponibilità e immagini di riconoscimento dalla bozza. Il VenueTarget resterà disponibile nell'archivio della sede.`)) return;
-      await this.execute(() => managementRepository.detachVenueTarget(this.id, detach.dataset.detachTarget), "Oggetto rimosso dalla configurazione fisica di lavoro.");
+      const label = detach.dataset.label || "questo oggetto";
+      this.requestDestructiveAction({ type: "target_detach", id: detach.dataset.detachTarget, title: `Rimuovere “${label}” dalla configurazione?`, description: "Collocazione, disponibilità e immagini di riconoscimento verranno rimosse soltanto dalla bozza. Il VenueTarget resterà nell'archivio della sede.", confirmLabel: "Rimuovi dalla bozza", successMessage: "Oggetto rimosso dalla configurazione fisica di lavoro." });
     }
   },
 

@@ -51,11 +51,11 @@ rejectPattern("clients/marketplace/src/ui/app-shell.js", /visit-logistics-editor
 requirePattern("clients/marketplace/src/ui/create-hub-view.js", /renderVisitCard[\s\S]*href="\/workspace\/visit-authoring"[\s\S]*Crea visita/, "Create hub new Visit entry point");
 requirePattern("clients/marketplace/src/ui/workspace-view.js", /resourceType\s*===\s*["']visit["'][\s\S]*\/workspace\/visit-authoring\?visitId=/, "Workspace existing Visit authoringRef entry point");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /createVisit[\s\S]*updateVisit/, "Visit create and edit through VisitV2 API");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Informazioni principali[\s\S]*Contenuti[\s\S]*Tappe[\s\S]*Impostazioni[\s\S]*Logistica[\s\S]*Riepilogo e pubblicazione/, "Six-step novice-first Visit workflow");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-move-entry[\s\S]*data-remove-entry/, "Visit content reorder and removal controls");
+requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Informazioni[\s\S]*Contenuti[\s\S]*Tappe[\s\S]*Impostazioni[\s\S]*Percorso[\s\S]*Pubblicazione/, "Six-step stop-centric Visit workflow");
+requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-move-stop[\s\S]*data-remove-stop[\s\S]*data-remove-content/, "Visit stop ordering and safe removal controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContent[\s\S]*data-content-page/, "Paginated Visit content search");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /deliveryAnchorId:\s*null[\s\S]*data-add-anchor[\s\S]*data-entry-anchor/, "Explicit content-to-anchor separation");
+requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /activeContentStopId[\s\S]*data-attach-contextual[\s\S]*data-detach-content/, "Explicit content-to-anchor separation");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /preVisitNotes[\s\S]*routeHints/, "Visit logistics integrated while preserving route hints");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-visit-logistics[\s\S]*serializeRouteHints\(\)/, "Visit logistics editing boundary kept separate from content entries");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /executeWorkspaceOperation[\s\S]*resourceType:\s*["']visit["']/, "Backend-authoritative Visit workflow from editor");

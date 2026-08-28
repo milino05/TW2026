@@ -88,11 +88,15 @@ export const venueTargetsMixin = {
     const target = event.target instanceof Element ? event.target : null;
     const remove = target?.closest("[data-remove-recognition-media]");
     if (!remove) return false;
-    if (!window.confirm(`Rimuovere questa immagine di riconoscimento da “${remove.dataset.targetLabel || "questo oggetto"}”?`)) return true;
-    await this.execute(
-      () => managementRepository.removeVenueTargetRecognitionMedia(this.id, remove.dataset.targetId, remove.dataset.removeRecognitionMedia),
-      "Immagine di riconoscimento rimossa.",
-    );
+    this.requestDestructiveAction({
+      type: "recognition_media",
+      targetId: remove.dataset.targetId,
+      mediaId: remove.dataset.removeRecognitionMedia,
+      title: `Rimuovere questa immagine da “${remove.dataset.targetLabel || "questo oggetto"}”?`,
+      description: "L'immagine verrà rimossa dalla configurazione fisica di lavoro. Gli asset ancora usati da snapshot storici restano conservati.",
+      confirmLabel: "Rimuovi immagine",
+      successMessage: "Immagine di riconoscimento rimossa.",
+    });
     return true;
   },
 

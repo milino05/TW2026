@@ -70,7 +70,8 @@ test("a semantic requirement resolves to different local definitionIds without a
   }]);
   const translated = translateRequirements(target, { _id: new mongoose.Types.ObjectId() }, requirement);
   assert.equal(translated.requirements[0].physicalAttributeDefinitionId, targetDefinition.definitionId);
-  assert.deepEqual(translated.unsupportedRequired, []);
+  assert.deepEqual(translated.warnings, []);
+  assert.deepEqual(translated.blockers, []);
 });
 
 test("a resolved but type-incompatible required feature remains a blocker", () => {
@@ -84,5 +85,8 @@ test("a resolved but type-incompatible required feature remains a blocker", () =
     priority: "required",
   }]);
   assert.deepEqual(translated.requirements, []);
-  assert.deepEqual(translated.unsupportedRequired, [physicalFeatureRef]);
+  assert.deepEqual(translated.warnings, []);
+  assert.equal(translated.blockers.length, 1);
+  assert.equal(translated.blockers[0].code, "PHYSICAL_REQUIREMENT_INCOMPATIBLE");
+  assert.deepEqual(translated.blockers[0].physicalFeatureRef, physicalFeatureRef);
 });
