@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 const controller = require("../controllers/venues.controller");
+const lifecycleController = require("../controllers/venueLifecycle.controller");
 
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
@@ -15,6 +16,9 @@ router.get("/venues", controller.list);
 router.post("/venues", requireAuth, controller.create);
 router.get("/venues/:venueId", venueId, controller.get);
 router.patch("/venues/:venueId", requireAuth, venueId, controller.update);
+router.get("/venues/:venueId/lifecycle-impact", requireAuth, venueId, lifecycleController.impact);
+router.post("/venues/:venueId/lifecycle/trash", requireAuth, venueId, lifecycleController.trash);
+router.post("/venues/:venueId/lifecycle/restore", requireAuth, venueId, lifecycleController.restore);
 
 router.get("/venues/:venueId/targets", venueId, controller.listTargets);
 router.post("/venues/:venueId/targets", requireAuth, venueId, controller.createTarget);
