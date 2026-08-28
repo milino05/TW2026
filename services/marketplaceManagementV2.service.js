@@ -175,7 +175,22 @@ function venueOperations({ release, permissions, hasWorking }) {
   return operations;
 }
 
-function projectTarget(target, subject, permissions, binding) {
+function projectTarget(target, subject, permissions, {
+  binding = null,
+  placement = null,
+  publishedReferenced = false,
+  workingEditable = false,
+} = {}) {
+  const includedInWorkingConfiguration = Boolean(binding || placement);
+  const availableOperations = [
+    ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
+    ...(workingEditable && includedInWorkingConfiguration && permissions.has("venue.physical.edit")
+      ? [operation("venue.target.detach", "Rimuovi dalla configurazione")]
+      : []),
+    ...(permissions.has("venue.lifecycle.manage") && !includedInWorkingConfiguration && !publishedReferenced
+      ? [operation("venue.target.trash", "Sposta nel cestino")]
+      : []),
+  ];
   return {
     id: target._id,
     publicCode: target.publicCode,
@@ -190,10 +205,15 @@ function projectTarget(target, subject, permissions, binding) {
         altText: media.altText || "",
       })),
     } : null,
-    availableOperations: [
-      ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
-      ...(permissions.has("venue.lifecycle.manage") ? [operation("venue.target.trash", "Sposta nel cestino")] : []),
-    ],
+    configuration: {
+      includedInWorkingConfiguration,
+      placed: Boolean(placement),
+      publishedReferenced: Boolean(publishedReferenced),
+      lifecycleBlocker: includedInWorkingConfiguration
+        ? "working_configuration"
+        : (publishedReferenced ? "published_configuration" : null),
+    },
+    availableOperations,
   };
 }
 
@@ -212,10 +232,31 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
     : [];
   const subjectById = new Map(subjects.map((subject) => [id(subject._id), subject]));
   const bindingByTargetId = new Map((release?.targetBindings || []).map((binding) => [id(binding.venueTargetId), binding]));
+  const placementByTargetId = new Map((layout?.venueTargetPlacements || []).map((placement) => [id(placement.venueTargetId), placement]));
   const source = venue.workingReleaseId ? "working" : (venue.publishedReleaseId ? "published" : "empty");
   const liveIssues = venue.workingReleaseId && release && layout
     ? await computeVenueReleaseIssues({ venue, release, layout })
     : [];
+
+  let publishedReferencedTargetIds = new Set();
+  if (venue.publishedReleaseId) {
+    if (!venue.workingReleaseId && release && id(release._id) === id(venue.publishedReleaseId)) {
+      publishedReferencedTargetIds = new Set([
+        ...(release.targetBindings || []).map((entry) => id(entry.venueTargetId)),
+        ...(layout?.venueTargetPlacements || []).map((entry) => id(entry.venueTargetId)),
+      ]);
+    } else {
+      const publishedRelease = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings layoutRevisionId").lean();
+      const publishedLayout = publishedRelease?.layoutRevisionId
+        ? await LayoutRevision.findById(publishedRelease.layoutRevisionId).select("venueTargetPlacements").lean()
+        : null;
+      publishedReferencedTargetIds = new Set([
+        ...(publishedRelease?.targetBindings || []).map((entry) => id(entry.venueTargetId)),
+        ...(publishedLayout?.venueTargetPlacements || []).map((entry) => id(entry.venueTargetId)),
+      ]);
+    }
+  }
+
   const physicalVocabulary = vocabularyBundle?.physicalVocabulary || null;
   const canManagePinnedVocabulary = Boolean(physicalVocabulary && (
     (physicalVocabulary.ownerType === "organization"
@@ -223,6 +264,7 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       && permissions.has("physical_vocabulary.view"))
     || (physicalVocabulary.ownerType === "user" && id(physicalVocabulary.ownerId) === id(actorUserId))
   ));
+  const workingEditable = Boolean(venue.workingReleaseId && ["draft", "changes_requested"].includes(release?.status));
 
   return {
     venue: {
@@ -269,7 +311,12 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
         routingProfiles: plain(vocabularyBundle.revision).routingProfiles || [],
       },
     } : null,
-    targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), permissions, bindingByTargetId.get(id(target._id)))),
+    targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), permissions, {
+      binding: bindingByTargetId.get(id(target._id)) || null,
+      placement: placementByTargetId.get(id(target._id)) || null,
+      publishedReferenced: publishedReferencedTargetIds.has(id(target._id)),
+      workingEditable,
+    })),
     availableOperations: venueOperations({ release, permissions, hasWorking: Boolean(venue.workingReleaseId) }),
   };
 }
