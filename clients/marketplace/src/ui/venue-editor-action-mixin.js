@@ -2,6 +2,14 @@ import { navigate } from "../application/router.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 
+const WORKFLOW_CONFIG = {
+  "venue.release.check": ["check-consistency", {}],
+  "venue.release.request_review": ["review", {}],
+  "venue.release.withdraw_review": ["review", { method: "DELETE" }],
+  "venue.release.request_changes": ["request-changes", {}],
+  "venue.release.publish": ["publish", {}],
+};
+
 function media(value) {
   return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     const separator = line.indexOf("|");
@@ -22,6 +30,11 @@ export const venueActionMixin = {
 
     if (target.closest("[data-back]")) {
       navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues`);
+      return;
+    }
+
+    if (target.closest("[data-ensure-release]")) {
+      await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Nuova bozza fisica pronta.");
       return;
     }
 
@@ -190,6 +203,24 @@ export const venueActionMixin = {
         placeIds: [],
       }), "Collocazione dell'oggetto aggiornata.");
     }
+  },
+
+  async runWorkflowRequest(code) {
+    const config = WORKFLOW_CONFIG[code];
+    if (!config) return;
+    const options = { ...config[1] };
+    if (code === "venue.release.request_changes") {
+      const message = this.workflowMessage.trim();
+      if (!message) throw new Error("Inserisci una motivazione per le modifiche richieste.");
+      options.payload = { message };
+    }
+    await managementRepository.venueWorkflow(this.id, config[0], options);
+  },
+
+  async performWorkflow(code) {
+    if (!WORKFLOW_CONFIG[code]) return;
+    if (code === "venue.release.request_changes") { this.pendingWorkflow = code; this.workflowMessage = ""; this.render(); return; }
+    await this.execute(() => this.runWorkflowRequest(code), "Workflow della sede aggiornato.");
   },
 
   onSubjectSelected(event) {
