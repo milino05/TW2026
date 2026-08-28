@@ -29,7 +29,6 @@ router.get("/venues/:venueId/physical-state", venueId, controller.getPhysicalSta
 router.get("/venues/:venueId/physical-onboarding", requireAuth, venueId, controller.getPhysicalOnboarding);
 router.post("/venues/:venueId/physical-onboarding", requireAuth, venueId, controller.initializePhysicalOnboarding);
 router.post("/venues/:venueId/working-release", requireAuth, venueId, controller.ensureWorkingRelease);
-router.patch("/venues/:venueId/working-release", requireAuth, venueId, controller.updateWorkingRelease);
 router.post("/venues/:venueId/working-release/check-consistency", requireAuth, venueId, controller.checkRelease);
 router.post("/venues/:venueId/working-release/review", requireAuth, venueId, controller.submitReleaseReview);
 router.delete("/venues/:venueId/working-release/review", requireAuth, venueId, controller.withdrawReleaseReview);
