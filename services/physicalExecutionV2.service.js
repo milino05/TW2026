@@ -8,7 +8,7 @@ const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
 const { placesForPhysicalFeature } = require("./venueRouting.service");
 const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
-const { translateRoutingRequirements, describePhysicalFeatureRef } = require("./physicalVocabularyResolver.service");
+const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -39,9 +39,7 @@ function globalSemanticRequirements(requirements = []) {
 }
 function assertRequirementScope({ requirements = [], venueCount }) {
   if (venueCount <= 1) return;
-  const local = (requirements || []).filter((requirement) => (
-    requirement?.physicalFeatureRef?.kind === "local" || requirement?.physicalAttributeDefinitionId
-  ));
+  const local = (requirements || []).filter((requirement) => requirement?.physicalFeatureRef?.kind === "local" || requirement?.physicalAttributeDefinitionId);
   if (!local.length) return;
   throw new AppError("Un requisito locale deve essere limitato a una singola Venue", 409, local.map((requirement) => ({
     field: "navigation.requirements",
@@ -54,12 +52,7 @@ function interVenueRequirementOutcome({ requirements = [], fromVenueId, toVenueI
   const relevant = globalSemanticRequirements(requirements);
   const required = relevant.filter((requirement) => (requirement.priority || "preferred") === "required");
   const soft = relevant.filter((requirement) => (requirement.priority || "preferred") !== "required");
-  const contextFor = (requirement) => ({
-    fromVenueId,
-    toVenueId,
-    priority: requirement.priority || "preferred",
-    physicalFeatureRef: requirement.physicalFeatureRef,
-  });
+  const contextFor = (requirement) => ({ fromVenueId, toVenueId, priority: requirement.priority || "preferred", physicalFeatureRef: requirement.physicalFeatureRef });
   const blockers = required.map((requirement) => ({
     field: "navigation.requirements",
     code: "INTER_VENUE_PHYSICAL_REQUIREMENT_UNVERIFIABLE",
@@ -119,9 +112,7 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
   const warnings = [], requirementsByVenue = new Map();
   for (const [venueId, bundle] of resolved.bundleByVenueId) {
     const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, navigation.requirements || []);
-    if (translated.blockers.length) {
-      throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, routingBlockerDetails(translated.blockers, { venueId }));
-    }
+    if (translated.blockers.length) throw new AppError("Una Venue non supporta un requisito di routing necessario", 409, routingBlockerDetails(translated.blockers, { venueId }));
     warnings.push(...translated.warnings.map((entry) => ({ ...entry, venueId: bundle.venue._id })));
     requirementsByVenue.set(venueId, translated.requirements);
   }
@@ -132,14 +123,7 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
     const profile = profileByTarget.get(id(target._id));
     const learned = Number(profile?.typicalObservationSeconds);
     const observationSeconds = Number(profile?.confidence) >= policy.confidence.usableThreshold && Number.isFinite(learned) ? learned : policy.coldStart.observationSeconds;
-    return {
-      _id: source._id,
-      sourceAnchorId: source._id,
-      venueTargetId: target._id,
-      venueId: target.venueId,
-      placeId: placement.primaryPlaceId,
-      estimatedObservationSeconds: Math.round(Math.max(0, observationSeconds)),
-    };
+    return { _id: source._id, sourceAnchorId: source._id, venueTargetId: target._id, venueId: target.venueId, placeId: placement.primaryPlaceId, estimatedObservationSeconds: Math.round(Math.max(0, observationSeconds)) };
   });
   const speedMps = resolveMovementSpeed(navigation.movementPacePreference);
   const legs = [];
@@ -147,14 +131,8 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
     const from = visitAnchors[index - 1], to = visitAnchors[index];
     const hint = sourceLegHints.get(`${id(from.sourceAnchorId)}>${id(to.sourceAnchorId)}`) || null;
     if (id(from.venueId) !== id(to.venueId)) {
-      const verification = interVenueRequirementOutcome({
-        requirements: navigation.requirements || [],
-        fromVenueId: from.venueId,
-        toVenueId: to.venueId,
-      });
-      if (verification.blockers.length) {
-        throw new AppError("Il trasferimento tra sedi non può verificare un requisito fisico obbligatorio", 409, verification.blockers);
-      }
+      const verification = interVenueRequirementOutcome({ requirements: navigation.requirements || [], fromVenueId: from.venueId, toVenueId: to.venueId });
+      if (verification.blockers.length) throw new AppError("Il trasferimento tra sedi non può verificare un requisito fisico obbligatorio", 409, verification.blockers);
       warnings.push(...verification.warnings);
       const estimatedSeconds = Number(hint?.estimatedSeconds ?? hint?.estimatedTransferSeconds);
       if (!Number.isFinite(estimatedSeconds) || estimatedSeconds <= 0) throw new AppError("Trasferimento inter-Venue senza stima esplicita", 409, [{ code: "INTER_VENUE_TRANSFER_ESTIMATE_REQUIRED", context: { fromVenueId: from.venueId, toVenueId: to.venueId } }]);
@@ -162,7 +140,7 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
       continue;
     }
     const bundle = resolved.bundleByVenueId.get(id(from.venueId));
-    const route = resolveRoute({ connections: bundle.layout.connections || [], fromPlaceId: from.placeId, toPlaceId: to.placeId, requirements: requirementsByVenue.get(id(from.venueId)) || [], speedMps, learnedResidualByConnection: {} });
+    const route = resolveRoute({ connections: bundle.layout.connections || [], places: bundle.layout.places || [], fromPlaceId: from.placeId, toPlaceId: to.placeId, requirements: requirementsByVenue.get(id(from.venueId)) || [], speedMps, learnedResidualByConnection: {} });
     if (!route.reachable) throw new AppError("Nessun percorso compatibile tra due VisitAnchor", 409, [{ code: "SESSION_ROUTE_UNREACHABLE", context: { venueId: from.venueId, fromAnchorId: from._id, toAnchorId: to._id } }]);
     legs.push({ type: "indoor", fromAnchorId: from._id, toAnchorId: to._id, venueReleaseId: bundle.release._id, layoutRevisionId: bundle.layout._id, path: (route.path || []).map((entry) => entry.connectionId || entry), estimatedSeconds: Math.round(route.estimatedSeconds), preferencePenalty: route.preferencePenalty || 0, instruction: hint?.instruction || hint?.instructionOverride || null });
   }
@@ -183,18 +161,14 @@ async function loadPinnedBundle(session, venueId) {
 
 async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, physicalFeatureRef }) {
   const bundle = await loadPinnedBundle(session, venueId);
-  const destinations = placesForPhysicalFeature({
-    layoutRevision: bundle.layout,
-    physicalVocabulary: bundle.physicalVocabulary,
-    physicalVocabularyRevision: bundle.physicalVocabularyRevision,
-    physicalFeatureRef,
-  });
+  const destinations = placesForPhysicalFeature({ layoutRevision: bundle.layout, physicalVocabulary: bundle.physicalVocabulary, physicalVocabularyRevision: bundle.physicalVocabularyRevision, physicalFeatureRef });
   if (!destinations.length) throw new AppError("La Venue non contiene una destinazione per la caratteristica fisica richiesta", 404);
   const translated = translateRequirements(bundle.physicalVocabularyRevision, bundle.physicalVocabulary, session.navigationSnapshot?.requirements || []);
-  if (translated.blockers.length) {
-    throw new AppError("Snapshot fisica non supporta un requisito obbligatorio", 409, routingBlockerDetails(translated.blockers, { venueId }));
-  }
-  const candidates = destinations.map((destination) => ({ destination, route: resolveRoute({ connections: bundle.layout.connections || [], fromPlaceId, toPlaceId: destination._id, requirements: translated.requirements, speedMps: session.sessionMovementSpeedMps, learnedResidualByConnection: {} }) })).filter((entry) => entry.route.reachable);
+  if (translated.blockers.length) throw new AppError("Snapshot fisica non supporta un requisito obbligatorio", 409, routingBlockerDetails(translated.blockers, { venueId }));
+  const candidates = destinations.map((destination) => ({
+    destination,
+    route: resolveRoute({ connections: bundle.layout.connections || [], places: bundle.layout.places || [], fromPlaceId, toPlaceId: destination._id, requirements: translated.requirements, speedMps: session.sessionMovementSpeedMps, learnedResidualByConnection: {} }),
+  })).filter((entry) => entry.route.reachable);
   if (!candidates.length) throw new AppError("Nessuna destinazione raggiungibile per la caratteristica fisica richiesta", 409);
   const fastest = Math.min(...candidates.map((entry) => entry.route.estimatedSeconds));
   const acceptable = candidates.filter((entry) => entry.route.estimatedSeconds <= fastest * (1 + policy.routing.maxPreferredDetourRatio));
@@ -205,11 +179,7 @@ async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, 
     venueReleaseId: bundle.pin.venueReleaseId,
     layoutRevisionId: bundle.pin.layoutRevisionId,
     requestedPhysicalFeatureRef: physicalFeatureRef,
-    physicalFeatureRef: {
-      kind: "local",
-      physicalVocabularyId: bundle.physicalVocabulary._id,
-      definitionId: best.destination.placeTypeDefinitionId,
-    },
+    physicalFeatureRef: { kind: "local", physicalVocabularyId: bundle.physicalVocabulary._id, definitionId: best.destination.placeTypeDefinitionId },
     destination: best.destination,
     warnings: translated.warnings.map((entry) => ({ ...entry, venueId: bundle.pin.venueId })),
     ...best.route,
