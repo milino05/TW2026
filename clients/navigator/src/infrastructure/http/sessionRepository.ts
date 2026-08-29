@@ -8,6 +8,7 @@ export interface AvailableAction {
   family: "progress" | "presentation" | "semantic" | "navigation" | "lifecycle" | string;
   label: string;
   controlledVoiceAliases: string[];
+  semanticChoice?: boolean;
 }
 
 export interface SessionProjection {
