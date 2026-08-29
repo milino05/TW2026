@@ -39,16 +39,23 @@ function workflowCapabilities(principal, resourceType) {
 }
 
 function lifecyclePrefix(resourceType) {
-  if (resourceType === "item_edition") return "item";
-  if (resourceType === "namespace") return "namespace";
-  if (resourceType === "physical_vocabulary") return "physical_vocabulary";
-  return null;
+  return {
+    item_edition: "item",
+    editorial_context: "editorial_context",
+    namespace: "namespace",
+    physical_vocabulary: "physical_vocabulary",
+    visit: "visit",
+  }[resourceType] || null;
 }
 
 function removalLabel(resourceType) {
-  if (resourceType === "item_edition") return "Elimina contenuto";
-  if (resourceType === "namespace") return "Elimina regole editoriali";
-  return "Elimina vocabolario fisico";
+  return {
+    item_edition: "Elimina contenuto",
+    editorial_context: "Elimina raccolta editoriale",
+    namespace: "Elimina regole editoriali",
+    physical_vocabulary: "Elimina vocabolario fisico",
+    visit: "Elimina visita",
+  }[resourceType] || "Elimina risorsa";
 }
 
 function canRemoveOwnedResource(principal, resourceType) {
@@ -126,7 +133,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       state: candidate.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: candidate.publishedReleaseId ? { resourceType: "editorial_release", resourceId: candidate.publishedReleaseId } : null,
       listing,
-      availableOperations: ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce, canEdit: capabilities.edit }),
+      availableOperations: withRemovalOperation(
+        ownedOperations({ published: Boolean(candidate.publishedReleaseId), listing, canManageCommerce, canEdit: capabilities.edit }),
+        principal,
+        "editorial_context",
+      ),
     };
   }
   if (candidate.resourceType === "namespace") {
@@ -178,7 +189,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
     editorialWorkflow: workflowState(revision),
     publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "visit_revision", resourceId: candidate.publishedRevisionId } : null,
     listing,
-    availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
+    availableOperations: withRemovalOperation(
+      withWorkflowOperations({ baseOperations, principal, resourceType: "visit", revision }),
+      principal,
+      "visit",
+    ),
   };
 }
 
