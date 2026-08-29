@@ -309,7 +309,7 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
     const persisted = await VisitSessionV2.findById(started.session._id).lean();
     const semanticEvent = persisted.interactionEvents.find((entry) => entry.actionId === refreshedAuthorAction.actionId);
     assert.ok(semanticEvent);
-    assert.equal(semanticEvent.actionType, "EXPLORE_SEMANTIC_CONTENT");
+    assert.equal(semanticEvent.actionType, "EXPLORE_SEMANTIC_RELATION");
     assert.equal(semanticEvent.interactionChannel, "controlled_voice");
     assert.equal(id(semanticEvent.context.semanticSubjectId), id(artistSubject._id));
     assert.equal(id(semanticEvent.context.semanticItemEditionId), id(artist.edition._id));
