@@ -120,7 +120,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
   ]);
   const listingIds = listings.map((entry) => entry._id);
   const [offers, acquisitions] = await Promise.all([
-    listingIds.length ? MarketplaceOffer.find({ listingId: { $in: listingIds } }).sort({ createdAt: -1 }).lean() : [],
+    listingIds.length ? MarketplaceOffer.find({ listingId: { $in: listingIds }, status: "active" }).sort({ createdAt: -1 }).lean() : [],
     listingIds.length ? MarketplaceAcquisition.find({ listingId: { $in: listingIds } }).lean() : [],
   ]);
   const offersByListing = new Map();
@@ -142,6 +142,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
 
   const projectedListings = [];
   for (const listing of listings) {
+    let marketableAvailable = true;
     let asset = {
       type: listing.resourceType,
       id: listing.resourceId,
@@ -154,6 +155,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
       asset = { ...marketable.asset, title: listing.title || marketable.asset.title, summary: listing.summary || marketable.asset.summary };
     } catch (error) {
       if (![404, 409].includes(error?.status)) throw error;
+      marketableAvailable = false;
     }
     const listingOffers = offersByListing.get(id(listing._id)) || [];
     const listingAcquisitions = acquisitionsByListing.get(id(listing._id)) || [];
@@ -164,7 +166,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
       asset,
       publishedAt: listing.publishedAt,
       withdrawnAt: listing.withdrawnAt,
-      ...(canManage ? { offerConfiguration: {
+      ...(canManage && marketableAvailable ? { offerConfiguration: {
         resourceRef: { resourceType: listing.resourceType, resourceId: listing.resourceId },
         capabilityOptions: capabilityOptions(listing.resourceType),
         versionPolicyOptions: versionPolicyOptions(listing.resourceType),
@@ -207,7 +209,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
         } : {}),
       },
       availableOperations: canManage ? [
-        ...(["draft", "published"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
+        ...(marketableAvailable && ["draft", "published", "withdrawn"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
         ...(["draft", "published"].includes(listing.status) ? [{ code: "withdraw_listing", label: "Ritira listing" }] : []),
       ] : [],
     });

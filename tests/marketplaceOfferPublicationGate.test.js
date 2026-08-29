@@ -21,9 +21,9 @@ test("il gate offerta-pubblicazione passa il syntax gate", () => {
   }
 });
 
-test("creare la scheda prepara una bozza e la prima offerta la pubblica", () => {
+test("creare o riattivare la scheda e pubblicare un'offerta la rende visibile", () => {
   assert.match(source.marketplace, /status: "draft",[\s\S]*?publishedAt: null/);
-  assert.match(source.marketplace, /status: \{ \$in: \["draft", "published"\] \}/);
+  assert.match(source.marketplace, /status: \{ \$in: \["draft", "published", "withdrawn"\] \}/);
   assert.match(source.marketplace, /offer = await MarketplaceOffer\.create/);
   assert.match(source.marketplace, /\$set: \{ status: "published", publishedAt: new Date\(\)/);
   assert.match(source.marketplace, /if \(!offers\.length\) return null/);
@@ -40,8 +40,10 @@ test("la UI guida direttamente alla formulazione dell'offerta", () => {
   assert.match(source.workspace, /Configura offerta e pubblica/);
   assert.match(source.workspace, /\/workspace\/commerce\?listingId=/);
   assert.match(source.commerce, /Una risorsa appare nel Catalogo solo dopo la pubblicazione di almeno un’offerta/);
-  assert.match(source.commerce, /Non ancora visibile nel Catalogo/);
-  assert.match(source.commerce, /open: !hasActiveOffer/);
+  assert.match(source.commerce, /Contenuto privato/);
+  assert.match(source.commerce, /Nuova offerta/);
+  assert.match(source.commerce, /canCreateOffer \? this\.renderOfferForm\(listing\) : ""/);
+  assert.doesNotMatch(source.commerce, /open: !hasActiveOffer/);
   assert.match(source.commerce, /Pubblica offerta/);
-  assert.match(source.commercial, /\["draft", "published"\]\.includes\(listing\.status\)/);
+  assert.match(source.commercial, /\["draft", "published", "withdrawn"\]\.includes\(listing\.status\)/);
 });

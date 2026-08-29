@@ -156,7 +156,7 @@ async function validateOfferGrants({ listing, grants, actorUserId }) {
 }
 
 async function createOffer({ listingId, payload = {}, actorUserId }) {
-  const listing = await MarketplaceListing.findOne({ _id: listingId, status: { $in: ["draft", "published"] } }).lean();
+  const listing = await MarketplaceListing.findOne({ _id: listingId, status: { $in: ["draft", "published", "withdrawn"] } }).lean();
   if (!listing) throw new AppError("Scheda Marketplace non disponibile", 404);
   await assertCanActForPrincipal({
     actorUserId,
@@ -182,9 +182,9 @@ async function createOffer({ listingId, payload = {}, actorUserId }) {
       status: "active",
       createdBy: actorUserId,
     });
-    if (listing.status === "draft") {
+    if (listing.status !== "published") {
       const published = await MarketplaceListing.updateOne(
-        { _id: listing._id, status: "draft" },
+        { _id: listing._id, status: listing.status },
         { $set: { status: "published", publishedAt: new Date(), withdrawnAt: null, withdrawnBy: null } },
       );
       if (published.modifiedCount !== 1) {

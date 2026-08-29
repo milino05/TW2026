@@ -216,5 +216,31 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
       () => acquireOffer({ offerId: replacementOffer._id, actorUserId: secondBuyer._id }),
       (error) => error?.status === 409,
     );
+
+    await withdrawOffer({ offerId: replacementOffer._id, actorUserId: seller._id });
+    const privateCommercial = await getCommercialManagement({ actorUserId: seller._id });
+    assert.equal(privateCommercial.listings[0].offers.length, 0, "withdrawn offers must stay hidden from sales");
+    assert.equal(
+      privateCommercial.listings[0].availableOperations.some((operation) => operation.code === "create_offer"),
+      true,
+      "a private withdrawn listing must still allow a new offer from the sales page",
+    );
+
+    const resumedOffer = await createOffer({
+      listingId: listing._id,
+      actorUserId: seller._id,
+      payload: {
+        label: "Licenza contenuto ripubblicata",
+        pricing: { type: "paid", amountMinor: 799, currency: "EUR" },
+        grants: [{
+          resourceType: "item_revision",
+          resourceId: revision._id,
+          capability: "content.consume",
+          versionPolicy: "pinned",
+        }],
+      },
+    });
+    assert.equal(resumedOffer.status, "active");
+    assert.equal((await MarketplaceListing.findById(listing._id).lean()).status, "published");
   });
 });
