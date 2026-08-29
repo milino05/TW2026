@@ -74,6 +74,7 @@ export interface ActionResult {
     };
     navigation?: NavigationProjection;
     obstacleCheck?: ObstacleCheckProjection;
+    choices?: AvailableAction[];
   };
 }
 
