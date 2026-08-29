@@ -5,7 +5,7 @@ const ORIGINS = Object.freeze(["human", "ai_assisted", "ai_generated", "imported
 const ALLOWED_FIELDS = new Set([
   "scopeKey",
   "relationTypeDefinitionId",
-  "targetItemId",
+  "targetSubjectId",
   "sourceSubjectClassDefinitionId",
   "targetSubjectClassDefinitionId",
   "weight",
@@ -22,7 +22,7 @@ function normalizeItemConnectionPayload(payload = {}) {
   return {
     scopeKey: typeof payload.scopeKey === "string" ? payload.scopeKey.trim() : payload.scopeKey,
     relationTypeDefinitionId: typeof payload.relationTypeDefinitionId === "string" ? payload.relationTypeDefinitionId.trim() : payload.relationTypeDefinitionId,
-    targetItemId: payload.targetItemId,
+    targetSubjectId: payload.targetSubjectId,
     sourceSubjectClassDefinitionId: optionalTrimmedString(payload.sourceSubjectClassDefinitionId),
     targetSubjectClassDefinitionId: optionalTrimmedString(payload.targetSubjectClassDefinitionId),
     weight: payload.weight === undefined || payload.weight === "" ? 5 : Number(payload.weight),
@@ -39,7 +39,7 @@ function validateItemConnectionPayload(payload = {}) {
   }
   if (typeof payload.scopeKey !== "string" || !payload.scopeKey.trim()) issues.push({ field: "scopeKey", code: "REQUIRED", message: "Scegli l’ambito editoriale" });
   if (typeof payload.relationTypeDefinitionId !== "string" || !payload.relationTypeDefinitionId.trim()) issues.push({ field: "relationTypeDefinitionId", code: "REQUIRED", message: "Scegli il tipo di collegamento" });
-  if (!mongoose.isValidObjectId(payload.targetItemId)) issues.push({ field: "targetItemId", code: "INVALID_OBJECT_ID", message: "Il contenuto collegato non è valido" });
+  if (!mongoose.isValidObjectId(payload.targetSubjectId)) issues.push({ field: "targetSubjectId", code: "INVALID_OBJECT_ID", message: "Il soggetto collegato non è valido" });
   for (const field of ["sourceSubjectClassDefinitionId", "targetSubjectClassDefinitionId"]) {
     const value = payload[field];
     if (value !== undefined && value !== null && (typeof value !== "string" || !value.trim())) {
