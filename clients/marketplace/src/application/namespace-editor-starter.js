@@ -19,6 +19,19 @@ export function starterDefinitions(source = {}) {
     definitions[field].push(definition);
     return definition;
   };
+  const addRelation = (key, values) => {
+    const relation = add("relationTypes", key, values);
+    // Namespace created with an older ArtAround starter did not have these fields.
+    // Backfill only absent fields: an explicit empty/custom preference remains authoritative.
+    if (!Object.prototype.hasOwnProperty.call(relation, "targetSelectionSignals")) {
+      relation.targetSelectionSignals = JSON.parse(JSON.stringify(values.targetSelectionSignals || []));
+    }
+    if (!relation.reverse || typeof relation.reverse !== "object") relation.reverse = {};
+    if (!Object.prototype.hasOwnProperty.call(relation.reverse, "targetSelectionSignals")) {
+      relation.reverse.targetSelectionSignals = JSON.parse(JSON.stringify(values.reverse?.targetSelectionSignals || []));
+    }
+    return relation;
+  };
   const seconds = new Set(definitions.durationTypes.map((entry) => Number(entry.targetSeconds) || 0));
   const addDuration = (key, label, preferredSeconds, description) => {
     const existing = definitions.durationTypes.find((entry) => entry.key === key || String(entry.label || "").trim().toLocaleLowerCase("it") === label.toLocaleLowerCase("it"));
@@ -45,7 +58,7 @@ export function starterDefinitions(source = {}) {
   add("selectionSignals", "curiosita", { label: "Curiosità", description: "Contenuto adatto a richieste di dettagli insoliti, curiosi o sorprendenti." });
   add("selectionSignals", "aneddoto", { label: "Aneddoto", description: "Contenuto centrato su episodi, racconti o aneddoti specifici relativi al soggetto." });
 
-  add("relationTypes", "creata-da", {
+  addRelation("creata-da", {
     label: "Creata da",
     description: "Risponde alla domanda “Chi è l'autore?” e collega l'opera alla persona o al gruppo che l'ha realizzata.",
     domainDefinitionIds: [culturalWork.definitionId],
@@ -66,7 +79,7 @@ export function starterDefinitions(source = {}) {
     },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
-  add("relationTypes", "contesto-storico-culturale", {
+  addRelation("contesto-storico-culturale", {
     label: "Contesto storico e culturale",
     description: "Risponde alla domanda “Quando e dove è stata realizzata?” e collega l'opera al periodo storico, al luogo, al movimento artistico e alle condizioni geopolitiche del momento.",
     domainDefinitionIds: [culturalWork.definitionId],
@@ -84,7 +97,7 @@ export function starterDefinitions(source = {}) {
     },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
-  add("relationTypes", "tecnica-esecuzione", {
+  addRelation("tecnica-esecuzione", {
     label: "Tecnica e esecuzione",
     description: "Risponde alla domanda “Quali materiali e tecniche sono stati impiegati?” e collega l'opera ai materiali, agli strumenti e ai procedimenti usati per realizzarla.",
     domainDefinitionIds: [culturalWork.definitionId],
