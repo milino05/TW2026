@@ -39,6 +39,12 @@ export function starterDefinitions(source = {}) {
   const author = add("subjectClasses", "persona-autore", { label: "Persona o autore", description: "Persone, gruppi o botteghe che hanno ideato o realizzato un'opera." });
   const historicalContext = add("subjectClasses", "contesto-storico-culturale", { label: "Periodo, luogo o contesto culturale", description: "Periodi storici, luoghi, movimenti artistici e condizioni geopolitiche collegati a un'opera." });
   const materialOrTechnique = add("subjectClasses", "materiale-tecnica", { label: "Materiale o tecnica", description: "Materiali, supporti, strumenti e tecniche impiegati per realizzare un'opera." });
+
+  const overview = add("selectionSignals", "panoramica", { label: "Panoramica", description: "Contenuto adatto a introdurre il soggetto o a rispondere a una richiesta generale." });
+  const biography = add("selectionSignals", "biografia", { label: "Biografia", description: "Contenuto centrato sulla vita, il percorso e il profilo di una persona o autore." });
+  add("selectionSignals", "curiosita", { label: "Curiosità", description: "Contenuto adatto a richieste di dettagli insoliti, curiosi o sorprendenti." });
+  add("selectionSignals", "aneddoto", { label: "Aneddoto", description: "Contenuto centrato su episodi, racconti o aneddoti specifici relativi al soggetto." });
+
   add("relationTypes", "creata-da", {
     label: "Creata da",
     description: "Risponde alla domanda “Chi è l'autore?” e collega l'opera alla persona o al gruppo che l'ha realizzata.",
@@ -48,7 +54,16 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["chi è l'autore", "chi ha creato l'opera"],
-    reverse: { label: "Autore di", description: "Collega una persona alle opere che ha realizzato.", userIntents: ["quali opere ha realizzato"] },
+    targetSelectionSignals: [
+      { definitionId: overview.definitionId, weight: 1 },
+      { definitionId: biography.definitionId, weight: 0.9 },
+    ],
+    reverse: {
+      label: "Autore di",
+      description: "Collega una persona alle opere che ha realizzato.",
+      userIntents: ["quali opere ha realizzato"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
   add("relationTypes", "contesto-storico-culturale", {
@@ -60,7 +75,13 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["quando è stata realizzata", "dove è stata realizzata", "qual è il contesto storico e culturale"],
-    reverse: { label: "Contesto di", description: "Collega un periodo, un luogo o un contesto culturale alle opere pertinenti.", userIntents: ["quali opere appartengono a questo contesto"] },
+    targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    reverse: {
+      label: "Contesto di",
+      description: "Collega un periodo, un luogo o un contesto culturale alle opere pertinenti.",
+      userIntents: ["quali opere appartengono a questo contesto"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
   add("relationTypes", "tecnica-esecuzione", {
@@ -72,7 +93,13 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["quali materiali sono stati impiegati", "quale tecnica è stata usata", "come è stata realizzata"],
-    reverse: { label: "Impiegata in", description: "Collega un materiale o una tecnica alle opere in cui è stato impiegato.", userIntents: ["in quali opere è stata impiegata"] },
+    targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    reverse: {
+      label: "Impiegata in",
+      description: "Collega un materiale o una tecnica alle opere in cui è stato impiegato.",
+      userIntents: ["in quali opere è stata impiegata"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
   return definitions;
