@@ -36,10 +36,12 @@ function normalize(value: string) {
 function matchAction<T extends VoiceActionOption>(actions: T[], transcript: string) {
   const spoken = normalize(transcript);
   if (!spoken) return null;
-  return actions.find((action) => {
+  const matches = actions.filter((action) => {
     const vocabulary = [action.label, ...(action.controlledVoiceAliases || [])];
     return vocabulary.some((phrase) => normalize(phrase) === spoken);
-  }) || null;
+  });
+  // Controlled voice must never resolve an ambiguous phrase by array order.
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export class BrowserControlledVoice implements ControlledVoiceCapability {
