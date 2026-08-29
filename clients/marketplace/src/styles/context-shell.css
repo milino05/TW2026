@@ -8,3 +8,7 @@
 @media(max-width:68rem){.context-identity{margin-left:auto}.market-header:has(.context-identity) .menu-toggle{margin-left:.25rem}.home-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:50rem){.context-grid{grid-template-columns:1fr}.context-grid--personal{grid-template-columns:1fr}.context-card{grid-template-columns:auto minmax(0,1fr)}.context-card__action{grid-column:2}.home-hero{align-items:start;flex-direction:column}.home-actions,.home-metrics{grid-template-columns:1fr 1fr}.context-identity strong{max-width:9rem}}
 @media(max-width:34rem){.home-hero h1{font-size:clamp(1.9rem,10vw,2.65rem);overflow-wrap:anywhere}.home-actions,.home-metrics{grid-template-columns:1fr}.context-identity>span:nth-child(2){display:none}.context-identity button{padding:.35rem}.context-card{grid-template-columns:1fr}.context-card__action{grid-column:1}.context-card__icon,.context-card__plus{width:2.6rem;height:2.6rem}}
+
+/* Warmer, quieter surfaces for the museum identity. */
+.home-hero{background:var(--surface)}
+.context-card--create .context-card__plus{background:var(--sage-100);color:var(--ink-800)}
