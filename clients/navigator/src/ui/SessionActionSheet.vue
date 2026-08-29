@@ -18,7 +18,9 @@ const emit = defineEmits<{
 const closeButton = ref<HTMLButtonElement | null>(null);
 const dismissedChoiceSignature = ref("");
 const semanticChoices = computed(() => props.groups.semantic.filter((action) => action.semanticChoice === true));
-const semanticChoiceSignature = computed(() => semanticChoices.value.map((action) => action.actionId).join("|"));
+const semanticChoiceSignature = computed(() => semanticChoices.value
+  .map((action) => `${action.actionId}@${action.semanticChoiceRequestVersion ?? ""}`)
+  .join("|"));
 const autoChoiceOpen = computed(() => Boolean(
   semanticChoices.value.length
   && semanticChoiceSignature.value !== dismissedChoiceSignature.value,
@@ -53,7 +55,7 @@ function closeSheet() {
 </script>
 
 <template>
-  <div v-if="visible" class="action-overlay" @click.self="closeSheet">
+  <div v-if="visible" class="action-overlay" @click.self="closeSheet" @keydown.esc.stop.prevent="closeSheet">
     <section
       class="action-sheet"
       role="dialog"
