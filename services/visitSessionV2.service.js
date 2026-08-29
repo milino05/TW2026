@@ -253,7 +253,7 @@ async function currentSessionProjection({ sessionId, userId }) {
         venueId: anchor.venueId,
       } : null,
     } : null,
-    availableActions: actions.map(publicAction),
+    availableActions: actions.filter((action) => !action.hidden).map(publicAction),
   };
 }
 
