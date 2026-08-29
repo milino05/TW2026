@@ -128,6 +128,7 @@ function publicChoice(definition) {
     family: definition.family,
     label: definition.label,
     controlledVoiceAliases: [...(definition.controlledVoiceAliases || [])],
+    semanticChoice: true,
   };
 }
 
