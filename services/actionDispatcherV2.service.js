@@ -135,7 +135,13 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
 function appendSemanticChoices(runtime, effect) {
   if (effect?.type !== "semantic_choices" || !Array.isArray(effect.choices) || !effect.choices.length) return runtime;
   const seen = new Set((runtime.availableActions || []).map((action) => String(action.actionId)));
-  const choices = effect.choices.filter((choice) => choice?.actionId && !seen.has(String(choice.actionId)));
+  const choices = effect.choices
+    .filter((choice) => choice?.actionId && !seen.has(String(choice.actionId)))
+    .map((choice) => ({
+      ...choice,
+      semanticChoice: true,
+      semanticChoiceRequestVersion: runtime.session?.runtimeVersion,
+    }));
   return choices.length ? { ...runtime, availableActions: [...(runtime.availableActions || []), ...choices] } : runtime;
 }
 
