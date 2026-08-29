@@ -7,17 +7,29 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const { loadSemanticGraphRevision, neighbors } = require("./semanticGraphV2.service");
 const { resolveInitialPresentation, unitPosition } = require("./presentationRuntimeV2.service");
+const { resolveSemanticRelationTargets } = require("./semanticItemResolverV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function unique(values) { return [...new Set((values || []).map(id).filter(Boolean))]; }
-function opaqueActionId(seed) {
-  return `semantic.explore.${crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 20)}`;
+function opaqueActionId(kind, seed) {
+  return `semantic.${kind}.${crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 20)}`;
 }
 
-function semanticDefinition({ seed, label, controlledVoiceAliases = [] }) {
+function semanticContentDefinition({ seed, label, controlledVoiceAliases = [], hidden = false }) {
   return {
-    actionId: opaqueActionId(seed),
+    actionId: opaqueActionId("content", seed),
     type: "EXPLORE_SEMANTIC_CONTENT",
+    family: "semantic",
+    label,
+    controlledVoiceAliases: [...new Set((controlledVoiceAliases || []).map((value) => String(value || "").trim()).filter(Boolean))],
+    ...(hidden ? { hidden: true } : {}),
+  };
+}
+
+function semanticRelationDefinition({ seed, label, controlledVoiceAliases = [] }) {
+  return {
+    actionId: opaqueActionId("relation", seed),
+    type: "EXPLORE_SEMANTIC_RELATION",
     family: "semantic",
     label,
     controlledVoiceAliases: [...new Set((controlledVoiceAliases || []).map((value) => String(value || "").trim()).filter(Boolean))],
@@ -28,18 +40,20 @@ async function loadPinnedEditorialScope(plan) {
   const releaseIds = unique(plan?.sourceEditorialReleaseIds);
   if (!releaseIds.length) return { releases: [], rows: [], graphByReleaseId: new Map() };
 
-  const releases = await EditorialRelease.find({ _id: { $in: releaseIds } }).lean();
-  const releaseById = new Map(releases.map((release) => [id(release._id), release]));
+  const loadedReleases = await EditorialRelease.find({ _id: { $in: releaseIds } }).lean();
+  const releaseById = new Map(loadedReleases.map((release) => [id(release._id), release]));
   for (const releaseId of releaseIds) {
     if (!releaseById.has(releaseId)) {
       throw new AppError("EditorialRelease pinzata dalla Session non disponibile", 409, [{ code: "SESSION_EDITORIAL_SCOPE_UNAVAILABLE" }]);
     }
   }
+  const releases = releaseIds.map((releaseId) => releaseById.get(releaseId));
 
   const bindingRows = releases.flatMap((release) => (release.itemBindings || []).map((binding) => ({
     release,
     itemEditionId: binding.itemEditionId,
     itemRevisionId: binding.itemRevisionId,
+    curationSignals: binding.curationSignals || [],
   })));
   const editionIds = unique(bindingRows.map((row) => row.itemEditionId));
   const revisionIds = unique(bindingRows.map((row) => row.itemRevisionId));
@@ -59,12 +73,16 @@ async function loadPinnedEditorialScope(plan) {
     if (!edition || !revision || !item) continue;
     rows.push({
       sourceEditorialReleaseId: binding.release._id,
+      sourceEditorialReleaseIds: [binding.release._id],
       namespaceRevisionId: binding.release.namespaceRevisionId,
       itemId: item._id,
       itemEditionId: edition._id,
       itemRevisionId: revision._id,
       subjectId: item.primarySubjectId,
+      item,
+      edition,
       revision,
+      curationSignals: binding.curationSignals || [],
     });
   }
 
@@ -76,11 +94,41 @@ async function loadPinnedEditorialScope(plan) {
   return { releases, rows, graphByReleaseId };
 }
 
-function relationVoiceAliases(graph, edge) {
-  const definition = (graph?.namespaceRevision?.relationTypes || []).find((entry) =>
-    String(entry.definitionId) === String(edge.relationTypeDefinitionId));
+function relationDefinition(graph, edge) {
+  return (graph?.namespaceRevision?.relationTypes || []).find((entry) =>
+    String(entry.definitionId) === String(edge.relationTypeDefinitionId)) || null;
+}
+
+function relationVoiceAliases(definition, direction) {
   if (!definition) return [];
-  return edge.generated ? definition.reverse?.userIntents || [] : definition.userIntents || [];
+  return direction === "reverse" ? definition.reverse?.userIntents || [] : definition.userIntents || [];
+}
+
+function relationLabel(definition, edge, direction) {
+  if (direction === "reverse") return definition?.reverse?.label || edge?.label || definition?.label || "Approfondisci";
+  return definition?.label || edge?.label || "Approfondisci";
+}
+
+function candidateServerInput(candidate, relation = null) {
+  return {
+    sourceEditorialReleaseId: candidate.sourceEditorialReleaseId,
+    itemId: candidate.itemId,
+    itemEditionId: candidate.itemEditionId,
+    itemRevisionId: candidate.itemRevisionId,
+    namespaceRevisionId: candidate.namespaceRevisionId,
+    subjectId: candidate.subjectId,
+    relationLabel: relation,
+  };
+}
+
+function publicChoice(definition) {
+  return {
+    actionId: definition.actionId,
+    type: definition.type,
+    family: definition.family,
+    label: definition.label,
+    controlledVoiceAliases: [...(definition.controlledVoiceAliases || [])],
+  };
 }
 
 async function resolveCurrentSubjectId({ currentSubjectId = null, currentItemId = null }) {
@@ -103,57 +151,126 @@ async function deriveSemanticExplorationActions({
   if (!scope.rows.length) return [];
 
   const actions = [];
-  const seen = new Set();
-  function add(candidate, definition, relationLabel = null) {
-    if (actions.length >= maxActions || seen.has(definition.actionId)) return;
-    seen.add(definition.actionId);
-    actions.push({
-      definition,
-      serverInput: {
-        sourceEditorialReleaseId: candidate.sourceEditorialReleaseId,
-        itemId: candidate.itemId,
-        itemEditionId: candidate.itemEditionId,
-        itemRevisionId: candidate.itemRevisionId,
-        namespaceRevisionId: candidate.namespaceRevisionId,
-        subjectId: candidate.subjectId,
-        relationLabel,
-      },
-      semanticContext: {
-        subjectId: candidate.subjectId,
-        itemEditionId: candidate.itemEditionId,
-      },
+  const publicActionIds = new Set();
+  function addPublic(action) {
+    if (publicActionIds.size >= maxActions || publicActionIds.has(action.definition.actionId)) return false;
+    publicActionIds.add(action.definition.actionId);
+    actions.push(action);
+    return true;
+  }
+  function addHidden(action) {
+    if (!actions.some((entry) => entry.definition.actionId === action.definition.actionId)) actions.push(action);
+  }
+
+  // Explicit alternative content about the same Subject remains an Item-level action.
+  for (const candidate of scope.rows) {
+    if (publicActionIds.size >= maxActions) break;
+    if (id(candidate.itemRevisionId) === id(currentItemRevisionId)) continue;
+    if (id(candidate.subjectId) !== subjectId) continue;
+    addPublic({
+      definition: semanticContentDefinition({
+        seed: `same-subject|${id(candidate.itemRevisionId)}`,
+        label: `Approfondisci: ${candidate.revision.label}`,
+      }),
+      serverInput: candidateServerInput(candidate),
+      semanticContext: { subjectId: candidate.subjectId, itemEditionId: candidate.itemEditionId },
     });
   }
 
-  for (const candidate of scope.rows) {
-    if (id(candidate.itemRevisionId) === id(currentItemRevisionId)) continue;
-    if (id(candidate.subjectId) !== subjectId) continue;
-    add(candidate, semanticDefinition({
-      seed: `same-subject|${id(candidate.itemRevisionId)}`,
-      label: `Approfondisci: ${candidate.revision.label}`,
-    }));
-  }
-
+  // A semantic relation is one user action. Item selection happens only after the graph
+  // has resolved its target Subject(s), so controlled-voice aliases cannot collide per Item.
+  const groups = new Map();
   for (const release of scope.releases) {
-    if (actions.length >= maxActions) break;
     const graph = scope.graphByReleaseId.get(id(release._id));
     if (!graph?.nodes?.has(subjectId)) continue;
     for (const edge of neighbors(graph, subjectId)) {
-      if (actions.length >= maxActions) break;
       const targetSubjectId = id(edge.toSubjectId);
       const targetSubject = graph.nodes.get(targetSubjectId)?.subject;
       if (!targetSubject) continue;
-      const candidates = scope.rows.filter((candidate) =>
-        id(candidate.subjectId) === targetSubjectId && id(candidate.itemRevisionId) !== id(currentItemRevisionId));
+      const definition = relationDefinition(graph, edge);
+      if (!definition) continue;
+      const direction = edge.generated ? "reverse" : "forward";
+      const key = `${id(release.namespaceRevisionId)}:${definition.definitionId}:${direction}`;
+      if (!groups.has(key)) groups.set(key, {
+        key,
+        definition,
+        direction,
+        label: relationLabel(definition, edge, direction),
+        aliases: relationVoiceAliases(definition, direction),
+        targets: new Map(),
+      });
+      const group = groups.get(key);
+      group.aliases = [...new Set([...group.aliases, ...relationVoiceAliases(definition, direction)])];
+      if (!group.targets.has(targetSubjectId)) group.targets.set(targetSubjectId, {
+        subjectId: targetSubjectId,
+        subject: targetSubject,
+        candidates: [],
+      });
+      const target = group.targets.get(targetSubjectId);
+      target.candidates.push(...scope.rows.filter((candidate) =>
+        id(candidate.subjectId) === targetSubjectId && id(candidate.itemRevisionId) !== id(currentItemRevisionId)));
+    }
+  }
+
+  for (const group of groups.values()) {
+    if (publicActionIds.size >= maxActions) break;
+    const targets = [...group.targets.values()].filter((target) => target.candidates.length);
+    if (!targets.length) continue;
+    const resolution = resolveSemanticRelationTargets({
+      targets,
+      relationType: group.definition,
+      direction: group.direction,
+    });
+    if (resolution.status === "unavailable") continue;
+
+    const relationDefinitionValue = semanticRelationDefinition({
+      seed: `${subjectId}|${group.key}`,
+      label: targets.length === 1 ? `${group.label}: ${targets[0].subject?.preferredLabel || "Approfondimento"}` : group.label,
+      controlledVoiceAliases: group.aliases,
+    });
+    const relation = group.label;
+
+    if (resolution.status === "resolved") {
+      const selected = resolution.selected;
+      addPublic({
+        definition: relationDefinitionValue,
+        serverInput: {
+          resolution: {
+            status: "resolved",
+            selected: candidateServerInput(selected, relation),
+          },
+        },
+        semanticContext: { subjectId: selected.subjectId, itemEditionId: selected.itemEditionId },
+      });
+      continue;
+    }
+
+    const choices = [];
+    for (const target of resolution.targets || []) {
+      const candidates = target.resolution?.status === "resolved"
+        ? [target.resolution.selected]
+        : target.resolution?.candidates || [];
       for (const candidate of candidates) {
-        if (actions.length >= maxActions) break;
-        add(candidate, semanticDefinition({
-          seed: `related|${id(release._id)}|${id(edge.edgeId)}|${edge.direction}|${id(candidate.itemRevisionId)}`,
-          label: `${edge.label}: ${targetSubject.preferredLabel || candidate.revision.label}`,
-          controlledVoiceAliases: relationVoiceAliases(graph, edge),
-        }), edge.label || null);
+        const choiceDefinition = semanticContentDefinition({
+          seed: `relation-choice|${group.key}|${id(candidate.itemRevisionId)}`,
+          label: `${target.subject?.preferredLabel || "Approfondimento"} — ${candidate.revision?.label || "Contenuto"}`,
+          hidden: true,
+        });
+        const choiceAction = {
+          definition: choiceDefinition,
+          serverInput: candidateServerInput(candidate, relation),
+          semanticContext: { subjectId: candidate.subjectId, itemEditionId: candidate.itemEditionId },
+        };
+        addHidden(choiceAction);
+        choices.push(publicChoice(choiceDefinition));
       }
     }
+    if (!choices.length) continue;
+    addPublic({
+      definition: relationDefinitionValue,
+      serverInput: { resolution: { status: "ambiguous", choices } },
+      semanticContext: { subjectId },
+    });
   }
 
   return actions;
