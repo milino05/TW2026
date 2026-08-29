@@ -92,6 +92,17 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
     case "PRESENTATION_DEPTH_DECREASE": await changePresentationDepthV2({ sessionId, userId, direction: "down" }); return null;
     case "PRESENTATION_COMPLEXITY_INCREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "up" }); return null;
     case "PRESENTATION_COMPLEXITY_DECREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "down" }); return null;
+    case "EXPLORE_SEMANTIC_RELATION": {
+      const resolution = descriptor.serverInput?.resolution;
+      if (resolution?.status === "resolved" && resolution.selected) {
+        await openSemanticPresentationV2({ sessionId, userId, serverInput: resolution.selected, sourceActionId: descriptor.actionId });
+        return { type: "semantic_presentation" };
+      }
+      if (resolution?.status === "ambiguous" && Array.isArray(resolution.choices) && resolution.choices.length) {
+        return { type: "semantic_choices", choices: resolution.choices };
+      }
+      throw new AppError("La relazione semantica non è risolvibile nello scope corrente", 409, [{ code: "SEMANTIC_RELATION_UNRESOLVABLE" }]);
+    }
     case "EXPLORE_SEMANTIC_CONTENT":
       await openSemanticPresentationV2({ sessionId, userId, serverInput: descriptor.serverInput, sourceActionId: descriptor.actionId });
       return { type: "semantic_presentation" };
