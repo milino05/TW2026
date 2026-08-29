@@ -60,3 +60,22 @@ test("ritirare una nuova offerta non invalida acquisizioni già concluse", () =>
   assert.match(view, /acquisizioni già completate/);
   assert.match(view, /diritti già concessi/);
 });
+
+test("le offerte ritirate non si accumulano nella vista vendite", () => {
+  assert.match(view, /const activeOffers = offers\.filter\(\(offer\) => offer\.status === "active"\)/);
+  assert.match(view, /const renderedOffers = activeOffers\.map/);
+  assert.match(view, /activeOffers\.length \? `\$\{activeOffers\.length\}/);
+  assert.match(service, /MarketplaceOffer\.find\(\{ listingId: \{ \$in: listingIds \}, status: "active" \}\)/);
+});
+
+test("una risorsa senza offerte è privata e può ricevere una nuova offerta", () => {
+  assert.match(view, /return status === "published" && hasActiveOffer \? "Nel catalogo" : "Privato"/);
+  assert.match(view, /const isPublic = listing\.status === "published" && hasActiveOffer/);
+  assert.match(view, /const canCreateOffer = hasOperation\(listing\.availableOperations, "create_offer"\)/);
+  assert.match(service, /\["draft", "published", "withdrawn"\]\.includes\(listing\.status\)/);
+});
+
+test("il modulo Nuova offerta è chiuso inizialmente", () => {
+  assert.match(view, /canCreateOffer \? this\.renderOfferForm\(listing\) : ""/);
+  assert.doesNotMatch(view, /this\.renderOfferForm\(listing, \{ open: !hasActiveOffer \}\)/);
+});
