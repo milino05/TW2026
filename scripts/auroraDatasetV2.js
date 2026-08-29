@@ -22,6 +22,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const LayoutRevision = require("../models/layoutRevision.model");
@@ -203,6 +204,7 @@ async function cleanupAuroraDataset() {
   await VisitV2.deleteMany({ _id: { $in: ids.visitIds } });
   await VenueRelease.deleteMany({ _id: IDS.venueRelease });
   await LayoutRevision.deleteMany({ _id: IDS.layoutRevision });
+  await ExhibitSlot.deleteMany({ venueId: IDS.venue });
   await PhysicalVocabularyRevision.deleteMany({ _id: IDS.physicalVocabularyRevision });
   await PhysicalVocabulary.deleteMany({ _id: IDS.physicalVocabulary });
   await VenueTarget.deleteMany({ _id: { $in: ids.targetIds } });
@@ -575,8 +577,9 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
       _id: auroraId(`venue-target:${work.key}`),
       venueId: venue._id,
       subjectId: workSubjectIds.get(work.key),
-      label: work.title,
-      description: `${work.title} — ${work.artist}`,
+      displayLabelOverride: work.title,
+      inventoryNote: `${work.title} — ${work.artist}`,
+      provenance: { origin: "imported", sourceId: `aurora:${work.key}` },
       createdBy: manager._id,
     }));
   }
@@ -649,6 +652,12 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     });
   }
 
+  const exhibitSlots = await ExhibitSlot.create(WORKS.map((work) => ({
+    _id: auroraId(`exhibit-slot:${work.key}`),
+    venueId: venue._id,
+    publicCode: `as_${auroraId(`slot-code:${work.key}`).toHexString()}`,
+    createdBy: manager._id,
+  })));
   const layoutRevision = await LayoutRevision.create({
     _id: IDS.layoutRevision,
     venueId: venue._id,
@@ -656,10 +665,12 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
     floors: [{ _id: floorId, label: "Piano terra", mapAsset: { url: AURORA_MAP_URL, mimeType: "image/svg+xml", width: 1200, height: 700, originalName: "museo-aurora-demo.svg" } }],
     places,
-    venueTargetPlacements: targets.map((target, index) => ({
-      venueTargetId: target._id,
-      primaryPlaceId: workPlaceIds[index],
-      placeIds: [workPlaceIds[index]],
+    exhibitSlots: exhibitSlots.map((slot, index) => ({
+      exhibitSlotId: slot._id,
+      placeId: workPlaceIds[index],
+      label: `${WORKS[index].title} · posizione espositiva`,
+      order: index,
+      approachGuidance: { defaultInstruction: `Cerca ${WORKS[index].title} nello spazio espositivo.`, overrides: [] },
     })),
     connections,
     status: "published",
@@ -671,7 +682,7 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     venueId: venue._id,
     version: 1,
     layoutRevisionId: layoutRevision._id,
-    targetBindings: targets.map((target) => ({ venueTargetId: target._id, availability: "active", recognitionMedia: [] })),
+    targetBindings: targets.map((target, index) => ({ venueTargetId: target._id, exhibitSlotId: exhibitSlots[index]._id, availability: "active", recognitionMedia: [] })),
     preVisitInformation: [
       "Museo Civico Aurora e la sua collezione sono contenuti dimostrativi creati per ArtAround.",
       "La pianta è schematica; il percorso accessibile evita le scale e mantiene passaggi di almeno 90 cm.",

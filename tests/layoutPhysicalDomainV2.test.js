@@ -44,11 +44,12 @@ test("Venue physical authoring exposes granular commands and no aggregate rewrit
     "working-layout/floors",
     "working-layout/places",
     "working-layout/connections",
-    "working-layout/targets/:venueTargetId/placement",
+    "working-layout/exhibit-slots",
+    "working-layout/entities/:venueTargetId/exhibit-slot",
   ]) assert.match(routes, new RegExp(route.replaceAll("/", "\\/")));
   for (const command of [
     "addFloor", "calibrateFloor", "createPlace", "movePlace", "createConnection",
-    "setConnectionAttribute", "setVenueTargetPlacement", "setPreVisitInformation",
+    "setConnectionAttribute", "createExhibitSlot", "assignVenueTargetToExhibitSlot", "unassignVenueTargetFromExhibitSlot", "setPreVisitInformation",
   ]) assert.equal(typeof layoutCommands[command], "function", `${command} command missing`);
   assert.match(layoutSource, /workingReleaseId: ensured\.release\._id/);
   assert.match(bindingSource, /workingReleaseId: ensured\.release\._id/);

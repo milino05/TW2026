@@ -393,6 +393,10 @@ async function listenControlledVoice() {
             <span aria-hidden="true"></span>{{ physicalContext }}
             <em v-if="isSemantic">Approfondimento</em>
           </p>
+          <aside v-if="stopContext.current?.approachInstruction" class="approach-guidance" aria-label="Come trovare l'opera">
+            <strong>Ultimi passi</strong>
+            <span>{{ stopContext.current.approachInstruction }}</span>
+          </aside>
           <h1>{{ displayTitle }}</h1>
           <p v-if="displaySubtitle" class="content-label">{{ displaySubtitle }}</p>
 
@@ -757,6 +761,18 @@ async function listenControlledVoice() {
   letter-spacing: .04em;
   text-transform: uppercase;
 }
+
+.approach-guidance {
+  display: grid;
+  gap: .2rem;
+  margin: .75rem 0;
+  padding: .8rem 1rem;
+  border-left: .22rem solid var(--navigator-accent);
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--navigator-accent) 9%, white);
+}
+
+.approach-guidance span { color: var(--navigator-muted); }
 
 .content-panel h1 {
   margin: .55rem 0 .25rem;

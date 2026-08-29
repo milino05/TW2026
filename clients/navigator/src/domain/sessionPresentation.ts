@@ -8,6 +8,7 @@ export interface SessionStopContext {
     order: number;
     venueName: string;
     floorLabel: string;
+    approachInstruction: string | null;
   };
   next: null | {
     visitAnchorId: string;
@@ -15,6 +16,7 @@ export interface SessionStopContext {
     order: number;
     venueName: string;
     floorLabel: string;
+    approachInstruction: string | null;
   };
   total: number;
 }

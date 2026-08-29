@@ -7,7 +7,7 @@ import { venueSectionMixin } from "./venue-editor-section-mixin.js";
 import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
 import { venueSpatialDiagnosticsMixin } from "./venue-editor-spatial-diagnostics-mixin.js";
 
-const SECTIONS = ["overview", "targets", "map", "visitors", "publication"];
+const SECTIONS = ["overview", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
 function initialVenueSection() {
   const requested = String(window.location.hash || "").replace(/^#venue-/, "");
@@ -33,7 +33,16 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   activeSection = initialVenueSection();
   selectedFloorId = null;
   selectedMapPlaceId = null;
+  selectedConnectionId = null;
+  selectedExhibitSlotId = null;
+  selectedVenueTargetId = null;
+  activeSpatialTab = "map";
+  activeArrangementTab = "slots";
+  inventoryFilter = "all";
+  venueSubjectCandidates = null;
+  venueSubjectQuery = "";
   pendingMapAction = null;
+  draggingPlace = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -41,6 +50,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
     this.addEventListener("change", this.onChange);
+    this.addEventListener("pointerdown", this.onMapPointerDown);
+    this.addEventListener("pointermove", this.onMapPointerMove);
+    this.addEventListener("pointerup", this.onMapPointerUp);
+    this.addEventListener("pointercancel", this.onMapPointerCancel);
+    this.addEventListener("dblclick", this.onMapDoubleClick);
     this.addEventListener("subject-selected", this.onSubjectSelected);
     this.load();
   }
@@ -51,6 +65,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("input", this.onInput);
     this.removeEventListener("change", this.onChange);
+    this.removeEventListener("pointerdown", this.onMapPointerDown);
+    this.removeEventListener("pointermove", this.onMapPointerMove);
+    this.removeEventListener("pointerup", this.onMapPointerUp);
+    this.removeEventListener("pointercancel", this.onMapPointerCancel);
+    this.removeEventListener("dblclick", this.onMapDoubleClick);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
 
@@ -96,6 +115,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
+    if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) {
+      event.preventDefault();
+      this.cancelMapAction();
+      return;
+    }
     if (this.onboarding?.required) return;
     const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;

@@ -176,6 +176,9 @@ export class ItemAuthoringView extends HTMLElement {
   selectedSubject = null;
   itemId = params().get("itemId") || null;
   venueTargetId = params().get("venueTargetId") || null;
+  venueId = params().get("venueId") || null;
+  preselectedSubjectId = params().get("subjectId") || null;
+  physicalIntent = params().get("physicalIntent") === "1";
   venueTargetContext = null;
   projection = null;
   namespaceControls = null;
@@ -369,6 +372,9 @@ export class ItemAuthoringView extends HTMLElement {
       if (this.venueTargetId) {
         this.venueTargetContext = await authoringRepository.venueTargetContext(this.venueTargetId);
         this.selectedSubject = this.venueTargetContext.subject;
+        await this.loadSuggestedMedia();
+      } else if (this.preselectedSubjectId) {
+        this.selectedSubject = await authoringRepository.getSubject(this.preselectedSubjectId);
         await this.loadSuggestedMedia();
       }
       if (this.itemId) {
@@ -611,7 +617,13 @@ export class ItemAuthoringView extends HTMLElement {
         for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
         if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
         if (!this.selectedSubject) throw new Error("Scegli prima di cosa deve parlare il contenuto");
-        const item = await authoringRepository.createItem({ primarySubjectId: this.selectedSubject.id || this.selectedSubject._id, ownerType: this.principal.type, ownerId: this.principal.id });
+        const itemPayload = { primarySubjectId: this.selectedSubject.id || this.selectedSubject._id, ownerType: this.principal.type, ownerId: this.principal.id };
+        this.physicalIntent = Boolean(this.venueId && data.get("physicalIntent") === "on");
+        const created = this.physicalIntent
+          ? await authoringRepository.createItemWithPhysicalIntent(this.venueId, itemPayload)
+          : await authoringRepository.createItem(itemPayload);
+        const item = created.item || created;
+        if (created.venueEntity) this.venueTargetId = id(created.venueEntity);
         this.itemId = item._id || item.id;
         const url = new URL(window.location.href); url.search = ""; url.searchParams.set("itemId", this.itemId); window.history.replaceState({}, "", url);
         await this.reloadProjection(); await this.prepareNewEdition();
@@ -929,8 +941,9 @@ export class ItemAuthoringView extends HTMLElement {
     const venue = this.venueTargetContext;
     const physicalContext = venue ? `<aside class="context-box"><span class="eyebrow">Oggetto della sede</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L'oggetto serve a precompilare il soggetto. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>` : "";
     if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}<div class="step-actions"><button type="button" data-step="2">Continua alle informazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
+    const physicalIntentControl = this.venueId ? `<label class="physical-intent"><input type="checkbox" name="physicalIntent" ${this.physicalIntent ? "checked" : ""}><span><strong>Destinato all’esposizione</strong><small>Aggiunge atomicamente il Subject all’inventario della sede. Il contenuto resta un Item separato e non viene assegnato a uno slot.</small></span></label>` : "";
     const subjectSelection = this.selectedSubject
-      ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
+      ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}${physicalIntentControl}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
       : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>Cerca prima un'identità già esistente; creane una nuova solo se non trovi quella corretta.</p></div></header>${physicalContext}${subjectSelection}</section>`;
   }
@@ -1089,6 +1102,7 @@ export class ItemAuthoringView extends HTMLElement {
     return `<style>
       .authoring-page{grid-template-columns:minmax(0,1fr)}
       .authoring-page>*,.wizard-step,.editor-form,.representation-list,.representation-editor{min-width:0}
+      .physical-intent{display:grid;grid-template-columns:auto 1fr;gap:.7rem;align-items:start;padding:.85rem;border:1px solid #b9ccc3;border-radius:.8rem;background:#f1f6f3}.physical-intent input{margin-top:.2rem}.physical-intent span{display:grid;gap:.2rem}.physical-intent small{color:#60706a;font-weight:450}
       .selection-signal-fieldset{display:grid;gap:.7rem;margin:0;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.selection-signal-fieldset legend{padding:0 .35rem;color:#173e35;font-weight:800}.selection-signal-fieldset>p{margin:0}.selection-signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.selection-signal-card{display:grid;gap:.55rem;padding:.75rem;border:1px solid #d4ddd8;border-radius:.7rem;background:#fff}.selection-signal-card[data-selected="true"]{border-color:#568173;background:#f1f6f3}.selection-signal-main{display:grid;grid-template-columns:auto 1fr;gap:.55rem;align-items:start}.selection-signal-main>span{display:grid;gap:.15rem}.selection-signal-main small{color:#60706a;font-weight:400;line-height:1.35}.selection-signal-weight{display:grid;grid-template-columns:1fr 5rem;gap:.55rem;align-items:center;color:#60706a;font-size:.76rem}.selection-signal-weight input{min-width:0}
       .representation-editor[data-selected="true"]{border-color:#91a39b;box-shadow:0 0 0 2px rgba(23,62,53,.08)}
       .representation-editor:focus{outline:3px solid rgba(233,168,68,.3);outline-offset:2px}

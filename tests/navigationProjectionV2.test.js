@@ -63,7 +63,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
         { _id: firstPlaceId, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", floorId, position: { x: 0.2, y: 0.3 } },
         { _id: secondPlaceId, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", floorId, position: { x: 0.8, y: 0.3 } },
       ],
-      venueTargetPlacements: [],
+      exhibitSlots: [],
       connections: [{
         _id: connectionId,
         fromPlaceId: firstPlaceId,

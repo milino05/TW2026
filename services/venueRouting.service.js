@@ -1,20 +1,15 @@
 const AppError = require("../utils/AppError");
 const { resolveRoute } = require("./graphRouting.service");
 const { resolvePhysicalFeatureRef, requireSingleResolution } = require("./physicalVocabularyResolver.service");
+const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 
-function venueTargetPlacementMap(layoutRevision) {
-  return new Map((layoutRevision?.venueTargetPlacements || []).map((placement) => [String(placement.venueTargetId), placement]));
+function resolveVenueTargetPlace(venueRelease, layoutRevision, venueTargetId) {
+  return resolveVenueTargetExhibit({ venueRelease, layoutRevision, venueTargetId }).place._id;
 }
 
-function resolveVenueTargetPrimaryPlace(layoutRevision, venueTargetId) {
-  const placement = venueTargetPlacementMap(layoutRevision).get(String(venueTargetId));
-  return placement?.primaryPlaceId || null;
-}
-
-function routeBetweenVenueTargets({ layoutRevision, fromVenueTargetId, toVenueTargetId, requirements = [], speedMps, learnedResidualByConnection = {} }) {
-  const fromPlaceId = resolveVenueTargetPrimaryPlace(layoutRevision, fromVenueTargetId);
-  const toPlaceId = resolveVenueTargetPrimaryPlace(layoutRevision, toVenueTargetId);
-  if (!fromPlaceId || !toPlaceId) throw new AppError("VenueTarget non posizionato nella LayoutRevision", 409);
+function routeBetweenVenueTargets({ venueRelease, layoutRevision, fromVenueTargetId, toVenueTargetId, requirements = [], speedMps, learnedResidualByConnection = {} }) {
+  const fromPlaceId = resolveVenueTargetPlace(venueRelease, layoutRevision, fromVenueTargetId);
+  const toPlaceId = resolveVenueTargetPlace(venueRelease, layoutRevision, toVenueTargetId);
   const route = resolveRoute({
     connections: layoutRevision.connections || [],
     places: layoutRevision.places || [],
@@ -38,4 +33,4 @@ function placesForPhysicalFeature({ layoutRevision, physicalVocabulary, physical
   return (layoutRevision?.places || []).filter((place) => place.placeTypeDefinitionId === definition.definitionId);
 }
 
-module.exports = { venueTargetPlacementMap, resolveVenueTargetPrimaryPlace, routeBetweenVenueTargets, placesForPhysicalFeature };
+module.exports = { resolveVenueTargetPlace, routeBetweenVenueTargets, placesForPhysicalFeature };

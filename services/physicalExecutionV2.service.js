@@ -10,6 +10,7 @@ const { placesForPhysicalFeature } = require("./venueRouting.service");
 const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
+const { resolveVenueTargetExhibit, resolveApproachInstruction } = require("./venueExhibitResolution.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -110,15 +111,14 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non disponibile", 409);
     const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
-    const activeTargets = new Set((release.targetBindings || []).filter((entry) => entry.availability === "active").map((entry) => id(entry.venueTargetId)));
-    const placementByTarget = new Map((layout.venueTargetPlacements || []).map((entry) => [id(entry.venueTargetId), entry]));
+    const resolutionByTarget = new Map();
     for (const target of targets.filter((entry) => id(entry.venueId) === venueId)) {
-      if (target.lifecycleStatus !== "active" || !activeTargets.has(id(target._id))) throw new AppError("VenueTarget non disponibile nella VenueRelease corrente", 409, [{ code: "VENUE_TARGET_UNAVAILABLE_AT_SESSION_START", context: { venueId, venueTargetId: target._id } }]);
-      if (!placementByTarget.get(id(target._id))?.primaryPlaceId) throw new AppError("VenueTarget senza placement nella LayoutRevision corrente", 409, [{ code: "VENUE_TARGET_WITHOUT_PLACEMENT", context: { venueId, venueTargetId: target._id } }]);
+      if (target.lifecycleStatus !== "active") throw new AppError("VenueTarget non disponibile nella VenueRelease corrente", 409, [{ code: "VENUE_TARGET_UNAVAILABLE_AT_SESSION_START", context: { venueId, venueTargetId: target._id } }]);
+      resolutionByTarget.set(id(target._id), resolveVenueTargetExhibit({ venueRelease: release, layoutRevision: layout, venueTargetId: target._id }));
     }
     const pin = { venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id };
     venuePins.push(pin);
-    bundleByVenueId.set(venueId, { venue, release, layout, physicalVocabulary, physicalVocabularyRevision, placementByTarget });
+    bundleByVenueId.set(venueId, { venue, release, layout, physicalVocabulary, physicalVocabularyRevision, resolutionByTarget });
   }
   return { venuePins, targetById, bundleByVenueId };
 }
@@ -144,12 +144,25 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
   const visitAnchors = sourceAnchors.map((source) => {
     const target = resolved.targetById.get(id(source.venueTargetId));
     const bundle = resolved.bundleByVenueId.get(id(target.venueId));
-    const placement = bundle.placementByTarget.get(id(target._id));
+    const physical = bundle.resolutionByTarget.get(id(target._id));
     const profile = profileByTarget.get(id(target._id));
     const learned = Number(profile?.typicalObservationSeconds);
     const observationSeconds = Number(profile?.confidence) >= policy.confidence.usableThreshold && Number.isFinite(learned) ? learned : policy.coldStart.observationSeconds;
-    return { _id: source._id, sourceAnchorId: source._id, venueTargetId: target._id, venueId: target.venueId, placeId: placement.primaryPlaceId, estimatedObservationSeconds: Math.round(Math.max(0, observationSeconds)) };
+    return {
+      _id: source._id,
+      sourceAnchorId: source._id,
+      venueTargetId: target._id,
+      exhibitSlotId: physical.exhibitSlot.exhibitSlotId,
+      venueId: target.venueId,
+      placeId: physical.place._id,
+      estimatedObservationSeconds: Math.round(Math.max(0, observationSeconds)),
+      approachInstruction: null,
+    };
   });
+  if (visitAnchors[0]) {
+    const firstBundle = resolved.bundleByVenueId.get(id(visitAnchors[0].venueId));
+    visitAnchors[0].approachInstruction = resolveApproachInstruction({ layoutRevision: firstBundle.layout, destinationExhibitSlotId: visitAnchors[0].exhibitSlotId });
+  }
   const speedMps = resolveMovementSpeed(navigation.movementPacePreference);
   const legs = [];
   for (let index = 1; index < visitAnchors.length; index += 1) {
@@ -162,11 +175,20 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
       const estimatedSeconds = Number(hint?.estimatedSeconds ?? hint?.estimatedTransferSeconds);
       if (!Number.isFinite(estimatedSeconds) || estimatedSeconds <= 0) throw new AppError("Trasferimento inter-Venue senza stima esplicita", 409, [{ code: "INTER_VENUE_TRANSFER_ESTIMATE_REQUIRED", context: { fromVenueId: from.venueId, toVenueId: to.venueId } }]);
       legs.push({ type: "inter_venue", fromAnchorId: from._id, toAnchorId: to._id, venueReleaseId: null, layoutRevisionId: null, path: [], estimatedSeconds: Math.round(estimatedSeconds), preferencePenalty: 0, instruction: hint?.instruction || hint?.instructionOverride || null });
+      const destinationBundle = resolved.bundleByVenueId.get(id(to.venueId));
+      to.approachInstruction = resolveApproachInstruction({ layoutRevision: destinationBundle.layout, destinationExhibitSlotId: to.exhibitSlotId });
       continue;
     }
     const bundle = resolved.bundleByVenueId.get(id(from.venueId));
     const route = resolveRoute({ connections: bundle.layout.connections || [], places: bundle.layout.places || [], fromPlaceId: from.placeId, toPlaceId: to.placeId, requirements: requirementsByVenue.get(id(from.venueId)) || [], speedMps, learnedResidualByConnection: {} });
     if (!route.reachable) throw new AppError("Nessun percorso compatibile tra due VisitAnchor", 409, [{ code: "SESSION_ROUTE_UNREACHABLE", context: { venueId: from.venueId, fromAnchorId: from._id, toAnchorId: to._id } }]);
+    const incomingConnectionId = route.path?.at(-1)?.connectionId || route.path?.at(-1) || null;
+    to.approachInstruction = resolveApproachInstruction({
+      layoutRevision: bundle.layout,
+      destinationExhibitSlotId: to.exhibitSlotId,
+      sourceExhibitSlotId: from.exhibitSlotId,
+      incomingConnectionId,
+    });
     legs.push({ type: "indoor", fromAnchorId: from._id, toAnchorId: to._id, venueReleaseId: bundle.release._id, layoutRevisionId: bundle.layout._id, path: (route.path || []).map((entry) => entry.connectionId || entry), estimatedSeconds: Math.round(route.estimatedSeconds), preferencePenalty: route.preferencePenalty || 0, instruction: hint?.instruction || hint?.instructionOverride || null });
   }
   return { ...resolved, visitAnchors, physicalRoute: { legs }, warnings, speedMps };

@@ -16,7 +16,7 @@ const files = [
 ];
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 const source = Object.values(sources).join("\n");
-const styleSource = fs.readFileSync(path.join(root, "clients/marketplace/src/styles/venue-editor.css"), "utf8");
+const styleSource = ["venue-editor.css", "venue-map-authoring.css"].map((file) => fs.readFileSync(path.join(root, `clients/marketplace/src/styles/${file}`), "utf8")).join("\n");
 
 test("Sedi e spazi fisici passa il syntax gate", () => {
   for (const file of files) {
@@ -35,7 +35,8 @@ test("i moduli dichiarano le dipendenze di runtime che usano", () => {
 });
 
 test("Venue editor espone la IA user-facing approvata", () => {
-  for (const label of ["Panoramica", "Oggetti", "Spazi e mappa", "Informazioni visitatori", "Pubblicazione"]) assert.match(source, new RegExp(label));
+  for (const label of ["Panoramica", "Spazi e mappa", "Informazioni visitatori", "Pubblicazione"]) assert.match(source, new RegExp(label));
+  assert.doesNotMatch(sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"], /\["targets", "Oggetti"\]/);
 });
 
 test("Venue editor mostra una sezione alla volta con tab accessibili e deep link", () => {
@@ -51,33 +52,33 @@ test("Venue editor mostra una sezione alla volta con tab accessibili e deep link
   assert.doesNotMatch(styleSource, /venue-editor-nav nav\{display:flex;overflow:auto\}/);
 });
 
-test("VenueTarget, recognition media e Subject restano nel dominio fisico senza diventare Item", () => {
+test("Venue entities, recognition media e Subject restano separati dagli Item", () => {
   for (const token of ["createVenueTarget", "updateVenueTarget", "trashVenueTarget", "subjectId", "recognitionMedia", "configuration", "binding"]) assert.match(source, new RegExp(token));
-  assert.match(source, /non crea un Item/);
-  assert.doesNotMatch(source, /createItem|updateItem|itemId\s*:/);
+  assert.match(source, /distinto dagli Item/);
+  assert.doesNotMatch(source, /managementRepository\.createItem|managementRepository\.updateItem|itemId\s*:/);
 });
 
-test("la creazione object-first accompagna subito alla collocazione sulla mappa", () => {
+test("la creazione dell'inventario non assegna implicitamente uno slot", () => {
   const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
-  assert.match(actionSource, /createdTarget = await managementRepository\.createVenueTarget/);
-  assert.match(actionSource, /pendingMapAction = \{ type: "place-target", targetId \}/);
-  assert.match(actionSource, /showSection\("map", \{ scroll: true \}\)/);
-  assert.match(actionSource, /Aggiungi un luogo sulla mappa, poi colloca l’oggetto/);
+  assert.match(actionSource, /managementRepository\.createVenueTarget/);
+  assert.match(source, /type: "placing-slot"/);
+  assert.doesNotMatch(source, /type: "place-target"/);
+  assert.match(source, /Scollega dallo slot/);
 });
 
 test("Layout authoring usa command granulari e controlli guidati dal PhysicalVocabulary", () => {
   for (const token of [
     "addVenueFloor", "uploadVenueFloorPlan", "calibrateVenueFloor", "createVenuePlace",
-    "moveVenuePlace", "createVenueConnection", "updateVenueConnection", "setVenueTargetPlacement",
+    "moveVenuePlace", "createVenueConnection", "updateVenueConnection", "createExhibitSlot", "assignVenueTargetToExhibitSlot",
   ]) assert.match(source, new RegExp(token));
-  assert.match(source, /Editor visuale/);
+  assert.match(source, /Editor spaziale/);
   assert.match(source, /Caratteristiche fisiche/);
   assert.match(source, /Non verificato/);
   assert.doesNotMatch(source, /routingAttributes|routingPresets|canonicalKey|snapshotDraft|captureDraft|applyDraft|preserveDraft/);
 });
 
 test("mappa resta una projection fisica e non introduce posizionamento automatico", () => {
-  assert.match(source, /Non rappresenta né calcola la posizione attuale del visitatore/);
+  assert.match(source, /non traccia la posizione del visitatore/i);
   assert.match(source, /map-canvas/);
   assert.doesNotMatch(source, /navigator\.geolocation|getCurrentPosition|watchPosition|teleport|QRScanner/);
 });

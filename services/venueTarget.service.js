@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
-const LayoutRevision = require("../models/layoutRevision.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Subject = require("../models/subject.model");
@@ -27,25 +26,51 @@ async function findVenueTargetOrFail({ venueId, venueTargetId, includeTrashed = 
 }
 
 async function createVenueTarget({ venueId, payload, actorUserId }) {
-  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
+  const ensured = await ensureVenueEntity({ venueId, payload, actorUserId });
+  return ensured.target;
+}
+
+async function ensureVenueEntity({ venueId, payload, actorUserId, session = null, skipAuthorization = false }) {
+  if (!skipAuthorization) await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   const normalized = validatedTargetPayload(payload, { creating: true });
-  const subject = await Subject.exists({ _id: normalized.subjectId });
+  let subjectQuery = Subject.exists({ _id: normalized.subjectId });
+  if (session) subjectQuery = subjectQuery.session(session);
+  const subject = await subjectQuery;
   if (!subject) throw new AppError("Subject non trovato", 404);
-  return VenueTarget.create({
-    venueId,
-    subjectId: normalized.subjectId,
-    label: normalized.label,
-    description: normalized.description || "",
-    createdBy: actorUserId,
-  });
+  let query = VenueTarget.findOne({ venueId, subjectId: normalized.subjectId, lifecycleStatus: "active" });
+  if (session) query = query.session(session);
+  const existing = await query;
+  if (existing) return { target: existing, created: false };
+  try {
+    const payloadToCreate = {
+      venueId,
+      subjectId: normalized.subjectId,
+      displayLabelOverride: normalized.displayLabelOverride || null,
+      inventoryNote: normalized.inventoryNote || null,
+      provenance: normalized.provenance || { origin: "human" },
+      createdBy: actorUserId,
+    };
+    const target = session
+      ? (await VenueTarget.create([payloadToCreate], { session }))[0]
+      : await VenueTarget.create(payloadToCreate);
+    return { target, created: true };
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    let raceQuery = VenueTarget.findOne({ venueId, subjectId: normalized.subjectId, lifecycleStatus: "active" });
+    if (session) raceQuery = raceQuery.session(session);
+    const target = await raceQuery;
+    if (!target) throw error;
+    return { target, created: false };
+  }
 }
 
 async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId }) {
   await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   const target = await findVenueTargetOrFail({ venueId, venueTargetId });
   const normalized = validatedTargetPayload(payload, { creating: false });
-  if (Object.prototype.hasOwnProperty.call(normalized, "label")) target.label = normalized.label;
-  if (Object.prototype.hasOwnProperty.call(normalized, "description")) target.description = normalized.description || "";
+  if (Object.prototype.hasOwnProperty.call(normalized, "displayLabelOverride")) target.displayLabelOverride = normalized.displayLabelOverride;
+  if (Object.prototype.hasOwnProperty.call(normalized, "inventoryNote")) target.inventoryNote = normalized.inventoryNote;
+  if (Object.prototype.hasOwnProperty.call(normalized, "provenance")) target.provenance = normalized.provenance;
   await target.save();
   return target;
 }
@@ -54,31 +79,24 @@ async function listVenueTargets({ venueId, view = "published", actorUserId = nul
   const venue = await findVenueOrFail({ venueId });
   if (view === "all") {
     await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
-    return VenueTarget.find({ venueId, lifecycleStatus: "active" }).sort({ label: 1, createdAt: 1 }).lean();
+    return VenueTarget.find({ venueId, lifecycleStatus: "active" }).sort({ displayLabelOverride: 1, createdAt: 1 }).lean();
   }
   if (view !== "published") throw new AppError("view deve essere published o all", 400);
   if (!venue.publishedReleaseId) return [];
   const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
   if (!release) return [];
-  const activeIds = (release.targetBindings || []).filter((binding) => binding.availability === "active").map((binding) => binding.venueTargetId);
+  const activeIds = (release.targetBindings || []).filter((binding) => binding.availability === "active" && binding.exhibitSlotId).map((binding) => binding.venueTargetId);
   const targets = await VenueTarget.find({ _id: { $in: activeIds }, venueId }).lean();
   const byId = new Map(targets.map((target) => [String(target._id), target]));
   return activeIds.map((targetId) => byId.get(String(targetId))).filter(Boolean);
 }
 
 async function releaseReferencesTarget({ releaseId, venueId, venueTargetId, session }) {
-  if (!releaseId) return { binding: false, placement: false };
-  const release = await VenueRelease.findOne({ _id: releaseId, venueId }).select("targetBindings layoutRevisionId").session(session);
-  if (!release) return { binding: false, placement: false };
+  if (!releaseId) return { binding: false };
+  const release = await VenueRelease.findOne({ _id: releaseId, venueId }).select("targetBindings").session(session);
+  if (!release) return { binding: false };
   const binding = (release.targetBindings || []).some((entry) => id(entry.venueTargetId) === id(venueTargetId));
-  const placement = release.layoutRevisionId
-    ? Boolean(await LayoutRevision.exists({
-      _id: release.layoutRevisionId,
-      venueId,
-      "venueTargetPlacements.venueTargetId": venueTargetId,
-    }).session(session))
-    : false;
-  return { binding, placement };
+  return { binding };
 }
 
 async function publishedVisitReferenceCounts({ venueTargetIds = [], session = null }) {
@@ -145,7 +163,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
         venueTargetId: target._id,
         session,
       });
-      if (workingReferences.binding || workingReferences.placement) {
+      if (workingReferences.binding) {
         throw new AppError("Rimuovi prima l'oggetto dalla configurazione fisica di lavoro", 409, [{
           code: "TARGET_IN_WORKING_RELEASE",
           field: "venueTargetId",
@@ -158,7 +176,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
         venueTargetId: target._id,
         session,
       });
-      if (publishedReferences.binding || publishedReferences.placement) {
+      if (publishedReferences.binding) {
         throw new AppError("L'oggetto appartiene ancora alla configurazione pubblicata. Pubblica prima una nuova release senza questo oggetto", 409, [{
           code: "TARGET_IN_PUBLISHED_RELEASE",
           field: "venueTargetId",
@@ -193,6 +211,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
 module.exports = {
   findVenueTargetOrFail,
   createVenueTarget,
+  ensureVenueEntity,
   updateVenueTarget,
   listVenueTargets,
   releaseReferencesTarget,

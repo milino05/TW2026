@@ -39,6 +39,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
   get entityKind() { return this.getAttribute("entity-kind") === "property" ? "property" : "item"; }
 
   connectedCallback() {
+    if (!this.query && this.hasAttribute("initial-query")) this.query = normalizeSemanticQuery(this.getAttribute("initial-query"));
     this.stopReliableSelects = observeReliableSelects(this.shadowRoot);
     this.shadowRoot.addEventListener("submit", this.onSubmit);
     this.shadowRoot.addEventListener("click", this.onClick);

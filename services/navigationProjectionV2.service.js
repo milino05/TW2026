@@ -6,6 +6,7 @@ const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { loadPinnedBundle, resolveNavigationRequirementsForVenue } = require("./physicalExecutionV2.service");
 const { selectionMap } = require("./routingProfileSelectionV2.service");
 const { resolvePlannedPath } = require("./graphRouting.service");
+const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function opaqueId(seed) { return crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 16); }
@@ -117,9 +118,10 @@ async function projectSessionMap({ sessionId, userId }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
   const targetIds = [...new Set((plan.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter(Boolean))];
   const targets = targetIds.length
-    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("_id label").lean()
+    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("_id subjectId displayLabelOverride inventoryNote").lean()
     : [];
   const targetById = new Map(targets.map((target) => [id(target._id), target]));
+  const targetIdentityById = await venueTargetIdentityMap(targets);
   const venueIds = [...new Set((session.venuePins || []).map((pin) => id(pin.venueId)).filter(Boolean))];
   const venues = venueIds.length
     ? await Venue.find({ _id: { $in: venueIds } }).select("_id name description").lean()
@@ -141,7 +143,9 @@ async function projectSessionMap({ sessionId, userId }) {
       return {
         visitAnchorId: anchor._id,
         venueTargetId: anchor.venueTargetId,
-        label: targetById.get(id(anchor.venueTargetId))?.label || `Tappa ${index + 1}`,
+        exhibitSlotId: anchor.exhibitSlotId,
+        label: targetById.has(id(anchor.venueTargetId)) ? targetIdentityById.get(id(anchor.venueTargetId))?.label || `Tappa ${index + 1}` : `Tappa ${index + 1}`,
+        approachInstruction: anchor.approachInstruction || null,
         floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },
         order: (plan.visitAnchors || []).findIndex((value) => id(value._id) === id(anchor._id)) + 1,

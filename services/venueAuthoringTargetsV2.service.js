@@ -16,7 +16,7 @@ async function listVenueAuthoringTargets({ venueId }) {
   }
   const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
   if (!release) throw new AppError("VenueRelease pubblicata non disponibile", 409);
-  const activeBindings = (release.targetBindings || []).filter((binding) => binding.availability === "active");
+  const activeBindings = (release.targetBindings || []).filter((binding) => binding.availability === "active" && binding.exhibitSlotId);
   const targetIds = activeBindings.map((binding) => binding.venueTargetId);
   if (!targetIds.length) return { venue: { id: venue._id, name: venue.name, description: venue.description || "" }, targets: [] };
   const targets = await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).lean();
@@ -33,8 +33,8 @@ async function listVenueAuthoringTargets({ venueId }) {
       const binding = bindingByTarget.get(id(targetId));
       return {
         id: target._id,
-        label: target.label,
-        description: target.description || "",
+        label: target.displayLabelOverride || subject?.preferredLabel || "Entità della sede",
+        description: target.inventoryNote || subject?.description || "",
         subject: subject ? {
           id: subject._id,
           preferredLabel: subject.preferredLabel,

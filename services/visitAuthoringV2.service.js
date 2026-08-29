@@ -11,6 +11,7 @@ const { getCreatorWorkspace } = require("./marketplaceWorkspaceV2.service");
 const { projectEditorialWorkflowOperations, mayEditEditorialRevision } = require("./editorialWorkflowOperationsV2.service");
 const { assertCanComposeEditorialRelease } = require("./visitEditorialUsageAuthorization.service");
 const { projectVisitAuthoringRouteReview } = require("./visitAuthoringRouteReviewV2.service");
+const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -87,12 +88,13 @@ async function hydrateVisitRevision(revision) {
 
   const targetIds = (revision.visitAnchors || []).map((entry) => entry.venueTargetId);
   const targets = targetIds.length
-    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("venueId subjectId label description").lean()
+    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("venueId subjectId displayLabelOverride inventoryNote").lean()
     : [];
   const venues = targets.length
     ? await Venue.find({ _id: { $in: targets.map((entry) => entry.venueId) } }).select("name").lean()
     : [];
   const targetById = new Map(targets.map((entry) => [id(entry), entry]));
+  const targetIdentityById = await venueTargetIdentityMap(targets);
   const venueById = new Map(venues.map((entry) => [id(entry), entry]));
   const anchorById = new Map((revision.visitAnchors || []).map((entry) => [id(entry._id), entry]));
 
@@ -103,7 +105,7 @@ async function hydrateVisitRevision(revision) {
       id: anchor._id,
       order: index,
       venueTargetId: anchor.venueTargetId,
-      label: target?.label || "Target non disponibile",
+      label: target ? targetIdentityById.get(id(target._id))?.label : "Target non disponibile",
       subjectId: target?.subjectId || null,
       venue: target ? { id: target.venueId, name: venue?.name || "Venue" } : null,
     };
@@ -128,7 +130,7 @@ async function hydrateVisitRevision(revision) {
       deliveryAnchorId: entry.deliveryAnchorId || null,
       deliveryTarget: target ? {
         id: target._id,
-        label: target.label,
+        label: targetIdentityById.get(id(target._id))?.label || "Entità della sede",
         subjectId: target.subjectId,
         venue: { id: target.venueId, name: venue?.name || "Venue" },
       } : null,

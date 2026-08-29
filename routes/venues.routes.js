@@ -11,11 +11,15 @@ const mediaId = validateObjectIdParam("mediaId");
 const floorId = validateObjectIdParam("floorId");
 const placeId = validateObjectIdParam("placeId");
 const connectionId = validateObjectIdParam("connectionId");
+const exhibitSlotId = validateObjectIdParam("exhibitSlotId");
+const resourceId = validateObjectIdParam("resourceId");
 
+router.get("/physical-locations/:publicCode", controller.resolvePublishedPublicLocation);
 router.get("/venues", controller.list);
 router.post("/venues", requireAuth, controller.create);
 router.get("/venues/:venueId", venueId, controller.get);
 router.patch("/venues/:venueId", requireAuth, venueId, controller.update);
+router.get("/venues/:venueId/subject-candidates", requireAuth, venueId, controller.searchSubjectCandidates);
 router.get("/venues/:venueId/lifecycle-impact", requireAuth, venueId, lifecycleController.impact);
 router.post("/venues/:venueId/lifecycle/trash", requireAuth, venueId, lifecycleController.trash);
 router.post("/venues/:venueId/lifecycle/restore", requireAuth, venueId, lifecycleController.restore);
@@ -56,7 +60,12 @@ router.patch("/venues/:venueId/working-layout/connections/:connectionId", requir
 router.put("/venues/:venueId/working-layout/connections/:connectionId/attributes/:definitionId", requireAuth, venueId, connectionId, controller.setLayoutConnectionAttribute);
 router.delete("/venues/:venueId/working-layout/connections/:connectionId", requireAuth, venueId, connectionId, controller.removeLayoutConnection);
 
-router.put("/venues/:venueId/working-layout/targets/:venueTargetId/placement", requireAuth, venueId, venueTargetId, controller.setLayoutTargetPlacement);
+router.post("/venues/:venueId/working-layout/exhibit-slots", requireAuth, venueId, controller.createLayoutExhibitSlot);
+router.patch("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId", requireAuth, venueId, exhibitSlotId, controller.updateLayoutExhibitSlot);
+router.delete("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId", requireAuth, venueId, exhibitSlotId, controller.removeLayoutExhibitSlot);
+router.put("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId/entity/:venueTargetId", requireAuth, venueId, exhibitSlotId, venueTargetId, controller.assignTargetToExhibitSlot);
+router.delete("/venues/:venueId/working-layout/entities/:venueTargetId/exhibit-slot", requireAuth, venueId, venueTargetId, controller.unassignTargetFromExhibitSlot);
+router.get("/venues/:venueId/working-layout/removal-impact/:resourceType/:resourceId", requireAuth, venueId, resourceId, controller.getLayoutRemovalImpact);
 router.put("/venues/:venueId/working-layout/pre-visit-information", requireAuth, venueId, controller.setPreVisitInformation);
 
 module.exports = router;

@@ -25,18 +25,21 @@ function validateVenuePayload({ payload = {}, rawPayload = {}, creating = false 
 function normalizeVenueTargetPayload(payload = {}) {
   const out = {};
   if (hasOwn(payload, "subjectId")) out.subjectId = payload.subjectId;
-  if (hasOwn(payload, "label")) out.label = trimIfString(payload.label);
-  if (hasOwn(payload, "description")) out.description = trimIfString(payload.description);
+  if (hasOwn(payload, "displayLabelOverride")) out.displayLabelOverride = trimIfString(payload.displayLabelOverride) || null;
+  if (hasOwn(payload, "inventoryNote")) out.inventoryNote = trimIfString(payload.inventoryNote) || null;
+  if (hasOwn(payload, "provenance")) out.provenance = payload.provenance;
   return out;
 }
 
 function validateVenueTargetPayload({ payload = {}, rawPayload = {}, creating = false } = {}) {
   const issues = [];
-  const allowed = ["subjectId", "label", "description"];
+  const allowed = ["subjectId", "displayLabelOverride", "inventoryNote", "provenance"];
   for (const key of Object.keys(rawPayload || {})) if (!allowed.includes(key)) issues.push({ field: key, code: "UNKNOWN_FIELD", message: `Campo non supportato: ${key}` });
   if (creating && !mongoose.isValidObjectId(payload.subjectId)) issues.push({ field: "subjectId", code: "INVALID_OBJECT_ID", message: "subjectId non valido" });
   if (!creating && hasOwn(rawPayload, "subjectId")) issues.push({ field: "subjectId", code: "IMMUTABLE_FIELD", message: "subjectId non e modificabile" });
-  if ((creating || hasOwn(payload, "label")) && (!payload.label || typeof payload.label !== "string")) issues.push({ field: "label", code: "REQUIRED", message: "label e obbligatoria" });
+  if (hasOwn(payload, "displayLabelOverride") && payload.displayLabelOverride !== null && typeof payload.displayLabelOverride !== "string") issues.push({ field: "displayLabelOverride", code: "INVALID_TYPE", message: "displayLabelOverride deve essere una stringa o null" });
+  if (hasOwn(payload, "inventoryNote") && payload.inventoryNote !== null && typeof payload.inventoryNote !== "string") issues.push({ field: "inventoryNote", code: "INVALID_TYPE", message: "inventoryNote deve essere una stringa o null" });
+  if (hasOwn(payload, "provenance") && (!payload.provenance || typeof payload.provenance !== "object" || Array.isArray(payload.provenance))) issues.push({ field: "provenance", code: "INVALID_TYPE", message: "provenance deve essere un oggetto" });
   return issues;
 }
 

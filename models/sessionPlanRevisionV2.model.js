@@ -23,9 +23,11 @@ const SessionContentEntrySchema = new Schema({
 const SessionVisitAnchorSchema = new Schema({
   sourceAnchorId: { type: Schema.Types.ObjectId, default: null },
   venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
+  exhibitSlotId: { type: Schema.Types.ObjectId, ref: "ExhibitSlot", required: true },
   venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
   placeId: { type: Schema.Types.ObjectId, required: true },
   estimatedObservationSeconds: { type: Number, min: 0, default: 0 },
+  approachInstruction: { type: String, trim: true, default: null },
 }, { _id: true });
 
 const SessionPhysicalLegSchema = new Schema({

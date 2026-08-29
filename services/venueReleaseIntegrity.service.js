@@ -1,6 +1,7 @@
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
 const {
   deriveMetersPerPixel,
   distanceMetersForGeometry,
@@ -203,10 +204,53 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
   if (bindingIds.length !== uniqueBindingIds.size) add("targetBindings", "DUPLICATE_VENUE_TARGET_BINDING", "Ogni VenueTarget puo comparire una sola volta nella VenueRelease");
   const targets = await VenueTarget.find({ _id: { $in: [...uniqueBindingIds] } }).select("_id venueId lifecycleStatus").lean();
   const targetById = new Map(targets.map((target) => [id(target._id), target]));
+  const exhibitSlotIds = (layout.exhibitSlots || []).map((entry) => id(entry.exhibitSlotId));
+  const uniqueExhibitSlotIds = new Set(exhibitSlotIds);
+  if (exhibitSlotIds.length !== uniqueExhibitSlotIds.size) add("layout.exhibitSlots", "DUPLICATE_EXHIBIT_SLOT", "Ogni ExhibitSlot può comparire una sola volta nella LayoutRevision");
+  const exhibitSlots = uniqueExhibitSlotIds.size
+    ? await ExhibitSlot.find({ _id: { $in: [...uniqueExhibitSlotIds] } }).select("_id venueId lifecycleStatus").lean()
+    : [];
+  const exhibitSlotById = new Map(exhibitSlots.map((slot) => [id(slot._id), slot]));
+  for (let index = 0; index < (layout.exhibitSlots || []).length; index += 1) {
+    const entry = layout.exhibitSlots[index];
+    const field = `layout.exhibitSlots[${index}]`;
+    const slot = exhibitSlotById.get(id(entry.exhibitSlotId));
+    if (!slot || id(slot.venueId) !== id(venue._id)) add(`${field}.exhibitSlotId`, "EXHIBIT_SLOT_SCOPE_MISMATCH", "ExhibitSlot non appartenente alla Venue");
+    else if (slot.lifecycleStatus !== "active") add(`${field}.exhibitSlotId`, "EXHIBIT_SLOT_NOT_ACTIVE", "ExhibitSlot non attivo nella configurazione corrente");
+    if (!placeById.has(id(entry.placeId))) add(`${field}.placeId`, "UNKNOWN_PLACE", "Il luogo dello slot non è presente nel Layout");
+    if (!String(entry.label || "").trim()) add(`${field}.label`, "EXHIBIT_SLOT_LABEL_REQUIRED", "Lo slot richiede un'etichetta");
+    const guidanceKeys = new Set();
+    for (let overrideIndex = 0; overrideIndex < (entry.approachGuidance?.overrides || []).length; overrideIndex += 1) {
+      const override = entry.approachGuidance.overrides[overrideIndex];
+      const overrideField = `${field}.approachGuidance.overrides[${overrideIndex}]`;
+      const sourceId = override.sourceKind === "incoming_connection" ? override.sourceConnectionId : override.sourceExhibitSlotId;
+      const key = `${override.sourceKind}:${id(sourceId)}`;
+      if (guidanceKeys.has(key)) add(overrideField, "DUPLICATE_APPROACH_SOURCE", "Una sorgente di avvicinamento non può essere ripetuta");
+      guidanceKeys.add(key);
+      if (!String(override.instruction || "").trim()) add(`${overrideField}.instruction`, "APPROACH_INSTRUCTION_REQUIRED", "L'istruzione di avvicinamento è obbligatoria");
+      if (override.sourceKind === "incoming_connection") {
+        const connection = connectionById.get(id(override.sourceConnectionId));
+        const canArrive = connection && (id(connection.toPlaceId) === id(entry.placeId)
+          || (connection.directionality === "bidirectional" && id(connection.fromPlaceId) === id(entry.placeId)));
+        if (!canArrive) add(`${overrideField}.sourceConnectionId`, "APPROACH_CONNECTION_NOT_INCOMING", "Il collegamento non conduce al luogo dello slot");
+      } else if (override.sourceKind === "exhibit_slot") {
+        const source = (layout.exhibitSlots || []).find((candidate) => id(candidate.exhibitSlotId) === id(override.sourceExhibitSlotId));
+        if (!source || id(source.exhibitSlotId) === id(entry.exhibitSlotId) || id(source.placeId) !== id(entry.placeId)) add(`${overrideField}.sourceExhibitSlotId`, "APPROACH_SLOT_PLACE_MISMATCH", "Lo slot sorgente deve essere distinto e nello stesso luogo");
+      }
+    }
+  }
+
+  const assignedSlotIds = new Set();
   (release.targetBindings || []).forEach((binding, index) => {
     const target = targetById.get(id(binding.venueTargetId));
     if (!target || id(target.venueId) !== id(venue._id)) add(`targetBindings[${index}].venueTargetId`, "VENUE_TARGET_SCOPE_MISMATCH", "VenueTarget non appartenente alla Venue");
     else if (target.lifecycleStatus !== "active") add(`targetBindings[${index}].venueTargetId`, "VENUE_TARGET_NOT_ACTIVE", "VenueTarget non attivo");
+    if (binding.exhibitSlotId) {
+      const slotId = id(binding.exhibitSlotId);
+      if (!uniqueExhibitSlotIds.has(slotId)) add(`targetBindings[${index}].exhibitSlotId`, "EXHIBIT_SLOT_NOT_IN_LAYOUT", "Lo slot assegnato non è presente nella LayoutRevision");
+      if (assignedSlotIds.has(slotId)) add(`targetBindings[${index}].exhibitSlotId`, "EXHIBIT_SLOT_MULTIPLE_ASSIGNMENT", "Uno slot può essere assegnato a una sola entità della sede");
+      assignedSlotIds.add(slotId);
+    }
     const mediaUrls = new Set();
     (binding.recognitionMedia || []).forEach((media, mediaIndex) => {
       const url = String(media.url || "").trim();
@@ -214,21 +258,6 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
       if (mediaUrls.has(url)) add(`targetBindings[${index}].recognitionMedia[${mediaIndex}].url`, "DUPLICATE_RECOGNITION_MEDIA", "Immagine di riconoscimento duplicata");
       mediaUrls.add(url);
     });
-  });
-
-  const placementTargetIds = new Set();
-  for (let index = 0; index < (layout.venueTargetPlacements || []).length; index += 1) {
-    const placement = layout.venueTargetPlacements[index];
-    const targetId = id(placement.venueTargetId);
-    if (placementTargetIds.has(targetId)) add(`layout.venueTargetPlacements[${index}].venueTargetId`, "DUPLICATE_TARGET_PLACEMENT", "Un VenueTarget puo avere un solo placement nella LayoutRevision");
-    placementTargetIds.add(targetId);
-    if (!uniqueBindingIds.has(targetId)) add(`layout.venueTargetPlacements[${index}].venueTargetId`, "TARGET_NOT_IN_RELEASE", "Il placement riferisce un VenueTarget non incluso nella VenueRelease");
-    if (!placeById.has(id(placement.primaryPlaceId))) add(`layout.venueTargetPlacements[${index}].primaryPlaceId`, "UNKNOWN_PLACE", "Posizione primaria non presente nel Layout");
-    if (!(placement.placeIds || []).some((placeId) => id(placeId) === id(placement.primaryPlaceId))) add(`layout.venueTargetPlacements[${index}].placeIds`, "PRIMARY_PLACE_MISSING", "primaryPlaceId deve comparire in placeIds");
-    (placement.placeIds || []).forEach((placeId) => { if (!placeById.has(id(placeId))) add(`layout.venueTargetPlacements[${index}].placeIds`, "UNKNOWN_PLACE", "Posizione secondaria non presente nel Layout"); });
-  }
-  (release.targetBindings || []).forEach((binding, index) => {
-    if (binding.availability === "active" && !placementTargetIds.has(id(binding.venueTargetId))) add(`targetBindings[${index}].venueTargetId`, "ACTIVE_TARGET_NOT_PLACED", "Un VenueTarget attivo deve essere posizionato nella LayoutRevision");
   });
 
   return issues;

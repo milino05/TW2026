@@ -57,7 +57,7 @@ test("VenueRelease integrity validates typed attributes against the pinned Physi
             { physicalAttributeDefinitionId: quietArea.definitionId, value: "si" },
           ],
         }],
-        venueTargetPlacements: [],
+        exhibitSlots: [],
         connections: [],
       },
     });
@@ -96,7 +96,7 @@ test("geometry_derived uses Floor calibration and rejects a stale distance", { s
         { _id: fromPlaceId, floorId, placeTypeDefinitionId: room.definitionId, position: { x: 0.1, y: 0.5 }, attributeValues: [] },
         { _id: toPlaceId, floorId, placeTypeDefinitionId: room.definitionId, position: { x: 0.5, y: 0.5 }, attributeValues: [] },
       ],
-      venueTargetPlacements: [],
+      exhibitSlots: [],
       connections: [{
         _id: new mongoose.Types.ObjectId(),
         fromPlaceId,

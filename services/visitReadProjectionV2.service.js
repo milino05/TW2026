@@ -8,7 +8,7 @@ function id(value) {
 async function projectVisitPhysicalScope(revision) {
   const targetIds = [...new Set((revision?.visitAnchors || []).map((entry) => id(entry.venueTargetId)).filter(Boolean))];
   const targets = targetIds.length
-    ? await VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId label").lean()
+    ? await VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId subjectId displayLabelOverride inventoryNote").lean()
     : [];
   const targetById = new Map(targets.map((entry) => [id(entry._id), entry]));
   const venueIds = [...new Set(targets.map((entry) => id(entry.venueId)).filter(Boolean))];

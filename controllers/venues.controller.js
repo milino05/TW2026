@@ -9,14 +9,18 @@ const venuePhysicalAssetUsageService = require("../services/venuePhysicalAssetUs
 const venueFloorPlanUploadService = require("../services/venueFloorPlanUpload.service");
 const venueRecognitionMediaUploadService = require("../services/venueRecognitionMediaUpload.service");
 const AppError = require("../utils/AppError");
+const sessionPublicLocationService = require("../services/sessionPublicLocationV2.service");
+const venueSubjectResolverService = require("../services/venueSubjectResolver.service");
 
 async function list(req, res, next) { try { res.status(200).json(await venueService.listVenues({ ownerOrganizationId: req.query?.ownerOrganizationId || null })); } catch (error) { next(error); } }
+async function resolvePublishedPublicLocation(req, res, next) { try { res.status(200).json(await sessionPublicLocationService.resolveCurrentPublishedPublicCode({ publicCode: req.params.publicCode })); } catch (error) { next(error); } }
+async function searchSubjectCandidates(req, res, next) { try { res.status(200).json(await venueSubjectResolverService.searchVenueSubjectCandidates({ venueId: req.params.venueId, actorUserId: req.user._id, query: req.query?.query || "", limit: req.query?.limit })); } catch (error) { next(error); } }
 async function get(req, res, next) { try { res.status(200).json(await venueService.getVenue({ venueId: req.params.venueId })); } catch (error) { next(error); } }
 async function create(req, res, next) { try { res.status(201).json(await venueService.createVenue({ payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function update(req, res, next) { try { res.status(200).json(await venueService.updateVenue({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
 async function listTargets(req, res, next) { try { res.status(200).json(await venueTargetService.listVenueTargets({ venueId: req.params.venueId, view: req.query?.view || "published", actorUserId: req.user?._id || null })); } catch (error) { next(error); } }
-async function createTarget(req, res, next) { try { res.status(201).json(await venueTargetService.createVenueTarget({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function createTarget(req, res, next) { try { const result = await venueTargetService.ensureVenueEntity({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id }); res.status(result.created ? 201 : 200).json(result.target); } catch (error) { next(error); } }
 async function updateTarget(req, res, next) { try { res.status(200).json(await venueTargetService.updateVenueTarget({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function trashTarget(req, res, next) { try { res.status(200).json(await venueTargetService.trashVenueTarget({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
@@ -127,11 +131,16 @@ async function createLayoutConnection(req, res, next) { try { res.status(201).js
 async function updateLayoutConnection(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateConnection({ venueId: req.params.venueId, connectionId: req.params.connectionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function setLayoutConnectionAttribute(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setConnectionAttribute({ venueId: req.params.venueId, connectionId: req.params.connectionId, definitionId: req.params.definitionId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 async function removeLayoutConnection(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeConnection({ venueId: req.params.venueId, connectionId: req.params.connectionId, actorUserId: req.user._id })); } catch (error) { next(error); } }
-async function setLayoutTargetPlacement(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setVenueTargetPlacement({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function createLayoutExhibitSlot(req, res, next) { try { res.status(201).json(await venueLayoutCommandService.createExhibitSlot({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function updateLayoutExhibitSlot(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.updateExhibitSlot({ venueId: req.params.venueId, exhibitSlotId: req.params.exhibitSlotId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
+async function removeLayoutExhibitSlot(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.removeExhibitSlot({ venueId: req.params.venueId, exhibitSlotId: req.params.exhibitSlotId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function assignTargetToExhibitSlot(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.assignVenueTargetToExhibitSlot({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, exhibitSlotId: req.params.exhibitSlotId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function unassignTargetFromExhibitSlot(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.unassignVenueTargetFromExhibitSlot({ venueId: req.params.venueId, venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function getLayoutRemovalImpact(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.getWorkingLayoutRemovalImpact({ venueId: req.params.venueId, resourceType: req.params.resourceType, resourceId: req.params.resourceId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function setPreVisitInformation(req, res, next) { try { res.status(200).json(await venueLayoutCommandService.setPreVisitInformation({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} })); } catch (error) { next(error); } }
 
 module.exports = {
-  list, get, create, update,
+  list, get, create, update, resolvePublishedPublicLocation, searchSubjectCandidates,
   listTargets, createTarget, updateTarget, trashTarget,
   getPhysicalState, getPhysicalOnboarding, initializePhysicalOnboarding,
   ensureWorkingRelease, checkRelease,
@@ -140,5 +149,7 @@ module.exports = {
   addLayoutFloor, updateLayoutFloor, uploadLayoutFloorPlan, calibrateLayoutFloor, removeLayoutFloor,
   createLayoutPlace, moveLayoutPlace, updateLayoutPlace, setLayoutPlaceAttribute, removeLayoutPlace,
   createLayoutConnection, updateLayoutConnection, setLayoutConnectionAttribute, removeLayoutConnection,
-  setLayoutTargetPlacement, setPreVisitInformation,
+  createLayoutExhibitSlot, updateLayoutExhibitSlot, removeLayoutExhibitSlot,
+  assignTargetToExhibitSlot, unassignTargetFromExhibitSlot, getLayoutRemovalImpact,
+  setPreVisitInformation,
 };

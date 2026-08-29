@@ -1,98 +1,58 @@
-const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
+const Venue = require("../models/venue.model");
+const VenueRelease = require("../models/venueRelease.model");
+const LayoutRevision = require("../models/layoutRevision.model");
 const AppError = require("../utils/AppError");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { id, loadPinnedBundle } = require("./physicalExecutionV2.service");
 
 function normalizePublicCode(value) {
   const code = String(value || "").trim();
-  if (!code) {
-    throw new AppError("Codice pubblico mancante", 400, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_CODE_REQUIRED",
-    }]);
-  }
-  if (code.length > 128) {
-    throw new AppError("Codice pubblico non valido", 400, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_CODE_INVALID",
-    }]);
-  }
+  if (!code) throw new AppError("Codice pubblico mancante", 400, [{ field: "publicCode", code: "PUBLIC_LOCATION_CODE_REQUIRED" }]);
+  if (code.length > 128) throw new AppError("Codice pubblico non valido", 400, [{ field: "publicCode", code: "PUBLIC_LOCATION_CODE_INVALID" }]);
   return code;
+}
+
+function locationFromBundle({ slot, release, layout, requireActiveBinding = true }) {
+  const slotEntry = (layout.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(slot._id));
+  if (!slotEntry) throw new AppError("Slot non presente nello snapshot fisico", 409, [{ code: "PUBLIC_LOCATION_NOT_IN_SNAPSHOT", context: { exhibitSlotId: slot._id } }]);
+  const binding = (release.targetBindings || []).find((entry) => id(entry.exhibitSlotId) === id(slot._id));
+  if (!binding || (requireActiveBinding && binding.availability !== "active")) throw new AppError("Slot non esposto nello snapshot fisico", 409, [{ code: "PUBLIC_LOCATION_NOT_EXPOSED", context: { exhibitSlotId: slot._id } }]);
+  const place = (layout.places || []).find((entry) => id(entry._id) === id(slotEntry.placeId));
+  const floor = place ? (layout.floors || []).find((entry) => id(entry._id) === id(place.floorId)) : null;
+  if (!place || !floor) throw new AppError("Posizione logica dello slot non disponibile", 409, [{ code: "PUBLIC_LOCATION_PLACE_MISSING", context: { exhibitSlotId: slot._id, placeId: slotEntry.placeId } }]);
+  return {
+    location: {
+      venueId: id(slot.venueId),
+      floorId: id(floor._id),
+      placeId: id(place._id),
+      exhibitSlotId: id(slot._id),
+      venueTargetId: id(binding.venueTargetId),
+    },
+  };
 }
 
 async function resolvePublicCodeLocation({ sessionId, userId, publicCode }) {
   const code = normalizePublicCode(publicCode);
   const { session } = await getCurrentSessionPlanV2({ sessionId, userId });
-  const target = await VenueTarget.findOne({ publicCode: code })
-    .select("_id venueId publicCode")
-    .lean();
-
-  if (!target) {
-    throw new AppError("Riferimento fisico non disponibile", 404, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_NOT_FOUND",
-    }]);
-  }
-
-  const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(target.venueId));
-  if (!pin) {
-    throw new AppError("Riferimento fisico non disponibile in questa sessione", 404, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_OUTSIDE_SESSION_SCOPE",
-    }]);
-  }
-
-  const bundle = await loadPinnedBundle(session, target.venueId);
-  const activeBinding = (bundle.release.targetBindings || []).find((entry) => (
-    id(entry.venueTargetId) === id(target._id) && entry.availability === "active"
-  ));
-  if (!activeBinding) {
-    throw new AppError("Riferimento fisico non attivo nello snapshot della sessione", 409, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_NOT_ACTIVE_IN_PINNED_RELEASE",
-      context: { venueId: id(target.venueId), venueTargetId: id(target._id) },
-    }]);
-  }
-
-  const placement = (bundle.layout.venueTargetPlacements || []).find((entry) => (
-    id(entry.venueTargetId) === id(target._id)
-  ));
-  if (!placement?.primaryPlaceId) {
-    throw new AppError("Riferimento fisico senza posizione nello snapshot della sessione", 409, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_WITHOUT_PINNED_PLACEMENT",
-      context: { venueId: id(target.venueId), venueTargetId: id(target._id) },
-    }]);
-  }
-
-  const place = (bundle.layout.places || []).find((entry) => id(entry._id) === id(placement.primaryPlaceId));
-  if (!place) {
-    throw new AppError("Posizione logica non disponibile nello snapshot della sessione", 409, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_PLACE_MISSING",
-      context: { venueId: id(target.venueId), placeId: id(placement.primaryPlaceId) },
-    }]);
-  }
-
-  const floor = (bundle.layout.floors || []).find((entry) => id(entry._id) === id(place.floorId));
-  if (!floor) {
-    throw new AppError("Piano della posizione logica non disponibile nello snapshot della sessione", 409, [{
-      field: "publicCode",
-      code: "PUBLIC_LOCATION_FLOOR_MISSING",
-      context: { venueId: id(target.venueId), placeId: id(place._id), floorId: id(place.floorId) },
-    }]);
-  }
-
-  return {
-    location: {
-      venueId: id(target.venueId),
-      placeId: id(place._id),
-      floorId: id(floor._id),
-      venueTargetId: id(target._id),
-    },
-  };
+  const slot = await ExhibitSlot.findOne({ publicCode: code }).select("_id venueId publicCode lifecycleStatus").lean();
+  if (!slot) throw new AppError("Riferimento fisico non disponibile", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_NOT_FOUND" }]);
+  const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(slot.venueId));
+  if (!pin) throw new AppError("Riferimento fisico non disponibile in questa sessione", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_OUTSIDE_SESSION_SCOPE" }]);
+  const bundle = await loadPinnedBundle(session, slot.venueId);
+  return locationFromBundle({ slot, release: bundle.release, layout: bundle.layout });
 }
 
-module.exports = {
-  resolvePublicCodeLocation,
-};
+async function resolveCurrentPublishedPublicCode({ publicCode }) {
+  const code = normalizePublicCode(publicCode);
+  const slot = await ExhibitSlot.findOne({ publicCode: code, lifecycleStatus: "active" }).select("_id venueId publicCode").lean();
+  if (!slot) throw new AppError("Riferimento fisico non disponibile", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_NOT_FOUND" }]);
+  const venue = await Venue.findOne({ _id: slot.venueId, lifecycleStatus: "active", publishedReleaseId: { $ne: null } }).select("publishedReleaseId").lean();
+  if (!venue) throw new AppError("Sede pubblicata non disponibile", 404, [{ code: "PUBLIC_LOCATION_VENUE_NOT_PUBLISHED" }]);
+  const release = await VenueRelease.findOne({ _id: venue.publishedReleaseId, venueId: slot.venueId, status: "published" }).lean();
+  const layout = release ? await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: slot.venueId, status: "published" }).lean() : null;
+  if (!release || !layout) throw new AppError("Snapshot fisico pubblicato non disponibile", 409, [{ code: "PUBLIC_LOCATION_SNAPSHOT_MISSING" }]);
+  return locationFromBundle({ slot, release, layout });
+}
+
+module.exports = { resolvePublicCodeLocation, resolveCurrentPublishedPublicCode, locationFromBundle };

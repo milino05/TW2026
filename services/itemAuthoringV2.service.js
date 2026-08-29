@@ -333,7 +333,7 @@ async function getVenueTargetAuthoringContext({ venueTargetId }) {
   }
   return {
     venue: { id: venue._id, name: venue.name, description: venue.description || "" },
-    venueTarget: { id: target._id, label: target.label, description: target.description || "" },
+    venueTarget: { id: target._id, label: target.displayLabelOverride || subject.preferredLabel, description: target.inventoryNote || subject.description || "" },
     subject: projectSubject(subject),
     recognitionMedia,
   };

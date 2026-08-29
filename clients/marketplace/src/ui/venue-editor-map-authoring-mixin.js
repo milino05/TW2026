@@ -92,9 +92,34 @@ function geometryDistanceMeters(points, floor) {
 function lengthTolerance(distanceMeters) { return Math.max(0.05, Number(distanceMeters) * 0.01); }
 
 export const venueMapAuthoringMixin = {
+  mapMode() {
+    if (this.draggingPlace || this.pendingMapAction?.type === "move-place") return "dragging_place";
+    const action = this.pendingMapAction;
+    if (!action) return "idle";
+    if (action.type === "create-place") return "placing_place";
+    if (action.type === "connect") return action.fromPlaceId ? "connecting_select_to" : "connecting_select_from";
+    if (action.type === "placing-slot") return "placing_slot";
+    if (action.type === "calibrate") return "calibrating";
+    if (action.type === "geometry") return "editing_geometry";
+    return "idle";
+  },
+
   cancelMapAction({ render = true } = {}) {
     this.pendingMapAction = null;
+    this.draggingPlace = null;
     if (render) this.render();
+  },
+
+  locateExhibitSlot(exhibitSlotId) {
+    const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
+    const place = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(slot?.placeId));
+    if (!slot || !place) return;
+    this.selectedExhibitSlotId = id(slot.exhibitSlotId);
+    this.selectedMapPlaceId = id(place._id);
+    this.selectedFloorId = id(place.floorId);
+    this.activeSpatialTab = "map";
+    this.render();
+    requestAnimationFrame(() => this.querySelector(`[data-map-place="${CSS.escape(id(place._id))}"]`)?.focus());
   },
 
   geometryAuthoringState() {
@@ -115,6 +140,45 @@ export const venueMapAuthoringMixin = {
   async handleMapAuthoringClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
+    if (this.suppressNextMapClick && target.closest("[data-map-place]")) {
+      this.suppressNextMapClick = false;
+      return true;
+    }
+
+    const spatialTab = target.closest("[data-spatial-tab], [data-show-spatial-tab]");
+    if (spatialTab) {
+      this.activeSpatialTab = spatialTab.dataset.spatialTab || spatialTab.dataset.showSpatialTab;
+      this.render();
+      return true;
+    }
+    const arrangementTab = target.closest("[data-arrangement-tab]");
+    if (arrangementTab) { this.activeArrangementTab = arrangementTab.dataset.arrangementTab; this.render(); return true; }
+    const inventoryFilter = target.closest("[data-inventory-filter]");
+    if (inventoryFilter) { this.inventoryFilter = inventoryFilter.dataset.inventoryFilter; this.render(); return true; }
+    const locateSlot = target.closest("[data-locate-slot]");
+    if (locateSlot) { this.locateExhibitSlot(locateSlot.dataset.locateSlot); return true; }
+    const copySlot = target.closest("[data-copy-slot-code]");
+    if (copySlot) {
+      try { await navigator.clipboard.writeText(copySlot.dataset.copySlotCode); this.message = "Codice dello slot copiato."; }
+      catch { this.error = "Non è stato possibile copiare il codice. Selezionalo manualmente."; }
+      this.render();
+      return true;
+    }
+    if (target.closest("[data-start-slot]")) {
+      this.activeSpatialTab = "arrangement";
+      this.activeArrangementTab = "slots";
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-create-slot] input")?.focus());
+      return true;
+    }
+
+    const mapConnection = target.closest("[data-map-connection]");
+    if (mapConnection) {
+      this.selectedConnectionId = mapConnection.dataset.mapConnection;
+      this.activeSpatialTab = "connections";
+      this.render();
+      return true;
+    }
 
     const vocabulary = target.closest("[data-edit-physical-vocabulary]");
     if (vocabulary) {
@@ -211,13 +275,6 @@ export const venueMapAuthoringMixin = {
       return true;
     }
 
-    const placeTarget = target.closest("[data-place-target]");
-    if (placeTarget) {
-      this.pendingMapAction = { type: "place-target", targetId: placeTarget.dataset.placeTarget };
-      this.render();
-      return true;
-    }
-
     const placeNode = target.closest("[data-map-place]");
     if (placeNode) {
       const placeId = placeNode.dataset.mapPlace;
@@ -230,13 +287,12 @@ export const venueMapAuthoringMixin = {
         this.render();
         return true;
       }
-      if (action?.type === "place-target") {
-        const targetId = action.targetId;
+      if (action?.type === "placing-slot") {
         const success = await this.execute(
-          () => managementRepository.setVenueTargetPlacement(this.id, targetId, { primaryPlaceId: placeId, placeIds: [] }),
-          "Oggetto collocato sulla mappa.",
+          () => managementRepository.createExhibitSlot(this.id, { placeId, label: action.label, order: action.order }),
+          "Slot espositivo creato e posizionato.",
         );
-        if (success) { this.pendingMapAction = null; this.render(); }
+        if (success) { this.pendingMapAction = null; this.activeSpatialTab = "arrangement"; this.activeArrangementTab = "slots"; this.render(); }
         return true;
       }
       if (action?.type === "geometry") return true;
@@ -290,6 +346,44 @@ export const venueMapAuthoringMixin = {
   },
 
   async handleMapAuthoringSubmit(form, data) {
+    if (form.matches("[data-create-slot]")) {
+      this.pendingMapAction = {
+        type: "placing-slot",
+        label: String(data.get("label") || "").trim(),
+        order: String(data.get("order") || "").trim() ? Number(data.get("order")) : null,
+      };
+      this.activeSpatialTab = "map";
+      this.render();
+      return true;
+    }
+
+    if (form.matches("[data-slot-assignment]")) {
+      const exhibitSlotId = form.dataset.slotAssignment;
+      const targetId = String(data.get("venueTargetId") || "");
+      const current = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId))?.assignedVenueTargetId;
+      await this.execute(async () => {
+        if (current && id(current) !== id(targetId)) await managementRepository.unassignVenueTargetFromExhibitSlot(this.id, current);
+        if (targetId) await managementRepository.assignVenueTargetToExhibitSlot(this.id, exhibitSlotId, targetId);
+      },
+        targetId ? "Entità assegnata allo slot." : "Slot liberato.",
+      );
+      return true;
+    }
+
+    if (form.matches("[data-slot-editor]")) {
+      const sourceConnectionId = String(data.get("sourceConnectionId") || "");
+      const sourceExhibitSlotId = String(data.get("sourceExhibitSlotId") || "");
+      const instruction = String(data.get("overrideInstruction") || "").trim();
+      const overrides = instruction && (sourceConnectionId || sourceExhibitSlotId) ? [{ instruction, ...(sourceConnectionId ? { sourceConnectionId } : { sourceExhibitSlotId }) }] : [];
+      await this.execute(() => managementRepository.updateExhibitSlot(this.id, form.dataset.slotEditor, {
+        label: String(data.get("label") || "").trim(),
+        placeId: String(data.get("placeId") || ""),
+        order: String(data.get("order") || "").trim() ? Number(data.get("order")) : null,
+        approachGuidance: { defaultInstruction: String(data.get("defaultInstruction") || "").trim() || null, overrides },
+      }), "Slot espositivo aggiornato.");
+      return true;
+    }
+
     if (form.matches("[data-place-positioning]")) {
       const floorId = this.activeFloorId?.();
       if (!floorId) throw new Error("Seleziona prima un piano.");
@@ -368,7 +462,82 @@ export const venueMapAuthoringMixin = {
     return false;
   },
 
+  onMapPointerDown(event) {
+    if (event.button !== 0 || this.pendingMapAction || this.busy) return;
+    const node = event.target instanceof Element ? event.target.closest("[data-map-place]") : null;
+    const surface = node?.closest("[data-map-surface]");
+    if (!node || !surface) return;
+    const place = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(node.dataset.mapPlace));
+    if (!place) return;
+    node.setPointerCapture?.(event.pointerId);
+    this.draggingPlace = {
+      pointerId: event.pointerId,
+      placeId: id(place._id),
+      floorId: id(place.floorId),
+      node,
+      surface,
+      startX: event.clientX,
+      startY: event.clientY,
+      point: { x: Number(place.position?.x), y: Number(place.position?.y) },
+      moved: false,
+    };
+  },
+
+  onMapPointerMove(event) {
+    const drag = this.draggingPlace;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = mapPoint(event, drag.surface);
+    if (!point) return;
+    drag.point = point;
+    drag.moved = drag.moved || Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4;
+    if (drag.moved) {
+      event.preventDefault();
+      drag.node.style.left = `${point.x * 100}%`;
+      drag.node.style.top = `${point.y * 100}%`;
+      drag.node.classList.add("dragging");
+    }
+  },
+
+  async onMapPointerUp(event) {
+    const drag = this.draggingPlace;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    this.draggingPlace = null;
+    drag.node.releasePointerCapture?.(event.pointerId);
+    if (!drag.moved) return;
+    this.suppressNextMapClick = true;
+    const connections = (this.data.layout?.connections || []).filter((entry) => [id(entry.fromPlaceId), id(entry.toPlaceId)].includes(drag.placeId) && entry.geometry?.points?.length);
+    const connectionGeometryUpdates = connections.map((connection) => {
+      const points = connection.geometry.points.map((point) => ({ x: Number(point.x), y: Number(point.y) }));
+      if (id(connection.fromPlaceId) === drag.placeId) points[0] = drag.point;
+      if (id(connection.toPlaceId) === drag.placeId) points[points.length - 1] = drag.point;
+      return { connectionId: id(connection._id), geometryPoints: points };
+    });
+    await this.execute(() => managementRepository.moveVenuePlace(this.id, drag.placeId, { position: drag.point, connectionGeometryUpdates }), "Luogo e geometrie incidenti aggiornati.");
+  },
+
+  onMapPointerCancel(event) {
+    if (!this.draggingPlace || this.draggingPlace.pointerId !== event.pointerId) return;
+    this.draggingPlace = null;
+    this.render();
+  },
+
+  onMapDoubleClick(event) {
+    const place = event.target instanceof Element ? event.target.closest("[data-map-place]") : null;
+    if (!place || this.pendingMapAction) return;
+    this.selectedMapPlaceId = place.dataset.mapPlace;
+    this.activeSpatialTab = "places";
+    this.render();
+    requestAnimationFrame(() => this.querySelector(`[data-place-editor="${CSS.escape(this.selectedMapPlaceId)}"] input`)?.focus());
+  },
+
   async onChange(event) {
+    const floorSelect = event.target instanceof HTMLSelectElement ? event.target.closest("[data-floor-select]") : null;
+    if (floorSelect) {
+      this.selectedFloorId = floorSelect.value;
+      if (["calibrate", "geometry", "create-place", "move-place"].includes(this.pendingMapAction?.type)) this.pendingMapAction = null;
+      this.render();
+      return;
+    }
     const input = event.target instanceof HTMLInputElement ? event.target : null;
     if (!input?.matches("[data-floor-plan-input]")) return;
     const file = input.files?.[0];

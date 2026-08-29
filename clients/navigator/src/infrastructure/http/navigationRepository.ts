@@ -23,7 +23,9 @@ export interface MapProjection {
     stops: Array<{
       visitAnchorId: string;
       venueTargetId: string;
+      exhibitSlotId: string;
       label: string;
+      approachInstruction: string | null;
       floorKey: string;
       position: MapPoint;
       order: number;

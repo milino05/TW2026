@@ -46,7 +46,7 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
       catch (error) { commandError(error.message, error.code || "REVISION_NOT_EDITABLE", null, 409); }
       let binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
       if (!binding) {
-        release.targetBindings.push({ venueTargetId: target._id, availability: "active", recognitionMedia: [] });
+        release.targetBindings.push({ venueTargetId: target._id, exhibitSlotId: null, availability: "active", recognitionMedia: [] });
         binding = release.targetBindings.at(-1);
       }
       const result = await mutate({ release, target, binding, session });
