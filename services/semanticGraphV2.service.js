@@ -96,7 +96,12 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId);
   const { namespace, namespaceRevision } = await resolveNamespaceRevision(context, normalized.authoredAgainstNamespaceRevisionId);
-  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId });
+  await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
 
   if (normalized.basedOnRevisionId) {
     const base = await SemanticGraphRevision.findOne({ _id: normalized.basedOnRevisionId, editorialContextId: context._id });
@@ -109,15 +114,17 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   ];
   if (semanticIssues.length) throw new AppError("GraphRevision non coerente", 409, semanticIssues);
 
-  const graphRevision = await SemanticGraphRevision.create({
-    editorialContextId: context._id,
-    version: await nextVersion(context._id),
-    basedOnRevisionId: normalized.basedOnRevisionId || context.workingGraphRevisionId || null,
-    authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-    createdBy: actorUserId,
-  });
-
+  const expectedWorkingGraphRevisionId = context.workingGraphRevisionId || null;
+  const expectedPublishedReleaseId = context.publishedReleaseId || null;
+  let graphRevision = null;
   try {
+    graphRevision = await SemanticGraphRevision.create({
+      editorialContextId: context._id,
+      version: await nextVersion(context._id),
+      basedOnRevisionId: normalized.basedOnRevisionId || expectedWorkingGraphRevisionId,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      createdBy: actorUserId,
+    });
     if (normalized.subjectBindings.length) {
       await GraphSubjectBinding.insertMany(normalized.subjectBindings.map((binding) => ({
         graphRevisionId: graphRevision._id,
@@ -136,17 +143,29 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
         provenance: edge.provenance,
       })), { ordered: true });
     }
-    context.workingGraphRevisionId = graphRevision._id;
-    await context.save();
-    return loadSemanticGraphRevision(graphRevision._id, { bypassCache: true });
+    const pointer = await EditorialContext.updateOne({
+      _id: context._id,
+      lifecycleStatus: "active",
+      workingGraphRevisionId: expectedWorkingGraphRevisionId,
+      publishedReleaseId: expectedPublishedReleaseId,
+    }, { $set: { workingGraphRevisionId: graphRevision._id } });
+    if (pointer.modifiedCount !== 1) {
+      throw new AppError("Il grafo è stato modificato da un’altra operazione", 409, [{ code: "GRAPH_REVISION_CONFLICT" }]);
+    }
   } catch (error) {
-    await Promise.allSettled([
-      GraphSubjectBinding.deleteMany({ graphRevisionId: graphRevision._id }),
-      SemanticEdgeV2.deleteMany({ graphRevisionId: graphRevision._id }),
-      SemanticGraphRevision.deleteOne({ _id: graphRevision._id }),
-    ]);
+    if (graphRevision?._id) {
+      await Promise.allSettled([
+        GraphSubjectBinding.deleteMany({ graphRevisionId: graphRevision._id }),
+        SemanticEdgeV2.deleteMany({ graphRevisionId: graphRevision._id }),
+        SemanticGraphRevision.deleteOne({ _id: graphRevision._id }),
+      ]);
+    }
+    if ([11000, 112, 251].includes(Number(error?.code))) {
+      throw new AppError("Il grafo è stato modificato da un’altra operazione", 409, [{ code: "GRAPH_REVISION_CONFLICT" }]);
+    }
     throw error;
   }
+  return loadSemanticGraphRevision(graphRevision._id, { bypassCache: true });
 }
 
 async function loadSemanticGraphRevision(graphRevisionId, { namespaceRevisionId = null, bypassCache = false } = {}) {

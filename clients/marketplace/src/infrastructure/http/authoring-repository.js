@@ -30,6 +30,21 @@ export const authoringRepository = {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
     return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}${query}`);
   },
+  itemConnections(itemId, editionId) {
+    const query = queryString({ editionId });
+    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections?${query}`);
+  },
+  searchItemConnectionTargets(itemId, { editionId, q, limit = 20 }) {
+    const query = queryString({ editionId, q, limit });
+    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connection-targets?${query}`);
+  },
+  createItemConnection(itemId, payload) {
+    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  removeItemConnection(itemId, { editionId, connectionId, contextId }) {
+    const query = queryString({ editionId, contextId });
+    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections/${encodeURIComponent(connectionId)}?${query}`, { method: "DELETE" });
+  },
   namespaceControls(namespaceId, principal) {
     const query = queryString({ principalType: principal?.type || "user", principalId: principal?.id || null });
     return apiClient.request(`/v2/marketplace/namespace-authoring/${encodeURIComponent(namespaceId)}?${query}`);
