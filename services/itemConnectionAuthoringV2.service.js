@@ -162,22 +162,26 @@ async function subjectContentSummaries({ item, namespaceId, subjectIds }) {
   for (const candidate of items) {
     const edition = editionByItemId.get(id(candidate));
     if (!edition) continue;
-    const subjectId = id(candidate.primarySubjectId);
-    if (!grouped.has(subjectId)) grouped.set(subjectId, []);
     const revision = revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId));
-    if (revision?.label) grouped.get(subjectId).push(String(revision.label));
+    if (!revision?.label) continue;
+    const subjectId = id(candidate.primarySubjectId);
+    if (!grouped.has(subjectId)) grouped.set(subjectId, { contentCount: 0, titles: [] });
+    const group = grouped.get(subjectId);
+    group.contentCount += 1;
+    group.titles.push(String(revision.label));
   }
   const result = new Map();
   for (const subjectId of values) {
     const subject = subjectById.get(subjectId);
-    const titles = [...new Set(grouped.get(subjectId) || [])].sort((left, right) => left.localeCompare(right, "it"));
-    if (!subject || !titles.length) continue;
+    const group = grouped.get(subjectId);
+    if (!subject || !group?.contentCount) continue;
+    const titles = [...new Set(group.titles)].sort((left, right) => left.localeCompare(right, "it"));
     result.set(subjectId, {
       id: subject._id,
       title: subject.preferredLabel,
       description: subject.description || "",
       subject: { id: subject._id, label: subject.preferredLabel },
-      contentCount: titles.length,
+      contentCount: group.contentCount,
       sampleTitles: titles.slice(0, 3),
     });
   }
@@ -284,7 +288,7 @@ async function ensureScope({ scopeKey, item, namespace, actorUserId }) {
     contentSpace = await createContentSpace({
       payload: {
         name: "Collegamenti personali",
-        description: "Spazio preparato automaticamente per i collegamenti tra contenuti.",
+        description: "Spazio preparato automaticamente per i collegamenti tra soggetti.",
         ownerType: item.ownerType,
         ownerId: item.ownerId,
       },
@@ -317,7 +321,7 @@ async function ensureScope({ scopeKey, item, namespace, actorUserId }) {
           contentSpaceId: contentSpace._id,
           namespaceId: namespace._id,
           displayName: `${namespace.name} · Collegamenti`,
-          shortDescription: "Collegamenti semantici tra contenuti.",
+          shortDescription: "Collegamenti semantici tra soggetti.",
         },
         actorUserId,
       });
@@ -346,7 +350,7 @@ function resolveClass({ allowed, requested, existing, role }) {
   const allowedIds = (allowed || []).map(String);
   if (!allowedIds.length) return null;
   if (requested) {
-    if (!allowedIds.includes(String(requested))) throw new AppError(`Il tipo scelto per il contenuto ${role} non è compatibile con la relazione`, 400);
+    if (!allowedIds.includes(String(requested))) throw new AppError(`Il tipo scelto per il soggetto ${role} non è compatibile con la relazione`, 400);
     return String(requested);
   }
   const alreadyCompatible = (existing || []).find((entry) => allowedIds.includes(String(entry)));
