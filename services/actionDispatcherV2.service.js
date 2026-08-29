@@ -132,6 +132,13 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
   }
 }
 
+function appendSemanticChoices(runtime, effect) {
+  if (effect?.type !== "semantic_choices" || !Array.isArray(effect.choices) || !effect.choices.length) return runtime;
+  const seen = new Set((runtime.availableActions || []).map((action) => String(action.actionId)));
+  const choices = effect.choices.filter((choice) => choice?.actionId && !seen.has(String(choice.actionId)));
+  return choices.length ? { ...runtime, availableActions: [...(runtime.availableActions || []), ...choices] } : runtime;
+}
+
 async function dispatchAction({ sessionId, userId, payload = {} }) {
   const actionId = String(payload.actionId || "").trim();
   if (!actionId) throw new AppError("actionId e obbligatorio", 400, [{ field: "actionId", code: "REQUIRED" }]);
@@ -165,9 +172,10 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     { _id: sessionId, userId },
     { $push: { interactionEvents: interactionEvent({ userId, descriptor, interactionChannel, status: "applied" }) } },
   );
+  const runtime = appendSemanticChoices(await currentSessionProjection({ sessionId, userId }), effect);
   return {
     action: { actionId: descriptor.actionId, type: descriptor.type, family: descriptor.family },
-    runtime: await currentSessionProjection({ sessionId, userId }),
+    runtime,
     effect,
   };
 }
