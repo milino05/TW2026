@@ -68,6 +68,16 @@ test("Home e aree operative consumano il contesto senza permettere selezioni loc
   }
 });
 
+test("Home differenzia area personale e organizzazione senza duplicare le azioni della header", () => {
+  assert.match(source.home, /Continua il tuo lavoro/);
+  assert.match(source.home, /Da completare/);
+  assert.match(source.home, /Adatti alle vostre sedi/);
+  assert.match(source.home, /Attività recente/);
+  assert.match(source.home, /Gestisci organizzazione/);
+  assert.match(source.home, /section=overview/);
+  assert.doesNotMatch(source.home, /home-actions|home-action-card/);
+});
+
 test("route Context Hub, Home e discovery Organization/Venue sono parte del router", () => {
   for (const route of ["/context", "/home", "/organizations", "/organizations/public", "/venues", "/venues/public"]) {
     assert.match(source.router, new RegExp(`"${route.replaceAll("/", "\\/")}"`));
