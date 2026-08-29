@@ -16,23 +16,46 @@ const emit = defineEmits<{
 }>();
 
 const closeButton = ref<HTMLButtonElement | null>(null);
-const sections = computed(() => [
-  { key: "presentation", title: "Adatta il contenuto", actions: props.groups.presentation },
-  { key: "semantic", title: "Approfondisci", actions: props.groups.semantic },
-  { key: "navigation", title: "Muoviti nel museo", actions: props.groups.navigation },
-  { key: "lifecycle", title: "Sessione", actions: props.groups.lifecycle },
-  { key: "other", title: "Altre azioni", actions: props.groups.other },
-].filter((section) => section.actions.length));
+const dismissedChoiceSignature = ref("");
+const semanticChoices = computed(() => props.groups.semantic.filter((action) => action.semanticChoice === true));
+const semanticChoiceSignature = computed(() => semanticChoices.value
+  .map((action) => `${action.actionId}@${action.semanticChoiceRequestVersion ?? ""}`)
+  .join("|"));
+const autoChoiceOpen = computed(() => Boolean(
+  semanticChoices.value.length
+  && semanticChoiceSignature.value !== dismissedChoiceSignature.value,
+));
+const visible = computed(() => props.open || autoChoiceOpen.value);
+const choiceMode = computed(() => autoChoiceOpen.value && !props.open);
+const sections = computed(() => {
+  if (choiceMode.value) return [{ key: "semantic-choice", title: "Scegli un approfondimento", actions: semanticChoices.value }];
+  return [
+    { key: "presentation", title: "Adatta il contenuto", actions: props.groups.presentation },
+    { key: "semantic", title: "Approfondisci", actions: props.groups.semantic },
+    { key: "navigation", title: "Muoviti nel museo", actions: props.groups.navigation },
+    { key: "lifecycle", title: "Sessione", actions: props.groups.lifecycle },
+    { key: "other", title: "Altre azioni", actions: props.groups.other },
+  ].filter((section) => section.actions.length);
+});
+const title = computed(() => choiceMode.value ? "Quale approfondimento vuoi aprire?" : "Cosa vuoi fare?");
 
-watch(() => props.open, async (open) => {
+watch(visible, async (open) => {
   if (!open) return;
   await nextTick();
   closeButton.value?.focus();
 });
+watch(semanticChoiceSignature, (signature, previous) => {
+  if (signature && signature !== previous) dismissedChoiceSignature.value = "";
+});
+
+function closeSheet() {
+  if (choiceMode.value) dismissedChoiceSignature.value = semanticChoiceSignature.value;
+  emit("close");
+}
 </script>
 
 <template>
-  <div v-if="open" class="action-overlay" @click.self="emit('close')">
+  <div v-if="visible" class="action-overlay" @click.self="closeSheet" @keydown.esc.stop.prevent="closeSheet">
     <section
       class="action-sheet"
       role="dialog"
@@ -41,8 +64,11 @@ watch(() => props.open, async (open) => {
     >
       <div class="sheet-grip" aria-hidden="true"></div>
       <header>
-        <h2 id="session-actions-title">Cosa vuoi fare?</h2>
-        <button ref="closeButton" class="close-button" type="button" aria-label="Chiudi azioni" @click="emit('close')">
+        <div>
+          <h2 id="session-actions-title">{{ title }}</h2>
+          <p v-if="choiceMode" class="sheet-intro">Più contenuti sono pertinenti alla relazione richiesta. Scegli quello che vuoi ascoltare.</p>
+        </div>
+        <button ref="closeButton" class="close-button" type="button" aria-label="Chiudi azioni" @click="closeSheet">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
             <path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
@@ -105,9 +131,13 @@ watch(() => props.open, async (open) => {
 
 header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+header > div {
+  min-width: 0;
 }
 
 h2 {
@@ -115,6 +145,13 @@ h2 {
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(1.6rem, 6vw, 2rem);
   font-weight: 500;
+}
+
+.sheet-intro {
+  margin: .4rem 0 0;
+  color: var(--navigator-muted);
+  font-size: .82rem;
+  line-height: 1.45;
 }
 
 .close-button {
@@ -170,5 +207,6 @@ h2 {
 
 @media (max-width: 420px) {
   .action-sheet { max-height: 82dvh; }
+  .action-grid { grid-template-columns: 1fr; }
 }
 </style>

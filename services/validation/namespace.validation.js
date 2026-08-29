@@ -55,6 +55,14 @@ function normalizeBaseDefinition(value) {
   };
 }
 
+function normalizeRelationTargetSelectionSignals(values) {
+  if (!Array.isArray(values)) return values;
+  return values.map((value) => isPlainObject(value) ? {
+    definitionId: trimIfString(value.definitionId),
+    weight: value.weight === undefined || value.weight === "" ? 1 : Number(value.weight),
+  } : value);
+}
+
 function normalizeRelationType(value) {
   if (!isPlainObject(value)) return value;
   const base = normalizeBaseDefinition(value);
@@ -65,11 +73,13 @@ function normalizeRelationType(value) {
     category: normalizeKey(value.category || "semantic"),
     strength: normalizeKey(value.strength || "medium"),
     userIntents: normalizeStringArrayStrict(value.userIntents || []),
+    targetSelectionSignals: normalizeRelationTargetSelectionSignals(value.targetSelectionSignals || []),
     directionality: normalizeKey(value.directionality || "directed"),
     reverse: isPlainObject(value.reverse) ? {
       label: trimIfString(value.reverse.label),
       description: trimIfString(value.reverse.description),
       userIntents: normalizeStringArrayStrict(value.reverse.userIntents || []),
+      targetSelectionSignals: normalizeRelationTargetSelectionSignals(value.reverse.targetSelectionSignals || []),
     } : value.reverse,
     validationRules: isPlainObject(value.validationRules) ? {
       allowMultiple: normalizeBoolean(value.validationRules.allowMultiple) !== false,
@@ -164,12 +174,34 @@ function validateLanguageLevels(values, errors) {
   });
 }
 
-function validateRelationTypes(values, subjectClasses, errors) {
+function validateRelationSelectionSignals(values, field, selectionSignalIds, errors) {
+  if (!Array.isArray(values)) {
+    pushError(errors, field, "INVALID_TYPE", `${field} deve essere un array`);
+    return;
+  }
+  const seen = new Set();
+  values.forEach((value, index) => {
+    const path = `${field}[${index}]`;
+    if (!isPlainObject(value)) return pushError(errors, path, "INVALID_TYPE", "La preferenza deve essere un oggetto");
+    validateUnknownFields(value, new Set(["definitionId", "weight"]), path, errors);
+    const definitionId = value.definitionId;
+    if (typeof definitionId !== "string" || !validateUuid(definitionId)) pushError(errors, `${path}.definitionId`, "INVALID_UUID", "Il SelectionSignal deve essere un UUID valido");
+    else if (!selectionSignalIds.has(definitionId)) pushError(errors, `${path}.definitionId`, "UNKNOWN_SELECTION_SIGNAL", `SelectionSignal non presente: ${definitionId}`);
+    if (seen.has(definitionId)) pushError(errors, `${path}.definitionId`, "DUPLICATE_VALUE", `SelectionSignal duplicato: ${definitionId}`);
+    seen.add(definitionId);
+    if (!Number.isFinite(Number(value.weight)) || Number(value.weight) < 0 || Number(value.weight) > 1) {
+      pushError(errors, `${path}.weight`, "OUT_OF_RANGE", "weight deve essere compreso fra 0 e 1");
+    }
+  });
+}
+
+function validateRelationTypes(values, subjectClasses, selectionSignals, errors) {
   validateDefinitionCollection(values, "relationTypes", errors, {
-    extraAllowed: ["domainDefinitionIds", "rangeDefinitionIds", "category", "strength", "userIntents", "directionality", "reverse", "validationRules"],
+    extraAllowed: ["domainDefinitionIds", "rangeDefinitionIds", "category", "strength", "userIntents", "targetSelectionSignals", "directionality", "reverse", "validationRules"],
   });
   if (!Array.isArray(values)) return;
   const subjectClassIds = new Set((subjectClasses || []).filter(isPlainObject).map((entry) => entry.definitionId));
+  const selectionSignalIds = new Set((selectionSignals || []).filter(isPlainObject).map((entry) => entry.definitionId));
   values.forEach((value, index) => {
     if (!isPlainObject(value)) return;
     const path = `relationTypes[${index}]`;
@@ -191,11 +223,13 @@ function validateRelationTypes(values, subjectClasses, errors) {
       });
     }
     if (!Array.isArray(value.userIntents)) pushError(errors, `${path}.userIntents`, "INVALID_TYPE", "userIntents deve essere un array");
+    validateRelationSelectionSignals(value.targetSelectionSignals || [], `${path}.targetSelectionSignals`, selectionSignalIds, errors);
     if (value.reverse !== undefined && value.reverse !== null) {
       if (!isPlainObject(value.reverse)) pushError(errors, `${path}.reverse`, "INVALID_TYPE", "reverse deve essere un oggetto");
       else {
-        validateUnknownFields(value.reverse, new Set(["label", "description", "userIntents"]), `${path}.reverse`, errors);
+        validateUnknownFields(value.reverse, new Set(["label", "description", "userIntents", "targetSelectionSignals"]), `${path}.reverse`, errors);
         if (!Array.isArray(value.reverse.userIntents || [])) pushError(errors, `${path}.reverse.userIntents`, "INVALID_TYPE", "reverse.userIntents deve essere un array");
+        validateRelationSelectionSignals(value.reverse.targetSelectionSignals || [], `${path}.reverse.targetSelectionSignals`, selectionSignalIds, errors);
       }
     }
     if (!isPlainObject(value.validationRules)) pushError(errors, `${path}.validationRules`, "INVALID_TYPE", "validationRules deve essere un oggetto");
@@ -230,7 +264,7 @@ function validateNamespaceRevisionUnknownFields(payload = {}) {
   const baseAllowed = new Set(["definitionId", "key", "label", "description", "semanticRefs"]);
   const durationAllowed = new Set([...baseAllowed, "targetSeconds", "level"]);
   const languageAllowed = new Set([...baseAllowed, "level"]);
-  const relationAllowed = new Set([...baseAllowed, "domainDefinitionIds", "rangeDefinitionIds", "category", "strength", "userIntents", "directionality", "reverse", "validationRules"]);
+  const relationAllowed = new Set([...baseAllowed, "domainDefinitionIds", "rangeDefinitionIds", "category", "strength", "userIntents", "targetSelectionSignals", "directionality", "reverse", "validationRules"]);
   const inspectDefinitions = (field, allowed) => {
     if (!Array.isArray(payload[field])) return;
     payload[field].forEach((definition, index) => {
@@ -243,7 +277,15 @@ function validateNamespaceRevisionUnknownFields(payload = {}) {
         });
       }
       if (field === "relationTypes") {
-        if (isPlainObject(definition.reverse)) validateUnknownFields(definition.reverse, new Set(["label", "description", "userIntents"]), `${path}.reverse`, errors);
+        if (Array.isArray(definition.targetSelectionSignals)) definition.targetSelectionSignals.forEach((signal, signalIndex) => {
+          if (isPlainObject(signal)) validateUnknownFields(signal, new Set(["definitionId", "weight"]), `${path}.targetSelectionSignals[${signalIndex}]`, errors);
+        });
+        if (isPlainObject(definition.reverse)) {
+          validateUnknownFields(definition.reverse, new Set(["label", "description", "userIntents", "targetSelectionSignals"]), `${path}.reverse`, errors);
+          if (Array.isArray(definition.reverse.targetSelectionSignals)) definition.reverse.targetSelectionSignals.forEach((signal, signalIndex) => {
+            if (isPlainObject(signal)) validateUnknownFields(signal, new Set(["definitionId", "weight"]), `${path}.reverse.targetSelectionSignals[${signalIndex}]`, errors);
+          });
+        }
         if (isPlainObject(definition.validationRules)) validateUnknownFields(definition.validationRules, new Set(["allowMultiple", "targetRequired"]), `${path}.validationRules`, errors);
       }
     });
@@ -264,7 +306,7 @@ function validateNamespaceRevisionSnapshot(snapshot = {}, { requireCoreScales = 
   validateLanguageLevels(snapshot.languageLevels || [], errors);
   validateDefinitionCollection(snapshot.presentationAspects || [], "presentationAspects", errors);
   validateDefinitionCollection(snapshot.selectionSignals || [], "selectionSignals", errors);
-  validateRelationTypes(snapshot.relationTypes || [], snapshot.subjectClasses || [], errors);
+  validateRelationTypes(snapshot.relationTypes || [], snapshot.subjectClasses || [], snapshot.selectionSignals || [], errors);
   validateDefinitionIdsAreUnique(snapshot, errors);
   if (requireCoreScales && !(snapshot.durationTypes || []).length) pushError(errors, "durationTypes", "EMPTY_ARRAY", "Almeno un DurationType e obbligatorio per pubblicare il Namespace");
   if (requireCoreScales && !(snapshot.languageLevels || []).length) pushError(errors, "languageLevels", "EMPTY_ARRAY", "Almeno un LanguageLevel e obbligatorio per pubblicare il Namespace");

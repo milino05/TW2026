@@ -10,7 +10,7 @@ async function withFreshDatabase(callback) {
   finally { await mongoose.connection.dropDatabase().catch(() => {}); await mongoose.disconnect(); }
 }
 
-test("item authoring crea, proietta e rimuove collegamenti tramite revisioni immutabili del grafo", { skip: !mongoUri }, async () => {
+test("item authoring crea, proietta e rimuove collegamenti Subject-to-Subject tramite revisioni immutabili del grafo", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -100,7 +100,10 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
       actorUserId: owner._id,
     });
     assert.equal(search.results.length, 1);
-    assert.equal(String(search.results[0].id), String(targetItem._id));
+    assert.equal(String(search.results[0].id), String(targetSubject._id));
+    assert.equal(search.results[0].title, "Autore collegato");
+    assert.equal(search.results[0].contentCount, 1);
+    assert.deepEqual(search.results[0].sampleTitles, ["Biografia dell’autore"]);
 
     await assert.rejects(
       () => connections.createItemConnection({
@@ -110,7 +113,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
         payload: {
           scopeKey: "new",
           relationTypeDefinitionId: "relation-created-by",
-          targetItemId: targetItem._id,
+          targetSubjectId: targetSubject._id,
           unexpected: true,
         },
       }),
@@ -124,7 +127,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
       payload: {
         scopeKey: "new",
         relationTypeDefinitionId: "relation-created-by",
-        targetItemId: targetItem._id,
+        targetSubjectId: targetSubject._id,
         weight: 8,
         provenanceOrigin: "human",
         note: "Attribuzione verificata dal curatore.",
@@ -132,12 +135,14 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
     });
     assert.equal(created.connections.length, 1);
     assert.equal(created.connections[0].relationType.label, "Creata da");
-    assert.equal(created.connections[0].targetContent.title, "Biografia dell’autore");
+    assert.equal(String(created.connections[0].targetSubject.id), String(targetSubject._id));
+    assert.equal(created.connections[0].targetSubject.label, "Autore collegato");
+    assert.equal(created.connections[0].targetSubject.contentCount, 1);
     assert.equal(created.connections[0].weight, 8);
     assert.equal(created.connections[0].note, "Attribuzione verificata dal curatore.");
     assert.equal(await ContentSpace.countDocuments(), 1);
     assert.equal(await EditorialContext.countDocuments(), 1);
-    assert.equal(await ContentSpaceMembership.countDocuments(), 2);
+    assert.equal(await ContentSpaceMembership.countDocuments(), 1, "il grafo non acquisisce implicitamente un Item target");
     assert.equal(await SemanticGraphRevision.countDocuments(), 1);
     const firstEdge = await SemanticEdgeV2.findOne().lean();
     assert.equal(String(firstEdge.sourceSubjectId), String(sourceSubject._id));
@@ -168,7 +173,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
       payload: {
         scopeKey: `context:${context._id}`,
         relationTypeDefinitionId: "relation-created-by",
-        targetItemId: targetItem._id,
+        targetSubjectId: targetSubject._id,
       },
     });
     assert.equal(beforeTrash.connections.length, 1);
@@ -192,7 +197,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
       payload: {
         scopeKey: afterTrash.scopes[0].key,
         relationTypeDefinitionId: "relation-created-by",
-        targetItemId: targetItem._id,
+        targetSubjectId: targetSubject._id,
       },
     });
     assert.equal(afterReuse.connections.length, 1, "il vecchio collegamento non viene ripristinato insieme a quello nuovo");
@@ -221,7 +226,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
         payload: {
           scopeKey: `context:${context._id}`,
           relationTypeDefinitionId: "relation-created-by",
-          targetItemId: concurrentItemA._id,
+          targetSubjectId: concurrentSubjectA._id,
         },
       }),
       connections.createItemConnection({
@@ -231,7 +236,7 @@ test("item authoring crea, proietta e rimuove collegamenti tramite revisioni imm
         payload: {
           scopeKey: `context:${context._id}`,
           relationTypeDefinitionId: "relation-created-by",
-          targetItemId: concurrentItemB._id,
+          targetSubjectId: concurrentSubjectB._id,
         },
       }),
     ]);

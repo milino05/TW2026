@@ -139,37 +139,50 @@ function projectedDefinitions(namespaceRevision) {
   };
 }
 
-async function targetItemsBySubject({ item, namespaceId, subjectIds }) {
-  const values = [...new Set(subjectIds.map(id).filter(Boolean))];
+async function subjectContentSummaries({ item, namespaceId, subjectIds }) {
+  const values = [...new Set((subjectIds || []).map(id).filter(Boolean))].filter((subjectId) => subjectId !== id(item.primarySubjectId));
   if (!values.length) return new Map();
-  const items = await ItemV2.find({
-    _id: { $ne: item._id },
-    ownerType: item.ownerType,
-    ownerId: item.ownerId,
-    lifecycleStatus: "active",
-    primarySubjectId: { $in: values },
-  }).sort({ updatedAt: -1 }).lean();
-  const editions = await ItemEdition.find({ itemId: { $in: items.map((entry) => entry._id) }, namespaceId }).lean();
+  const [subjects, items] = await Promise.all([
+    Subject.find({ _id: { $in: values } }).select("preferredLabel description").lean(),
+    ItemV2.find({
+      _id: { $ne: item._id },
+      ownerType: item.ownerType,
+      ownerId: item.ownerId,
+      lifecycleStatus: "active",
+      primarySubjectId: { $in: values },
+    }).select("_id primarySubjectId").lean(),
+  ]);
+  const editions = items.length ? await ItemEdition.find({ itemId: { $in: items.map((entry) => entry._id) }, namespaceId }).lean() : [];
   const editionByItemId = new Map(editions.map((entry) => [id(entry.itemId), entry]));
   const revisionIds = editions.map((entry) => entry.workingRevisionId || entry.publishedRevisionId).filter(Boolean);
-  const [revisions, subjects] = await Promise.all([
-    ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label illustrativeMedia").lean(),
-    Subject.find({ _id: { $in: values } }).select("preferredLabel description").lean(),
-  ]);
+  const revisions = revisionIds.length ? await ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label").lean() : [];
   const revisionById = new Map(revisions.map((entry) => [id(entry), entry]));
   const subjectById = new Map(subjects.map((entry) => [id(entry), entry]));
+  const grouped = new Map();
+  for (const candidate of items) {
+    const edition = editionByItemId.get(id(candidate));
+    if (!edition) continue;
+    const revision = revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId));
+    if (!revision?.label) continue;
+    const subjectId = id(candidate.primarySubjectId);
+    if (!grouped.has(subjectId)) grouped.set(subjectId, { contentCount: 0, titles: [] });
+    const group = grouped.get(subjectId);
+    group.contentCount += 1;
+    group.titles.push(String(revision.label));
+  }
   const result = new Map();
-  for (const target of items) {
-    const edition = editionByItemId.get(id(target));
-    const revision = revisionById.get(id(edition?.workingRevisionId || edition?.publishedRevisionId));
-    const subject = subjectById.get(id(target.primarySubjectId));
-    if (!edition || !revision || result.has(id(target.primarySubjectId))) continue;
-    result.set(id(target.primarySubjectId), {
-      id: target._id,
-      editionId: edition._id,
-      title: revision.label,
-      subject: { id: target.primarySubjectId, label: subject?.preferredLabel || revision.label },
-      image: revision.illustrativeMedia?.[0] || null,
+  for (const subjectId of values) {
+    const subject = subjectById.get(subjectId);
+    const group = grouped.get(subjectId);
+    if (!subject || !group?.contentCount) continue;
+    const titles = [...new Set(group.titles)].sort((left, right) => left.localeCompare(right, "it"));
+    result.set(subjectId, {
+      id: subject._id,
+      title: subject.preferredLabel,
+      description: subject.description || "",
+      subject: { id: subject._id, label: subject.preferredLabel },
+      contentCount: group.contentCount,
+      sampleTitles: titles.slice(0, 3),
     });
   }
   return result;
@@ -185,7 +198,7 @@ async function projectConnections({ item, edition, namespaceRevision, scopes }) 
     const graph = await effectiveGraph(context);
     if (!graph) continue;
     const outgoing = graph.authoritativeEdges.filter((edge) => sameId(edge.sourceSubjectId, sourceSubjectId));
-    const targets = await targetItemsBySubject({
+    const summaries = await subjectContentSummaries({
       item,
       namespaceId: edition.namespaceId,
       subjectIds: outgoing.map((edge) => edge.targetSubjectId),
@@ -195,6 +208,7 @@ async function projectConnections({ item, edition, namespaceRevision, scopes }) 
     for (const edge of outgoing) {
       const relation = relationById.get(String(edge.relationTypeDefinitionId));
       const targetSubject = graph.nodes.get(id(edge.targetSubjectId))?.subject;
+      const summary = summaries.get(id(edge.targetSubjectId));
       rows.push({
         id: edge._id,
         contextId: context._id,
@@ -204,8 +218,12 @@ async function projectConnections({ item, edition, namespaceRevision, scopes }) 
           label: relation?.label || edge.relationTypeDefinitionId,
           directionality: relation?.directionality || "directed",
         },
-        targetContent: targets.get(id(edge.targetSubjectId)) || null,
-        targetSubject: { id: edge.targetSubjectId, label: targetSubject?.preferredLabel || "Soggetto collegato" },
+        targetSubject: {
+          id: edge.targetSubjectId,
+          label: targetSubject?.preferredLabel || "Soggetto collegato",
+          description: targetSubject?.description || "",
+          contentCount: summary?.contentCount || 0,
+        },
         weight: edge.weight,
         note: typeof edge.metadata?.note === "string" ? edge.metadata.note : "",
         provenance: edge.provenance || { origin: "human" },
@@ -236,39 +254,25 @@ async function searchItemConnectionTargets({ itemId, editionId, query, actorUser
   const regex = new RegExp(escapeRegex(normalized), "i");
   const safeLimit = Math.max(1, Math.min(30, Number(limit) || 20));
   const [subjects, matchingRevisions] = await Promise.all([
-    Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(safeLimit * 3).lean(),
-    ItemRevisionV2.find({ label: regex }).select("_id itemEditionId").limit(safeLimit * 3).lean(),
+    Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(safeLimit * 4).lean(),
+    ItemRevisionV2.find({ label: regex }).select("_id itemEditionId").limit(safeLimit * 4).lean(),
   ]);
-  const subjectItems = await ItemV2.find({
-    _id: { $ne: item._id }, ownerType: item.ownerType, ownerId: item.ownerId, lifecycleStatus: "active",
-    primarySubjectId: { $in: subjects.map((entry) => entry._id) },
-  }).select("_id").lean();
-  const revisionEditions = await ItemEdition.find({
+  const revisionEditions = matchingRevisions.length ? await ItemEdition.find({
     _id: { $in: matchingRevisions.map((entry) => entry.itemEditionId) },
     namespaceId: edition.namespaceId,
-  }).select("itemId").lean();
-  const candidateItemIds = [...new Set([...subjectItems.map((entry) => id(entry)), ...revisionEditions.map((entry) => id(entry.itemId))])];
-  if (!candidateItemIds.length) return { results: [], minimumQueryLength: 2 };
-  const candidateItems = await ItemV2.find({
-    _id: { $in: candidateItemIds, $ne: item._id },
+  }).select("itemId").lean() : [];
+  const revisionItems = revisionEditions.length ? await ItemV2.find({
+    _id: { $in: revisionEditions.map((entry) => entry.itemId), $ne: item._id },
     ownerType: item.ownerType,
     ownerId: item.ownerId,
     lifecycleStatus: "active",
-  }).lean();
-  const candidateEditions = await ItemEdition.find({
-    itemId: { $in: candidateItems.map((entry) => entry._id) },
-    namespaceId: edition.namespaceId,
-  }).lean();
-  const targetMap = await targetItemsBySubject({
-    item,
-    namespaceId: edition.namespaceId,
-    subjectIds: candidateItems.map((entry) => entry.primarySubjectId),
-  });
-  const editionItemIds = new Set(candidateEditions.map((entry) => id(entry.itemId)));
-  const results = candidateItems
-    .filter((entry) => editionItemIds.has(id(entry)))
-    .map((entry) => targetMap.get(id(entry.primarySubjectId)))
-    .filter(Boolean)
+  }).select("primarySubjectId").lean() : [];
+  const subjectIds = [...new Set([
+    ...subjects.map((entry) => id(entry)),
+    ...revisionItems.map((entry) => id(entry.primarySubjectId)),
+  ].filter((value) => value && value !== id(item.primarySubjectId)))];
+  const summaries = await subjectContentSummaries({ item, namespaceId: edition.namespaceId, subjectIds });
+  const results = [...summaries.values()]
     .sort((left, right) => String(left.title).localeCompare(String(right.title), "it"))
     .slice(0, safeLimit);
   return { results, minimumQueryLength: 2 };
@@ -284,7 +288,7 @@ async function ensureScope({ scopeKey, item, namespace, actorUserId }) {
     contentSpace = await createContentSpace({
       payload: {
         name: "Collegamenti personali",
-        description: "Spazio preparato automaticamente per i collegamenti tra contenuti.",
+        description: "Spazio preparato automaticamente per i collegamenti tra soggetti.",
         ownerType: item.ownerType,
         ownerId: item.ownerId,
       },
@@ -317,7 +321,7 @@ async function ensureScope({ scopeKey, item, namespace, actorUserId }) {
           contentSpaceId: contentSpace._id,
           namespaceId: namespace._id,
           displayName: `${namespace.name} · Collegamenti`,
-          shortDescription: "Collegamenti semantici tra contenuti.",
+          shortDescription: "Collegamenti semantici tra soggetti.",
         },
         actorUserId,
       });
@@ -346,42 +350,36 @@ function resolveClass({ allowed, requested, existing, role }) {
   const allowedIds = (allowed || []).map(String);
   if (!allowedIds.length) return null;
   if (requested) {
-    if (!allowedIds.includes(String(requested))) throw new AppError(`Il tipo scelto per il contenuto ${role} non è compatibile con la relazione`, 400);
+    if (!allowedIds.includes(String(requested))) throw new AppError(`Il tipo scelto per il soggetto ${role} non è compatibile con la relazione`, 400);
     return String(requested);
   }
   const alreadyCompatible = (existing || []).find((entry) => allowedIds.includes(String(entry)));
   if (alreadyCompatible) return String(alreadyCompatible);
   if (allowedIds.length === 1) return allowedIds[0];
-  throw new AppError(`Scegli il tipo del contenuto ${role}`, 400, [{ code: role === "di partenza" ? "SOURCE_CLASS_REQUIRED" : "TARGET_CLASS_REQUIRED" }]);
+  throw new AppError(`Scegli il tipo del soggetto ${role}`, 400, [{ code: role === "di partenza" ? "SOURCE_CLASS_REQUIRED" : "TARGET_CLASS_REQUIRED" }]);
 }
 
 async function createItemConnectionAttempt({ itemId, editionId, payload, actorUserId }) {
   const { item, edition, namespace, namespaceRevision } = await loadEditionContext({ itemId, editionId, actorUserId });
-  if (!mongoose.isValidObjectId(payload?.targetItemId)) throw new AppError("Scegli il contenuto da collegare", 400);
+  if (!mongoose.isValidObjectId(payload?.targetSubjectId)) throw new AppError("Scegli il soggetto da collegare", 400);
   const relation = (namespaceRevision.relationTypes || []).find((entry) => String(entry.definitionId) === String(payload?.relationTypeDefinitionId || ""));
   if (!relation) throw new AppError("Scegli una relazione prevista dalle regole editoriali", 400);
-  const targetItem = await ItemV2.findOne({
-    _id: payload.targetItemId,
-    ownerType: item.ownerType,
-    ownerId: item.ownerId,
-    lifecycleStatus: "active",
-  });
-  if (!targetItem || sameId(targetItem._id, item._id)) throw new AppError("Il contenuto da collegare non è disponibile nel tuo account", 404);
-  const targetEdition = await ItemEdition.findOne({ itemId: targetItem._id, namespaceId: edition.namespaceId });
-  if (!targetEdition) throw new AppError("Il contenuto scelto non usa queste regole editoriali", 409);
+  const targetSubject = await Subject.findById(payload.targetSubjectId).lean();
+  if (!targetSubject) throw new AppError("Il soggetto da collegare non è disponibile", 404);
+  const sourceSubjectId = item.primarySubjectId;
+  const targetSubjectId = targetSubject._id;
+  if (sameId(sourceSubjectId, targetSubjectId)) throw new AppError("Scegli un soggetto diverso da quello del contenuto corrente", 409);
+
   const context = await ensureScope({ scopeKey: payload?.scopeKey, item, namespace, actorUserId });
   const graph = await effectiveGraph(context);
   const snapshot = writableGraph(graph);
-  const sourceSubjectId = item.primarySubjectId;
-  const targetSubjectId = targetItem.primarySubjectId;
-  if (sameId(sourceSubjectId, targetSubjectId)) throw new AppError("Scegli un contenuto che parli di un soggetto diverso", 409);
   const duplicate = snapshot.edges.some((edge) => sameId(edge.sourceSubjectId, sourceSubjectId)
     && sameId(edge.targetSubjectId, targetSubjectId)
     && String(edge.relationTypeDefinitionId) === String(relation.definitionId));
   if (duplicate) throw new AppError("Questo collegamento è già presente", 409);
   if (relation.validationRules?.allowMultiple === false && snapshot.edges.some((edge) => sameId(edge.sourceSubjectId, sourceSubjectId)
     && String(edge.relationTypeDefinitionId) === String(relation.definitionId))) {
-    throw new AppError(`La relazione “${relation.label}” consente un solo contenuto collegato`, 409);
+    throw new AppError(`La relazione “${relation.label}” consente un solo soggetto collegato`, 409);
   }
   const existingSourceClasses = snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, sourceSubjectId))?.subjectClassDefinitionIds || [];
   const existingTargetClasses = snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, targetSubjectId))?.subjectClassDefinitionIds || [];
@@ -400,18 +398,13 @@ async function createItemConnectionAttempt({ itemId, editionId, payload, actorUs
     metadata: note ? { note } : null,
     provenance: { origin },
   });
-  await Promise.all([
-    ContentSpaceMembership.updateOne(
-      { contentSpaceId: context.contentSpaceId, itemId: item._id },
-      { $setOnInsert: { addedBy: actorUserId } },
-      { upsert: true },
-    ),
-    ContentSpaceMembership.updateOne(
-      { contentSpaceId: context.contentSpaceId, itemId: targetItem._id },
-      { $setOnInsert: { addedBy: actorUserId } },
-      { upsert: true },
-    ),
-  ]);
+  // A graph edge concerns Subjects. Only the source Item is made a member of the chosen
+  // editorial space; target Item membership and release composition remain explicit curation.
+  await ContentSpaceMembership.updateOne(
+    { contentSpaceId: context.contentSpaceId, itemId: item._id },
+    { $setOnInsert: { addedBy: actorUserId } },
+    { upsert: true },
+  );
   await createGraphRevision({
     editorialContextId: context._id,
     actorUserId,

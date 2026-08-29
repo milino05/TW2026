@@ -19,6 +19,19 @@ export function starterDefinitions(source = {}) {
     definitions[field].push(definition);
     return definition;
   };
+  const addRelation = (key, values) => {
+    const relation = add("relationTypes", key, values);
+    // Namespace created with an older ArtAround starter did not have these fields.
+    // Backfill only absent fields: an explicit empty/custom preference remains authoritative.
+    if (!Object.prototype.hasOwnProperty.call(relation, "targetSelectionSignals")) {
+      relation.targetSelectionSignals = JSON.parse(JSON.stringify(values.targetSelectionSignals || []));
+    }
+    if (!relation.reverse || typeof relation.reverse !== "object") relation.reverse = {};
+    if (!Object.prototype.hasOwnProperty.call(relation.reverse, "targetSelectionSignals")) {
+      relation.reverse.targetSelectionSignals = JSON.parse(JSON.stringify(values.reverse?.targetSelectionSignals || []));
+    }
+    return relation;
+  };
   const seconds = new Set(definitions.durationTypes.map((entry) => Number(entry.targetSeconds) || 0));
   const addDuration = (key, label, preferredSeconds, description) => {
     const existing = definitions.durationTypes.find((entry) => entry.key === key || String(entry.label || "").trim().toLocaleLowerCase("it") === label.toLocaleLowerCase("it"));
@@ -39,7 +52,13 @@ export function starterDefinitions(source = {}) {
   const author = add("subjectClasses", "persona-autore", { label: "Persona o autore", description: "Persone, gruppi o botteghe che hanno ideato o realizzato un'opera." });
   const historicalContext = add("subjectClasses", "contesto-storico-culturale", { label: "Periodo, luogo o contesto culturale", description: "Periodi storici, luoghi, movimenti artistici e condizioni geopolitiche collegati a un'opera." });
   const materialOrTechnique = add("subjectClasses", "materiale-tecnica", { label: "Materiale o tecnica", description: "Materiali, supporti, strumenti e tecniche impiegati per realizzare un'opera." });
-  add("relationTypes", "creata-da", {
+
+  const overview = add("selectionSignals", "panoramica", { label: "Panoramica", description: "Contenuto adatto a introdurre il soggetto o a rispondere a una richiesta generale." });
+  const biography = add("selectionSignals", "biografia", { label: "Biografia", description: "Contenuto centrato sulla vita, il percorso e il profilo di una persona o autore." });
+  add("selectionSignals", "curiosita", { label: "Curiosità", description: "Contenuto adatto a richieste di dettagli insoliti, curiosi o sorprendenti." });
+  add("selectionSignals", "aneddoto", { label: "Aneddoto", description: "Contenuto centrato su episodi, racconti o aneddoti specifici relativi al soggetto." });
+
+  addRelation("creata-da", {
     label: "Creata da",
     description: "Risponde alla domanda “Chi è l'autore?” e collega l'opera alla persona o al gruppo che l'ha realizzata.",
     domainDefinitionIds: [culturalWork.definitionId],
@@ -48,10 +67,19 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["chi è l'autore", "chi ha creato l'opera"],
-    reverse: { label: "Autore di", description: "Collega una persona alle opere che ha realizzato.", userIntents: ["quali opere ha realizzato"] },
+    targetSelectionSignals: [
+      { definitionId: overview.definitionId, weight: 1 },
+      { definitionId: biography.definitionId, weight: 0.9 },
+    ],
+    reverse: {
+      label: "Autore di",
+      description: "Collega una persona alle opere che ha realizzato.",
+      userIntents: ["quali opere ha realizzato"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
-  add("relationTypes", "contesto-storico-culturale", {
+  addRelation("contesto-storico-culturale", {
     label: "Contesto storico e culturale",
     description: "Risponde alla domanda “Quando e dove è stata realizzata?” e collega l'opera al periodo storico, al luogo, al movimento artistico e alle condizioni geopolitiche del momento.",
     domainDefinitionIds: [culturalWork.definitionId],
@@ -60,10 +88,16 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["quando è stata realizzata", "dove è stata realizzata", "qual è il contesto storico e culturale"],
-    reverse: { label: "Contesto di", description: "Collega un periodo, un luogo o un contesto culturale alle opere pertinenti.", userIntents: ["quali opere appartengono a questo contesto"] },
+    targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    reverse: {
+      label: "Contesto di",
+      description: "Collega un periodo, un luogo o un contesto culturale alle opere pertinenti.",
+      userIntents: ["quali opere appartengono a questo contesto"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
-  add("relationTypes", "tecnica-esecuzione", {
+  addRelation("tecnica-esecuzione", {
     label: "Tecnica e esecuzione",
     description: "Risponde alla domanda “Quali materiali e tecniche sono stati impiegati?” e collega l'opera ai materiali, agli strumenti e ai procedimenti usati per realizzarla.",
     domainDefinitionIds: [culturalWork.definitionId],
@@ -72,7 +106,13 @@ export function starterDefinitions(source = {}) {
     strength: "strong",
     directionality: "directed",
     userIntents: ["quali materiali sono stati impiegati", "quale tecnica è stata usata", "come è stata realizzata"],
-    reverse: { label: "Impiegata in", description: "Collega un materiale o una tecnica alle opere in cui è stato impiegato.", userIntents: ["in quali opere è stata impiegata"] },
+    targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    reverse: {
+      label: "Impiegata in",
+      description: "Collega un materiale o una tecnica alle opere in cui è stato impiegato.",
+      userIntents: ["in quali opere è stata impiegata"],
+      targetSelectionSignals: [{ definitionId: overview.definitionId, weight: 1 }],
+    },
     validationRules: { allowMultiple: true, targetRequired: true },
   });
   return definitions;

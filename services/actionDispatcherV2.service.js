@@ -92,6 +92,17 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
     case "PRESENTATION_DEPTH_DECREASE": await changePresentationDepthV2({ sessionId, userId, direction: "down" }); return null;
     case "PRESENTATION_COMPLEXITY_INCREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "up" }); return null;
     case "PRESENTATION_COMPLEXITY_DECREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "down" }); return null;
+    case "EXPLORE_SEMANTIC_RELATION": {
+      const resolution = descriptor.serverInput?.resolution;
+      if (resolution?.status === "resolved" && resolution.selected) {
+        await openSemanticPresentationV2({ sessionId, userId, serverInput: resolution.selected, sourceActionId: descriptor.actionId });
+        return { type: "semantic_presentation" };
+      }
+      if (resolution?.status === "ambiguous" && Array.isArray(resolution.choices) && resolution.choices.length) {
+        return { type: "semantic_choices", choices: resolution.choices };
+      }
+      throw new AppError("La relazione semantica non è risolvibile nello scope corrente", 409, [{ code: "SEMANTIC_RELATION_UNRESOLVABLE" }]);
+    }
     case "EXPLORE_SEMANTIC_CONTENT":
       await openSemanticPresentationV2({ sessionId, userId, serverInput: descriptor.serverInput, sourceActionId: descriptor.actionId });
       return { type: "semantic_presentation" };
@@ -119,6 +130,19 @@ async function executeDescriptor({ sessionId, userId, descriptor }) {
     default:
       throw new AppError("Action non supportata dal dispatcher", 409, [{ code: "ACTION_NOT_SUPPORTED" }]);
   }
+}
+
+function appendSemanticChoices(runtime, effect) {
+  if (effect?.type !== "semantic_choices" || !Array.isArray(effect.choices) || !effect.choices.length) return runtime;
+  const seen = new Set((runtime.availableActions || []).map((action) => String(action.actionId)));
+  const choices = effect.choices
+    .filter((choice) => choice?.actionId && !seen.has(String(choice.actionId)))
+    .map((choice) => ({
+      ...choice,
+      semanticChoice: true,
+      semanticChoiceRequestVersion: runtime.session?.runtimeVersion,
+    }));
+  return choices.length ? { ...runtime, availableActions: [...(runtime.availableActions || []), ...choices] } : runtime;
 }
 
 async function dispatchAction({ sessionId, userId, payload = {} }) {
@@ -154,9 +178,10 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     { _id: sessionId, userId },
     { $push: { interactionEvents: interactionEvent({ userId, descriptor, interactionChannel, status: "applied" }) } },
   );
+  const runtime = appendSemanticChoices(await currentSessionProjection({ sessionId, userId }), effect);
   return {
     action: { actionId: descriptor.actionId, type: descriptor.type, family: descriptor.family },
-    runtime: await currentSessionProjection({ sessionId, userId }),
+    runtime,
     effect,
   };
 }

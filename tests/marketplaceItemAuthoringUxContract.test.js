@@ -186,7 +186,8 @@ test("i metadati facoltativi non sono esposti e i tag esistenti non vengono canc
   assert.doesNotMatch(source, /Metadati facoltativi/);
   assert.doesNotMatch(source, /name="tags"/);
   assert.match(source, /tags: revision\.tags \|\| \[\]/);
-  assert.match(source, /relatedSubjectIds: \[\], tags: \[\]/);
+  assert.match(source, /relatedSubjectIds: \[\]/);
+  assert.match(source, /tags: \[\]/);
   assert.doesNotMatch(source, /payload\.tags =/);
 });
 
