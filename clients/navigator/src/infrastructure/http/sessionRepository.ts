@@ -9,6 +9,7 @@ export interface AvailableAction {
   label: string;
   controlledVoiceAliases: string[];
   semanticChoice?: boolean;
+  semanticChoiceRequestVersion?: number;
 }
 
 export interface SessionProjection {
