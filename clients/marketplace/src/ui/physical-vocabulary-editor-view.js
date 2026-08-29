@@ -37,15 +37,17 @@ const META = {
     example: "Senza gradini · richiede passaggi compatibili con l'accessibilità selezionata.",
   },
 };
-const TUTORIAL_STORAGE_KEY = "artaround.physical-vocabulary-editor.tutorial.v1";
+const TUTORIAL_STORAGE_KEY = "artaround.physical-vocabulary-editor.tutorial.v2";
 const TUTORIAL_STEPS = [
-  { section: "general", title: "A cosa serve il vocabolario fisico?", body: "È il linguaggio condiviso con cui ArtAround descrive spazi, collegamenti e caratteristiche di una sede. Una Venue adotta una sua revisione pubblicata." },
-  { section: "placeTypes", title: "1. Tipi di luogo", body: "Definiscono che cosa rappresenta un punto sulla mappa: sala, ingresso, servizi, ascensore e così via. Non sono luoghi reali: sono categorie riutilizzabili." },
-  { section: "connectionTypes", title: "2. Tipi di collegamento", body: "Descrivono il modo in cui due luoghi sono connessi: corridoio, porta, rampa, scala. La connessione concreta verrà disegnata nella Venue." },
-  { section: "physicalAttributes", title: "3. Caratteristiche fisiche", body: "Sono fatti verificabili usati dal routing. Un valore assente significa non verificato, non equivale automaticamente a falso." },
-  { section: "routingProfiles", title: "4. Profili di percorso", body: "Raccolgono requisiti e preferenze riutilizzabili. Scegli una caratteristica, il comportamento desiderato e la sua importanza: ArtAround conserva la struttura tecnica." },
-  { section: "mappings", title: "5. Mapping esterni", body: "Alias e riferimenti semantici hanno ruoli diversi. Gli alias aiutano il linguaggio umano; i mapping collegano una definizione a concetti esterni senza creare un'ontologia globale ArtAround." },
-  { section: "general", title: "Controlla e pubblica", body: "Usa la configurazione base se vuoi una partenza rapida, personalizza ciò che serve, controlla la consistenza e pubblica. Le Venue useranno una revisione precisa e stabile." },
+  { section: "general", title: "A cosa serve il vocabolario fisico?", body: "È il linguaggio condiviso con cui ArtAround descrive spazi, collegamenti e caratteristiche di una sede. Le sedi dell'organizzazione possono riutilizzarlo senza ridefinire ogni volta gli stessi concetti.", target: '[data-physical-tutorial-anchor="overview"]' },
+  { section: "general", title: "Un passaggio alla volta", body: "Usa queste sezioni come un percorso. I numeri indicano quante definizioni hai già aggiunto; puoi tornare su ogni sezione in qualsiasi momento.", target: '[data-physical-tutorial-anchor="sections"]' },
+  { section: "placeTypes", title: "1. Definisci i tipi di luogo", body: "Indica che cosa può rappresentare un punto sulla mappa: sala, ingresso, servizi o ascensore. Sono categorie riutilizzabili, non i luoghi reali di una singola sede.", target: "#physical-placeTypes" },
+  { section: "connectionTypes", title: "2. Descrivi i collegamenti", body: "Spiega come possono essere connessi due luoghi: corridoio, porta, rampa o scala. Il collegamento concreto verrà poi disegnato nella sede.", target: "#physical-connectionTypes" },
+  { section: "physicalAttributes", title: "3. Aggiungi le caratteristiche fisiche", body: "Definisci fatti verificabili utili al percorso, come la presenza di gradini o la larghezza di un passaggio. Un valore assente significa non verificato, non falso.", target: "#physical-physicalAttributes" },
+  { section: "routingProfiles", title: "4. Crea profili di percorso", body: "Combina le caratteristiche in requisiti e preferenze riutilizzabili, per esempio un percorso senza gradini o adatto a passaggi larghi.", target: "#physical-routingProfiles" },
+  { section: "mappings", title: "5. Collega concetti esterni", body: "Gli alias aiutano il linguaggio umano; i mapping riconoscono concetti equivalenti in vocabolari esterni senza cambiare l'identità delle definizioni locali.", target: "#physical-mappings" },
+  { section: "general", title: "Controlla, poi pubblica", body: "Torna in Generale, controlla la consistenza e pubblica. Le sedi useranno una revisione precisa e stabile del vocabolario.", target: '[data-physical-tutorial-anchor="workflow"]' },
+  { section: "general", title: "Vuoi partire da una configurazione pronta?", body: "Puoi aggiungere la configurazione base ArtAround con tipi di luogo, collegamenti, caratteristiche e profili già pronti. Potrai modificarla liberamente e le definizioni già presenti non verranno sovrascritte.", target: null, starter: true },
 ];
 const WORKFLOW_ACTION = {
   "physical_vocabulary.revision.check": "check-consistency",
@@ -137,18 +139,28 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
+    this.addEventListener("keydown", this.onKeyDown);
     this.addEventListener("input", this.onInput);
     this.addEventListener("change", this.onInput);
     this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("wheel", this.onTutorialScroll, { passive: false });
+    this.addEventListener("touchmove", this.onTutorialScroll, { passive: false });
     window.addEventListener("beforeunload", this.onBeforeUnload);
+    window.addEventListener("resize", this.onTutorialViewportChange);
     this.load();
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("keydown", this.onKeyDown);
     this.removeEventListener("input", this.onInput);
     this.removeEventListener("change", this.onInput);
     this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("wheel", this.onTutorialScroll);
+    this.removeEventListener("touchmove", this.onTutorialScroll);
     window.removeEventListener("beforeunload", this.onBeforeUnload);
+    window.removeEventListener("resize", this.onTutorialViewportChange);
+    document.documentElement.classList.remove("physical-overlay-open");
+    document.body?.classList.remove("physical-overlay-open");
   }
   onBeforeUnload = (event) => { if (this.dirty) { event.preventDefault(); event.returnValue = ""; } };
 
@@ -175,11 +187,71 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     try { return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "seen"; } catch { return false; }
   }
   startTutorial({ remember = false } = {}) {
-    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.activeSection = TUTORIAL_STEPS[0].section;
+    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.starterOpen = false; this.activeSection = TUTORIAL_STEPS[0].section;
     if (remember) { try { localStorage.setItem(TUTORIAL_STORAGE_KEY, "seen"); } catch { /* non bloccante */ } }
     this.render();
   }
-  closeTutorial() { this.tutorialOpen = false; this.activeSection = this.tutorialReturnSection || "general"; this.render(); }
+  closeTutorial() { this.tutorialOpen = false; this.tutorialStep = 0; this.activeSection = this.tutorialReturnSection || "general"; this.render(); }
+  setTutorialStep(step) {
+    this.tutorialStep = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, step));
+    this.activeSection = TUTORIAL_STEPS[this.tutorialStep].section || "general";
+    this.render();
+  }
+  syncOverlayLock() {
+    const locked = this.tutorialOpen || this.starterOpen || this.pendingWorkflow || this.pendingConfirmation;
+    document.documentElement.classList.toggle("physical-overlay-open", Boolean(locked));
+    document.body?.classList.toggle("physical-overlay-open", Boolean(locked));
+  }
+  onTutorialScroll = (event) => { if (this.tutorialOpen) event.preventDefault(); };
+  onTutorialViewportChange = () => { if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial()); };
+  onKeyDown = (event) => {
+    const modal = this.querySelector('[aria-modal="true"]');
+    if (!modal) return;
+    if (event.key === "Escape") { event.preventDefault(); this.tutorialOpen ? this.closeTutorial() : (this.starterOpen = false, this.pendingWorkflow = null, this.pendingConfirmation = null, this.render()); return; }
+    if (event.key !== "Tab") return;
+    const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
+    if (!focusable.length) return;
+    const first = focusable[0]; const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+  positionTutorial() {
+    const overlay = this.querySelector("[data-physical-tutorial-overlay]");
+    const bubble = overlay?.querySelector("[data-physical-tutorial-bubble]");
+    const spotlight = overlay?.querySelector("[data-physical-tutorial-spotlight]");
+    const step = TUTORIAL_STEPS[this.tutorialStep];
+    if (!overlay || !bubble || !spotlight || !step) return;
+    const target = step.target ? this.querySelector(step.target) : null;
+    if (!target) { overlay.dataset.centered = "true"; bubble.querySelector("button")?.focus(); return; }
+    delete overlay.dataset.centered;
+    delete overlay.dataset.mobile;
+    target.scrollIntoView({ behavior: "auto", block: "center" });
+    const expectedStep = this.tutorialStep;
+    requestAnimationFrame(() => {
+      if (!this.tutorialOpen || this.tutorialStep !== expectedStep || !target.isConnected) return;
+      this.placeTutorial(target);
+    });
+  }
+  placeTutorial(target) {
+    const overlay = this.querySelector("[data-physical-tutorial-overlay]");
+    const bubble = overlay?.querySelector("[data-physical-tutorial-bubble]");
+    const spotlight = overlay?.querySelector("[data-physical-tutorial-spotlight]");
+    if (!overlay || !bubble || !spotlight) return;
+    const rect = target.getBoundingClientRect(); const padding = 8; const viewportWidth = window.innerWidth; const viewportHeight = window.innerHeight;
+    const highlight = { left: Math.max(6, rect.left - padding), top: Math.max(6, rect.top - padding), right: Math.min(viewportWidth - 6, rect.right + padding), bottom: Math.min(viewportHeight - 6, rect.bottom + padding) };
+    highlight.width = Math.max(1, highlight.right - highlight.left); highlight.height = Math.max(1, highlight.bottom - highlight.top);
+    Object.assign(spotlight.style, { left: `${highlight.left}px`, top: `${highlight.top}px`, width: `${highlight.width}px`, height: `${highlight.height}px` });
+    if (viewportWidth <= 720) { overlay.dataset.mobile = "true"; bubble.querySelector("button")?.focus(); return; }
+    const gap = 20; const bubbleWidth = bubble.offsetWidth; const bubbleHeight = bubble.offsetHeight; let left; let top; let side;
+    if (viewportWidth - highlight.right >= bubbleWidth + gap) { side = "right"; left = highlight.right + gap; top = highlight.top + highlight.height / 2 - bubbleHeight / 2; }
+    else if (highlight.left >= bubbleWidth + gap + 16) { side = "left"; left = highlight.left - bubbleWidth - gap; top = highlight.top + highlight.height / 2 - bubbleHeight / 2; }
+    else if (viewportHeight - highlight.bottom >= bubbleHeight + gap) { side = "bottom"; left = highlight.left + highlight.width / 2 - bubbleWidth / 2; top = highlight.bottom + gap; }
+    else if (highlight.top >= bubbleHeight + gap + 16) { side = "top"; left = highlight.left + highlight.width / 2 - bubbleWidth / 2; top = highlight.top - bubbleHeight - gap; }
+    else { side = "floating"; left = viewportWidth - bubbleWidth - 16; top = viewportHeight - bubbleHeight - 16; }
+    bubble.dataset.side = side;
+    Object.assign(bubble.style, { left: `${Math.max(16, Math.min(viewportWidth - bubbleWidth - 16, left))}px`, top: `${Math.max(16, Math.min(viewportHeight - bubbleHeight - 16, top))}px` });
+    bubble.querySelector("button")?.focus();
+  }
   goToSection(section) {
     if (!SECTIONS.some(([key]) => key === section)) return;
     this.activeSection = section;
@@ -262,15 +334,12 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const sectionButton = target.closest("[data-section]");
     if (sectionButton) { this.goToSection(sectionButton.dataset.section); return; }
     if (target.closest("[data-tutorial-start]")) { this.startTutorial(); return; }
-    if (target.closest("[data-tutorial-close]")) { this.closeTutorial(); return; }
-    if (target.closest("[data-tutorial-next]")) {
-      if (this.tutorialStep >= TUTORIAL_STEPS.length - 1) { this.closeTutorial(); return; }
-      this.tutorialStep += 1; this.activeSection = TUTORIAL_STEPS[this.tutorialStep].section; this.render(); return;
-    }
-    if (target.closest("[data-tutorial-prev]")) { this.tutorialStep = Math.max(0, this.tutorialStep - 1); this.activeSection = TUTORIAL_STEPS[this.tutorialStep].section; this.render(); return; }
-    if (target.closest("[data-starter-open]")) { this.starterOpen = true; this.render(); return; }
+    if (target.closest("[data-tutorial-close], [data-tutorial-finish]")) { this.closeTutorial(); return; }
+    if (target.closest("[data-tutorial-next]")) { this.setTutorialStep(this.tutorialStep + 1); return; }
+    if (target.closest("[data-tutorial-prev]")) { this.setTutorialStep(this.tutorialStep - 1); return; }
+    if (target.closest("[data-starter-open]")) { this.starterOpen = true; this.tutorialOpen = false; this.render(); return; }
     if (target.closest("[data-starter-close]")) { this.starterOpen = false; this.render(); return; }
-    if (target.closest("[data-starter-apply]")) { this.starterOpen = false; await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti."); return; }
+    if (target.closest("[data-starter-apply]")) { this.starterOpen = false; this.tutorialOpen = false; this.activeSection = "general"; await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti."); return; }
     if (target.closest("[data-working-ensure]")) { await this.execute(() => managementRepository.ensurePhysicalVocabularyWorking(this.id), "Nuova bozza creata dalla versione pubblicata."); return; }
     const add = target.closest("[data-add-definition]");
     if (add) { this.definitions[add.dataset.addDefinition].push(emptyDefinition(add.dataset.addDefinition)); this.dirty = true; this.render(); return; }
@@ -344,16 +413,22 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   canEdit() { return has(this.operations(), "physical_vocabulary.revision.update"); }
 
   renderTutorial() {
-    if (!this.tutorialOpen) return ""; const step = TUTORIAL_STEPS[this.tutorialStep];
-    return `<aside class="physical-tutorial" role="dialog" aria-modal="true" aria-label="Tutorial vocabolario fisico"><div class="physical-tutorial__progress"><span>Guida ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><button type="button" class="button-secondary small" data-tutorial-close>Chiudi</button></div><div><span class="eyebrow">Tutorial facoltativo</span><h2>${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p></div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-prev ${this.tutorialStep === 0 ? "disabled" : ""}>Indietro</button><button type="button" data-tutorial-next>${this.tutorialStep === TUTORIAL_STEPS.length - 1 ? "Fine" : "Continua"}</button></div></aside>`;
+    if (!this.tutorialOpen) return "";
+    const step = TUTORIAL_STEPS[this.tutorialStep];
+    const canApplyStarter = has(this.operations(), "physical_vocabulary.starter.apply");
+    const progress = TUTORIAL_STEPS.map((_, index) => `<span class="${index === this.tutorialStep ? "active" : ""}"></span>`).join("");
+    const actions = step.starter
+      ? `<div class="physical-tutorial-template"><button type="button" data-starter-apply ${canApplyStarter ? "" : "disabled"}>${icon("plus", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-tutorial-finish>Preferisco partire da zero</button></div>${canApplyStarter ? "" : `<p class="physical-tutorial-note">Per applicare la configurazione, crea prima una bozza modificabile.</p>`}<button type="button" class="button-secondary small" data-tutorial-prev>${icon("arrowLeft", { size: 14 })} Precedente</button>`
+      : `<div class="physical-tutorial-navigation"><button type="button" class="button-secondary" data-tutorial-prev ${this.tutorialStep === 0 ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><button type="button" data-tutorial-next>Avanti ${icon("chevron", { size: 14 })}</button></div>`;
+    return `<div class="physical-tutorial-overlay" data-physical-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="physical-tutorial-title"><div class="physical-tutorial-spotlight" data-physical-tutorial-spotlight></div><article class="physical-tutorial-bubble" data-physical-tutorial-bubble><button class="physical-tutorial-close" type="button" data-tutorial-close aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="physical-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.starter ? `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>` : ""}<div class="physical-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
   }
   renderStarterDialog() {
     if (!this.starterOpen) return "";
-    return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="Applica configurazione base"><span class="eyebrow">Configurazione base ArtAround</span><h2>Partire da una base pronta?</h2><p>Verranno aggiunti soltanto i tipi, le caratteristiche e i profili mancanti. Le tue definizioni, label, alias e personalizzazioni non vengono sovrascritti.</p><div class="physical-starter-summary"><span>13 tipi di luogo</span><span>8 collegamenti</span><span>9 caratteristiche</span><span>4 profili</span></div><div class="button-row"><button type="button" data-starter-apply>${icon("check", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-starter-close>Continua da zero</button></div></aside>`;
+    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="physical-starter-title"><article class="physical-dialog"><button class="physical-tutorial-close" type="button" data-starter-close aria-label="Chiudi">×</button><span class="eyebrow">Configurazione facoltativa</span><h2 id="physical-starter-title">Partire da una base pronta?</h2><p>Verranno aggiunti soltanto i tipi, le caratteristiche e i profili mancanti. Le tue definizioni, label, alias e personalizzazioni non vengono sovrascritti.</p><div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div><div class="button-row"><button type="button" data-starter-apply>${icon("check", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-starter-close>Annulla</button></div></article></div>`;
   }
   renderSectionNav() {
     const counts = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, this.definitions[field]?.length || 0]));
-    return `<nav class="physical-editor-tabs" aria-label="Sezioni vocabolario fisico">${SECTIONS.map(([key, label]) => `<button type="button" data-section="${key}" aria-current="${this.activeSection === key ? "page" : "false"}"><span>${escapeHtml(label)}</span>${counts[key] !== undefined ? `<small>${counts[key]}</small>` : ""}</button>`).join("")}</nav>`;
+    return `<nav class="physical-editor-tabs" data-physical-tutorial-anchor="sections" aria-label="Sezioni vocabolario fisico">${SECTIONS.map(([key, label]) => `<button type="button" data-section="${key}" aria-current="${this.activeSection === key ? "page" : "false"}"><span>${escapeHtml(label)}</span>${counts[key] !== undefined ? `<small>${counts[key]}</small>` : ""}</button>`).join("")}</nav>`;
   }
   renderIntegrity() {
     const integrity = this.data?.revision?.integrity;
@@ -364,13 +439,13 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   renderWorkflow() {
     const operations = this.operations().filter((entry) => WORKFLOW_ACTION[entry.code]);
     if (!operations.length) return "";
-    return `<section class="physical-workflow"><div><span class="eyebrow">Workflow</span><h3>Controllo e pubblicazione</h3><p>La bozza resta modificabile finché non entra in revisione. La pubblicazione crea lo snapshot stabile usato dalle Venue.</p></div><div class="button-row">${operations.map((entry) => `<button type="button" class="${entry.code.includes("request_changes") ? "button-secondary" : ""}" data-workflow="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join("")}</div></section>`;
+    return `<section class="physical-workflow" data-physical-tutorial-anchor="workflow"><div><span class="eyebrow">Workflow</span><h3>Controllo e pubblicazione</h3><p>La bozza resta modificabile finché non entra in revisione. La pubblicazione crea lo snapshot stabile usato dalle Venue.</p></div><div class="button-row">${operations.map((entry) => `<button type="button" class="${entry.code.includes("request_changes") ? "button-secondary" : ""}" data-workflow="${escapeHtml(entry.code)}">${escapeHtml(WORKFLOW_LABEL[entry.code] || entry.label)}</button>`).join("")}</div></section>`;
   }
   renderGeneral() {
     const vocabulary = this.data.physicalVocabulary; const revision = this.data.revision;
     const editableMetadata = has(this.operations(), "physical_vocabulary.update"); const canStarter = has(this.operations(), "physical_vocabulary.starter.apply"); const canEnsure = has(this.operations(), "physical_vocabulary.working.ensure");
     const counts = DEFINITION_FIELDS.map((field) => `<div><strong>${this.definitions[field].length}</strong><span>${META[field].title}</span></div>`).join("");
-    return `<section class="physical-editor-section"><div class="physical-overview-grid"><section class="panel physical-overview-copy"><span class="eyebrow">Vocabolario fisico</span><h2>Un linguaggio riutilizzabile per sedi e routing</h2><p>Qui descrivi categorie e caratteristiche fisiche. Le Venue useranno queste definizioni per costruire mappe concrete senza duplicare il vocabolario.</p><div class="physical-count-grid">${counts}</div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-start>${icon("book", { size: 16 })} Riapri tutorial</button>${canStarter ? `<button type="button" data-starter-open>${icon("plus", { size: 16 })} Configurazione base</button>` : ""}</div></section><section class="panel"><span class="eyebrow">Versione</span><h3>${escapeHtml(sourceLabel(vocabulary.source))}${revision ? ` · v${revision.version}` : ""}</h3><p>Stato: <strong>${escapeHtml(statusLabel(revision?.status))}</strong></p>${canEnsure ? `<button type="button" data-working-ensure>Crea nuova bozza</button>` : ""}${this.renderIntegrity()}</section></div><form class="panel physical-metadata-form" data-metadata-form><div class="section-heading compact"><div><h3>Informazioni generali</h3><p>Nome e descrizione identificano il vocabolario nel Marketplace e nelle Venue.</p></div></div><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(vocabulary.name)}" ${editableMetadata ? "" : "disabled"}></label><label>Descrizione<textarea name="description" rows="4" ${editableMetadata ? "" : "disabled"}>${escapeHtml(vocabulary.description || "")}</textarea></label>${editableMetadata ? `<button>${icon("check", { size: 16 })} Salva dettagli</button>` : ""}</form>${this.renderWorkflow()}</section>`;
+    return `<section class="physical-editor-section"><div class="physical-overview-grid"><section class="panel physical-overview-copy"><span class="eyebrow">Vocabolario fisico</span><h2>Un linguaggio riutilizzabile per sedi e routing</h2><p>Qui descrivi categorie e caratteristiche fisiche. Le Venue useranno queste definizioni per costruire mappe concrete senza duplicare il vocabolario.</p><div class="physical-count-grid">${counts}</div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-start>${icon("book", { size: 16 })} Ripeti tutorial</button>${canStarter ? `<button type="button" data-starter-open>${icon("plus", { size: 16 })} Configurazione base</button>` : ""}</div></section><section class="panel"><span class="eyebrow">Versione</span><h3>${escapeHtml(sourceLabel(vocabulary.source))}${revision ? ` · v${revision.version}` : ""}</h3><p>Stato: <strong>${escapeHtml(statusLabel(revision?.status))}</strong></p>${canEnsure ? `<button type="button" data-working-ensure>Crea nuova bozza</button>` : ""}${this.renderIntegrity()}</section></div><form class="panel physical-metadata-form" data-metadata-form><div class="section-heading compact"><div><h3>Informazioni generali</h3><p>Nome e descrizione identificano il vocabolario nel Marketplace e nelle Venue.</p></div></div><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(vocabulary.name)}" ${editableMetadata ? "" : "disabled"}></label><label>Descrizione<textarea name="description" rows="4" ${editableMetadata ? "" : "disabled"}>${escapeHtml(vocabulary.description || "")}</textarea></label>${editableMetadata ? `<button>${icon("check", { size: 16 })} Salva dettagli</button>` : ""}</form>${this.renderWorkflow()}</section>`;
   }
 
   renderRequirement(profileIndex, requirement, requirementIndex, editable) {
@@ -393,26 +468,28 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   }
   renderDefinitionSection(field) {
     const meta = META[field]; const editable = this.canEdit(); const definitions = this.definitions[field] || [];
-    return `<section class="physical-editor-section"><header class="physical-section-intro"><div><span class="eyebrow">${escapeHtml(meta.title)}</span><h2>${escapeHtml(meta.question)}</h2><p>${escapeHtml(meta.description)}</p><p class="physical-example"><strong>Esempio:</strong> ${escapeHtml(meta.example)}</p></div><span class="count">${definitions.length}</span></header><form data-save-definitions="${field}"><div class="physical-definition-grid">${definitions.map((definition, index) => this.renderDefinitionCard(field, definition, index, editable)).join("") || `<div class="empty-state"><h3>Nessuna definizione</h3><p>Aggiungi la prima quando serve oppure usa la configurazione base dalla sezione Generale.</p></div>`}</div>${editable ? `<div class="physical-sticky-actions"><button type="button" class="button-secondary" data-add-definition="${field}">${icon("plus", { size: 16 })} Aggiungi ${escapeHtml(meta.singular)}</button><button type="submit">${icon("check", { size: 16 })} Salva ${escapeHtml(meta.title.toLowerCase())}</button></div>` : ""}</form></section>`;
+    return `<section class="physical-editor-section" id="physical-${field}"><header class="physical-section-intro"><div><span class="eyebrow">${escapeHtml(meta.title)}</span><h2>${escapeHtml(meta.question)}</h2><p>${escapeHtml(meta.description)}</p><p class="physical-example"><strong>Esempio:</strong> ${escapeHtml(meta.example)}</p></div><span class="count">${definitions.length}</span></header><form data-save-definitions="${field}"><div class="physical-definition-grid">${definitions.map((definition, index) => this.renderDefinitionCard(field, definition, index, editable)).join("") || `<div class="empty-state"><h3>Nessuna definizione</h3><p>Aggiungi la prima quando serve oppure usa la configurazione base dalla sezione Generale.</p></div>`}</div>${editable ? `<div class="physical-sticky-actions"><button type="button" class="button-secondary" data-add-definition="${field}">${icon("plus", { size: 16 })} Aggiungi ${escapeHtml(meta.singular)}</button><button type="submit">${icon("check", { size: 16 })} Salva ${escapeHtml(meta.title.toLowerCase())}</button></div>` : ""}</form></section>`;
   }
   allDefinitions() { return DEFINITION_FIELDS.flatMap((field) => this.definitions[field].map((definition, index) => ({ field, definition, index }))); }
   renderMappings() {
     const editable = this.canEdit(); const entries = this.allDefinitions();
-    return `<section class="physical-editor-section"><header class="physical-section-intro"><div><span class="eyebrow">Mapping esterni</span><h2>Collega le definizioni senza renderle globali</h2><p>I riferimenti semantici permettono di riconoscere concetti equivalenti tra vocabolari diversi. Restano separati dagli alias e non cambiano l'identità locale della definizione.</p></div><span class="count">${entries.reduce((sum, entry) => sum + (entry.definition.semanticRefs?.length || 0), 0)}</span></header><div class="physical-mapping-list">${entries.map(({ field, definition, index }) => `<article class="physical-mapping-card"><header><div><small>${escapeHtml(META[field].title)}</small><strong>${escapeHtml(definitionName(definition))}</strong></div></header><div class="semantic-ref-list">${(definition.semanticRefs || []).map((mapping, mappingIndex) => `<span class="semantic-ref-chip"><span>${escapeHtml(mapping.scheme)} · ${escapeHtml(mapping.id)} · ${escapeHtml(MATCH_LABEL[mapping.matchType] || mapping.matchType)}</span>${editable ? `<button type="button" data-remove-mapping data-collection="${field}" data-index="${index}" data-mapping-index="${mappingIndex}" aria-label="Rimuovi mapping">×</button>` : ""}</span>`).join("") || `<span class="muted">Nessun mapping</span>`}</div>${editable ? `<form data-add-mapping class="physical-mapping-add"><input type="hidden" name="collection" value="${field}"><input type="hidden" name="index" value="${index}"><label>Schema<input name="scheme" required placeholder="Es. openstreetmap-tag"></label><label>Identificatore<input name="id" required placeholder="Es. amenity=toilets"></label><label>Relazione<select name="matchType"><option value="exact">Equivalente</option><option value="close">Molto vicino</option><option value="broader">Più generale</option><option value="narrower">Più specifico</option></select></label><button type="submit" class="button-secondary">Aggiungi mapping</button></form>` : ""}</article>`).join("") || `<div class="empty-state"><h3>Nessuna definizione da mappare</h3></div>`}</div>${editable ? `<div class="physical-sticky-actions"><span>Alias e mapping restano separati; salva quando hai finito le associazioni.</span><button type="button" data-save-mappings>${icon("check", { size: 16 })} Salva mapping</button></div>` : ""}</section>`;
+    return `<section class="physical-editor-section" id="physical-mappings"><header class="physical-section-intro"><div><span class="eyebrow">Mapping esterni</span><h2>Collega le definizioni senza renderle globali</h2><p>I riferimenti semantici permettono di riconoscere concetti equivalenti tra vocabolari diversi. Restano separati dagli alias e non cambiano l'identità locale della definizione.</p></div><span class="count">${entries.reduce((sum, entry) => sum + (entry.definition.semanticRefs?.length || 0), 0)}</span></header><div class="physical-mapping-list">${entries.map(({ field, definition, index }) => `<article class="physical-mapping-card"><header><div><small>${escapeHtml(META[field].title)}</small><strong>${escapeHtml(definitionName(definition))}</strong></div></header><div class="semantic-ref-list">${(definition.semanticRefs || []).map((mapping, mappingIndex) => `<span class="semantic-ref-chip"><span>${escapeHtml(mapping.scheme)} · ${escapeHtml(mapping.id)} · ${escapeHtml(MATCH_LABEL[mapping.matchType] || mapping.matchType)}</span>${editable ? `<button type="button" data-remove-mapping data-collection="${field}" data-index="${index}" data-mapping-index="${mappingIndex}" aria-label="Rimuovi mapping">×</button>` : ""}</span>`).join("") || `<span class="muted">Nessun mapping</span>`}</div>${editable ? `<form data-add-mapping class="physical-mapping-add"><input type="hidden" name="collection" value="${field}"><input type="hidden" name="index" value="${index}"><label>Schema<input name="scheme" required placeholder="Es. openstreetmap-tag"></label><label>Identificatore<input name="id" required placeholder="Es. amenity=toilets"></label><label>Relazione<select name="matchType"><option value="exact">Equivalente</option><option value="close">Molto vicino</option><option value="broader">Più generale</option><option value="narrower">Più specifico</option></select></label><button type="submit" class="button-secondary">Aggiungi mapping</button></form>` : ""}</article>`).join("") || `<div class="empty-state"><h3>Nessuna definizione da mappare</h3></div>`}</div>${editable ? `<div class="physical-sticky-actions"><span>Alias e mapping restano separati; salva quando hai finito le associazioni.</span><button type="button" data-save-mappings>${icon("check", { size: 16 })} Salva mapping</button></div>` : ""}</section>`;
   }
   renderPendingWorkflowMessage() {
     if (!this.pendingWorkflow) return "";
-    return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="Richiedi modifiche"><span class="eyebrow">Richiedi modifiche</span><h2>Che cosa deve essere rivisto?</h2><label>Messaggio<textarea rows="4" data-workflow-message-input>${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Invia richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></aside>`;
+    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-label="Richiedi modifiche"><article class="physical-dialog"><span class="eyebrow">Richiedi modifiche</span><h2>Che cosa deve essere rivisto?</h2><label>Messaggio<textarea rows="4" data-workflow-message-input>${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Invia richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></article></div>`;
   }
   renderPendingConfirmation() {
     if (!this.pendingConfirmation) return "";
-    return `<aside class="physical-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(this.pendingConfirmation.title)}"><span class="eyebrow">Conferma richiesta</span><h2>${escapeHtml(this.pendingConfirmation.title)}</h2><p>${escapeHtml(this.pendingConfirmation.detail)}</p><div class="button-row"><button type="button" class="danger" data-confirm-action>${escapeHtml(this.pendingConfirmation.confirmLabel)}</button><button type="button" class="button-secondary" data-confirm-cancel>Annulla</button></div></aside>`;
+    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHtml(this.pendingConfirmation.title)}"><article class="physical-dialog"><span class="eyebrow">Conferma richiesta</span><h2>${escapeHtml(this.pendingConfirmation.title)}</h2><p>${escapeHtml(this.pendingConfirmation.detail)}</p><div class="button-row"><button type="button" class="danger" data-confirm-action>${escapeHtml(this.pendingConfirmation.confirmLabel)}</button><button type="button" class="button-secondary" data-confirm-cancel>Annulla</button></div></article></div>`;
   }
   renderCurrentSection() { if (this.activeSection === "general") return this.renderGeneral(); if (this.activeSection === "mappings") return this.renderMappings(); return this.renderDefinitionSection(this.activeSection); }
   render() {
+    this.syncOverlayLock();
     if (!this.data) { this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`; return; }
     const vocabulary = this.data.physicalVocabulary;
-    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}</main>`;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}`;
+    if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial());
   }
 }
 

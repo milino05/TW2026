@@ -183,7 +183,8 @@ export class MarketplaceAppShell extends HTMLElement {
 
   renderContextIdentity() {
     if (!this.context) return "";
-    return `<div class="context-identity"><span class="context-identity__icon">${icon(this.context.type === "organization" ? "building" : "user", { size: 16 })}</span><span><small>${escapeHtml(contextKindLabel(this.context))}</small><strong>${escapeHtml(this.context.type === "user" ? "Area personale" : this.context.name)}</strong></span><button type="button" data-change-context aria-label="Cambia area di lavoro">Cambia</button></div>`;
+    const contextName = this.context.type === "user" ? (this.context.name || this.user?.username || "Account personale") : this.context.name;
+    return `<div class="context-identity"><span class="context-identity__icon">${icon(this.context.type === "organization" ? "building" : "user", { size: 16 })}</span><span><small>${escapeHtml(contextKindLabel(this.context))}</small><strong>${escapeHtml(contextName)}</strong></span><button type="button" data-change-context aria-label="Cambia area di lavoro">Cambia</button></div>`;
   }
 
   renderNavigation(route) {

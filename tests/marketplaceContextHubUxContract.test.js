@@ -45,6 +45,11 @@ test("utente autenticato senza contesto viene portato al Context Hub", () => {
   assert.match(source.shell, /data-change-context/);
 });
 
+test("l'identità dell'area personale mostra lo username sotto la tipologia", () => {
+  assert.match(source.shell, /this\.context\.type === "user" \? \(this\.context\.name \|\| this\.user\?\.username/);
+  assert.doesNotMatch(source.shell, /this\.context\.type === "user" \? "Area personale" : this\.context\.name/);
+});
+
 test("Context Hub espone area personale, organizzazioni e creazione Organization", () => {
   assert.match(source.hub, /accountRepository\.workspace\(\)/);
   assert.match(source.hub, /data-context-type="user"/);
