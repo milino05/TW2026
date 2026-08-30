@@ -69,6 +69,7 @@ export const venueMapRefinementMixin = {
   render() {
     this.ensureGlobalEscapeHandler();
     venueSlotSubjectUiMixin.render.call(this);
+    if (!this.data) return;
     this.decorateMapRefinements();
   },
 
