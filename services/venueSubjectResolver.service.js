@@ -1,8 +1,9 @@
 const Subject = require("../models/subject.model");
-const VenueTarget = require("../models/venueTarget.model");
-const VenueRelease = require("../models/venueRelease.model");
-const ItemV2 = require("../models/itemV2.model");
 const { assertVenuePermission } = require("./venueAuthorization.service");
+const {
+  projectVenueSubjectContext,
+  venueSubjectContextMap,
+} = require("./venueSubjectContextProjection.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function normalizedLabel(value) {
@@ -17,6 +18,15 @@ function similarity(left, right) {
   const union = new Set([...a, ...b]).size;
   const containment = normalizedLabel(left).includes(normalizedLabel(right)) || normalizedLabel(right).includes(normalizedLabel(left)) ? 0.2 : 0;
   return Math.min(1, intersection / union + containment);
+}
+
+function rankingTier(projected) {
+  if (projected?.inventory?.status === "exposed") return { tier: 1, source: "venue_exposed" };
+  if (projected?.inventory?.venueTargetId) return { tier: 2, source: "venue_inventory" };
+  if ((projected?.museumContent?.availableCount || 0) > 0 || (projected?.museumContent?.draftCount || 0) > 0) {
+    return { tier: 3, source: "organization_content" };
+  }
+  return { tier: 4, source: "artaround" };
 }
 
 async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit = 20 }) {
@@ -43,24 +53,15 @@ async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit
   const candidateRegex = queryTokens.length ? new RegExp(queryTokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i") : null;
   const subjects = await Subject.find(candidateRegex ? { preferredLabel: candidateRegex } : {}).limit(160).lean();
   const subjectIds = subjects.map((subject) => subject._id);
-  const [targets, organizationItems] = await Promise.all([
-    subjectIds.length ? VenueTarget.find({ venueId, lifecycleStatus: "active", subjectId: { $in: subjectIds } }).lean() : [],
-    subjectIds.length ? ItemV2.find({ ownerType: "organization", ownerId: venue.ownerOrganizationId, lifecycleStatus: "active", primarySubjectId: { $in: subjectIds } }).select("primarySubjectId").lean() : [],
-  ]);
-  const targetBySubjectId = new Map(targets.map((target) => [id(target.subjectId), target]));
-  const organizationContentSubjectIds = new Set(organizationItems.map((item) => id(item.primarySubjectId)));
-  const releaseId = venue.workingReleaseId || venue.publishedReleaseId;
-  const release = releaseId ? await VenueRelease.findById(releaseId).select("targetBindings").lean() : null;
-  const bindingByTargetId = new Map((release?.targetBindings || []).map((binding) => [id(binding.venueTargetId), binding]));
+  const venueProjection = await projectVenueSubjectContext({ venueId, subjectIds, view: "effective" });
+  const projectedBySubjectId = venueSubjectContextMap(venueProjection);
   const ranked = subjects.map((subject) => {
-    const target = targetBySubjectId.get(id(subject._id));
-    const binding = target ? bindingByTargetId.get(id(target._id)) : null;
+    const projected = projectedBySubjectId.get(id(subject._id)) || {
+      inventory: null,
+      museumContent: { availableCount: 0, draftCount: 0 },
+    };
     const exact = normalizedLabel(subject.preferredLabel) === normalizedQuery;
-    let tier = 4;
-    let source = "artaround";
-    if (target && binding?.availability === "active" && binding.exhibitSlotId) { tier = 1; source = "venue_exposed"; }
-    else if (target) { tier = 2; source = "venue_inventory"; }
-    else if (organizationContentSubjectIds.has(id(subject._id))) { tier = 3; source = "organization_content"; }
+    const { tier, source } = rankingTier(projected);
     return {
       id: subject._id,
       preferredLabel: subject.preferredLabel,
@@ -70,8 +71,8 @@ async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit
       similarity: similarity(query, subject.preferredLabel),
       tier,
       source,
-      venueTargetId: target?._id || null,
-      state: target ? (binding?.availability === "unavailable" ? "unavailable" : (binding?.exhibitSlotId ? "exposed" : "unplaced")) : null,
+      inventory: projected.inventory,
+      museumContent: projected.museumContent,
     };
   }).sort((left, right) => left.tier - right.tier || Number(right.exact) - Number(left.exact) || right.similarity - left.similarity || left.preferredLabel.localeCompare(right.preferredLabel, "it"));
   const exact = ranked.filter((entry) => entry.exact).slice(0, safeLimit);

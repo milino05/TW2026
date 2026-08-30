@@ -11,6 +11,29 @@ function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 function subjectId(subject) { return String(subject?.id || subject?._id || ""); }
+function venueSubjectContextHtml(subject) {
+  const inventory = subject?.inventory || null;
+  const museumContent = subject?.museumContent || { availableCount: 0, draftCount: 0 };
+  const details = [];
+  if (inventory) {
+    const status = {
+      exposed: "Esposta",
+      unplaced: "Da collocare",
+      unavailable: "Non disponibile",
+    }[inventory.status] || inventory.status;
+    const location = [inventory.place?.label || inventory.place?.floorLabel, inventory.slot?.label].filter(Boolean).join(" · ");
+    details.push(`Inventario della sede · ${status}${location ? ` · ${location}` : ""}`);
+  }
+  const available = Math.max(0, Number(museumContent.availableCount) || 0);
+  const drafts = Math.max(0, Number(museumContent.draftCount) || 0);
+  if (available || drafts) {
+    const parts = [];
+    if (available) parts.push(`${available} ${available === 1 ? "contenuto disponibile" : "contenuti disponibili"}`);
+    if (drafts) parts.push(`${drafts} ${drafts === 1 ? "bozza" : "bozze"}`);
+    details.push(`Contenuti del museo · ${parts.join(" · ")}`);
+  }
+  return details.map((detail) => `<span class="bound">${escapeHtml(detail)}</span>`).join("");
+}
 
 export class ArtAroundSemanticEntityPicker extends HTMLElement {
   localResults = [];
@@ -357,12 +380,12 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
 
   renderLocalResults() {
     if (!this.localResults.length) return "";
-    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · identità condivise</span><strong>Soggetti con lo stesso nome</strong></div><span class="result-count">${this.localResults.length}</span></div><ul class="resolver-results">${this.localResults.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${subject.state ? `<span class="bound">Inventario della sede · ${escapeHtml({ exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[subject.state] || subject.state)}</span>` : ""}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
+    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · identità condivise</span><strong>Soggetti con lo stesso nome</strong></div><span class="result-count">${this.localResults.length}</span></div><ul class="resolver-results">${this.localResults.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${venueSubjectContextHtml(subject)}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
   }
 
   renderLocalSuggestions() {
     if (!this.localSuggestions.length) return "";
-    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · verifica consigliata</span><strong>Possibili corrispondenze nella sede</strong></div><span class="result-count">${this.localSuggestions.length}</span></div><ul class="resolver-results">${this.localSuggestions.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${subject.state ? `<span class="bound">Inventario della sede · ${escapeHtml({ exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[subject.state] || subject.state)}</span>` : ""}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
+    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · verifica consigliata</span><strong>Possibili corrispondenze nella sede</strong></div><span class="result-count">${this.localSuggestions.length}</span></div><ul class="resolver-results">${this.localSuggestions.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${venueSubjectContextHtml(subject)}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
   }
 
   renderExternalResults() {

@@ -2,10 +2,15 @@ import { managementRepository } from "../infrastructure/http/management-reposito
 import "./semantic-entity-picker.js";
 import { venueActionMixin } from "./venue-editor-action-mixin.js";
 import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
+import { venueInventorySearchMixin } from "./venue-editor-inventory-search-mixin.js";
 import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSectionMixin } from "./venue-editor-section-mixin.js";
 import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
+import { venueMapInspectorMixin } from "./venue-editor-map-inspector-mixin.js";
+import { venueFloorDialogMixin } from "./venue-editor-floor-dialog-mixin.js";
+import { venueLiveConnectionPreviewMixin } from "./venue-editor-live-connection-preview-mixin.js";
 import { venueSpatialDiagnosticsMixin } from "./venue-editor-spatial-diagnostics-mixin.js";
+import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
 
 const SECTIONS = ["overview", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -28,6 +33,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   message = null;
   selectedSubject = null;
   id = venueId();
+  managementRepository = managementRepository;
   pendingWorkflow = null;
   workflowMessage = "";
   activeSection = initialVenueSection();
@@ -38,13 +44,18 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   selectedVenueTargetId = null;
   activeSpatialTab = "map";
   activeArrangementTab = "slots";
+  activeMapInspectorTab = "details";
+  floorDialog = null;
   inventoryFilter = "all";
+  inventorySearchQuery = "";
   venueSubjectCandidates = null;
   venueSubjectQuery = "";
   pendingMapAction = null;
   draggingPlace = null;
+  renderActiveFloorMetadata = () => "";
 
   connectedCallback() {
+    this.addEventListener("click", this.onMapSelectionCapture, true);
     this.addEventListener("click", this.onClick);
     this.addEventListener("keydown", this.onSectionKeyDown);
     this.addEventListener("submit", this.onSubmit);
@@ -52,14 +63,17 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.addEventListener("change", this.onChange);
     this.addEventListener("pointerdown", this.onMapPointerDown);
     this.addEventListener("pointermove", this.onMapPointerMove);
+    this.addEventListener("pointermove", this.onMapLiveConnectionPreview);
     this.addEventListener("pointerup", this.onMapPointerUp);
     this.addEventListener("pointercancel", this.onMapPointerCancel);
     this.addEventListener("dblclick", this.onMapDoubleClick);
     this.addEventListener("subject-selected", this.onSubjectSelected);
+    this.addEventListener("slot-subject-assigned", this.onSlotSubjectAssigned);
     this.load();
   }
 
   disconnectedCallback() {
+    this.removeEventListener("click", this.onMapSelectionCapture, true);
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("keydown", this.onSectionKeyDown);
     this.removeEventListener("submit", this.onSubmit);
@@ -67,11 +81,44 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("change", this.onChange);
     this.removeEventListener("pointerdown", this.onMapPointerDown);
     this.removeEventListener("pointermove", this.onMapPointerMove);
+    this.removeEventListener("pointermove", this.onMapLiveConnectionPreview);
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("dblclick", this.onMapDoubleClick);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this.removeEventListener("slot-subject-assigned", this.onSlotSubjectAssigned);
   }
+
+  onMapSelectionCapture = (event) => {
+    if (this.pendingMapAction) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("[data-map-place]")) {
+      this.selectedConnectionId = null;
+      this.activeMapInspectorTab = "details";
+    }
+  };
+
+  onSlotSubjectAssigned = async (event) => {
+    const assignment = event.detail || {};
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    try {
+      await this.refreshServerState();
+      this.selectedVenueTargetId = assignment.venueTargetId ? String(assignment.venueTargetId) : null;
+      this.selectedExhibitSlotId = assignment.exhibitSlotId ? String(assignment.exhibitSlotId) : this.selectedExhibitSlotId;
+      this.message = assignment.venueTargetCreated
+        ? "Entità aggiunta all’inventario e assegnata allo slot."
+        : assignment.previousExhibitSlotId
+          ? "Entità ricollocata nello slot selezionato."
+          : "Entità assegnata allo slot.";
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Configurazione aggiornata, ma non è stato possibile ricaricare la sede";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  };
 
   async refreshServerState() {
     this.data = await managementRepository.venue(this.id);
@@ -115,6 +162,12 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
+    if (event.key === "Escape" && this.floorDialog) {
+      event.preventDefault();
+      this.floorDialog = null;
+      this.render();
+      return;
+    }
     if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) {
       event.preventDefault();
       this.cancelMapAction();
@@ -144,9 +197,14 @@ Object.assign(
   ArtAroundVenueEditorView.prototype,
   venueActionMixin,
   venueTargetsMixin,
+  venueInventorySearchMixin,
   venueSpatialMixin,
   venueSectionMixin,
   venueMapAuthoringMixin,
+  venueMapInspectorMixin,
+  venueFloorDialogMixin,
+  venueLiveConnectionPreviewMixin,
   venueSpatialDiagnosticsMixin,
+  venueSlotSubjectUiMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);

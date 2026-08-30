@@ -2,6 +2,21 @@ import { authoringRepository } from "../infrastructure/http/authoring-repository
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function targetContext(target) {
+  const inventory = target.inventory || null;
+  const content = target.museumContent || { availableCount: 0, draftCount: 0 };
+  const rows = [];
+  if (inventory?.place || inventory?.slot) {
+    rows.push([inventory.place?.label || inventory.place?.floorLabel, inventory.slot?.label].filter(Boolean).join(" · "));
+  }
+  const available = Math.max(0, Number(content.availableCount) || 0);
+  const drafts = Math.max(0, Number(content.draftCount) || 0);
+  const contentParts = [];
+  if (available) contentParts.push(`${available} ${available === 1 ? "contenuto disponibile" : "contenuti disponibili"}`);
+  if (drafts) contentParts.push(`${drafts} ${drafts === 1 ? "bozza" : "bozze"}`);
+  if (contentParts.length) rows.push(contentParts.join(" · "));
+  return rows.map((row) => `<span class="chip">${escapeHtml(row)}</span>`).join("");
+}
 
 export class VenueTargetChooser extends HTMLElement {
   data = null; error = null; venueId = null;
@@ -15,7 +30,7 @@ export class VenueTargetChooser extends HTMLElement {
     this.render();
   }
   render() {
-    const targets = (this.data?.targets || []).map((target) => `<article class="target-choice"><div class="target-choice__icon">${icon("museum", { size: 22 })}</div><div class="target-choice__copy"><span class="eyebrow">${escapeHtml(target.subject?.preferredLabel || "Soggetto non disponibile")}</span><h2>${escapeHtml(target.label)}</h2>${target.description ? `<p>${escapeHtml(target.description)}</p>` : ""}${(target.recognitionMedia || []).length ? `<span class="chip">${target.recognitionMedia.length} ${target.recognitionMedia.length === 1 ? "immagine" : "immagini"} di riconoscimento</span>` : ""}</div><a class="button-link" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(target.id)}">Crea contenuto ${icon("chevron", { size: 16 })}</a></article>`).join("");
+    const targets = (this.data?.targets || []).map((target) => `<article class="target-choice"><div class="target-choice__icon">${icon("museum", { size: 22 })}</div><div class="target-choice__copy"><span class="eyebrow">${escapeHtml(target.subject?.preferredLabel || "Soggetto non disponibile")}</span><h2>${escapeHtml(target.label)}</h2>${target.description ? `<p>${escapeHtml(target.description)}</p>` : ""}${targetContext(target)}${(target.recognitionMedia || []).length ? `<span class="chip">${target.recognitionMedia.length} ${target.recognitionMedia.length === 1 ? "immagine" : "immagini"} di riconoscimento</span>` : ""}</div><a class="button-link" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(target.id)}">Crea contenuto ${icon("chevron", { size: 16 })}</a></article>`).join("");
     const otherSubjectAction = this.data && this.venueId
       ? `<aside class="context-box"><div><span class="eyebrow">Non trovi l’entità giusta?</span><strong>Cerca un altro soggetto</strong><p>ArtAround controllerà prima l’inventario di questa sede e poi, se necessario, Wikidata.</p></div><a class="button-link secondary" data-route href="/workspace/item-authoring?venueId=${encodeURIComponent(this.venueId)}&physicalIntent=1">Crea contenuto per un’altra entità ${icon("chevron", { size: 16 })}</a></aside>`
       : "";

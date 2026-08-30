@@ -392,7 +392,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.venueContext = { venue: result.venue, permissions: result.permissions };
     const selectedSubjectId = id(this.selectedSubject);
     this.venueInventoryMatch = selectedSubjectId
-      ? (result.exact || []).find((entry) => id(entry) === selectedSubjectId && entry.venueTargetId) || null
+      ? (result.exact || []).find((entry) => id(entry) === selectedSubjectId && entry.inventory?.venueTargetId) || null
       : null;
   }
 
@@ -986,7 +986,7 @@ export class ItemAuthoringView extends HTMLElement {
     const physicalContext = venue
       ? `<aside class="context-box"><span class="eyebrow">Già nell’inventario della sede · ${escapeHtml(inventoryStateLabel(venue.venueTarget.inventoryState))}</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L’entità precompila l’esatto Subject. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>`
       : inventoryMatch
-        ? `<aside class="context-box"><span class="eyebrow">Già nell’inventario della sede · ${escapeHtml(inventoryStateLabel(inventoryMatch.state))}</span><strong>${escapeHtml(this.selectedSubject?.preferredLabel || inventoryMatch.preferredLabel)}</strong><p>${escapeHtml(contextualVenue?.name || "Sede")}</p><p class="note">Verrà creato soltanto il contenuto: l’entità fisica esistente non sarà duplicata né spostata.</p></aside>`
+        ? `<aside class="context-box"><span class="eyebrow">Già nell’inventario della sede · ${escapeHtml(inventoryStateLabel(inventoryMatch.inventory?.status))}</span><strong>${escapeHtml(this.selectedSubject?.preferredLabel || inventoryMatch.preferredLabel)}</strong><p>${escapeHtml(contextualVenue?.name || "Sede")}</p><p class="note">Verrà creato soltanto il contenuto: l’entità fisica esistente non sarà duplicata né spostata.</p></aside>`
         : contextualVenue
           ? `<aside class="context-box"><span class="eyebrow">Contenuto per la sede</span><strong>${escapeHtml(contextualVenue.name)}</strong><p>${this.canUsePhysicalIntent() ? "Puoi aggiungere il soggetto all’inventario insieme al contenuto, senza assegnarlo automaticamente a uno slot." : "Puoi creare il contenuto. Per aggiungere nuove entità all’inventario, seleziona l’area di lavoro dell’organizzazione proprietaria e assicurati di avere il permesso di modifica fisica."}</p></aside>`
           : "";

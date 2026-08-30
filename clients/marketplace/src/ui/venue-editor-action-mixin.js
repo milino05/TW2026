@@ -104,8 +104,8 @@ export const venueActionMixin = {
     if (venueSubject) {
       const candidates = [...(this.venueSubjectCandidates?.exact || []), ...(this.venueSubjectCandidates?.suggestions || [])];
       const candidate = candidates.find((entry) => String(entry.id) === String(venueSubject.dataset.useVenueSubject));
-      if (candidate?.venueTargetId) {
-        this.selectedVenueTargetId = String(candidate.venueTargetId);
+      if (candidate?.inventory?.venueTargetId) {
+        this.selectedVenueTargetId = String(candidate.inventory.venueTargetId);
         this.inventoryFilter = "all";
         this.message = "Questa identità è già presente nell’inventario della sede.";
       } else if (candidate) this.selectedSubject = candidate;
