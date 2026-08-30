@@ -15,6 +15,7 @@ import { venueContextualWorkspaceMixin } from "./venue-editor-contextual-workspa
 import { venueSpatialInteractionMixin } from "./venue-editor-spatial-interaction-mixin.js";
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
+import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 
 const SECTIONS = ["overview", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -51,6 +52,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   activeSpatialTab = "map";
   floorDialog = null;
   mapCreationDialog = null;
+  calibrationOverwritePrompt = null;
   inventoryFilter = "all";
   inventorySearchQuery = "";
   venueSubjectCandidates = null;
@@ -87,6 +89,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
     this.removeEventListener("slot-subject-assigned", this.onSlotSubjectAssigned);
+    if (this._venueGlobalEscapeHandler) {
+      window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
+      this._venueGlobalEscapeHandler = null;
+    }
   }
 
   onSlotSubjectAssigned = async (event) => {
@@ -230,5 +236,6 @@ Object.assign(
   venueSpatialInteractionMixin,
   venueSpatialOverlayMixin,
   venueSlotSubjectUiMixin,
+  venueMapRefinementMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
