@@ -32,6 +32,7 @@ const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.ser
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
 const { assertRequirementScope, routingBlockerDetails } = require("./physicalExecutionV2.service");
+const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 const {
   resolveGenerationSources,
   resolvePrimaryDefaultGenerationSources,
@@ -96,7 +97,7 @@ async function loadPhysicalScope(request) {
   }
 
   const activeBindingRows = bundles.flatMap((bundle) => (bundle.release.targetBindings || [])
-    .filter((entry) => entry.availability === "active")
+    .filter((entry) => entry.availability === "active" && entry.exhibitSlotId)
     .map((entry) => ({ bundle, binding: entry })));
   const targetIds = uniqueIds(activeBindingRows.map((entry) => entry.binding.venueTargetId));
   const [targets, profiles] = await Promise.all([
@@ -108,11 +109,11 @@ async function loadPhysicalScope(request) {
   for (const bundle of bundles) {
     layoutByVenue.set(id(bundle.venue._id), bundle.layout);
     requirementsByVenue.set(id(bundle.venue._id), bundle.requirements);
-    const placementByTarget = new Map((bundle.layout.venueTargetPlacements || []).map((entry) => [id(entry.venueTargetId), entry]));
     for (const binding of bundle.release.targetBindings || []) {
-      if (binding.availability !== "active") continue;
-      const target = targetById.get(id(binding.venueTargetId)), placement = placementByTarget.get(id(binding.venueTargetId));
-      if (!target || !placement?.primaryPlaceId) throw new AppError("La VenueRelease pubblicata contiene un target fisico non risolvibile", 409, [{ field: "venueIds", code: "ACTIVE_TARGET_WITHOUT_PLACEMENT", context: { venueId: bundle.venue._id, venueTargetId: binding.venueTargetId } }]);
+      if (binding.availability !== "active" || !binding.exhibitSlotId) continue;
+      const target = targetById.get(id(binding.venueTargetId));
+      if (!target) throw new AppError("La VenueRelease pubblicata contiene un target fisico non risolvibile", 409, [{ field: "venueIds", code: "ACTIVE_TARGET_MISSING", context: { venueId: bundle.venue._id, venueTargetId: binding.venueTargetId } }]);
+      const physical = resolveVenueTargetExhibit({ venueRelease: bundle.release, layoutRevision: bundle.layout, venueTargetId: target._id });
       const profile = profileByTargetId.get(id(target._id));
       const learnedSeconds = Number(profile?.typicalObservationSeconds);
       const reliable = Number(profile?.confidence) >= policy.confidence.usableThreshold && Number.isFinite(learnedSeconds);
@@ -122,7 +123,8 @@ async function loadPhysicalScope(request) {
         venueTargetId: target._id,
         venueId: bundle.venue._id,
         subjectId: target.subjectId,
-        placeId: placement.primaryPlaceId,
+        exhibitSlotId: physical.exhibitSlot.exhibitSlotId,
+        placeId: physical.place._id,
         venueReleaseId: bundle.release._id,
         layoutRevisionId: bundle.layout._id,
         observationSeconds,

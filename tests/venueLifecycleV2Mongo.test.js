@@ -77,7 +77,7 @@ test("Venue trash/restore preserves physical children and reports only current p
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const venueService = require("../services/venue.service");
     const { user, venue, subjects } = await createFixture("venue-lifecycle");
-    const target = await VenueTarget.create({ venueId: venue.id, subjectId: subjects[0]._id, label: "Target preservato", createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue.id, subjectId: subjects[0]._id, displayLabelOverride: "Target preservato", createdBy: user._id });
     const current = await createPublishedVisitReference({ userId: user._id, venueTargetId: target._id, title: "Visit corrente" });
     await VisitRevisionV2.create({
       visitId: current.visit._id,
@@ -111,6 +111,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
   await withFreshDatabase(async () => {
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
+    const ExhibitSlot = require("../models/exhibitSlot.model");
     const LayoutRevision = require("../models/layoutRevision.model");
     const VenueRelease = require("../models/venueRelease.model");
     const { createVenueTarget, trashVenueTarget } = require("../services/venueTarget.service");
@@ -122,8 +123,12 @@ test("VenueTarget trash enforces working, published and current-Visit references
     const [workingTarget, publishedTarget, visitTarget] = await Promise.all(subjects.map((subject, index) => createVenueTarget({
       venueId: venue.id,
       actorUserId: user._id,
-      payload: { subjectId: subject._id, label: ["Working target", "Published target", "Visit target"][index] },
+      payload: { subjectId: subject._id, displayLabelOverride: ["Working target", "Published target", "Visit target"][index] },
     })));
+    const [workingSlot, publishedSlot] = await ExhibitSlot.create([
+      { venueId: venue.id, createdBy: user._id },
+      { venueId: venue.id, createdBy: user._id },
+    ]);
 
     const publishedFloorId = oid();
     const publishedPlaceId = oid();
@@ -133,7 +138,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
       authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{ _id: publishedFloorId, label: "Pubblicato" }],
       places: [{ _id: publishedPlaceId, floorId: publishedFloorId, placeTypeDefinitionId, label: "Sala pubblicata", position: { x: 0.3, y: 0.3 }, attributeValues: [] }],
-      venueTargetPlacements: [{ venueTargetId: publishedTarget._id, primaryPlaceId: publishedPlaceId, placeIds: [] }],
+      exhibitSlots: [{ exhibitSlotId: publishedSlot._id, placeId: publishedPlaceId, label: "Slot pubblicato" }],
       status: "published",
       createdBy: user._id,
       updatedBy: user._id,
@@ -142,7 +147,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
       venueId: venue.id,
       version: 1,
       layoutRevisionId: publishedLayout._id,
-      targetBindings: [{ venueTargetId: publishedTarget._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: publishedTarget._id, exhibitSlotId: publishedSlot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       publication: { publishedAt: new Date(), publishedBy: user._id },
@@ -159,7 +164,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
       authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{ _id: workingFloorId, label: "Bozza" }],
       places: [{ _id: workingPlaceId, floorId: workingFloorId, placeTypeDefinitionId, label: "Sala bozza", position: { x: 0.4, y: 0.4 }, attributeValues: [] }],
-      venueTargetPlacements: [{ venueTargetId: workingTarget._id, primaryPlaceId: workingPlaceId, placeIds: [] }],
+      exhibitSlots: [{ exhibitSlotId: workingSlot._id, placeId: workingPlaceId, label: "Slot bozza" }],
       status: "draft",
       createdBy: user._id,
       updatedBy: user._id,
@@ -170,7 +175,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
       version: 2,
       basedOnReleaseId: publishedRelease._id,
       layoutRevisionId: workingLayout._id,
-      targetBindings: [{ venueTargetId: workingTarget._id, availability: "active", recognitionMedia: [{ url: mediaUrl, altText: "Riconoscimento" }] }],
+      targetBindings: [{ venueTargetId: workingTarget._id, exhibitSlotId: workingSlot._id, availability: "active", recognitionMedia: [{ url: mediaUrl, altText: "Riconoscimento" }] }],
       status: "draft",
       createdBy: user._id,
       updatedBy: user._id,
@@ -184,7 +189,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
     const detached = await detachVenueTargetFromWorkingConfiguration({ venueId: venue.id, venueTargetId: workingTarget._id, actorUserId: user._id });
     assert.equal(detached.detached, true);
     assert.equal(detached.removedBinding, true);
-    assert.equal(detached.removedPlacement, true);
+    assert.equal(detached.removedPlacement, undefined);
     assert.deepEqual(detached.recognitionMediaUrls, [mediaUrl]);
     const trashedWorkingTarget = await trashVenueTarget({ venueId: venue.id, venueTargetId: workingTarget._id, actorUserId: user._id });
     assert.equal(trashedWorkingTarget.lifecycleStatus, "trashed");
@@ -203,7 +208,7 @@ test("VenueTarget trash enforces working, published and current-Visit references
     const refreshedWorkingRelease = await VenueRelease.findById(workingRelease._id).lean();
     const refreshedWorkingLayout = await LayoutRevision.findById(workingLayout._id).lean();
     assert.equal(refreshedWorkingRelease.targetBindings.some((entry) => entry.venueTargetId.equals(workingTarget._id)), false);
-    assert.equal(refreshedWorkingLayout.venueTargetPlacements.some((entry) => entry.venueTargetId.equals(workingTarget._id)), false);
+    assert.equal(refreshedWorkingLayout.exhibitSlots.some((entry) => entry.exhibitSlotId.equals(workingSlot._id)), true);
     assert.equal(await VenueTarget.countDocuments({ venueId: venue.id }), 3);
   });
 });

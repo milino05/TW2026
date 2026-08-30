@@ -3,6 +3,7 @@ const VenueTarget = require("../models/venueTarget.model");
 const Venue = require("../models/venue.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const EditorialContext = require("../models/editorialContext.model");
+const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -38,7 +39,7 @@ async function projectGeneratedPlanV2(planDocument) {
       ? ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("_id label authorCredits metadata").lean()
       : [],
     targetIds.length
-      ? VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId label").lean()
+      ? VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId subjectId displayLabelOverride inventoryNote").lean()
       : [],
     releaseIds.length
       ? EditorialRelease.find({ _id: { $in: releaseIds } }).select("_id editorialContextId version").lean()
@@ -46,6 +47,7 @@ async function projectGeneratedPlanV2(planDocument) {
   ]);
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
   const targetById = new Map(targets.map((target) => [id(target._id), target]));
+  const targetIdentityById = await venueTargetIdentityMap(targets);
   const venueIds = uniqueIds(targets.map((target) => target.venueId));
   const contextIds = uniqueIds(releases.map((release) => release.editorialContextId));
   const [venues, contexts] = await Promise.all([
@@ -70,7 +72,7 @@ async function projectGeneratedPlanV2(planDocument) {
       authorCredits: revision?.authorCredits || [],
       license: revision?.metadata?.license || null,
       delivery: target ? {
-        targetLabel: target.label,
+        targetLabel: targetIdentityById.get(id(target._id))?.label || "Entità della sede",
         venueName: venue?.name || "Sede",
       } : null,
       estimatedContentSeconds: Number(entry.estimatedContentSeconds) || 0,
@@ -82,7 +84,7 @@ async function projectGeneratedPlanV2(planDocument) {
     const venue = target ? venueById.get(id(target.venueId)) : null;
     return {
       position: index + 1,
-      label: target?.label || "Tappa",
+      label: target ? targetIdentityById.get(id(target._id))?.label || "Tappa" : "Tappa",
       venueName: venue?.name || "Sede",
     };
   });

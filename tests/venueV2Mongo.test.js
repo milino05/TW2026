@@ -57,8 +57,8 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     const venueId = venue.id;
     const physical = await createPublishedPhysicalVocabulary({ userId: user._id, ownerType: "organization", ownerId: organization._id });
     const roomType = physical.placeTypeByKey.get("room");
-    const targetA = await createVenueTarget({ venueId, payload: { subjectId: subjectA._id, label: "Opera A in sala" }, actorUserId: user._id });
-    const targetB = await createVenueTarget({ venueId, payload: { subjectId: subjectB._id, label: "Opera B in sala" }, actorUserId: user._id });
+    const targetA = await createVenueTarget({ venueId, payload: { subjectId: subjectA._id, displayLabelOverride: "Opera A in sala" }, actorUserId: user._id });
+    const targetB = await createVenueTarget({ venueId, payload: { subjectId: subjectB._id, displayLabelOverride: "Opera B in sala" }, actorUserId: user._id });
 
     await ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId: physical.revision._id, actorUserId: user._id });
     const floorResult = await layoutCommands.addFloor({
@@ -100,8 +100,10 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     await bindingCommands.setAvailability({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { availability: "active" } });
     await bindingCommands.setAvailability({ venueId, venueTargetId: targetB._id, actorUserId: user._id, payload: { availability: "active" } });
     await bindingCommands.addRecognitionMedia({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { url: "https://example.test/a.jpg", altText: "Opera A" } });
-    await layoutCommands.setVenueTargetPlacement({ venueId, venueTargetId: targetA._id, actorUserId: user._id, payload: { primaryPlaceId: placeA, placeIds: [] } });
-    await layoutCommands.setVenueTargetPlacement({ venueId, venueTargetId: targetB._id, actorUserId: user._id, payload: { primaryPlaceId: placeB, placeIds: [] } });
+    const slotA = await layoutCommands.createExhibitSlot({ venueId, actorUserId: user._id, payload: { placeId: placeA, label: "Slot A" } });
+    const slotB = await layoutCommands.createExhibitSlot({ venueId, actorUserId: user._id, payload: { placeId: placeB, label: "Slot B" } });
+    await layoutCommands.assignVenueTargetToExhibitSlot({ venueId, venueTargetId: targetA._id, exhibitSlotId: slotA.result.exhibitSlotId, actorUserId: user._id });
+    await layoutCommands.assignVenueTargetToExhibitSlot({ venueId, venueTargetId: targetB._id, exhibitSlotId: slotB.result.exhibitSlotId, actorUserId: user._id });
     await layoutCommands.setPreVisitInformation({ venueId, actorUserId: user._id, payload: { items: ["Ingresso principale accessibile"] } });
 
     const checked = await checkVenueReleaseConsistency({ venueId, actorUserId: user._id });
@@ -118,7 +120,7 @@ test("VenueRelease publishes immutable physical state around VenueTarget", { ski
     const publicTargets = await listVenueTargets({ venueId });
     assert.equal(publicTargets.length, 2);
 
-    const route = routeBetweenVenueTargets({ layoutRevision: publicState.layout, fromVenueTargetId: targetA._id, toVenueTargetId: targetB._id });
+    const route = routeBetweenVenueTargets({ layoutRevision: publicState.layout, venueRelease: publicState.release, fromVenueTargetId: targetA._id, toVenueTargetId: targetB._id });
     assert.equal(route.reachable, true);
     assert.equal(route.distanceMeters, 12);
 

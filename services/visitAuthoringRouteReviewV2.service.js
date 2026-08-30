@@ -3,6 +3,7 @@ const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const { resolveRoute } = require("./graphRouting.service");
+const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function venueMapHref(venueId) { return `/venues/editor?venueId=${encodeURIComponent(id(venueId))}#venue-map`; }
@@ -23,7 +24,7 @@ function hintFor(revision, fromAnchorId, toAnchorId, type = null) {
 async function physicalBundlesForAnchors(revision) {
   const targetIds = [...new Set((revision.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter(Boolean))];
   const targets = targetIds.length
-    ? await VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId label subjectId").lean()
+    ? await VenueTarget.find({ _id: { $in: targetIds }, lifecycleStatus: "active" }).select("_id venueId displayLabelOverride subjectId").lean()
     : [];
   const targetById = new Map(targets.map((target) => [id(target._id), target]));
   const venueIds = [...new Set(targets.map((target) => id(target.venueId)))];
@@ -39,7 +40,7 @@ async function physicalBundlesForAnchors(revision) {
   const layoutIds = releases.map((release) => release.layoutRevisionId).filter(Boolean);
   const layouts = layoutIds.length
     ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } })
-      .select("_id venueId places connections venueTargetPlacements")
+      .select("_id venueId places connections exhibitSlots")
       .lean()
     : [];
   const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
@@ -50,16 +51,6 @@ async function physicalBundlesForAnchors(revision) {
     bundleByVenueId.set(id(venue._id), { venue, release, layout });
   }
   return { targetById, venueById, bundleByVenueId };
-}
-
-function placementFor(bundle, venueTargetId) {
-  if (!bundle?.layout) return null;
-  return (bundle.layout.venueTargetPlacements || []).find((entry) => id(entry.venueTargetId) === id(venueTargetId)) || null;
-}
-function targetIsActiveInRelease(bundle, venueTargetId) {
-  return Boolean((bundle?.release?.targetBindings || []).some((entry) => (
-    id(entry.venueTargetId) === id(venueTargetId) && entry.availability === "active"
-  )));
 }
 
 async function projectVisitAuthoringRouteReview(revision) {
@@ -73,7 +64,7 @@ async function projectVisitAuthoringRouteReview(revision) {
   for (const [index, anchor] of anchors.entries()) {
     const target = physical.targetById.get(id(anchor.venueTargetId));
     if (!target) {
-      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNAVAILABLE", "La tappa fa riferimento a un oggetto fisico non più disponibile.", {
+      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNAVAILABLE", "La tappa fa riferimento a un’entità fisica non più disponibile.", {
         anchorId: anchor._id,
         anchorIndex: index,
       }));
@@ -90,18 +81,10 @@ async function projectVisitAuthoringRouteReview(revision) {
       }));
       continue;
     }
-    if (!targetIsActiveInRelease(bundle, target._id)) {
-      blockers.push(blocker("VISIT_ANCHOR_TARGET_NOT_PUBLISHED", "L'oggetto della tappa non è attivo nella configurazione pubblicata della sede.", {
-        anchorId: anchor._id,
-        anchorIndex: index,
-        venueId: target.venueId,
-        fixHref,
-      }));
-      continue;
-    }
-    const placement = placementFor(bundle, target._id);
-    if (!placement?.primaryPlaceId) {
-      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNPLACED", "L'oggetto della tappa non è collocato sulla mappa pubblicata della sede.", {
+    let physicalResolution;
+    try { physicalResolution = resolveVenueTargetExhibit({ venueRelease: bundle.release, layoutRevision: bundle.layout, venueTargetId: target._id }); }
+    catch {
+      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNPLACED", "L'entità della tappa non è assegnata a uno slot espositivo pubblicato.", {
         anchorId: anchor._id,
         anchorIndex: index,
         venueId: target.venueId,
@@ -113,7 +96,8 @@ async function projectVisitAuthoringRouteReview(revision) {
       anchor,
       target,
       bundle,
-      placeId: placement.primaryPlaceId,
+      exhibitSlotId: physicalResolution.exhibitSlot.exhibitSlotId,
+      placeId: physicalResolution.place._id,
     });
   }
 

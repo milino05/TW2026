@@ -6,7 +6,9 @@ const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
 const LayoutRevision = require("../models/layoutRevision.model");
+const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
+const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 const { getVisitV2, updateVisitV2 } = require("./visitV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -80,9 +82,10 @@ async function resolveReleasedContent({ editorialReleaseId, itemEditionId, itemR
 
 async function publishedOccurrenceCandidates(subjectId) {
   const targets = await VenueTarget.find({ subjectId, lifecycleStatus: "active" })
-    .select("_id venueId subjectId label description")
+    .select("_id venueId subjectId displayLabelOverride inventoryNote")
     .lean();
   if (!targets.length) return [];
+  const subject = await Subject.findById(subjectId).select("preferredLabel description").lean();
   const venueIds = [...new Set(targets.map((target) => id(target.venueId)))];
   const venues = await Venue.find({
     _id: { $in: venueIds },
@@ -101,7 +104,7 @@ async function publishedOccurrenceCandidates(subjectId) {
     ? await LayoutRevision.find({
         _id: { $in: releases.map((release) => release.layoutRevisionId) },
         status: { $in: ["published", "superseded"] },
-      }).select("_id venueId venueTargetPlacements").lean()
+      }).select("_id venueId places exhibitSlots").lean()
     : [];
   const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
   const result = [];
@@ -110,21 +113,21 @@ async function publishedOccurrenceCandidates(subjectId) {
     if (!venue) continue;
     const release = releaseById.get(id(venue.publishedReleaseId));
     if (!release || id(release.venueId) !== id(venue._id)) continue;
-    const binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id) && entry.availability === "active");
-    if (!binding) continue;
     const layout = layoutById.get(id(release.layoutRevisionId));
     if (!layout || id(layout.venueId) !== id(venue._id)) continue;
-    const placement = (layout.venueTargetPlacements || []).find((entry) => id(entry.venueTargetId) === id(target._id));
-    if (!placement?.primaryPlaceId) continue;
+    let physical;
+    try { physical = resolveVenueTargetExhibit({ venueRelease: release, layoutRevision: layout, venueTargetId: target._id }); }
+    catch { continue; }
     result.push({
       venueTargetId: target._id,
-      label: target.label,
-      description: target.description || "",
+      exhibitSlotId: physical.exhibitSlot.exhibitSlotId,
+      label: target.displayLabelOverride || subject?.preferredLabel || "Entità della sede",
+      description: target.inventoryNote || subject?.description || "",
       subjectId: target.subjectId,
       venue: { id: venue._id, name: venue.name },
       venueReleaseId: release._id,
       layoutRevisionId: layout._id,
-      placeId: placement.primaryPlaceId,
+      placeId: physical.place._id,
     });
   }
   return result.sort((left, right) => (

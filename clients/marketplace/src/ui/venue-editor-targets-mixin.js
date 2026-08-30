@@ -4,7 +4,10 @@ import { managementRepository } from "../infrastructure/http/management-reposito
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function selected(value, current) { return String(value || "") === String(current || "") ? "selected" : ""; }
 function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
+function id(value) { return String(value?._id || value?.id || value || ""); }
 function availabilityLabel(value) { return value === "active" ? "Disponibile" : "Temporaneamente non disponibile"; }
+function stateLabel(value) { return { exposed: "Esposto", unplaced: "Non collocato", unavailable: "Non disponibile" }[value] || "Inventario"; }
+function sourceLabel(value) { return { venue_exposed: "Esposto in questa sede", venue_inventory: "Inventario della sede", organization_content: "Contenuto del museo", artaround: "ArtAround" }[value] || "ArtAround"; }
 function fileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -14,11 +17,7 @@ function fileAsBase64(file) {
   });
 }
 function canvasAsBlob(canvas, mimeType, quality) {
-  return new Promise((resolve, reject) => canvas.toBlob(
-    (blob) => blob ? resolve(blob) : reject(new Error("Non è stato possibile ottimizzare l'immagine")),
-    mimeType,
-    quality,
-  ));
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Non è stato possibile ottimizzare l'immagine")), mimeType, quality));
 }
 async function optimizedRecognitionMedia(file) {
   const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
@@ -48,39 +47,32 @@ async function optimizedRecognitionMedia(file) {
 function renderRecognitionMedia(target, editable) {
   const media = target.binding?.recognitionMedia || [];
   const cards = media.map((entry, index) => `<figure class="venue-recognition-media-card"><img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.altText || `Immagine di riconoscimento ${index + 1} di ${target.label}`)}" loading="lazy"><figcaption><span>${escapeHtml(entry.altText || "Nessuna descrizione aggiuntiva")}</span>${editable && entry.id ? `<button class="danger small" type="button" data-remove-recognition-media="${escapeHtml(entry.id)}" data-target-id="${escapeHtml(target.id)}" data-target-label="${escapeHtml(target.label)}">${icon("trash", { size: 14 })} Rimuovi</button>` : ""}</figcaption></figure>`).join("");
-  const upload = editable ? `<form data-recognition-media-upload="${escapeHtml(target.id)}" class="venue-recognition-upload"><label class="venue-recognition-file"><span>Aggiungi immagine</span><small>JPEG, PNG, WebP o AVIF · massimo 2 MB. È un riferimento fisico per riconoscere l'oggetto, non un contenuto editoriale.</small><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required></label><label>Descrizione dell'immagine<input name="altText" maxlength="500" placeholder="Es. Vista frontale della scultura"></label><button type="submit">${icon("image", { size: 15 })} Carica immagine</button></form>` : "";
-  return `<div class="venue-recognition-media"><div class="venue-recognition-heading"><div><strong>Immagini di riconoscimento</strong><small>Aiutano il Navigator e le future funzioni di riconoscimento a riferirsi all'oggetto fisico.</small></div><span class="count">${media.length}</span></div>${cards ? `<div class="venue-recognition-media-grid">${cards}</div>` : `<p class="note">Nessuna immagine di riconoscimento configurata.</p>`}${upload}</div>`;
-}
-
-function renderConfigurationState(target, editable, hasRelease) {
-  if (!hasRelease) return "";
-  const configuration = target.configuration || {};
-  const canDetach = has(target.availableOperations, "venue.target.detach");
-  if (configuration.includedInWorkingConfiguration) {
-    return `<aside class="venue-target-configuration-state"><div><strong>Incluso nella configurazione di lavoro</strong><small>${configuration.placed ? "L'oggetto è collocato nella mappa." : "Manca ancora una collocazione valida nella mappa."}</small></div>${editable && canDetach ? `<button class="button-secondary small" type="button" data-detach-target="${escapeHtml(target.id)}" data-label="${escapeHtml(target.label)}">Rimuovi dalla configurazione</button>` : ""}</aside>`;
-  }
-  if (configuration.source === "published" || (configuration.includedInPublishedConfiguration && !editable)) {
-    return `<aside class="venue-target-configuration-state published"><div><strong>Incluso nella configurazione pubblicata</strong><small>Questa è la versione attiva della sede. Crea una nuova bozza fisica per modificarne collocazione, disponibilità o immagini di riconoscimento.</small></div></aside>`;
-  }
-  const publishedNote = configuration.includedInPublishedConfiguration || configuration.publishedReferenced
-    ? "La versione pubblicata corrente contiene ancora questo oggetto. Dopo aver pubblicato questa bozza senza l'oggetto potrai eventualmente spostarlo nel cestino."
-    : "Per includerlo nella bozza, colloca l'oggetto in un luogo dalla sezione Spazi e mappa.";
-  return `<aside class="venue-target-configuration-state detached"><div><strong>Non incluso nella configurazione di lavoro</strong><small>${escapeHtml(publishedNote)}</small></div></aside>`;
-}
-
-function targetStatusLabel(entry) {
-  const configuration = entry.configuration || {};
-  if (configuration.includedInWorkingConfiguration) return entry.binding ? availabilityLabel(entry.binding.availability) : "Incluso nella bozza";
-  if (configuration.includedInPublishedConfiguration) return entry.binding ? `Pubblicato · ${availabilityLabel(entry.binding.availability)}` : "Solo nella versione pubblicata";
-  return "Fuori dalla bozza";
+  const upload = editable && target.binding ? `<form data-recognition-media-upload="${escapeHtml(target.id)}" class="venue-recognition-upload"><label class="venue-recognition-file"><span>Aggiungi immagine</span><small>Riferimento fisico, non contenuto editoriale · massimo 2 MB.</small><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required></label><label>Descrizione<input name="altText" maxlength="500" placeholder="Es. Vista frontale"></label><button type="submit">${icon("image", { size: 15 })} Carica</button></form>` : "";
+  return `<div class="venue-recognition-media"><div class="venue-recognition-heading"><strong>Riconoscimento</strong><span class="count">${media.length}</span></div>${cards ? `<div class="venue-recognition-media-grid">${cards}</div>` : `<p class="note">Nessuna immagine configurata.</p>`}${upload}</div>`;
 }
 
 function renderTargetRemoval(target, pendingTargetRemovalId, busy) {
   if (!has(target.availableOperations, "venue.target.trash")) return "";
-  if (String(pendingTargetRemovalId || "") !== String(target.id)) {
-    return `<button class="danger" type="button" data-request-target-removal="${escapeHtml(target.id)}">Sposta nel cestino</button>`;
-  }
-  return `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><span class="eyebrow">Conferma richiesta</span><strong>Spostare “${escapeHtml(target.label)}” nel cestino?</strong><p>Verrà rimossa soltanto questa presenza fisica dalla sede. Il Subject condiviso e gli eventuali Item editoriali non verranno eliminati.</p><p>Il server impedirà l'operazione se l'oggetto è ancora presente in una configurazione fisica o in una Visit pubblicata corrente.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-target-removal="${escapeHtml(target.id)}" ${busy ? "disabled" : ""}>Sposta nel cestino</button><button class="button-secondary" type="button" data-cancel-target-removal ${busy ? "disabled" : ""}>Annulla</button></div></section>`;
+  if (String(pendingTargetRemovalId || "") !== String(target.id)) return `<button class="danger small" type="button" data-request-target-removal="${escapeHtml(target.id)}">Rimuovi dall’inventario</button>`;
+  return `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><strong>Rimuovere “${escapeHtml(target.label)}” dall’inventario?</strong><p>Subject e Item non verranno eliminati. L’operazione è possibile solo se nessuna configurazione corrente usa l’entità.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-target-removal="${escapeHtml(target.id)}" ${busy ? "disabled" : ""}>Rimuovi</button><button class="button-secondary" type="button" data-cancel-target-removal>Annulla</button></div></section>`;
+}
+
+function targetCard(entry, context) {
+  const { editable, venueId, pendingTargetRemovalId, busy, selectedVenueTargetId } = context;
+  const state = entry.configuration?.state || "unplaced";
+  const itemHref = `/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(entry.id))}`;
+  const slot = entry.exhibitSlot;
+  const counts = entry.museumContent || { available: 0, draft: 0 };
+  const trash = renderTargetRemoval(entry, pendingTargetRemovalId, busy);
+  const detach = has(entry.availableOperations, "venue.target.detach")
+    ? `<button class="danger small" type="button" data-detach-target="${escapeHtml(entry.id)}" data-label="${escapeHtml(entry.label)}">Rimuovi dalla configurazione</button>`
+    : "";
+  return `<article class="venue-target-card${id(selectedVenueTargetId) === id(entry.id) ? " selected" : ""}" data-venue-entity-card="${escapeHtml(entry.id)}" data-state="${escapeHtml(state)}"><header><div><span class="eyebrow">${escapeHtml(entry.subject?.label || "Identità non disponibile")}</span><h3>${escapeHtml(entry.label)}</h3></div><span class="chip" data-tone="${state === "exposed" ? "success" : state === "unavailable" ? "warning" : "neutral"}">${escapeHtml(stateLabel(state))}</span></header><p>${escapeHtml(entry.inventoryNote || entry.subject?.description || "Nessuna nota d’inventario.")}</p><dl class="venue-command-facts"><div><dt>Contenuti disponibili</dt><dd>${counts.available || 0}</dd></div><div><dt>Bozze del museo</dt><dd>${counts.draft || 0}</dd></div></dl>${slot ? `<p class="venue-entity-location">${icon("pin", { size: 14 })} ${escapeHtml(slot.label)} <button class="link-button" type="button" data-locate-slot="${escapeHtml(id(slot.id))}">Localizza</button></p>` : `<p class="venue-entity-location muted">Nessuno slot assegnato</p>`}${editable ? `<div class="button-row"><a class="button-link small secondary" data-route href="${itemHref}">Crea contenuto</a>${slot ? `<button class="button-secondary small" type="button" data-unassign-target="${escapeHtml(entry.id)}">Scollega dallo slot</button>` : ""}</div><details><summary>Inventario e disponibilità</summary><form data-target-metadata="${escapeHtml(entry.id)}" class="venue-inline-form"><label>Etichetta locale<input name="displayLabelOverride" value="${escapeHtml(entry.displayLabelOverride || "")}" placeholder="Usa il nome del Subject"></label><label>Nota d’inventario<textarea name="inventoryNote">${escapeHtml(entry.inventoryNote || "")}</textarea></label><button>Salva</button></form>${entry.binding ? `<form data-target-availability="${escapeHtml(entry.id)}" class="venue-target-availability"><label>Disponibilità<select name="availability"><option value="active" ${selected("active", entry.binding.availability || "active")}>Disponibile</option><option value="unavailable" ${selected("unavailable", entry.binding.availability)}>Temporaneamente non disponibile</option></select></label><button class="button-secondary">Salva</button></form>` : ""}${renderRecognitionMedia(entry, editable)}${detach}${trash}</details>` : ""}</article>`;
+}
+
+function candidateList(entries, title) {
+  if (!entries?.length) return "";
+  return `<section class="venue-subject-results"><strong>${escapeHtml(title)}</strong>${entries.map((entry) => `<button class="venue-subject-result" type="button" data-use-venue-subject="${escapeHtml(entry.id)}"><span><b>${escapeHtml(entry.preferredLabel)}</b><small>${escapeHtml(entry.description || "Senza descrizione")}</small></span><span class="chip">${escapeHtml(sourceLabel(entry.source))}</span></button>`).join("")}</section>`;
 }
 
 export const venueTargetsMixin = {
@@ -88,15 +80,7 @@ export const venueTargetsMixin = {
     const target = event.target instanceof Element ? event.target : null;
     const remove = target?.closest("[data-remove-recognition-media]");
     if (!remove) return false;
-    this.requestDestructiveAction({
-      type: "recognition_media",
-      targetId: remove.dataset.targetId,
-      mediaId: remove.dataset.removeRecognitionMedia,
-      title: `Rimuovere questa immagine da “${remove.dataset.targetLabel || "questo oggetto"}”?`,
-      description: "L'immagine verrà rimossa dalla configurazione fisica di lavoro. Gli asset ancora usati da snapshot storici restano conservati.",
-      confirmLabel: "Rimuovi immagine",
-      successMessage: "Immagine di riconoscimento rimossa.",
-    });
+    this.requestDestructiveAction({ type: "recognition_media", targetId: remove.dataset.targetId, mediaId: remove.dataset.removeRecognitionMedia, title: `Rimuovere questa immagine da “${remove.dataset.targetLabel || "questa entità"}”?`, description: "L’asset resta conservato se uno snapshot storico lo usa.", confirmLabel: "Rimuovi immagine", successMessage: "Immagine di riconoscimento rimossa." });
     return true;
   },
 
@@ -107,38 +91,29 @@ export const venueTargetsMixin = {
       if (!(file instanceof File) || !file.size) throw new Error("Scegli un'immagine da caricare.");
       const optimized = await optimizedRecognitionMedia(file);
       const dataBase64 = await fileAsBase64(optimized);
-      await this.execute(() => managementRepository.uploadVenueTargetRecognitionMedia(
-        this.id,
-        form.dataset.recognitionMediaUpload,
-        {
-          fileName: optimized.name || file.name,
-          mimeType: optimized.type || file.type,
-          dataBase64,
-          altText: String(data.get("altText") || "").trim(),
-        },
-      ), "Immagine di riconoscimento caricata.");
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Caricamento dell'immagine di riconoscimento non riuscito";
-      this.render();
-    }
+      await this.execute(() => managementRepository.uploadVenueTargetRecognitionMedia(this.id, form.dataset.recognitionMediaUpload, { fileName: optimized.name || file.name, mimeType: optimized.type || file.type, dataBase64, altText: String(data.get("altText") || "").trim() }), "Immagine di riconoscimento caricata.");
+    } catch (error) { this.error = error instanceof Error ? error.message : "Caricamento non riuscito"; this.render(); }
     return true;
   },
 
   renderTargets(editable) {
-    const hasRelease = Boolean(this.data.release);
-    const cards = this.data.targets.map((entry) => {
-      const trash = renderTargetRemoval(entry, this.pendingTargetRemovalId, this.busy);
-      const bindingDetails = hasRelease && entry.binding
-        ? `<details ${entry.binding.recognitionMedia?.length ? "open" : ""}><summary>Disponibilità e riconoscimento</summary>${editable ? `<form data-target-availability="${escapeHtml(entry.id)}" class="venue-target-availability"><label>Disponibilità<select name="availability"><option value="active" ${selected("active", entry.binding.availability || "active")}>Disponibile</option><option value="unavailable" ${selected("unavailable", entry.binding.availability)}>Temporaneamente non disponibile</option></select></label><button class="button-secondary" type="submit">${icon("check", { size: 16 })} Salva disponibilità</button></form>` : `<p class="note">${escapeHtml(availabilityLabel(entry.binding.availability || "active"))}</p>`}${renderRecognitionMedia(entry, editable)}</details>`
-        : "";
-      return `<article class="venue-target-card"><header><div><span class="eyebrow">${escapeHtml(entry.subject?.label || "Identità non disponibile")}</span><h3>${escapeHtml(entry.label)}</h3></div><span class="chip">${escapeHtml(targetStatusLabel(entry))}</span></header><p>${escapeHtml(entry.description || "Nessuna descrizione fisica.")}</p>${renderConfigurationState(entry, editable, hasRelease)}<details><summary>Dettagli oggetto</summary><form data-target-metadata="${escapeHtml(entry.id)}"><label>Nome nella sede<input name="label" value="${escapeHtml(entry.label)}" required></label><label>Descrizione fisica<textarea name="description">${escapeHtml(entry.description || "")}</textarea></label><div class="button-row"><button type="submit">Salva oggetto</button>${trash && !this.pendingTargetRemovalId ? trash : ""}</div></form>${this.pendingTargetRemovalId === String(entry.id) || String(this.pendingTargetRemovalId || "") === String(entry.id) ? trash : ""}</details>${bindingDetails}</article>`;
-    }).join("");
-    const selectedSubject = this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Identità selezionata</span><strong>${escapeHtml(this.selectedSubject.preferredLabel)}</strong><small>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</small></article><form data-create-target><input type="hidden" name="subjectId" value="${escapeHtml(this.selectedSubject.id || this.selectedSubject._id)}"><label>Nome dell'oggetto nella sede<input name="label" required value="${escapeHtml(this.selectedSubject.preferredLabel)}"></label><label>Descrizione fisica<textarea name="description"></textarea></label><button type="submit">Crea oggetto fisico</button></form>` : "";
-    return `<section class="venue-section" id="venue-targets"><div class="section-heading"><div><span class="eyebrow">Oggetti</span><h2>Oggetti e punti di interesse</h2><p>Ogni VenueTarget identifica una presenza fisica nella sede e rimane separato dagli Item editoriali.</p></div><span class="count">${this.data.targets.length}</span></div><div class="venue-target-grid">${cards || `<div class="empty-state"><h3>Nessun oggetto configurato</h3><p>Aggiungi opere o punti di interesse presenti fisicamente nella sede.</p></div>`}</div>${editable ? `<details class="venue-create"><summary>${icon("plus", { size: 16 })} Aggiungi oggetto</summary><p>Cerca prima il Subject condiviso. La scelta non crea un Item e non copia contenuti editoriali.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>${selectedSubject}</details>` : ""}</section>`;
+    const filtered = (this.data.targets || []).filter((entry) => this.inventoryFilter === "all" || entry.configuration?.state === this.inventoryFilter);
+    const cards = filtered.map((entry) => targetCard(entry, { editable, venueId: this.id, pendingTargetRemovalId: this.pendingTargetRemovalId, busy: this.busy, selectedVenueTargetId: this.selectedVenueTargetId })).join("");
+    const exact = candidateList(this.venueSubjectCandidates?.exact, "Corrispondenze esatte");
+    const suggestions = candidateList(this.venueSubjectCandidates?.suggestions, "Possibili corrispondenze — verifica prima di scegliere");
+    const selectedSubject = this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject selezionato</span><strong>${escapeHtml(this.selectedSubject.preferredLabel)}</strong><small>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</small><form data-create-target><input type="hidden" name="subjectId" value="${escapeHtml(id(this.selectedSubject))}"><label>Etichetta locale facoltativa<input name="displayLabelOverride" placeholder="Usa il nome condiviso"></label><label>Nota d’inventario<textarea name="inventoryNote"></textarea></label><button>Aggiungi all’inventario</button></form></article>` : "";
+    const resolverFallback = this.venueSubjectCandidates && !this.venueSubjectCandidates.exact?.length
+      ? `<details class="venue-semantic-fallback" open><summary>Ricerca estesa e creazione manuale</summary><p>Nessuna corrispondenza esatta nell’inventario: ArtAround continua automaticamente su Wikidata. Le corrispondenze approssimative non vengono selezionate automaticamente.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item" initial-query="${escapeHtml(this.venueSubjectQuery)}" auto-search></artaround-semantic-entity-picker></details>`
+      : "";
+    const filters = [["all", "Tutte"], ["exposed", "Esposte"], ["unplaced", "Non collocate"], ["unavailable", "Non disponibili"]]
+      .map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-filter="${value}" aria-pressed="${this.inventoryFilter === value}">${label}</button>`)
+      .join("");
+    const create = editable ? `<details class="venue-create"><summary>${icon("plus", { size: 16 })} Aggiungi entità all’inventario</summary><form data-venue-subject-search class="venue-subject-search"><label>Cerca un’opera, una persona o un luogo<input name="query" minlength="2" value="${escapeHtml(this.venueSubjectQuery)}" required></label><button>Cerca</button></form>${exact}${suggestions}${resolverFallback}${selectedSubject}</details>` : "";
+    return `<section class="venue-arrangement-panel"><div class="venue-inventory-toolbar"><div><h3>Entità della sede</h3><p>Inventario interno della sede, distinto dagli Item e dagli slot.</p></div><div class="venue-filter-group" role="group" aria-label="Filtra inventario">${filters}</div></div><div class="venue-target-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità in questo filtro</h4></div>`}</div>${create}</section>`;
   },
 
   renderVisitors(editable) {
     const values = this.data.release?.preVisitInformation || [];
-    return `<section class="venue-section" id="venue-visitors"><div class="section-heading"><div><span class="eyebrow">Informazioni visitatori</span><h2>Prima della visita</h2><p>Indicazioni logistiche mostrate prima dell'ingresso nella visita. Non sono Item.</p></div><span class="count">${values.length}</span></div>${this.data.release ? `<form data-previsit><label>Una informazione per riga<textarea name="preVisitInformation" rows="7" ${editable ? "" : "disabled"}>${escapeHtml(values.join("\n"))}</textarea></label>${editable ? `<button type="submit">${icon("check", { size: 16 })} Salva informazioni</button>` : ""}</form>` : `<div class="empty-state"><h3>Avvia una bozza fisica</h3><p>Le informazioni visitatori fanno parte della VenueRelease.</p></div>`}</section>`;
+    return `<section class="venue-section" id="venue-visitors"><div class="section-heading"><div><span class="eyebrow">Informazioni visitatori</span><h2>Prima della visita</h2><p>Indicazioni logistiche mostrate prima dell’ingresso. Non sono Item.</p></div><span class="count">${values.length}</span></div>${this.data.release ? `<form data-previsit><label>Una informazione per riga<textarea name="preVisitInformation" rows="7" ${editable ? "" : "disabled"}>${escapeHtml(values.join("\n"))}</textarea></label>${editable ? `<button type="submit">${icon("check", { size: 16 })} Salva informazioni</button>` : ""}</form>` : `<div class="empty-state"><h3>Avvia una bozza fisica</h3></div>`}</section>`;
   },
 };

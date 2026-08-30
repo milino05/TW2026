@@ -126,6 +126,7 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     const Subject = require("../models/subject.model");
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
+    const ExhibitSlot = require("../models/exhibitSlot.model");
     const LayoutRevision = require("../models/layoutRevision.model");
     const VenueRelease = require("../models/venueRelease.model");
     const VisitV2 = require("../models/visitV2.model");
@@ -137,7 +138,8 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     const organization = await Organization.create({ name: "Map readiness org", createdBy: owner._id });
     const subject = await Subject.create({ preferredLabel: "Map subject", createdBy: owner._id });
     const venue = await Venue.create({ name: "Map readiness Venue", ownerOrganizationId: organization._id, createdBy: owner._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Map target", createdBy: owner._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Map target", createdBy: owner._id });
+    const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: owner._id });
     const physical = await createPublishedPhysicalVocabulary({ userId: owner._id });
     const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
@@ -147,7 +149,7 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
       authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{ _id: floorId, label: "Piano terra" }],
       places: [{ _id: placeId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala mappa", floorId, position: { x: 0.5, y: 0.5 } }],
-      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [placeId] }],
+      exhibitSlots: [{ exhibitSlotId: slot._id, placeId, label: "Slot mappa" }],
       connections: [],
       status: "published",
       createdBy: owner._id,
@@ -157,7 +159,7 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
       venueId: venue._id,
       version: 1,
       layoutRevisionId: layout._id,
-      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
       publication: { publishedAt: new Date(), publishedBy: owner._id },

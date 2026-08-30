@@ -1,4 +1,5 @@
 const Organization = require("../models/organization.model");
+const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
@@ -93,14 +94,15 @@ async function venuePublicProfile({ venueId }) {
     VenueRelease.findOne({ _id: venue.publishedReleaseId, venueId: venue._id, status: "published" }).lean(),
   ]);
   if (!organization || !release) throw new AppError("Sede pubblica non disponibile", 404);
-  const activeBindings = (release.targetBindings || []).filter((entry) => entry.availability === "active");
+  const activeBindings = (release.targetBindings || []).filter((entry) => entry.availability === "active" && entry.exhibitSlotId);
   const targetIds = activeBindings.map((entry) => entry.venueTargetId);
-  const targets = targetIds.length ? await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).select("label description subjectId").lean() : [];
+  const targets = targetIds.length ? await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).select("displayLabelOverride inventoryNote subjectId").lean() : [];
+  const targetIdentityById = await venueTargetIdentityMap(targets);
   const bindingById = new Map(activeBindings.map((entry) => [id(entry.venueTargetId), entry]));
   return {
     venue: { id: venue._id, name: venue.name, description: venue.description || "", preVisitInformation: release.preVisitInformation || [], version: release.version },
     organization: { id: organization._id, name: organization.name, description: organization.description || "" },
-    targets: targets.map((target) => ({ id: target._id, subjectId: target.subjectId, label: target.label, description: target.description || "", recognitionMedia: (bindingById.get(id(target._id))?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })) })),
+    targets: targets.map((target) => ({ id: target._id, subjectId: target.subjectId, label: targetIdentityById.get(id(target._id))?.label, description: targetIdentityById.get(id(target._id))?.description || "", recognitionMedia: (bindingById.get(id(target._id))?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })) })),
   };
 }
 

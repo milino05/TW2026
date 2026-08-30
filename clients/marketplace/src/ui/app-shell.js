@@ -32,7 +32,7 @@ const TITLES = {
   "/organizations": "Organizzazioni", "/organizations/public": "Organizzazione", "/organizations/detail": "Gestione organizzazione",
   "/venues": "Musei e sedi", "/venues/public": "Sede", "/venues/editor": "Gestione sede",
   "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
-  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Oggetti della sede",
+  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Entità della sede",
   "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/namespaces/editor": "Regole editoriali",
   "/physical-vocabularies/editor": "Vocabolario fisico", "/404": "Pagina non trovata",
 };

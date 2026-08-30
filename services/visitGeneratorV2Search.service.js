@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const AppError = require("../utils/AppError");
+const { resolveApproachInstruction } = require("./venueExhibitResolution.service");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
 const { interVenueRequirementOutcome } = require("./physicalExecutionV2.service");
@@ -138,6 +139,7 @@ function optimizeVisitV2({
       currentTargetId: null,
       currentVenueId: null,
       currentPlaceId: null,
+      currentExhibitSlotId: null,
       currentAnchorId: null,
       entries: [],
       anchors: [],
@@ -186,15 +188,22 @@ function optimizeVisitV2({
     if (context.hardTimeBudget !== false && nextElapsed > usableBudget) return null;
 
     const entryId = newObjectId(), anchors = [...state.anchors], legs = [...state.legs];
-    let currentTargetId = state.currentTargetId, currentVenueId = state.currentVenueId, currentPlaceId = state.currentPlaceId, currentAnchorId = state.currentAnchorId;
+    let currentTargetId = state.currentTargetId, currentVenueId = state.currentVenueId, currentPlaceId = state.currentPlaceId, currentExhibitSlotId = state.currentExhibitSlotId, currentAnchorId = state.currentAnchorId;
     const visitedTargetIds = new Set(state.visitedTargetIds);
     if (option.target && createsAnchor) {
       const anchor = {
         _id: newObjectId(),
         venueTargetId: option.target.venueTargetId,
         venueId: option.target.venueId,
+        exhibitSlotId: option.target.exhibitSlotId,
         placeId: option.target.placeId,
         estimatedObservationSeconds: Math.round(observationSeconds),
+        approachInstruction: resolveApproachInstruction({
+          layoutRevision: layoutByVenue.get(id(option.target.venueId)),
+          destinationExhibitSlotId: option.target.exhibitSlotId,
+          sourceExhibitSlotId: id(state.currentVenueId) === id(option.target.venueId) ? state.currentExhibitSlotId : null,
+          incomingConnectionId: route.path?.at(-1)?.connectionId || route.path?.at(-1) || null,
+        }),
       };
       if (state.currentAnchorId && route.type) {
         legs.push({
@@ -216,6 +225,7 @@ function optimizeVisitV2({
       currentTargetId = option.target.venueTargetId;
       currentVenueId = option.target.venueId;
       currentPlaceId = option.target.placeId;
+      currentExhibitSlotId = option.target.exhibitSlotId;
       currentAnchorId = anchor._id;
     } else if (option.target) {
       deliveryAnchorId = state.currentAnchorId;
@@ -229,7 +239,7 @@ function optimizeVisitV2({
     for (const match of option.preferenceMatches || []) if ((Number(match.score) || 0) > 0) preferenceCoverageCounts.set(match.key, (preferenceCoverageCounts.get(match.key) || 0) + 1);
     return {
       selectedItemIds, visitedTargetIds, hardCoverage, hardCovered: hardCoverage.size,
-      currentTargetId, currentVenueId, currentPlaceId, currentAnchorId,
+      currentTargetId, currentVenueId, currentPlaceId, currentExhibitSlotId, currentAnchorId,
       entries: [...state.entries, { _id: entryId, option, deliveryAnchorId }], anchors, legs,
       physicalWarnings: mergeWarnings(state.physicalWarnings, route.warnings || []),
       elapsedSeconds: nextElapsed,

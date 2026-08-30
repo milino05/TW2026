@@ -170,7 +170,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       this.venueTargets = await authoringRepository.venueTargets(this.selectedVenueId);
     } catch (error) {
       this.venueTargets = null;
-      if (render) this.error = error instanceof Error ? error.message : "Oggetti della sede non disponibili";
+      if (render) this.error = error instanceof Error ? error.message : "Entità della sede non disponibili";
     }
     if (render) this.render();
   }
@@ -480,7 +480,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   renderOccurrenceChoice() {
     if (!this.pendingOccurrence) return "";
     const candidates = this.pendingOccurrence.candidates || [];
-    return `<section class="occurrence-choice" role="status"><div><strong>Scegli dove si trova l'oggetto</strong><p>Lo stesso Subject ha più occorrenze fisiche pubblicate. ArtAround non ne sceglie una arbitrariamente.</p></div><div class="occurrence-grid">${candidates.map((candidate) => `<button type="button" class="occurrence-card" data-occurrence-target="${escapeHtml(id(candidate.venueTargetId))}"><strong>${escapeHtml(candidate.label)}</strong><small>${escapeHtml(candidate.venue?.name || "Sede")}</small></button>`).join("")}</div><button class="button-secondary" type="button" data-cancel-occurrence>Annulla</button></section>`;
+    return `<section class="occurrence-choice" role="status"><div><strong>Scegli dove si trova l’entità</strong><p>Lo stesso Subject ha più occorrenze fisiche pubblicate. ArtAround non ne sceglie una arbitrariamente.</p></div><div class="occurrence-grid">${candidates.map((candidate) => `<button type="button" class="occurrence-card" data-occurrence-target="${escapeHtml(id(candidate.venueTargetId))}"><strong>${escapeHtml(candidate.label)}</strong><small>${escapeHtml(candidate.venue?.name || "Sede")}</small></button>`).join("")}</div><button class="button-secondary" type="button" data-cancel-occurrence>Annulla</button></section>`;
   }
   renderContentSearch() {
     if (!this.editable) return "";
@@ -526,11 +526,11 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const venueOptions = venues.map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
     const used = new Set((this.revision?.stops || []).map((stop) => id(stop.venueTargetId)));
     const targets = (this.venueTargets?.targets || []).filter((entry) => !used.has(id(entry.id)));
-    return `<details class="advanced-panel"><summary>Aggiungi una tappa fisica esplicita</summary><p>Usa questa opzione per una sosta intenzionale anche prima di associarle un contenuto. Normalmente le tappe vengono create dall'inferenza dei contenuti.</p><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Oggetto fisico")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">Aggiungi tappa</button></article>`).join("") || `<p class="note">Nessun altro target pubblicato disponibile in questa sede.</p>`}</div></details>`;
+    return `<details class="advanced-panel"><summary>Aggiungi una tappa fisica esplicita</summary><p>Usa questa opzione per una sosta intenzionale anche prima di associarle un contenuto. Normalmente le tappe vengono create dall'inferenza dei contenuti.</p><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Entità fisica")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">Aggiungi tappa</button></article>`).join("") || `<p class="note">Nessun’altra entità pubblicata disponibile in questa sede.</p>`}</div></details>`;
   }
   renderStepThree() {
     if (this.activeStep !== 3) return "";
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Tappe</span><h2>Rivedi la sequenza fisica</h2><p>Una tappa è un VisitAnchor su un oggetto fisico. I contenuti restano entità editoriali separate e vengono proiettati dentro la tappa solo per l'authoring.</p></div></header>${this.renderStops()}${this.renderContextualEntries()}${this.renderManualStopBrowser()}<div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Continua alle impostazioni</button></div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Tappe</span><h2>Rivedi la sequenza fisica</h2><p>Una tappa è un VisitAnchor su un’entità fisica. I contenuti restano entità editoriali separate e vengono proiettati dentro la tappa solo per l'authoring.</p></div></header>${this.renderStops()}${this.renderContextualEntries()}${this.renderManualStopBrowser()}<div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Continua alle impostazioni</button></div></section>`;
   }
 
   renderStepFour() {

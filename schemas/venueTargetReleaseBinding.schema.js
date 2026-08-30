@@ -8,6 +8,7 @@ const RecognitionMediaSchema = new Schema({
 
 const VenueTargetReleaseBindingSchema = new Schema({
   venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
+  exhibitSlotId: { type: Schema.Types.ObjectId, ref: "ExhibitSlot", default: null },
   availability: { type: String, enum: ["active", "unavailable"], default: "active" },
   recognitionMedia: { type: [RecognitionMediaSchema], default: [] },
 }, { _id: false });

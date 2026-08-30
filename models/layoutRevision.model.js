@@ -47,10 +47,24 @@ const PlaceSchema = new Schema({
   attributeValues: { type: [PhysicalAttributeValueSchema], default: [] },
 });
 
-const VenueTargetPlacementSchema = new Schema({
-  venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
-  primaryPlaceId: { type: Schema.Types.ObjectId, required: true },
-  placeIds: { type: [Schema.Types.ObjectId], default: [] },
+const ApproachGuidanceOverrideSchema = new Schema({
+  sourceKind: { type: String, enum: ["incoming_connection", "exhibit_slot"], required: true },
+  sourceConnectionId: { type: Schema.Types.ObjectId, default: null },
+  sourceExhibitSlotId: { type: Schema.Types.ObjectId, ref: "ExhibitSlot", default: null },
+  instruction: { type: String, required: true, trim: true },
+}, { _id: false });
+
+const ApproachGuidanceSchema = new Schema({
+  defaultInstruction: { type: String, trim: true, default: null },
+  overrides: { type: [ApproachGuidanceOverrideSchema], default: [] },
+}, { _id: false });
+
+const ExhibitSlotEntrySchema = new Schema({
+  exhibitSlotId: { type: Schema.Types.ObjectId, ref: "ExhibitSlot", required: true },
+  placeId: { type: Schema.Types.ObjectId, required: true },
+  label: { type: String, required: true, trim: true },
+  order: { type: Number, min: 0, default: null },
+  approachGuidance: { type: ApproachGuidanceSchema, default: () => ({}) },
 }, { _id: false });
 
 const ConnectionGeometrySchema = new Schema({
@@ -86,7 +100,7 @@ const LayoutRevisionSchema = new Schema({
   },
   floors: { type: [FloorSchema], default: [] },
   places: { type: [PlaceSchema], default: [] },
-  venueTargetPlacements: { type: [VenueTargetPlacementSchema], default: [] },
+  exhibitSlots: { type: [ExhibitSlotEntrySchema], default: [] },
   connections: { type: [ConnectionSchema], default: [] },
   status: { type: String, enum: ["draft", "published", "superseded"], default: "draft", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },

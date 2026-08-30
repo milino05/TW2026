@@ -4,6 +4,7 @@ const LayoutRevision = require("../models/layoutRevision.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
 const AppError = require("../utils/AppError");
 const { ensureWorkingVenueRelease } = require("./venueRelease.service");
 const { markRevisionEdited } = require("./revisionWorkflow.service");
@@ -122,6 +123,100 @@ function connectionById(layout, connectionId) {
   const connection = layout.connections.id(connectionId);
   if (!connection) commandError("Collegamento non trovato", "CONNECTION_NOT_FOUND", "connectionId", 404);
   return connection;
+}
+
+function exhibitSlotEntryById(layout, exhibitSlotId) {
+  const entry = (layout.exhibitSlots || []).find((value) => id(value.exhibitSlotId) === id(exhibitSlotId));
+  if (!entry) commandError("Slot espositivo non trovato nella configurazione di lavoro", "EXHIBIT_SLOT_NOT_FOUND", "exhibitSlotId", 404);
+  return entry;
+}
+
+function normalizedApproachGuidance(value, layout, placeId, exhibitSlotId = null) {
+  if (value === null || value === undefined) return { defaultInstruction: null, overrides: [] };
+  assertAllowedFields(value, ["defaultInstruction", "overrides"], "approachGuidance");
+  if (value.overrides !== undefined && !Array.isArray(value.overrides)) commandError("overrides deve essere un array", "INVALID_TYPE", "approachGuidance.overrides");
+  const overrides = (value.overrides || []).map((override, index) => {
+    const field = `approachGuidance.overrides[${index}]`;
+    assertAllowedFields(override, ["sourceKind", "sourceConnectionId", "sourceExhibitSlotId", "instruction"], field);
+    const sourceKind = String(override.sourceKind || "");
+    const instruction = requiredText(override.instruction, `${field}.instruction`, 500);
+    if (sourceKind === "incoming_connection") {
+      const connection = connectionById(layout, override.sourceConnectionId);
+      const canArrive = id(connection.toPlaceId) === id(placeId)
+        || (connection.directionality === "bidirectional" && id(connection.fromPlaceId) === id(placeId));
+      if (!canArrive) commandError("Il collegamento non conduce al luogo dello slot", "APPROACH_CONNECTION_NOT_INCOMING", `${field}.sourceConnectionId`);
+      return { sourceKind, sourceConnectionId: connection._id, sourceExhibitSlotId: null, instruction };
+    }
+    if (sourceKind === "exhibit_slot") {
+      const source = exhibitSlotEntryById(layout, override.sourceExhibitSlotId);
+      if (id(source.exhibitSlotId) === id(exhibitSlotId)) commandError("Uno slot non può riferirsi a se stesso", "SELF_APPROACH_SLOT", `${field}.sourceExhibitSlotId`);
+      if (id(source.placeId) !== id(placeId)) commandError("Lo slot sorgente deve trovarsi nello stesso luogo", "APPROACH_SLOT_PLACE_MISMATCH", `${field}.sourceExhibitSlotId`);
+      return { sourceKind, sourceConnectionId: null, sourceExhibitSlotId: source.exhibitSlotId, instruction };
+    }
+    commandError("Tipo di sorgente non valido", "INVALID_APPROACH_SOURCE_KIND", `${field}.sourceKind`);
+  });
+  const keys = overrides.map((entry) => `${entry.sourceKind}:${id(entry.sourceConnectionId || entry.sourceExhibitSlotId)}`);
+  if (new Set(keys).size !== keys.length) commandError("Una sorgente di avvicinamento non può essere ripetuta", "DUPLICATE_APPROACH_SOURCE", "approachGuidance.overrides");
+  return {
+    defaultInstruction: optionalText(value.defaultInstruction, "approachGuidance.defaultInstruction", 500),
+    overrides,
+  };
+}
+
+function unassignSlotsFromRelease(release, exhibitSlotIds) {
+  const slotIds = new Set((exhibitSlotIds || []).map(id));
+  let count = 0;
+  for (const binding of release.targetBindings || []) {
+    if (binding.exhibitSlotId && slotIds.has(id(binding.exhibitSlotId))) {
+      binding.exhibitSlotId = null;
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function layoutRemovalImpact(layout, { floorId = null, placeId = null, exhibitSlotId = null } = {}) {
+  const placeIds = new Set();
+  if (placeId) placeIds.add(id(placeId));
+  if (floorId) for (const place of layout.places || []) if (id(place.floorId) === id(floorId)) placeIds.add(id(place._id));
+  const connectionIds = (layout.connections || [])
+    .filter((entry) => placeIds.has(id(entry.fromPlaceId)) || placeIds.has(id(entry.toPlaceId)))
+    .map((entry) => entry._id);
+  const exhibitSlotIds = (layout.exhibitSlots || [])
+    .filter((entry) => (exhibitSlotId && id(entry.exhibitSlotId) === id(exhibitSlotId)) || placeIds.has(id(entry.placeId)))
+    .map((entry) => entry.exhibitSlotId);
+  return { placeIds: [...placeIds], connectionIds, exhibitSlotIds };
+}
+
+async function getWorkingLayoutRemovalImpact({ venueId, resourceType, resourceId, actorUserId }) {
+  const { release, layout } = await ensureWorkingVenueRelease({ venueId, actorUserId });
+  let impact;
+  if (resourceType === "floor") {
+    floorById(layout, resourceId);
+    impact = layoutRemovalImpact(layout, { floorId: resourceId });
+  } else if (resourceType === "place") {
+    placeById(layout, resourceId);
+    impact = layoutRemovalImpact(layout, { placeId: resourceId });
+  } else if (resourceType === "exhibit-slot") {
+    exhibitSlotEntryById(layout, resourceId);
+    impact = layoutRemovalImpact(layout, { exhibitSlotId: resourceId });
+  } else commandError("Tipo di risorsa non valido", "INVALID_REMOVAL_RESOURCE_TYPE", "resourceType");
+  const slotIds = new Set(impact.exhibitSlotIds.map(id));
+  const assignedVenueTargetIds = (release.targetBindings || [])
+    .filter((entry) => entry.exhibitSlotId && slotIds.has(id(entry.exhibitSlotId)))
+    .map((entry) => entry.venueTargetId);
+  return {
+    resourceType,
+    resourceId,
+    ...impact,
+    assignedVenueTargetIds,
+    counts: {
+      places: impact.placeIds.length,
+      connections: impact.connectionIds.length,
+      exhibitSlots: impact.exhibitSlotIds.length,
+      assignedEntities: assignedVenueTargetIds.length,
+    },
+  };
 }
 
 function assertSameFloor(layout, from, to) {
@@ -306,12 +401,24 @@ async function calibrateFloor({ venueId, floorId, actorUserId, payload = {} }) {
 }
 
 async function removeFloor({ venueId, floorId, actorUserId }) {
-  return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
     const floor = floorById(layout, floorId);
-    if ((layout.places || []).some((place) => id(place.floorId) === id(floor._id))) commandError("Sposta o rimuovi prima i luoghi presenti sul piano", "FLOOR_NOT_EMPTY", "floorId", 409);
+    const impact = layoutRemovalImpact(layout, { floorId: floor._id });
+    const placeIds = new Set(impact.placeIds.map(id));
+    const connectionIds = new Set(impact.connectionIds.map(id));
+    const slotIds = new Set(impact.exhibitSlotIds.map(id));
     const mapAssetUrl = floor.mapAsset?.url || null;
+    layout.connections = (layout.connections || []).filter((entry) => !connectionIds.has(id(entry._id)));
+    layout.exhibitSlots = (layout.exhibitSlots || []).filter((entry) => !slotIds.has(id(entry.exhibitSlotId)));
+    layout.places = (layout.places || []).filter((entry) => !placeIds.has(id(entry._id)));
     layout.floors.pull(floor._id);
-    return { removedFloorId: floor._id, mapAssetUrl };
+    const unassignedEntityCount = unassignSlotsFromRelease(release, impact.exhibitSlotIds);
+    if (impact.exhibitSlotIds.length) await ExhibitSlot.updateMany(
+      { _id: { $in: impact.exhibitSlotIds }, venueId, lifecycleStatus: "active" },
+      { $set: { lifecycleStatus: "trashed", trashedAt: new Date(), trashedBy: actorUserId } },
+      { session },
+    );
+    return { removedFloorId: floor._id, mapAssetUrl, impact: { ...impact, unassignedEntityCount } };
   } });
 }
 
@@ -342,18 +449,40 @@ async function createPlace({ venueId, actorUserId, payload = {} }) {
 }
 
 async function movePlace({ venueId, placeId, actorUserId, payload = {} }) {
-  assertAllowedFields(payload, ["position"]);
+  assertAllowedFields(payload, ["position", "connectionGeometryUpdates"]);
+  if (payload.connectionGeometryUpdates !== undefined && !Array.isArray(payload.connectionGeometryUpdates)) commandError("connectionGeometryUpdates deve essere un array", "INVALID_TYPE", "connectionGeometryUpdates");
+  for (const [index, entry] of (payload.connectionGeometryUpdates || []).entries()) {
+    assertAllowedFields(entry, ["connectionId", "geometryPoints"], `connectionGeometryUpdates[${index}]`);
+  }
   return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
     const place = placeById(layout, placeId);
     const nextPosition = normalizedPoint(payload.position);
+    const updateByConnectionId = new Map((payload.connectionGeometryUpdates || []).map((entry) => [id(entry.connectionId), entry]));
     place.position = nextPosition;
     for (const connection of layout.connections || []) {
+      const incident = id(connection.fromPlaceId) === id(place._id) || id(connection.toPlaceId) === id(place._id);
+      if (!incident) continue;
       if (!connection.geometry?.points?.length) continue;
       if (id(connection.fromPlaceId) === id(place._id)) connection.geometry.points[0] = nextPosition;
       if (id(connection.toPlaceId) === id(place._id)) connection.geometry.points[connection.geometry.points.length - 1] = nextPosition;
+      const update = updateByConnectionId.get(id(connection._id));
+      const from = placeById(layout, connection.fromPlaceId);
+      const to = placeById(layout, connection.toPlaceId);
+      const metric = connectionMetric({
+        layout,
+        from,
+        to,
+        payload: { metricMode: connection.metricMode, ...(update ? { geometryPoints: update.geometryPoints } : {}) },
+        current: connection,
+      });
+      connection.distanceMeters = metric.distanceMeters;
+      connection.geometry = metric.geometry;
     }
-    recomputeDerivedConnectionsForFloor(layout, place.floorId);
-    return { placeId: place._id, position: place.position };
+    for (const connectionId of updateByConnectionId.keys()) {
+      const connection = connectionById(layout, connectionId);
+      if (id(connection.fromPlaceId) !== id(place._id) && id(connection.toPlaceId) !== id(place._id)) commandError("La geometria non appartiene a un collegamento del luogo", "NON_INCIDENT_CONNECTION_UPDATE", "connectionGeometryUpdates");
+    }
+    return { placeId: place._id, position: place.position, updatedConnectionIds: [...updateByConnectionId.keys()] };
   } });
 }
 
@@ -383,12 +512,21 @@ async function setPlaceAttribute({ venueId, placeId, definitionId, actorUserId, 
 }
 
 async function removePlace({ venueId, placeId, actorUserId }) {
-  return mutateWorkingLayout({ venueId, actorUserId, mutate: ({ layout }) => {
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
     const place = placeById(layout, placeId);
-    if ((layout.connections || []).some((entry) => id(entry.fromPlaceId) === id(place._id) || id(entry.toPlaceId) === id(place._id))) commandError("Rimuovi prima i collegamenti del luogo", "PLACE_HAS_CONNECTIONS", "placeId", 409);
-    if ((layout.venueTargetPlacements || []).some((entry) => (entry.placeIds || []).some((value) => id(value) === id(place._id)))) commandError("Sposta prima gli oggetti collocati nel luogo", "PLACE_HAS_TARGET_PLACEMENTS", "placeId", 409);
+    const impact = layoutRemovalImpact(layout, { placeId: place._id });
+    const connectionIds = new Set(impact.connectionIds.map(id));
+    const slotIds = new Set(impact.exhibitSlotIds.map(id));
+    layout.connections = (layout.connections || []).filter((entry) => !connectionIds.has(id(entry._id)));
+    layout.exhibitSlots = (layout.exhibitSlots || []).filter((entry) => !slotIds.has(id(entry.exhibitSlotId)));
     layout.places.pull(place._id);
-    return { removedPlaceId: place._id };
+    const unassignedEntityCount = unassignSlotsFromRelease(release, impact.exhibitSlotIds);
+    if (impact.exhibitSlotIds.length) await ExhibitSlot.updateMany(
+      { _id: { $in: impact.exhibitSlotIds }, venueId, lifecycleStatus: "active" },
+      { $set: { lifecycleStatus: "trashed", trashedAt: new Date(), trashedBy: actorUserId } },
+      { session },
+    );
+    return { removedPlaceId: place._id, impact: { ...impact, unassignedEntityCount } };
   } });
 }
 
@@ -487,31 +625,125 @@ async function removeConnection({ venueId, connectionId, actorUserId }) {
     const referenced = (layout.floors || []).find((floor) => id(floor.calibration?.referenceConnectionId) === id(connection._id));
     if (referenced) commandError("Il collegamento e usato per calibrare un piano", "CONNECTION_USED_FOR_CALIBRATION", "connectionId", 409, { floorId: referenced._id });
     layout.connections.pull(connection._id);
-    return { removedConnectionId: connection._id };
+    let removedGuidanceOverrides = 0;
+    for (const slot of layout.exhibitSlots || []) {
+      const before = slot.approachGuidance?.overrides?.length || 0;
+      if (slot.approachGuidance) slot.approachGuidance.overrides = (slot.approachGuidance.overrides || []).filter((entry) => id(entry.sourceConnectionId) !== id(connection._id));
+      removedGuidanceOverrides += before - (slot.approachGuidance?.overrides?.length || 0);
+    }
+    return { removedConnectionId: connection._id, removedGuidanceOverrides };
   } });
 }
 
-async function setVenueTargetPlacement({ venueId, venueTargetId, actorUserId, payload = {} }) {
-  assertAllowedFields(payload, ["primaryPlaceId", "placeIds"]);
-  if (hasOwn(payload, "placeIds") && !Array.isArray(payload.placeIds)) commandError("placeIds deve essere un array", "INVALID_TYPE", "placeIds");
+async function createExhibitSlot({ venueId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["placeId", "label", "order", "approachGuidance"]);
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
+    void release;
+    const place = placeById(layout, payload.placeId);
+    const order = payload.order === null || payload.order === undefined ? null : Number(payload.order);
+    if (order !== null && (!Number.isInteger(order) || order < 0)) commandError("Ordine non valido", "INVALID_ORDER", "order");
+    const [slot] = await ExhibitSlot.create([{ venueId, createdBy: actorUserId }], { session });
+    const entry = {
+      exhibitSlotId: slot._id,
+      placeId: place._id,
+      label: requiredText(payload.label, "label", 160),
+      order,
+      approachGuidance: normalizedApproachGuidance(payload.approachGuidance, layout, place._id, slot._id),
+    };
+    layout.exhibitSlots.push(entry);
+    return { exhibitSlotId: slot._id, publicCode: slot.publicCode, entry };
+  } });
+}
+
+async function updateExhibitSlot({ venueId, exhibitSlotId, actorUserId, payload = {} }) {
+  assertAllowedFields(payload, ["placeId", "label", "order", "approachGuidance"]);
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ layout, session }) => {
+    const slot = await ExhibitSlot.findOne({ _id: exhibitSlotId, venueId, lifecycleStatus: "active" }).session(session);
+    if (!slot) commandError("Slot espositivo non trovato", "EXHIBIT_SLOT_NOT_FOUND", "exhibitSlotId", 404);
+    const entry = exhibitSlotEntryById(layout, slot._id);
+    const place = hasOwn(payload, "placeId") ? placeById(layout, payload.placeId) : placeById(layout, entry.placeId);
+    if (hasOwn(payload, "label")) entry.label = requiredText(payload.label, "label", 160);
+    if (hasOwn(payload, "order")) {
+      const order = payload.order === null ? null : Number(payload.order);
+      if (order !== null && (!Number.isInteger(order) || order < 0)) commandError("Ordine non valido", "INVALID_ORDER", "order");
+      entry.order = order;
+    }
+    if (id(entry.placeId) !== id(place._id)) {
+      const invalidDependent = (layout.exhibitSlots || []).find((candidate) => (
+        id(candidate.exhibitSlotId) !== id(slot._id)
+        && id(candidate.placeId) !== id(place._id)
+        && (candidate.approachGuidance?.overrides || []).some((override) => (
+          override.sourceKind === "exhibit_slot" && id(override.sourceExhibitSlotId) === id(slot._id)
+        ))
+      ));
+      if (invalidDependent) commandError(
+        "Rimuovi prima le indicazioni che usano questo slot come punto di partenza",
+        "EXHIBIT_SLOT_MOVE_INVALIDATES_APPROACH",
+        "placeId",
+        409,
+        { dependentExhibitSlotId: invalidDependent.exhibitSlotId },
+      );
+    }
+    const guidance = hasOwn(payload, "approachGuidance") ? payload.approachGuidance : plain(entry.approachGuidance);
+    entry.approachGuidance = normalizedApproachGuidance(guidance, layout, place._id, slot._id);
+    entry.placeId = place._id;
+    return { exhibitSlotId: slot._id, entry };
+  } });
+}
+
+async function assignVenueTargetToExhibitSlot({ venueId, venueTargetId, exhibitSlotId, actorUserId }) {
   return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
     const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
-    if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
-    const primary = placeById(layout, payload.primaryPlaceId);
-    const requestedIds = Array.isArray(payload.placeIds) ? payload.placeIds : [];
-    const placeIds = [...new Map([primary._id, ...requestedIds].map((value) => [id(value), value])).values()];
-    for (const value of placeIds) placeById(layout, value);
-    const existing = (layout.venueTargetPlacements || []).find((entry) => id(entry.venueTargetId) === id(target._id));
-    if (existing) {
-      existing.primaryPlaceId = primary._id;
-      existing.placeIds = placeIds;
-    } else layout.venueTargetPlacements.push({ venueTargetId: target._id, primaryPlaceId: primary._id, placeIds });
+    if (!target) commandError("Entità della sede non trovata", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
+    const slot = await ExhibitSlot.findOne({ _id: exhibitSlotId, venueId, lifecycleStatus: "active" }).session(session);
+    if (!slot) commandError("Slot espositivo non trovato", "EXHIBIT_SLOT_NOT_FOUND", "exhibitSlotId", 404);
+    exhibitSlotEntryById(layout, slot._id);
+    const occupied = (release.targetBindings || []).find((entry) => id(entry.exhibitSlotId) === id(slot._id) && id(entry.venueTargetId) !== id(target._id));
+    const replacedVenueTargetId = occupied?.venueTargetId || null;
+    if (occupied) occupied.exhibitSlotId = null;
     let binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
+    const previousExhibitSlotId = binding?.exhibitSlotId || null;
     if (!binding) {
-      release.targetBindings.push({ venueTargetId: target._id, availability: "active", recognitionMedia: [] });
+      release.targetBindings.push({ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] });
       binding = release.targetBindings.at(-1);
-    } else binding.availability = "active";
-    return { venueTargetId: target._id, primaryPlaceId: primary._id, placeIds, availability: binding.availability };
+    } else binding.exhibitSlotId = slot._id;
+    return {
+      venueTargetId: target._id,
+      exhibitSlotId: slot._id,
+      previousExhibitSlotId,
+      replacedVenueTargetId,
+      availability: binding.availability,
+    };
+  } });
+}
+
+async function unassignVenueTargetFromExhibitSlot({ venueId, venueTargetId, actorUserId }) {
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, session }) => {
+    const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
+    if (!target) commandError("Entità della sede non trovata", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
+    const binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
+    if (!binding) return { venueTargetId: target._id, exhibitSlotId: null, changed: false };
+    const previousExhibitSlotId = binding.exhibitSlotId || null;
+    binding.exhibitSlotId = null;
+    return { venueTargetId: target._id, exhibitSlotId: null, previousExhibitSlotId, changed: Boolean(previousExhibitSlotId) };
+  } });
+}
+
+async function removeExhibitSlot({ venueId, exhibitSlotId, actorUserId }) {
+  return mutateWorkingLayout({ venueId, actorUserId, mutate: async ({ release, layout, session }) => {
+    const slot = await ExhibitSlot.findOne({ _id: exhibitSlotId, venueId, lifecycleStatus: "active" }).session(session);
+    if (!slot) commandError("Slot espositivo non trovato", "EXHIBIT_SLOT_NOT_FOUND", "exhibitSlotId", 404);
+    exhibitSlotEntryById(layout, slot._id);
+    layout.exhibitSlots = (layout.exhibitSlots || []).filter((entry) => id(entry.exhibitSlotId) !== id(slot._id));
+    for (const entry of layout.exhibitSlots || []) {
+      if (entry.approachGuidance) entry.approachGuidance.overrides = (entry.approachGuidance.overrides || []).filter((override) => id(override.sourceExhibitSlotId) !== id(slot._id));
+    }
+    const unassignedEntityCount = unassignSlotsFromRelease(release, [slot._id]);
+    slot.lifecycleStatus = "trashed";
+    slot.trashedAt = new Date();
+    slot.trashedBy = actorUserId;
+    await slot.save({ session });
+    return { removedExhibitSlotId: slot._id, unassignedEntityCount };
   } });
 }
 
@@ -540,6 +772,12 @@ module.exports = {
   updateConnection,
   setConnectionAttribute,
   removeConnection,
-  setVenueTargetPlacement,
+  createExhibitSlot,
+  updateExhibitSlot,
+  removeExhibitSlot,
+  assignVenueTargetToExhibitSlot,
+  unassignVenueTargetFromExhibitSlot,
+  layoutRemovalImpact,
+  getWorkingLayoutRemovalImpact,
   setPreVisitInformation,
 };

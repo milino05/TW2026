@@ -84,6 +84,7 @@ async function publishVenueTargets({ VenueRelease, venue, targetIds, userId }) {
     layoutRevisionId: oid(),
     targetBindings: targetIds.map((targetId) => ({
       venueTargetId: targetId,
+      exhibitSlotId: oid(),
       availability: "active",
       recognitionMedia: [{ url: `https://example.test/${targetId}.jpg`, altText: "Riconoscimento" }],
     })),
@@ -174,8 +175,8 @@ test("multi-Venue Catalog uses union relevance, keeps Namespace venue-neutral an
       { name: "Museo B", ownerOrganizationId: organization._id, createdBy: user._id },
     ]);
     const [targetA, targetB] = await VenueTarget.create([
-      { venueId: venueA._id, subjectId: subjectA._id, label: "Oggetto A", createdBy: user._id },
-      { venueId: venueB._id, subjectId: subjectB._id, label: "Oggetto B", createdBy: user._id },
+      { venueId: venueA._id, subjectId: subjectA._id, displayLabelOverride: "Oggetto A", createdBy: user._id },
+      { venueId: venueB._id, subjectId: subjectB._id, displayLabelOverride: "Oggetto B", createdBy: user._id },
     ]);
     await publishVenueTargets({ VenueRelease, venue: venueA, targetIds: [targetA._id], userId: user._id });
     await publishVenueTargets({ VenueRelease, venue: venueB, targetIds: [targetB._id], userId: user._id });
@@ -255,7 +256,7 @@ test("unpublished VenueTarget does not make editorial content Venue-relevant, bu
     const organization = await Organization.create({ name: "Org", createdBy: user._id });
     const subject = await Subject.create({ preferredLabel: "Non ancora pubblicato", createdBy: user._id });
     const venue = await Venue.create({ name: "Venue draft", ownerOrganizationId: organization._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Target draft", createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Target draft", createdBy: user._id });
     const { namespace, revision: namespaceRevision } = await createPublishedNamespace({ Namespace, NamespaceRevision, userId: user._id });
     const content = await createPublishedEdition({ ItemV2, ItemEdition, ItemRevisionV2, subjectId: subject._id, namespaceId: namespace._id, namespaceRevisionId: namespaceRevision._id, userId: user._id, label: "Contenuto draft-target" });
     const visit = await VisitV2.create({ ownerType: "user", ownerId: user._id, createdBy: user._id });
@@ -286,12 +287,69 @@ test("VenueTarget authoring context keeps recognition media physical and separat
     const organization = await Organization.create({ name: "Media org", createdBy: user._id });
     const subject = await Subject.create({ preferredLabel: "Oggetto", createdBy: user._id });
     const venue = await Venue.create({ name: "Media Venue", ownerOrganizationId: organization._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Oggetto fisico", createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Oggetto fisico", createdBy: user._id });
     await publishVenueTargets({ VenueRelease, venue, targetIds: [target._id], userId: user._id });
     const context = await getVenueTargetAuthoringContext({ venueTargetId: target._id });
     assert.equal(context.subject.preferredLabel, "Oggetto");
     assert.equal(context.recognitionMedia.length, 1);
     assert.equal(context.illustrativeMedia, undefined);
     assert.equal(context.venueTarget.subjectId, undefined);
+  });
+});
+
+test("Item physical intent atomically creates or reuses the Venue inventory entity", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Subject = require("../models/subject.model");
+    const Venue = require("../models/venue.model");
+    const VenueTarget = require("../models/venueTarget.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const organizationService = require("../services/organization.service");
+    const { createItemWithPhysicalIntent } = require("../services/itemV2.service");
+    const { searchVenueSubjectCandidates } = require("../services/venueSubjectResolver.service");
+
+    const user = await User.create({ username: "physical-intent-author", passwordHash: "hash" });
+    const organization = await organizationService.createOrganization({ payload: { name: "Physical intent org" }, actorUserId: user._id });
+    const subject = await Subject.create({ preferredLabel: "Opera da collocare", createdBy: user._id });
+    const venue = await Venue.create({ name: "Physical intent Venue", ownerOrganizationId: organization._id, createdBy: user._id });
+    const payload = { primarySubjectId: subject._id, ownerType: "organization", ownerId: organization._id };
+
+    const first = await createItemWithPhysicalIntent({ venueId: venue._id, payload, actorUserId: user._id });
+    assert.equal(first.createdVenueEntity, true);
+    assert.equal(String(first.venueEntity.subjectId), String(subject._id));
+    assert.equal(first.venueEntity.provenance.origin, "item_authoring");
+
+    const second = await createItemWithPhysicalIntent({ venueId: venue._id, payload, actorUserId: user._id });
+    assert.equal(second.createdVenueEntity, false);
+    assert.equal(String(second.venueEntity._id), String(first.venueEntity._id));
+    assert.equal(await ItemV2.countDocuments({ primarySubjectId: subject._id }), 2);
+    assert.equal(await VenueTarget.countDocuments({ venueId: venue._id, subjectId: subject._id, lifecycleStatus: "active" }), 1);
+
+    const candidates = await searchVenueSubjectCandidates({
+      venueId: venue._id,
+      actorUserId: user._id,
+      query: "Opera da collocare",
+    });
+    assert.equal(String(candidates.venue.id), String(venue._id));
+    assert.equal(candidates.venue.name, "Physical intent Venue");
+    assert.equal(String(candidates.venue.ownerOrganizationId), String(organization._id));
+    assert.equal(candidates.permissions.canEditInventory, true);
+    assert.equal(String(candidates.exact[0].venueTargetId), String(first.venueEntity._id));
+    assert.equal(candidates.exact[0].state, "unplaced");
+
+    await assert.rejects(
+      () => createItemWithPhysicalIntent({ venueId: venue._id, payload: { ...payload, primarySubjectId: oid() }, actorUserId: user._id }),
+      (error) => error?.status === 404,
+    );
+    assert.equal(await ItemV2.countDocuments({ ownerId: organization._id }), 2);
+
+    await assert.rejects(
+      () => createItemWithPhysicalIntent({
+        venueId: venue._id,
+        payload: { primarySubjectId: subject._id, ownerType: "user", ownerId: user._id },
+        actorUserId: user._id,
+      }),
+      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "PHYSICAL_INTENT_OWNER_MISMATCH"),
+    );
   });
 });

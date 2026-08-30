@@ -86,7 +86,7 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
         authoredAgainstPhysicalVocabularyRevisionId: sourceLayout.authoredAgainstPhysicalVocabularyRevisionId,
         floors: sourceLayout.floors,
         places: sourceLayout.places,
-        venueTargetPlacements: sourceLayout.venueTargetPlacements,
+        exhibitSlots: sourceLayout.exhibitSlots,
         connections: sourceLayout.connections,
         basedOnRevisionId: sourceLayout._id,
       } : { authoredAgainstPhysicalVocabularyRevisionId: physicalVocabularyRevisionId }),

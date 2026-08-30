@@ -111,7 +111,7 @@ test("learning v2 separates Subject, Edition, Namespace and VenueTarget scopes",
     await edition.save();
 
     const venue = await Venue.create({ name: "Venue learning", ownerOrganizationId: organization._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera fisica", createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera fisica", createdBy: user._id });
 
     await upsertSubjectAffinity({ userId: user._id, subjectId: subject._id, evidence: 1 });
     await upsertSubjectKnowledge({ userId: user._id, subjectId: subject._id, level: 0.8, confidence: 1, source: "explicit" });

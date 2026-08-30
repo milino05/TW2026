@@ -7,11 +7,15 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const itemPath = path.join(root, "clients/marketplace/src/ui/item-authoring-view.js");
 const pickerPath = path.join(root, "clients/marketplace/src/ui/semantic-entity-picker.js");
+const authoringRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/authoring-repository.js");
+const chooserPath = path.join(root, "clients/marketplace/src/ui/venue-target-chooser.js");
 const source = fs.readFileSync(itemPath, "utf8");
 const pickerSource = fs.readFileSync(pickerPath, "utf8");
+const authoringRepositorySource = fs.readFileSync(authoringRepositoryPath, "utf8");
+const chooserSource = fs.readFileSync(chooserPath, "utf8");
 
 test("item authoring e picker semantico passano il syntax gate", () => {
-  for (const target of [itemPath, pickerPath]) {
+  for (const target of [itemPath, pickerPath, authoringRepositoryPath, chooserPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
@@ -226,10 +230,22 @@ test("il controllo rende il contenuto privato e propone il Marketplace in un dia
   assert.match(source, /html:has\(\.private-success-overlay\)/);
 });
 
-test("il flusso da oggetto fisico preserva la separazione del dominio", () => {
-  assert.match(source, /L'oggetto serve a precompilare il soggetto/);
+test("il flusso da entità fisica preserva la separazione del dominio", () => {
+  assert.match(source, /L’entità precompila l’esatto Subject/);
   assert.match(source, /non incorpora la posizione fisica/);
   assert.match(source, /immagine\/i restano nella configurazione della sede/);
+});
+
+test("il flusso contestualizzato alla sede è raggiungibile, permission-aware e non duplica l'inventario", () => {
+  assert.match(chooserSource, /physicalIntent=1/);
+  assert.match(chooserSource, /Crea contenuto per un’altra entità/);
+  assert.match(authoringRepositorySource, /subject-candidates/);
+  assert.match(source, /venue-id="\$\{escapeHtml\(this\.venueId\)\}"/);
+  assert.match(source, /canUsePhysicalIntent\(\)/);
+  assert.match(source, /ownerOrganizationId/);
+  assert.match(source, /Già nell’inventario della sede/);
+  assert.match(source, /!this\.venueInventoryMatch/);
+  assert.match(source, /non sarà duplicata né spostata/);
 });
 
 test("l'immagine facoltativa è proposta, modificabile e salvata con la revisione", () => {

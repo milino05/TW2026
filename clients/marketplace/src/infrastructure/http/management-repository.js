@@ -97,8 +97,8 @@ export const managementRepository = {
   updateVenuePlace(venueId, placeId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/places/${encoded(placeId)}`, { method: "PATCH", ...body(payload) });
   },
-  moveVenuePlace(venueId, placeId, position) {
-    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/places/${encoded(placeId)}/position`, { method: "PATCH", ...body({ position }) });
+  moveVenuePlace(venueId, placeId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/places/${encoded(placeId)}/position`, { method: "PATCH", ...body(payload?.position ? payload : { position: payload }) });
   },
   setVenuePlaceAttribute(venueId, placeId, definitionId, value) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/places/${encoded(placeId)}/attributes/${encoded(definitionId)}`, { method: "PUT", ...body({ value }) });
@@ -118,8 +118,23 @@ export const managementRepository = {
   removeVenueConnection(venueId, connectionId) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/connections/${encoded(connectionId)}`, { method: "DELETE" });
   },
-  setVenueTargetPlacement(venueId, targetId, payload) {
-    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/targets/${encoded(targetId)}/placement`, { method: "PUT", ...body(payload) });
+  createExhibitSlot(venueId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/exhibit-slots`, { method: "POST", ...body(payload) });
+  },
+  updateExhibitSlot(venueId, exhibitSlotId, payload) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/exhibit-slots/${encoded(exhibitSlotId)}`, { method: "PATCH", ...body(payload) });
+  },
+  removeExhibitSlot(venueId, exhibitSlotId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/exhibit-slots/${encoded(exhibitSlotId)}`, { method: "DELETE" });
+  },
+  assignVenueTargetToExhibitSlot(venueId, exhibitSlotId, targetId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/exhibit-slots/${encoded(exhibitSlotId)}/entity/${encoded(targetId)}`, { method: "PUT", ...body({}) });
+  },
+  unassignVenueTargetFromExhibitSlot(venueId, targetId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/entities/${encoded(targetId)}/exhibit-slot`, { method: "DELETE" });
+  },
+  venueLayoutRemovalImpact(venueId, resourceType, resourceId) {
+    return apiClient.request(`/venues/${encoded(venueId)}/working-layout/removal-impact/${encoded(resourceType)}/${encoded(resourceId)}`);
   },
   setVenuePreVisitInformation(venueId, items) {
     return apiClient.request(`/venues/${encoded(venueId)}/working-layout/pre-visit-information`, { method: "PUT", ...body({ items }) });
@@ -127,6 +142,10 @@ export const managementRepository = {
   searchSubjects(search) {
     const params = new URLSearchParams({ search: String(search || ""), limit: "25" });
     return apiClient.request(`/subjects?${params}`);
+  },
+  searchVenueSubjectCandidates(venueId, search) {
+    const params = new URLSearchParams({ query: String(search || ""), limit: "25" });
+    return apiClient.request(`/venues/${encoded(venueId)}/subject-candidates?${params}`);
   },
   createVenueTarget(venueId, payload) {
     return apiClient.request(`/venues/${encoded(venueId)}/targets`, { method: "POST", ...body(payload) });

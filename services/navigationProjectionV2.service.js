@@ -6,6 +6,8 @@ const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const { loadPinnedBundle, resolveNavigationRequirementsForVenue } = require("./physicalExecutionV2.service");
 const { selectionMap } = require("./routingProfileSelectionV2.service");
 const { resolvePlannedPath } = require("./graphRouting.service");
+const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
+const { resolveApproachStep } = require("./venueExhibitResolution.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function opaqueId(seed) { return crypto.createHash("sha256").update(String(seed)).digest("hex").slice(0, 16); }
@@ -117,9 +119,10 @@ async function projectSessionMap({ sessionId, userId }) {
   const { session, plan } = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
   const targetIds = [...new Set((plan.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter(Boolean))];
   const targets = targetIds.length
-    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("_id label").lean()
+    ? await VenueTarget.find({ _id: { $in: targetIds } }).select("_id subjectId displayLabelOverride inventoryNote").lean()
     : [];
   const targetById = new Map(targets.map((target) => [id(target._id), target]));
+  const targetIdentityById = await venueTargetIdentityMap(targets);
   const venueIds = [...new Set((session.venuePins || []).map((pin) => id(pin.venueId)).filter(Boolean))];
   const venues = venueIds.length
     ? await Venue.find({ _id: { $in: venueIds } }).select("_id name description").lean()
@@ -127,12 +130,15 @@ async function projectSessionMap({ sessionId, userId }) {
   const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
   const currentAnchor = logicalAnchorForIndex(plan, session.currentEntryIndex);
   const projectedVenues = [];
+  const bundleByVenueId = new Map();
+  const plannedLegByKey = new Map();
   const profileSelections = selectionMap(session.navigationSnapshot?.routingProfileSelections || []);
 
   for (const pin of session.venuePins || []) {
     const venueId = id(pin.venueId);
     const venue = venueById.get(venueId);
     const bundle = await loadPinnedBundle(session, venueId);
+    bundleByVenueId.set(venueId, bundle);
     const places = placeMap(bundle.layout);
     const typeById = placeTypeMap(bundle.physicalVocabularyRevision);
     const stops = (plan.visitAnchors || []).filter((anchor) => id(anchor.venueId) === venueId).map((anchor, index) => {
@@ -141,7 +147,9 @@ async function projectSessionMap({ sessionId, userId }) {
       return {
         visitAnchorId: anchor._id,
         venueTargetId: anchor.venueTargetId,
-        label: targetById.get(id(anchor.venueTargetId))?.label || `Tappa ${index + 1}`,
+        exhibitSlotId: anchor.exhibitSlotId,
+        label: targetById.has(id(anchor.venueTargetId)) ? targetIdentityById.get(id(anchor.venueTargetId))?.label || `Tappa ${index + 1}` : `Tappa ${index + 1}`,
+        approachInstruction: anchor.approachInstruction || null,
         floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },
         order: (plan.visitAnchors || []).findIndex((value) => id(value._id) === id(anchor._id)) + 1,
@@ -198,6 +206,27 @@ async function projectSessionMap({ sessionId, userId }) {
         fromVisitAnchorId: from._id,
         toVisitAnchorId: to._id,
       })));
+      plannedLegByKey.set(`${id(leg.fromAnchorId)}>${id(leg.toAnchorId)}`, {
+        type: "indoor",
+        fromVisitAnchorId: from._id,
+        toVisitAnchorId: to._id,
+        transferInstruction: null,
+        macroSteps: resolved.path.map((edge) => ({
+          direction: edge.direction,
+          instruction: edge.instruction || null,
+          distanceMeters: edge.distanceMeters,
+          estimatedSeconds: Math.round(Number(edge.estimatedSeconds) || 0),
+        })),
+        approachStep: (() => {
+          const step = resolveApproachStep({
+            layoutRevision: bundle.layout,
+            destinationExhibitSlotId: to.exhibitSlotId,
+            sourceExhibitSlotId: from.exhibitSlotId,
+            incomingConnectionId: resolved.path.at(-1)?.connectionId || null,
+          });
+          return step ? { instruction: step.instruction, resolutionSource: step.resolutionSource } : null;
+        })(),
+      });
     }
 
     projectedVenues.push({
@@ -227,9 +256,33 @@ async function projectSessionMap({ sessionId, userId }) {
     });
   }
 
+  for (const leg of (plan.physicalRoute?.legs || []).filter((entry) => entry.type === "inter_venue")) {
+    const from = anchorMap(plan).get(id(leg.fromAnchorId));
+    const to = anchorMap(plan).get(id(leg.toAnchorId));
+    const destinationBundle = to ? bundleByVenueId.get(id(to.venueId)) : null;
+    if (!from || !to || !destinationBundle) continue;
+    plannedLegByKey.set(`${id(leg.fromAnchorId)}>${id(leg.toAnchorId)}`, {
+      type: "inter_venue",
+      fromVisitAnchorId: from._id,
+      toVisitAnchorId: to._id,
+      transferInstruction: leg.instruction || null,
+      macroSteps: [],
+      approachStep: (() => {
+        const step = resolveApproachStep({
+          layoutRevision: destinationBundle.layout,
+          destinationExhibitSlotId: to.exhibitSlotId,
+        });
+        return step ? { instruction: step.instruction, resolutionSource: step.resolutionSource } : null;
+      })(),
+    });
+  }
+
   return {
     venues: projectedVenues,
     logicalCurrentStop: currentAnchor ? { visitAnchorId: currentAnchor._id, venueId: currentAnchor.venueId } : null,
+    plannedLegs: (plan.physicalRoute?.legs || [])
+      .map((leg) => plannedLegByKey.get(`${id(leg.fromAnchorId)}>${id(leg.toAnchorId)}`))
+      .filter(Boolean),
     interVenueTransitions: (plan.physicalRoute?.legs || []).filter((leg) => leg.type === "inter_venue").map((leg) => ({
       fromVisitAnchorId: leg.fromAnchorId,
       toVisitAnchorId: leg.toAnchorId,

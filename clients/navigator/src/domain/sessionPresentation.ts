@@ -8,6 +8,7 @@ export interface SessionStopContext {
     order: number;
     venueName: string;
     floorLabel: string;
+    approachInstruction: string | null;
   };
   next: null | {
     visitAnchorId: string;
@@ -15,6 +16,7 @@ export interface SessionStopContext {
     order: number;
     venueName: string;
     floorLabel: string;
+    approachInstruction: string | null;
   };
   total: number;
 }
@@ -34,7 +36,7 @@ export function resolveSessionStopContext(map: MapProjection | null, currentAnch
     .flatMap((venue) => venue.stops.map((stop) => ({
       ...stop,
       venueName: venue.name,
-      floorLabel: venue.floors.find((floor) => floor.key === stop.floorKey)?.label || stop.floorKey,
+      floorLabel: venue.floors.find((floor) => floor.id === stop.floorId)?.label || stop.floorId,
     })))
     .sort((left, right) => left.order - right.order);
   const current = stops.find((stop) => stop.visitAnchorId === currentAnchorId) || null;

@@ -9,7 +9,7 @@ const props = defineProps<{
 }>();
 
 const venueIndex = ref(0);
-const selectedFloorKey = ref<string | null>(null);
+const selectedFloorId = ref<string | null>(null);
 const venue = computed(() => props.map.venues[venueIndex.value] || null);
 
 watch(() => props.currentVisitAnchorId, (anchorId) => {
@@ -20,18 +20,18 @@ watch(() => props.currentVisitAnchorId, (anchorId) => {
 }, { immediate: true });
 
 watch([venue, () => props.currentVisitAnchorId], ([value]) => {
-  if (!value) { selectedFloorKey.value = null; return; }
+  if (!value) { selectedFloorId.value = null; return; }
   const currentStop = value.stops.find((stop) => stop.visitAnchorId === props.currentVisitAnchorId);
-  selectedFloorKey.value = currentStop?.floorKey || value.floors[0]?.key || null;
+  selectedFloorId.value = currentStop?.floorId || value.floors[0]?.id || null;
 }, { immediate: true });
 
-const floor = computed(() => venue.value?.floors.find((entry) => entry.key === selectedFloorKey.value) || null);
-const stops = computed(() => venue.value?.stops.filter((entry) => entry.floorKey === selectedFloorKey.value) || []);
+const floor = computed(() => venue.value?.floors.find((entry) => entry.id === selectedFloorId.value) || null);
+const stops = computed(() => venue.value?.stops.filter((entry) => entry.floorId === selectedFloorId.value) || []);
 const orderedStops = computed(() => props.map.venues
   .flatMap((candidate) => candidate.stops.map((stop) => ({
     ...stop,
     venueName: candidate.name,
-    floorLabel: candidate.floors.find((floor) => floor.key === stop.floorKey)?.label || stop.floorKey,
+    floorLabel: candidate.floors.find((floor) => floor.id === stop.floorId)?.label || stop.floorId,
   })))
   .sort((left, right) => left.order - right.order));
 const currentStop = computed(() =>
@@ -40,12 +40,25 @@ const nextStop = computed(() =>
   currentStop.value
     ? orderedStops.value.find((stop) => stop.order > currentStop.value!.order) || null
     : null);
+const plannedLeg = computed(() => props.map.plannedLegs.find((entry) =>
+  entry.fromVisitAnchorId === props.currentVisitAnchorId) || null);
+const plannedSteps = computed(() => {
+  const leg = plannedLeg.value;
+  if (!leg) return [];
+  return [
+    ...(leg.transferInstruction ? [{ key: "transfer", label: "Trasferimento", instruction: leg.transferInstruction }] : []),
+    ...leg.macroSteps.flatMap((step, index) => step.instruction
+      ? [{ key: `macro-${index}`, label: "Percorso", instruction: step.instruction }]
+      : []),
+    ...(leg.approachStep ? [{ key: "approach", label: "Ultimi passi", instruction: leg.approachStep.instruction }] : []),
+  ];
+});
 
-const facilities = computed(() => venue.value?.facilities.filter((entry) => entry.floorKey === selectedFloorKey.value) || []);
-const plannedOverlays = computed(() => venue.value?.route.overlays.filter((entry) => entry.floorKey === selectedFloorKey.value) || []);
+const facilities = computed(() => venue.value?.facilities.filter((entry) => entry.floorId === selectedFloorId.value) || []);
+const plannedOverlays = computed(() => venue.value?.route.overlays.filter((entry) => entry.floorId === selectedFloorId.value) || []);
 const navigationOverlays = computed(() => {
   if (!venue.value || props.navigation?.destination.venueId !== venue.value.id) return [];
-  return props.navigation.route.overlays.filter((entry) => entry.floorKey === selectedFloorKey.value);
+  return props.navigation.route.overlays.filter((entry) => entry.floorId === selectedFloorId.value);
 });
 
 function pointStyle(point: { x: number; y: number }) {
@@ -70,10 +83,10 @@ function pointStyle(point: { x: number; y: number }) {
     <div class="map-tabs" aria-label="Piano">
       <button
         v-for="candidate in venue.floors"
-        :key="candidate.key"
+        :key="candidate.id"
         type="button"
-        :aria-pressed="selectedFloorKey === candidate.key"
-        @click="selectedFloorKey = candidate.key"
+        :aria-pressed="selectedFloorId === candidate.id"
+        @click="selectedFloorId = candidate.id"
       >{{ candidate.label }}</button>
     </div>
 
@@ -112,7 +125,7 @@ function pointStyle(point: { x: number; y: number }) {
         :title="`${facility.category}: ${facility.label}`"
       >•</span>
       <span
-        v-if="navigation && navigation.destination.venueId === venue.id && navigation.destination.floorKey === selectedFloorKey"
+        v-if="navigation && navigation.destination.venueId === venue.id && navigation.destination.floorId === selectedFloorId"
         class="map-marker destination-marker"
         :style="pointStyle(navigation.destination.position)"
         :title="navigation.destination.label"
@@ -142,6 +155,12 @@ function pointStyle(point: { x: number; y: number }) {
         <span>{{ nextStop.venueName }} · {{ nextStop.floorLabel }}</span>
       </div>
     </article>
+    <ol v-if="plannedSteps.length" class="planned-guidance" aria-label="Indicazioni verso la prossima tappa">
+      <li v-for="step in plannedSteps" :key="step.key">
+        <small>{{ step.label }}</small>
+        <span>{{ step.instruction }}</span>
+      </li>
+    </ol>
     <ol v-if="navigation?.route.instructions.length" class="route-instructions">
       <li v-for="instruction in navigation.route.instructions" :key="instruction">{{ instruction }}</li>
     </ol>
@@ -218,6 +237,28 @@ function pointStyle(point: { x: number; y: number }) {
   stroke-width: 1.8;
   stroke-dasharray: none;
 }
+.planned-guidance {
+  display: grid;
+  gap: .55rem;
+  margin: .85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.planned-guidance li {
+  display: grid;
+  grid-template-columns: 6.2rem minmax(0, 1fr);
+  gap: .7rem;
+  align-items: start;
+  padding: .7rem .8rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .8rem;
+  background: var(--navigator-surface-raised);
+}
+.planned-guidance small {
+  color: var(--navigator-primary);
+  font-weight: 760;
+}
+.planned-guidance span { color: var(--navigator-ink); }
 .map-marker {
   position: absolute;
   transform: translate(-50%, -50%);

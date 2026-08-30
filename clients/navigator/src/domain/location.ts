@@ -3,6 +3,7 @@ export interface LogicalLocation {
   placeId: string;
   floorId: string | null;
   venueTargetId: string | null;
+  exhibitSlotId: string | null;
 }
 
 export interface LocationObservation {
@@ -19,7 +20,8 @@ export function logicalLocationOf(value: unknown): LogicalLocation | null {
   if (!venueId || !placeId) return null;
   const floorId = String(input.floorId || "").trim() || null;
   const venueTargetId = String(input.venueTargetId || "").trim() || null;
-  return { venueId, placeId, floorId, venueTargetId };
+  const exhibitSlotId = String(input.exhibitSlotId || "").trim() || null;
+  return { venueId, placeId, floorId, venueTargetId, exhibitSlotId };
 }
 
 export function locationObservation({

@@ -41,12 +41,12 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
       const release = await VenueRelease.findOne({ _id: ensured.release._id, venueId }).session(session);
       const target = await VenueTarget.findOne({ _id: venueTargetId, venueId, lifecycleStatus: "active" }).session(session);
       if (!release) commandError("Bozza fisica non disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
-      if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
+      if (!target) commandError("Entità della sede non trovata", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
       try { markRevisionEdited(release, actorUserId); }
       catch (error) { commandError(error.message, error.code || "REVISION_NOT_EDITABLE", null, 409); }
       let binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
       if (!binding) {
-        release.targetBindings.push({ venueTargetId: target._id, availability: "active", recognitionMedia: [] });
+        release.targetBindings.push({ venueTargetId: target._id, exhibitSlotId: null, availability: "active", recognitionMedia: [] });
         binding = release.targetBindings.at(-1);
       }
       const result = await mutate({ release, target, binding, session });
@@ -57,7 +57,7 @@ async function mutateTargetBinding({ venueId, venueTargetId, actorUserId, mutate
     return commandResult;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError("Comando sul binding fisico dell'oggetto non completato", 500, [{ code: "VENUE_TARGET_BINDING_COMMAND_FAILED", message: error.message }]);
+    throw new AppError("Comando sul binding fisico dell’entità non completato", 500, [{ code: "VENUE_TARGET_BINDING_COMMAND_FAILED", message: error.message }]);
   }
 }
 

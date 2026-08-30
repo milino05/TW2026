@@ -43,6 +43,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
+    const ExhibitSlot = require("../models/exhibitSlot.model");
     const LayoutRevision = require("../models/layoutRevision.model");
     const VenueRelease = require("../models/venueRelease.model");
     const VisitV2 = require("../models/visitV2.model");
@@ -153,7 +154,8 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     await context.save();
 
     const venue = await Venue.create({ name: "Runtime Venue", ownerOrganizationId: organization._id, primaryEditorialContextId: context._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera fisica", createdBy: user._id });
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera fisica", createdBy: user._id });
+    const exhibitSlot = await ExhibitSlot.create({ venueId: venue._id, createdBy: user._id });
     const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
     const roomType = physical.placeTypeByKey.get("room");
     const toiletsType = physical.placeTypeByKey.get("toilets");
@@ -177,7 +179,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
         { _id: targetPlaceR1, placeTypeDefinitionId: roomType.definitionId, label: "Sala A", floorId: floorR1, position: { x: 0.1, y: 0.1 } },
         { _id: toiletPlaceR1, placeTypeDefinitionId: toiletsType.definitionId, label: "Toilette R1", floorId: floorR1, position: { x: 0.4, y: 0.1 } },
       ],
-      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: targetPlaceR1, placeIds: [targetPlaceR1] }],
+      exhibitSlots: [{ exhibitSlotId: exhibitSlot._id, placeId: targetPlaceR1, label: "Slot opera runtime", approachGuidance: { defaultInstruction: "Cerca l’opera nella Sala A.", overrides: [] } }],
       connections: [{ _id: connectionR1, fromPlaceId: targetPlaceR1, toPlaceId: toiletPlaceR1, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 10, additionalDelaySeconds: 0, attributeValues: [] }],
       status: "published",
       createdBy: user._id,
@@ -187,7 +189,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       venueId: venue._id,
       version: 1,
       layoutRevisionId: layoutR1._id,
-      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: target._id, exhibitSlotId: exhibitSlot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       publication: { publishedAt: new Date(), publishedBy: user._id },
@@ -243,7 +245,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
         locale: "it-IT",
         estimatedContentSeconds: 20,
       }],
-      visitAnchors: [{ _id: generatedAnchorId, venueTargetId: target._id, venueId: venue._id, placeId: targetPlaceR1, estimatedObservationSeconds: 45 }],
+      visitAnchors: [{ _id: generatedAnchorId, venueTargetId: target._id, venueId: venue._id, exhibitSlotId: exhibitSlot._id, placeId: targetPlaceR1, approachInstruction: "Cerca l’opera nella Sala A.", estimatedObservationSeconds: 45 }],
       physicalRoute: { legs: [] },
       estimatedTiming: { contentSeconds: 20, observationSeconds: 45, logisticsSeconds: 0, totalSeconds: 65, reservedSeconds: 0 },
     });
@@ -298,7 +300,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
         { _id: targetPlaceR2, placeTypeDefinitionId: roomType.definitionId, label: "Sala B", floorId: floorR2, position: { x: 0.7, y: 0.2 } },
         { _id: toiletPlaceR2, placeTypeDefinitionId: toiletsType.definitionId, label: "Toilette R2", floorId: floorR2, position: { x: 0.9, y: 0.2 } },
       ],
-      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: targetPlaceR2, placeIds: [targetPlaceR2] }],
+      exhibitSlots: [{ exhibitSlotId: exhibitSlot._id, placeId: targetPlaceR2, label: "Slot opera runtime", approachGuidance: { defaultInstruction: "Cerca l’opera nella Sala B.", overrides: [] } }],
       connections: [{ fromPlaceId: targetPlaceR2, toPlaceId: toiletPlaceR2, directionality: "bidirectional", metricMode: "manual_override", distanceMeters: 6, additionalDelaySeconds: 0, attributeValues: [] }],
       status: "published",
       createdBy: user._id,
@@ -309,7 +311,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       version: 2,
       basedOnReleaseId: releaseR1._id,
       layoutRevisionId: layoutR2._id,
-      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: target._id, exhibitSlotId: exhibitSlot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       publication: { publishedAt: new Date(), publishedBy: user._id },

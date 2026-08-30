@@ -5,7 +5,10 @@ const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
 const Subject = require("../models/subject.model");
+const ItemV2 = require("../models/itemV2.model");
+const ItemEdition = require("../models/itemEdition.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
@@ -171,16 +174,17 @@ function venueOperations({ release, permissions, hasWorking }) {
 
 function projectTarget(target, subject, permissions, {
   binding = null,
-  placement = null,
+  exhibitSlot = null,
+  contentCounts = { available: 0, draft: 0 },
   hasWorking = false,
   publishedReferenced = false,
   workingEditable = false,
 } = {}) {
-  const currentReferenced = Boolean(binding || placement);
+  const currentReferenced = Boolean(binding);
   const includedInWorkingConfiguration = Boolean(hasWorking && currentReferenced);
   const includedInPublishedConfiguration = Boolean(publishedReferenced);
   const availableOperations = [
-    ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
+    ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica entità")] : []),
     ...(workingEditable && includedInWorkingConfiguration && permissions.has("venue.physical.edit")
       ? [operation("venue.target.detach", "Rimuovi dalla configurazione")]
       : []),
@@ -190,12 +194,15 @@ function projectTarget(target, subject, permissions, {
   ];
   return {
     id: target._id,
-    publicCode: target.publicCode,
-    label: target.label,
-    description: target.description || "",
+    legacyPublicCode: target.publicCode || null,
+    label: target.displayLabelOverride || subject?.preferredLabel || "Entità della sede",
+    displayLabelOverride: target.displayLabelOverride || null,
+    inventoryNote: target.inventoryNote || "",
+    description: target.inventoryNote || subject?.description || "",
     subject: subject ? { id: subject._id, label: subject.preferredLabel, description: subject.description || "" } : { id: target.subjectId, missing: true },
     binding: binding ? {
       availability: binding.availability || "active",
+      exhibitSlotId: binding.exhibitSlotId || null,
       recognitionMedia: (binding.recognitionMedia || []).map((media) => ({
         id: media._id,
         url: media.url,
@@ -206,12 +213,15 @@ function projectTarget(target, subject, permissions, {
       source: hasWorking ? "working" : (includedInPublishedConfiguration ? "published" : "none"),
       includedInWorkingConfiguration,
       includedInPublishedConfiguration,
-      placed: Boolean(placement),
+      state: binding?.availability === "unavailable" ? "unavailable" : (exhibitSlot ? "exposed" : "unplaced"),
+      placed: Boolean(exhibitSlot),
       publishedReferenced: includedInPublishedConfiguration,
       lifecycleBlocker: includedInWorkingConfiguration
         ? "working_configuration"
         : (includedInPublishedConfiguration ? "published_configuration" : null),
     },
+    exhibitSlot: exhibitSlot || null,
+    museumContent: contentCounts,
     availableOperations,
   };
 }
@@ -225,13 +235,44 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
   const layout = release ? await LayoutRevision.findById(release.layoutRevisionId).lean() : null;
   if (release && !layout) throw new AppError("LayoutRevision non disponibile", 409);
   const vocabularyBundle = layout ? await loadLayoutPhysicalVocabulary(layout) : null;
-  const targets = await VenueTarget.find({ venueId: venue._id, lifecycleStatus: "active" }).sort({ label: 1 }).lean();
+  const targets = await VenueTarget.find({ venueId: venue._id, lifecycleStatus: "active" }).sort({ displayLabelOverride: 1, createdAt: 1 }).lean();
   const subjects = targets.length
     ? await Subject.find({ _id: { $in: targets.map((target) => target.subjectId) } }).select("preferredLabel description").lean()
     : [];
   const subjectById = new Map(subjects.map((subject) => [id(subject._id), subject]));
   const bindingByTargetId = new Map((release?.targetBindings || []).map((binding) => [id(binding.venueTargetId), binding]));
-  const placementByTargetId = new Map((layout?.venueTargetPlacements || []).map((placement) => [id(placement.venueTargetId), placement]));
+  const exhibitSlotEntries = plain(layout).exhibitSlots || [];
+  const slotIds = exhibitSlotEntries.map((entry) => entry.exhibitSlotId);
+  const slotDocuments = slotIds.length ? await ExhibitSlot.find({ _id: { $in: slotIds } }).select("_id venueId publicCode lifecycleStatus").lean() : [];
+  const slotDocumentById = new Map(slotDocuments.map((slot) => [id(slot._id), slot]));
+  const exhibitSlotEntryById = new Map(exhibitSlotEntries.map((entry) => [id(entry.exhibitSlotId), entry]));
+  const exhibitSlotForTarget = new Map((release?.targetBindings || []).flatMap((binding) => {
+    const entry = binding.exhibitSlotId ? exhibitSlotEntryById.get(id(binding.exhibitSlotId)) : null;
+    const slot = entry ? slotDocumentById.get(id(binding.exhibitSlotId)) : null;
+    return entry && slot ? [[id(binding.venueTargetId), { ...entry, id: slot._id, publicCode: slot.publicCode, lifecycleStatus: slot.lifecycleStatus }]] : [];
+  }));
+
+  const museumItems = targets.length ? await ItemV2.find({
+    ownerType: "organization",
+    ownerId: venue.ownerOrganizationId,
+    lifecycleStatus: "active",
+    primarySubjectId: { $in: targets.map((target) => target.subjectId) },
+  }).select("_id primarySubjectId").lean() : [];
+  const museumEditions = museumItems.length ? await ItemEdition.find({ itemId: { $in: museumItems.map((item) => item._id) } }).select("itemId publishedRevisionId workingRevisionId").lean() : [];
+  const editionsByItemId = new Map();
+  for (const edition of museumEditions) {
+    const entries = editionsByItemId.get(id(edition.itemId)) || [];
+    entries.push(edition);
+    editionsByItemId.set(id(edition.itemId), entries);
+  }
+  const contentCountsBySubjectId = new Map();
+  for (const item of museumItems) {
+    const counts = contentCountsBySubjectId.get(id(item.primarySubjectId)) || { available: new Set(), draft: new Set() };
+    const editions = editionsByItemId.get(id(item._id)) || [];
+    if (editions.some((edition) => edition.publishedRevisionId)) counts.available.add(id(item._id));
+    if (editions.some((edition) => edition.workingRevisionId)) counts.draft.add(id(item._id));
+    contentCountsBySubjectId.set(id(item.primarySubjectId), counts);
+  }
   const source = venue.workingReleaseId ? "working" : (venue.publishedReleaseId ? "published" : "empty");
   const liveIssues = venue.workingReleaseId && release && layout
     ? await computeVenueReleaseIssues({ venue, release, layout })
@@ -240,19 +281,10 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
   let publishedReferencedTargetIds = new Set();
   if (venue.publishedReleaseId) {
     if (!venue.workingReleaseId && release && id(release._id) === id(venue.publishedReleaseId)) {
-      publishedReferencedTargetIds = new Set([
-        ...(release.targetBindings || []).map((entry) => id(entry.venueTargetId)),
-        ...(layout?.venueTargetPlacements || []).map((entry) => id(entry.venueTargetId)),
-      ]);
+      publishedReferencedTargetIds = new Set((release.targetBindings || []).map((entry) => id(entry.venueTargetId)));
     } else {
       const publishedRelease = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings layoutRevisionId").lean();
-      const publishedLayout = publishedRelease?.layoutRevisionId
-        ? await LayoutRevision.findById(publishedRelease.layoutRevisionId).select("venueTargetPlacements").lean()
-        : null;
-      publishedReferencedTargetIds = new Set([
-        ...(publishedRelease?.targetBindings || []).map((entry) => id(entry.venueTargetId)),
-        ...(publishedLayout?.venueTargetPlacements || []).map((entry) => id(entry.venueTargetId)),
-      ]);
+      publishedReferencedTargetIds = new Set((publishedRelease?.targetBindings || []).map((entry) => id(entry.venueTargetId)));
     }
   }
 
@@ -294,7 +326,11 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       authoredAgainstPhysicalVocabularyRevisionId: layout.authoredAgainstPhysicalVocabularyRevisionId,
       floors: plain(layout).floors || [],
       places: plain(layout).places || [],
-      venueTargetPlacements: plain(layout).venueTargetPlacements || [],
+      exhibitSlots: exhibitSlotEntries.map((entry) => {
+        const slot = slotDocumentById.get(id(entry.exhibitSlotId));
+        const binding = (release?.targetBindings || []).find((value) => id(value.exhibitSlotId) === id(entry.exhibitSlotId));
+        return { ...entry, id: entry.exhibitSlotId, publicCode: slot?.publicCode || null, lifecycleStatus: slot?.lifecycleStatus || "missing", assignedVenueTargetId: binding?.venueTargetId || null };
+      }),
       connections: plain(layout).connections || [],
     } : null,
     physicalVocabulary: vocabularyBundle ? {
@@ -313,7 +349,11 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
     } : null,
     targets: targets.map((target) => projectTarget(target, subjectById.get(id(target.subjectId)), permissions, {
       binding: bindingByTargetId.get(id(target._id)) || null,
-      placement: placementByTargetId.get(id(target._id)) || null,
+      exhibitSlot: exhibitSlotForTarget.get(id(target._id)) || null,
+      contentCounts: (() => {
+        const counts = contentCountsBySubjectId.get(id(target.subjectId));
+        return { available: counts?.available.size || 0, draft: counts?.draft.size || 0 };
+      })(),
       hasWorking,
       publishedReferenced: publishedReferencedTargetIds.has(id(target._id)),
       workingEditable,

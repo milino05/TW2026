@@ -23,6 +23,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
+const ExhibitSlot = require("../models/exhibitSlot.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const LayoutRevision = require("../models/layoutRevision.model");
@@ -179,6 +180,7 @@ async function cleanupDemo() {
   await VisitV2.deleteMany({ _id: { $in: visitIds } });
   await VenueRelease.deleteMany({ _id: IDS.venueRelease });
   await LayoutRevision.deleteMany({ _id: IDS.layoutRevision });
+  await ExhibitSlot.deleteMany({ venueId: IDS.venue });
   await PhysicalVocabularyRevision.deleteMany({ _id: IDS.physicalVocabularyRevision });
   await PhysicalVocabulary.deleteMany({ _id: IDS.physicalVocabulary });
   await VenueTarget.deleteMany({ _id: { $in: targetIds } });
@@ -529,8 +531,9 @@ async function seedExamDataset() {
       _id: demoId(`venue-target:${work.key}`),
       venueId: venue._id,
       subjectId: workSubjectIds.get(work.key),
-      label: work.title,
-      description: `${work.title} — ${work.artist}`,
+      displayLabelOverride: work.title,
+      inventoryNote: `${work.title} — ${work.artist}`,
+      provenance: { origin: "imported", sourceId: `exam:${work.key}` },
       createdBy: manager._id,
     }));
   }
@@ -596,6 +599,12 @@ async function seedExamDataset() {
     });
   }
 
+  const exhibitSlots = await ExhibitSlot.create(WORKS.map((work) => ({
+    _id: demoId(`exhibit-slot:${work.key}`),
+    venueId: venue._id,
+    publicCode: `as_${demoId(`slot-code:${work.key}`).toHexString()}`,
+    createdBy: manager._id,
+  })));
   const layoutRevision = await LayoutRevision.create({
     _id: IDS.layoutRevision,
     venueId: venue._id,
@@ -603,7 +612,7 @@ async function seedExamDataset() {
     authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
     floors: [{ _id: floorId, label: "Percorso demo", mapAsset: { url: DEMO_MAP_URL, mimeType: "image/svg+xml", width: 1200, height: 700, originalName: "pinacoteca-bologna-demo.svg" } }],
     places,
-    venueTargetPlacements: targets.map((target, index) => ({ venueTargetId: target._id, primaryPlaceId: workPlaceIds[index], placeIds: [workPlaceIds[index]] })),
+    exhibitSlots: exhibitSlots.map((slot, index) => ({ exhibitSlotId: slot._id, placeId: workPlaceIds[index], label: `${WORKS[index].title} · posizione espositiva`, order: index, approachGuidance: { defaultInstruction: `Cerca ${WORKS[index].title} nello spazio espositivo.`, overrides: [] } })),
     connections,
     status: "published",
     createdBy: manager._id,
@@ -614,7 +623,7 @@ async function seedExamDataset() {
     venueId: venue._id,
     version: 1,
     layoutRevisionId: layoutRevision._id,
-    targetBindings: targets.map((target) => ({ venueTargetId: target._id, availability: "active", recognitionMedia: [] })),
+    targetBindings: targets.map((target, index) => ({ venueTargetId: target._id, exhibitSlotId: exhibitSlots[index]._id, availability: "active", recognitionMedia: [] })),
     preVisitInformation: [
       "La pianta mostrata da ArtAround è una schematizzazione didattica per la demo TW2026.",
       "L'ingresso ordinario presenta gradini; il museo documenta anche un percorso senza barriere e un ascensore. Verifica in sede eventuali variazioni temporanee.",
@@ -760,10 +769,8 @@ async function verifyExamDataset() {
   if (!venueRelease || venueRelease.status !== "published") add("DEMO_VENUE_RELEASE_MISSING", "VenueRelease demo pubblicata non disponibile");
   const targetIds = venueRelease?.targetBindings?.filter((entry) => entry.availability === "active").map((entry) => String(entry.venueTargetId)) || [];
   if (targetIds.length < 10) add("NOT_ENOUGH_TARGETS", "La Venue demo deve contenere almeno 10 target attivi", { count: targetIds.length });
-  const placementIds = new Set((layout?.venueTargetPlacements || []).map((entry) => String(entry.venueTargetId)));
-  for (const targetId of targetIds) {
-    if (!placementIds.has(targetId)) add("TARGET_NOT_PLACED", "Target demo attivo privo di placement", { targetId });
-  }
+  const slotIds = new Set((layout?.exhibitSlots || []).map((entry) => String(entry.exhibitSlotId)));
+  for (const binding of venueRelease?.targetBindings || []) if (!binding.exhibitSlotId || !slotIds.has(String(binding.exhibitSlotId))) add("TARGET_NOT_ASSIGNED_TO_SLOT", "Entità demo attiva priva di ExhibitSlot", { targetId: binding.venueTargetId });
   if (!(layout?.floors || []).some((floor) => floor.mapAsset?.url)) add("MAP_ASSET_MISSING", "La LayoutRevision demo non contiene una mappa visualizzabile");
   const physicalRevision = await PhysicalVocabularyRevision.findById(layout?.authoredAgainstPhysicalVocabularyRevisionId).lean();
   const placeTypeById = new Map((physicalRevision?.placeTypes || []).map((definition) => [definition.definitionId, definition]));

@@ -23,6 +23,12 @@ export const authoringRepository = {
   createItem({ primarySubjectId, ownerType, ownerId }) {
     return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
   },
+  createItemWithPhysicalIntent(venueId, { primarySubjectId, ownerType, ownerId }) {
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/items-with-physical-intent`, { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
+  },
+  getSubject(subjectId) {
+    return apiClient.request(`/subjects/${encodeURIComponent(subjectId)}`);
+  },
   uploadItemMedia(payload) {
     return apiClient.request("/item-media", { method: "POST", body: JSON.stringify(payload) });
   },
@@ -51,6 +57,10 @@ export const authoringRepository = {
   },
   venueTargets(venueId) {
     return apiClient.request(`/v2/marketplace/venues/${encodeURIComponent(venueId)}/authoring-targets`);
+  },
+  venueSubjectCandidates(venueId, query = "", { limit = 25 } = {}) {
+    const search = queryString({ query, limit });
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/subject-candidates${search ? `?${search}` : ""}`);
   },
   venueTargetContext(venueTargetId) {
     return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
