@@ -16,6 +16,7 @@ const VenueRelease = require("../models/venueRelease.model");
 const { applyPhysicalStarter } = require("../services/physicalVocabularyStarter.service");
 const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
+const { ensureVisitAuthoringPlaygroundMap } = require("./visitAuthoringPlaygroundMap");
 
 const WORKS = [
   ["luce-chiostro", "Luce nel chiostro"],
@@ -35,7 +36,7 @@ function stablePublicCode(scope, key) {
   return `as_visitui_${crypto.createHash("sha1").update(`${scope}:${key}`).digest("hex").slice(0, 16)}`;
 }
 
-async function seedVisitAuthoringPlayground({ username = "visitatore1" } = {}) {
+async function seedVisitAuthoringPlayground({ username = "visitatore1", floorPlanRoot = undefined } = {}) {
   const normalizedUsername = String(username).trim().toLowerCase();
   const user = await User.findOne({ username: normalizedUsername, status: "active" });
   if (!user) throw new Error(`Utente attivo non trovato: ${normalizedUsername}`);
@@ -51,6 +52,7 @@ async function seedVisitAuthoringPlayground({ username = "visitatore1" } = {}) {
     venueRelease: stableObjectId(scope, "venue-release"),
     floor: stableObjectId(scope, "floor"),
   };
+  const mapAsset = await ensureVisitAuthoringPlaygroundMap({ scope, floorPlanRoot });
 
   const organization = await Organization.findOneAndUpdate(
     { _id: ids.organization },
@@ -217,7 +219,7 @@ async function seedVisitAuthoringPlayground({ username = "visitatore1" } = {}) {
     {
       $set: {
         version: 1,
-        floors: [{ _id: ids.floor, label: "Piano terra", mapAsset: null, calibration: null }],
+        floors: [{ _id: ids.floor, label: "Piano terra", mapAsset, calibration: null }],
         places,
         exhibitSlots: stops.map((stop) => ({
           exhibitSlotId: stop.slot._id,
@@ -305,6 +307,7 @@ async function seedVisitAuthoringPlayground({ username = "visitatore1" } = {}) {
     organization,
     venue,
     release,
+    mapAsset,
     stops: stops.map((stop) => ({
       label: stop.label,
       subjectId: stop.subject._id,
@@ -323,6 +326,7 @@ async function main() {
     console.log(`Playground visite pronto per ${result.username}`);
     console.log(`Organizzazione: ${result.organization.name}`);
     console.log(`Sede: ${result.venue.name}`);
+    console.log(`Planimetria: ${result.mapAsset.url}`);
     console.log("Subject/opere fisiche disponibili:");
     for (const stop of result.stops) console.log(`- ${stop.label} (Subject ${stop.subjectId})`);
     console.log("\nPer testare l'associazione automatica, crea un contenuto usando uno di questi Subject e poi aggiungilo a una nuova visita.");
