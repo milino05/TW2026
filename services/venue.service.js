@@ -76,7 +76,7 @@ async function createVenue({ payload, actorUserId }) {
 
 async function updateVenue({ venueId, payload, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.profile.manage" });
-  const normalized = validatedVenuePayload(payload, { creating: false });
+  const normalized = validatedVenuePayload(payload || {}, { creating: false });
   const previousPrimaryId = venue.primaryEditorialContextId || null;
   const changesPrimary = Object.prototype.hasOwnProperty.call(normalized, "primaryEditorialContextId")
     && !sameId(previousPrimaryId, normalized.primaryEditorialContextId || null);
@@ -121,57 +121,42 @@ async function getVenue({ venueId }) {
   return projectVenue(venue);
 }
 
-async function getVenueLifecycleImpact({ venueId, session = null }) {
-  let targetQuery = VenueTarget.find({ venueId }).select("_id");
-  if (session) targetQuery = targetQuery.session(session);
-  const targets = await targetQuery.lean();
+async function getVenueLifecycleImpact({ venueId }) {
+  const targets = await VenueTarget.find({ venueId }).select("_id").lean();
   const targetIds = targets.map((entry) => entry._id);
   if (!targetIds.length) return { venueTargetCount: 0, publishedVisitCount: 0 };
 
-  let revisionQuery = VisitRevisionV2.find({
+  const revisions = await VisitRevisionV2.find({
     status: "published",
     "visitAnchors.venueTargetId": { $in: targetIds },
-  }).select("_id visitId");
-  if (session) revisionQuery = revisionQuery.session(session);
-  const revisions = await revisionQuery.lean();
+  }).select("_id visitId").lean();
   if (!revisions.length) return { venueTargetCount: targetIds.length, publishedVisitCount: 0 };
 
   const revisionIds = revisions.map((entry) => entry._id);
   const visitIds = revisions.map((entry) => entry.visitId);
-  let visitQuery = VisitV2.find({
+  const visits = await VisitV2.find({
     _id: { $in: visitIds },
     publishedRevisionId: { $in: revisionIds },
     lifecycleStatus: "active",
-  }).select("_id");
-  if (session) visitQuery = visitQuery.session(session);
-  const visits = await visitQuery.lean();
+  }).select("_id").lean();
   return { venueTargetCount: targetIds.length, publishedVisitCount: visits.length };
 }
 
 async function trashVenue({ venueId, actorUserId }) {
   const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
-  const session = await mongoose.startSession();
-  let result = null;
-  try {
-    await session.withTransaction(async () => {
-      const current = await Venue.findOne({ _id: venue._id, lifecycleStatus: "active" }).session(session);
-      if (!current) throw new AppError("Venue non disponibile", 404);
-      const impact = await getVenueLifecycleImpact({ venueId: current._id, session });
-      const now = new Date();
-      current.lifecycleStatus = "trashed";
-      current.trashedAt = now;
-      current.trashedBy = actorUserId;
-      await current.save({ session });
-      result = {
-        venue: projectVenue(current, { includeWorking: true }),
-        removedAt: now,
-        impact,
-      };
-    });
-    return result;
-  } finally {
-    await session.endSession();
-  }
+  const impact = await getVenueLifecycleImpact({ venueId: venue._id });
+  const now = new Date();
+  const current = await Venue.findOneAndUpdate(
+    { _id: venue._id, lifecycleStatus: "active" },
+    { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
+    { new: true },
+  );
+  if (!current) throw new AppError("Venue non disponibile", 404);
+  return {
+    venue: projectVenue(current, { includeWorking: true }),
+    removedAt: now,
+    impact,
+  };
 }
 
 async function restoreVenue({ venueId, actorUserId }) {
