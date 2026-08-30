@@ -61,6 +61,13 @@ async function projectVisitAuthoringRouteReview(revision) {
   const warnings = [];
   const resolvedAnchors = new Map();
 
+  if (!anchors.length) {
+    blockers.push(blocker(
+      "VISIT_PHYSICAL_STOP_REQUIRED",
+      "Aggiungi almeno una tappa fisica prima di controllare il percorso.",
+    ));
+  }
+
   for (const [index, anchor] of anchors.entries()) {
     const target = physical.targetById.get(id(anchor.venueTargetId));
     if (!target) {

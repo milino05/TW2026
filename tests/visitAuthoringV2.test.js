@@ -78,6 +78,9 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
       actorUserId: manager._id,
       payload: { ownerType: "organization", ownerId: IDS.organization, title: "Visita con contenuto diretto" },
     });
+    const emptyVisitProjection = await getVisitAuthoringProjection({ actorUserId: manager._id, visitId: directVisit.visit._id });
+    assert.equal(emptyVisitProjection.visit.revision.routeReview.status, "blocked");
+    assert.equal(emptyVisitProjection.visit.revision.routeReview.blockers[0].code, "VISIT_PHYSICAL_STOP_REQUIRED");
     const directCandidates = await searchVisitAuthoringCandidates({ actorUserId: manager._id, visitId: directVisit.visit._id, source: "owned", page: 1, limit: 1 });
     const directCandidate = directCandidates.results[0];
     const added = await addContentToVisit({

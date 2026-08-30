@@ -101,7 +101,9 @@ test("riordino conserva fallback accessibili e spostamento tappa esplicito", () 
 
 test("tappe manuali restano una opzione avanzata e non uno step obbligatorio", () => {
   assert.match(view, /Opzioni avanzate/);
-  assert.match(view, /Aggiungi una tappa senza contenuto/);
+  assert.match(view, /Aggiungi la prima tappa/);
+  assert.match(view, /Manca ancora una tappa fisica/);
+  assert.match(view, /renderManualStopBrowser\(\{ open: !stops\.length \}\)/);
   assert.match(view, /data-add-stop/);
   assert.match(view, /data-remove-stop/);
 });

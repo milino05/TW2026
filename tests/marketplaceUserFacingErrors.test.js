@@ -64,6 +64,19 @@ test("gli errori di rete non espongono il messaggio inglese del browser", async 
   );
 });
 
+test("il controllo visita spiega in italiano come aggiungere la tappa mancante", async () => {
+  const { userFacingIssueMessage } = await import(errorsUrl);
+  const message = userFacingIssueMessage({
+    field: "visitAnchors",
+    code: "EMPTY_PHYSICAL_ITINERARY",
+    message: "Una Visit pubblicabile deve contenere almeno un VisitAnchor",
+  });
+
+  assert.match(message, /^Tappe:/);
+  assert.match(message, /Aggiungi almeno una tappa fisica/);
+  assert.doesNotMatch(message, /visitAnchors|VisitAnchor/);
+});
+
 test("un errore DNS del resolver mantiene una spiegazione operativa", async () => {
   const { ApiClient, ApiError } = await import(apiClientUrl);
   const client = new ApiClient("/api", {

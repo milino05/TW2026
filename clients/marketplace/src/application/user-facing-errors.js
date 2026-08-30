@@ -20,6 +20,8 @@ const FIELD_LABELS = Object.freeze({
   description: "Descrizione",
   primarySubjectId: "Soggetto principale",
   relatedSubjectIds: "Soggetti collegati",
+  contentEntries: "Contenuti",
+  visitAnchors: "Tappe",
   authorCredits: "Autore",
   metadata: "Informazioni aggiuntive",
   semanticRefs: "Collegamenti esterni",
@@ -57,6 +59,8 @@ const CODE_MESSAGES = Object.freeze({
   MONGOOSE_VALIDATION_ERROR: "Il valore inserito non rispetta il formato richiesto.",
   ACTIVE_OFFER_REQUIRED: "Pubblica almeno un'offerta prima di rendere visibile la risorsa nel Catalogo.",
   LISTING_NOT_PUBLISHABLE: "La pubblicazione non può essere completata nello stato corrente.",
+  EMPTY_VISIT_CONTENT: "Aggiungi almeno un contenuto prima di eseguire il controllo finale.",
+  EMPTY_PHYSICAL_ITINERARY: "Aggiungi almeno una tappa fisica alla visita. Se nessun contenuto propone automaticamente una tappa, puoi sceglierla nella sezione “La tua visita”.",
 });
 
 function sentence(value) {
