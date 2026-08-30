@@ -39,79 +39,98 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
     await assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId });
   }
 
-  let committed = null;
-  await Venue.db.transaction(async (session) => {
-    const currentVenue = await Venue.findOne({ _id: venue._id, lifecycleStatus: "active" }).session(session);
-    if (!currentVenue) throw new AppError("Venue non trovata", 404);
-    if (currentVenue.workingReleaseId) {
-      const existing = await loadReleaseSnapshot(currentVenue.workingReleaseId, { session });
-      if (physicalVocabularyRevisionId
-        && String(physicalVocabularyRevisionId) !== String(existing.layout.authoredAgainstPhysicalVocabularyRevisionId)) {
-        throw new AppError("La working release usa gia un'altra revisione del vocabolario fisico", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
-      }
-      committed = { venue: currentVenue, ...existing };
-      return;
+  const currentVenue = await Venue.findOne({ _id: venue._id, lifecycleStatus: "active" });
+  if (!currentVenue) throw new AppError("Venue non trovata", 404);
+  if (currentVenue.workingReleaseId) {
+    const existing = await loadReleaseSnapshot(currentVenue.workingReleaseId);
+    if (physicalVocabularyRevisionId
+      && String(physicalVocabularyRevisionId) !== String(existing.layout.authoredAgainstPhysicalVocabularyRevisionId)) {
+      throw new AppError("La working release usa gia un'altra revisione del vocabolario fisico", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
     }
+    return { venue: currentVenue, ...existing };
+  }
 
-    let version = 1;
-    let basedOnReleaseId = null;
-    let targetBindings = [];
-    let preVisitInformation = [];
-    let sourceLayout = null;
-    if (currentVenue.publishedReleaseId) {
-      const published = await VenueRelease.findById(currentVenue.publishedReleaseId).session(session).lean();
-      if (!published || published.status !== "published") throw new AppError("VenueRelease pubblicata non disponibile", 409);
-      sourceLayout = await LayoutRevision.findById(published.layoutRevisionId).session(session).lean();
-      if (!sourceLayout) throw new AppError("LayoutRevision pubblicata non disponibile", 409);
-      version = published.version + 1;
-      basedOnReleaseId = published._id;
-      targetBindings = published.targetBindings || [];
-      preVisitInformation = published.preVisitInformation || [];
+  let version = 1;
+  let basedOnReleaseId = null;
+  let targetBindings = [];
+  let preVisitInformation = [];
+  let sourceLayout = null;
+  if (currentVenue.publishedReleaseId) {
+    const published = await VenueRelease.findById(currentVenue.publishedReleaseId).lean();
+    if (!published || published.status !== "published") throw new AppError("VenueRelease pubblicata non disponibile", 409);
+    sourceLayout = await LayoutRevision.findById(published.layoutRevisionId).lean();
+    if (!sourceLayout) throw new AppError("LayoutRevision pubblicata non disponibile", 409);
+    version = published.version + 1;
+    basedOnReleaseId = published._id;
+    targetBindings = published.targetBindings || [];
+    preVisitInformation = published.preVisitInformation || [];
+  }
+
+  let layout = await LayoutRevision.findOne({ venueId: currentVenue._id, version });
+  if (!layout) {
+    try {
+      layout = await LayoutRevision.create({
+        ...(sourceLayout ? {
+          authoredAgainstPhysicalVocabularyRevisionId: sourceLayout.authoredAgainstPhysicalVocabularyRevisionId,
+          floors: sourceLayout.floors,
+          places: sourceLayout.places,
+          exhibitSlots: sourceLayout.exhibitSlots,
+          connections: sourceLayout.connections,
+          basedOnRevisionId: sourceLayout._id,
+        } : { authoredAgainstPhysicalVocabularyRevisionId: physicalVocabularyRevisionId }),
+        venueId: currentVenue._id,
+        version,
+        status: "draft",
+        createdBy: actorUserId,
+        updatedBy: actorUserId,
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      layout = await LayoutRevision.findOne({ venueId: currentVenue._id, version });
+      if (!layout) throw error;
     }
+  }
+  if (physicalVocabularyRevisionId
+    && String(physicalVocabularyRevisionId) !== String(layout.authoredAgainstPhysicalVocabularyRevisionId)) {
+    throw new AppError("La working release usa gia un'altra revisione del vocabolario fisico", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
+  }
 
-    const layoutId = new Venue.db.base.Types.ObjectId();
-    const releaseId = new Venue.db.base.Types.ObjectId();
-    const claimed = await Venue.updateOne(
-      { _id: currentVenue._id, lifecycleStatus: "active", workingReleaseId: null },
-      { $set: { workingReleaseId: releaseId } },
-      { session },
-    );
-    if (claimed.modifiedCount !== 1) {
-      throw new AppError("La working VenueRelease e cambiata durante la creazione", 409, [{ code: "WORKING_RELEASE_CHANGED" }]);
+  let release = await VenueRelease.findOne({ venueId: currentVenue._id, version });
+  if (!release) {
+    try {
+      release = await VenueRelease.create({
+        venueId: currentVenue._id,
+        version,
+        basedOnReleaseId,
+        layoutRevisionId: layout._id,
+        targetBindings,
+        preVisitInformation,
+        createdBy: actorUserId,
+        updatedBy: actorUserId,
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      release = await VenueRelease.findOne({ venueId: currentVenue._id, version });
+      if (!release) throw error;
     }
+  }
 
-    const [layout] = await LayoutRevision.create([{
-      _id: layoutId,
-      ...(sourceLayout ? {
-        authoredAgainstPhysicalVocabularyRevisionId: sourceLayout.authoredAgainstPhysicalVocabularyRevisionId,
-        floors: sourceLayout.floors,
-        places: sourceLayout.places,
-        exhibitSlots: sourceLayout.exhibitSlots,
-        connections: sourceLayout.connections,
-        basedOnRevisionId: sourceLayout._id,
-      } : { authoredAgainstPhysicalVocabularyRevisionId: physicalVocabularyRevisionId }),
-      venueId: currentVenue._id,
-      version,
-      status: "draft",
-      createdBy: actorUserId,
-      updatedBy: actorUserId,
-    }], { session });
-    const [release] = await VenueRelease.create([{
-      _id: releaseId,
-      venueId: currentVenue._id,
-      version,
-      basedOnReleaseId,
-      layoutRevisionId: layout._id,
-      targetBindings,
-      preVisitInformation,
-      createdBy: actorUserId,
-      updatedBy: actorUserId,
-    }], { session });
-    currentVenue.workingReleaseId = release._id;
-    committed = { venue: currentVenue, release, layout };
-  });
-  if (!committed) throw new AppError("Creazione della working VenueRelease non completata", 500);
-  return committed;
+  const claimed = await Venue.findOneAndUpdate(
+    { _id: currentVenue._id, lifecycleStatus: "active", workingReleaseId: null },
+    { $set: { workingReleaseId: release._id } },
+    { new: true },
+  );
+  if (claimed) return { venue: claimed, release, layout };
+
+  const winnerVenue = await Venue.findOne({ _id: currentVenue._id, lifecycleStatus: "active" });
+  if (!winnerVenue) throw new AppError("Venue non trovata", 404);
+  if (!winnerVenue.workingReleaseId) throw new AppError("Creazione della working VenueRelease non completata", 500);
+  const existing = await loadReleaseSnapshot(winnerVenue.workingReleaseId);
+  if (physicalVocabularyRevisionId
+    && String(physicalVocabularyRevisionId) !== String(existing.layout.authoredAgainstPhysicalVocabularyRevisionId)) {
+    throw new AppError("La working release usa gia un'altra revisione del vocabolario fisico", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
+  }
+  return { venue: winnerVenue, ...existing };
 }
 
 async function ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId = null, actorUserId }) {
