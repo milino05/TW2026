@@ -10,27 +10,15 @@ import { targetInspector } from "./venue-editor-targets-mixin.js";
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function selected(value, current) { return id(value) === id(current) ? "selected" : ""; }
-function normalized(value) {
-  return String(value || "").trim().toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
+function normalized(value) { return String(value || "").trim().toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 function searchableTargetText(target) {
-  return normalized([
-    target?.label,
-    target?.displayLabelOverride,
-    target?.inventoryNote,
-    target?.subject?.preferredLabel,
-    target?.subject?.label,
-    target?.subject?.description,
-    target?.exhibitSlot?.label,
-  ].filter(Boolean).join(" "));
+  return normalized([target?.label, target?.displayLabelOverride, target?.inventoryNote, target?.subject?.preferredLabel, target?.subject?.label, target?.subject?.description, target?.exhibitSlot?.label].filter(Boolean).join(" "));
 }
 function targetSubjectId(target) { return id(target?.subject?.id || target?.subject?._id || target?.subjectId); }
-function assignedTargetForSlot(targets, slotId) {
-  return (targets || []).find((target) => id(target.exhibitSlot?.id || target.exhibitSlot?._id) === id(slotId));
-}
+function assignedTargetForSlot(targets, slotId) { return (targets || []).find((target) => id(target.exhibitSlot?.id || target.exhibitSlot?._id) === id(slotId)); }
 function inventoryStatus(target) {
-  if (target?.configuration?.state === "unavailable") return { label: "Non disponibile", tone: "warning" };
   if (target?.exhibitSlot || target?.configuration?.state === "exposed") return { label: "Già esposto", tone: "success" };
+  if (target?.configuration?.state === "unavailable") return { label: "Non disponibile", tone: "warning" };
   return { label: "Non esposto", tone: "neutral" };
 }
 function detailTabs(entries, activeTab) {
@@ -41,11 +29,10 @@ function detailShell({ eyebrow, title, subtitle, tabs, activeTab, panel, danger 
 }
 function inventoryCard(target, selectedTargetId) {
   const status = inventoryStatus(target);
-  const subtitle = target.subject?.preferredLabel && target.subject.preferredLabel !== target.label
-    ? target.subject.preferredLabel
-    : target.subject?.description || "Entità della sede";
+  const subtitle = target.subject?.preferredLabel && target.subject.preferredLabel !== target.label ? target.subject.preferredLabel : target.subject?.description || "Entità della sede";
   const location = target.exhibitSlot?.label ? `Slot: ${target.exhibitSlot.label}` : "Nessuno slot assegnato";
-  return `<button class="venue-inventory-browser-card${id(target.id) === id(selectedTargetId) ? " selected" : ""}" type="button" data-inventory-browser-target="${escapeHtml(id(target.id))}" aria-pressed="${id(target.id) === id(selectedTargetId)}"><span class="venue-inventory-browser-card-status" data-tone="${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span><strong>${escapeHtml(target.label || "Entità")}</strong><small>${escapeHtml(subtitle)}</small><span class="venue-inventory-browser-card-location">${escapeHtml(location)}</span></button>`;
+  const active = id(target.id) === id(selectedTargetId);
+  return `<button class="venue-inventory-browser-card${active ? " selected" : ""}" type="button" data-inventory-browser-target="${escapeHtml(id(target.id))}" aria-pressed="${active}"><span class="venue-inventory-browser-card-status" data-tone="${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span><strong>${escapeHtml(target.label || "Entità")}</strong><small>${escapeHtml(subtitle)}</small><span class="venue-inventory-browser-card-location">${escapeHtml(location)}</span></button>`;
 }
 
 export const venueSlotInventoryMixin = {
@@ -60,49 +47,31 @@ export const venueSlotInventoryMixin = {
       if (event.key !== "Escape" || this.busy) return;
       let handled = true;
       if (this.pendingDestructiveAction) {
-        this.pendingDestructiveAction = null;
-        this.error = null;
-        this.render();
+        this.pendingDestructiveAction = null; this.error = null; this.render();
       } else if (this.inventorySubjectPickerOpen) {
-        this.inventorySubjectPickerOpen = false;
-        this.inventoryPendingSubject = null;
-        this.render();
-      } else if (this.inventoryDetailTargetId) {
-        this.inventoryDetailTargetId = null;
-        this.render();
-      } else if (this.inventoryBrowser) {
-        this.inventoryBrowser = null;
-        this.render();
+        this.inventorySubjectPickerOpen = false; this.inventoryPendingSubject = null; this.render();
       } else if (this.pendingTargetRemovalId) {
-        this.pendingTargetRemovalId = null;
-        this.error = null;
-        this.render();
+        this.pendingTargetRemovalId = null; this.error = null; this.render();
+      } else if (this.inventoryDetailTargetId) {
+        this.inventoryDetailTargetId = null; this.render();
+      } else if (this.inventoryBrowser) {
+        this.inventoryBrowser = null; this.render();
       } else if (this.pendingVenueRemoval) {
-        this.pendingVenueRemoval = false;
-        this.error = null;
-        this.render();
+        this.pendingVenueRemoval = false; this.error = null; this.render();
       } else if (this.pendingWorkflow) {
-        this.pendingWorkflow = null;
-        this.workflowMessage = "";
-        this.render();
+        this.pendingWorkflow = null; this.workflowMessage = ""; this.render();
       } else if (this.calibrationOverwritePrompt) {
-        this.calibrationOverwritePrompt = null;
-        this.render();
+        this.calibrationOverwritePrompt = null; this.render();
       } else if (this.mapCreationDialog) {
-        this.closeMapCreationDialog?.();
-        this.render();
+        this.closeMapCreationDialog?.(); this.render();
       } else if (this.floorDialog) {
-        this.floorDialog = null;
-        this.render();
+        this.floorDialog = null; this.render();
       } else if (this.spatialEditor) {
         this.closeSpatialEditor?.();
       } else if (this.pendingMapAction || this.draggingPlace) {
         this.cancelMapAction?.();
       } else handled = false;
-      if (handled) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
+      if (handled) { event.preventDefault(); event.stopImmediatePropagation(); }
     };
     window.addEventListener("keydown", this._venueGlobalEscapeHandler, true);
   },
@@ -118,54 +87,27 @@ export const venueSlotInventoryMixin = {
     const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
     if (!slot) return false;
     const assigned = assignedTargetForSlot(this.data.targets || [], exhibitSlotId);
-    this.inventoryBrowser = {
-      purpose: "assign_to_slot",
-      exhibitSlotId: id(exhibitSlotId),
-      query: "",
-      filter: "all",
-      selectedTargetId: assigned ? id(assigned.id) : null,
-    };
+    this.inventoryBrowser = { purpose: "assign_to_slot", exhibitSlotId: id(exhibitSlotId), query: "", filter: "all", selectedTargetId: assigned ? id(assigned.id) : null };
     this.inventorySubjectPickerOpen = false;
     this.inventoryPendingSubject = null;
     this.render();
-    requestAnimationFrame(() => this.querySelector("[data-inventory-browser-overlay] input[name=inventoryQuery]")?.focus());
+    requestAnimationFrame(() => this.querySelector("[data-inventory-browser-backdrop] input[name=inventoryQuery]")?.focus());
     return true;
   },
 
   browserState() {
-    if (this.inventoryBrowser) return this.inventoryBrowser;
-    return {
-      purpose: "standalone",
-      exhibitSlotId: null,
-      query: this.inventorySearchQuery || "",
-      filter: this.inventoryFilter || "all",
-      selectedTargetId: this.selectedVenueTargetId || null,
-    };
+    return this.inventoryBrowser || { purpose: "standalone", exhibitSlotId: null, query: this.inventorySearchQuery || "", filter: this.inventoryFilter || "all", selectedTargetId: this.selectedVenueTargetId || null };
   },
-
-  setBrowserSelection(targetId) {
-    if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: id(targetId) };
-    else this.selectedVenueTargetId = id(targetId);
-  },
-
-  setBrowserQuery(query) {
-    if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, query };
-    else this.inventorySearchQuery = query;
-  },
-
-  setBrowserFilter(filter) {
-    if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, filter };
-    else this.inventoryFilter = filter;
-  },
+  setBrowserSelection(targetId) { if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: id(targetId) }; else this.selectedVenueTargetId = id(targetId); },
+  setBrowserQuery(query) { if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, query }; else this.inventorySearchQuery = query; },
+  setBrowserFilter(filter) { if (this.inventoryBrowser) this.inventoryBrowser = { ...this.inventoryBrowser, filter }; else this.inventoryFilter = filter; },
 
   onSubjectSelected(event) {
     if (!this.inventorySubjectPickerOpen) return venueActionMixin.onSubjectSelected.call(this, event);
     const subject = event.detail?.subject;
     if (!subject) return;
     const projectedTargetId = id(subject.inventory?.venueTargetId);
-    const existing = (this.data.targets || []).find((target) => (
-      projectedTargetId && id(target.id) === projectedTargetId
-    ) || targetSubjectId(target) === id(subject));
+    const existing = (this.data.targets || []).find((target) => (projectedTargetId && id(target.id) === projectedTargetId) || targetSubjectId(target) === id(subject));
     if (existing) {
       this.setBrowserSelection(existing.id);
       this.inventorySubjectPickerOpen = false;
@@ -185,60 +127,38 @@ export const venueSlotInventoryMixin = {
     const openFromSlot = target.closest("[data-open-inventory-browser]");
     if (openFromSlot) return this.openInventoryBrowserForSlot(openFromSlot.dataset.openInventoryBrowser) || true;
 
-    if (target.matches("[data-inventory-browser-backdrop]")) {
-      this.inventoryBrowser = null;
-      this.render();
-      return true;
+    if (target.matches("[data-inventory-browser-backdrop]") || target.closest("[data-close-inventory-browser]")) {
+      this.inventoryBrowser = null; this.render(); return true;
     }
-    if (target.closest("[data-close-inventory-browser]")) {
-      this.inventoryBrowser = null;
-      this.render();
-      return true;
+    if (target.matches("[data-inventory-subject-backdrop]") || target.closest("[data-close-inventory-subject-picker]")) {
+      this.inventorySubjectPickerOpen = false; this.inventoryPendingSubject = null; this.render(); return true;
     }
 
-    const selectTarget = target.closest("[data-inventory-browser-target]");
-    if (selectTarget) {
-      this.setBrowserSelection(selectTarget.dataset.inventoryBrowserTarget);
-      this.render();
-      return true;
-    }
-
+    const card = target.closest("[data-inventory-browser-target]");
+    if (card) { this.setBrowserSelection(card.dataset.inventoryBrowserTarget); this.render(); return true; }
     const filter = target.closest("[data-inventory-browser-filter]");
-    if (filter) {
-      this.setBrowserFilter(filter.dataset.inventoryBrowserFilter || "all");
-      this.render();
-      return true;
-    }
+    if (filter) { this.setBrowserFilter(filter.dataset.inventoryBrowserFilter || "all"); this.render(); return true; }
 
     if (target.closest("[data-open-inventory-subject-picker]")) {
-      this.inventorySubjectPickerOpen = true;
-      this.inventoryPendingSubject = null;
-      this.render();
+      this.inventorySubjectPickerOpen = true; this.inventoryPendingSubject = null; this.render();
+      requestAnimationFrame(() => this.querySelector(".venue-inventory-subject-dialog input")?.focus());
       return true;
     }
-    if (target.closest("[data-close-inventory-subject-picker]")) {
-      this.inventorySubjectPickerOpen = false;
-      this.inventoryPendingSubject = null;
-      this.render();
-      return true;
-    }
-    if (target.closest("[data-reset-inventory-subject-picker]")) {
-      this.inventoryPendingSubject = null;
-      this.render();
-      return true;
-    }
+    if (target.closest("[data-reset-inventory-subject-picker]")) { this.inventoryPendingSubject = null; this.render(); return true; }
 
     if (target.closest("[data-open-selected-inventory-detail]")) {
       const selectedTargetId = this.browserState().selectedTargetId;
-      if (selectedTargetId) {
-        this.inventoryDetailTargetId = id(selectedTargetId);
-        this.render();
-      }
+      if (selectedTargetId) { this.inventoryDetailTargetId = id(selectedTargetId); this.render(); }
       return true;
     }
     if (this.inventoryDetailTargetId && target.closest("[data-close-inventory-inspector]")) {
+      this.inventoryDetailTargetId = null; this.render(); return true;
+    }
+    const locate = target.closest("[data-locate-slot]");
+    if (this.inventoryDetailTargetId && locate) {
       this.inventoryDetailTargetId = null;
-      this.render();
+      this.inventoryBrowser = null;
+      this.locateExhibitSlot?.(locate.dataset.locateSlot);
       return true;
     }
 
@@ -263,34 +183,23 @@ export const venueSlotInventoryMixin = {
 
     const unassign = target.closest("[data-unassign-slot-current]");
     if (unassign) {
-      await this.execute(
-        () => managementRepository.unassignVenueTargetFromExhibitSlot(this.id, unassign.dataset.unassignSlotCurrent),
-        "Slot liberato. L’entità resta nell’inventario della sede.",
-      );
+      await this.execute(() => managementRepository.unassignVenueTargetFromExhibitSlot(this.id, unassign.dataset.unassignSlotCurrent), "Slot liberato. L’entità resta nell’inventario della sede.");
       return true;
     }
-
     return venueInventorySearchMixin.handleTargetMediaClick.call(this, event);
   },
 
   async handleTargetMediaSubmit(form, data) {
     if (form.matches("[data-inventory-browser-search]")) {
-      this.setBrowserQuery(String(data.get("inventoryQuery") || "").trim());
-      this.render();
-      return true;
+      this.setBrowserQuery(String(data.get("inventoryQuery") || "").trim()); this.render(); return true;
     }
-
     if (form.matches("[data-add-subject-to-inventory]")) {
       const subjectId = String(data.get("subjectId") || "").trim();
       if (!subjectId) return true;
       const before = new Set((this.data.targets || []).map((entry) => id(entry.id)));
-      const success = await this.execute(
-        () => managementRepository.createVenueTarget(this.id, { subjectId, provenance: { origin: "human" } }),
-        "Entità aggiunta all’inventario della sede.",
-      );
+      const success = await this.execute(() => managementRepository.createVenueTarget(this.id, { subjectId, provenance: { origin: "human" } }), "Entità aggiunta all’inventario della sede.");
       if (success) {
-        const created = (this.data.targets || []).find((entry) => targetSubjectId(entry) === id(subjectId))
-          || (this.data.targets || []).find((entry) => !before.has(id(entry.id)));
+        const created = (this.data.targets || []).find((entry) => targetSubjectId(entry) === id(subjectId)) || (this.data.targets || []).find((entry) => !before.has(id(entry.id)));
         if (created) this.setBrowserSelection(created.id);
         this.inventorySubjectPickerOpen = false;
         this.inventoryPendingSubject = null;
@@ -298,25 +207,19 @@ export const venueSlotInventoryMixin = {
       }
       return true;
     }
-
     return venueInventorySearchMixin.handleTargetMediaSubmit.call(this, form, data);
   },
 
   async handleMapAuthoringClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
-
     const createSlot = target.closest("[data-start-slot]");
     if (createSlot) {
-      this.mapCreationDialog = {
-        type: "slot",
-        placeId: id(createSlot.dataset.placeId || createSlot.dataset.startSlotPlace || ""),
-      };
+      this.mapCreationDialog = { type: "slot", placeId: id(createSlot.dataset.placeId || createSlot.dataset.startSlotPlace || "") };
       this.render();
       requestAnimationFrame(() => this.querySelector("[data-map-slot-dialog] input[name=label]")?.focus());
       return true;
     }
-
     return venueMapRefinementMixin.handleMapAuthoringClick.call(this, event);
   },
 
@@ -327,16 +230,12 @@ export const venueSlotInventoryMixin = {
       const orderText = String(data.get("order") || "").trim();
       if (!placeId || !label) return true;
       const before = new Set((this.data.layout?.exhibitSlots || []).map((slot) => id(slot.exhibitSlotId)));
-      const success = await this.execute(
-        () => managementRepository.createExhibitSlot(this.id, { placeId, label, order: orderText ? Number(orderText) : null }),
-        "Slot espositivo creato.",
-      );
+      const success = await this.execute(() => managementRepository.createExhibitSlot(this.id, { placeId, label, order: orderText ? Number(orderText) : null }), "Slot espositivo creato.");
       if (success) {
         const created = (this.data.layout?.exhibitSlots || []).find((slot) => !before.has(id(slot.exhibitSlotId)));
         this.mapCreationDialog = null;
         this.activeSpatialTab = "slots";
-        if (created) this.openSpatialEditor?.("slot", created.exhibitSlotId);
-        else this.render();
+        if (created) this.openSpatialEditor?.("slot", created.exhibitSlotId); else this.render();
       }
       return true;
     }
@@ -352,11 +251,11 @@ export const venueSlotInventoryMixin = {
     const cards = slots.map((slot) => {
       const slotId = id(slot.exhibitSlotId);
       const place = placeById.get(id(slot.placeId));
-      const floor = floorById.get(id(place?.floorId));
       const assigned = assignedTargetForSlot(targets, slotId);
-      return `<button class="venue-slot-grid-card" type="button" data-open-spatial-slot="${escapeHtml(slotId)}"><span class="venue-slot-grid-status" data-tone="${assigned ? "success" : "neutral"}">${assigned ? "Assegnato" : "Libero"}</span><strong>${escapeHtml(slot.label || "Slot espositivo")}</strong><span>${escapeHtml(assigned?.label || "Nessuna entità")}</span><small>${escapeHtml(place?.label || "Luogo mancante")} · ${escapeHtml(floor?.label || "Piano")}</small></button>`;
+      return `<button class="venue-slot-grid-card" type="button" data-open-spatial-slot="${escapeHtml(slotId)}"><span class="venue-slot-grid-status" data-tone="${assigned ? "success" : "neutral"}">${assigned ? "Assegnato" : "Libero"}</span><strong>${escapeHtml(slot.label || "Slot espositivo")}</strong><span>${escapeHtml(assigned?.label || "Nessuna entità")}</span><small>${escapeHtml(place?.label || "Luogo mancante")} · ${escapeHtml(floorById.get(id(place?.floorId))?.label || "Piano")}</small></button>`;
     }).join("");
-    const add = editable ? `<button class="venue-slot-grid-card venue-slot-grid-card--add" type="button" data-start-slot ${!(layout.places || []).length ? "disabled title=\"Crea prima almeno un luogo\"" : ""}><span class="venue-slot-grid-plus">${icon("plus", { size: 28 })}</span><strong>Nuovo slot</strong>${!(layout.places || []).length ? `<small>Crea prima un luogo</small>` : ""}</button>` : "";
+    const noPlaces = !(layout.places || []).length;
+    const add = editable ? `<button class="venue-slot-grid-card venue-slot-grid-card--add" type="button" data-start-slot ${noPlaces ? "disabled title=\"Crea prima almeno un luogo\"" : ""}><span class="venue-slot-grid-plus">${icon("plus", { size: 28 })}</span><strong>Nuovo slot</strong>${noPlaces ? `<small>Crea prima un luogo</small>` : ""}</button>` : "";
     return `<section class="venue-command-block venue-slots-browser"><div class="section-heading compact"><div><h3>Slot espositivi</h3><p>Posizioni stabili dell’allestimento. Apri una card per configurare entità, indicazioni e proprietà dello slot.</p></div><span class="count">${slots.length}</span></div><div class="venue-slot-grid">${cards}${add}</div></section>`;
   },
 
@@ -369,9 +268,8 @@ export const venueSlotInventoryMixin = {
     const floor = (layout.floors || []).find((entry) => id(entry._id) === id(place.floorId));
     const type = definitions.placeTypes.find((entry) => id(entry.definitionId) === id(place.placeTypeDefinitionId));
     const slots = (layout.exhibitSlots || []).filter((entry) => id(entry.placeId) === id(place._id));
-    const targets = this.data.targets || [];
     const cards = slots.map((slot) => {
-      const assigned = assignedTargetForSlot(targets, slot.exhibitSlotId);
+      const assigned = assignedTargetForSlot(this.data.targets || [], slot.exhibitSlotId);
       return `<button class="venue-slot-grid-card" type="button" data-open-spatial-slot="${escapeHtml(id(slot.exhibitSlotId))}"><span class="venue-slot-grid-status" data-tone="${assigned ? "success" : "neutral"}">${assigned ? "Assegnato" : "Libero"}</span><strong>${escapeHtml(slot.label)}</strong><span>${escapeHtml(assigned?.label || "Nessuna entità")}</span><small>${escapeHtml(slot.approachGuidance?.defaultInstruction || "Nessuna indicazione predefinita")}</small></button>`;
     }).join("");
     const add = editable ? `<button class="venue-slot-grid-card venue-slot-grid-card--add" type="button" data-start-slot data-place-id="${escapeHtml(id(place._id))}"><span class="venue-slot-grid-plus">${icon("plus", { size: 28 })}</span><strong>Nuovo slot</strong><small>${escapeHtml(place.label || "Questo luogo")}</small></button>` : "";
@@ -389,10 +287,10 @@ export const venueSlotInventoryMixin = {
     const floor = (layout.floors || []).find((entry) => id(entry._id) === id(place.floorId));
     const assigned = assignedTargetForSlot(this.data.targets || [], slot.exhibitSlotId);
     const current = assigned
-      ? `<article class="venue-slot-current-entity"><span class="venue-inventory-browser-card-status" data-tone="success">Già esposto</span><h3>${escapeHtml(assigned.label || "Entità")}</h3><p>${escapeHtml(assigned.subject?.preferredLabel || assigned.subject?.description || "Entità dell’inventario")}</p>${assigned.exhibitSlot?.label ? `<small>Collocazione: ${escapeHtml(assigned.exhibitSlot.label)}</small>` : ""}</article>`
+      ? `<article class="venue-slot-current-entity"><span class="venue-inventory-browser-card-status" data-tone="success">Già esposto</span><h3>${escapeHtml(assigned.label || "Entità")}</h3><p>${escapeHtml(assigned.subject?.preferredLabel || assigned.subject?.description || "Entità dell’inventario")}</p><small>Collocazione: ${escapeHtml(assigned.exhibitSlot?.label || slot.label)}</small></article>`
       : `<div class="empty-state compact venue-slot-empty-entity"><h3>Slot libero</h3><p>Nessuna entità dell’inventario è assegnata a questa posizione.</p></div>`;
     const actions = editable ? `<div class="button-row venue-slot-entity-actions"><button type="button" data-open-inventory-browser="${escapeHtml(id(slot.exhibitSlotId))}">${assigned ? "Cambia entità" : "Apri inventario"}</button>${assigned ? `<button class="button-secondary" type="button" data-unassign-slot-current="${escapeHtml(id(assigned.id))}">Libera slot</button><a class="button-link secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(assigned.id))}">Crea contenuto</a>` : ""}</div>` : "";
-    const panel = `<div class="venue-slot-entity-panel">${current}${actions}<p class="note">L’inventario è indipendente dallo slot: aggiungere una nuova entità all’inventario non la colloca automaticamente. L’assegnazione avviene solo scegliendola esplicitamente per questo slot.</p></div>`;
+    const panel = `<div class="venue-slot-entity-panel">${current}${actions}<p class="note">Aggiungere un’entità all’inventario non la colloca automaticamente: l’assegnazione a questo slot resta un gesto esplicito.</p></div>`;
     const breadcrumb = `<button class="button-link" type="button" data-open-spatial-place="${escapeHtml(id(place._id))}">‹ ${escapeHtml(place.label || "Luogo")}</button>`;
     const danger = editable ? `<section class="venue-detail-danger"><div><strong>Rimuovi slot</strong><p>L’entità eventualmente esposta resterà nell’inventario della sede.</p></div><button class="danger" type="button" data-remove-slot="${escapeHtml(id(slot.exhibitSlotId))}" data-label="${escapeHtml(slot.label)}">Rimuovi slot</button></section>` : "";
     return detailShell({ eyebrow: "Slot espositivo", title: slot.label, subtitle: `${escapeHtml(place.label || "Luogo")} · ${escapeHtml(floor?.label || "Piano")}`, tabs: [["entity", "Entità"], ["guidance", "Indicazioni"], ["advanced", "Avanzate"]], activeTab: "entity", panel, danger, breadcrumb });
@@ -407,26 +305,24 @@ export const venueSlotInventoryMixin = {
       if (browser.filter === "unavailable") return target.configuration?.state === "unavailable";
       return true;
     });
-    const cards = filtered.map((target) => inventoryCard(target, browser.selectedTargetId)).join("");
     const selectedTarget = (this.data.targets || []).find((entry) => id(entry.id) === id(browser.selectedTargetId));
     const filters = [["all", "Tutte"], ["exposed", "Già esposte"], ["unplaced", "Non esposte"], ["unavailable", "Non disponibili"]]
       .map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-browser-filter="${value}" aria-pressed="${browser.filter === value}">${label}</button>`).join("");
-    let contextAction = "";
+    let contextAction;
     if (browser.purpose === "assign_to_slot") {
       const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(browser.exhibitSlotId));
       const alreadyHere = selectedTarget && id(selectedTarget.exhibitSlot?.id || selectedTarget.exhibitSlot?._id) === id(browser.exhibitSlotId);
       const relocating = selectedTarget && selectedTarget.exhibitSlot && !alreadyHere;
-      const buttonLabel = alreadyHere ? "Già in questo slot" : relocating ? "Ricolloca in questo slot" : "Aggiungi allo slot";
-      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Assegnazione allo slot</span><strong>${escapeHtml(slot?.label || "Slot selezionato")}</strong>${relocating ? `<small>L’entità è già esposta in “${escapeHtml(selectedTarget.exhibitSlot.label || "un altro slot")}” e verrà ricollocata.</small>` : ""}</div><button type="button" data-assign-selected-inventory-target ${!selectedTarget || alreadyHere ? "disabled" : ""}>${escapeHtml(buttonLabel)}</button></footer>`;
+      const label = alreadyHere ? "Già in questo slot" : relocating ? "Ricolloca in questo slot" : "Aggiungi allo slot";
+      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Assegnazione allo slot</span><strong>${escapeHtml(slot?.label || "Slot selezionato")}</strong>${relocating ? `<small>L’entità è già esposta in “${escapeHtml(selectedTarget.exhibitSlot.label || "un altro slot")}” e verrà ricollocata.</small>` : ""}</div><button type="button" data-assign-selected-inventory-target ${!selectedTarget || alreadyHere ? "disabled" : ""}>${escapeHtml(label)}</button></footer>`;
     } else {
-      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Inventario standalone</span><strong>${selectedTarget ? escapeHtml(selectedTarget.label) : "Seleziona un’entità"}</strong><small>Da qui gestisci l’inventario; la collocazione negli slot parte sempre dall’editor di uno slot.</small></div><button type="button" data-open-selected-inventory-detail ${selectedTarget ? "" : "disabled"}>Apri dettagli</button></footer>`;
+      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Inventario standalone</span><strong>${selectedTarget ? escapeHtml(selectedTarget.label) : "Seleziona un’entità"}</strong><small>La collocazione parte sempre dall’editor di uno slot; qui gestisci l’inventario in modo indipendente.</small></div><button type="button" data-open-selected-inventory-detail ${selectedTarget ? "" : "disabled"}>Apri dettagli</button></footer>`;
     }
+    const cards = filtered.map((target) => inventoryCard(target, browser.selectedTargetId)).join("");
     return `<div class="venue-inventory-browser"><header class="venue-inventory-browser-heading"><div><span class="eyebrow">Inventario della sede</span><h3>${browser.purpose === "assign_to_slot" ? "Scegli l’entità da esporre" : "Entità della Venue"}</h3></div><span class="count">${filtered.length}</span></header><form class="venue-inventory-browser-search" data-inventory-browser-search role="search"><label><span class="sr-only">Cerca nell’inventario</span><input name="inventoryQuery" value="${escapeHtml(browser.query || "")}" placeholder="Cerca nell’inventario"></label><button class="button-secondary" type="submit">Cerca</button>${editable ? `<button class="venue-inventory-add-button" type="button" data-open-inventory-subject-picker aria-label="Aggiungi entità all’inventario" title="Aggiungi entità all’inventario">${icon("plus", { size: 18 })}</button>` : ""}</form><div class="venue-inventory-browser-filters" role="group" aria-label="Filtra inventario">${filters}</div><div class="venue-inventory-browser-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità trovata</h4><p>Modifica la ricerca oppure aggiungi una nuova entità all’inventario.</p></div>`}</div>${contextAction}</div>`;
   },
 
-  renderTargets(editable) {
-    return this.renderInventoryBrowserSurface(editable, this.browserState());
-  },
+  renderTargets(editable) { return this.renderInventoryBrowserSurface(editable, this.browserState()); },
 
   renderInventoryBrowserOverlay(editable) {
     if (!this.inventoryBrowser) return "";
@@ -439,7 +335,7 @@ export const venueSlotInventoryMixin = {
     const body = pending
       ? `<article class="venue-inventory-subject-selected"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(pending.preferredLabel || pending.label || "Subject")}</h3><p>${escapeHtml(pending.description || "Senza descrizione")}</p><form data-add-subject-to-inventory><input type="hidden" name="subjectId" value="${escapeHtml(id(pending))}"><div class="button-row"><button type="submit">Aggiungi all’inventario</button><button class="button-secondary" type="button" data-reset-inventory-subject-picker>Cambia ricerca</button></div></form></article>`
       : `<p>Cerca tra i Subject ArtAround. Se non viene trovata una corrispondenza esatta, la ricerca prosegue automaticamente su Wikidata.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item" venue-id="${escapeHtml(this.id)}"></artaround-semantic-entity-picker>`;
-    return `<div class="venue-modal-backdrop venue-inventory-subject-backdrop" role="presentation"><section class="venue-modal-card venue-inventory-subject-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-inventory-subject-title"><header><div><span class="eyebrow">Nuova entità</span><h3 id="venue-inventory-subject-title">Aggiungi all’inventario</h3></div><button class="button-secondary small" type="button" data-close-inventory-subject-picker aria-label="Chiudi ricerca Subject">×</button></header>${body}</section></div>`;
+    return `<div class="venue-modal-backdrop venue-inventory-subject-backdrop" data-inventory-subject-backdrop role="presentation"><section class="venue-modal-card venue-inventory-subject-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-inventory-subject-title"><header><div><span class="eyebrow">Nuova entità</span><h3 id="venue-inventory-subject-title">Aggiungi all’inventario</h3></div><button class="button-secondary small" type="button" data-close-inventory-subject-picker aria-label="Chiudi ricerca Subject">×</button></header>${body}</section></div>`;
   },
 
   renderInventoryDetailOverlay(editable) {
