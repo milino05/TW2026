@@ -4,7 +4,7 @@ import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
 import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueContextualWorkspaceMixin } from "./venue-editor-contextual-workspace-mixin.js";
-import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
+import { venueSectionMixin } from "./venue-editor-section-mixin.js";
 
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -68,7 +68,7 @@ export const venueMapRefinementMixin = {
 
   render() {
     this.ensureGlobalEscapeHandler();
-    venueSlotSubjectUiMixin.render.call(this);
+    venueSectionMixin.render.call(this);
     if (!this.data) return;
     this.decorateMapRefinements();
   },
