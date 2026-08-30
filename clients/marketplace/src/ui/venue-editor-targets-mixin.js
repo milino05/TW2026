@@ -5,7 +5,6 @@ function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").
 function selected(value, current) { return String(value || "") === String(current || "") ? "selected" : ""; }
 function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
 function id(value) { return String(value?._id || value?.id || value || ""); }
-function availabilityLabel(value) { return value === "active" ? "Disponibile" : "Temporaneamente non disponibile"; }
 function stateLabel(value) { return { exposed: "Esposto", unplaced: "Non collocato", unavailable: "Non disponibile" }[value] || "Inventario"; }
 function sourceLabel(value) { return { venue_exposed: "Esposto in questa sede", venue_inventory: "Inventario della sede", organization_content: "Contenuto del museo", artaround: "ArtAround" }[value] || "ArtAround"; }
 function fileAsBase64(file) {
@@ -57,22 +56,28 @@ function renderTargetRemoval(target, pendingTargetRemovalId, busy) {
   return `<section class="confirmation-panel resource-removal-confirmation" role="alert"><div><strong>Rimuovere “${escapeHtml(target.label)}” dall’inventario?</strong><p>Subject e Item non verranno eliminati. L’operazione è possibile solo se nessuna configurazione corrente usa l’entità.</p></div><div class="button-row"><button class="danger" type="button" data-confirm-target-removal="${escapeHtml(target.id)}" ${busy ? "disabled" : ""}>Rimuovi</button><button class="button-secondary" type="button" data-cancel-target-removal>Annulla</button></div></section>`;
 }
 
-function targetCard(entry, context) {
-  const { editable, venueId, pendingTargetRemovalId, busy, selectedVenueTargetId } = context;
-  const state = entry.configuration?.state || "unplaced";
-  const itemHref = `/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(entry.id))}`;
-  const slot = entry.exhibitSlot;
-  const counts = entry.museumContent || { available: 0, draft: 0 };
-  const trash = renderTargetRemoval(entry, pendingTargetRemovalId, busy);
-  const detach = has(entry.availableOperations, "venue.target.detach")
-    ? `<button class="danger small" type="button" data-detach-target="${escapeHtml(entry.id)}" data-label="${escapeHtml(entry.label)}">Rimuovi dalla configurazione</button>`
-    : "";
-  return `<article class="venue-target-card${id(selectedVenueTargetId) === id(entry.id) ? " selected" : ""}" data-venue-entity-card="${escapeHtml(entry.id)}" data-state="${escapeHtml(state)}"><header><div><span class="eyebrow">${escapeHtml(entry.subject?.label || "Identità non disponibile")}</span><h3>${escapeHtml(entry.label)}</h3></div><span class="chip" data-tone="${state === "exposed" ? "success" : state === "unavailable" ? "warning" : "neutral"}">${escapeHtml(stateLabel(state))}</span></header><p>${escapeHtml(entry.inventoryNote || entry.subject?.description || "Nessuna nota d’inventario.")}</p><dl class="venue-command-facts"><div><dt>Contenuti disponibili</dt><dd>${counts.available || 0}</dd></div><div><dt>Bozze del museo</dt><dd>${counts.draft || 0}</dd></div></dl>${slot ? `<p class="venue-entity-location">${icon("pin", { size: 14 })} ${escapeHtml(slot.label)} <button class="link-button" type="button" data-locate-slot="${escapeHtml(id(slot.id))}">Localizza</button></p>` : `<p class="venue-entity-location muted">Nessuno slot assegnato</p>`}${editable ? `<div class="button-row"><a class="button-link small secondary" data-route href="${itemHref}">Crea contenuto</a>${slot ? `<button class="button-secondary small" type="button" data-unassign-target="${escapeHtml(entry.id)}">Scollega dallo slot</button>` : ""}</div><details><summary>Inventario e disponibilità</summary><form data-target-metadata="${escapeHtml(entry.id)}" class="venue-inline-form"><label>Etichetta locale<input name="displayLabelOverride" value="${escapeHtml(entry.displayLabelOverride || "")}" placeholder="Usa il nome del Subject"></label><label>Nota d’inventario<textarea name="inventoryNote">${escapeHtml(entry.inventoryNote || "")}</textarea></label><button>Salva</button></form>${entry.binding ? `<form data-target-availability="${escapeHtml(entry.id)}" class="venue-target-availability"><label>Disponibilità<select name="availability"><option value="active" ${selected("active", entry.binding.availability || "active")}>Disponibile</option><option value="unavailable" ${selected("unavailable", entry.binding.availability)}>Temporaneamente non disponibile</option></select></label><button class="button-secondary">Salva</button></form>` : ""}${renderRecognitionMedia(entry, editable)}${detach}${trash}</details>` : ""}</article>`;
-}
-
 function candidateList(entries, title) {
   if (!entries?.length) return "";
   return `<section class="venue-subject-results"><strong>${escapeHtml(title)}</strong>${entries.map((entry) => `<button class="venue-subject-result" type="button" data-use-venue-subject="${escapeHtml(entry.id)}"><span><b>${escapeHtml(entry.preferredLabel)}</b><small>${escapeHtml(entry.description || "Senza descrizione")}</small></span><span class="chip">${escapeHtml(sourceLabel(entry.source))}</span></button>`).join("")}</section>`;
+}
+
+function targetSummaryCard(entry, selectedTargetId) {
+  const state = entry.configuration?.state || "unplaced";
+  const slot = entry.exhibitSlot;
+  const counts = entry.museumContent || { available: 0, draft: 0 };
+  return `<article class="venue-target-card venue-target-card--summary${id(selectedTargetId) === id(entry.id) ? " selected" : ""}" data-venue-entity-card="${escapeHtml(entry.id)}" data-state="${escapeHtml(state)}"><header><div><span class="eyebrow">${escapeHtml(entry.subject?.label || "Identità non disponibile")}</span><h3>${escapeHtml(entry.label)}</h3></div><span class="chip" data-tone="${state === "exposed" ? "success" : state === "unavailable" ? "warning" : "neutral"}">${escapeHtml(stateLabel(state))}</span></header><p>${escapeHtml(entry.inventoryNote || entry.subject?.description || "Nessuna nota d’inventario.")}</p><dl class="venue-command-facts"><div><dt>Contenuti</dt><dd>${counts.available || 0}</dd></div><div><dt>Bozze museo</dt><dd>${counts.draft || 0}</dd></div></dl>${slot ? `<p class="venue-entity-location">${icon("pin", { size: 14 })} ${escapeHtml(slot.label)}</p>` : `<p class="venue-entity-location muted">Nessuno slot assegnato</p>`}<button class="button-secondary small" type="button" data-select-venue-target="${escapeHtml(entry.id)}">Apri dettagli</button></article>`;
+}
+
+function targetInspector(entry, { editable, pendingTargetRemovalId, busy }) {
+  if (!entry) return `<aside class="venue-map-inspector venue-inventory-inspector empty"><span class="eyebrow">Inspector inventario</span><h3>Seleziona un’entità</h3><p>Le card servono per trovare l’entità; disponibilità, media e note si modificano in un solo inspector.</p></aside>`;
+  const state = entry.configuration?.state || "unplaced";
+  const slot = entry.exhibitSlot;
+  const counts = entry.museumContent || { available: 0, draft: 0 };
+  const detach = has(entry.availableOperations, "venue.target.detach")
+    ? `<button class="danger small" type="button" data-detach-target="${escapeHtml(entry.id)}" data-label="${escapeHtml(entry.label)}">Rimuovi dalla configurazione</button>`
+    : "";
+  const trash = renderTargetRemoval(entry, pendingTargetRemovalId, busy);
+  return `<aside class="venue-map-inspector venue-inventory-inspector"><header class="venue-map-inspector-header"><div><span class="eyebrow">Inventario · ${escapeHtml(stateLabel(state))}</span><h3>${escapeHtml(entry.label)}</h3></div><button class="button-secondary small" type="button" data-close-inventory-inspector aria-label="Chiudi inspector">×</button></header><p>${escapeHtml(entry.subject?.description || entry.inventoryNote || "Nessuna descrizione disponibile.")}</p><dl class="venue-command-facts"><div><dt>Contenuti disponibili</dt><dd>${counts.available || 0}</dd></div><div><dt>Bozze del museo</dt><dd>${counts.draft || 0}</dd></div></dl>${slot ? `<p class="venue-entity-location">${icon("pin", { size: 14 })} ${escapeHtml(slot.label)} <button class="link-button" type="button" data-locate-slot="${escapeHtml(id(slot.id))}">Localizza</button></p>` : `<p class="venue-entity-location muted">Entità non collocata nell’allestimento corrente.</p>`}${editable ? `<div class="button-row"><a class="button-link small secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(entry.id))}">Crea contenuto</a>${slot ? `<button class="button-secondary small" type="button" data-unassign-target="${escapeHtml(entry.id)}">Scollega dallo slot</button>` : ""}</div><form data-target-metadata="${escapeHtml(entry.id)}" class="venue-inline-form venue-inspector-form"><label>Etichetta locale<input name="displayLabelOverride" value="${escapeHtml(entry.displayLabelOverride || "")}" placeholder="Usa il nome del Subject"></label><label>Nota d’inventario<textarea name="inventoryNote">${escapeHtml(entry.inventoryNote || "")}</textarea></label><button type="submit">Salva inventario</button></form>${entry.binding ? `<form data-target-availability="${escapeHtml(entry.id)}" class="venue-target-availability"><label>Disponibilità<select name="availability"><option value="active" ${selected("active", entry.binding.availability || "active")}>Disponibile</option><option value="unavailable" ${selected("unavailable", entry.binding.availability)}>Temporaneamente non disponibile</option></select></label><button class="button-secondary">Salva</button></form>` : ""}${renderRecognitionMedia(entry, true)}${detach}${trash}` : renderRecognitionMedia(entry, false)}</aside>`;
 }
 
 export const venueTargetsMixin = {
@@ -97,8 +102,10 @@ export const venueTargetsMixin = {
   },
 
   renderTargets(editable) {
-    const filtered = (this.data.targets || []).filter((entry) => this.inventoryFilter === "all" || entry.configuration?.state === this.inventoryFilter);
-    const cards = filtered.map((entry) => targetCard(entry, { editable, venueId: this.id, pendingTargetRemovalId: this.pendingTargetRemovalId, busy: this.busy, selectedVenueTargetId: this.selectedVenueTargetId })).join("");
+    const allTargets = this.data.targets || [];
+    const filtered = allTargets.filter((entry) => this.inventoryFilter === "all" || entry.configuration?.state === this.inventoryFilter);
+    const cards = filtered.map((entry) => targetSummaryCard(entry, this.selectedVenueTargetId)).join("");
+    const selectedTarget = filtered.find((entry) => id(entry.id) === id(this.selectedVenueTargetId)) || null;
     const exact = candidateList(this.venueSubjectCandidates?.exact, "Corrispondenze esatte");
     const suggestions = candidateList(this.venueSubjectCandidates?.suggestions, "Possibili corrispondenze — verifica prima di scegliere");
     const selectedSubject = this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject selezionato</span><strong>${escapeHtml(this.selectedSubject.preferredLabel)}</strong><small>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</small><form data-create-target><input type="hidden" name="subjectId" value="${escapeHtml(id(this.selectedSubject))}"><label>Etichetta locale facoltativa<input name="displayLabelOverride" placeholder="Usa il nome condiviso"></label><label>Nota d’inventario<textarea name="inventoryNote"></textarea></label><button>Aggiungi all’inventario</button></form></article>` : "";
@@ -109,7 +116,7 @@ export const venueTargetsMixin = {
       .map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-filter="${value}" aria-pressed="${this.inventoryFilter === value}">${label}</button>`)
       .join("");
     const create = editable ? `<details class="venue-create"><summary>${icon("plus", { size: 16 })} Aggiungi entità all’inventario</summary><form data-venue-subject-search class="venue-subject-search"><label>Cerca un’opera, una persona o un luogo<input name="query" minlength="2" value="${escapeHtml(this.venueSubjectQuery)}" required></label><button>Cerca</button></form>${exact}${suggestions}${resolverFallback}${selectedSubject}</details>` : "";
-    return `<section class="venue-arrangement-panel"><div class="venue-inventory-toolbar"><div><h3>Entità della sede</h3><p>Inventario interno della sede, distinto dagli Item e dagli slot.</p></div><div class="venue-filter-group" role="group" aria-label="Filtra inventario">${filters}</div></div><div class="venue-target-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità in questo filtro</h4></div>`}</div>${create}</section>`;
+    return `<section class="venue-arrangement-panel"><div class="venue-inventory-toolbar"><div><h3>Inventario della sede</h3><p>Entità fisiche della Venue, distinte dagli Item e dagli slot dell’allestimento.</p></div><div class="venue-filter-group" role="group" aria-label="Filtra inventario">${filters}</div></div><div class="venue-inventory-workspace"><div class="venue-target-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità in questo filtro</h4></div>`}</div>${targetInspector(selectedTarget, { editable, pendingTargetRemovalId: this.pendingTargetRemovalId, busy: this.busy })}</div>${create}</section>`;
   },
 
   renderVisitors(editable) {

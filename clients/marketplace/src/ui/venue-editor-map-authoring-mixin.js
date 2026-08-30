@@ -110,18 +110,6 @@ export const venueMapAuthoringMixin = {
     if (render) this.render();
   },
 
-  locateExhibitSlot(exhibitSlotId) {
-    const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
-    const place = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(slot?.placeId));
-    if (!slot || !place) return;
-    this.selectedExhibitSlotId = id(slot.exhibitSlotId);
-    this.selectedMapPlaceId = id(place._id);
-    this.selectedFloorId = id(place.floorId);
-    this.activeSpatialTab = "map";
-    this.render();
-    requestAnimationFrame(() => this.querySelector(`[data-map-place="${CSS.escape(id(place._id))}"]`)?.focus());
-  },
-
   geometryAuthoringState() {
     const action = this.pendingMapAction;
     if (action?.type !== "geometry") return null;
@@ -152,22 +140,8 @@ export const venueMapAuthoringMixin = {
       requestAnimationFrame(() => this.querySelector(`[data-spatial-tab="${this.activeSpatialTab}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
       return true;
     }
-    const arrangementTab = target.closest("[data-arrangement-tab]");
-    if (arrangementTab) { this.activeArrangementTab = arrangementTab.dataset.arrangementTab; this.render(); return true; }
     const inventoryFilter = target.closest("[data-inventory-filter]");
     if (inventoryFilter) { this.inventoryFilter = inventoryFilter.dataset.inventoryFilter; this.render(); return true; }
-    if (target.closest("[data-add-floor-shortcut]")) {
-      this.activeSpatialTab = "places";
-      this.render();
-      requestAnimationFrame(() => this.querySelector("[data-add-floor] input")?.focus());
-      return true;
-    }
-    if (target.closest("[data-floor-settings-shortcut]")) {
-      this.activeSpatialTab = "map";
-      this.render();
-      requestAnimationFrame(() => this.querySelector("[data-floor-metadata] input")?.focus());
-      return true;
-    }
     const locateSlot = target.closest("[data-locate-slot]");
     if (locateSlot) { this.locateExhibitSlot(locateSlot.dataset.locateSlot); return true; }
     const copySlot = target.closest("[data-copy-slot-code]");
@@ -195,21 +169,6 @@ export const venueMapAuthoringMixin = {
           overrides,
         },
       }), "Istruzione specifica rimossa.");
-      return true;
-    }
-    if (target.closest("[data-start-slot]")) {
-      this.activeSpatialTab = "arrangement";
-      this.activeArrangementTab = "slots";
-      this.render();
-      requestAnimationFrame(() => this.querySelector("[data-create-slot] input")?.focus());
-      return true;
-    }
-
-    const mapConnection = target.closest("[data-map-connection]");
-    if (mapConnection) {
-      this.selectedConnectionId = mapConnection.dataset.mapConnection;
-      this.activeSpatialTab = "connections";
-      this.render();
       return true;
     }
 
@@ -331,7 +290,7 @@ export const venueMapAuthoringMixin = {
           () => managementRepository.createExhibitSlot(this.id, { placeId, label: action.label, order: action.order }),
           "Slot espositivo creato e posizionato.",
         );
-        if (success) { this.pendingMapAction = null; this.activeSpatialTab = "arrangement"; this.activeArrangementTab = "slots"; this.render(); }
+        if (success) { this.pendingMapAction = null; this.activeSpatialTab = "slots"; this.render(); }
         return true;
       }
       if (action?.type === "geometry") return true;
@@ -385,17 +344,6 @@ export const venueMapAuthoringMixin = {
   },
 
   async handleMapAuthoringSubmit(form, data) {
-    if (form.matches("[data-create-slot]")) {
-      this.pendingMapAction = {
-        type: "placing-slot",
-        label: String(data.get("label") || "").trim(),
-        order: String(data.get("order") || "").trim() ? Number(data.get("order")) : null,
-      };
-      this.activeSpatialTab = "map";
-      this.render();
-      return true;
-    }
-
     if (form.matches("[data-slot-assignment]")) {
       const exhibitSlotId = form.dataset.slotAssignment;
       const targetId = String(data.get("venueTargetId") || "");
@@ -590,15 +538,6 @@ export const venueMapAuthoringMixin = {
     if (!this.draggingPlace || this.draggingPlace.pointerId !== event.pointerId) return;
     this.draggingPlace = null;
     this.render();
-  },
-
-  onMapDoubleClick(event) {
-    const place = event.target instanceof Element ? event.target.closest("[data-map-place]") : null;
-    if (!place || this.pendingMapAction) return;
-    this.selectedMapPlaceId = place.dataset.mapPlace;
-    this.activeSpatialTab = "places";
-    this.render();
-    requestAnimationFrame(() => this.querySelector(`[data-place-editor="${CSS.escape(this.selectedMapPlaceId)}"] input`)?.focus());
   },
 
   async onChange(event) {
