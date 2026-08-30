@@ -29,7 +29,8 @@ const PresentationOverrideSchema = new Schema({
 
 const SemanticPresentationSchema = new Schema({
   sourceActionId: { type: String, required: true, trim: true },
-  sourceEditorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", required: true },
+  sourceType: { type: String, enum: ["editorial_release", "direct_item"], default: "editorial_release" },
+  sourceEditorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null },
   itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
   itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
