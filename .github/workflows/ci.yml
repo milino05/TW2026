@@ -14,7 +14,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      MONGO_URI: mongodb://127.0.0.1:27017/artaround_ci?replicaSet=rs0
+      MONGO_URI: mongodb://127.0.0.1:27017/artaround_ci
       NODE_ENV: test
       ADAPTIVE_CONTRIBUTOR_SECRET: ci-only-stable-secret-for-tests
 
@@ -34,16 +34,11 @@ jobs:
       - name: Install Navigator dependencies
         run: npm install --prefix clients/navigator --no-audit --no-fund
 
-      - name: Start transactional MongoDB replica set
+      - name: Start standalone MongoDB matching department deployment
         run: |
-          docker run --detach --name artaround-ci-mongo --publish 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          docker run --detach --name artaround-ci-mongo --publish 27017:27017 mongo:7 --bind_ip_all
           for attempt in {1..30}; do
             if docker exec artaround-ci-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then break; fi
-            sleep 1
-          done
-          docker exec artaround-ci-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
-          for attempt in {1..30}; do
-            if docker exec artaround-ci-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then break; fi
             sleep 1
           done
 
@@ -53,7 +48,7 @@ jobs:
       - name: Check and build clients
         run: npm run check:clients && npm run build:clients
 
-      - name: Run unit and MongoDB compatibility tests
+      - name: Run unit and standalone MongoDB compatibility tests
         run: npm test
 
       - name: Audit production backend dependencies
