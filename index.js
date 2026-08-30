@@ -8,6 +8,7 @@ require("dotenv").config({
 });
 
 const mongoose = require("mongoose");
+require("./config/mongoUnitOfWork");
 const app = require("./app");
 
 const mongoURI = process.env.MONGO_URI;
