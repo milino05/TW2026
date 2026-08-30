@@ -62,7 +62,12 @@ for (const [pattern, label] of [
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContentCandidates[\s\S]*data-content-page/, "Paginated unified Visit content search");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry-stop[\s\S]*attachVisitContentToStop[\s\S]*detachVisitContentFromStop/, "Explicit content-to-anchor reassignment");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Opzioni avanzate[\s\S]*Aggiungi una tappa senza contenuto[\s\S]*data-add-stop/, "Manual stops remain advanced authoring");
+for (const [pattern, label] of [
+  [/renderManualStopBrowser/, "Manual stop advanced browser"],
+  [/advanced-panel manual-stops/, "Manual stops advanced disclosure"],
+  [/Opzioni avanzate/, "Manual stops advanced label"],
+  [/data-add-stop/, "Manual stop add action"],
+]) requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
 requirePattern("services/visitSequenceV2.service.js", /canonicalizeContentEntries[\s\S]*reorderWithinDeliveryGroup[\s\S]*sameDeliveryGroup/, "Canonical Visit sequence domain helper");
 requirePattern("services/visitAuthoringSequenceCommandV2.service.js", /canonicalizeContentEntries[\s\S]*reorderWithinDeliveryGroup[\s\S]*updateVisitV2/, "Content reorder command preserves delivery groups");
 requirePattern("services/sessionPlanV2.service.js", /canonicalizeContentEntries[\s\S]*orderedContentEntries/, "SessionPlan consumes canonical Visit sequence");
