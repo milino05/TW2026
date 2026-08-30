@@ -6,10 +6,7 @@ function clamp(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
 function mapPoint(event, surface) {
   const rect = surface.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  return {
-    x: clamp((event.clientX - rect.left) / rect.width),
-    y: clamp((event.clientY - rect.top) / rect.height),
-  };
+  return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
 }
 function fileAsBase64(file) {
   return new Promise((resolve, reject) => {
@@ -20,18 +17,14 @@ function fileAsBase64(file) {
   });
 }
 function canvasAsBlob(canvas, mimeType, quality) {
-  return new Promise((resolve, reject) => canvas.toBlob(
-    (blob) => blob ? resolve(blob) : reject(new Error("Non è stato possibile ottimizzare la planimetria")),
-    mimeType,
-    quality,
-  ));
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Non è stato possibile ottimizzare la planimetria")), mimeType, quality));
 }
 async function optimizedFloorPlan(file) {
   const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
   if (!allowed.has(file.type)) throw new Error("Usa una planimetria JPEG, PNG o WebP.");
   const maxBytes = 4 * 1024 * 1024;
   if (file.size <= maxBytes) return file;
-  if (typeof createImageBitmap !== "function") throw new Error("La planimetria supera 4 MB. Riduci il file prima di caricarlo.");
+  if (typeof createImageBitmap !== "function") throw new Error("La planimetria supera 4 MB. Riduci il file prima di caricarla.");
   const bitmap = await createImageBitmap(file);
   try {
     for (const option of [{ maxSide: 3600, quality: .9 }, { maxSide: 3000, quality: .82 }, { maxSide: 2400, quality: .72 }]) {
@@ -98,7 +91,6 @@ export const venueMapAuthoringMixin = {
     if (!action) return "idle";
     if (action.type === "create-place") return "placing_place";
     if (action.type === "connect") return action.fromPlaceId ? "connecting_select_to" : "connecting_select_from";
-    if (action.type === "placing-slot") return "placing_slot";
     if (action.type === "calibrate") return "calibrating";
     if (action.type === "geometry") return "editing_geometry";
     return "idle";
@@ -128,10 +120,7 @@ export const venueMapAuthoringMixin = {
   async handleMapAuthoringClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
-    if (this.suppressNextMapClick && target.closest("[data-map-place]")) {
-      this.suppressNextMapClick = false;
-      return true;
-    }
+    if (this.suppressNextMapClick && target.closest("[data-map-place]")) { this.suppressNextMapClick = false; return true; }
 
     const spatialTab = target.closest("[data-spatial-tab], [data-show-spatial-tab]");
     if (spatialTab) {
@@ -163,12 +152,7 @@ export const venueMapAuthoringMixin = {
         const entrySourceId = sourceKind === "incoming_connection" ? entry.sourceConnectionId : entry.sourceExhibitSlotId;
         return id(entrySourceId) !== id(sourceId);
       });
-      await this.execute(() => managementRepository.updateExhibitSlot(this.id, exhibitSlotId, {
-        approachGuidance: {
-          defaultInstruction: slot.approachGuidance?.defaultInstruction || null,
-          overrides,
-        },
-      }), "Istruzione specifica rimossa.");
+      await this.execute(() => managementRepository.updateExhibitSlot(this.id, exhibitSlotId, { approachGuidance: { defaultInstruction: slot.approachGuidance?.defaultInstruction || null, overrides } }), "Istruzione specifica rimossa.");
       return true;
     }
 
@@ -176,10 +160,7 @@ export const venueMapAuthoringMixin = {
     if (vocabulary) {
       const vocabularyId = vocabulary.dataset.editPhysicalVocabulary;
       if (vocabularyId) {
-        const params = new URLSearchParams({
-          physicalVocabularyId: vocabularyId,
-          returnTo: `/venues/editor?venueId=${encodeURIComponent(this.id)}#venue-map`,
-        });
+        const params = new URLSearchParams({ physicalVocabularyId: vocabularyId, returnTo: `/venues/editor?venueId=${encodeURIComponent(this.id)}#venue-map` });
         navigate(`/physical-vocabularies/editor?${params.toString()}`);
       }
       return true;
@@ -194,11 +175,7 @@ export const venueMapAuthoringMixin = {
       this.render();
       return true;
     }
-
-    if (target.closest("[data-cancel-map-action]")) {
-      this.cancelMapAction();
-      return true;
-    }
+    if (target.closest("[data-cancel-map-action]")) { this.cancelMapAction(); return true; }
 
     const tool = target.closest("[data-map-tool]");
     if (tool) {
@@ -215,7 +192,6 @@ export const venueMapAuthoringMixin = {
       const context = connectionContext(this.data.layout, geometryEditor.dataset.editConnectionGeometry);
       if (!context || id(context.from.floorId) !== id(context.to.floorId)) return true;
       const floorId = id(context.from.floorId);
-      const existing = (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y }));
       this.selectedFloorId = floorId;
       this.pendingMapAction = {
         type: "geometry",
@@ -223,41 +199,21 @@ export const venueMapAuthoringMixin = {
         floorId,
         metricMode: context.connection.metricMode,
         distanceMeters: context.connection.distanceMeters,
-        waypoints: existing,
+        waypoints: (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y })),
       };
       this.render();
       return true;
     }
-
-    if (target.closest("[data-geometry-undo]")) {
-      const action = this.pendingMapAction;
-      if (action?.type === "geometry") action.waypoints = (action.waypoints || []).slice(0, -1);
-      this.render();
-      return true;
-    }
-
-    if (target.closest("[data-geometry-clear]")) {
-      const action = this.pendingMapAction;
-      if (action?.type === "geometry") action.waypoints = [];
-      this.render();
-      return true;
-    }
-
+    if (target.closest("[data-geometry-undo]")) { if (this.pendingMapAction?.type === "geometry") this.pendingMapAction.waypoints = (this.pendingMapAction.waypoints || []).slice(0, -1); this.render(); return true; }
+    if (target.closest("[data-geometry-clear]")) { if (this.pendingMapAction?.type === "geometry") this.pendingMapAction.waypoints = []; this.render(); return true; }
     if (target.closest("[data-save-geometry]")) {
       const action = this.pendingMapAction;
       const state = this.geometryAuthoringState();
       if (action?.type !== "geometry" || !state) return true;
-      if (!state.constraintSatisfied) {
-        this.error = "La geometria deve rispettare la lunghezza richiesta prima di poter essere salvata.";
-        this.render();
-        return true;
-      }
+      if (!state.constraintSatisfied) { this.error = "La geometria deve rispettare la lunghezza richiesta prima di poter essere salvata."; this.render(); return true; }
       const payload = { metricMode: action.metricMode, geometryPoints: state.points };
       if (action.metricMode !== "geometry_derived") payload.distanceMeters = Number(action.distanceMeters);
-      const success = await this.execute(
-        () => managementRepository.updateVenueConnection(this.id, action.connectionId, payload),
-        action.metricMode === "length_constrained" ? "Percorso salvato con la lunghezza vincolata." : "Geometria del collegamento aggiornata.",
-      );
+      const success = await this.execute(() => managementRepository.updateVenueConnection(this.id, action.connectionId, payload), action.metricMode === "length_constrained" ? "Percorso salvato con la lunghezza vincolata." : "Geometria del collegamento aggiornata.");
       if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
@@ -265,11 +221,7 @@ export const venueMapAuthoringMixin = {
     const move = target.closest("[data-position-place]");
     if (move) {
       const place = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(move.dataset.positionPlace));
-      if (place) {
-        this.selectedFloorId = id(place.floorId);
-        this.pendingMapAction = { type: "move-place", placeId: id(place._id), floorId: id(place.floorId) };
-        this.render();
-      }
+      if (place) { this.selectedFloorId = id(place.floorId); this.pendingMapAction = { type: "move-place", placeId: id(place._id), floorId: id(place.floorId) }; this.render(); }
       return true;
     }
 
@@ -285,14 +237,6 @@ export const venueMapAuthoringMixin = {
         this.render();
         return true;
       }
-      if (action?.type === "placing-slot") {
-        const success = await this.execute(
-          () => managementRepository.createExhibitSlot(this.id, { placeId, label: action.label, order: action.order }),
-          "Slot espositivo creato e posizionato.",
-        );
-        if (success) { this.pendingMapAction = null; this.activeSpatialTab = "slots"; this.render(); }
-        return true;
-      }
       if (action?.type === "geometry") return true;
       this.selectedMapPlaceId = placeId;
       this.render();
@@ -305,94 +249,50 @@ export const venueMapAuthoringMixin = {
     const point = mapPoint(event, surface);
     if (!point) return true;
     const surfaceFloorId = surface.dataset.floorId;
-
     if (action.type === "create-place") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
-      const payload = {
-        floorId: action.floorId,
-        placeTypeDefinitionId: action.placeTypeDefinitionId,
-        label: action.label,
-        position: point,
-      };
-      const success = await this.execute(() => managementRepository.createVenuePlace(this.id, payload), "Luogo aggiunto sulla mappa.");
+      const success = await this.execute(() => managementRepository.createVenuePlace(this.id, { floorId: action.floorId, placeTypeDefinitionId: action.placeTypeDefinitionId, label: action.label, position: point }), "Luogo aggiunto sulla mappa.");
       if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
-
     if (action.type === "move-place") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
       const success = await this.execute(() => managementRepository.moveVenuePlace(this.id, action.placeId, point), "Posizione del luogo aggiornata.");
       if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
-
     if (action.type === "calibrate") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
       action.points = [...(action.points || []), point].slice(0, 2);
       this.render();
       return true;
     }
-
     if (action.type === "geometry") {
       if (id(action.floorId) !== id(surfaceFloorId)) return true;
       action.waypoints = [...(action.waypoints || []), point].slice(0, 40);
       this.render();
       return true;
     }
-
     return false;
   },
 
   async handleMapAuthoringSubmit(form, data) {
-    if (form.matches("[data-slot-assignment]")) {
-      const exhibitSlotId = form.dataset.slotAssignment;
-      const targetId = String(data.get("venueTargetId") || "");
-      const current = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId))?.assignedVenueTargetId;
-      await this.execute(async () => {
-        if (targetId && id(current) !== id(targetId)) await managementRepository.assignVenueTargetToExhibitSlot(this.id, exhibitSlotId, targetId);
-        else if (!targetId && current) await managementRepository.unassignVenueTargetFromExhibitSlot(this.id, current);
-      },
-        targetId ? "Entità assegnata allo slot." : "Slot liberato.",
-      );
-      return true;
-    }
-
     if (form.matches("[data-slot-editor]")) {
       const sourceConnectionId = String(data.get("sourceConnectionId") || "");
       const sourceExhibitSlotId = String(data.get("sourceExhibitSlotId") || "");
       const instruction = String(data.get("overrideInstruction") || "").trim();
-      if (sourceConnectionId && sourceExhibitSlotId) {
-        this.error = "Seleziona un solo punto di provenienza per ogni istruzione specifica.";
-        this.render();
-        return true;
-      }
-      if (instruction && !sourceConnectionId && !sourceExhibitSlotId) {
-        this.error = "Seleziona il collegamento o lo slot da cui proviene il visitatore.";
-        this.render();
-        return true;
-      }
-      if (!instruction && (sourceConnectionId || sourceExhibitSlotId)) {
-        this.error = "Scrivi l’istruzione specifica da associare al punto di provenienza.";
-        this.render();
-        return true;
-      }
+      if (sourceConnectionId && sourceExhibitSlotId) { this.error = "Seleziona un solo punto di provenienza per ogni istruzione specifica."; this.render(); return true; }
+      if (instruction && !sourceConnectionId && !sourceExhibitSlotId) { this.error = "Seleziona il collegamento o lo slot da cui proviene il visitatore."; this.render(); return true; }
+      if (!instruction && (sourceConnectionId || sourceExhibitSlotId)) { this.error = "Scrivi l’istruzione specifica da associare al punto di provenienza."; this.render(); return true; }
       const exhibitSlotId = form.dataset.slotEditor;
       const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
-      const overrides = (slot?.approachGuidance?.overrides || []).map((entry) => ({
-        sourceKind: entry.sourceKind,
-        instruction: entry.instruction,
-        ...(entry.sourceKind === "incoming_connection"
-          ? { sourceConnectionId: id(entry.sourceConnectionId) }
-          : { sourceExhibitSlotId: id(entry.sourceExhibitSlotId) }),
-      }));
+      const overrides = (slot?.approachGuidance?.overrides || []).map((entry) => ({ sourceKind: entry.sourceKind, instruction: entry.instruction, ...(entry.sourceKind === "incoming_connection" ? { sourceConnectionId: id(entry.sourceConnectionId) } : { sourceExhibitSlotId: id(entry.sourceExhibitSlotId) }) }));
       if (instruction) {
         const sourceKind = sourceConnectionId ? "incoming_connection" : "exhibit_slot";
         const sourceId = sourceConnectionId || sourceExhibitSlotId;
-        const existingIndex = overrides.findIndex((entry) => entry.sourceKind === sourceKind
-          && id(sourceKind === "incoming_connection" ? entry.sourceConnectionId : entry.sourceExhibitSlotId) === id(sourceId));
+        const existingIndex = overrides.findIndex((entry) => entry.sourceKind === sourceKind && id(sourceKind === "incoming_connection" ? entry.sourceConnectionId : entry.sourceExhibitSlotId) === id(sourceId));
         const nextOverride = { sourceKind, instruction, ...(sourceConnectionId ? { sourceConnectionId } : { sourceExhibitSlotId }) };
-        if (existingIndex >= 0) overrides.splice(existingIndex, 1, nextOverride);
-        else overrides.push(nextOverride);
+        if (existingIndex >= 0) overrides.splice(existingIndex, 1, nextOverride); else overrides.push(nextOverride);
       }
       await this.execute(() => managementRepository.updateExhibitSlot(this.id, exhibitSlotId, {
         label: String(data.get("label") || "").trim(),
@@ -406,12 +306,7 @@ export const venueMapAuthoringMixin = {
     if (form.matches("[data-place-positioning]")) {
       const floorId = this.activeFloorId?.();
       if (!floorId) throw new Error("Seleziona prima un piano.");
-      this.pendingMapAction = {
-        type: "create-place",
-        floorId,
-        label: String(data.get("label") || "").trim(),
-        placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
-      };
+      this.pendingMapAction = { type: "create-place", floorId, label: String(data.get("label") || "").trim(), placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || "") };
       this.render();
       return true;
     }
@@ -442,14 +337,7 @@ export const venueMapAuthoringMixin = {
       const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(context.from.floorId));
       if (!floor?.mapAsset || !floor?.calibration) throw new Error("Calibra prima la planimetria del piano.");
       this.selectedFloorId = id(context.from.floorId);
-      this.pendingMapAction = {
-        type: "geometry",
-        connectionId: id(context.connection._id),
-        floorId: id(context.from.floorId),
-        metricMode: "length_constrained",
-        distanceMeters,
-        waypoints: (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y })),
-      };
+      this.pendingMapAction = { type: "geometry", connectionId: id(context.connection._id), floorId: id(context.from.floorId), metricMode: "length_constrained", distanceMeters, waypoints: (context.connection.geometry?.points || []).slice(1, -1).map((point) => ({ x: point.x, y: point.y })) };
       this.render();
       return true;
     }
@@ -457,11 +345,7 @@ export const venueMapAuthoringMixin = {
     if (form.matches("[data-calibration-distance]")) {
       const action = this.pendingMapAction;
       if (action?.type !== "calibrate" || action.points?.length !== 2) return true;
-      const success = await this.execute(() => managementRepository.calibrateVenueFloor(this.id, action.floorId, {
-        method: "line",
-        distanceMeters: Number(data.get("distanceMeters")),
-        line: { from: action.points[0], to: action.points[1] },
-      }), "Piano calibrato dalla mappa.");
+      const success = await this.execute(() => managementRepository.calibrateVenueFloor(this.id, action.floorId, { method: "line", distanceMeters: Number(data.get("distanceMeters")), line: { from: action.points[0], to: action.points[1] } }), "Piano calibrato dalla mappa.");
       if (success) { this.pendingMapAction = null; this.render(); }
       return true;
     }
@@ -477,7 +361,6 @@ export const venueMapAuthoringMixin = {
       await this.execute(operation, value === null ? "Caratteristica impostata come non verificata." : "Caratteristica fisica aggiornata.");
       return true;
     }
-
     return false;
   },
 
@@ -489,17 +372,7 @@ export const venueMapAuthoringMixin = {
     const place = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(node.dataset.mapPlace));
     if (!place) return;
     node.setPointerCapture?.(event.pointerId);
-    this.draggingPlace = {
-      pointerId: event.pointerId,
-      placeId: id(place._id),
-      floorId: id(place.floorId),
-      node,
-      surface,
-      startX: event.clientX,
-      startY: event.clientY,
-      point: { x: Number(place.position?.x), y: Number(place.position?.y) },
-      moved: false,
-    };
+    this.draggingPlace = { pointerId: event.pointerId, placeId: id(place._id), floorId: id(place.floorId), node, surface, startX: event.clientX, startY: event.clientY, point: { x: Number(place.position?.x), y: Number(place.position?.y) }, moved: false };
   },
 
   onMapPointerMove(event) {
@@ -509,12 +382,7 @@ export const venueMapAuthoringMixin = {
     if (!point) return;
     drag.point = point;
     drag.moved = drag.moved || Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4;
-    if (drag.moved) {
-      event.preventDefault();
-      drag.node.style.left = `${point.x * 100}%`;
-      drag.node.style.top = `${point.y * 100}%`;
-      drag.node.classList.add("dragging");
-    }
+    if (drag.moved) { event.preventDefault(); drag.node.style.left = `${point.x * 100}%`; drag.node.style.top = `${point.y * 100}%`; drag.node.classList.add("dragging"); }
   },
 
   async onMapPointerUp(event) {
@@ -555,17 +423,11 @@ export const venueMapAuthoringMixin = {
     try {
       const optimized = await optimizedFloorPlan(file);
       const dataBase64 = await fileAsBase64(optimized);
-      await this.execute(() => managementRepository.uploadVenueFloorPlan(this.id, input.dataset.floorId, {
-        fileName: file.name,
-        mimeType: optimized.type || file.type,
-        dataBase64,
-      }), "Planimetria caricata e collegata al piano.");
+      await this.execute(() => managementRepository.uploadVenueFloorPlan(this.id, input.dataset.floorId, { fileName: file.name, mimeType: optimized.type || file.type, dataBase64 }), "Planimetria caricata e collegata al piano.");
       this.selectedFloorId = input.dataset.floorId;
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Caricamento della planimetria non riuscito";
       this.render();
-    } finally {
-      input.value = "";
-    }
+    } finally { input.value = ""; }
   },
 };
