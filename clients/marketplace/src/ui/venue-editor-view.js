@@ -14,8 +14,8 @@ import { venueSpatialDiagnosticsMixin } from "./venue-editor-spatial-diagnostics
 import { venueContextualWorkspaceMixin } from "./venue-editor-contextual-workspace-mixin.js";
 import { venueSpatialInteractionMixin } from "./venue-editor-spatial-interaction-mixin.js";
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
-import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
+import { venueSlotInventoryMixin } from "./venue-editor-slot-inventory-mixin.js";
 
 const SECTIONS = ["overview", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -55,6 +55,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   calibrationOverwritePrompt = null;
   inventoryFilter = "all";
   inventorySearchQuery = "";
+  inventoryBrowser = null;
+  inventorySubjectPickerOpen = false;
+  inventoryPendingSubject = null;
+  inventoryDetailTargetId = null;
   venueSubjectCandidates = null;
   venueSubjectQuery = "";
   pendingMapAction = null;
@@ -72,7 +76,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.addEventListener("pointerup", this.onMapPointerUp);
     this.addEventListener("pointercancel", this.onMapPointerCancel);
     this.addEventListener("subject-selected", this.onSubjectSelected);
-    this.addEventListener("slot-subject-assigned", this.onSlotSubjectAssigned);
     this.load();
   }
 
@@ -88,37 +91,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
-    this.removeEventListener("slot-subject-assigned", this.onSlotSubjectAssigned);
     if (this._venueGlobalEscapeHandler) {
       window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
       this._venueGlobalEscapeHandler = null;
     }
   }
-
-  onSlotSubjectAssigned = async (event) => {
-    const assignment = event.detail || {};
-    this.busy = true;
-    this.error = null;
-    this.message = null;
-    try {
-      await this.refreshServerState();
-      this.selectedVenueTargetId = assignment.venueTargetId ? String(assignment.venueTargetId) : null;
-      this.selectedExhibitSlotId = assignment.exhibitSlotId ? String(assignment.exhibitSlotId) : this.selectedExhibitSlotId;
-      if (assignment.exhibitSlotId && this.spatialEditor?.kind === "slot") {
-        this.spatialEditor = { ...this.spatialEditor, id: String(assignment.exhibitSlotId) };
-      }
-      this.message = assignment.venueTargetCreated
-        ? "Entità aggiunta all’inventario e assegnata allo slot."
-        : assignment.previousExhibitSlotId
-          ? "Entità ricollocata nello slot selezionato."
-          : "Entità assegnata allo slot.";
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Configurazione aggiornata, ma non è stato possibile ricaricare la sede";
-    } finally {
-      this.busy = false;
-      this.render();
-    }
-  };
 
   validateSpatialEditor() {
     if (!this.spatialEditor || !this.data?.layout) return;
@@ -134,11 +111,25 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     if (!exists) this.spatialEditor = null;
   }
 
+  validateInventoryState() {
+    const targetIds = new Set((this.data?.targets || []).map((target) => id(target.id)));
+    if (this.selectedVenueTargetId && !targetIds.has(id(this.selectedVenueTargetId))) this.selectedVenueTargetId = null;
+    if (this.inventoryDetailTargetId && !targetIds.has(id(this.inventoryDetailTargetId))) this.inventoryDetailTargetId = null;
+    if (this.inventoryBrowser?.selectedTargetId && !targetIds.has(id(this.inventoryBrowser.selectedTargetId))) {
+      this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: null };
+    }
+    if (this.inventoryBrowser?.exhibitSlotId) {
+      const slotExists = (this.data?.layout?.exhibitSlots || []).some((slot) => id(slot.exhibitSlotId) === id(this.inventoryBrowser.exhibitSlotId));
+      if (!slotExists) this.inventoryBrowser = null;
+    }
+  }
+
   async refreshServerState() {
     this.data = await managementRepository.venue(this.id);
     const floorIds = new Set((this.data?.layout?.floors || []).map((floor) => String(floor._id)));
     if (!floorIds.has(String(this.selectedFloorId || ""))) this.selectedFloorId = [...floorIds][0] || null;
     this.validateSpatialEditor();
+    this.validateInventoryState();
     const needsSetup = !this.data?.release && !this.data?.layout && has(this.data?.availableOperations, "venue.release.ensure");
     this.onboarding = needsSetup ? await managementRepository.venuePhysicalOnboarding(this.id) : null;
     this.lifecycleImpact = null;
@@ -235,7 +226,7 @@ Object.assign(
   venueContextualWorkspaceMixin,
   venueSpatialInteractionMixin,
   venueSpatialOverlayMixin,
-  venueSlotSubjectUiMixin,
   venueMapRefinementMixin,
+  venueSlotInventoryMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
