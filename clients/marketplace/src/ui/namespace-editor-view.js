@@ -336,7 +336,7 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
     const copy = DEFINITION_COPY[field];
     const inputId = `namespace-${field}-${index}`;
     const key = definitionKey(field, entry, index);
-    const expanded = !editable || this.editingDefinitionKey === key;
+    const expanded = editable && this.editingDefinitionKey === key;
     const description = entry.description || (entry.label ? "Nessuna descrizione aggiunta." : "Definizione da completare.");
     const durationSummary = field === "durationTypes" ? `<span class="chip">${Number(entry.targetSeconds) || 60} secondi</span>` : "";
     const durationField = field === "durationTypes" ? `<div class="namespace-form-field"><div class="namespace-label-row"><label for="${inputId}-seconds">Tempo di lettura in secondi</label>${helpButton("Tempo di lettura", "È una stima utile per confrontare e ordinare le durate. Un minuto corrisponde a 60 secondi.")}</div><input id="${inputId}-seconds" name="targetSeconds" type="number" min="1" value="${Number(entry.targetSeconds) || 60}" required><small>Per esempio: 60 per un testo breve, 180 per uno medio.</small></div>` : "";

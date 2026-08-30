@@ -121,7 +121,7 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
         label: "Autore",
         category: "semantic",
         strength: "strong",
-        userIntents: ["chi è l'autore"],
+        userIntents: ["chi è l'autore", "dimmi chi ha creato l'opera"],
         directionality: "directed",
         reverse: { label: "Ha creato", userIntents: [] },
       }],
@@ -254,10 +254,10 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
 
     const semanticActions = started.current.availableActions.filter((entry) => entry.family === "semantic");
     const curiosityAction = semanticActions.find((entry) => entry.label === "Approfondisci: Curiosità sull'opera");
-    const authorAction = semanticActions.find((entry) => entry.label === "Autore: Girolamo Bedoli");
+    const authorAction = semanticActions.find((entry) => entry.label === "Chi è l'autore");
     assert.ok(curiosityAction, "same-Subject Item must materialize a semantic Action without requiring a graph edge");
     assert.ok(authorAction, "related Subject with available content must materialize a semantic Action");
-    assert.deepEqual(authorAction.controlledVoiceAliases, ["chi è l'autore"]);
+    assert.deepEqual(authorAction.controlledVoiceAliases, ["chi è l'autore", "dimmi chi ha creato l'opera"]);
     assert.equal(authorAction.actionId.includes(id(artist.revision._id)), false, "Action ID must not expose the ItemRevision ID");
     assert.equal(authorAction.actionId.includes("created_by"), false, "Action ID must not expose the local relation key");
 
@@ -283,14 +283,14 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       payload: {
         actionId: "semantic.return",
         expectedRuntimeVersion: 2,
-        interactionChannel: "button",
+        interactionChannel: "controlled_voice",
       },
     });
     assert.equal(returned.runtime.session.runtimeVersion, 3);
     assert.equal(returned.runtime.current.label, "Opera principale");
     assert.equal(returned.runtime.current.presentation.kind, "visit_content");
 
-    const refreshedAuthorAction = returned.runtime.availableActions.find((entry) => entry.label === "Autore: Girolamo Bedoli");
+    const refreshedAuthorAction = returned.runtime.availableActions.find((entry) => entry.label === "Chi è l'autore");
     assert.ok(refreshedAuthorAction);
     const authorResult = await dispatchAction({
       sessionId: started.session._id,

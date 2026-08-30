@@ -214,8 +214,8 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
     assert.ok(plan.semanticContentPins.some((entry) => id(entry.itemRevisionId) === id(artist.revision._id)), "Item 2 deve essere pinzato come contenuto semantico anche se non è nella sequenza della Visit");
 
     const authorAction = started.current.availableActions.find((entry) =>
-      entry.family === "semantic" && entry.label === "Autore: Item 2");
-    assert.ok(authorAction, "created_by deve materializzare l'azione Autore per una ItemRevision diretta");
+      entry.family === "semantic" && entry.label === "Chi è l'autore");
+    assert.ok(authorAction, "created_by deve materializzare un'azione naturale per una ItemRevision diretta");
     assert.deepEqual(authorAction.controlledVoiceAliases, ["chi è l'autore"]);
 
     const result = await dispatchAction({

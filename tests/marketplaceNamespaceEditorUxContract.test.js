@@ -46,6 +46,7 @@ test("progressive disclosure preserva i campi tecnici e il modello NamespaceRevi
 
 test("le definizioni non selezionate restano compatte e una sola entra in modifica", () => {
   assert.match(source, /editingDefinitionKey/);
+  assert.match(source, /const expanded = editable && this\.editingDefinitionKey === key/);
   assert.match(source, /data-edit-definition/);
   assert.match(source, /namespace-definition--collapsed/);
   assert.match(source, /namespace-definition-summary/);
@@ -55,7 +56,7 @@ test("le definizioni non selezionate restano compatte e una sola entra in modifi
   assert.doesNotMatch(source, /Riduci/);
   assert.match(source, /this\.editingDefinitionKey = definitionKey\(field, definition/);
   assert.match(styleSource, /namespace-definition-editor\[hidden\]\{display:none\}/);
-  assert.match(styleSource, /namespace-definition--collapsed:hover/);
+  assert.match(styleSource, /namespace-definition--collapsed\[data-edit-definition\]:hover/);
 });
 
 test("Mapping esterni usa semanticRefs esistenti e resta provider-neutral", () => {

@@ -229,9 +229,9 @@ async function dispatch(action: AvailableAction, channel: InteractionChannel = "
   }
 }
 
-function requestAction(action: AvailableAction, channel: InteractionChannel = "button") {
+async function requestAction(action: AvailableAction, channel: InteractionChannel = "button") {
   if (action.type !== "COMPLETE") {
-    void dispatch(action, channel);
+    await dispatch(action, channel);
     return;
   }
   closeOverlays();
@@ -299,7 +299,10 @@ async function listenControlledVoice() {
       return;
     }
     notice.value = "Comando riconosciuto: “" + result.transcript + "”";
-    requestAction(result.action, "controlled_voice");
+    // Il riconoscimento è concluso: libera il lock prima di passare l'azione
+    // al dispatcher, che altrimenti la scarterebbe come interazione concorrente.
+    voiceBusy.value = false;
+    await requestAction(result.action, "controlled_voice");
   } catch (cause) {
     if (requestId !== voiceSequence) return;
     voiceSheetOpen.value = false;

@@ -188,6 +188,14 @@ function relationLabel(definition, edge, direction) {
   return definition?.label || edge?.label || "Approfondisci";
 }
 
+function naturalRelationActionLabel(definition, edge, direction) {
+  const firstIntent = relationVoiceAliases(definition, direction)
+    .map((value) => String(value || "").trim())
+    .find(Boolean);
+  const label = firstIntent || relationLabel(definition, edge, direction);
+  return label ? label.charAt(0).toLocaleUpperCase("it-IT") + label.slice(1) : "Approfondisci";
+}
+
 function candidateServerInput(candidate, relation = null) {
   return {
     sourceType: candidate.sourceType,
@@ -272,7 +280,8 @@ async function deriveSemanticExplorationActions({
         key,
         definition,
         direction,
-        label: relationLabel(definition, edge, direction),
+        relationLabel: relationLabel(definition, edge, direction),
+        actionLabel: naturalRelationActionLabel(definition, edge, direction),
         aliases: relationVoiceAliases(definition, direction),
         targets: new Map(),
       });
@@ -302,10 +311,10 @@ async function deriveSemanticExplorationActions({
 
     const relationDefinitionValue = semanticRelationDefinition({
       seed: `${subjectId}|${group.key}`,
-      label: targets.length === 1 ? `${group.label}: ${targets[0].subject?.preferredLabel || "Approfondimento"}` : group.label,
+      label: group.actionLabel,
       controlledVoiceAliases: group.aliases,
     });
-    const relation = group.label;
+    const relation = group.relationLabel;
 
     if (resolution.status === "resolved") {
       const selected = resolution.selected;
