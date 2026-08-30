@@ -18,6 +18,8 @@ async function withFreshDatabase(callback) {
 test("seller projection compone vendita e adozione con dati user-facing", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
+    const VisitV2 = require("../models/visitV2.model");
+    const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
     const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
@@ -29,8 +31,34 @@ test("seller projection compone vendita e adozione con dati user-facing", { skip
       { username: "seller-projection", passwordHash: "test-hash" },
       { username: "buyer-projection", passwordHash: "test-hash" },
     ]);
-    const visitId = new mongoose.Types.ObjectId();
-    const visitRevisionId = new mongoose.Types.ObjectId();
+    const visit = await VisitV2.create({
+      ownerType: "user",
+      ownerId: seller._id,
+      createdBy: seller._id,
+    });
+    const visitRevision = await VisitRevisionV2.create({
+      visitId: visit._id,
+      version: 1,
+      title: "Visita venduta",
+      description: "Visita usata per verificare la projection seller",
+      status: "published",
+      integrity: {
+        status: "valid",
+        checkedAt: new Date(),
+        checkedBy: seller._id,
+      },
+      publication: {
+        publishedAt: new Date(),
+        publishedBy: seller._id,
+      },
+      createdBy: seller._id,
+      updatedBy: seller._id,
+    });
+    visit.publishedRevisionId = visitRevision._id;
+    await visit.save();
+
+    const visitId = visit._id;
+    const visitRevisionId = visitRevision._id;
     const listing = await MarketplaceListing.create({
       sellerType: "user",
       sellerId: seller._id,
