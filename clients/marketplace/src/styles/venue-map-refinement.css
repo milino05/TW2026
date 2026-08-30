@@ -4,5 +4,5 @@
 .venue-map-toolbar [data-map-tool=calibrate].calibrated{border-color:var(--sage-500);background:var(--sage-100);color:var(--ink-950)}
 .venue-calibration-distance-backdrop,.venue-calibration-overwrite-backdrop{z-index:145}.venue-calibration-dialog{width:min(34rem,100%)}
 .venue-destructive-confirmation-backdrop{z-index:170}.venue-destructive-confirmation-dialog{width:min(38rem,100%)}
-.venue-spatial-dialog-frame .venue-spatial-detail-header{padding-right:6.7rem}.venue-spatial-dialog-delete{position:absolute;z-index:3;top:1rem;right:3.85rem;display:grid;place-items:center;width:2.45rem;height:2.45rem;min-height:0;padding:0;border-radius:999px}.venue-spatial-dialog-delete svg{pointer-events:none}
+.venue-spatial-dialog-frame .venue-spatial-detail-header{padding-right:6.7rem}.venue-spatial-dialog-frame .venue-detail-danger{display:none}.venue-spatial-dialog-delete{position:absolute;z-index:3;top:1rem;right:3.85rem;display:grid;place-items:center;width:2.45rem;height:2.45rem;min-height:0;padding:0;border-radius:999px}.venue-spatial-dialog-delete svg{pointer-events:none}
 @media(prefers-reduced-motion:reduce){.map-place-node,.map-canvas--authoring svg .connection-line{transition:none!important}}
