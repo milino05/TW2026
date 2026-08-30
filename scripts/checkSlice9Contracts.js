@@ -64,8 +64,8 @@ requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisi
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry-stop[\s\S]*attachVisitContentToStop[\s\S]*detachVisitContentFromStop/, "Explicit content-to-anchor reassignment");
 for (const [pattern, label] of [
   [/renderManualStopBrowser/, "Manual stop advanced browser"],
-  [/advanced-panel manual-stops/, "Manual stops advanced disclosure"],
-  [/Opzioni avanzate/, "Manual stops advanced label"],
+  [/class="stop-builder"/, "Manual stop builder disclosure"],
+  [/Aggiungi una tappa fisica/, "Manual stop builder label"],
   [/data-add-stop/, "Manual stop add action"],
 ]) requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
 requirePattern("services/visitSequenceV2.service.js", /canonicalizeContentEntries[\s\S]*reorderWithinDeliveryGroup[\s\S]*sameDeliveryGroup/, "Canonical Visit sequence domain helper");
