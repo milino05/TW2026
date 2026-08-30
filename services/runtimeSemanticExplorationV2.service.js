@@ -36,9 +36,9 @@ function semanticRelationDefinition({ seed, label, controlledVoiceAliases = [] }
   };
 }
 
-async function loadPinnedEditorialScope(plan) {
+async function loadReleaseRows(plan) {
   const releaseIds = unique(plan?.sourceEditorialReleaseIds);
-  if (!releaseIds.length) return { releases: [], rows: [], graphByReleaseId: new Map() };
+  if (!releaseIds.length) return { releases: [], rows: [] };
 
   const loadedReleases = await EditorialRelease.find({ _id: { $in: releaseIds } }).lean();
   const releaseById = new Map(loadedReleases.map((release) => [id(release._id), release]));
@@ -72,6 +72,7 @@ async function loadPinnedEditorialScope(plan) {
     const item = edition ? itemById.get(id(edition.itemId)) : null;
     if (!edition || !revision || !item) continue;
     rows.push({
+      sourceType: "editorial_release",
       sourceEditorialReleaseId: binding.release._id,
       sourceEditorialReleaseIds: [binding.release._id],
       namespaceRevisionId: binding.release.namespaceRevisionId,
@@ -85,13 +86,89 @@ async function loadPinnedEditorialScope(plan) {
       curationSignals: binding.curationSignals || [],
     });
   }
+  return { releases, rows };
+}
 
-  const graphByReleaseId = new Map();
-  for (const release of releases) {
-    const graph = await loadSemanticGraphRevision(release.graphRevisionId, { namespaceRevisionId: release.namespaceRevisionId });
-    graphByReleaseId.set(id(release._id), graph);
+async function loadDirectRows(plan) {
+  const entries = (plan?.contentEntries || []).filter((entry) => !(entry.sourceEditorialReleaseIds || []).length);
+  if (!entries.length) return [];
+  const revisionIds = unique(entries.map((entry) => entry.itemRevisionId));
+  const itemIds = unique(entries.map((entry) => entry.itemId));
+  const [revisions, items] = await Promise.all([
+    ItemRevisionV2.find({ _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } }).lean(),
+    ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(),
+  ]);
+  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+  const itemById = new Map(items.map((item) => [id(item._id), item]));
+  return entries.map((entry) => {
+    const revision = revisionById.get(id(entry.itemRevisionId));
+    const item = itemById.get(id(entry.itemId));
+    if (!revision || !item || id(revision.itemEditionId) !== id(entry.itemEditionId)) return null;
+    return {
+      sourceType: "direct_item",
+      sourceEditorialReleaseId: null,
+      sourceEditorialReleaseIds: [],
+      namespaceRevisionId: entry.namespaceRevisionId,
+      itemId: entry.itemId,
+      itemEditionId: entry.itemEditionId,
+      itemRevisionId: entry.itemRevisionId,
+      subjectId: item.primarySubjectId,
+      item,
+      edition: null,
+      revision,
+      curationSignals: [],
+    };
+  }).filter(Boolean);
+}
+
+function deduplicateRows(rows = []) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = `${id(row.itemId)}:${id(row.itemEditionId)}:${id(row.itemRevisionId)}`;
+    const existing = byKey.get(key);
+    if (!existing || row.sourceType === "editorial_release") byKey.set(key, row);
   }
-  return { releases, rows, graphByReleaseId };
+  return [...byKey.values()];
+}
+
+async function loadPinnedGraphs(plan, releases) {
+  const explicitPins = (plan?.semanticGraphPins || []).map((pin) => ({
+    sourceType: pin.sourceType,
+    sourceEditorialReleaseId: pin.sourceEditorialReleaseId || null,
+    editorialContextId: pin.editorialContextId,
+    graphRevisionId: pin.graphRevisionId,
+    namespaceRevisionId: pin.namespaceRevisionId,
+  }));
+  const pins = explicitPins.length ? explicitPins : (releases || []).map((release) => ({
+    sourceType: "editorial_release",
+    sourceEditorialReleaseId: release._id,
+    editorialContextId: release.editorialContextId,
+    graphRevisionId: release.graphRevisionId,
+    namespaceRevisionId: release.namespaceRevisionId,
+  }));
+  const graphs = [];
+  for (const pin of pins) {
+    try {
+      const graph = await loadSemanticGraphRevision(pin.graphRevisionId, { namespaceRevisionId: pin.namespaceRevisionId });
+      graphs.push({ pin, graph });
+    } catch (error) {
+      if (error?.status === 404 || error?.status === 409) {
+        throw new AppError("SemanticGraphRevision pinzata dalla Session non disponibile", 409, [{ code: "SESSION_SEMANTIC_SCOPE_UNAVAILABLE" }]);
+      }
+      throw error;
+    }
+  }
+  return graphs;
+}
+
+async function loadPinnedSemanticScope(plan) {
+  const [{ releases, rows: releaseRows }, directRows] = await Promise.all([
+    loadReleaseRows(plan),
+    loadDirectRows(plan),
+  ]);
+  const rows = deduplicateRows([...releaseRows, ...directRows]);
+  const graphs = await loadPinnedGraphs(plan, releases);
+  return { releases, rows, graphs };
 }
 
 function relationDefinition(graph, edge) {
@@ -111,7 +188,8 @@ function relationLabel(definition, edge, direction) {
 
 function candidateServerInput(candidate, relation = null) {
   return {
-    sourceEditorialReleaseId: candidate.sourceEditorialReleaseId,
+    sourceType: candidate.sourceType,
+    sourceEditorialReleaseId: candidate.sourceEditorialReleaseId || null,
     itemId: candidate.itemId,
     itemEditionId: candidate.itemEditionId,
     itemRevisionId: candidate.itemRevisionId,
@@ -148,7 +226,7 @@ async function deriveSemanticExplorationActions({
 }) {
   const subjectId = await resolveCurrentSubjectId({ currentSubjectId, currentItemId });
   if (!subjectId) return [];
-  const scope = await loadPinnedEditorialScope(plan);
+  const scope = await loadPinnedSemanticScope(plan);
   if (!scope.rows.length) return [];
 
   const actions = [];
@@ -163,7 +241,6 @@ async function deriveSemanticExplorationActions({
     if (!actions.some((entry) => entry.definition.actionId === action.definition.actionId)) actions.push(action);
   }
 
-  // Explicit alternative content about the same Subject remains an Item-level action.
   for (const candidate of scope.rows) {
     if (publicActionIds.size >= maxActions) break;
     if (id(candidate.itemRevisionId) === id(currentItemRevisionId)) continue;
@@ -178,11 +255,8 @@ async function deriveSemanticExplorationActions({
     });
   }
 
-  // A semantic relation is one user action. Item selection happens only after the graph
-  // has resolved its target Subject(s), so controlled-voice aliases cannot collide per Item.
   const groups = new Map();
-  for (const release of scope.releases) {
-    const graph = scope.graphByReleaseId.get(id(release._id));
+  for (const { pin, graph } of scope.graphs) {
     if (!graph?.nodes?.has(subjectId)) continue;
     for (const edge of neighbors(graph, subjectId)) {
       const targetSubjectId = id(edge.toSubjectId);
@@ -191,7 +265,7 @@ async function deriveSemanticExplorationActions({
       const definition = relationDefinition(graph, edge);
       if (!definition) continue;
       const direction = edge.generated ? "reverse" : "forward";
-      const key = `${id(release.namespaceRevisionId)}:${definition.definitionId}:${direction}`;
+      const key = `${id(pin.namespaceRevisionId)}:${definition.definitionId}:${direction}`;
       if (!groups.has(key)) groups.set(key, {
         key,
         definition,
@@ -289,7 +363,24 @@ function preferenceFromRuntime(runtime) {
   return Object.keys(preference).length ? preference : null;
 }
 
-async function materializeSemanticPresentation({ plan, serverInput, currentRuntime = null, sourceActionId }) {
+async function resolvePinnedSemanticContent({ plan, serverInput }) {
+  const sourceType = serverInput?.sourceType || (serverInput?.sourceEditorialReleaseId ? "editorial_release" : "direct_item");
+  if (sourceType === "direct_item") {
+    const pinnedEntry = (plan?.contentEntries || []).find((entry) =>
+      !(entry.sourceEditorialReleaseIds || []).length
+      && id(entry.itemId) === id(serverInput.itemId)
+      && id(entry.itemEditionId) === id(serverInput.itemEditionId)
+      && id(entry.itemRevisionId) === id(serverInput.itemRevisionId));
+    if (!pinnedEntry || id(pinnedEntry.namespaceRevisionId) !== id(serverInput.namespaceRevisionId)) {
+      throw new AppError("Contenuto semantico diretto non appartiene allo scope pinzato", 409, [{ code: "SEMANTIC_CONTENT_NOT_PINNED" }]);
+    }
+    const [revision, namespaceRevision] = await Promise.all([
+      ItemRevisionV2.findOne({ _id: pinnedEntry.itemRevisionId, status: { $in: ["published", "superseded"] } }).lean(),
+      NamespaceRevision.findById(pinnedEntry.namespaceRevisionId).lean(),
+    ]);
+    return { sourceType, sourceEditorialReleaseId: null, revision, namespaceRevision };
+  }
+
   const releaseId = id(serverInput?.sourceEditorialReleaseId);
   if (!unique(plan?.sourceEditorialReleaseIds).includes(releaseId)) {
     throw new AppError("La sorgente semantica non appartiene allo scope pinzato", 409, [{ code: "SEMANTIC_SOURCE_NOT_PINNED" }]);
@@ -299,11 +390,16 @@ async function materializeSemanticPresentation({ plan, serverInput, currentRunti
   const binding = (release.itemBindings || []).find((entry) =>
     id(entry.itemEditionId) === id(serverInput.itemEditionId) && id(entry.itemRevisionId) === id(serverInput.itemRevisionId));
   if (!binding) throw new AppError("Contenuto semantico non appartiene alla release pinzata", 409, [{ code: "SEMANTIC_CONTENT_NOT_PINNED" }]);
-
   const [revision, namespaceRevision] = await Promise.all([
     ItemRevisionV2.findOne({ _id: serverInput.itemRevisionId, status: { $in: ["published", "superseded"] } }).lean(),
     NamespaceRevision.findById(release.namespaceRevisionId).lean(),
   ]);
+  return { sourceType, sourceEditorialReleaseId: release._id, revision, namespaceRevision };
+}
+
+async function materializeSemanticPresentation({ plan, serverInput, currentRuntime = null, sourceActionId }) {
+  const resolved = await resolvePinnedSemanticContent({ plan, serverInput });
+  const { revision, namespaceRevision } = resolved;
   if (!revision || !namespaceRevision) {
     throw new AppError("Presentation semantica non risolvibile", 409, [{ code: "SEMANTIC_PRESENTATION_UNAVAILABLE" }]);
   }
@@ -314,7 +410,8 @@ async function materializeSemanticPresentation({ plan, serverInput, currentRunti
   });
   return {
     sourceActionId,
-    sourceEditorialReleaseId: release._id,
+    sourceType: resolved.sourceType,
+    sourceEditorialReleaseId: resolved.sourceEditorialReleaseId,
     itemId: serverInput.itemId,
     itemEditionId: serverInput.itemEditionId,
     itemRevisionId: revision._id,
