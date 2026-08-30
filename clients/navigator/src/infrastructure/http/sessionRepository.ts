@@ -22,8 +22,8 @@ export interface SessionProjection {
   };
   planRevisionId: string;
   current: null | {
-    contentEntryId: string;
-    role?: string;
+    contentEntryId: string | null;
+    role?: string | null;
     label: string;
     illustrativeMedia: Array<{
       id?: string;
@@ -49,13 +49,20 @@ export interface SessionProjection {
     presentation: {
       text: string;
       locale?: string;
-      kind?: "visit_content" | "semantic_exploration";
+      kind?: "visit_content" | "semantic_exploration" | "logistics";
       estimatedContentSeconds?: number;
     };
     anchor?: null | {
       visitAnchorId: string;
       venueTargetId: string;
       venueId: string;
+    };
+    logistics?: {
+      kind: "connection" | "transfer" | "approach";
+      stepNumber: number;
+      stepCount: number;
+      distanceMeters: number | null;
+      estimatedSeconds: number | null;
     };
   };
   availableActions: AvailableAction[];

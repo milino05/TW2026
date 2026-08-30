@@ -1,11 +1,12 @@
 const service = require("../services/visitSessionV2.service");
+const logistics = require("../services/sessionLogisticsProgressionV2.service");
 const actions = require("../services/actionDispatcherV2.service");
 const navigation = require("../services/navigationProjectionV2.service");
 const publicLocation = require("../services/sessionPublicLocationV2.service");
 
 async function current(req, res, next) {
   try {
-    res.json(await service.currentSessionProjection({ sessionId: req.params.sessionId, userId: req.user._id }));
+    res.json(await logistics.currentSessionProjectionWithLogistics({ sessionId: req.params.sessionId, userId: req.user._id }));
   } catch (error) { next(error); }
 }
 

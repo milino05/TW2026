@@ -107,6 +107,25 @@ const RoutingProfileSelectionSchema = new Schema({
   routingProfileDefinitionId: { type: String, trim: true, required: true },
 }, { _id: false });
 
+const LogisticsStepSchema = new Schema({
+  kind: { type: String, enum: ["connection", "transfer", "approach"], required: true },
+  instruction: { type: String, required: true, trim: true },
+  venueId: { type: Schema.Types.ObjectId, ref: "Venue", default: null },
+  connectionId: { type: Schema.Types.ObjectId, default: null },
+  distanceMeters: { type: Number, min: 0, default: null },
+  estimatedSeconds: { type: Number, min: 0, default: null },
+  resolutionSource: { type: String, trim: true, default: null },
+}, { _id: false });
+
+const LogisticsProgressSchema = new Schema({
+  fromEntryIndex: { type: Number, min: 0, required: true },
+  targetEntryIndex: { type: Number, min: 0, required: true },
+  fromVisitAnchorId: { type: Schema.Types.ObjectId, default: null },
+  toVisitAnchorId: { type: Schema.Types.ObjectId, required: true },
+  stepIndex: { type: Number, min: 0, default: 0 },
+  steps: { type: [LogisticsStepSchema], default: [] },
+}, { _id: false });
+
 const VisitSessionV2Schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   sourceType: { type: String, enum: ["visit", "generated_plan"], required: true, index: true },
@@ -117,6 +136,7 @@ const VisitSessionV2Schema = new Schema({
   venuePins: { type: [VenuePinSchema], default: [] },
   status: { type: String, enum: ["active", "paused", "route_completed", "completed", "abandoned"], default: "active", index: true },
   currentEntryIndex: { type: Number, min: 0, default: 0 },
+  logisticsProgress: { type: LogisticsProgressSchema, default: null },
   runtimeVersion: { type: Number, min: 1, default: 1, required: true },
   navigationSnapshot: {
     movementPacePreference: { type: Number, min: 0, max: 1, default: 0.5 },
@@ -151,6 +171,15 @@ VisitSessionV2Schema.pre("validate", function validateSource(next) {
     const venueId = String(selection.venueId || "");
     if (profileVenueIds.has(venueId)) { this.invalidate("navigationSnapshot.routingProfileSelections", "È ammesso un solo profilo di percorso per Venue"); break; }
     profileVenueIds.add(venueId);
+  }
+  if (this.logisticsProgress) {
+    const steps = this.logisticsProgress.steps || [];
+    const stepIndex = Number(this.logisticsProgress.stepIndex) || 0;
+    if (!steps.length) this.invalidate("logisticsProgress.steps", "La progressione logistica richiede almeno un'indicazione");
+    if (stepIndex >= steps.length) this.invalidate("logisticsProgress.stepIndex", "Indice della progressione logistica fuori intervallo");
+    if (this.logisticsProgress.targetEntryIndex <= this.logisticsProgress.fromEntryIndex) {
+      this.invalidate("logisticsProgress.targetEntryIndex", "La progressione logistica deve avanzare verso una ContentEntry successiva");
+    }
   }
   next();
 });
