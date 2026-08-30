@@ -20,6 +20,14 @@ const SessionContentEntrySchema = new Schema({
   },
 }, { _id: true });
 
+const SessionSemanticGraphPinSchema = new Schema({
+  sourceType: { type: String, enum: ["editorial_release", "direct_item"], required: true },
+  sourceEditorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null },
+  editorialContextId: { type: Schema.Types.ObjectId, ref: "EditorialContext", required: true },
+  graphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", required: true },
+  namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
+}, { _id: false });
+
 const SessionVisitAnchorSchema = new Schema({
   sourceAnchorId: { type: Schema.Types.ObjectId, default: null },
   venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
@@ -64,6 +72,7 @@ const SessionPlanRevisionV2Schema = new Schema({
   fidelity: { type: String, enum: ["preserve", "adapt", "regenerate"], default: "preserve" },
   executedThroughEntryIndex: { type: Number, min: -1, default: -1 },
   sourceEditorialReleaseIds: [{ type: Schema.Types.ObjectId, ref: "EditorialRelease" }],
+  semanticGraphPins: { type: [SessionSemanticGraphPinSchema], default: [] },
   contentEntries: { type: [SessionContentEntrySchema], default: [] },
   visitAnchors: { type: [SessionVisitAnchorSchema], default: [] },
   physicalRoute: { legs: { type: [SessionPhysicalLegSchema], default: [] } },
