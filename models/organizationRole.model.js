@@ -18,6 +18,21 @@ OrganizationRoleSchema.pre("validate", function normalizeRoleName(next) {
   next();
 });
 
+OrganizationRoleSchema.pre("save", async function rejectNormalizedDuplicate() {
+  if (!this.isNew && !this.isModified("name") && !this.isModified("normalizedName")) return;
+  const duplicate = await this.constructor.exists({
+    organizationId: this.organizationId,
+    normalizedName: this.normalizedName,
+    _id: { $ne: this._id },
+  });
+  if (!duplicate) return;
+  const error = new Error("Duplicate normalized role name");
+  error.code = 11000;
+  error.keyPattern = { organizationId: 1, normalizedName: 1 };
+  error.keyValue = { organizationId: this.organizationId, normalizedName: this.normalizedName };
+  throw error;
+});
+
 OrganizationRoleSchema.index({ organizationId: 1, normalizedName: 1 }, { unique: true });
 OrganizationRoleSchema.index(
   { organizationId: 1, starterKey: 1 },
