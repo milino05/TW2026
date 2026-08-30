@@ -16,9 +16,7 @@ const configPath = "clients/navigator/public/navigator.config.json";
 if (!fs.existsSync(configPath)) fail("Navigator static config missing");
 else {
   const config = JSON.parse(read(configPath));
-  if (!/^[a-f0-9]{24}$/i.test(String(config.venueId || "")) || /^0{24}$/.test(String(config.venueId || ""))) {
-    fail("Navigator venueId must be a non-zero ObjectId");
-  }
+  if (!/^[a-f0-9]{24}$/i.test(String(config.venueId || "")) || /^0{24}$/.test(String(config.venueId || ""))) fail("Navigator venueId must be a non-zero ObjectId");
 }
 const mapPath = "clients/navigator/public/maps/pinacoteca-bologna-demo.svg";
 if (!fs.existsSync(mapPath)) fail("Exam demo map asset missing");
@@ -52,8 +50,15 @@ requirePattern("clients/marketplace/src/ui/create-hub-view.js", /renderVisitCard
 requirePattern("clients/marketplace/src/ui/workspace-view.js", /resourceType\s*===\s*["']visit["'][\s\S]*\/workspace\/visit-authoring\?visitId=/, "Workspace existing Visit authoringRef entry point");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /createVisit[\s\S]*updateVisit/, "Visit create and edit through VisitV2 API");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Informazioni[\s\S]*Costruisci la visita[\s\S]*Impostazioni[\s\S]*Percorso[\s\S]*Pubblicazione/, "Five-step Visit authoring workflow");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /visit-content-composer[\s\S]*renderVisitSequence[\s\S]*data-add-content/, "Unified content selection and sequence composer");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-drag-kind="stop"[\s\S]*data-drag-kind="content"[\s\S]*data-move-stop[\s\S]*data-move-content/, "Visit drag and accessible reorder controls");
+for (const [pattern, label] of [
+  [/visit-content-composer/, "Unified Visit composer"],
+  [/renderVisitSequence/, "Visit sequence rendering"],
+  [/data-add-content/, "Visit content add control"],
+  [/data-drag-kind="stop"/, "Visit stop drag"],
+  [/data-drag-kind="content"/, "Visit content drag"],
+  [/data-move-stop/, "Accessible stop reorder"],
+  [/data-move-content/, "Accessible content reorder"],
+]) requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContentCandidates[\s\S]*data-content-page/, "Paginated unified Visit content search");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry-stop[\s\S]*attachVisitContentToStop[\s\S]*detachVisitContentFromStop/, "Explicit content-to-anchor reassignment");
