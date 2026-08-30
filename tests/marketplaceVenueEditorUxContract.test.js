@@ -52,6 +52,14 @@ test("Venue editor mostra una sezione alla volta con tab accessibili e deep link
   assert.doesNotMatch(styleSource, /venue-editor-nav nav\{display:flex;overflow:auto\}/);
 });
 
+test("il workspace desktop non comprime la prima configurazione fisica", () => {
+  const sectionSource = sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"];
+  assert.match(sectionSource, /venue-editor-page venue-editor-page--onboarding/);
+  assert.match(sectionSource, /venue-editor-page venue-editor-page--workspace/);
+  assert.match(styleSource, /main\.venue-editor-page--workspace\{height:calc\(100vh - var\(--header-height\)\);[^}]*overflow:hidden/);
+  assert.doesNotMatch(styleSource, /main\.venue-editor-page\{height:calc\(100vh - var\(--header-height\)\)/);
+});
+
 test("Venue entities, recognition media e Subject restano separati dagli Item", () => {
   for (const token of ["createVenueTarget", "updateVenueTarget", "trashVenueTarget", "subjectId", "recognitionMedia", "configuration", "binding"]) assert.match(source, new RegExp(token));
   assert.match(source, /distinto dagli Item/);
