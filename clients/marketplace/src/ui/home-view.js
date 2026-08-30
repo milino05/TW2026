@@ -57,6 +57,7 @@ function attentionCopy(asset) {
     const count = Number(workflow.issueCount || 0);
     return count ? `Controlla ${count} ${count === 1 ? "aspetto" : "aspetti"} prima di pubblicare.` : "Controlla la consistenza prima di pubblicare.";
   }
+  if (asset?.state === "private" && workflow?.integrityStatus === "valid") return "Il contenuto è corretto, se vuoi puoi pubblicarlo";
   if (hasOperation(asset, "workflow.publish")) return "I controlli sono completi: puoi pubblicare.";
   if (asset?.state === "empty") return "Aggiungi le informazioni necessarie per iniziare.";
   if (["working", "private"].includes(asset?.state)) return "Riprendi la bozza e completa il prossimo passaggio.";

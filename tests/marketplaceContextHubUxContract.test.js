@@ -78,6 +78,11 @@ test("Home differenzia area personale e organizzazione senza duplicare le azioni
   assert.doesNotMatch(source.home, /home-actions|home-action-card/);
 });
 
+test("Home distingue un contenuto privato già controllato da una bozza incompleta", () => {
+  assert.match(source.home, /asset\?\.state === "private" && workflow\?\.integrityStatus === "valid"/);
+  assert.match(source.home, /Il contenuto è corretto, se vuoi puoi pubblicarlo/);
+});
+
 test("route Context Hub, Home e discovery Organization/Venue sono parte del router", () => {
   for (const route of ["/context", "/home", "/organizations", "/organizations/public", "/venues", "/venues/public"]) {
     assert.match(source.router, new RegExp(`"${route.replaceAll("/", "\\/")}"`));
