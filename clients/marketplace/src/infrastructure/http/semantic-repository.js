@@ -21,6 +21,9 @@ export const semanticRepository = {
   searchSubjects(search, { limit = 25, match = "label_exact" } = {}) {
     return apiClient.request(`/subjects?${queryString({ search, limit, match })}`);
   },
+  searchVenueSubjects(venueId, search, { limit = 25 } = {}) {
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/subject-candidates?${queryString({ query: search, limit })}`);
+  },
   createLocalSubject(payload) {
     return apiClient.request("/subjects", { method: "POST", body: JSON.stringify(payload) });
   },

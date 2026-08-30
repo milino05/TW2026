@@ -22,7 +22,7 @@ function resolveVenueTargetExhibit({ venueRelease, layoutRevision, venueTargetId
   return { binding, exhibitSlot, place };
 }
 
-function resolveApproachInstruction({ layoutRevision, destinationExhibitSlotId, sourceExhibitSlotId = null, incomingConnectionId = null }) {
+function resolveApproachStep({ layoutRevision, destinationExhibitSlotId, sourceExhibitSlotId = null, incomingConnectionId = null }) {
   const destination = exhibitSlotEntryMap(layoutRevision).get(id(destinationExhibitSlotId));
   if (!destination) return null;
   const overrides = destination.approachGuidance?.overrides || [];
@@ -30,15 +30,39 @@ function resolveApproachInstruction({ layoutRevision, destinationExhibitSlotId, 
     const source = exhibitSlotEntryMap(layoutRevision).get(id(sourceExhibitSlotId));
     if (source && id(source.placeId) === id(destination.placeId)) {
       const fromSlot = overrides.find((entry) => entry.sourceKind === "exhibit_slot" && id(entry.sourceExhibitSlotId) === id(sourceExhibitSlotId));
-      if (fromSlot?.instruction) return fromSlot.instruction;
+      if (fromSlot?.instruction) return {
+        exhibitSlotId: destination.exhibitSlotId,
+        placeId: destination.placeId,
+        instruction: fromSlot.instruction,
+        resolutionSource: "source_slot_override",
+      };
     }
   }
   if (incomingConnectionId) {
     const fromConnection = overrides.find((entry) => entry.sourceKind === "incoming_connection" && id(entry.sourceConnectionId) === id(incomingConnectionId));
-    if (fromConnection?.instruction) return fromConnection.instruction;
+    if (fromConnection?.instruction) return {
+      exhibitSlotId: destination.exhibitSlotId,
+      placeId: destination.placeId,
+      instruction: fromConnection.instruction,
+      resolutionSource: "incoming_connection_override",
+    };
   }
-  if (destination.approachGuidance?.defaultInstruction) return destination.approachGuidance.defaultInstruction;
-  return `Cerca “${destination.label}” all'interno del luogo raggiunto.`;
+  if (destination.approachGuidance?.defaultInstruction) return {
+    exhibitSlotId: destination.exhibitSlotId,
+    placeId: destination.placeId,
+    instruction: destination.approachGuidance.defaultInstruction,
+    resolutionSource: "default",
+  };
+  return {
+    exhibitSlotId: destination.exhibitSlotId,
+    placeId: destination.placeId,
+    instruction: `Raggiungi ${destination.label}.`,
+    resolutionSource: "fallback",
+  };
+}
+
+function resolveApproachInstruction(options) {
+  return resolveApproachStep(options)?.instruction || null;
 }
 
 module.exports = {
@@ -46,5 +70,6 @@ module.exports = {
   exhibitSlotEntryMap,
   bindingMap,
   resolveVenueTargetExhibit,
+  resolveApproachStep,
   resolveApproachInstruction,
 };

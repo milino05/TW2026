@@ -9,6 +9,7 @@ const {
   deriveMetersPerPixel,
   distanceMetersForGeometry,
 } = require("../services/layoutGeometry.service");
+const { resolveApproachStep } = require("../services/venueExhibitResolution.service");
 
 function oid() { return new mongoose.Types.ObjectId(); }
 
@@ -72,4 +73,42 @@ test("Floor calibration converts normalized polyline geometry into meters", () =
     points: [{ x: 0.1, y: 0.5 }, { x: 0.5, y: 0.5 }],
     floor,
   }), 40);
+});
+
+test("approach guidance uses slot, connection, default and deterministic fallback priority", () => {
+  const placeId = oid();
+  const sourceSlotId = oid();
+  const destinationSlotId = oid();
+  const connectionId = oid();
+  const layoutRevision = {
+    exhibitSlots: [
+      { exhibitSlotId: sourceSlotId, placeId, label: "Parete est" },
+      {
+        exhibitSlotId: destinationSlotId,
+        placeId,
+        label: "Parete nord",
+        approachGuidance: {
+          defaultInstruction: "Guarda davanti a te.",
+          overrides: [
+            { sourceKind: "incoming_connection", sourceConnectionId: connectionId, instruction: "Entra e gira a destra." },
+            { sourceKind: "exhibit_slot", sourceExhibitSlotId: sourceSlotId, instruction: "Prosegui lungo la parete." },
+          ],
+        },
+      },
+    ],
+  };
+  const fromSlot = resolveApproachStep({ layoutRevision, destinationExhibitSlotId: destinationSlotId, sourceExhibitSlotId: sourceSlotId, incomingConnectionId: connectionId });
+  assert.equal(fromSlot.resolutionSource, "source_slot_override");
+  assert.equal(fromSlot.instruction, "Prosegui lungo la parete.");
+  const fromConnection = resolveApproachStep({ layoutRevision, destinationExhibitSlotId: destinationSlotId, incomingConnectionId: connectionId });
+  assert.equal(fromConnection.resolutionSource, "incoming_connection_override");
+  assert.equal(fromConnection.instruction, "Entra e gira a destra.");
+  const byDefault = resolveApproachStep({ layoutRevision, destinationExhibitSlotId: destinationSlotId });
+  assert.equal(byDefault.resolutionSource, "default");
+  layoutRevision.exhibitSlots[1].approachGuidance = { defaultInstruction: null, overrides: [] };
+  const fallback = resolveApproachStep({ layoutRevision, destinationExhibitSlotId: destinationSlotId });
+  assert.deepEqual(
+    { instruction: fallback.instruction, resolutionSource: fallback.resolutionSource },
+    { instruction: "Raggiungi Parete nord.", resolutionSource: "fallback" },
+  );
 });

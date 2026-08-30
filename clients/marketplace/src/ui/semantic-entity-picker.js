@@ -14,6 +14,7 @@ function subjectId(subject) { return String(subject?.id || subject?._id || ""); 
 
 export class ArtAroundSemanticEntityPicker extends HTMLElement {
   localResults = [];
+  localSuggestions = [];
   externalResults = [];
   selectedCandidate = null;
   provider = null;
@@ -29,6 +30,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
   providerRetryAfterSeconds = null;
   providerUnavailable = false;
   externalQuery = null;
+  venueContext = null;
 
   constructor() {
     super();
@@ -37,6 +39,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
 
   get mode() { return this.getAttribute("mode") === "mapping" ? "mapping" : "subject"; }
   get entityKind() { return this.getAttribute("entity-kind") === "property" ? "property" : "item"; }
+  get venueId() { return String(this.getAttribute("venue-id") || "").trim(); }
 
   connectedCallback() {
     if (!this.query && this.hasAttribute("initial-query")) this.query = normalizeSemanticQuery(this.getAttribute("initial-query"));
@@ -44,6 +47,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
     this.shadowRoot.addEventListener("submit", this.onSubmit);
     this.shadowRoot.addEventListener("click", this.onClick);
     this.render();
+    if (this.hasAttribute("auto-search") && this.query.length >= 2) queueMicrotask(() => this.runSubjectSearch(this.query));
   }
 
   disconnectedCallback() {
@@ -101,6 +105,7 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
   resetSubjectSearch(query) {
     this.query = normalizeSemanticQuery(query);
     this.localResults = [];
+    this.localSuggestions = [];
     this.externalResults = [];
     this.selectedCandidate = null;
     this.provider = null;
@@ -127,11 +132,41 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
     this.busy = true;
     this.render();
     try {
-      const result = await searchSubjectCascade({
-        repository: semanticRepository,
-        query: this.query,
-        entityKind: this.entityKind,
-      });
+      let result;
+      if (this.venueId) {
+        const venueResult = await semanticRepository.searchVenueSubjects(this.venueId, this.query);
+        this.venueContext = { venue: venueResult.venue, permissions: venueResult.permissions };
+        this.localSuggestions = venueResult.suggestions || [];
+        if ((venueResult.exact || []).length) {
+          result = {
+            localResults: venueResult.exact,
+            externalResults: [],
+            externalSearched: false,
+            provider: null,
+            externalQuery: null,
+          };
+        } else {
+          const external = await searchExternalCandidates({
+            repository: semanticRepository,
+            query: this.query,
+            entityKind: this.entityKind,
+            retryWithoutItalianArticle: true,
+          });
+          result = {
+            localResults: [],
+            externalResults: external.candidates,
+            externalSearched: true,
+            provider: external.provider,
+            externalQuery: external.query,
+          };
+        }
+      } else {
+        result = await searchSubjectCascade({
+          repository: semanticRepository,
+          query: this.query,
+          entityKind: this.entityKind,
+        });
+      }
       if (requestId !== this.searchRequestId) return;
       this.localSearched = true;
       this.localResults = result.localResults;
@@ -276,7 +311,8 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
     }
     const local = target?.closest("button[data-local-subject]");
     if (local) {
-      const subject = this.localResults.find((entry) => subjectId(entry) === local.dataset.localSubject);
+      const subject = [...this.localResults, ...this.localSuggestions]
+        .find((entry) => subjectId(entry) === local.dataset.localSubject);
       if (subject) this.emit("subject-selected", { subject, source: "local_existing" });
       return;
     }
@@ -321,7 +357,12 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
 
   renderLocalResults() {
     if (!this.localResults.length) return "";
-    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · identità condivise</span><strong>Soggetti con lo stesso nome</strong></div><span class="result-count">${this.localResults.length}</span></div><ul class="resolver-results">${this.localResults.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small></div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
+    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · identità condivise</span><strong>Soggetti con lo stesso nome</strong></div><span class="result-count">${this.localResults.length}</span></div><ul class="resolver-results">${this.localResults.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${subject.state ? `<span class="bound">Inventario della sede · ${escapeHtml({ exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[subject.state] || subject.state)}</span>` : ""}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
+  }
+
+  renderLocalSuggestions() {
+    if (!this.localSuggestions.length) return "";
+    return `<section class="result-group"><div class="result-heading"><div><span class="result-source">ArtAround · verifica consigliata</span><strong>Possibili corrispondenze nella sede</strong></div><span class="result-count">${this.localSuggestions.length}</span></div><ul class="resolver-results">${this.localSuggestions.map((subject) => `<li><div><strong>${escapeHtml(subject.preferredLabel)}</strong><small>${escapeHtml(subject.description || "Senza descrizione")}</small>${subject.state ? `<span class="bound">Inventario della sede · ${escapeHtml({ exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[subject.state] || subject.state)}</span>` : ""}</div><button type="button" data-local-subject="${escapeHtml(subjectId(subject))}">Usa</button></li>`).join("")}</ul></section>`;
   }
 
   renderExternalResults() {
@@ -341,8 +382,9 @@ export class ArtAroundSemanticEntityPicker extends HTMLElement {
   renderSubjectSearch() {
     const canContinueExternally = this.localResults.length > 0 && !this.externalSearched;
     return `<form class="unified-search" data-subject-search role="search"><label>Cerca ciò di cui vuoi parlare<input name="query" required value="${escapeHtml(this.query)}" placeholder="Opera, persona, stile, concetto o QID" autocomplete="off"></label><button ${this.busy ? "disabled" : ""}>${icon("search", { size: 16 })} Cerca</button></form>
-      <p class="search-explanation">Cerchiamo prima tra le identità già condivise in ArtAround. Se non troviamo quella corretta, continuiamo automaticamente su Wikidata.</p>
+      <p class="search-explanation">${this.venueId ? "Diamo priorità alle identità già presenti o usate dalla sede. Se non troviamo lo stesso nome, continuiamo automaticamente su Wikidata." : "Cerchiamo prima tra le identità già condivise in ArtAround. Se non troviamo quella corretta, continuiamo automaticamente su Wikidata."}</p>
       ${this.renderLocalResults()}
+      ${this.renderLocalSuggestions()}
       ${canContinueExternally ? `<div class="continue-search"><div><strong>Non è quello che cercavi?</strong><small>Estendi la stessa ricerca a Wikidata.</small></div><button class="button-secondary" type="button" data-continue-external ${this.busy ? "disabled" : ""}>Cerca anche su Wikidata</button></div>` : ""}
       ${this.renderExternalResults()}`;
   }

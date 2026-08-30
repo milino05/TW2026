@@ -118,6 +118,9 @@ function connectionOriginLabel(origin) {
     forked: "Ereditato da una copia",
   }[origin] || "Inserito manualmente";
 }
+function inventoryStateLabel(value) {
+  return { exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[value] || "Nell’inventario";
+}
 function newRepresentation(overrides = {}) {
   return {
     id: id(overrides.id || overrides._id),
@@ -180,6 +183,8 @@ export class ItemAuthoringView extends HTMLElement {
   preselectedSubjectId = params().get("subjectId") || null;
   physicalIntent = params().get("physicalIntent") === "1";
   venueTargetContext = null;
+  venueContext = null;
+  venueInventoryMatch = null;
   projection = null;
   namespaceControls = null;
   connectionsProjection = null;
@@ -365,6 +370,32 @@ export class ItemAuthoringView extends HTMLElement {
     this.persistWorkingDraft();
   }
 
+  canUsePhysicalIntent() {
+    return Boolean(
+      this.venueId
+      && this.venueContext?.permissions?.canEditInventory
+      && this.principal?.type === "organization"
+      && id(this.principal?.id) === id(this.venueContext?.venue?.ownerOrganizationId),
+    );
+  }
+
+  async loadVenueContext() {
+    if (!this.venueId) {
+      this.venueContext = null;
+      this.venueInventoryMatch = null;
+      return;
+    }
+    const result = await authoringRepository.venueSubjectCandidates(
+      this.venueId,
+      this.selectedSubject?.preferredLabel || "",
+    );
+    this.venueContext = { venue: result.venue, permissions: result.permissions };
+    const selectedSubjectId = id(this.selectedSubject);
+    this.venueInventoryMatch = selectedSubjectId
+      ? (result.exact || []).find((entry) => id(entry) === selectedSubjectId && entry.venueTargetId) || null
+      : null;
+  }
+
   async bootstrap() {
     this.busy = true; this.error = null; this.render();
     try {
@@ -373,9 +404,13 @@ export class ItemAuthoringView extends HTMLElement {
         this.venueTargetContext = await authoringRepository.venueTargetContext(this.venueTargetId);
         this.selectedSubject = this.venueTargetContext.subject;
         await this.loadSuggestedMedia();
-      } else if (this.preselectedSubjectId) {
-        this.selectedSubject = await authoringRepository.getSubject(this.preselectedSubjectId);
-        await this.loadSuggestedMedia();
+      } else {
+        if (this.venueId) await this.loadVenueContext();
+        if (this.preselectedSubjectId) {
+          this.selectedSubject = await authoringRepository.getSubject(this.preselectedSubjectId);
+          if (this.venueId) await this.loadVenueContext();
+          await this.loadSuggestedMedia();
+        }
       }
       if (this.itemId) {
         await this.reloadProjection();
@@ -618,7 +653,7 @@ export class ItemAuthoringView extends HTMLElement {
         if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
         if (!this.selectedSubject) throw new Error("Scegli prima di cosa deve parlare il contenuto");
         const itemPayload = { primarySubjectId: this.selectedSubject.id || this.selectedSubject._id, ownerType: this.principal.type, ownerId: this.principal.id };
-        this.physicalIntent = Boolean(this.venueId && data.get("physicalIntent") === "on");
+        this.physicalIntent = Boolean(this.canUsePhysicalIntent() && !this.venueInventoryMatch && data.get("physicalIntent") === "on");
         const created = this.physicalIntent
           ? await authoringRepository.createItemWithPhysicalIntent(this.venueId, itemPayload)
           : await authoringRepository.createItem(itemPayload);
@@ -740,7 +775,14 @@ export class ItemAuthoringView extends HTMLElement {
     if (this.itemId || !event.detail?.subject) return;
     this.selectedSubject = event.detail.subject;
     this.notice = event.detail.source === "reuse_existing" ? "Identità già presente: è stato riutilizzato il soggetto ArtAround esistente." : "Soggetto selezionato. Puoi continuare.";
-    this.render();
+    if (this.venueId) {
+      this.busy = true;
+      this.error = null;
+      this.render();
+      try { await this.loadVenueContext(); }
+      catch (error) { this.error = error instanceof Error ? error.message : "Impossibile verificare l’inventario della sede"; }
+      finally { this.busy = false; this.render(); }
+    } else this.render();
     await this.loadSuggestedMedia();
   };
 
@@ -939,12 +981,20 @@ export class ItemAuthoringView extends HTMLElement {
   renderStepOne() {
     if (this.activeStep !== 1) return "";
     const venue = this.venueTargetContext;
-    const physicalContext = venue ? `<aside class="context-box"><span class="eyebrow">Oggetto della sede</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L'oggetto serve a precompilare il soggetto. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>` : "";
+    const contextualVenue = this.venueContext?.venue;
+    const inventoryMatch = this.venueInventoryMatch;
+    const physicalContext = venue
+      ? `<aside class="context-box"><span class="eyebrow">Già nell’inventario della sede · ${escapeHtml(inventoryStateLabel(venue.venueTarget.inventoryState))}</span><strong>${escapeHtml(venue.venueTarget.label)}</strong><p>${escapeHtml(venue.venue.name)}${venue.venueTarget.description ? ` · ${escapeHtml(venue.venueTarget.description)}` : ""}</p><p class="note">L’entità precompila l’esatto Subject. Il contenuto resta editoriale e non incorpora la posizione fisica.</p>${(venue.recognitionMedia || []).length ? `<details class="technical-details"><summary>Riconoscimento fisico</summary><p>${venue.recognitionMedia.length} immagine/i restano nella configurazione della sede, separate dal contenuto editoriale.</p></details>` : ""}</aside>`
+      : inventoryMatch
+        ? `<aside class="context-box"><span class="eyebrow">Già nell’inventario della sede · ${escapeHtml(inventoryStateLabel(inventoryMatch.state))}</span><strong>${escapeHtml(this.selectedSubject?.preferredLabel || inventoryMatch.preferredLabel)}</strong><p>${escapeHtml(contextualVenue?.name || "Sede")}</p><p class="note">Verrà creato soltanto il contenuto: l’entità fisica esistente non sarà duplicata né spostata.</p></aside>`
+        : contextualVenue
+          ? `<aside class="context-box"><span class="eyebrow">Contenuto per la sede</span><strong>${escapeHtml(contextualVenue.name)}</strong><p>${this.canUsePhysicalIntent() ? "Puoi aggiungere il soggetto all’inventario insieme al contenuto, senza assegnarlo automaticamente a uno slot." : "Puoi creare il contenuto. Per aggiungere nuove entità all’inventario, seleziona l’area di lavoro dell’organizzazione proprietaria e assicurati di avere il permesso di modifica fisica."}</p></aside>`
+          : "";
     if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Soggetto confermato</h2><p>Il soggetto identifica in modo univoco ciò di cui parla il contenuto.</p></div></header>${physicalContext}${this.renderSubjectSummary()}<div class="step-actions"><button type="button" data-step="2">Continua alle informazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
-    const physicalIntentControl = this.venueId ? `<label class="physical-intent"><input type="checkbox" name="physicalIntent" ${this.physicalIntent ? "checked" : ""}><span><strong>Destinato all’esposizione</strong><small>Aggiunge atomicamente il Subject all’inventario della sede. Il contenuto resta un Item separato e non viene assegnato a uno slot.</small></span></label>` : "";
+    const physicalIntentControl = this.canUsePhysicalIntent() && !inventoryMatch ? `<label class="physical-intent"><input type="checkbox" name="physicalIntent" ${this.physicalIntent ? "checked" : ""}><span><strong>Destinato all’esposizione</strong><small>Aggiunge atomicamente il soggetto all’inventario della sede. Il contenuto resta separato e non viene assegnato a uno slot.</small></span></label>` : "";
     const subjectSelection = this.selectedSubject
       ? `<form data-create-item class="subject-confirmation">${this.renderSubjectSummary()}${physicalIntentControl}<div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("check", { size: 16 })} Soggetto selezionato · Continua ${icon("chevron", { size: 15 })}</button></div></form>`
-      : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
+      : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"${this.venueId ? ` venue-id="${escapeHtml(this.venueId)}"` : ""}></artaround-semantic-entity-picker>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>Cerca prima un'identità già esistente; creane una nuova solo se non trovi quella corretta.</p></div></header>${physicalContext}${subjectSelection}</section>`;
   }
 

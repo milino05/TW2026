@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -11,6 +13,20 @@ function isolatedMongoUri(uri) {
   return parsed.toString();
 }
 const mongoUri = isolatedMongoUri(baseMongoUri);
+
+test("Navigator consumes the exact floor identifiers emitted by MapProjection", () => {
+  const root = path.resolve(__dirname, "..");
+  const repository = fs.readFileSync(path.join(root, "clients/navigator/src/infrastructure/http/navigationRepository.ts"), "utf8");
+  const mapView = fs.readFileSync(path.join(root, "clients/navigator/src/ui/SessionMap.vue"), "utf8");
+  const presentation = fs.readFileSync(path.join(root, "clients/navigator/src/domain/sessionPresentation.ts"), "utf8");
+  for (const source of [repository, mapView, presentation]) {
+    assert.doesNotMatch(source, /floorKey|fromFloorKey|toFloorKey/);
+  }
+  assert.match(repository, /floors: Array<\{\s*id: string;/);
+  assert.match(repository, /floorId: string;/);
+  assert.match(mapView, /currentStop\?\.floorId \|\| value\.floors\[0\]\?\.id/);
+  assert.match(presentation, /floor\.id === stop\.floorId/);
+});
 
 async function withFreshDatabase(callback) {
   await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
@@ -149,6 +165,8 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     const secondAnchorId = new mongoose.Types.ObjectId();
     const firstTargetId = new mongoose.Types.ObjectId();
     const secondTargetId = new mongoose.Types.ObjectId();
+    const firstSlotId = new mongoose.Types.ObjectId();
+    const secondSlotId = new mongoose.Types.ObjectId();
     const contentEntryId = new mongoose.Types.ObjectId();
     const plan = await SessionPlanRevisionV2.create({
       sessionId: session._id,
@@ -175,8 +193,8 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
         },
       }],
       visitAnchors: [
-        { _id: firstAnchorId, venueTargetId: firstTargetId, venueId: venue._id, placeId: firstPlaceId, estimatedObservationSeconds: 30 },
-        { _id: secondAnchorId, venueTargetId: secondTargetId, venueId: venue._id, placeId: secondPlaceId, estimatedObservationSeconds: 30 },
+        { _id: firstAnchorId, venueTargetId: firstTargetId, venueId: venue._id, exhibitSlotId: firstSlotId, placeId: firstPlaceId, approachInstruction: "Cerca il primo punto.", estimatedObservationSeconds: 30 },
+        { _id: secondAnchorId, venueTargetId: secondTargetId, venueId: venue._id, exhibitSlotId: secondSlotId, placeId: secondPlaceId, approachInstruction: "Cerca il secondo punto.", estimatedObservationSeconds: 30 },
       ],
       physicalRoute: {
         legs: [{
@@ -203,6 +221,9 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     assert.equal(map.venues[0].floors[0].map.imageUrl, "/maps/navigation-test.svg");
     assert.equal(map.logicalCurrentStop.visitAnchorId.toString(), firstAnchorId.toString());
     assert.equal(map.venues[0].route.overlays[0].floorId.toString(), floorId.toString());
+    assert.equal(map.plannedLegs.length, 1);
+    assert.equal(map.plannedLegs[0].macroSteps[0].direction, "forward");
+    assert.equal(map.plannedLegs[0].macroSteps[0].instruction, "Prosegui verso Sala B");
     const serializedMap = JSON.stringify(map);
     assert.equal(serializedMap.includes("placeId"), false);
     assert.equal(serializedMap.includes("connectionId"), false);

@@ -668,8 +668,25 @@ async function updateExhibitSlot({ venueId, exhibitSlotId, actorUserId, payload 
       if (order !== null && (!Number.isInteger(order) || order < 0)) commandError("Ordine non valido", "INVALID_ORDER", "order");
       entry.order = order;
     }
+    if (id(entry.placeId) !== id(place._id)) {
+      const invalidDependent = (layout.exhibitSlots || []).find((candidate) => (
+        id(candidate.exhibitSlotId) !== id(slot._id)
+        && id(candidate.placeId) !== id(place._id)
+        && (candidate.approachGuidance?.overrides || []).some((override) => (
+          override.sourceKind === "exhibit_slot" && id(override.sourceExhibitSlotId) === id(slot._id)
+        ))
+      ));
+      if (invalidDependent) commandError(
+        "Rimuovi prima le indicazioni che usano questo slot come punto di partenza",
+        "EXHIBIT_SLOT_MOVE_INVALIDATES_APPROACH",
+        "placeId",
+        409,
+        { dependentExhibitSlotId: invalidDependent.exhibitSlotId },
+      );
+    }
+    const guidance = hasOwn(payload, "approachGuidance") ? payload.approachGuidance : plain(entry.approachGuidance);
+    entry.approachGuidance = normalizedApproachGuidance(guidance, layout, place._id, slot._id);
     entry.placeId = place._id;
-    if (hasOwn(payload, "approachGuidance")) entry.approachGuidance = normalizedApproachGuidance(payload.approachGuidance, layout, place._id, slot._id);
     return { exhibitSlotId: slot._id, entry };
   } });
 }
@@ -682,13 +699,21 @@ async function assignVenueTargetToExhibitSlot({ venueId, venueTargetId, exhibitS
     if (!slot) commandError("Slot espositivo non trovato", "EXHIBIT_SLOT_NOT_FOUND", "exhibitSlotId", 404);
     exhibitSlotEntryById(layout, slot._id);
     const occupied = (release.targetBindings || []).find((entry) => id(entry.exhibitSlotId) === id(slot._id) && id(entry.venueTargetId) !== id(target._id));
-    if (occupied) commandError("Lo slot è già assegnato a un'altra entità", "EXHIBIT_SLOT_ALREADY_ASSIGNED", "exhibitSlotId", 409, { venueTargetId: occupied.venueTargetId });
+    const replacedVenueTargetId = occupied?.venueTargetId || null;
+    if (occupied) occupied.exhibitSlotId = null;
     let binding = (release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
+    const previousExhibitSlotId = binding?.exhibitSlotId || null;
     if (!binding) {
       release.targetBindings.push({ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] });
       binding = release.targetBindings.at(-1);
     } else binding.exhibitSlotId = slot._id;
-    return { venueTargetId: target._id, exhibitSlotId: slot._id, availability: binding.availability };
+    return {
+      venueTargetId: target._id,
+      exhibitSlotId: slot._id,
+      previousExhibitSlotId,
+      replacedVenueTargetId,
+      availability: binding.availability,
+    };
   } });
 }
 

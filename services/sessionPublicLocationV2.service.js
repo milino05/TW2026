@@ -4,7 +4,8 @@ const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const AppError = require("../utils/AppError");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
-const { id, loadPinnedBundle } = require("./physicalExecutionV2.service");
+
+function id(value) { return String(value?._id || value || ""); }
 
 function normalizePublicCode(value) {
   const code = String(value || "").trim();
@@ -39,8 +40,14 @@ async function resolvePublicCodeLocation({ sessionId, userId, publicCode }) {
   if (!slot) throw new AppError("Riferimento fisico non disponibile", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_NOT_FOUND" }]);
   const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(slot.venueId));
   if (!pin) throw new AppError("Riferimento fisico non disponibile in questa sessione", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_OUTSIDE_SESSION_SCOPE" }]);
-  const bundle = await loadPinnedBundle(session, slot.venueId);
-  return locationFromBundle({ slot, release: bundle.release, layout: bundle.layout });
+  const [release, layout] = await Promise.all([
+    VenueRelease.findOne({ _id: pin.venueReleaseId, venueId: pin.venueId }).lean(),
+    LayoutRevision.findOne({ _id: pin.layoutRevisionId, venueId: pin.venueId }).lean(),
+  ]);
+  if (!release || !layout || id(release.layoutRevisionId) !== id(layout._id)) {
+    throw new AppError("Snapshot fisico pinzato non disponibile", 409, [{ code: "PUBLIC_LOCATION_PINNED_SNAPSHOT_MISSING" }]);
+  }
+  return locationFromBundle({ slot, release, layout });
 }
 
 async function resolveCurrentPublishedPublicCode({ publicCode }) {

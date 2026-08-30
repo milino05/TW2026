@@ -1,13 +1,30 @@
 import { apiClient } from "./apiClient";
 
 export interface MapPoint { x: number; y: number }
-export interface RouteOverlay { floorKey: string; points: MapPoint[] }
+export interface RouteOverlay { floorId: string; points: MapPoint[] }
 export interface FloorTransition {
-  fromFloorKey: string;
-  toFloorKey: string;
+  fromFloorId: string;
+  toFloorId: string;
   from: MapPoint;
   to: MapPoint;
   instruction: string | null;
+}
+
+export interface PlannedNavigationLeg {
+  type: "indoor" | "inter_venue";
+  fromVisitAnchorId: string;
+  toVisitAnchorId: string;
+  transferInstruction: string | null;
+  macroSteps: Array<{
+    direction: "forward" | "backward";
+    instruction: string | null;
+    distanceMeters: number;
+    estimatedSeconds: number;
+  }>;
+  approachStep: null | {
+    instruction: string;
+    resolutionSource: "source_slot_override" | "incoming_connection_override" | "default" | "fallback";
+  };
 }
 
 export interface MapProjection {
@@ -16,7 +33,7 @@ export interface MapProjection {
     name: string;
     description: string;
     floors: Array<{
-      key: string;
+      id: string;
       label: string;
       map: { available: boolean; imageUrl: string | null; width: number | null; height: number | null };
     }>;
@@ -26,7 +43,7 @@ export interface MapProjection {
       exhibitSlotId: string;
       label: string;
       approachInstruction: string | null;
-      floorKey: string;
+      floorId: string;
       position: MapPoint;
       order: number;
     }>;
@@ -34,8 +51,8 @@ export interface MapProjection {
       id: string;
       label: string;
       category: string;
-      userIntents: string[];
-      floorKey: string;
+      physicalFeatureRef: { kind: "local"; physicalVocabularyId: string; definitionId: string };
+      floorId: string;
       position: MapPoint;
     }>;
     route: {
@@ -45,6 +62,7 @@ export interface MapProjection {
     warnings: Array<{ code: string; message: string }>;
   }>;
   logicalCurrentStop: null | { visitAnchorId: string; venueId: string };
+  plannedLegs: PlannedNavigationLeg[];
   interVenueTransitions: Array<{
     fromVisitAnchorId: string;
     toVisitAnchorId: string;
@@ -59,7 +77,7 @@ export interface NavigationProjection {
     venueId: string;
     label: string;
     category: string;
-    floorKey: string;
+    floorId: string;
     position: MapPoint;
   };
   route: {

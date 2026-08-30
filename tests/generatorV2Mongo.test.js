@@ -113,7 +113,9 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
     await context.save();
 
     const venue = await Venue.create({ name: "Generator Venue", ownerOrganizationId: organization._id, primaryEditorialContextId: context._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera fisica", createdBy: user._id });
+    const ExhibitSlot = require("../models/exhibitSlot.model");
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera fisica", createdBy: user._id });
+    const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: user._id });
     const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
     const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
@@ -123,7 +125,7 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
       authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{ _id: floorId, label: "Piano terra" }],
       places: [{ _id: placeId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala 1", floorId, position: { x: 0.5, y: 0.5 } }],
-      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [placeId] }],
+      exhibitSlots: [{ exhibitSlotId: slot._id, placeId, label: "Slot opera" }],
       connections: [],
       status: "published",
       createdBy: user._id,
@@ -133,7 +135,7 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
       venueId: venue._id,
       version: 1,
       layoutRevisionId: layout._id,
-      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       publication: { publishedAt: new Date(), publishedBy: user._id },
@@ -147,6 +149,8 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
     assert.equal(plan.contentEntries.length, 1);
     assert.equal(plan.visitAnchors.length, 1);
     assert.equal(String(plan.visitAnchors[0].venueTargetId), String(target._id));
+    assert.equal(String(plan.visitAnchors[0].exhibitSlotId), String(slot._id));
+    assert.match(plan.visitAnchors[0].approachInstruction, /Slot opera|Sala 1/);
     assert.equal(String(plan.contentEntries[0].itemEditionId), String(edition._id));
     assert.equal(String(plan.contentEntries[0].deliveryAnchorId), String(plan.visitAnchors[0]._id));
     assert.equal(String(plan.sourceEditorialReleaseIds[0]), String(editorialRelease._id));

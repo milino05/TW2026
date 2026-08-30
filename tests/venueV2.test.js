@@ -61,9 +61,10 @@ test("Venue routing resolves VenueTargets through release bindings and ExhibitSl
       { exhibitSlotId: fromSlotId, placeId: fromPlaceId, label: "Slot A" },
       { exhibitSlotId: toSlotId, placeId: toPlaceId, label: "Slot B" },
     ],
+    places: [{ _id: fromPlaceId }, { _id: toPlaceId }],
     connections: [{ _id: id(), fromPlaceId, toPlaceId, directionality: "bidirectional", distanceMeters: 10, additionalDelaySeconds: 0, attributeValues: [], instructions: {} }],
   };
-  const venueRelease = { targetBindings: [{ venueTargetId: fromTargetId, exhibitSlotId: fromSlotId }, { venueTargetId: toTargetId, exhibitSlotId: toSlotId }] };
+  const venueRelease = { targetBindings: [{ venueTargetId: fromTargetId, exhibitSlotId: fromSlotId, availability: "active" }, { venueTargetId: toTargetId, exhibitSlotId: toSlotId, availability: "active" }] };
   const route = routeBetweenVenueTargets({ layoutRevision: layout, venueRelease, fromVenueTargetId: fromTargetId, toVenueTargetId: toTargetId });
   assert.equal(route.reachable, true);
   assert.equal(route.distanceMeters, 10);

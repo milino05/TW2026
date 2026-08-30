@@ -155,26 +155,56 @@ test("Venue layout commands preserve ids, pinned vocabulary semantics and metric
     assert.equal(connection.geometry.points.at(-1).x, 0.5);
 
     const subject = await Subject.create({ preferredLabel: "Opera command", createdBy: user._id });
-    const target = await createVenueTarget({ venueId: venue.id, actorUserId: user._id, payload: { subjectId: subject._id, label: "Opera command" } });
+    const target = await createVenueTarget({ venueId: venue.id, actorUserId: user._id, payload: { subjectId: subject._id, displayLabelOverride: "Opera command" } });
     const bindingCommands = require("../services/venueTargetBindingCommand.service");
     await assert.rejects(
       () => bindingCommands.setAvailability({ venueId: venue.id, venueTargetId: target._id, actorUserId: user._id, payload: { availability: "active", legacy: true } }),
       (error) => error?.status === 400 && error?.details?.some((detail) => detail.code === "UNKNOWN_FIELD" && detail.field === "legacy"),
     );
-    await commands.setVenueTargetPlacement({ venueId: venue.id, venueTargetId: target._id, actorUserId: user._id, payload: { primaryPlaceId: placeA } });
+    const createdSlot = await commands.createExhibitSlot({ venueId: venue.id, actorUserId: user._id, payload: { placeId: placeA, label: "Parete nord", approachGuidance: { defaultInstruction: "Guarda a sinistra", overrides: [] } } });
+    await commands.assignVenueTargetToExhibitSlot({ venueId: venue.id, venueTargetId: target._id, exhibitSlotId: createdSlot.result.exhibitSlotId, actorUserId: user._id });
+    const replacementSubject = await Subject.create({ preferredLabel: "Opera sostitutiva", createdBy: user._id });
+    const replacementTarget = await createVenueTarget({ venueId: venue.id, actorUserId: user._id, payload: { subjectId: replacementSubject._id } });
+    const replaced = await commands.assignVenueTargetToExhibitSlot({
+      venueId: venue.id,
+      venueTargetId: replacementTarget._id,
+      exhibitSlotId: createdSlot.result.exhibitSlotId,
+      actorUserId: user._id,
+    });
+    assert.equal(String(replaced.result.replacedVenueTargetId), String(target._id));
+    const sourceSlot = await commands.createExhibitSlot({ venueId: venue.id, actorUserId: user._id, payload: { placeId: placeA, label: "Parete est" } });
+    await commands.updateExhibitSlot({
+      venueId: venue.id,
+      exhibitSlotId: createdSlot.result.exhibitSlotId,
+      actorUserId: user._id,
+      payload: { approachGuidance: { defaultInstruction: "Guarda a sinistra", overrides: [{ sourceKind: "exhibit_slot", sourceExhibitSlotId: sourceSlot.result.exhibitSlotId, instruction: "Prosegui lungo la parete" }] } },
+    });
+    await assert.rejects(
+      () => commands.updateExhibitSlot({ venueId: venue.id, exhibitSlotId: sourceSlot.result.exhibitSlotId, actorUserId: user._id, payload: { placeId: placeB } }),
+      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "EXHIBIT_SLOT_MOVE_INVALIDATES_APPROACH"),
+    );
+    const sourceRemoved = await commands.removeExhibitSlot({ venueId: venue.id, exhibitSlotId: sourceSlot.result.exhibitSlotId, actorUserId: user._id });
+    const destinationAfterCleanup = sourceRemoved.layout.exhibitSlots.find((entry) => String(entry.exhibitSlotId) === String(createdSlot.result.exhibitSlotId));
+    assert.equal(destinationAfterCleanup.approachGuidance.overrides.length, 0);
     await commands.setPreVisitInformation({ venueId: venue.id, actorUserId: user._id, payload: { items: ["Ingresso dal cortile"] } });
 
     const state = await getVenuePhysicalState({ venueId: venue.id, view: "working", actorUserId: user._id });
     assert.equal(state.release.preVisitInformation[0], "Ingresso dal cortile");
-    assert.equal(state.release.targetBindings.length, 1);
-    assert.equal(state.layout.venueTargetPlacements.length, 1);
+    assert.equal(state.release.targetBindings.length, 2);
+    assert.equal(state.layout.exhibitSlots.length, 1);
+    assert.equal(state.release.targetBindings.filter((entry) => entry.exhibitSlotId).length, 1);
+    assert.equal(String(state.release.targetBindings.find((entry) => String(entry.venueTargetId) === String(replacementTarget._id)).exhibitSlotId), String(createdSlot.result.exhibitSlotId));
+    assert.equal(state.release.targetBindings.find((entry) => String(entry.venueTargetId) === String(target._id)).exhibitSlotId, null);
     assert.equal(state.release.integrity.status, "needs_review");
     assert.equal(String(state.layout.authoredAgainstPhysicalVocabularyRevisionId), String(physical.revision._id));
 
-    await assert.rejects(
-      commands.removePlace({ venueId: venue.id, placeId: placeA, actorUserId: user._id }),
-      (error) => error.status === 409 && error.details?.some((detail) => detail.code === "PLACE_HAS_CONNECTIONS"),
-    );
+    const impact = await commands.getWorkingLayoutRemovalImpact({ venueId: venue.id, resourceType: "place", resourceId: placeA, actorUserId: user._id });
+    assert.deepEqual(impact.counts, { places: 1, connections: 1, exhibitSlots: 1, assignedEntities: 1 });
+    const removed = await commands.removePlace({ venueId: venue.id, placeId: placeA, actorUserId: user._id });
+    assert.equal(removed.layout.exhibitSlots.length, 0);
+    const stateAfterRemoval = await getVenuePhysicalState({ venueId: venue.id, view: "working", actorUserId: user._id });
+    assert.equal(stateAfterRemoval.release.targetBindings.length, 2);
+    assert.equal(stateAfterRemoval.release.targetBindings.every((entry) => entry.exhibitSlotId === null), true);
   });
 });
 

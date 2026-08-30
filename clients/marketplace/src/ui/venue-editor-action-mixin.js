@@ -133,7 +133,7 @@ export const venueActionMixin = {
     if (confirmTargetRemoval) {
       await this.execute(
         () => managementRepository.trashVenueTarget(this.id, confirmTargetRemoval.dataset.confirmTargetRemoval),
-        "Oggetto fisico spostato nel cestino.",
+        "Entità della sede spostata nel cestino.",
       );
       return;
     }
@@ -179,8 +179,8 @@ export const venueActionMixin = {
 
     const detach = target.closest("[data-detach-target]");
     if (detach) {
-      const label = detach.dataset.label || "questo oggetto";
-      this.requestDestructiveAction({ type: "target_detach", id: detach.dataset.detachTarget, title: `Rimuovere “${label}” dalla configurazione?`, description: "Collocazione, disponibilità e immagini di riconoscimento verranno rimosse soltanto dalla bozza. Il VenueTarget resterà nell'archivio della sede.", confirmLabel: "Rimuovi dalla bozza", successMessage: "Oggetto rimosso dalla configurazione fisica di lavoro." });
+      const label = detach.dataset.label || "questa entità";
+      this.requestDestructiveAction({ type: "target_detach", id: detach.dataset.detachTarget, title: `Rimuovere “${label}” dalla configurazione?`, description: "Collocazione, disponibilità e immagini di riconoscimento verranno rimosse soltanto dalla bozza. L’entità resterà nell’inventario della sede.", confirmLabel: "Rimuovi dalla bozza", successMessage: "Entità rimossa dalla configurazione fisica di lavoro." });
     }
   },
 
@@ -228,7 +228,7 @@ export const venueActionMixin = {
         this.id,
         form.dataset.targetAvailability,
         String(data.get("availability") || "active"),
-      ), "Disponibilità dell'oggetto aggiornata.");
+      ), "Disponibilità dell’entità aggiornata.");
       return;
     }
 
@@ -315,7 +315,7 @@ export const venueActionMixin = {
   onSubjectSelected(event) {
     if (!event.detail?.subject) return;
     this.selectedSubject = event.detail.subject;
-    this.message = event.detail.source === "reuse_existing" ? "Identità esistente riutilizzata." : "Soggetto selezionato per il nuovo oggetto.";
+    this.message = event.detail.source === "reuse_existing" ? "Identità esistente riutilizzata." : "Soggetto selezionato per la nuova entità.";
     this.render();
   },
 

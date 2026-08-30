@@ -21,6 +21,7 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     const Organization = require("../models/organization.model");
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
+    const Subject = require("../models/subject.model");
     const VenueRelease = require("../models/venueRelease.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
     const MarketplaceOffer = require("../models/marketplaceOffer.model");
@@ -41,9 +42,13 @@ test("Marketplace discovery projects only published Venue state and keeps publis
       { name: "Sede pubblica", description: "Visitabile", ownerOrganizationId: organization._id, createdBy: actorId },
       { name: "Sede in preparazione", description: "Non pubblica", ownerOrganizationId: organization._id, createdBy: actorId },
     ]);
+    const [activeSubject, unavailableSubject] = await Subject.create([
+      { preferredLabel: "Opera pubblica", description: "Visibile", createdBy: actorId },
+      { preferredLabel: "Opera non disponibile", description: "Nascosta", createdBy: actorId },
+    ]);
     const [activeTarget, unavailableTarget] = await VenueTarget.create([
-      { venueId: publishedVenue._id, subjectId: oid(), label: "Opera pubblica", description: "Visibile", createdBy: actorId },
-      { venueId: publishedVenue._id, subjectId: oid(), label: "Opera non disponibile", description: "Nascosta", createdBy: actorId },
+      { venueId: publishedVenue._id, subjectId: activeSubject._id, createdBy: actorId },
+      { venueId: publishedVenue._id, subjectId: unavailableSubject._id, createdBy: actorId },
     ]);
     const release = await VenueRelease.create({
       venueId: publishedVenue._id,
@@ -51,8 +56,8 @@ test("Marketplace discovery projects only published Venue state and keeps publis
       layoutRevisionId: oid(),
       status: "published",
       targetBindings: [
-        { venueTargetId: activeTarget._id, availability: "active", recognitionMedia: [{ url: "https://example.test/opera.jpg", altText: "Opera" }] },
-        { venueTargetId: unavailableTarget._id, availability: "unavailable" },
+        { venueTargetId: activeTarget._id, exhibitSlotId: oid(), availability: "active", recognitionMedia: [{ url: "https://example.test/opera.jpg", altText: "Opera" }] },
+        { venueTargetId: unavailableTarget._id, exhibitSlotId: oid(), availability: "unavailable" },
       ],
       preVisitInformation: ["Presentarsi dieci minuti prima"],
       createdBy: actorId,

@@ -135,7 +135,7 @@ async function namespaceAuthoringControls(req, res, next) {
 }
 
 async function venueTargetAuthoringContext(req, res, next) {
-  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId })); }
+  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
 

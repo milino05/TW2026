@@ -123,10 +123,15 @@ async function migrateVenueExhibitSlots({ dryRun = false } = {}) {
   const indexes = await targetsCollection.indexes();
   const legacyPairIndex = indexes.find((entry) => entry.key?.venueId === 1 && entry.key?.subjectId === 1 && entry.name !== "unique_active_venue_subject");
   if (legacyPairIndex) await targetsCollection.dropIndex(legacyPairIndex.name);
-  const legacyPublicCodeIndex = indexes.find((entry) => entry.key?.publicCode === 1 && !entry.sparse);
-  if (legacyPublicCodeIndex) await targetsCollection.dropIndex(legacyPublicCodeIndex.name);
-  if (legacyPublicCodeIndex || !indexes.some((entry) => entry.key?.publicCode === 1 && entry.sparse)) {
-    await targetsCollection.createIndex({ publicCode: 1 }, { unique: true, sparse: true, name: "publicCode_1" });
+  const publicCodeIndex = indexes.find((entry) => entry.key?.publicCode === 1);
+  const hasExpectedPublicCodeIndex = publicCodeIndex?.unique === true
+    && publicCodeIndex?.partialFilterExpression?.publicCode?.$type === "string";
+  if (publicCodeIndex && !hasExpectedPublicCodeIndex) await targetsCollection.dropIndex(publicCodeIndex.name);
+  if (!hasExpectedPublicCodeIndex) {
+    await targetsCollection.createIndex(
+      { publicCode: 1 },
+      { unique: true, partialFilterExpression: { publicCode: { $type: "string" } }, name: "publicCode_1" },
+    );
   }
   await targetsCollection.createIndex(
     { venueId: 1, subjectId: 1 },

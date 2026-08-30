@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");

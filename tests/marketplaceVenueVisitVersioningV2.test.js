@@ -39,8 +39,8 @@ test("live Visit relevance follows only its current published revision while his
       { name: "Venue B", ownerOrganizationId: organization._id, createdBy: user._id },
     ]);
     const [targetA, targetB] = await VenueTarget.create([
-      { venueId: venueA._id, subjectId: subjectA._id, label: "Target A", createdBy: user._id },
-      { venueId: venueB._id, subjectId: subjectB._id, label: "Target B", createdBy: user._id },
+      { venueId: venueA._id, subjectId: subjectA._id, displayLabelOverride: "Target A", createdBy: user._id },
+      { venueId: venueB._id, subjectId: subjectB._id, displayLabelOverride: "Target B", createdBy: user._id },
     ]);
 
     const visit = await VisitV2.create({ ownerType: "user", ownerId: user._id, createdBy: user._id });

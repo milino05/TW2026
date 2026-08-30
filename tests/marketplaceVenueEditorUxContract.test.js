@@ -58,6 +58,26 @@ test("Venue entities, recognition media e Subject restano separati dagli Item", 
   assert.doesNotMatch(source, /managementRepository\.createItem|managementRepository\.updateItem|itemId\s*:/);
 });
 
+test("Allestimento usa la terminologia user-facing e preserva istruzioni multiple", () => {
+  assert.match(source, /Slot espositivi/);
+  assert.match(source, /Entità della sede/);
+  assert.doesNotMatch(source, />Venue entities</);
+  assert.match(source, /data-remove-slot-override/);
+  assert.match(source, /data-detach-target/);
+  assert.match(source, /Le istruzioni già presenti vengono conservate/);
+  assert.match(source, /connection\.directionality === "bidirectional"/);
+  assert.match(source, /data-add-floor-shortcut/);
+  assert.match(source, /data-floor-settings-shortcut/);
+  assert.match(source, /assignVenueTargetToExhibitSlot/);
+  assert.doesNotMatch(source, /current[\s\S]{0,160}unassignVenueTargetFromExhibitSlot[\s\S]{0,160}assignVenueTargetToExhibitSlot/);
+});
+
+test("il picker Venue-aware estende automaticamente la ricerca quando manca un exact match", () => {
+  const targetSource = sources["clients/marketplace/src/ui/venue-editor-targets-mixin.js"];
+  assert.match(targetSource, /auto-search/);
+  assert.match(targetSource, /continua automaticamente su Wikidata/);
+});
+
 test("la creazione dell'inventario non assegna implicitamente uno slot", () => {
   const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
   assert.match(actionSource, /managementRepository\.createVenueTarget/);
@@ -81,6 +101,18 @@ test("mappa resta una projection fisica e non introduce posizionamento automatic
   assert.match(source, /non traccia la posizione del visitatore/i);
   assert.match(source, /map-canvas/);
   assert.doesNotMatch(source, /navigator\.geolocation|getCurrentPosition|watchPosition|teleport|QRScanner/);
+});
+
+test("la macchina a stati della mappa usa soltanto gli otto modi canonici", () => {
+  for (const mode of [
+    "idle", "placing_place", "connecting_select_from", "connecting_select_to",
+    "placing_slot", "calibrating", "editing_geometry", "dragging_place",
+  ]) assert.match(source, new RegExp(`"${mode}"`));
+  for (const mode of [
+    "placing_place", "connecting_select_from", "connecting_select_to",
+    "placing_slot", "calibrating", "editing_geometry", "dragging_place",
+  ]) assert.match(styleSource, new RegExp(`data-map-mode=${mode}`));
+  assert.doesNotMatch(styleSource, /data-map-mode=(?:create-place|connect|calibrate|geometry)\]/);
 });
 
 test("workflow e comandi distruttivi restano backend-authoritative e senza dialoghi nativi", () => {

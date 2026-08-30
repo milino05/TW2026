@@ -149,12 +149,25 @@ export const venueMapAuthoringMixin = {
     if (spatialTab) {
       this.activeSpatialTab = spatialTab.dataset.spatialTab || spatialTab.dataset.showSpatialTab;
       this.render();
+      requestAnimationFrame(() => this.querySelector(`[data-spatial-tab="${this.activeSpatialTab}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
       return true;
     }
     const arrangementTab = target.closest("[data-arrangement-tab]");
     if (arrangementTab) { this.activeArrangementTab = arrangementTab.dataset.arrangementTab; this.render(); return true; }
     const inventoryFilter = target.closest("[data-inventory-filter]");
     if (inventoryFilter) { this.inventoryFilter = inventoryFilter.dataset.inventoryFilter; this.render(); return true; }
+    if (target.closest("[data-add-floor-shortcut]")) {
+      this.activeSpatialTab = "places";
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-add-floor] input")?.focus());
+      return true;
+    }
+    if (target.closest("[data-floor-settings-shortcut]")) {
+      this.activeSpatialTab = "map";
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-floor-metadata] input")?.focus());
+      return true;
+    }
     const locateSlot = target.closest("[data-locate-slot]");
     if (locateSlot) { this.locateExhibitSlot(locateSlot.dataset.locateSlot); return true; }
     const copySlot = target.closest("[data-copy-slot-code]");
@@ -162,6 +175,26 @@ export const venueMapAuthoringMixin = {
       try { await navigator.clipboard.writeText(copySlot.dataset.copySlotCode); this.message = "Codice dello slot copiato."; }
       catch { this.error = "Non è stato possibile copiare il codice. Selezionalo manualmente."; }
       this.render();
+      return true;
+    }
+    const removeSlotOverride = target.closest("[data-remove-slot-override]");
+    if (removeSlotOverride) {
+      const exhibitSlotId = removeSlotOverride.dataset.removeSlotOverride;
+      const sourceKind = removeSlotOverride.dataset.overrideSourceKind;
+      const sourceId = removeSlotOverride.dataset.overrideSourceId;
+      const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
+      if (!slot) return true;
+      const overrides = (slot.approachGuidance?.overrides || []).filter((entry) => {
+        if (entry.sourceKind !== sourceKind) return true;
+        const entrySourceId = sourceKind === "incoming_connection" ? entry.sourceConnectionId : entry.sourceExhibitSlotId;
+        return id(entrySourceId) !== id(sourceId);
+      });
+      await this.execute(() => managementRepository.updateExhibitSlot(this.id, exhibitSlotId, {
+        approachGuidance: {
+          defaultInstruction: slot.approachGuidance?.defaultInstruction || null,
+          overrides,
+        },
+      }), "Istruzione specifica rimossa.");
       return true;
     }
     if (target.closest("[data-start-slot]")) {
@@ -362,8 +395,8 @@ export const venueMapAuthoringMixin = {
       const targetId = String(data.get("venueTargetId") || "");
       const current = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId))?.assignedVenueTargetId;
       await this.execute(async () => {
-        if (current && id(current) !== id(targetId)) await managementRepository.unassignVenueTargetFromExhibitSlot(this.id, current);
-        if (targetId) await managementRepository.assignVenueTargetToExhibitSlot(this.id, exhibitSlotId, targetId);
+        if (targetId && id(current) !== id(targetId)) await managementRepository.assignVenueTargetToExhibitSlot(this.id, exhibitSlotId, targetId);
+        else if (!targetId && current) await managementRepository.unassignVenueTargetFromExhibitSlot(this.id, current);
       },
         targetId ? "Entità assegnata allo slot." : "Slot liberato.",
       );
@@ -374,8 +407,40 @@ export const venueMapAuthoringMixin = {
       const sourceConnectionId = String(data.get("sourceConnectionId") || "");
       const sourceExhibitSlotId = String(data.get("sourceExhibitSlotId") || "");
       const instruction = String(data.get("overrideInstruction") || "").trim();
-      const overrides = instruction && (sourceConnectionId || sourceExhibitSlotId) ? [{ instruction, ...(sourceConnectionId ? { sourceConnectionId } : { sourceExhibitSlotId }) }] : [];
-      await this.execute(() => managementRepository.updateExhibitSlot(this.id, form.dataset.slotEditor, {
+      if (sourceConnectionId && sourceExhibitSlotId) {
+        this.error = "Seleziona un solo punto di provenienza per ogni istruzione specifica.";
+        this.render();
+        return true;
+      }
+      if (instruction && !sourceConnectionId && !sourceExhibitSlotId) {
+        this.error = "Seleziona il collegamento o lo slot da cui proviene il visitatore.";
+        this.render();
+        return true;
+      }
+      if (!instruction && (sourceConnectionId || sourceExhibitSlotId)) {
+        this.error = "Scrivi l’istruzione specifica da associare al punto di provenienza.";
+        this.render();
+        return true;
+      }
+      const exhibitSlotId = form.dataset.slotEditor;
+      const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
+      const overrides = (slot?.approachGuidance?.overrides || []).map((entry) => ({
+        sourceKind: entry.sourceKind,
+        instruction: entry.instruction,
+        ...(entry.sourceKind === "incoming_connection"
+          ? { sourceConnectionId: id(entry.sourceConnectionId) }
+          : { sourceExhibitSlotId: id(entry.sourceExhibitSlotId) }),
+      }));
+      if (instruction) {
+        const sourceKind = sourceConnectionId ? "incoming_connection" : "exhibit_slot";
+        const sourceId = sourceConnectionId || sourceExhibitSlotId;
+        const existingIndex = overrides.findIndex((entry) => entry.sourceKind === sourceKind
+          && id(sourceKind === "incoming_connection" ? entry.sourceConnectionId : entry.sourceExhibitSlotId) === id(sourceId));
+        const nextOverride = { sourceKind, instruction, ...(sourceConnectionId ? { sourceConnectionId } : { sourceExhibitSlotId }) };
+        if (existingIndex >= 0) overrides.splice(existingIndex, 1, nextOverride);
+        else overrides.push(nextOverride);
+      }
+      await this.execute(() => managementRepository.updateExhibitSlot(this.id, exhibitSlotId, {
         label: String(data.get("label") || "").trim(),
         placeId: String(data.get("placeId") || ""),
         order: String(data.get("order") || "").trim() ? Number(data.get("order")) : null,

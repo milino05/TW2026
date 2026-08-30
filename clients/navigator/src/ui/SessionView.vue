@@ -769,7 +769,7 @@ async function listenControlledVoice() {
   padding: .8rem 1rem;
   border-left: .22rem solid var(--navigator-accent);
   border-radius: .65rem;
-  background: color-mix(in srgb, var(--navigator-accent) 9%, white);
+  background: color-mix(in srgb, var(--navigator-accent) 9%, var(--navigator-surface-raised));
 }
 
 .approach-guidance span { color: var(--navigator-muted); }

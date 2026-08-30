@@ -190,7 +190,7 @@ function projectTarget(target, subject, permissions, {
   const includedInWorkingConfiguration = Boolean(hasWorking && currentReferenced);
   const includedInPublishedConfiguration = Boolean(publishedReferenced);
   const availableOperations = [
-    ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica oggetto")] : []),
+    ...(permissions.has("venue.physical.edit") ? [operation("venue.target.update", "Modifica entità")] : []),
     ...(workingEditable && includedInWorkingConfiguration && permissions.has("venue.physical.edit")
       ? [operation("venue.target.detach", "Rimuovi dalla configurazione")]
       : []),

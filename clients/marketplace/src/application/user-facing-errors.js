@@ -91,7 +91,7 @@ export function replaceTechnicalTerms(message = "") {
     .replaceAll("SubjectClassDefinition", "tipo di soggetto")
     .replaceAll("Subject", "soggetto")
     .replaceAll("VenueRelease", "versione della sede")
-    .replaceAll("VenueTarget", "oggetto della sede")
+    .replaceAll("VenueTarget", "entità della sede")
     .replaceAll("LayoutRevision", "configurazione degli spazi")
     .replaceAll("Venue", "sede")
     .replaceAll("VisitRevision", "versione della visita")

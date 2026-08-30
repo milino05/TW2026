@@ -37,31 +37,27 @@ async function ensureVenueEntity({ venueId, payload, actorUserId, session = null
   if (session) subjectQuery = subjectQuery.session(session);
   const subject = await subjectQuery;
   if (!subject) throw new AppError("Subject non trovato", 404);
-  let query = VenueTarget.findOne({ venueId, subjectId: normalized.subjectId, lifecycleStatus: "active" });
-  if (session) query = query.session(session);
-  const existing = await query;
-  if (existing) return { target: existing, created: false };
-  try {
-    const payloadToCreate = {
-      venueId,
-      subjectId: normalized.subjectId,
-      displayLabelOverride: normalized.displayLabelOverride || null,
-      inventoryNote: normalized.inventoryNote || null,
-      provenance: normalized.provenance || { origin: "human" },
-      createdBy: actorUserId,
-    };
-    const target = session
-      ? (await VenueTarget.create([payloadToCreate], { session }))[0]
-      : await VenueTarget.create(payloadToCreate);
-    return { target, created: true };
-  } catch (error) {
-    if (error?.code !== 11000) throw error;
-    let raceQuery = VenueTarget.findOne({ venueId, subjectId: normalized.subjectId, lifecycleStatus: "active" });
-    if (session) raceQuery = raceQuery.session(session);
-    const target = await raceQuery;
-    if (!target) throw error;
-    return { target, created: false };
-  }
+  const payloadToCreate = {
+    venueId,
+    subjectId: normalized.subjectId,
+    displayLabelOverride: normalized.displayLabelOverride || null,
+    inventoryNote: normalized.inventoryNote || null,
+    provenance: normalized.provenance || { origin: "human" },
+    createdBy: actorUserId,
+  };
+  const result = await VenueTarget.findOneAndUpdate(
+    { venueId, subjectId: normalized.subjectId, lifecycleStatus: "active" },
+    { $setOnInsert: payloadToCreate },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      includeResultMetadata: true,
+      ...(session ? { session } : {}),
+    },
+  );
+  if (!result?.value) throw new AppError("Entità della sede non disponibile", 409, [{ code: "VENUE_ENTITY_ENSURE_FAILED" }]);
+  return { target: result.value, created: Boolean(result.lastErrorObject?.upserted) };
 }
 
 async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId }) {
@@ -164,7 +160,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
         session,
       });
       if (workingReferences.binding) {
-        throw new AppError("Rimuovi prima l'oggetto dalla configurazione fisica di lavoro", 409, [{
+        throw new AppError("Rimuovi prima l’entità dalla configurazione fisica di lavoro", 409, [{
           code: "TARGET_IN_WORKING_RELEASE",
           field: "venueTargetId",
         }]);
@@ -177,7 +173,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
         session,
       });
       if (publishedReferences.binding) {
-        throw new AppError("L'oggetto appartiene ancora alla configurazione pubblicata. Pubblica prima una nuova release senza questo oggetto", 409, [{
+        throw new AppError("L’entità appartiene ancora alla configurazione pubblicata. Pubblica prima una nuova release che non la includa", 409, [{
           code: "TARGET_IN_PUBLISHED_RELEASE",
           field: "venueTargetId",
         }]);
@@ -185,7 +181,7 @@ async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
 
       const visitReferences = await publishedVisitReferencesTarget({ venueTargetId: target._id, session });
       if (visitReferences.count) {
-        throw new AppError("L'oggetto è ancora usato da una visita pubblicata. Aggiorna prima la visita", 409, [{
+        throw new AppError("L’entità è ancora usata da una visita pubblicata. Aggiorna prima la visita", 409, [{
           code: "TARGET_IN_PUBLISHED_VISIT",
           field: "venueTargetId",
           context: { publishedVisitCount: visitReferences.count, visitIds: visitReferences.visitIds },

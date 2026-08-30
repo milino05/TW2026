@@ -33,6 +33,7 @@ async function createContentFixture({ manager, organization }) {
   const ItemRevisionV2 = require("../models/itemRevisionV2.model");
   const Venue = require("../models/venue.model");
   const VenueTarget = require("../models/venueTarget.model");
+  const ExhibitSlot = require("../models/exhibitSlot.model");
   const LayoutRevision = require("../models/layoutRevision.model");
   const VenueRelease = require("../models/venueRelease.model");
 
@@ -57,7 +58,8 @@ async function createContentFixture({ manager, organization }) {
   await edition.save();
 
   const venue = await Venue.create({ name: "Venue workflow", ownerOrganizationId: organization._id, createdBy: manager._id });
-  const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: manager._id });
+  const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera in sala", createdBy: manager._id });
+  const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: manager._id });
   const physical = await createPublishedPhysicalVocabulary({ userId: manager._id });
   const floorId = oid();
   const placeId = oid();
@@ -67,7 +69,7 @@ async function createContentFixture({ manager, organization }) {
     authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
     floors: [{ _id: floorId, label: "Piano terra" }],
     places: [{ _id: placeId, floorId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala", position: { x: 0.5, y: 0.5 }, attributeValues: [] }],
-    venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [] }],
+    exhibitSlots: [{ exhibitSlotId: slot._id, placeId, label: "Slot opera" }],
     status: "published",
     createdBy: manager._id,
     updatedBy: manager._id,
@@ -76,7 +78,7 @@ async function createContentFixture({ manager, organization }) {
     venueId: venue._id,
     version: 1,
     layoutRevisionId: layout._id,
-    targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+    targetBindings: [{ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] }],
     status: "published",
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: manager._id },
     publication: { publishedAt: new Date(), publishedBy: manager._id },

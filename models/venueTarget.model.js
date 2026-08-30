@@ -12,7 +12,7 @@ const VenueTargetSchema = new Schema({
   subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true, immutable: true, index: true },
   // Kept only for imported records while the ExhibitSlot migration is running.
   // New public codes belong exclusively to ExhibitSlot.
-  publicCode: { type: String, trim: true, default: null, unique: true, sparse: true, index: true },
+  publicCode: { type: String, trim: true, immutable: true },
   displayLabelOverride: { type: String, trim: true, default: null },
   inventoryNote: { type: String, trim: true, default: null },
   provenance: { type: VenueTargetProvenanceSchema, default: () => ({ origin: "human" }) },
@@ -23,6 +23,10 @@ const VenueTargetSchema = new Schema({
 }, { timestamps: true });
 
 VenueTargetSchema.index({ venueId: 1, lifecycleStatus: 1, displayLabelOverride: 1 });
+VenueTargetSchema.index(
+  { publicCode: 1 },
+  { unique: true, partialFilterExpression: { publicCode: { $type: "string" } }, name: "publicCode_1" },
+);
 VenueTargetSchema.index(
   { venueId: 1, subjectId: 1 },
   { unique: true, partialFilterExpression: { lifecycleStatus: "active" }, name: "unique_active_venue_subject" },

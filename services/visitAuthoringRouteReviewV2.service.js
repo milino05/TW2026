@@ -64,7 +64,7 @@ async function projectVisitAuthoringRouteReview(revision) {
   for (const [index, anchor] of anchors.entries()) {
     const target = physical.targetById.get(id(anchor.venueTargetId));
     if (!target) {
-      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNAVAILABLE", "La tappa fa riferimento a un oggetto fisico non più disponibile.", {
+      blockers.push(blocker("VISIT_ANCHOR_TARGET_UNAVAILABLE", "La tappa fa riferimento a un’entità fisica non più disponibile.", {
         anchorId: anchor._id,
         anchorIndex: index,
       }));

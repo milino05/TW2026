@@ -35,7 +35,7 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
         venueId,
         lifecycleStatus: "active",
       }).session(session);
-      if (!target) commandError("Oggetto della sede non trovato", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
+      if (!target) commandError("Entità della sede non trovata", "VENUE_TARGET_NOT_FOUND", "venueTargetId", 404);
 
       const release = await VenueRelease.findOne({ _id: currentVenue.workingReleaseId, venueId }).session(session);
       if (!release) commandError("Working VenueRelease non disponibile", "WORKING_RELEASE_NOT_FOUND", null, 409);
@@ -61,7 +61,7 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
     return commandResult;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError("Rimozione dell'oggetto dalla configurazione non completata", 500, [{
+    throw new AppError("Rimozione dell’entità dalla configurazione non completata", 500, [{
       code: "VENUE_TARGET_DETACH_FAILED",
       message: error.message,
     }]);

@@ -20,9 +20,24 @@ function similarity(left, right) {
 }
 
 async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit = 20 }) {
-  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
+  const { venue, authority } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.view" });
+  const context = {
+    venue: {
+      id: venue._id,
+      name: venue.name,
+      description: venue.description || "",
+      ownerOrganizationId: venue.ownerOrganizationId,
+    },
+    permissions: { canEditInventory: authority.effectivePermissions.includes("venue.physical.edit") },
+  };
   const normalizedQuery = normalizedLabel(query);
-  if (normalizedQuery.length < 2) return { query: String(query || ""), exact: [], suggestions: [], manualCreation: { allowed: false, reason: "query_too_short" } };
+  if (normalizedQuery.length < 2) return {
+    ...context,
+    query: String(query || ""),
+    exact: [],
+    suggestions: [],
+    manualCreation: { allowed: false, reason: "query_too_short" },
+  };
   const safeLimit = Math.max(1, Math.min(50, Number(limit) || 20));
   const queryTokens = [...tokens(query)];
   const candidateRegex = queryTokens.length ? new RegExp(queryTokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i") : null;
@@ -62,6 +77,7 @@ async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit
   const exact = ranked.filter((entry) => entry.exact).slice(0, safeLimit);
   const suggestions = ranked.filter((entry) => !entry.exact && entry.similarity >= 0.25).slice(0, safeLimit);
   return {
+    ...context,
     query: String(query || "").trim(),
     exact,
     suggestions,

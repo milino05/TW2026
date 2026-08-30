@@ -58,6 +58,10 @@ export const authoringRepository = {
   venueTargets(venueId) {
     return apiClient.request(`/v2/marketplace/venues/${encodeURIComponent(venueId)}/authoring-targets`);
   },
+  venueSubjectCandidates(venueId, query = "", { limit = 25 } = {}) {
+    const search = queryString({ query, limit });
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/subject-candidates${search ? `?${search}` : ""}`);
+  },
   venueTargetContext(venueTargetId) {
     return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
   },

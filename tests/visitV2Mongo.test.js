@@ -96,7 +96,9 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     await editorialContext.save();
 
     const venue = await Venue.create({ name: "Venue", ownerOrganizationId: organization._id, createdBy: user._id });
-    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, label: "Opera in sala", createdBy: user._id });
+    const ExhibitSlot = require("../models/exhibitSlot.model");
+    const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera in sala", createdBy: user._id });
+    const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: user._id });
     const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
     const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
@@ -106,7 +108,7 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
       authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
       floors: [{ _id: floorId, label: "Piano terra" }],
       places: [{ _id: placeId, floorId, placeTypeDefinitionId: physical.placeTypeByKey.get("room").definitionId, label: "Sala", position: { x: 0.5, y: 0.5 }, attributeValues: [] }],
-      venueTargetPlacements: [{ venueTargetId: target._id, primaryPlaceId: placeId, placeIds: [] }],
+      exhibitSlots: [{ exhibitSlotId: slot._id, placeId, label: "Slot opera" }],
       status: "published",
       createdBy: user._id,
       updatedBy: user._id,
@@ -115,7 +117,7 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
       venueId: venue._id,
       version: 1,
       layoutRevisionId: layout._id,
-      targetBindings: [{ venueTargetId: target._id, availability: "active", recognitionMedia: [] }],
+      targetBindings: [{ venueTargetId: target._id, exhibitSlotId: slot._id, availability: "active", recognitionMedia: [] }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       publication: { publishedAt: new Date(), publishedBy: user._id },

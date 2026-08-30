@@ -15,6 +15,7 @@ const itemService = require("./itemV2.service");
 const { listContentSpaces } = require("./contentSpace.service");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
+const { hasOrganizationPermission } = require("./organizationAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -317,23 +318,38 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
   };
 }
 
-async function getVenueTargetAuthoringContext({ venueTargetId }) {
+async function getVenueTargetAuthoringContext({ venueTargetId, actorUserId = null }) {
   const target = await VenueTarget.findOne({ _id: venueTargetId, lifecycleStatus: "active" }).lean();
   if (!target) throw new AppError("VenueTarget non disponibile", 404);
   const [venue, subject] = await Promise.all([
-    Venue.findOne({ _id: target.venueId, lifecycleStatus: "active" }).select("name description publishedReleaseId").lean(),
+    Venue.findOne({ _id: target.venueId, lifecycleStatus: "active" }).select("name description ownerOrganizationId workingReleaseId publishedReleaseId").lean(),
     Subject.findById(target.subjectId).lean(),
   ]);
   if (!venue || !subject) throw new AppError("Contesto fisico del VenueTarget non coerente", 409);
+  const canViewWorking = actorUserId ? await hasOrganizationPermission({
+    userId: actorUserId,
+    organizationId: venue.ownerOrganizationId,
+    permissionCode: "venue.view",
+  }) : false;
+  const releaseId = canViewWorking && venue.workingReleaseId ? venue.workingReleaseId : venue.publishedReleaseId;
   let recognitionMedia = [];
-  if (venue.publishedReleaseId) {
-    const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
-    const binding = (release?.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
-    recognitionMedia = (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null }));
+  const release = releaseId ? await VenueRelease.findById(releaseId).select("targetBindings").lean() : null;
+  const binding = (release?.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
+  if (!canViewWorking && (!binding || binding.availability !== "active" || !binding.exhibitSlotId)) {
+    throw new AppError("Entità pubblicata non disponibile", 404);
   }
+  recognitionMedia = (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null }));
+  const inventoryState = binding?.availability === "unavailable"
+    ? "unavailable"
+    : (binding?.exhibitSlotId ? "exposed" : "unplaced");
   return {
     venue: { id: venue._id, name: venue.name, description: venue.description || "" },
-    venueTarget: { id: target._id, label: target.displayLabelOverride || subject.preferredLabel, description: target.inventoryNote || subject.description || "" },
+    venueTarget: {
+      id: target._id,
+      label: target.displayLabelOverride || subject.preferredLabel,
+      description: target.inventoryNote || subject.description || "",
+      inventoryState,
+    },
     subject: projectSubject(subject),
     recognitionMedia,
   };
