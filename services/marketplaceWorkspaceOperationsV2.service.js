@@ -40,7 +40,7 @@ async function executeEditorialWorkflowOperation({ operationCode, sourceRef, aut
   }
 
   if (target.kind === "namespace") {
-    if (operationCode === "workflow.check") return namespaceRevisionService.evaluateNamespace({ namespaceId: target.id, actorUserId });
+    if (operationCode === "workflow.check") return namespaceRevisionService.checkNamespaceConsistency({ namespaceId: target.id, actorUserId });
     if (operationCode === "workflow.request_review") return namespaceRevisionService.requestNamespaceReview({ namespaceId: target.id, actorUserId });
     if (operationCode === "workflow.withdraw_review") return namespaceRevisionService.withdrawNamespaceReview({ namespaceId: target.id, actorUserId });
     if (operationCode === "workflow.request_changes") return namespaceRevisionService.requestNamespaceChanges({ namespaceId: target.id, actorUserId, message: payload?.message });

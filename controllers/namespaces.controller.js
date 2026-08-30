@@ -66,7 +66,7 @@ async function updateWorkingRevision(req, res, next) {
 }
 
 async function check(req, res, next) {
-  try { res.status(200).json(await namespaceRevisionService.evaluateNamespace({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
+  try { res.status(200).json(await namespaceRevisionService.checkNamespaceConsistency({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
 

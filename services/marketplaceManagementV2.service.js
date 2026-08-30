@@ -37,14 +37,8 @@ function namespaceOperations({ namespace, revision, permissions }) {
   if (editable && can("namespace.edit")) {
     operations.push(operation("namespace.revision.update", "Salva definizioni"));
     operations.push(operation("namespace.revision.check", "Controlla integrità"));
-    if (namespace.ownerType === "organization") operations.push(operation("namespace.revision.request_review", "Richiedi revisione"));
-    else operations.push(operation("namespace.revision.publish", "Pubblica"));
   }
-  if (status === "in_review" && namespace.ownerType === "organization") {
-    if (can("namespace.edit")) operations.push(operation("namespace.revision.withdraw_review", "Ritira dalla revisione"));
-    if (can("namespace.review")) operations.push(operation("namespace.revision.request_changes", "Richiedi modifiche", { requiresMessage: true }));
-    if (can("namespace.publish")) operations.push(operation("namespace.revision.publish", "Approva e pubblica"));
-  }
+  if (status === "in_review" && can("namespace.edit")) operations.push(operation("namespace.revision.check", "Controlla integrità"));
   return operations;
 }
 

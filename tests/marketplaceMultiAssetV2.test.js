@@ -26,6 +26,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
     const Entitlement = require("../models/entitlement.model");
     const {
       createListing,
@@ -184,6 +185,50 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
       commercial.listings[0].offerConfiguration.capabilityOptions.map((entry) => entry.code),
       ["content.consume", "content.use_in_editorial_release", "content.fork"],
     );
+
+    const legacyDuplicate = await MarketplaceListing.create({
+      sellerType: "user",
+      sellerId: seller._id,
+      resourceType: "item_revision",
+      resourceId: revision._id,
+      title: "Vecchia preparazione annullata",
+      status: "withdrawn",
+      withdrawnAt: new Date(),
+      withdrawnBy: seller._id,
+      createdBy: seller._id,
+    });
+    const legacyOffer = await MarketplaceOffer.create({
+      listingId: legacyDuplicate._id,
+      label: "Offerta della preparazione precedente",
+      pricing: { type: "free" },
+      grants: [{
+        resourceType: "item_revision",
+        resourceId: revision._id,
+        capability: "content.consume",
+        versionPolicy: "pinned",
+      }],
+      status: "active",
+      createdBy: seller._id,
+    });
+    const commercialWithLegacyDuplicate = await getCommercialManagement({ actorUserId: seller._id });
+    assert.equal(commercialWithLegacyDuplicate.total, 1, "sales must group legacy listings for the same resource");
+    assert.equal(commercialWithLegacyDuplicate.listings.length, 1);
+    assert.equal(commercialWithLegacyDuplicate.listings[0].offers.length, 2, "offers from duplicate legacy containers must be grouped");
+
+    const reusedListing = await createListing({
+      resourceType: "item_revision",
+      resourceId: revision._id,
+      sellerType: "user",
+      sellerId: seller._id,
+      actorUserId: seller._id,
+    });
+    assert.equal(String(reusedListing._id), String(listing._id), "opening sales again must reuse the canonical listing");
+    assert.equal(
+      await MarketplaceListing.countDocuments({ resourceType: "item_revision", resourceId: revision._id, sellerId: seller._id }),
+      2,
+      "opening sales must not create another duplicate",
+    );
+    await withdrawOffer({ offerId: legacyOffer._id, actorUserId: seller._id });
 
     const withdrawnOffer = await withdrawOffer({ offerId: offer._id, actorUserId: seller._id });
     assert.equal(withdrawnOffer.status, "withdrawn");

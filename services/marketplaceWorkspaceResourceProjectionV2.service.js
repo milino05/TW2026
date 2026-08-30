@@ -9,7 +9,27 @@ function key(type, value) { return `${type}:${id(value)}`; }
 
 function workflowState(revision) {
   if (!revision) return null;
-  return { status: revision.status, integrityStatus: revision.integrity?.status || "needs_review" };
+  const events = revision.review?.events || [];
+  const lastEvent = events.length ? events[events.length - 1] : null;
+  return {
+    status: revision.status,
+    integrityStatus: revision.integrity?.status || "needs_review",
+    issueCount: (revision.integrity?.issues || []).length,
+    reviewMessage: revision.review?.message || null,
+    lastEvent: lastEvent ? {
+      action: lastEvent.action,
+      at: lastEvent.at,
+      message: lastEvent.message || null,
+      _actorUserId: lastEvent.actorUserId || null,
+    } : null,
+  };
+}
+
+function modificationProjection(candidate, revision = null) {
+  return {
+    updatedAt: revision?.updatedAt || candidate.updatedAt || null,
+    _updatedByUserId: revision?.updatedBy || candidate.updatedBy || null,
+  };
 }
 
 function itemState(candidate, listing) {
@@ -76,7 +96,7 @@ function withWorkflowOperations({ baseOperations, principal, resourceType, revis
     ownerType: principal.type,
     capabilities: workflowCapabilities(principal, resourceType),
     revision,
-    finalizePrivatelyOnCheck: resourceType === "item_edition",
+    finalizePrivatelyOnCheck: ["item_edition", "namespace"].includes(resourceType),
   })];
 }
 
@@ -113,6 +133,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       sourceRef: { resourceType: "item_edition", resourceId: candidate._id },
       authoringRef: { resourceType: "item", resourceId: candidate.itemId },
       title: revision?.label || "Contenuto", summary: "",
+      ...modificationProjection(candidate, revision),
       state: itemState(candidate, listing),
       editorialWorkflow: itemWorkflowState(revision, listing),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "item_revision", resourceId: candidate.publishedRevisionId } : null,
@@ -130,6 +151,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       sourceRef: { resourceType: "editorial_context", resourceId: candidate._id },
       authoringRef: { resourceType: "editorial_context", resourceId: candidate._id },
       title: candidate.displayName, summary: candidate.shortDescription || candidate.description || "",
+      ...modificationProjection(candidate),
       state: candidate.publishedReleaseId ? "published" : "working",
       publishedSnapshotRef: candidate.publishedReleaseId ? { resourceType: "editorial_release", resourceId: candidate.publishedReleaseId } : null,
       listing,
@@ -148,8 +170,11 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       sourceRef: { resourceType: "namespace", resourceId: candidate._id },
       authoringRef: { resourceType: "namespace", resourceId: candidate._id },
       title: candidate.name, summary: candidate.description || "",
-      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
-      editorialWorkflow: workflowState(revision),
+      ...modificationProjection(candidate, revision),
+      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "private" : "empty"),
+      editorialWorkflow: candidate.publishedRevisionId && !candidate.workingRevisionId
+        ? { ...workflowState(revision), status: "private" }
+        : workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
       availableOperations: withRemovalOperation(
@@ -167,6 +192,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       sourceRef: { resourceType: "physical_vocabulary", resourceId: candidate._id },
       authoringRef: { resourceType: "physical_vocabulary", resourceId: candidate._id },
       title: candidate.name, summary: candidate.description || "",
+      ...modificationProjection(candidate, revision),
       state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
       editorialWorkflow: workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "physical_vocabulary_revision", resourceId: candidate.publishedRevisionId } : null,
@@ -185,6 +211,7 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
     sourceRef: { resourceType: "visit", resourceId: candidate._id },
     authoringRef: { resourceType: "visit", resourceId: candidate._id },
     title: revision?.title || "Visita", summary: revision?.description || "",
+    ...modificationProjection(candidate, revision),
     state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
     editorialWorkflow: workflowState(revision),
     publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "visit_revision", resourceId: candidate.publishedRevisionId } : null,
@@ -242,6 +269,7 @@ async function projectLicensedCandidate(candidate, { skipUnavailable = true } = 
     snapshotRef: refs.snapshotRef,
     title: marketable.asset.title,
     summary: marketable.asset.summary || "",
+    updatedAt: candidate.updatedAt || null,
     versionMode: resolvedResourceType === candidate._id.resourceType ? (candidate.versionPolicies?.[0] || null) : "pinned",
     capabilities,
     availableOperations: capabilities.map((capability) => ({

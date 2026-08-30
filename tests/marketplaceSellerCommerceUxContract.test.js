@@ -68,6 +68,14 @@ test("le offerte ritirate non si accumulano nella vista vendite", () => {
   assert.match(service, /MarketplaceOffer\.find\(\{ listingId: \{ \$in: listingIds \}, status: "active" \}\)/);
 });
 
+test("la vista vendite mostra un solo contenitore per risorsa", () => {
+  assert.match(service, /function listingResourceKey\(listing\)/);
+  assert.match(service, /const listingGroups = new Map\(\)/);
+  assert.match(service, /const groupedListings = \[\.\.\.listingGroups\.values\(\)\]/);
+  assert.match(service, /const total = groupedListings\.length/);
+  assert.match(service, /const listingOffers = groupListingIds\s*\.flatMap/);
+});
+
 test("una risorsa senza offerte è privata e può ricevere una nuova offerta", () => {
   assert.match(view, /return status === "published" && hasActiveOffer \? "Nel catalogo" : "Privato"/);
   assert.match(view, /const isPublic = listing\.status === "published" && hasActiveOffer/);

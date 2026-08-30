@@ -26,8 +26,9 @@ test("la gerarchia editoriale resta separata dai controlli operativi", () => {
 });
 
 test("home e catalogo ereditano il tema senza modificare il layout", () => {
-  assert.match(contextShell, /\.home-hero\{background:var\(--surface\)\}/);
-  assert.match(contextShell, /\.home-actions\{display:grid;grid-template-columns:repeat\(4/);
+  assert.match(contextShell, /\.home-intro\{display:flex/);
+  assert.match(contextShell, /\.home-card-grid\{display:grid;grid-template-columns:repeat\(3/);
+  assert.match(contextShell, /\.home-work-card,\.home-catalog-card\{[^}]*background:var\(--surface\)/);
   assert.match(consumerMarketplace, /rgba\(100,28,59,\.22\)/);
   assert.match(consumerMarketplace, /\.consumer-catalog \.catalog-grid\{grid-template-columns:repeat\(2/);
 });

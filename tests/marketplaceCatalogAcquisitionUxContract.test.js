@@ -88,3 +88,13 @@ test("acquisire non copia né trasferisce la proprietà editoriale", () => {
   assert.match(detail, /Aggiungi alla libreria/);
   assert.match(detail, /Apri in Libreria/);
 });
+
+test("l'immagine facoltativa del contenuto compare nel catalogo e nel dettaglio", () => {
+  assert.match(catalog, /asset\.illustrativeMedia\?\.\[0\]/);
+  assert.match(catalog, /consumer-catalog-card__preview/);
+  assert.match(catalog, /loading="lazy"/);
+  assert.match(detail, /asset\.illustrativeMedia\?\.\[0\]/);
+  assert.match(detail, /consumer-detail__image/);
+  assert.match(consumerStyles, /consumer-catalog-card__preview\{[^}]*object-fit:cover/);
+  assert.match(consumerStyles, /consumer-detail__image\{[^}]*aspect-ratio:4\/3[^}]*object-fit:cover/);
+});

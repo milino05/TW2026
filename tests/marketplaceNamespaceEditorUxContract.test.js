@@ -10,9 +10,13 @@ const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/namespace-editor-view.js");
 const stylePath = path.join(root, "clients/marketplace/src/styles/namespace-editor.css");
 const starterPath = path.join(root, "clients/marketplace/src/application/namespace-editor-starter.js");
+const namespaceServicePath = path.join(root, "services/namespaceRevision.service.js");
+const namespaceControllerPath = path.join(root, "controllers/namespaces.controller.js");
 const source = fs.readFileSync(viewPath, "utf8");
 const styleSource = fs.readFileSync(stylePath, "utf8");
 const starterSource = fs.readFileSync(starterPath, "utf8");
+const namespaceServiceSource = fs.readFileSync(namespaceServicePath, "utf8");
+const namespaceControllerSource = fs.readFileSync(namespaceControllerPath, "utf8");
 
 test("Regole editoriali passano il syntax gate", () => {
   const result = spawnSync(process.execPath, ["--check", viewPath], { encoding: "utf8" });
@@ -40,6 +44,20 @@ test("progressive disclosure preserva i campi tecnici e il modello NamespaceRevi
   assert.doesNotMatch(source, /venueId|venueTargetId|recognitionMedia/);
 });
 
+test("le definizioni non selezionate restano compatte e una sola entra in modifica", () => {
+  assert.match(source, /editingDefinitionKey/);
+  assert.match(source, /data-edit-definition/);
+  assert.match(source, /namespace-definition--collapsed/);
+  assert.match(source, /namespace-definition-summary/);
+  assert.match(source, /role="button" tabindex="0" aria-expanded="false"/);
+  assert.match(source, /\["Enter", " "\]\.includes\(event\.key\)/);
+  assert.match(source, /this\.editingDefinitionKey = key/);
+  assert.doesNotMatch(source, /Riduci/);
+  assert.match(source, /this\.editingDefinitionKey = definitionKey\(field, definition/);
+  assert.match(styleSource, /namespace-definition-editor\[hidden\]\{display:none\}/);
+  assert.match(styleSource, /namespace-definition--collapsed:hover/);
+});
+
 test("Mapping esterni usa semanticRefs esistenti e resta provider-neutral", () => {
   assert.match(source, /semanticRefs/);
   assert.match(source, /semantic-ref-selected/);
@@ -48,11 +66,35 @@ test("Mapping esterni usa semanticRefs esistenti e resta provider-neutral", () =
   assert.match(source, /exact, close, broader, narrower/);
 });
 
-test("workflow resta backend-authoritative e senza prompt o confirm nativi", () => {
-  for (const operation of ["namespace.revision.check", "namespace.revision.request_review", "namespace.revision.withdraw_review", "namespace.revision.request_changes", "namespace.revision.publish"]) assert.match(source, new RegExp(operation.replaceAll(".", "\\.")));
+test("il controllo finale è l'unica azione editoriale e non pubblica direttamente", () => {
+  assert.match(source, /namespace\.revision\.check/);
+  assert.doesNotMatch(source, /namespace\.revision\.publish/);
+  assert.doesNotMatch(source, /namespace\.revision\.request_review/);
   assert.match(source, /availableOperations/);
   assert.doesNotMatch(source, /window\.confirm|window\.prompt/);
-  assert.match(source, /data-workflow-message/);
+  assert.match(source, /Controlla se è tutto pronto/);
+  assert.match(source, /Salva e controlla/);
+});
+
+test("un controllo riuscito rende le regole private e propone il Marketplace", () => {
+  assert.match(source, /privateSuccessOpen/);
+  assert.match(source, /result\?\.finalized/);
+  assert.match(source, /Le regole editoriali sono corrette e ora sono private/);
+  assert.match(source, /Configura offerta e pubblica/);
+  assert.match(source, /Mantieni privata/);
+  assert.match(source, /resourceType=namespace/);
+  assert.match(source, /data-close-private-success/);
+  assert.match(styleSource, /namespace-private-success-overlay/);
+  assert.match(styleSource, /html\.namespace-overlay-open,body\.namespace-overlay-open\{overflow:hidden!important/);
+});
+
+test("il backend consolida come privata soltanto una revisione senza problemi bloccanti", () => {
+  assert.match(namespaceControllerSource, /checkNamespaceConsistency/);
+  assert.match(namespaceServiceSource, /async function checkNamespaceConsistency/);
+  assert.match(namespaceServiceSource, /finalized: false, visibility: "draft"/);
+  assert.match(namespaceServiceSource, /publishWithoutReview\(revision, actorUserId\)/);
+  assert.match(namespaceServiceSource, /publishedRevisionId: revision\._id, workingRevisionId: null/);
+  assert.match(namespaceServiceSource, /finalized: true, visibility: "private"/);
 });
 
 test("dirty state impedisce perdita silenziosa e salva metadata più definizioni insieme", () => {

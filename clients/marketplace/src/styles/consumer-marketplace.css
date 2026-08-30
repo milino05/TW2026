@@ -10,3 +10,7 @@
 
 .consumer-search__bar .input-icon:focus-within{outline-color:rgba(100,28,59,.22)}
 .consumer-venue-search__control .input-icon:focus-within{border-color:var(--ink-800);box-shadow:0 0 0 3px rgba(100,28,59,.22)}
+
+.consumer-catalog-card .catalog-card__body{position:relative}.consumer-catalog-card .catalog-card__body[data-has-preview] .catalog-card__meta,.consumer-catalog-card .catalog-card__body[data-has-preview] .consumer-catalog-card__heading{padding-right:7.25rem}.consumer-catalog-card__preview{position:absolute;top:1.15rem;right:1.15rem;width:5.8rem;height:5.8rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50);box-shadow:var(--shadow-sm);object-fit:cover}.consumer-detail__hero>div:first-child{min-width:0}.consumer-detail__aside{display:grid;flex:0 0 clamp(14rem,26vw,22rem);gap:.75rem}.consumer-detail__image{display:block;width:100%;aspect-ratio:4/3;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50);box-shadow:var(--shadow-sm);object-fit:cover}
+@media(max-width:55rem){.consumer-detail__aside{width:100%}.consumer-detail__image{max-width:28rem}}
+@media(max-width:38rem){.consumer-catalog-card .catalog-card__body[data-has-preview] .catalog-card__meta,.consumer-catalog-card .catalog-card__body[data-has-preview] .consumer-catalog-card__heading{padding-right:5.8rem}.consumer-catalog-card__preview{width:4.6rem;height:4.6rem}.consumer-detail__image{max-width:none}}

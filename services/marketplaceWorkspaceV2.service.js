@@ -128,7 +128,7 @@ function withWorkflowOperations({ baseOperations, principal, resourceType, revis
       ownerType: principal.type,
       capabilities: resourceCapabilities(principal, resourceType),
       revision,
-      finalizePrivatelyOnCheck: resourceType === "item_edition",
+      finalizePrivatelyOnCheck: ["item_edition", "namespace"].includes(resourceType),
     }),
   ];
 }
@@ -220,8 +220,10 @@ async function projectOwnedAssets({ principal, listings }) {
       sourceRef: { resourceType: "namespace", resourceId: namespace._id },
       authoringRef: { resourceType: "namespace", resourceId: namespace._id },
       title: namespace.name,
-      state: namespace.workingRevisionId ? "working" : (namespace.publishedRevisionId ? "published" : "empty"),
-      editorialWorkflow: workflowState(revision),
+      state: namespace.workingRevisionId ? "working" : (namespace.publishedRevisionId ? "private" : "empty"),
+      editorialWorkflow: namespace.publishedRevisionId && !namespace.workingRevisionId
+        ? { ...workflowState(revision), status: "private" }
+        : workflowState(revision),
       publishedSnapshotRef: namespace.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: namespace.publishedRevisionId } : null,
       listing,
       availableOperations: withWorkflowOperations({ baseOperations, principal, resourceType: "namespace", revision }),

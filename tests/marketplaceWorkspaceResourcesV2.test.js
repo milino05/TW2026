@@ -32,7 +32,25 @@ test("workspace resources separa context, ricerca e paginazione server-side", { 
         ownerType: "user", ownerId: owner._id, createdBy: owner._id,
       });
     }
-    await Namespace.insertMany(ownedNamespaces);
+    const insertedNamespaces = await Namespace.insertMany(ownedNamespaces);
+    const specialNamespace = insertedNamespaces[7];
+    const specialRevision = await NamespaceRevision.create({
+      namespaceId: specialNamespace._id,
+      version: 1,
+      status: "changes_requested",
+      integrity: {
+        status: "needs_review",
+        issues: [{ code: "MISSING_LABEL", field: "subjectClasses", message: "Completa una classe" }],
+      },
+      review: {
+        message: "Rivedi le etichette",
+        events: [{ action: "changes_requested", actorUserId: seller._id, at: new Date(), message: "Rivedi le etichette" }],
+      },
+      createdBy: owner._id,
+      updatedBy: seller._id,
+    });
+    specialNamespace.workingRevisionId = specialRevision._id;
+    await specialNamespace.save();
 
     const context = await getCreatorWorkspaceContext({ actorUserId: owner._id });
     assert.equal(context.principal.type, "user");
@@ -60,6 +78,14 @@ test("workspace resources separa context, ricerca e paginazione server-side", { 
     assert.match(search.results[0].title, /Speciale Rinascimento/);
     assert.equal(search.results[0].authoringRef.resourceType, "namespace");
     assert.equal(search.results[0].availableOperations.some((entry) => entry.code === "open_editor"), true);
+    assert.ok(search.results[0].updatedAt);
+    assert.equal(search.results[0].updatedBy.username, seller.username);
+    assert.equal(search.results[0].editorialWorkflow.status, "changes_requested");
+    assert.equal(search.results[0].editorialWorkflow.issueCount, 1);
+    assert.equal(search.results[0].editorialWorkflow.reviewMessage, "Rivedi le etichette");
+    assert.equal(search.results[0].editorialWorkflow.lastEvent.actor.username, seller.username);
+    assert.equal(Object.hasOwn(search.results[0], "_updatedByUserId"), false);
+    assert.equal(Object.hasOwn(search.results[0].editorialWorkflow.lastEvent, "_actorUserId"), false);
 
     const licensedNamespace = await Namespace.create({ name: "Regole esterne", ownerType: "user", ownerId: seller._id, createdBy: seller._id });
     const licensedRevision = await NamespaceRevision.create({

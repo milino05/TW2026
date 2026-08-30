@@ -91,13 +91,15 @@ async function createListing({ resourceType, resourceId, sellerType, sellerId, a
     throw new AppError("resourceType Marketplace non supportato", 400, [{ field: "resourceType", code: "INVALID_ENUM" }]);
   }
   const marketable = await assertSellerOwnsMarketableResource({ resourceType, resourceId, sellerType, sellerId, actorUserId });
-  const existing = await MarketplaceListing.findOne({
+  const existingListings = await MarketplaceListing.find({
     resourceType,
     resourceId,
     sellerType,
     sellerId,
-    status: { $in: ["draft", "published"] },
-  });
+  }).sort({ updatedAt: -1, _id: -1 });
+  const existing = existingListings.find((listing) => listing.status === "published")
+    || existingListings.find((listing) => listing.status === "draft")
+    || existingListings[0];
   if (existing) return existing;
   return MarketplaceListing.create({
     sellerType,

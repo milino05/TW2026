@@ -13,6 +13,7 @@ const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const Entitlement = require("../models/entitlement.model");
 const MarketplaceAcquisition = require("../models/marketplaceAcquisition.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
+const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { resolveSelectedPrincipal } = require("./marketplaceWorkspaceV2.service");
 const { getOwnedWorkspaceRemovalImpact } = require("./marketplaceResourceRemovalV2.service");
@@ -111,8 +112,37 @@ async function contextCandidates({ principal, q, windowSize, resourceId = null }
     { $match: { "space.ownerType": principal.type, "space.ownerId": principal.id, "space.lifecycleStatus": "active", lifecycleStatus: "active" } },
   );
   if (regex) pipeline.push({ $match: { $or: [{ displayName: regex }, { shortDescription: regex }, { description: regex }] } });
-  pipeline.push({ $project: { _id: 1, displayName: 1, shortDescription: 1, description: 1, publishedReleaseId: 1, updatedAt: 1, resourceType: { $literal: "editorial_context" } } });
+  pipeline.push({ $project: { _id: 1, displayName: 1, shortDescription: 1, description: 1, publishedReleaseId: 1, updatedAt: 1, updatedBy: 1, resourceType: { $literal: "editorial_context" } } });
   return facetCandidates(EditorialContext, pipeline, { windowSize });
+}
+
+async function enrichResourceActors(resources) {
+  const actorIds = [...new Set(resources.flatMap((resource) => [
+    id(resource._updatedByUserId),
+    id(resource.editorialWorkflow?.lastEvent?._actorUserId),
+  ]).filter(Boolean))];
+  const users = actorIds.length
+    ? await User.find({ _id: { $in: actorIds } }).select("username").lean()
+    : [];
+  const userById = new Map(users.map((user) => [id(user), { id: user._id, username: user.username }]));
+  return resources.map((resource) => {
+    const { _updatedByUserId, editorialWorkflow, ...publicResource } = resource;
+    const lastEvent = editorialWorkflow?.lastEvent;
+    const publicWorkflow = editorialWorkflow ? {
+      ...editorialWorkflow,
+      lastEvent: lastEvent ? {
+        action: lastEvent.action,
+        at: lastEvent.at,
+        message: lastEvent.message,
+        actor: userById.get(id(lastEvent._actorUserId)) || null,
+      } : null,
+    } : null;
+    return {
+      ...publicResource,
+      updatedBy: userById.get(id(_updatedByUserId)) || null,
+      editorialWorkflow: publicWorkflow,
+    };
+  });
 }
 
 async function namespaceCandidates({ principal, q, windowSize, resourceId = null }) {
@@ -182,7 +212,8 @@ async function listOwnedResources({ principal, q, resourceTypes, page, pageSize 
   const candidates = merged.slice(offset, offset + pageSize);
   const canViewDistribution = principal.type === "user" || principal.effectivePermissions.includes("marketplace.distribution.view");
   const listings = canViewDistribution ? await listingMapForCandidates(principal, candidates) : new Map();
-  return { total, results: candidates.map((candidate) => projectOwnedCandidate(candidate, { principal, listings })) };
+  const projected = candidates.map((candidate) => projectOwnedCandidate(candidate, { principal, listings }));
+  return { total, results: await enrichResourceActors(projected) };
 }
 
 async function listLicensedResources({ principal, q, resourceTypes, page, pageSize }) {
@@ -264,7 +295,7 @@ async function getCreatorWorkspaceResourceDetail({
     if (candidate) {
       const canViewDistribution = selected.type === "user" || selected.effectivePermissions.includes("marketplace.distribution.view");
       const listings = canViewDistribution ? await listingMapForCandidates(selected, [candidate]) : new Map();
-      asset = projectOwnedCandidate(candidate, { principal: selected, listings });
+      asset = (await enrichResourceActors([projectOwnedCandidate(candidate, { principal: selected, listings })]))[0];
       if ((asset.availableOperations || []).some((operation) => operation.code === "remove_resource")) {
         asset.removalImpact = await getOwnedWorkspaceRemovalImpact({ resourceType, resourceId });
       }

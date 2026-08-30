@@ -27,6 +27,10 @@ test("visit authoring espone i sei passaggi stop-centric", () => {
   assert.match(view, /aria-current="\$\{current \? "step" : "false"\}"/);
 });
 
+test("visit authoring non duplica il contesto operativo dentro la pagina", () => {
+  assert.doesNotMatch(view, /renderWorkingContext|class="working-context"|>Area di lavoro</);
+});
+
 test("contenuti persistenti e tappe restano distinti dietro una UX stop-centric", () => {
   assert.match(view, /data-add-content/);
   assert.match(view, /activeContentStopId/);
