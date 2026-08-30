@@ -83,27 +83,35 @@ async function createItemWithPhysicalIntent({ venueId, payload, actorUserId }) {
       context: { venueId, venueOwnerOrganizationId: venue.ownerOrganizationId },
     }]);
   }
+  if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404);
+
   let result = null;
-  await mongoose.connection.transaction(async (session) => {
-    const currentVenue = await Venue.findOne({ _id: venueId, ownerOrganizationId: payload.ownerId, lifecycleStatus: "active" }).session(session);
-    if (!currentVenue) throw new AppError("Sede non disponibile", 404);
-    const [item] = await ItemV2.create([{
-      primarySubjectId: payload.primarySubjectId,
-      ownerType: payload.ownerType,
-      ownerId: payload.ownerId,
-      provenance: payload.provenance || { origin: "human" },
-      createdBy: actorUserId,
-    }], { session });
-    const ensured = await ensureVenueEntity({
-      venueId,
-      payload: { subjectId: payload.primarySubjectId, provenance: { origin: "item_authoring", sourceId: String(item._id) } },
-      actorUserId,
-      session,
-      skipAuthorization: true,
+  let createdItem = null;
+  try {
+    await mongoose.connection.transaction(async (session) => {
+      const currentVenue = await Venue.findOne({ _id: venueId, ownerOrganizationId: payload.ownerId, lifecycleStatus: "active" }).session(session);
+      if (!currentVenue) throw new AppError("Sede non disponibile", 404);
+      [createdItem] = await ItemV2.create([{
+        primarySubjectId: payload.primarySubjectId,
+        ownerType: payload.ownerType,
+        ownerId: payload.ownerId,
+        provenance: payload.provenance || { origin: "human" },
+        createdBy: actorUserId,
+      }], { session });
+      const ensured = await ensureVenueEntity({
+        venueId,
+        payload: { subjectId: payload.primarySubjectId, provenance: { origin: "item_authoring", sourceId: String(createdItem._id) } },
+        actorUserId,
+        session,
+        skipAuthorization: true,
+      });
+      result = { item: createdItem, venueEntity: ensured.target, createdVenueEntity: ensured.created };
     });
-    result = { item, venueEntity: ensured.target, createdVenueEntity: ensured.created };
-  });
-  return result;
+    return result;
+  } catch (error) {
+    if (createdItem?._id) await ItemV2.deleteOne({ _id: createdItem._id }).catch(() => {});
+    throw error;
+  }
 }
 
 async function listItems({ ownerType, ownerId, primarySubjectId, includeTrashed = false } = {}) {
