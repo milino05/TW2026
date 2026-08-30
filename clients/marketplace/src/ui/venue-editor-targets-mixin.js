@@ -68,7 +68,7 @@ function targetSummaryCard(entry, selectedTargetId) {
   return `<article class="venue-target-card venue-target-card--summary${id(selectedTargetId) === id(entry.id) ? " selected" : ""}" data-venue-entity-card="${escapeHtml(entry.id)}" data-state="${escapeHtml(state)}"><header><div><span class="eyebrow">${escapeHtml(entry.subject?.label || "Identità non disponibile")}</span><h3>${escapeHtml(entry.label)}</h3></div><span class="chip" data-tone="${state === "exposed" ? "success" : state === "unavailable" ? "warning" : "neutral"}">${escapeHtml(stateLabel(state))}</span></header><p>${escapeHtml(entry.inventoryNote || entry.subject?.description || "Nessuna nota d’inventario.")}</p><dl class="venue-command-facts"><div><dt>Contenuti</dt><dd>${counts.available || 0}</dd></div><div><dt>Bozze museo</dt><dd>${counts.draft || 0}</dd></div></dl>${slot ? `<p class="venue-entity-location">${icon("pin", { size: 14 })} ${escapeHtml(slot.label)}</p>` : `<p class="venue-entity-location muted">Nessuno slot assegnato</p>`}<button class="button-secondary small" type="button" data-select-venue-target="${escapeHtml(entry.id)}">Apri dettagli</button></article>`;
 }
 
-function targetInspector(entry, { editable, pendingTargetRemovalId, busy }) {
+export function targetInspector(entry, { editable, pendingTargetRemovalId, busy }) {
   if (!entry) return `<aside class="venue-inventory-detail venue-inventory-inspector empty"><span class="eyebrow">Dettaglio inventario</span><h3>Seleziona un’entità</h3><p>Le card servono per trovare l’entità; disponibilità, media e note si modificano nel pannello di dettaglio.</p></aside>`;
   const state = entry.configuration?.state || "unplaced";
   const slot = entry.exhibitSlot;
