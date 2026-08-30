@@ -13,6 +13,7 @@ import { venueLiveConnectionPreviewMixin } from "./venue-editor-live-connection-
 import { venueSpatialDiagnosticsMixin } from "./venue-editor-spatial-diagnostics-mixin.js";
 import { venueContextualWorkspaceMixin } from "./venue-editor-contextual-workspace-mixin.js";
 import { venueSpatialInteractionMixin } from "./venue-editor-spatial-interaction-mixin.js";
+import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
 
 const SECTIONS = ["overview", "map", "visitors", "publication"];
@@ -227,6 +228,7 @@ Object.assign(
   venueSpatialDiagnosticsMixin,
   venueContextualWorkspaceMixin,
   venueSpatialInteractionMixin,
+  venueSpatialOverlayMixin,
   venueSlotSubjectUiMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
