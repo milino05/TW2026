@@ -11,6 +11,7 @@ const { resolveInitialPresentation } = require("./presentationRuntimeV2.service"
 const { id } = require("./physicalExecutionV2.service");
 const { resolveNavigationPreparation } = require("./navigationPreparationV2.service");
 const { canonicalizeContentEntries } = require("./visitSequenceV2.service");
+const { resolveSessionSemanticGraphPins } = require("./sessionSemanticScopeV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
@@ -35,6 +36,7 @@ function visitRevisionSourceSnapshotV2({ visit, revision }) {
   const sourceLegHints = new Map((revisionSnapshot.logistics?.routeHints || []).map((entry) => [`${id(entry.fromAnchorId)}>${id(entry.toAnchorId)}`, entry]));
   return {
     origin: { sourceType: "visit", visitRevisionId: revision._id, generatedVisitPlanId: null },
+    principal: { type: visit.ownerType, id: visit.ownerId },
     visitId: visit._id,
     visitRevisionId: revision._id,
     sourceEditorialReleaseIds: uniqueIds(sources.filter((entry) => entry.sourceType === "editorial_release").map((entry) => entry.editorialReleaseId)),
@@ -69,6 +71,7 @@ function generatedPlanSourceSnapshotV2(plan) {
   const sourceLegHints = new Map((plan.physicalRoute?.legs || []).map((entry) => [`${id(entry.fromAnchorId)}>${id(entry.toAnchorId)}`, entry]));
   return {
     origin: { sourceType: "generated_plan", visitRevisionId: null, generatedVisitPlanId: plan._id },
+    principal: null,
     generatedVisitPlanId: plan._id,
     sourceEditorialReleaseIds: uniqueIds(plan.sourceEditorialReleaseIds || []),
     visitBaseline: plan.contextSnapshot?.presentationPreference || null,
@@ -146,6 +149,7 @@ async function prepareInitialSessionPlan({ source, navigation, userPreference = 
     resolveNavigationPreparation({ sourceAnchors: source.sourceAnchors, sourceLegHints: source.sourceLegHints, navigation }),
     materializeContentEntries({ source, userPreference, explicitPreference }),
   ]);
+  const semanticGraphPins = await resolveSessionSemanticGraphPins({ source, contentEntries });
   const anchorIds = new Set((physical.visitAnchors || []).map((entry) => id(entry._id)));
   for (const entry of contentEntries) if (entry.deliveryAnchorId && !anchorIds.has(id(entry.deliveryAnchorId))) throw new AppError("ContentEntry punta a un VisitAnchor non risolto nella Session", 409);
   return {
@@ -157,6 +161,7 @@ async function prepareInitialSessionPlan({ source, navigation, userPreference = 
       fidelity: source.origin.sourceType === "visit" ? "preserve" : "adapt",
       executedThroughEntryIndex: -1,
       sourceEditorialReleaseIds: source.sourceEditorialReleaseIds || [],
+      semanticGraphPins,
       contentEntries,
       visitAnchors: physical.visitAnchors,
       physicalRoute: physical.physicalRoute,
