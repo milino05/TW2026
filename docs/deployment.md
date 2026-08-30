@@ -23,7 +23,7 @@ npm run seed:demo
 npm run verify:demo
 ```
 
-Il MongoDB di destinazione deve appartenere a un replica set: le mutazioni Organization RBAC e il relativo audit usano transazioni. Prima del deploy verificare con il gestore dell'ambiente che l'URI fornita includa il nome del replica set; un'istanza standalone non soddisfa il contratto corrente.
+ArtAround supporta il MongoDB standalone fornito dall'ambiente di dipartimento. I servizi runtime non richiedono transazioni multi-documento o un replica set: per i lifecycle composti il documento live della risorsa è l'autorità di disponibilità e il cleanup delle proiezioni/distribuzioni derivate è idempotente. Il `docker-compose.yml` locale può continuare a usare un replica set per lo sviluppo, ma questa non è una dipendenza del deploy.
 
 `seed:demo` è idempotente rispetto al dataset dimostrativo con ID deterministici. Non cancella genericamente il database: sostituisce soltanto le entità appartenenti al dataset ArtAround d'esame.
 
@@ -79,7 +79,7 @@ Per MongoDB:
 start mongo site2526XX
 ```
 
-Gocker restituisce username, password e il nome host interno, nel formato `mongo_site2526XX`. Conservare queste informazioni: il servizio Mongo è raggiungibile dal container Node all'interno del cluster `tw.cs.unibo.it`. Il servizio deve essere configurato come replica set; includere `replicaSet=<nome>` nella URI restituita.
+Gocker restituisce username, password e il nome host interno, nel formato `mongo_site2526XX`. Conservare queste informazioni: il servizio Mongo è raggiungibile dal container Node all'interno del cluster `tw.cs.unibo.it`. Usare direttamente i parametri forniti da gocker nella `MONGO_URI`; non aggiungere requisiti di replica set non forniti dall'ambiente.
 
 ### 2. Configurare ArtAround
 
