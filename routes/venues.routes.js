@@ -3,6 +3,7 @@ const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 const controller = require("../controllers/venues.controller");
 const lifecycleController = require("../controllers/venueLifecycle.controller");
+const slotAssignmentController = require("../controllers/venueSlotAssignment.controller");
 
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
@@ -64,6 +65,7 @@ router.post("/venues/:venueId/working-layout/exhibit-slots", requireAuth, venueI
 router.patch("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId", requireAuth, venueId, exhibitSlotId, controller.updateLayoutExhibitSlot);
 router.delete("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId", requireAuth, venueId, exhibitSlotId, controller.removeLayoutExhibitSlot);
 router.put("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId/entity/:venueTargetId", requireAuth, venueId, exhibitSlotId, venueTargetId, controller.assignTargetToExhibitSlot);
+router.put("/venues/:venueId/working-layout/exhibit-slots/:exhibitSlotId/subject", requireAuth, venueId, exhibitSlotId, slotAssignmentController.assignSubject);
 router.delete("/venues/:venueId/working-layout/entities/:venueTargetId/exhibit-slot", requireAuth, venueId, venueTargetId, controller.unassignTargetFromExhibitSlot);
 router.get("/venues/:venueId/working-layout/removal-impact/:resourceType/:resourceId", requireAuth, venueId, resourceId, controller.getLayoutRemovalImpact);
 router.put("/venues/:venueId/working-layout/pre-visit-information", requireAuth, venueId, controller.setPreVisitInformation);

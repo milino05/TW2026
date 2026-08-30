@@ -104,8 +104,8 @@ export const venueActionMixin = {
     if (venueSubject) {
       const candidates = [...(this.venueSubjectCandidates?.exact || []), ...(this.venueSubjectCandidates?.suggestions || [])];
       const candidate = candidates.find((entry) => String(entry.id) === String(venueSubject.dataset.useVenueSubject));
-      if (candidate?.venueTargetId) {
-        this.selectedVenueTargetId = String(candidate.venueTargetId);
+      if (candidate?.inventory?.venueTargetId) {
+        this.selectedVenueTargetId = String(candidate.inventory.venueTargetId);
         this.inventoryFilter = "all";
         this.message = "Questa identità è già presente nell’inventario della sede.";
       } else if (candidate) this.selectedSubject = candidate;
@@ -244,8 +244,7 @@ export const venueActionMixin = {
       if (success) {
         this.selectedSubject = null;
         this.venueSubjectCandidates = null;
-        this.activeSpatialTab = "arrangement";
-        this.activeArrangementTab = "entities";
+        this.activeSpatialTab = "inventory";
         this.render();
       }
       return;
@@ -257,18 +256,6 @@ export const venueActionMixin = {
       try { this.venueSubjectCandidates = await managementRepository.searchVenueSubjectCandidates(this.id, this.venueSubjectQuery); }
       catch (error) { this.error = error instanceof Error ? error.message : "Ricerca non riuscita"; }
       finally { this.busy = false; this.render(); }
-      return;
-    }
-
-    if (form.matches("[data-add-floor]")) {
-      await this.execute(() => managementRepository.addVenueFloor(this.id, { label: String(data.get("label") || "") }), "Piano aggiunto.");
-      return;
-    }
-
-    if (form.matches("[data-floor-metadata]")) {
-      await this.execute(() => managementRepository.updateVenueFloor(this.id, form.dataset.floorMetadata, {
-        label: String(data.get("label") || ""),
-      }), "Nome del piano aggiornato.");
       return;
     }
 
