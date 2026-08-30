@@ -30,7 +30,8 @@ test("workspace detail è esposto come endpoint autenticato con ObjectId validat
 
 test("dettagli e azioni espone una rimozione confermata che preserva lo storico", () => {
   assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId\/remove/);
-  assert.match(removal, /lifecycleStatus = "trashed"/);
+  assert.match(removal, /lifecycleStatus:\s*"trashed"/);
+  assert.match(removal, /findOneAndUpdate/);
   assert.match(removal, /status: "withdrawn"/);
   assert.match(removal, /status: "inactive"/);
   assert.doesNotMatch(removal, /MarketplaceAcquisition\.(?:delete|update)/);
