@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { getCommercialManagement } = require("../services/marketplaceCommercialV2.service");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -15,6 +16,12 @@ async function users(User, suffix) {
     { username: `removal-owner-${suffix}`, passwordHash: "test-hash" },
     { username: `removal-buyer-${suffix}`, passwordHash: "test-hash" },
   ]);
+}
+
+async function assertRemovedFromSales(owner, message) {
+  const commercial = await getCommercialManagement({ actorUserId: owner._id });
+  assert.equal(commercial.total, 0, message);
+  assert.deepEqual(commercial.listings, []);
 }
 
 async function publishedNamespace({ Namespace, NamespaceRevision, owner, name }) {
@@ -128,6 +135,8 @@ test("rimuovere un contenuto lo archivia e preserva storico, diritti, adozioni e
     assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
     assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
 
+    await assertRemovedFromSales(owner, "removed content and its snapshots must disappear from sales");
+
     const owned = await listCreatorWorkspaceResources({ actorUserId: owner._id, ownership: "owned", resourceTypes: ["item_edition"] });
     assert.equal(owned.total, 0);
     const licensed = await listCreatorWorkspaceResources({ actorUserId: buyer._id, ownership: "licensed" });
@@ -180,6 +189,7 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
     assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
     assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
     assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
+    await assertRemovedFromSales(owner, "removed namespaces must disappear from sales");
 
     const preflight = await getMarketplaceAuthoringPreflight({ actorUserId: buyer._id });
     assert.equal(preflight.content.allowed, true);
@@ -289,6 +299,7 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
     assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
     assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
     assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
+    await assertRemovedFromSales(owner, "removed contexts and releases must disappear from sales");
 
     const owned = await listCreatorWorkspaceResources({ actorUserId: owner._id, ownership: "owned", resourceTypes: ["editorial_context"] });
     assert.equal(owned.total, 0);
@@ -362,6 +373,8 @@ test("rimuovere una visita conserva la revisione e i diritti già acquisiti", { 
     assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
     assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
     assert.equal(await Adoption.countDocuments({ entitlementId: entitlement._id }), 1);
+
+    await assertRemovedFromSales(owner, "removed visits and their snapshots must disappear from sales");
 
     const owned = await listCreatorWorkspaceResources({ actorUserId: owner._id, ownership: "owned", resourceTypes: ["visit"] });
     assert.equal(owned.total, 0);
@@ -445,6 +458,7 @@ test("rimuovere un PhysicalVocabulary preserva snapshot e fork già acquisito", 
     assert.equal((await MarketplaceOffer.findById(snapshotPublication.offer._id).lean()).status, "inactive");
     assert.equal(await MarketplaceAcquisition.countDocuments({ _id: acquired.acquisition._id }), 1);
     assert.equal((await Entitlement.findById(entitlement._id).lean()).status, "active");
+    await assertRemovedFromSales(owner, "removed physical vocabularies and snapshots must disappear from sales");
 
     const organization = await Organization.create({ name: "Owner dello snapshot fisico", createdBy: owner._id });
     const venue = await Venue.create({ name: "Venue con pin storico", ownerOrganizationId: organization._id, createdBy: owner._id });

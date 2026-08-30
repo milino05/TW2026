@@ -242,6 +242,16 @@ function illustrativeMedia(resourceType, snapshot) {
   }];
 }
 
+function aggregateLifecycleStatus(resourceType, authority) {
+  let aggregate = authority?.resource;
+  if (["item_edition", "item_revision", "namespace_revision", "physical_vocabulary_revision", "visit_revision"].includes(resourceType)) {
+    aggregate = authority?.aggregate;
+  } else if (resourceType === "editorial_release") {
+    aggregate = authority?.context;
+  }
+  return aggregate?.lifecycleStatus || "active";
+}
+
 async function resolveMarketableResource({ resourceType, resourceId }) {
   const live = LIVE_RESOURCE_TYPES.has(resourceType);
   const authority = await resolveResourceAuthority(resourceType, resourceId, { includeTrashed: !live });
@@ -262,6 +272,7 @@ async function resolveMarketableResource({ resourceType, resourceId }) {
     resourceId: authority.resource._id,
     ownerType: authority.ownerType,
     ownerId: authority.ownerId,
+    lifecycleStatus: aggregateLifecycleStatus(resourceType, authority),
     live,
     snapshotRef,
     resource: authority.resource,

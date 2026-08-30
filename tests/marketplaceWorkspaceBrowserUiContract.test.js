@@ -24,6 +24,10 @@ test("workspace browser usa projection context/resources e non il dump legacy", 
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
 });
 
+test("la libreria non mostra la striscia finale degli spazi editoriali", () => {
+  assert.doesNotMatch(browserSource, /renderSpaces|Spazi editoriali|space-grid/);
+});
+
 test("workspace detail usa una projection puntuale e non carica workspace o distribution", () => {
   assert.match(detailSource, /marketplaceRepository\.workspaceResourceDetail\(/);
   assert.doesNotMatch(detailSource, /marketplaceRepository\.workspace\(/);

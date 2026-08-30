@@ -29,7 +29,7 @@ test("create boundary passa il syntax gate", () => {
 });
 
 test("shell espone Crea dentro la IA contestuale", () => {
-  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Marketplace", "Account"]) assert.match(shell, new RegExp(`>${label}<`));
+  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Attività", "Account"]) assert.match(shell, new RegExp(`>${label}<`));
   assert.match(shell, /class="nav-create"/);
   assert.match(shell, /authoringIsCreation/);
 });

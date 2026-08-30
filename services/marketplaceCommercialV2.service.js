@@ -130,9 +130,21 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
     listingGroups.get(key).push(listing);
   }
   const groupedListings = [...listingGroups.values()];
-  const total = groupedListings.length;
-  const selectedGroups = groupedListings.slice((safePage - 1) * safeLimit, safePage * safeLimit);
-  const listings = selectedGroups.map(canonicalListing);
+  const availableGroups = (await Promise.all(groupedListings.map(async (group) => {
+    const listing = canonicalListing(group);
+    try {
+      const marketable = await resolveMarketableResource({ resourceType: listing.resourceType, resourceId: listing.resourceId });
+      return marketable.lifecycleStatus === "trashed" ? null : { group, listing, marketable };
+    } catch (error) {
+      if ([404, 409].includes(error?.status)) return null;
+      throw error;
+    }
+  }))).filter(Boolean);
+  const total = availableGroups.length;
+  const selectedEntries = availableGroups.slice((safePage - 1) * safeLimit, safePage * safeLimit);
+  const selectedGroups = selectedEntries.map((entry) => entry.group);
+  const listings = selectedEntries.map((entry) => entry.listing);
+  const marketableByListingId = new Map(selectedEntries.map((entry) => [id(entry.listing._id), entry.marketable]));
   const groupIdsByCanonicalId = new Map(selectedGroups.map((group) => [
     id(canonicalListing(group)._id),
     group.map((listing) => listing._id),
@@ -161,21 +173,8 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
 
   const projectedListings = [];
   for (const listing of listings) {
-    let marketableAvailable = true;
-    let asset = {
-      type: listing.resourceType,
-      id: listing.resourceId,
-      title: listing.title || "Risorsa del Marketplace",
-      summary: listing.summary || "",
-      editorialLicense: null,
-    };
-    try {
-      const marketable = await resolveMarketableResource({ resourceType: listing.resourceType, resourceId: listing.resourceId });
-      asset = { ...marketable.asset, title: listing.title || marketable.asset.title, summary: listing.summary || marketable.asset.summary };
-    } catch (error) {
-      if (![404, 409].includes(error?.status)) throw error;
-      marketableAvailable = false;
-    }
+    const marketable = marketableByListingId.get(id(listing._id));
+    const asset = { ...marketable.asset, title: listing.title || marketable.asset.title, summary: listing.summary || marketable.asset.summary };
     const groupListingIds = groupIdsByCanonicalId.get(id(listing._id)) || [listing._id];
     const listingOffers = groupListingIds
       .flatMap((listingId) => offersByListing.get(id(listingId)) || []);
@@ -188,7 +187,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
       asset,
       publishedAt: listing.publishedAt,
       withdrawnAt: listing.withdrawnAt,
-      ...(canManage && marketableAvailable ? { offerConfiguration: {
+      ...(canManage ? { offerConfiguration: {
         resourceRef: { resourceType: listing.resourceType, resourceId: listing.resourceId },
         capabilityOptions: capabilityOptions(listing.resourceType),
         versionPolicyOptions: versionPolicyOptions(listing.resourceType),
@@ -231,7 +230,7 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
         } : {}),
       },
       availableOperations: canManage ? [
-        ...(marketableAvailable && ["draft", "published", "withdrawn"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
+        ...(["draft", "published", "withdrawn"].includes(listing.status) ? [{ code: "create_offer", label: "Crea offerta" }] : []),
         ...(["draft", "published"].includes(listing.status) ? [{ code: "withdraw_listing", label: "Ritira listing" }] : []),
       ] : [],
     });

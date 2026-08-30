@@ -44,7 +44,7 @@ test("shell e router espongono la IA contestuale corrente", () => {
   for (const route of ["/context", "/home", "/catalog", "/organizations", "/venues", "/workspace", "/create", "/acquisitions", "/profile"]) {
     assert.match(router, new RegExp(`"${route.replaceAll("/", "\\/")}"`));
   }
-  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Marketplace", "Account"]) {
+  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Attività", "Account"]) {
     assert.match(shell, new RegExp(`>${label}<`));
   }
   assert.match(shell, /data-change-context/);
