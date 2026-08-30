@@ -106,8 +106,9 @@ export const venueSlotInventoryMixin = {
     if (!this.inventorySubjectPickerOpen) return venueActionMixin.onSubjectSelected.call(this, event);
     const subject = event.detail?.subject;
     if (!subject) return;
+    const subjectId = id(subject);
     const projectedTargetId = id(subject.inventory?.venueTargetId);
-    const existing = (this.data.targets || []).find((target) => (projectedTargetId && id(target.id) === projectedTargetId) || targetSubjectId(target) === id(subject));
+    const existing = (this.data.targets || []).find((target) => (projectedTargetId && id(target.id) === projectedTargetId) || (subjectId && targetSubjectId(target) === subjectId));
     if (existing) {
       this.setBrowserSelection(existing.id);
       this.inventorySubjectPickerOpen = false;
@@ -116,8 +117,47 @@ export const venueSlotInventoryMixin = {
       this.render();
       return;
     }
+    if (!subjectId) {
+      this.error = "Il Subject selezionato non ha un identificatore ArtAround valido.";
+      this.render();
+      return;
+    }
     this.inventoryPendingSubject = subject;
+    this.error = null;
     this.render();
+  },
+
+  async addPendingSubjectToInventory() {
+    if (this.busy) return false;
+    const subjectId = id(this.inventoryPendingSubject);
+    if (!subjectId) {
+      this.error = "Seleziona prima un Subject valido.";
+      this.render();
+      return false;
+    }
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.render();
+    try {
+      const createdTarget = await managementRepository.createVenueTarget(this.id, { subjectId, provenance: { origin: "human" } });
+      await this.refreshServerState();
+      const returnedTargetId = id(createdTarget);
+      const target = (this.data.targets || []).find((entry) => returnedTargetId && id(entry.id) === returnedTargetId)
+        || (this.data.targets || []).find((entry) => targetSubjectId(entry) === subjectId);
+      if (!target) throw new Error("L’entità è stata salvata, ma non compare nell’inventario aggiornato.");
+      this.setBrowserSelection(target.id);
+      this.inventorySubjectPickerOpen = false;
+      this.inventoryPendingSubject = null;
+      this.message = "Entità aggiunta all’inventario della sede.";
+      return true;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere l’entità all’inventario.";
+      return false;
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   },
 
   async handleTargetMediaClick(event) {
@@ -140,11 +180,15 @@ export const venueSlotInventoryMixin = {
     if (filter) { this.setBrowserFilter(filter.dataset.inventoryBrowserFilter || "all"); this.render(); return true; }
 
     if (target.closest("[data-open-inventory-subject-picker]")) {
-      this.inventorySubjectPickerOpen = true; this.inventoryPendingSubject = null; this.render();
+      this.inventorySubjectPickerOpen = true; this.inventoryPendingSubject = null; this.error = null; this.render();
       requestAnimationFrame(() => this.querySelector(".venue-inventory-subject-dialog input")?.focus());
       return true;
     }
-    if (target.closest("[data-reset-inventory-subject-picker]")) { this.inventoryPendingSubject = null; this.render(); return true; }
+    if (target.closest("[data-reset-inventory-subject-picker]")) { this.inventoryPendingSubject = null; this.error = null; this.render(); return true; }
+    if (target.closest("[data-add-pending-subject-to-inventory]")) {
+      await this.addPendingSubjectToInventory();
+      return true;
+    }
 
     if (target.closest("[data-open-selected-inventory-detail]")) {
       const selectedTargetId = this.browserState().selectedTargetId;
@@ -194,17 +238,7 @@ export const venueSlotInventoryMixin = {
       this.setBrowserQuery(String(data.get("inventoryQuery") || "").trim()); this.render(); return true;
     }
     if (form.matches("[data-add-subject-to-inventory]")) {
-      const subjectId = String(data.get("subjectId") || "").trim();
-      if (!subjectId) return true;
-      const before = new Set((this.data.targets || []).map((entry) => id(entry.id)));
-      const success = await this.execute(() => managementRepository.createVenueTarget(this.id, { subjectId, provenance: { origin: "human" } }), "Entità aggiunta all’inventario della sede.");
-      if (success) {
-        const created = (this.data.targets || []).find((entry) => targetSubjectId(entry) === id(subjectId)) || (this.data.targets || []).find((entry) => !before.has(id(entry.id)));
-        if (created) this.setBrowserSelection(created.id);
-        this.inventorySubjectPickerOpen = false;
-        this.inventoryPendingSubject = null;
-        this.render();
-      }
+      await this.addPendingSubjectToInventory();
       return true;
     }
     return venueInventorySearchMixin.handleTargetMediaSubmit.call(this, form, data);
@@ -216,6 +250,7 @@ export const venueSlotInventoryMixin = {
     const createSlot = target.closest("[data-start-slot]");
     if (createSlot) {
       this.mapCreationDialog = { type: "slot", placeId: id(createSlot.dataset.placeId || createSlot.dataset.startSlotPlace || "") };
+      this.error = null;
       this.render();
       requestAnimationFrame(() => this.querySelector("[data-map-slot-dialog] input[name=label]")?.focus());
       return true;
@@ -333,9 +368,9 @@ export const venueSlotInventoryMixin = {
     if (!editable || !this.inventorySubjectPickerOpen) return "";
     const pending = this.inventoryPendingSubject;
     const body = pending
-      ? `<article class="venue-inventory-subject-selected"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(pending.preferredLabel || pending.label || "Subject")}</h3><p>${escapeHtml(pending.description || "Senza descrizione")}</p><form data-add-subject-to-inventory><input type="hidden" name="subjectId" value="${escapeHtml(id(pending))}"><div class="button-row"><button type="submit">Aggiungi all’inventario</button><button class="button-secondary" type="button" data-reset-inventory-subject-picker>Cambia ricerca</button></div></form></article>`
+      ? `<article class="venue-inventory-subject-selected"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(pending.preferredLabel || pending.label || "Subject")}</h3><p>${escapeHtml(pending.description || "Senza descrizione")}</p><div class="button-row"><button type="button" data-add-pending-subject-to-inventory ${this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : "Aggiungi all’inventario"}</button><button class="button-secondary" type="button" data-reset-inventory-subject-picker ${this.busy ? "disabled" : ""}>Cambia ricerca</button></div></article>`
       : `<p>Cerca tra i Subject ArtAround. Se non viene trovata una corrispondenza esatta, la ricerca prosegue automaticamente su Wikidata.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item" venue-id="${escapeHtml(this.id)}"></artaround-semantic-entity-picker>`;
-    return `<div class="venue-modal-backdrop venue-inventory-subject-backdrop" data-inventory-subject-backdrop role="presentation"><section class="venue-modal-card venue-inventory-subject-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-inventory-subject-title"><header><div><span class="eyebrow">Nuova entità</span><h3 id="venue-inventory-subject-title">Aggiungi all’inventario</h3></div><button class="button-secondary small" type="button" data-close-inventory-subject-picker aria-label="Chiudi ricerca Subject">×</button></header>${body}</section></div>`;
+    return `<div class="venue-modal-backdrop venue-inventory-subject-backdrop" data-inventory-subject-backdrop role="presentation"><section class="venue-modal-card venue-inventory-subject-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-inventory-subject-title"><header><div><span class="eyebrow">Nuova entità</span><h3 id="venue-inventory-subject-title">Aggiungi all’inventario</h3></div><button class="button-secondary small" type="button" data-close-inventory-subject-picker aria-label="Chiudi ricerca Subject" ${this.busy ? "disabled" : ""}>×</button></header>${body}</section></div>`;
   },
 
   renderInventoryDetailOverlay(editable) {
@@ -351,7 +386,7 @@ export const venueSlotInventoryMixin = {
       const places = this.data.layout?.places || [];
       const preferredPlaceId = id(this.mapCreationDialog.placeId);
       const options = places.map((place) => `<option value="${escapeHtml(id(place._id))}" ${selected(place._id, preferredPlaceId)}>${escapeHtml(place.label || "Luogo")}</option>`).join("");
-      base = `<div class="venue-modal-backdrop" role="presentation"><section class="venue-modal-card venue-slot-create-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-slot-create-title"><header><div><span class="eyebrow">Nuovo slot espositivo</span><h3 id="venue-slot-create-title">Crea una posizione espositiva</h3></div><button class="button-secondary small" type="button" data-close-map-creation-dialog aria-label="Chiudi">×</button></header><p>Uno slot è una posizione stabile dentro un luogo. Non richiede un punto geometrico separato sulla planimetria.</p><form data-map-slot-dialog class="venue-inline-form"><label>Etichetta<input name="label" required placeholder="Es. Parete destra · posizione 2"></label><label>Luogo<select name="placeId" required>${options}</select></label><label>Ordine facoltativo<input name="order" type="number" min="0"></label><div class="button-row"><button type="submit" ${places.length ? "" : "disabled"}>Crea slot</button><button class="button-secondary" type="button" data-close-map-creation-dialog>Annulla</button></div></form></section></div>`;
+      base = `<div class="venue-modal-backdrop venue-slot-create-backdrop" role="presentation"><section class="venue-modal-card venue-slot-create-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-slot-create-title"><header><div><span class="eyebrow">Nuovo slot espositivo</span><h3 id="venue-slot-create-title">Crea una posizione espositiva</h3></div><button class="button-secondary small" type="button" data-close-map-creation-dialog aria-label="Chiudi">×</button></header><p>Uno slot è una posizione stabile dentro un luogo. Non richiede un punto geometrico separato sulla planimetria.</p><form data-map-slot-dialog class="venue-inline-form"><label>Etichetta<input name="label" required placeholder="Es. Parete destra · posizione 2"></label><label>Luogo<select name="placeId" required>${options}</select></label><label>Ordine facoltativo<input name="order" type="number" min="0"></label><div class="button-row"><button type="submit" ${places.length ? "" : "disabled"}>Crea slot</button><button class="button-secondary" type="button" data-close-map-creation-dialog>Annulla</button></div></form></section></div>`;
     } else base = venueMapRefinementMixin.renderMapCreationDialog.call(this, editable);
     return `${base || ""}${this.renderInventoryBrowserOverlay(editable)}${this.renderInventoryDetailOverlay(editable)}${this.renderInventorySubjectPickerOverlay(editable)}`;
   },
