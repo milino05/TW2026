@@ -51,7 +51,21 @@ test("browser contenuti e sequenza della visita convivono nello stesso step", ()
   assert.match(view, /data-content-access="acquired"/);
   assert.match(view, /data-source-filter/);
   assert.match(view, /data-content-venue/);
+  assert.match(view, /searchPerformed = false/);
+  assert.match(view, /candidate-grid--scroll/);
+  assert.match(view, /grid-template-columns:1fr;gap:1rem;margin-top:1\.25rem/);
+  assert.match(view, /I risultati compariranno qui senza caricare in anticipo l’intera libreria/);
   assert.doesNotMatch(view, /Organizza le tappe/);
+});
+
+test("impostazioni visita usano slider spiegati e con feedback leggibile", () => {
+  assert.match(view, /type="range"/);
+  assert.match(view, /data-preference-range="depth"/);
+  assert.match(view, /data-preference-range="language"/);
+  assert.match(view, /Livello di approfondimento/);
+  assert.match(view, /Complessità del linguaggio/);
+  assert.match(view, /aiutano il Navigator a scegliere/);
+  assert.match(view, /preferenceLabel/);
 });
 
 test("aggiunta contenuto è one-click e usa importanza consigliata come default", () => {
@@ -99,11 +113,12 @@ test("riordino conserva fallback accessibili e spostamento tappa esplicito", () 
   assert.match(view, /Presenta in/);
 });
 
-test("tappe manuali restano una opzione avanzata e non uno step obbligatorio", () => {
-  assert.match(view, /Opzioni avanzate/);
-  assert.match(view, /Aggiungi la prima tappa/);
+test("aggiunta manuale delle tappe è sempre visibile nel composer", () => {
+  assert.match(view, /class="stop-builder"/);
+  assert.match(view, /Aggiungi una tappa fisica/);
   assert.match(view, /Manca ancora una tappa fisica/);
-  assert.match(view, /renderManualStopBrowser\(\{ open: !stops\.length \}\)/);
+  assert.match(view, /target-grid--scroll/);
+  assert.doesNotMatch(view, /manual-stops/);
   assert.match(view, /data-add-stop/);
   assert.match(view, /data-remove-stop/);
 });
