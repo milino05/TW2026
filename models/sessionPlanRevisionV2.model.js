@@ -28,6 +28,15 @@ const SessionSemanticGraphPinSchema = new Schema({
   namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
 }, { _id: false });
 
+const SessionSemanticContentPinSchema = new Schema({
+  sourceType: { type: String, enum: ["direct_item"], default: "direct_item" },
+  itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
+  itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
+  itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
+  namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
+  subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
+}, { _id: false });
+
 const SessionVisitAnchorSchema = new Schema({
   sourceAnchorId: { type: Schema.Types.ObjectId, default: null },
   venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
@@ -73,6 +82,7 @@ const SessionPlanRevisionV2Schema = new Schema({
   executedThroughEntryIndex: { type: Number, min: -1, default: -1 },
   sourceEditorialReleaseIds: [{ type: Schema.Types.ObjectId, ref: "EditorialRelease" }],
   semanticGraphPins: { type: [SessionSemanticGraphPinSchema], default: [] },
+  semanticContentPins: { type: [SessionSemanticContentPinSchema], default: [] },
   contentEntries: { type: [SessionContentEntrySchema], default: [] },
   visitAnchors: { type: [SessionVisitAnchorSchema], default: [] },
   physicalRoute: { legs: { type: [SessionPhysicalLegSchema], default: [] } },
