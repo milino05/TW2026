@@ -17,12 +17,15 @@ const files = [
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 const source = Object.values(sources).join("\n");
 const styleSource = ["venue-editor.css", "venue-map-authoring.css"].map((file) => fs.readFileSync(path.join(root, `clients/marketplace/src/styles/${file}`), "utf8")).join("\n");
+const physicalVocabularyEditorSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js"), "utf8");
 
 test("Sedi e spazi fisici passa il syntax gate", () => {
   for (const file of files) {
     const result = spawnSync(process.execPath, ["--check", path.join(root, file)], { encoding: "utf8" });
     assert.equal(result.status, 0, `${file}: ${result.stderr || result.stdout}`);
   }
+  const physicalResult = spawnSync(process.execPath, ["--check", path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js")], { encoding: "utf8" });
+  assert.equal(physicalResult.status, 0, physicalResult.stderr || physicalResult.stdout);
 });
 
 test("i moduli dichiarano le dipendenze di runtime che usano", () => {
@@ -52,12 +55,27 @@ test("Venue editor mostra una sezione alla volta con tab accessibili e deep link
   assert.doesNotMatch(styleSource, /venue-editor-nav nav\{display:flex;overflow:auto\}/);
 });
 
-test("il workspace desktop non comprime la prima configurazione fisica", () => {
+test("il workspace usa un layout compatto e lascia lo scorrimento verticale al documento", () => {
   const sectionSource = sources["clients/marketplace/src/ui/venue-editor-section-mixin.js"];
   assert.match(sectionSource, /venue-editor-page venue-editor-page--onboarding/);
   assert.match(sectionSource, /venue-editor-page venue-editor-page--workspace/);
-  assert.match(styleSource, /main\.venue-editor-page--workspace\{height:calc\(100vh - var\(--header-height\)\);[^}]*overflow:hidden/);
-  assert.doesNotMatch(styleSource, /main\.venue-editor-page\{height:calc\(100vh - var\(--header-height\)\)/);
+  assert.match(sectionSource, /class="venue-context-bar"/);
+  assert.match(sectionSource, /class="venue-editor-tabs"[^>]*aria-orientation="horizontal"/);
+  assert.doesNotMatch(sectionSource, /Sede dell'organizzazione/);
+  assert.doesNotMatch(styleSource, /venue-editor-page--workspace\{[^}]*height:calc\(100vh/);
+  assert.doesNotMatch(styleSource, /venue-editor-content\{[^}]*overflow:hidden/);
+  assert.doesNotMatch(styleSource, /venue-spatial-workspace\{[^}]*overflow:auto/);
+  assert.match(styleSource, /venue-spatial-workspace\{[^}]*overflow:visible/);
+});
+
+test("Gestisci vocabolario apre la rotta reale e torna alla sede", () => {
+  const mapSource = sources["clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js"];
+  assert.match(mapSource, /\/physical-vocabularies\/editor\?\$\{params\.toString\(\)\}/);
+  assert.doesNotMatch(mapSource, /\/physical-vocabularies\/edit\?/);
+  assert.match(mapSource, /returnTo: `\/venues\/editor\?venueId=\$\{encodeURIComponent\(this\.id\)\}#venue-map`/);
+  assert.match(physicalVocabularyEditorSource, /function requestedReturnUrl\(\)/);
+  assert.match(physicalVocabularyEditorSource, /resolved\.origin !== window\.location\.origin/);
+  assert.match(physicalVocabularyEditorSource, /navigate\(physicalVocabularyBackUrl\(this\.data\?\.physicalVocabulary\?\.owner\)\)/);
 });
 
 test("Venue entities, recognition media e Subject restano separati dagli Item", () => {

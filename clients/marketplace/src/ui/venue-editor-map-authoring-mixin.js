@@ -216,7 +216,13 @@ export const venueMapAuthoringMixin = {
     const vocabulary = target.closest("[data-edit-physical-vocabulary]");
     if (vocabulary) {
       const vocabularyId = vocabulary.dataset.editPhysicalVocabulary;
-      if (vocabularyId) navigate(`/physical-vocabularies/edit?physicalVocabularyId=${encodeURIComponent(vocabularyId)}`);
+      if (vocabularyId) {
+        const params = new URLSearchParams({
+          physicalVocabularyId: vocabularyId,
+          returnTo: `/venues/editor?venueId=${encodeURIComponent(this.id)}#venue-map`,
+        });
+        navigate(`/physical-vocabularies/editor?${params.toString()}`);
+      }
       return true;
     }
 

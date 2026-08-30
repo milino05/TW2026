@@ -77,6 +77,16 @@ function clone(value) { return globalThis.structuredClone ? structuredClone(valu
 function statusLabel(status) { return { draft: "Bozza", in_review: "In revisione", changes_requested: "Modifiche richieste", published: "Pubblicata", superseded: "Superata" }[status] || status || "Da configurare"; }
 function sourceLabel(source) { return source === "working" ? "Bozza di lavoro" : source === "published" ? "Versione pubblicata" : "Non configurato"; }
 function ownerBackUrl(owner) { return owner?.type === "organization" ? `/organizations/detail?organizationId=${encodeURIComponent(owner.id)}&section=physical` : "/profile#account-physical"; }
+function requestedReturnUrl() {
+  const value = new URLSearchParams(window.location.search).get("returnTo");
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  try {
+    const resolved = new URL(value, window.location.origin);
+    if (resolved.origin !== window.location.origin) return null;
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch { return null; }
+}
+function physicalVocabularyBackUrl(owner) { return requestedReturnUrl() || ownerBackUrl(owner); }
 function initialSection() { const requested = String(window.location.hash || "").replace(/^#physical-/, ""); return SECTIONS.some(([key]) => key === requested) ? requested : "general"; }
 function localAliases(definition) { return (definition.localizations || []).find((entry) => String(entry.locale).toLowerCase().startsWith("it"))?.aliases || []; }
 function replaceAliases(definition, aliases) {
@@ -310,13 +320,13 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
         this.render();
         return;
       }
-      navigate(ownerBackUrl(this.data?.physicalVocabulary?.owner)); return;
+      navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner)); return;
     }
     if (target.closest("[data-confirm-cancel]")) { this.pendingConfirmation = null; this.render(); return; }
     if (target.closest("[data-confirm-action]") && this.pendingConfirmation) {
       const confirmation = this.pendingConfirmation;
       this.pendingConfirmation = null;
-      if (confirmation.type === "leave") { navigate(ownerBackUrl(this.data?.physicalVocabulary?.owner)); return; }
+      if (confirmation.type === "leave") { navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner)); return; }
       if (confirmation.type === "remove-definition") {
         const definition = this.definition(confirmation.field, confirmation.index);
         if (!definition || definition.definitionId !== confirmation.definitionId) { this.render(); return; }
