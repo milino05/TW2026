@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -78,13 +79,35 @@ async function createPublishedEdition({ ItemV2, ItemEdition, ItemRevisionV2, sub
 }
 
 async function publishVenueTargets({ VenueRelease, venue, targetIds, userId }) {
+  const ExhibitSlot = require("../models/exhibitSlot.model");
+  const LayoutRevision = require("../models/layoutRevision.model");
+  const physical = await createPublishedPhysicalVocabulary({ userId });
+  const roomType = physical.placeTypeByKey.get("room");
+  const floorId = oid();
+  const roomId = oid();
+  const slots = [];
+  for (let index = 0; index < targetIds.length; index += 1) {
+    slots.push(await ExhibitSlot.create({ venueId: venue._id, createdBy: userId }));
+  }
+  const layout = await LayoutRevision.create({
+    venueId: venue._id,
+    version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id,
+    floors: [{ _id: floorId, label: "Piano terra" }],
+    places: [{ _id: roomId, floorId, placeTypeDefinitionId: roomType.definitionId, label: "Sala test", position: { x: 0.5, y: 0.5 } }],
+    exhibitSlots: slots.map((slot, index) => ({ exhibitSlotId: slot._id, placeId: roomId, label: `Posizione ${index + 1}`, order: index })),
+    connections: [],
+    status: "published",
+    createdBy: userId,
+    updatedBy: userId,
+  });
   const release = await VenueRelease.create({
     venueId: venue._id,
     version: 1,
-    layoutRevisionId: oid(),
-    targetBindings: targetIds.map((targetId) => ({
+    layoutRevisionId: layout._id,
+    targetBindings: targetIds.map((targetId, index) => ({
       venueTargetId: targetId,
-      exhibitSlotId: oid(),
+      exhibitSlotId: slots[index]._id,
       availability: "active",
       recognitionMedia: [{ url: `https://example.test/${targetId}.jpg`, altText: "Riconoscimento" }],
     })),
@@ -294,6 +317,10 @@ test("VenueTarget authoring context keeps recognition media physical and separat
     assert.equal(context.recognitionMedia.length, 1);
     assert.equal(context.illustrativeMedia, undefined);
     assert.equal(context.venueTarget.subjectId, undefined);
+    assert.equal(context.venueTarget.inventoryState, "exposed");
+    assert.equal(context.venueTarget.inventory.status, "exposed");
+    assert.equal(context.venueTarget.inventory.place.label, "Sala test");
+    assert.deepEqual(context.venueTarget.museumContent, { availableCount: 0, draftCount: 0 });
   });
 });
 
@@ -334,8 +361,10 @@ test("Item physical intent atomically creates or reuses the Venue inventory enti
     assert.equal(candidates.venue.name, "Physical intent Venue");
     assert.equal(String(candidates.venue.ownerOrganizationId), String(organization._id));
     assert.equal(candidates.permissions.canEditInventory, true);
-    assert.equal(String(candidates.exact[0].venueTargetId), String(first.venueEntity._id));
-    assert.equal(candidates.exact[0].state, "unplaced");
+    assert.equal(String(candidates.exact[0].inventory.venueTargetId), String(first.venueEntity._id));
+    assert.equal(candidates.exact[0].inventory.status, "unplaced");
+    assert.equal(candidates.exact[0].venueTargetId, undefined);
+    assert.equal(candidates.exact[0].state, undefined);
 
     await assert.rejects(
       () => createItemWithPhysicalIntent({ venueId: venue._id, payload: { ...payload, primarySubjectId: oid() }, actorUserId: user._id }),
