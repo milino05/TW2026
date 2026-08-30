@@ -1,6 +1,7 @@
 import { icon } from "./icons.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
+import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueContextualWorkspaceMixin } from "./venue-editor-contextual-workspace-mixin.js";
 import { venueSlotSubjectUiMixin } from "./venue-editor-slot-subject-ui-mixin.js";
@@ -31,6 +32,18 @@ export const venueMapRefinementMixin = {
         this.pendingDestructiveAction = null;
         this.error = null;
         this.render();
+      } else if (this.pendingTargetRemovalId) {
+        this.pendingTargetRemovalId = null;
+        this.error = null;
+        this.render();
+      } else if (this.pendingVenueRemoval) {
+        this.pendingVenueRemoval = false;
+        this.error = null;
+        this.render();
+      } else if (this.pendingWorkflow) {
+        this.pendingWorkflow = null;
+        this.workflowMessage = "";
+        this.render();
       } else if (this.calibrationOverwritePrompt) {
         this.calibrationOverwritePrompt = null;
         this.render();
@@ -59,6 +72,19 @@ export const venueMapRefinementMixin = {
     this.decorateMapRefinements();
   },
 
+  renderMapActionStatus() {
+    const action = this.pendingMapAction;
+    if (action?.type === "connect") {
+      if (!action.fromPlaceId) return `<p class="venue-map-instruction active"><strong>Collega luoghi</strong> · seleziona il luogo di partenza.</p>`;
+      if (!action.toPlaceId) {
+        const pointCount = (action.waypoints || []).length;
+        return `<p class="venue-map-instruction active"><strong>Disegna il collegamento</strong> · clicca sulla planimetria per aggiungere punti intermedi${pointCount ? ` (${pointCount})` : ""}, poi clicca sul luogo di destinazione. Esc annulla.</p>`;
+      }
+      return `<p class="venue-map-instruction active"><strong>Percorso definito</strong> · completa tipo, direzione e metrica nel pannello aperto.</p>`;
+    }
+    return venueSpatialMixin.renderMapActionStatus.call(this);
+  },
+
   decorateMapRefinements() {
     const floor = this.activeFloor?.();
     const calibrate = this.querySelector('[data-map-tool="calibrate"]');
@@ -71,13 +97,14 @@ export const venueMapRefinementMixin = {
     const dialog = this.querySelector(".venue-spatial-dialog-frame");
     const danger = dialog?.querySelector(".venue-detail-danger .danger");
     if (dialog && danger) {
+      const dangerZone = danger.closest(".venue-detail-danger");
       const label = danger.textContent?.trim() || "Rimuovi elemento";
       danger.className = "danger venue-spatial-dialog-delete";
       danger.innerHTML = icon("trash", { size: 17 });
       danger.setAttribute("aria-label", label);
       danger.setAttribute("title", label);
       dialog.querySelector(".venue-spatial-dialog-close")?.insertAdjacentElement("beforebegin", danger);
-      danger.closest(".venue-detail-danger")?.remove();
+      dangerZone?.remove();
     }
 
     this.renderConnectionDraftPreview();
@@ -170,6 +197,7 @@ export const venueMapRefinementMixin = {
     if (connectTool) {
       this.spatialEditor = null;
       this.activeSpatialTab = "map";
+      this.error = null;
       this.pendingMapAction = { type: "connect", fromPlaceId: null, toPlaceId: null, floorId: null, waypoints: [], cursorPoint: null };
       this.render();
       return true;
@@ -194,7 +222,7 @@ export const venueMapRefinementMixin = {
         if (id(action.fromPlaceId) === id(place._id)) return true;
         const from = (this.data.layout?.places || []).find((entry) => id(entry._id) === id(action.fromPlaceId));
         if ((action.waypoints || []).length && !sameFloor(from, place)) {
-          this.error = "I punti intermedi descrivono una geometria planare e non possono terminare su un altro piano. Annulla i punti o crea un collegamento cross-floor senza geometria.";
+          this.error = "I punti intermedi descrivono una geometria planare e non possono terminare su un altro piano. Annulla il collegamento e creane uno cross-floor senza punti intermedi.";
           this.render();
           return true;
         }
