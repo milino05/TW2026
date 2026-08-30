@@ -90,17 +90,19 @@ async function loadReleaseRows(plan) {
 }
 
 async function loadDirectRows(plan) {
-  const entries = (plan?.contentEntries || []).filter((entry) => !(entry.sourceEditorialReleaseIds || []).length);
-  if (!entries.length) return [];
-  const revisionIds = unique(entries.map((entry) => entry.itemRevisionId));
-  const itemIds = unique(entries.map((entry) => entry.itemId));
+  const pins = (plan?.semanticContentPins || []).length
+    ? plan.semanticContentPins
+    : (plan?.contentEntries || []).filter((entry) => !(entry.sourceEditorialReleaseIds || []).length);
+  if (!pins.length) return [];
+  const revisionIds = unique(pins.map((entry) => entry.itemRevisionId));
+  const itemIds = unique(pins.map((entry) => entry.itemId));
   const [revisions, items] = await Promise.all([
     ItemRevisionV2.find({ _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } }).lean(),
     ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(),
   ]);
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
   const itemById = new Map(items.map((item) => [id(item._id), item]));
-  return entries.map((entry) => {
+  return pins.map((entry) => {
     const revision = revisionById.get(id(entry.itemRevisionId));
     const item = itemById.get(id(entry.itemId));
     if (!revision || !item || id(revision.itemEditionId) !== id(entry.itemEditionId)) return null;
@@ -112,7 +114,7 @@ async function loadDirectRows(plan) {
       itemId: entry.itemId,
       itemEditionId: entry.itemEditionId,
       itemRevisionId: entry.itemRevisionId,
-      subjectId: item.primarySubjectId,
+      subjectId: entry.subjectId || item.primarySubjectId,
       item,
       edition: null,
       revision,
@@ -366,9 +368,11 @@ function preferenceFromRuntime(runtime) {
 async function resolvePinnedSemanticContent({ plan, serverInput }) {
   const sourceType = serverInput?.sourceType || (serverInput?.sourceEditorialReleaseId ? "editorial_release" : "direct_item");
   if (sourceType === "direct_item") {
-    const pinnedEntry = (plan?.contentEntries || []).find((entry) =>
-      !(entry.sourceEditorialReleaseIds || []).length
-      && id(entry.itemId) === id(serverInput.itemId)
+    const contentPins = (plan?.semanticContentPins || []).length
+      ? plan.semanticContentPins
+      : (plan?.contentEntries || []).filter((entry) => !(entry.sourceEditorialReleaseIds || []).length);
+    const pinnedEntry = contentPins.find((entry) =>
+      id(entry.itemId) === id(serverInput.itemId)
       && id(entry.itemEditionId) === id(serverInput.itemEditionId)
       && id(entry.itemRevisionId) === id(serverInput.itemRevisionId));
     if (!pinnedEntry || id(pinnedEntry.namespaceRevisionId) !== id(serverInput.namespaceRevisionId)) {
