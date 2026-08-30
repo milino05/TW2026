@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
@@ -16,7 +15,6 @@ const MarketplaceListing = require("../models/marketplaceListing.model");
 const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForPrincipal } = require("./principalResolution.service");
-const { trashPhysicalVocabulary } = require("./physicalVocabulary.service");
 
 const REMOVABLE_RESOURCE_TYPES = Object.freeze([
   "item_edition",
@@ -55,52 +53,52 @@ function assertOwnership(resource, principal) {
   }
 }
 
-async function itemRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
-  const edition = await ItemEdition.findById(resourceId).session(session).lean();
+async function itemRemovalTarget({ resourceId, principal }) {
+  const edition = await ItemEdition.findById(resourceId).lean();
   if (!edition) throw new AppError("Contenuto non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
-  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).session(session);
+  const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).lean();
   if (!item) throw new AppError("Contenuto non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
   assertOwnership(item, principal);
 
-  const editions = await ItemEdition.find({ itemId: item._id }).select("_id").session(session).lean();
+  const editions = await ItemEdition.find({ itemId: item._id }).select("_id").lean();
   const editionIds = editions.map((entry) => entry._id);
   const revisionIds = editionIds.length
-    ? await ItemRevisionV2.find({ itemEditionId: { $in: editionIds } }).distinct("_id").session(session)
+    ? await ItemRevisionV2.find({ itemEditionId: { $in: editionIds } }).distinct("_id")
     : [];
-  item.lifecycleStatus = "trashed";
-  item.trashedAt = now;
-  item.trashedBy = actorUserId;
-  await item.save({ session });
   return {
+    lifecycleModel: ItemV2,
+    lifecycleId: item._id,
+    unavailableMessage: "Contenuto non disponibile",
     aggregateType: "item",
     aggregateId: item._id,
     references: [reference("item_edition", editionIds), reference("item_revision", revisionIds)].filter(Boolean),
   };
 }
 
-async function namespaceRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
-  const namespace = await Namespace.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session);
+async function namespaceRemovalTarget({ resourceId, principal }) {
+  const namespace = await Namespace.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
   if (!namespace) throw new AppError("Regole editoriali non disponibili", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
   assertOwnership(namespace, principal);
-  const revisionIds = await NamespaceRevision.find({ namespaceId: namespace._id }).distinct("_id").session(session);
-  namespace.lifecycleStatus = "trashed";
-  namespace.trashedAt = now;
-  namespace.trashedBy = actorUserId;
-  await namespace.save({ session });
+  const revisionIds = await NamespaceRevision.find({ namespaceId: namespace._id }).distinct("_id");
   return {
+    lifecycleModel: Namespace,
+    lifecycleId: namespace._id,
+    unavailableMessage: "Regole editoriali non disponibili",
     aggregateType: "namespace",
     aggregateId: namespace._id,
     references: [reference("namespace", [namespace._id]), reference("namespace_revision", revisionIds)].filter(Boolean),
   };
 }
 
-async function physicalVocabularyRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
-  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session).lean();
+async function physicalVocabularyRemovalTarget({ resourceId, principal }) {
+  const physicalVocabulary = await PhysicalVocabulary.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
   if (!physicalVocabulary) throw new AppError("Vocabolario fisico non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
   assertOwnership(physicalVocabulary, principal);
-  const revisionIds = await PhysicalVocabularyRevision.find({ physicalVocabularyId: physicalVocabulary._id }).distinct("_id").session(session);
-  await trashPhysicalVocabulary({ physicalVocabularyId: physicalVocabulary._id, actorUserId, session, now });
+  const revisionIds = await PhysicalVocabularyRevision.find({ physicalVocabularyId: physicalVocabulary._id }).distinct("_id");
   return {
+    lifecycleModel: PhysicalVocabulary,
+    lifecycleId: physicalVocabulary._id,
+    unavailableMessage: "Vocabolario fisico non disponibile",
     aggregateType: "physical_vocabulary",
     aggregateId: physicalVocabulary._id,
     references: [
@@ -110,40 +108,35 @@ async function physicalVocabularyRemovalTarget({ resourceId, principal, actorUse
   };
 }
 
-async function currentContextGraphRevisionId(context, session = null) {
+async function currentContextGraphRevisionId(context) {
   if (context?.workingGraphRevisionId) return context.workingGraphRevisionId;
   if (!context?.publishedReleaseId) return null;
-  const query = EditorialRelease.findOne({
+  return (await EditorialRelease.findOne({
     _id: context.publishedReleaseId,
     editorialContextId: context._id,
-  }).select("graphRevisionId").lean();
-  if (session) query.session(session);
-  return (await query)?.graphRevisionId || null;
+  }).select("graphRevisionId").lean())?.graphRevisionId || null;
 }
 
-async function countActiveContextConnections(context, session = null) {
-  const graphRevisionId = await currentContextGraphRevisionId(context, session);
+async function countActiveContextConnections(context) {
+  const graphRevisionId = await currentContextGraphRevisionId(context);
   if (!graphRevisionId) return 0;
-  const query = SemanticEdgeV2.countDocuments({ graphRevisionId });
-  if (session) query.session(session);
-  return query;
+  return SemanticEdgeV2.countDocuments({ graphRevisionId });
 }
 
-async function editorialContextRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
-  const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session);
+async function editorialContextRemovalTarget({ resourceId, principal }) {
+  const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
   if (!context) throw new AppError("Raccolta editoriale non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
-  const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).session(session).lean();
+  const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).lean();
   if (!contentSpace) throw new AppError("Spazio editoriale della raccolta non disponibile", 409, [{ code: "CONTENT_SPACE_NOT_FOUND" }]);
   assertOwnership(contentSpace, principal);
   const [releaseIds, affectedConnectionCount] = await Promise.all([
-    EditorialRelease.find({ editorialContextId: context._id }).distinct("_id").session(session),
-    countActiveContextConnections(context, session),
+    EditorialRelease.find({ editorialContextId: context._id }).distinct("_id"),
+    countActiveContextConnections(context),
   ]);
-  context.lifecycleStatus = "trashed";
-  context.trashedAt = now;
-  context.trashedBy = actorUserId;
-  await context.save({ session });
   return {
+    lifecycleModel: EditorialContext,
+    lifecycleId: context._id,
+    unavailableMessage: "Raccolta editoriale non disponibile",
     aggregateType: "editorial_context",
     aggregateId: context._id,
     affectedConnectionCount,
@@ -151,16 +144,15 @@ async function editorialContextRemovalTarget({ resourceId, principal, actorUserI
   };
 }
 
-async function visitRemovalTarget({ resourceId, principal, actorUserId, now, session }) {
-  const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).session(session);
+async function visitRemovalTarget({ resourceId, principal }) {
+  const visit = await VisitV2.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
   if (!visit) throw new AppError("Visita non disponibile", 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
   assertOwnership(visit, principal);
-  const revisionIds = await VisitRevisionV2.find({ visitId: visit._id }).distinct("_id").session(session);
-  visit.lifecycleStatus = "trashed";
-  visit.trashedAt = now;
-  visit.trashedBy = actorUserId;
-  await visit.save({ session });
+  const revisionIds = await VisitRevisionV2.find({ visitId: visit._id }).distinct("_id");
   return {
+    lifecycleModel: VisitV2,
+    lifecycleId: visit._id,
+    unavailableMessage: "Visita non disponibile",
     aggregateType: "visit",
     aggregateId: visit._id,
     references: [reference("visit", [visit._id]), reference("visit_revision", revisionIds)].filter(Boolean),
@@ -180,6 +172,47 @@ async function removalTarget(args) {
   if (args.resourceType === "namespace") return namespaceRemovalTarget(args);
   if (args.resourceType === "physical_vocabulary") return physicalVocabularyRemovalTarget(args);
   return visitRemovalTarget(args);
+}
+
+async function cleanupMarketplaceDistribution({ references, actorUserId, now }) {
+  if (!references.length) return { withdrawnListingCount: 0, inactiveOfferCount: 0 };
+  const directListings = await MarketplaceListing.find({
+    $or: listingReferenceFilter(references),
+  }).select("_id").lean();
+  const directListingIds = directListings.map((entry) => entry._id);
+  const offerClauses = offerReferenceFilter(references, directListingIds);
+  const offerListingIds = offerClauses.length
+    ? await MarketplaceOffer.find({ $or: offerClauses }).distinct("listingId")
+    : [];
+  const affectedListingIds = [...new Map(
+    [...directListingIds, ...offerListingIds].map((listingId) => [id(listingId), listingId]),
+  ).values()];
+  if (!affectedListingIds.length) return { withdrawnListingCount: 0, inactiveOfferCount: 0 };
+
+  const listingResult = await MarketplaceListing.updateMany(
+    { _id: { $in: affectedListingIds }, status: { $ne: "withdrawn" } },
+    { $set: { status: "withdrawn", withdrawnAt: now, withdrawnBy: actorUserId } },
+  );
+  const offerResult = await MarketplaceOffer.updateMany(
+    { listingId: { $in: affectedListingIds }, status: { $ne: "inactive" } },
+    { $set: { status: "inactive", inactivatedAt: now, inactivatedBy: actorUserId } },
+  );
+  return {
+    withdrawnListingCount: Number(listingResult.modifiedCount || 0),
+    inactiveOfferCount: Number(offerResult.modifiedCount || 0),
+  };
+}
+
+async function applyLifecycleRemoval({ target, actorUserId, now }) {
+  const removed = await target.lifecycleModel.findOneAndUpdate(
+    { _id: target.lifecycleId, lifecycleStatus: "active" },
+    { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
+    { new: true },
+  );
+  if (!removed) {
+    throw new AppError(target.unavailableMessage, 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
+  }
+  return removed;
 }
 
 async function removeOwnedWorkspaceResource({
@@ -203,56 +236,29 @@ async function removeOwnedWorkspaceResource({
     permissionCode: principalType === "organization" ? lifecyclePermission(resourceType) : null,
   });
   const principal = { type: principalType, id: principalId };
-  const session = await mongoose.startSession();
-  let result = null;
-  try {
-    await session.withTransaction(async () => {
-      const now = new Date();
-      const target = await removalTarget({ resourceType, resourceId, principal, actorUserId, now, session });
+  const target = await removalTarget({ resourceType, resourceId, principal });
+  const now = new Date();
 
-      const directListings = await MarketplaceListing.find({
-        $or: listingReferenceFilter(target.references),
-      }).select("_id").session(session).lean();
-      const directListingIds = directListings.map((entry) => entry._id);
-      const offerClauses = offerReferenceFilter(target.references, directListingIds);
-      const offerListingIds = offerClauses.length
-        ? await MarketplaceOffer.find({ $or: offerClauses }).distinct("listingId").session(session)
-        : [];
-      const affectedListingIds = [...new Map(
-        [...directListingIds, ...offerListingIds].map((listingId) => [id(listingId), listingId]),
-      ).values()];
+  // Withdraw distribution first: a partial failure stays conservative (unpublished),
+  // while the resource is still active and the operation can be retried safely.
+  const before = await cleanupMarketplaceDistribution({ references: target.references, actorUserId, now });
+  await applyLifecycleRemoval({ target, actorUserId, now });
 
-      const listingResult = affectedListingIds.length
-        ? await MarketplaceListing.updateMany(
-          { _id: { $in: affectedListingIds } },
-          { $set: { status: "withdrawn", withdrawnAt: now, withdrawnBy: actorUserId } },
-          { session },
-        )
-        : { modifiedCount: 0 };
-      const offerResult = affectedListingIds.length
-        ? await MarketplaceOffer.updateMany(
-          { listingId: { $in: affectedListingIds } },
-          { $set: { status: "inactive", inactivatedAt: now, inactivatedBy: actorUserId } },
-          { session },
-        )
-        : { modifiedCount: 0 };
+  // The live lifecycle is authoritative for catalog visibility. This idempotent
+  // second pass also catches listings/offers created concurrently with the removal.
+  const after = await cleanupMarketplaceDistribution({ references: target.references, actorUserId, now });
 
-      result = {
-        resourceType,
-        resourceId,
-        aggregateType: target.aggregateType,
-        aggregateId: target.aggregateId,
-        lifecycleStatus: "trashed",
-        affectedConnectionCount: Number(target.affectedConnectionCount || 0),
-        withdrawnListingCount: Number(listingResult.modifiedCount || 0),
-        inactiveOfferCount: Number(offerResult.modifiedCount || 0),
-        removedAt: now,
-      };
-    });
-    return result;
-  } finally {
-    await session.endSession();
-  }
+  return {
+    resourceType,
+    resourceId,
+    aggregateType: target.aggregateType,
+    aggregateId: target.aggregateId,
+    lifecycleStatus: "trashed",
+    affectedConnectionCount: Number(target.affectedConnectionCount || 0),
+    withdrawnListingCount: before.withdrawnListingCount + after.withdrawnListingCount,
+    inactiveOfferCount: before.inactiveOfferCount + after.inactiveOfferCount,
+    removedAt: now,
+  };
 }
 
 module.exports = {
