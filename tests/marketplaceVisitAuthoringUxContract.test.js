@@ -41,6 +41,18 @@ test("contenuti persistenti e tappe restano distinti dietro una UX stop-centric"
   assert.doesNotMatch(view, /ensureReferences|matchingTarget\(result\)/);
 });
 
+test("il browser dei contenuti non richiede una raccolta editoriale", () => {
+  assert.match(view, /searchVisitContentCandidates/);
+  assert.match(view, /data-content-access="owned"/);
+  assert.match(view, /data-content-access="acquired"/);
+  assert.match(view, /data-source-filter/);
+  assert.match(view, /data-content-venue/);
+  assert.match(view, /Tutte le fonti/);
+  assert.match(view, /visit-content-composer/);
+  assert.match(view, /La tua visita/);
+  assert.doesNotMatch(view, /Nessuna raccolta editoriale disponibile|Serve una raccolta utilizzabile/);
+});
+
 test("l'inferenza Subject -> VenueTarget resta backend-authoritative e non indovina ambiguità", () => {
   assert.match(service, /ItemV2\.find\([\s\S]*primarySubjectId/);
   assert.match(service, /primarySubjectId:\s*item\?\.primarySubjectId\s*\|\|\s*null/);

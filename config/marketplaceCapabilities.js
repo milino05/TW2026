@@ -13,6 +13,7 @@ const RESOURCE_TYPES = Object.freeze([
 
 const CAPABILITY_DEFINITIONS = Object.freeze({
   "content.consume": ["item_edition", "item_revision"],
+  "content.use_in_visit": ["item_edition", "item_revision"],
   "content.use_in_editorial_release": ["item_edition", "item_revision"],
   "content.fork": ["item_edition", "item_revision"],
   "context.generate": ["editorial_context", "editorial_release"],

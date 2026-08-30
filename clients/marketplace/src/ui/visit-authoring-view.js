@@ -62,7 +62,9 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   message = null;
   query = "";
   page = 1;
-  selectedReleaseId = null;
+  contentAccess = "all";
+  selectedSourceKey = "all";
+  selectedContentVenueId = null;
   selectedVenueId = null;
   activeStep = 1;
   activeContentStopId = null;
@@ -91,22 +93,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   workflowOperations() {
     return (this.projection?.availableOperations || []).filter((operation) => String(operation.code || "").startsWith("workflow."));
   }
-  sourceChoices() {
-    const values = new Map();
-    for (const source of this.projection?.editorialSources || []) values.set(id(source.editorialReleaseId), source);
-    for (const source of this.revision?.editorialSources || []) {
-      const key = id(source.editorialReleaseId);
-      if (!values.has(key)) values.set(key, {
-        editorialContextId: source.editorialContextId,
-        editorialReleaseId: source.editorialReleaseId,
-        name: source.name,
-        summary: "Raccolta già collegata alla visita",
-        ownership: "current_visit",
-        versionMode: "pinned",
-      });
-    }
-    return [...values.values()];
-  }
   venueChoices() {
     return (this.projection?.venueSelector?.organizations || []).flatMap((organization) =>
       (organization.venues || []).map((venue) => ({ ...venue, organizationName: organization.name }))
@@ -127,11 +113,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       this.projection = await authoringRepository.visitProjection({ ...params, ...selected });
       if (this.projection?.principal && (this.projection.principal.type !== selected.principalType || id(this.projection.principal.id) !== id(selected.principalId))) {
         throw new Error("Questa visita appartiene a un'altra area di lavoro. Cambia area prima di modificarla.");
-      }
-      const sources = this.sourceChoices();
-      if (!sources.some((source) => id(source.editorialReleaseId) === id(this.selectedReleaseId))) {
-        this.selectedReleaseId = id(this.revision?.editorialSources?.[0]?.editorialReleaseId || sources[0]?.editorialReleaseId || "") || null;
-        this.page = 1;
       }
       const venues = this.venueChoices();
       if (!venues.some((venue) => id(venue.id) === id(this.selectedVenueId))) {
@@ -176,23 +157,23 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   async loadContent(render = true) {
-    if (!this.selectedReleaseId || !this.principal || !this.visitId) {
+    if (!this.principal || !this.visitId) {
       this.content = null;
       if (render) this.render();
       return;
     }
     try {
-      this.content = await authoringRepository.searchVisitContent({
-        editorialReleaseId: this.selectedReleaseId,
-        principalType: this.principal.type,
-        principalId: this.principal.id,
+      this.content = await authoringRepository.searchVisitContentCandidates(this.visitId, {
         q: this.query,
+        access: this.contentAccess,
+        source: this.selectedSourceKey,
+        venueId: this.selectedContentVenueId,
         page: this.page,
         limit: 20,
       });
     } catch (error) {
       this.content = null;
-      if (render) this.error = error instanceof Error ? error.message : "Contenuti della raccolta non disponibili";
+      if (render) this.error = error instanceof Error ? error.message : "Contenuti disponibili non caricabili";
     }
     if (render) this.render();
   }
@@ -237,7 +218,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     this.render();
     try {
       const payload = {
-        editorialReleaseId: this.selectedReleaseId,
+        contentSource: result.contentSource,
         itemEditionId: result.itemEditionId,
         itemRevisionId: result.itemRevisionId,
         role,
@@ -273,9 +254,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
 
   canOpenStep(step) {
     if (!this.visitId) return step === 1;
-    if ([1, 2, 4, 5, 6].includes(step)) return true;
-    if (step === 3) return (this.revision?.entries || []).length > 0;
-    return false;
+    return [1, 2, 3, 4, 5, 6].includes(step);
   }
   stepComplete(step) {
     if (step === 1) return Boolean(this.revision?.title);
@@ -371,8 +350,19 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   onChange = async (event) => {
     const target = event.target instanceof HTMLSelectElement ? event.target : null;
     if (!target) return;
-    if (target.matches("[data-source]")) {
-      this.selectedReleaseId = target.value || null;
+    if (target.matches("[data-source-filter]")) {
+      this.selectedSourceKey = target.value || "all";
+      this.page = 1;
+      this.pendingOccurrence = null;
+      this.busy = true;
+      this.render();
+      await this.loadContent(false);
+      this.busy = false;
+      this.render();
+      return;
+    }
+    if (target.matches("[data-content-venue]")) {
+      this.selectedContentVenueId = target.value || null;
       this.page = 1;
       this.pendingOccurrence = null;
       this.busy = true;
@@ -416,6 +406,18 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       this.page = Math.max(1, Number(pageButton.dataset.contentPage) || 1);
       this.busy = true; this.render(); await this.loadContent(false); this.busy = false; this.render(); return;
     }
+    const accessButton = target.closest("button[data-content-access]");
+    if (accessButton) {
+      this.contentAccess = accessButton.dataset.contentAccess || "all";
+      this.page = 1;
+      this.pendingOccurrence = null;
+      this.busy = true;
+      this.render();
+      await this.loadContent(false);
+      this.busy = false;
+      this.render();
+      return;
+    }
     const addButton = target.closest("button[data-add-content]");
     if (addButton) {
       const result = (this.content?.results || []).find((entry) => id(entry.itemRevisionId) === id(addButton.dataset.addContent));
@@ -456,11 +458,12 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
 
   renderProgress() {
     const stages = [[1, "Informazioni"], [2, "Contenuti"], [3, "Tappe"], [4, "Impostazioni"], [5, "Percorso"], [6, "Pubblicazione"]];
-    return `<nav class="visit-progress" aria-label="Passaggi di creazione della visita"><ol>${stages.map(([step, label]) => {
+    const currentLabel = stages.find(([step]) => step === this.activeStep)?.[1] || stages[0][1];
+    return `<nav class="authoring-progress" aria-label="Passaggi di creazione della visita"><div class="authoring-progress__summary"><span>Passaggio ${this.activeStep} di ${stages.length}</span><strong>${escapeHtml(currentLabel)}</strong></div><ol>${stages.map(([step, label]) => {
       const current = this.activeStep === step;
       const enabled = this.canOpenStep(step);
       const complete = this.stepComplete(step);
-      return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}"><span>${complete ? icon("check", { size: 13 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`;
+      return `<li data-current="${current}" data-complete="${complete}"><button type="button" data-step="${step}" ${enabled ? "" : "disabled"} aria-current="${current ? "step" : "false"}" aria-label="Passaggio ${step}: ${escapeHtml(label)}"><span>${complete ? icon("check", { size: 14 }) : step}</span><strong>${escapeHtml(label)}</strong></button></li>`;
     }).join("")}</ol></nav>`;
   }
   renderCreate() {
@@ -474,8 +477,8 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
 
   renderContentSummary() {
     const entries = this.revision?.entries || [];
-    if (!entries.length) return `<div class="empty-state compact"><h3>Nessun contenuto</h3><p>Scegli un contenuto dalla raccolta editoriale.</p></div>`;
-    return `<div class="content-summary-list">${entries.map((entry) => `<article class="content-summary-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${entry.deliveryTarget ? `${escapeHtml(entry.deliveryTarget.label)} · ${escapeHtml(entry.deliveryTarget.venue?.name || "Sede")}` : "Contenuto contestuale · nessuna tappa fisica inferita"}</small></div><span class="chip">${escapeHtml(roleLabel(entry.role))}</span></article>`).join("")}</div>`;
+    if (!entries.length) return `<div class="empty-state compact"><h3>La visita è ancora vuota</h3><p>Cerca un contenuto disponibile e aggiungilo. Potrai salvare la bozza anche prima di completare la selezione.</p></div>`;
+    return `<div class="content-summary-list">${entries.map((entry, index) => `<article class="content-summary-card"><span class="sequence-index">${index + 1}</span><div><strong>${escapeHtml(entry.label)}</strong><small>${entry.deliveryTarget ? `${escapeHtml(entry.deliveryTarget.label)} · ${escapeHtml(entry.deliveryTarget.venue?.name || "Sede")}` : "Contenuto contestuale · senza una tappa"}</small>${entry.source?.name ? `<span class="source-note">${escapeHtml(entry.source.name)}</span>` : ""}</div>${this.editable ? `<label>Importanza<select data-entry-role="${escapeHtml(entry.id)}" ${this.busy ? "disabled" : ""}><option value="core" ${entry.role === "core" ? "selected" : ""}>Essenziale</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Consigliato</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Facoltativo</option></select></label><button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}" ${this.busy ? "disabled" : ""}>Rimuovi</button>` : `<span class="chip">${escapeHtml(roleLabel(entry.role))}</span>`}</article>`).join("")}</div>`;
   }
   renderOccurrenceChoice() {
     if (!this.pendingOccurrence) return "";
@@ -484,24 +487,25 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
   renderContentSearch() {
     if (!this.editable) return "";
-    const sources = this.sourceChoices();
-    if (!sources.length) return `<div class="blocker-panel"><strong>Nessuna raccolta editoriale disponibile</strong><p>Serve una raccolta utilizzabile per comporre visite.</p></div>`;
-    const sourceOptions = sources.map((source) => `<option value="${escapeHtml(id(source.editorialReleaseId))}" ${id(source.editorialReleaseId) === id(this.selectedReleaseId) ? "selected" : ""}>${escapeHtml(source.name)}${source.ownership === "licensed" ? " · tramite licenza" : ""}</option>`).join("");
+    const sourceOptions = (this.content?.filters?.sources || []).map((source) => `<option value="${escapeHtml(source.key)}" ${source.key === this.selectedSourceKey ? "selected" : ""}>${escapeHtml(source.label)}${source.ownership === "licensed" ? " · tramite licenza" : ""}</option>`).join("");
+    const venueOptions = this.venueChoices().map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedContentVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
     const existing = new Set((this.revision?.entries || []).map((entry) => id(entry.itemRevisionId)));
     const cards = (this.content?.results || []).map((result) => {
       const alreadyAdded = existing.has(id(result.itemRevisionId));
-      return `<article class="candidate-card"><div><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml((result.authorCredits || []).join(", ") || "Autore non indicato")}</p><small>${(result.presentationProfiles || []).length} profilo/i di presentazione</small></div><label>Importanza<select data-add-role ${alreadyAdded ? "disabled" : ""}><option value="core">Essenziale</option><option value="recommended" selected>Consigliato</option><option value="optional">Facoltativo</option></select></label><button type="button" data-add-content="${escapeHtml(id(result.itemRevisionId))}" ${alreadyAdded || this.busy ? "disabled" : ""}>${alreadyAdded ? "Già nella visita" : this.activeContentStopId ? "Aggiungi a questa tappa" : "Aggiungi"}</button></article>`;
+      const availability = (result.availability || []).slice(0, 2).map((entry) => `<span class="availability-reason">${escapeHtml(entry.label)}</span>`).join("");
+      const extraReasons = Math.max(0, (result.availability || []).length - 2);
+      return `<article class="candidate-card"><div class="candidate-copy"><span class="eyebrow">Contenuto disponibile</span><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml((result.authorCredits || []).join(", ") || "Autore non indicato")}</p><small>${(result.presentationProfiles || []).length} configurazioni di durata, linguaggio e lingua</small><div class="availability-list">${availability}${extraReasons ? `<span class="availability-reason">+${extraReasons} altre fonti</span>` : ""}</div></div><label>Importanza<select data-add-role ${alreadyAdded ? "disabled" : ""}><option value="core">Essenziale</option><option value="recommended" selected>Consigliato</option><option value="optional">Facoltativo</option></select></label><button type="button" data-add-content="${escapeHtml(id(result.itemRevisionId))}" ${alreadyAdded || this.busy ? "disabled" : ""}>${alreadyAdded ? `${icon("check", { size: 14 })} Già aggiunto` : this.activeContentStopId ? "Aggiungi a questa tappa" : `${icon("plus", { size: 14 })} Aggiungi`}</button></article>`;
     }).join("");
     const page = Number(this.content?.page) || 1;
     const limit = Number(this.content?.limit) || 20;
     const total = Number(this.content?.total) || 0;
     const stop = this.stopById(this.activeContentStopId);
-    return `<div class="content-browser">${stop ? `<div class="context-box"><strong>Stai aggiungendo contenuti a: ${escapeHtml(stop.label)}</strong><p>${escapeHtml(stop.venue?.name || "Sede")}. Il deliveryAnchor sarà questa tappa anche se il contenuto parla di un altro Subject.</p><button class="button-secondary" type="button" data-content-for-route>Torna all'inferenza automatica</button></div>` : `<div class="context-box"><strong>Collocazione automatica</strong><p>Se il Subject ha una sola occorrenza fisica pubblicata, ArtAround crea o riusa la tappa. Se ne ha più di una ti chiede quale scegliere; se non ne ha, il contenuto resta contestuale.</p></div>`}${this.renderOccurrenceChoice()}<label>Raccolta editoriale<select data-source>${sourceOptions}</select></label><form data-visit-search class="search-inline"><label>Cerca contenuti<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo"></label><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></form><p class="note">${total} contenuti disponibili</p><div class="candidate-grid">${cards || `<div class="empty-state compact"><p>Nessun contenuto trovato.</p></div>`}</div><nav class="pagination"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva</button></nav></div>`;
+    return `<div class="content-browser">${stop ? `<div class="context-box"><strong>Stai aggiungendo contenuti a: ${escapeHtml(stop.label)}</strong><p>${escapeHtml(stop.venue?.name || "Sede")}. Il contenuto verrà presentato direttamente in questa tappa.</p><button class="button-secondary" type="button" data-content-for-route>Torna alla collocazione automatica</button></div>` : `<div class="context-box"><strong>La tappa viene proposta automaticamente</strong><p>Se il soggetto si trova in un solo luogo, ArtAround prepara la tappa. In caso di più sedi ti chiederà quale scegliere; un contenuto generale può restare contestuale.</p></div>`}${this.renderOccurrenceChoice()}<form data-visit-search class="search-inline"><label>Cerca contenuti<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo, autore o argomento"></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("search", { size: 14 })} Cerca</button></form><div class="content-filter-bar"><div class="content-access-filter" role="group" aria-label="Disponibilità dei contenuti"><button type="button" class="${this.contentAccess === "all" ? "" : "button-secondary"}" data-content-access="all" aria-pressed="${this.contentAccess === "all"}">Tutti</button><button type="button" class="${this.contentAccess === "owned" ? "" : "button-secondary"}" data-content-access="owned" aria-pressed="${this.contentAccess === "owned"}">Creati da me</button><button type="button" class="${this.contentAccess === "acquired" ? "" : "button-secondary"}" data-content-access="acquired" aria-pressed="${this.contentAccess === "acquired"}">Acquistati</button></div><label>Sede<select data-content-venue><option value="">Tutte le sedi</option>${venueOptions}</select></label><label>Fonte <span class="optional-label">facoltativa</span><select data-source-filter><option value="all">Tutte le fonti</option>${sourceOptions}</select></label></div><div class="candidate-heading"><div><span class="eyebrow">Contenuti disponibili</span><strong>${total}</strong></div><small>Ogni contenuto compare una sola volta, anche se proviene da più fonti.</small></div><div class="candidate-grid">${cards || `<div class="empty-state compact"><h3>Nessun contenuto trovato</h3><p>Prova a cambiare ricerca, sede o fonte.</p></div>`}</div><nav class="pagination"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva</button></nav></div>`;
   }
   renderStepTwo() {
     if (this.activeStep !== 2) return "";
     const count = (this.revision?.entries || []).length;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Contenuti</span><h2>Scegli cosa raccontare</h2><p>La collocazione fisica viene inferita dal Subject quando è deterministica; non devi associare manualmente ogni contenuto.</p></div><span class="count">${count}</span></header>${this.renderContentSummary()}${this.renderContentSearch()}<div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3" ${count ? "" : "disabled"}>Rivedi le tappe ${icon("chevron", { size: 15 })}</button></div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Contenuti</span><h2>Scegli cosa raccontare</h2><p>Cerca nell’intera libreria utilizzabile. Le raccolte sono soltanto una fonte e un filtro facoltativo.</p></div><span class="count">${count}</span></header><div class="visit-content-composer"><section class="available-content-pane" aria-label="Contenuti disponibili">${this.renderContentSearch()}</section><aside class="visit-selection-pane" aria-label="Contenuti della visita"><header><span class="eyebrow">La tua visita</span><h3>${escapeHtml(this.revision?.title || "Visita")}</h3><p>${count} ${count === 1 ? "contenuto aggiunto" : "contenuti aggiunti"}</p></header>${this.renderContentSummary()}</aside></div><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Organizza le tappe ${icon("chevron", { size: 15 })}</button></div></section>`;
   }
 
   renderStopContents(stop) {
@@ -511,14 +515,14 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
   renderStops() {
     const stops = this.revision?.stops || [];
-    if (!stops.length) return `<div class="empty-state compact"><h3>Nessuna tappa fisica</h3><p>I contenuti senza occorrenza fisica possono restare contestuali. Per una visita pubblicabile serve almeno una tappa.</p></div>`;
+    if (!stops.length) return `<div class="empty-state compact"><h3>Nessuna tappa proposta</h3><p>I contenuti generali possono restare contestuali. Prima del controllo finale servirà almeno una tappa fisica.</p></div>`;
     return `<ol class="stop-list">${stops.map((stop, index) => `<li><article class="stop-card"><header><span class="sequence-index">${index + 1}</span><div><strong>${escapeHtml(stop.label)}</strong><small>${escapeHtml(stop.venue?.name || "Sede non disponibile")}</small></div>${this.editable ? `<div class="stop-actions"><button class="button-secondary" type="button" data-move-stop="${escapeHtml(stop.id)}" data-direction="-1" aria-label="Sposta prima" title="Sposta prima" ${index === 0 || this.busy ? "disabled" : ""}>↑</button><button class="button-secondary" type="button" data-move-stop="${escapeHtml(stop.id)}" data-direction="1" aria-label="Sposta dopo" title="Sposta dopo" ${index === stops.length - 1 || this.busy ? "disabled" : ""}>↓</button><button class="button-secondary danger" type="button" data-remove-stop="${escapeHtml(stop.id)}" ${this.busy ? "disabled" : ""}>Rimuovi tappa</button></div>` : ""}</header>${this.renderStopContents(stop)}${this.editable ? `<button class="button-secondary add-to-stop" type="button" data-content-for-stop="${escapeHtml(stop.id)}">Aggiungi contenuto a questa tappa</button>` : ""}</article></li>`).join("")}</ol>`;
   }
   renderContextualEntries() {
     const entries = this.revision?.contextualEntries || [];
-    if (!entries.length) return "";
+    if (!entries.length) return `<div class="empty-state compact"><h3>Nessun contenuto contestuale</h3><p>I contenuti senza una collocazione precisa compariranno qui.</p></div>`;
     const stops = this.revision?.stops || [];
-    return `<section class="subsection contextual-section"><h3>Contenuti contestuali</h3><p>Questi contenuti fanno parte della visita ma non hanno una tappa fisica inferita. Puoi lasciarli così oppure scegliere esplicitamente dove presentarli.</p><div class="contextual-list">${entries.map((entry) => `<article><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(roleLabel(entry.role))}</small></div>${this.editable && stops.length ? `<label>Presenta a<select data-attach-contextual="${escapeHtml(entry.id)}"><option value="">Scegli una tappa…</option>${stops.map((stop) => `<option value="${escapeHtml(stop.id)}">${escapeHtml(stop.label)} · ${escapeHtml(stop.venue?.name || "Sede")}</option>`).join("")}</select></label>` : ""}${this.editable ? `<button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}">Rimuovi</button>` : ""}</article>`).join("")}</div></section>`;
+    return `<div><p>Questi contenuti accompagnano l’intera visita. Puoi lasciarli così oppure scegliere dove presentarli.</p><div class="contextual-list">${entries.map((entry) => `<article><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(roleLabel(entry.role))}</small></div>${this.editable && stops.length ? `<label>Presenta a<select data-attach-contextual="${escapeHtml(entry.id)}"><option value="">Scegli una tappa…</option>${stops.map((stop) => `<option value="${escapeHtml(stop.id)}">${escapeHtml(stop.label)} · ${escapeHtml(stop.venue?.name || "Sede")}</option>`).join("")}</select></label>` : ""}${this.editable ? `<button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}">Rimuovi</button>` : ""}</article>`).join("")}</div></div>`;
   }
   renderManualStopBrowser() {
     if (!this.editable) return "";
@@ -526,11 +530,11 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const venueOptions = venues.map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
     const used = new Set((this.revision?.stops || []).map((stop) => id(stop.venueTargetId)));
     const targets = (this.venueTargets?.targets || []).filter((entry) => !used.has(id(entry.id)));
-    return `<details class="advanced-panel"><summary>Aggiungi una tappa fisica esplicita</summary><p>Usa questa opzione per una sosta intenzionale anche prima di associarle un contenuto. Normalmente le tappe vengono create dall'inferenza dei contenuti.</p><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Entità fisica")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">Aggiungi tappa</button></article>`).join("") || `<p class="note">Nessun’altra entità pubblicata disponibile in questa sede.</p>`}</div></details>`;
+    return `<details class="advanced-panel"><summary>Aggiungi manualmente una tappa</summary><p>Usa questa opzione per prevedere una sosta anche quando non deriva automaticamente dai contenuti scelti.</p><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Entità fisica")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">Aggiungi tappa</button></article>`).join("") || `<p class="note">Nessun’altra entità pubblicata disponibile in questa sede.</p>`}</div></details>`;
   }
   renderStepThree() {
     if (this.activeStep !== 3) return "";
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Tappe</span><h2>Rivedi la sequenza fisica</h2><p>Una tappa è un VisitAnchor su un’entità fisica. I contenuti restano entità editoriali separate e vengono proiettati dentro la tappa solo per l'authoring.</p></div></header>${this.renderStops()}${this.renderContextualEntries()}${this.renderManualStopBrowser()}<div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Continua alle impostazioni</button></div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Tappe</span><h2>Organizza la visita nello spazio</h2><p>Riordina le soste proposte e decidi se i contenuti generali devono accompagnare tutta la visita oppure una tappa precisa. I contenuti restano entità editoriali separate e possono essere spostati senza duplicarli.</p></div></header><div class="visit-stops-composer"><section class="stops-pane"><header><span class="eyebrow">Sequenza della visita</span><h3>${(this.revision?.stops || []).length} ${(this.revision?.stops || []).length === 1 ? "tappa" : "tappe"}</h3></header>${this.renderStops()}${this.renderManualStopBrowser()}</section><aside class="contextual-pane"><header><span class="eyebrow">Durante tutta la visita</span><h3>Contenuti contestuali</h3></header>${this.renderContextualEntries()}</aside></div><div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Continua alle impostazioni</button></div></section>`;
   }
 
   renderStepFour() {
@@ -593,7 +597,21 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   styles() {
-    return `<style>:host{display:block}.visit-authoring-page{display:grid;gap:1rem;max-width:76rem;margin:auto;padding:2rem 1rem 5rem}.visit-progress{overflow:auto}.visit-progress ol{display:grid;grid-template-columns:repeat(6,minmax(8.5rem,1fr));gap:.5rem;min-width:55rem;margin:0;padding:0;list-style:none}.visit-progress button{display:flex;width:100%;align-items:center;gap:.45rem;padding:.62rem;border:1px solid #ccd6d1;border-radius:.7rem;background:#fff;color:#476159}.visit-progress button>span,.step-number,.sequence-index{display:grid;place-items:center;flex:0 0 1.8rem;height:1.8rem;border-radius:999px;background:#173e35;color:#fff}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem;align-items:flex-start}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.step-actions,.entry-actions,.stop-actions,.workflow-actions{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}.content-summary-list,.candidate-grid,.stop-content-list,.contextual-list,.target-grid,.route-leg-list{display:grid;gap:.7rem;margin-top:.8rem}.content-summary-card,.candidate-card,.stop-content,.contextual-list article,.target-card,.route-leg{display:grid;gap:.7rem;align-items:center;padding:.9rem;border:1px solid #d7dfdb;border-radius:.8rem;background:#fff}.content-summary-card{grid-template-columns:1fr auto}.candidate-card{grid-template-columns:minmax(0,1fr) minmax(9rem,.35fr) auto}.candidate-card small,.content-summary-card small,.stop-content small,.stop-card small{display:block;color:#60706a}.content-browser,.subsection{display:grid;gap:.8rem;margin-top:1.2rem;padding-top:1rem;border-top:1px solid #e0e6e3}.search-inline{display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:end}.occurrence-choice{display:grid;gap:.75rem;padding:1rem;border:1px solid #d99b3e;border-radius:.8rem;background:#fff8e8}.occurrence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.occurrence-card{display:grid;text-align:left;padding:.8rem;border:1px solid #d4ddd8;border-radius:.7rem;background:#fff}.stop-list{display:grid;gap:.9rem;padding:0;list-style:none}.stop-card{padding:1rem;border:1px solid #cbd7d1;border-radius:1rem;background:#fdfefd}.stop-card>header{display:grid;grid-template-columns:auto 1fr auto;gap:.7rem;align-items:center}.stop-content{grid-template-columns:minmax(0,1fr) minmax(9rem,.3fr) auto}.add-to-stop{margin-top:.75rem}.contextual-section{border-top:2px solid #d8e1dd}.contextual-list article{grid-template-columns:minmax(0,1fr) minmax(14rem,.6fr) auto}.advanced-panel{margin-top:1rem;padding:.85rem;border:1px dashed #91a39b;border-radius:.8rem}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.target-card{grid-template-columns:1fr auto}.route-blockers{display:grid;gap:.6rem;padding:0;list-style:none}.route-blockers li{display:flex;justify-content:space-between;gap:.75rem;align-items:center;padding:.7rem;border-top:1px solid #e1e5e3}.route-leg[data-status=blocked]{border-color:#d89a43;background:#fffaf0}.transfer-form{display:grid;grid-template-columns:8rem minmax(12rem,1fr) auto;gap:.6rem;align-items:end}.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}.review-grid article{display:grid;gap:.18rem;padding:.8rem;border:1px solid #d9e0dc;border-radius:.7rem;background:#fff}.readiness,.issue-panel,.workflow-panel,.context-box,.blocker-panel{margin-top:1rem;padding:1rem;border:1px solid #d4ddd8;border-radius:.8rem;background:#f8faf8}.workflow-panel{display:grid;grid-template-columns:minmax(12rem,.75fr) minmax(0,1.25fr);gap:1rem}.readiness.success{background:#eef8f2}.note{color:#60706a}.chip{display:inline-flex;width:max-content;padding:.2rem .5rem;border-radius:999px;background:#edf3f0;color:#38554d;font-size:.75rem}.danger{color:#9b2c2c}.pagination{display:flex;justify-content:space-between;align-items:center}@media(max-width:60rem){.candidate-card,.stop-content,.contextual-list article,.workflow-panel,.transfer-form{grid-template-columns:1fr}.target-grid,.occurrence-grid{grid-template-columns:1fr}.stop-card>header{grid-template-columns:auto 1fr}.stop-actions{grid-column:1/-1}}@media(max-width:42rem){.review-grid,.search-inline{grid-template-columns:1fr}}</style>`;
+    return `<style>
+      :host{display:block}.visit-authoring-page{display:grid;gap:1rem;max-width:var(--content);margin:auto;padding:2rem 1rem 5rem}
+      .authoring-progress{overflow:auto}.authoring-progress ol{display:grid;grid-template-columns:repeat(6,minmax(7rem,1fr));gap:.55rem;min-width:42rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid var(--line);border-radius:.7rem;background:var(--surface);color:var(--ink-800);box-shadow:var(--shadow-sm)}.authoring-progress button:hover:not(:disabled){border-color:var(--sage-400);background:var(--sage-50);color:var(--ink-950)}.authoring-progress li[data-current=true] button,.authoring-progress li[data-current=true] button:hover:not(:disabled){border-color:var(--ink-900);background:var(--ink-900);color:#fff}.authoring-progress li[data-complete=true]:not([data-current=true]) button{border-color:var(--sage-300);background:var(--sage-100);color:var(--ink-900)}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:var(--sage-100);color:var(--ink-800)}.authoring-progress li[data-current=true] button>span{background:var(--surface);color:var(--ink-900)}.authoring-progress li[data-complete=true]:not([data-current=true]) button>span{background:var(--ink-900);color:#fff}.authoring-progress button:disabled{color:var(--sage-600);opacity:.72}
+      .step-number,.sequence-index{display:grid;place-items:center;flex:0 0 1.8rem;height:1.8rem;border-radius:999px;background:var(--ink-900);color:#fff}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem;align-items:flex-start}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.step-actions,.entry-actions,.stop-actions,.workflow-actions{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
+      .visit-content-composer{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(19rem,.75fr);gap:1rem;align-items:start;margin-top:1.25rem}.available-content-pane,.visit-selection-pane,.stops-pane,.contextual-pane{min-width:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50)}.available-content-pane,.stops-pane{padding:1rem}.visit-selection-pane,.contextual-pane{position:sticky;top:calc(var(--header-height) + 1rem);padding:1rem}.visit-selection-pane>header,.stops-pane>header,.contextual-pane>header{padding-bottom:.75rem;border-bottom:1px solid var(--line)}.visit-selection-pane h3,.stops-pane h3,.contextual-pane h3{margin:.15rem 0}.visit-selection-pane p{margin:.2rem 0;color:var(--sage-600)}
+      .content-browser{display:grid;gap:.9rem}.search-inline{display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:end}.content-filter-bar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem;padding:.85rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.content-access-filter{display:flex;grid-column:1/-1;gap:.4rem;flex-wrap:wrap}.content-access-filter button{min-height:2.25rem;padding:.42rem .7rem}.optional-label{color:var(--sage-600);font-size:.72rem;font-weight:500}.candidate-heading{display:flex;align-items:end;justify-content:space-between;gap:1rem}.candidate-heading>div{display:grid}.candidate-heading strong{font-size:1.25rem}.candidate-heading small{text-align:right}
+      .content-summary-list,.candidate-grid,.stop-content-list,.contextual-list,.target-grid,.route-leg-list{display:grid;gap:.7rem;margin-top:.8rem}.content-summary-card,.candidate-card,.stop-content,.contextual-list article,.target-card,.route-leg{display:grid;gap:.7rem;align-items:center;padding:.9rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.content-summary-card{grid-template-columns:auto minmax(0,1fr)}.content-summary-card label,.content-summary-card button{grid-column:2}.source-note{display:block;margin-top:.25rem;color:var(--ink-800);font-size:.72rem}.candidate-card{grid-template-columns:minmax(0,1fr) minmax(9rem,.35fr) auto}.candidate-copy h3{margin:.15rem 0}.candidate-copy p{margin:.15rem 0}.candidate-card small,.content-summary-card small,.stop-content small,.stop-card small{display:block;color:var(--sage-600)}.availability-list{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}.availability-reason{display:inline-flex;border-radius:999px;padding:.22rem .5rem;background:var(--sage-100);color:var(--ink-800);font-size:.7rem;font-weight:700}
+      .context-box{margin:0;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.context-box p{margin:.3rem 0}.occurrence-choice{display:grid;gap:.75rem;padding:1rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.occurrence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.occurrence-card{display:grid;text-align:left;padding:.8rem;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--ink-800)}
+      .visit-stops-composer{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(19rem,.7fr);gap:1rem;align-items:start;margin-top:1.25rem}.stop-list{display:grid;gap:.9rem;padding:0;list-style:none}.stop-card{padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.stop-card>header{display:grid;grid-template-columns:auto 1fr auto;gap:.7rem;align-items:center}.stop-content{grid-template-columns:minmax(0,1fr) minmax(9rem,.3fr) auto}.add-to-stop{margin-top:.75rem}.contextual-list article{grid-template-columns:1fr}.advanced-panel{margin-top:1rem;padding:.85rem;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--surface)}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.target-card{grid-template-columns:1fr auto}
+      .route-blockers{display:grid;gap:.6rem;padding:0;list-style:none}.route-blockers li{display:flex;justify-content:space-between;gap:.75rem;align-items:center;padding:.7rem;border-top:1px solid var(--line)}.route-leg[data-status=blocked]{border-color:var(--amber-500);background:var(--amber-100)}.transfer-form{display:grid;grid-template-columns:8rem minmax(12rem,1fr) auto;gap:.6rem;align-items:end}.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}.review-grid article{display:grid;gap:.18rem;padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness,.issue-panel,.workflow-panel,.blocker-panel{margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.workflow-panel{display:grid;grid-template-columns:minmax(12rem,.75fr) minmax(0,1.25fr);gap:1rem}.readiness.success{background:#f4ebe9}.note{color:var(--sage-600)}.chip{display:inline-flex;width:max-content;padding:.2rem .5rem;border-radius:999px;background:var(--sage-100);color:var(--ink-800);font-size:.75rem}.danger{color:var(--red-700)}.pagination{display:flex;justify-content:space-between;align-items:center}
+      @media(max-width:68rem){.visit-content-composer,.visit-stops-composer{grid-template-columns:1fr}.visit-selection-pane,.contextual-pane{position:static}.candidate-card,.stop-content,.workflow-panel,.transfer-form{grid-template-columns:1fr}.candidate-card>button,.candidate-card>label{width:100%}.target-grid,.occurrence-grid{grid-template-columns:1fr}.stop-card>header{grid-template-columns:auto 1fr}.stop-actions{grid-column:1/-1}}
+      @media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(6,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}}
+      @media(max-width:42rem){.review-grid,.search-inline,.content-filter-bar{grid-template-columns:1fr}.content-access-filter{grid-column:auto}.candidate-heading{align-items:start;flex-direction:column}.candidate-heading small{text-align:left}}
+      @media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}}
+    </style>`;
   }
 }
 

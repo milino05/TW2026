@@ -10,21 +10,25 @@ const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 const { getVisitV2, updateVisitV2 } = require("./visitV2.service");
+const { assertCanUseItemRevisionInVisit } = require("./visitEditorialUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function newId() { return new mongoose.Types.ObjectId(); }
 function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object || {}, key); }
 
-function editorialSources(revision) {
-  return (revision.editorialSources || []).map((source) => ({
+function contentSources(revision) {
+  return (revision.contentSources || []).map((source) => ({
     _id: source._id,
-    editorialReleaseId: source.editorialReleaseId,
+    sourceType: source.sourceType,
+    editorialReleaseId: source.editorialReleaseId || null,
+    itemRevisionId: source.itemRevisionId || null,
   }));
 }
 function contentEntries(revision) {
   return (revision.contentEntries || []).map((entry) => ({
     _id: entry._id,
-    editorialSourceId: entry.editorialSourceId,
+    contentSourceId: entry.contentSourceId || null,
+    editorialSourceId: entry.editorialSourceId || null,
     itemId: entry.itemId,
     itemEditionId: entry.itemEditionId,
     itemRevisionId: entry.itemRevisionId,
@@ -78,6 +82,27 @@ async function resolveReleasedContent({ editorialReleaseId, itemEditionId, itemR
   const item = await ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
   if (!item) throw new AppError("Item non disponibile", 409, [{ field: "itemEditionId", code: "ITEM_NOT_ACTIVE" }]);
   return { release, binding, edition, item };
+}
+
+async function resolveSelectedContent({ revision, payload, actorUserId, principalType, principalId }) {
+  const requested = payload.contentSource || {};
+  const sourceType = requested.sourceType || (payload.editorialReleaseId ? "editorial_release" : "item_revision");
+  if (sourceType === "editorial_release") {
+    const editorialReleaseId = requested.editorialReleaseId || payload.editorialReleaseId;
+    const selection = await resolveReleasedContent({ editorialReleaseId, itemEditionId: payload.itemEditionId, itemRevisionId: payload.itemRevisionId });
+    return { ...selection, source: { sourceType, editorialReleaseId, itemRevisionId: null } };
+  }
+  if (sourceType === "item_revision") {
+    const itemRevisionId = requested.itemRevisionId || payload.itemRevisionId;
+    const selection = await assertCanUseItemRevisionInVisit({ itemRevisionId, itemEditionId: payload.itemEditionId, actorUserId, principalType, principalId });
+    return {
+      revision: selection.revision,
+      edition: selection.edition,
+      item: selection.item,
+      source: { sourceType, editorialReleaseId: null, itemRevisionId: selection.revision._id },
+    };
+  }
+  throw new AppError("Fonte del contenuto non valida", 400, [{ field: "contentSource.sourceType", code: "INVALID_ENUM" }]);
 }
 
 async function publishedOccurrenceCandidates(subjectId) {
@@ -152,11 +177,15 @@ async function assertPublishedTargetUsable(venueTargetId) {
   return candidate;
 }
 
-function ensureEditorialSource(revision, editorialReleaseId) {
-  const sources = editorialSources(revision);
-  const existing = sources.find((source) => id(source.editorialReleaseId) === id(editorialReleaseId));
+function ensureContentSource(revision, requested) {
+  const sources = contentSources(revision);
+  const existing = sources.find((source) => source.sourceType === requested.sourceType && (
+    requested.sourceType === "editorial_release"
+      ? id(source.editorialReleaseId) === id(requested.editorialReleaseId)
+      : id(source.itemRevisionId) === id(requested.itemRevisionId)
+  ));
   if (existing) return { sources, sourceId: existing._id, added: false };
-  const source = { _id: newId(), editorialReleaseId };
+  const source = { _id: newId(), ...requested };
   sources.push(source);
   return { sources, sourceId: source._id, added: true };
 }
@@ -170,9 +199,15 @@ function ensureAnchorForTarget(anchors, venueTargetId) {
 }
 
 async function addContentEntry({ visitId, actorUserId, payload = {}, explicitAnchorId = null }) {
-  const { revision } = await loadEditableVisit({ visitId, actorUserId });
-  const selection = await resolveReleasedContent(payload);
-  const source = ensureEditorialSource(revision, payload.editorialReleaseId);
+  const { visit, revision } = await loadEditableVisit({ visitId, actorUserId });
+  const selection = await resolveSelectedContent({
+    revision,
+    payload,
+    actorUserId,
+    principalType: visit.ownerType,
+    principalId: visit.ownerId,
+  });
+  const source = ensureContentSource(revision, selection.source);
   const entries = contentEntries(revision);
   const anchors = visitAnchors(revision);
   let deliveryAnchorId = explicitAnchorId || null;
@@ -215,10 +250,11 @@ async function addContentEntry({ visitId, actorUserId, payload = {}, explicitAnc
 
   const entry = {
     _id: newId(),
-    editorialSourceId: source.sourceId,
+    contentSourceId: source.sourceId,
+    editorialSourceId: null,
     itemId: selection.item._id,
     itemEditionId: selection.edition._id,
-    itemRevisionId: selection.binding.itemRevisionId,
+    itemRevisionId: selection.binding?.itemRevisionId || selection.revision._id,
     deliveryAnchorId,
     role: payload.role || "recommended",
   };
@@ -226,7 +262,7 @@ async function addContentEntry({ visitId, actorUserId, payload = {}, explicitAnc
   const updatePayload = {
     contentEntries: entries,
     visitAnchors: anchors,
-    ...(source.added ? { editorialSources: source.sources } : {}),
+    ...(source.added ? { contentSources: source.sources } : {}),
   };
   const result = await updateVisitV2({ visitId, payload: updatePayload, actorUserId });
   return {

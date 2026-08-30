@@ -63,7 +63,10 @@ function enrichRouteReview(routeReview, stops) {
 
 async function hydrateVisitRevision(revision) {
   if (!revision) return null;
-  const sourceReleaseIds = (revision.editorialSources || []).map((entry) => entry.editorialReleaseId);
+  const sourceReleaseIds = [
+    ...(revision.editorialSources || []).map((entry) => entry.editorialReleaseId),
+    ...(revision.contentSources || []).filter((entry) => entry.sourceType === "editorial_release").map((entry) => entry.editorialReleaseId),
+  ];
   const releases = sourceReleaseIds.length
     ? await EditorialRelease.find({ _id: { $in: sourceReleaseIds } }).select("editorialContextId version").lean()
     : [];
@@ -97,6 +100,40 @@ async function hydrateVisitRevision(revision) {
   const targetIdentityById = await venueTargetIdentityMap(targets);
   const venueById = new Map(venues.map((entry) => [id(entry), entry]));
   const anchorById = new Map((revision.visitAnchors || []).map((entry) => [id(entry._id), entry]));
+  const projectedContentSources = [
+    ...(revision.contentSources || []).map((source) => {
+      if (source.sourceType === "item_revision") return {
+        id: source._id,
+        sourceType: "item_revision",
+        itemRevisionId: source.itemRevisionId,
+        name: "Contenuto disponibile direttamente",
+      };
+      const release = releaseById.get(id(source.editorialReleaseId));
+      const context = release ? contextById.get(id(release.editorialContextId)) : null;
+      return {
+        id: source._id,
+        sourceType: "editorial_release",
+        editorialReleaseId: source.editorialReleaseId,
+        editorialContextId: release?.editorialContextId || null,
+        name: context?.displayName || "Raccolta editoriale",
+        version: release?.version || null,
+      };
+    }),
+    ...(revision.editorialSources || []).map((source) => {
+      const release = releaseById.get(id(source.editorialReleaseId));
+      const context = release ? contextById.get(id(release.editorialContextId)) : null;
+      return {
+        id: source._id,
+        sourceType: "editorial_release",
+        editorialReleaseId: source.editorialReleaseId,
+        editorialContextId: release?.editorialContextId || null,
+        name: context?.displayName || "Raccolta editoriale",
+        version: release?.version || null,
+        legacy: true,
+      };
+    }),
+  ];
+  const contentSourceById = new Map(projectedContentSources.map((entry) => [id(entry.id), entry]));
 
   const projectedAnchors = (revision.visitAnchors || []).map((anchor, index) => {
     const target = targetById.get(id(anchor.venueTargetId));
@@ -119,7 +156,9 @@ async function hydrateVisitRevision(revision) {
     return {
       id: entry._id,
       order: index,
+      contentSourceId: entry.contentSourceId || entry.editorialSourceId,
       editorialSourceId: entry.editorialSourceId,
+      source: contentSourceById.get(id(entry.contentSourceId || entry.editorialSourceId)) || null,
       itemId: entry.itemId,
       itemEditionId: entry.itemEditionId,
       itemRevisionId: entry.itemRevisionId,
@@ -164,6 +203,7 @@ async function hydrateVisitRevision(revision) {
     },
     title: revision.title,
     description: revision.description || "",
+    contentSources: projectedContentSources,
     editorialSources: (revision.editorialSources || []).map((source) => {
       const release = releaseById.get(id(source.editorialReleaseId));
       const context = release ? contextById.get(id(release.editorialContextId)) : null;
@@ -285,6 +325,199 @@ function presentationProfiles(revision) {
   return profiles;
 }
 
+function candidateReason({ sourceKey, sourceType, itemRevisionId, editorialReleaseId = null, accessKind, label, sourceName = null, priority }) {
+  return {
+    sourceKey,
+    sourceType,
+    itemRevisionId,
+    editorialReleaseId,
+    accessKind,
+    label,
+    sourceName,
+    priority,
+  };
+}
+
+function directRevisionRef(asset) {
+  const ref = asset.publishedSnapshotRef || asset.snapshotRef;
+  return ref?.resourceType === "item_revision" ? ref.resourceId : null;
+}
+
+async function searchVisitAuthoringCandidates({
+  actorUserId,
+  visitId,
+  queryText = "",
+  access = "all",
+  source = "all",
+  venueId = null,
+  page = 1,
+  limit = 30,
+}) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 30));
+  const safeAccess = ["all", "owned", "acquired"].includes(access) ? access : "all";
+  const { workspace } = await resolveAuthoringPrincipal({ actorUserId, visitId });
+  const reasonsByEdition = new Map();
+  const sourceFilters = new Map();
+
+  function addReason(itemEditionId, reason) {
+    const key = id(itemEditionId);
+    if (!key || !reason.itemRevisionId) return;
+    if (!reasonsByEdition.has(key)) reasonsByEdition.set(key, []);
+    const reasons = reasonsByEdition.get(key);
+    if (!reasons.some((entry) => entry.sourceKey === reason.sourceKey && id(entry.itemRevisionId) === id(reason.itemRevisionId))) reasons.push(reason);
+  }
+
+  for (const asset of workspace.ownedAssets || []) {
+    if (asset.resourceType !== "item_edition") continue;
+    const itemRevisionId = directRevisionRef(asset);
+    if (!itemRevisionId) continue;
+    sourceFilters.set("owned", { key: "owned", label: "Creati da questa area", kind: "direct" });
+    addReason(asset.resourceId, candidateReason({
+      sourceKey: "owned",
+      sourceType: "item_revision",
+      itemRevisionId,
+      accessKind: "owned",
+      label: workspace.principal.type === "organization" ? "Creato dall’organizzazione" : "Creato da te",
+      priority: 0,
+    }));
+  }
+
+  for (const asset of workspace.licensedAssets || []) {
+    if (!["item_edition", "item_revision"].includes(asset.resourceType) || !(asset.capabilities || []).includes("content.use_in_visit")) continue;
+    const itemRevisionId = directRevisionRef(asset);
+    const itemEditionId = asset.sourceRef?.resourceType === "item_edition" ? asset.sourceRef.resourceId : (asset.resourceType === "item_edition" ? asset.resourceId : null);
+    if (!itemRevisionId || !itemEditionId) continue;
+    sourceFilters.set("acquired", { key: "acquired", label: "Acquistati singolarmente", kind: "direct" });
+    addReason(itemEditionId, candidateReason({
+      sourceKey: "acquired",
+      sourceType: "item_revision",
+      itemRevisionId,
+      accessKind: "acquired",
+      label: "Acquistato singolarmente",
+      priority: 1,
+    }));
+  }
+
+  const collections = sourceOptionsFromWorkspace(workspace);
+  const releases = collections.length
+    ? await EditorialRelease.find({ _id: { $in: collections.map((entry) => entry.editorialReleaseId) } }).select("itemBindings").lean()
+    : [];
+  const releaseById = new Map(releases.map((entry) => [id(entry._id), entry]));
+  for (const collection of collections) {
+    const release = releaseById.get(id(collection.editorialReleaseId));
+    if (!release) continue;
+    const sourceKey = `editorial_release:${id(release._id)}`;
+    sourceFilters.set(sourceKey, { key: sourceKey, label: collection.name, kind: "editorial_release", ownership: collection.ownership });
+    for (const binding of release.itemBindings || []) {
+      addReason(binding.itemEditionId, candidateReason({
+        sourceKey,
+        sourceType: "editorial_release",
+        itemRevisionId: binding.itemRevisionId,
+        editorialReleaseId: release._id,
+        accessKind: collection.ownership === "licensed" ? "acquired" : "owned",
+        label: `Raccolta “${collection.name}”`,
+        sourceName: collection.name,
+        priority: collection.ownership === "licensed" ? 3 : 2,
+      }));
+    }
+  }
+
+  const selectedByEdition = new Map();
+  for (const [editionId, reasons] of reasonsByEdition) {
+    const matching = reasons.filter((reason) => (
+      (safeAccess === "all" || reason.accessKind === safeAccess)
+      && (source === "all" || reason.sourceKey === source)
+    ));
+    if (!matching.length) continue;
+    matching.sort((left, right) => left.priority - right.priority || String(left.sourceKey).localeCompare(String(right.sourceKey), "it"));
+    selectedByEdition.set(editionId, { selected: matching[0], reasons: matching });
+  }
+
+  let allowedEditionIds = [...selectedByEdition.keys()];
+  let preloadedEditionById = null;
+  let preloadedItemById = null;
+  if (venueId && allowedEditionIds.length) {
+    const editions = await ItemEdition.find({ _id: { $in: allowedEditionIds } }).select("itemId").lean();
+    preloadedEditionById = new Map(editions.map((entry) => [id(entry._id), entry]));
+    const items = await ItemV2.find({ _id: { $in: editions.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
+    preloadedItemById = new Map(items.map((entry) => [id(entry._id), entry]));
+    const subjectIds = items.map((entry) => entry.primarySubjectId).filter(Boolean);
+    const targets = subjectIds.length ? await VenueTarget.find({ venueId, subjectId: { $in: subjectIds }, lifecycleStatus: "active" }).select("subjectId").lean() : [];
+    const allowedSubjects = new Set(targets.map((entry) => id(entry.subjectId)));
+    allowedEditionIds = allowedEditionIds.filter((editionId) => {
+      const edition = preloadedEditionById.get(editionId);
+      const item = edition ? preloadedItemById.get(id(edition.itemId)) : null;
+      return item && allowedSubjects.has(id(item.primarySubjectId));
+    });
+  }
+
+  const revisionIds = allowedEditionIds.map((editionId) => selectedByEdition.get(editionId)?.selected.itemRevisionId).filter(Boolean);
+  const query = { _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } };
+  const trimmed = String(queryText || "").trim();
+  if (trimmed) query.$or = [
+    { label: { $regex: escapeRegex(trimmed), $options: "i" } },
+    { authorCredits: { $regex: escapeRegex(trimmed), $options: "i" } },
+  ];
+  const [total, revisions] = await Promise.all([
+    ItemRevisionV2.countDocuments(query),
+    ItemRevisionV2.find(query)
+      .select("label authorCredits metadata.license itemEditionId presentationVariants")
+      .sort({ label: 1, _id: 1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .lean(),
+  ]);
+  const editionIds = revisions.map((entry) => entry.itemEditionId);
+  const editions = preloadedEditionById
+    ? editionIds.map((editionId) => preloadedEditionById.get(id(editionId))).filter(Boolean)
+    : await ItemEdition.find({ _id: { $in: editionIds } }).select("itemId namespaceId").lean();
+  const editionById = new Map(editions.map((entry) => [id(entry._id), entry]));
+  const itemIds = editions.map((entry) => entry.itemId);
+  const items = preloadedItemById
+    ? itemIds.map((itemId) => preloadedItemById.get(id(itemId))).filter(Boolean)
+    : await ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
+  const itemById = new Map(items.map((entry) => [id(entry._id), entry]));
+
+  return {
+    page: safePage,
+    limit: safeLimit,
+    total,
+    filters: {
+      access: safeAccess,
+      source,
+      venueId: venueId || null,
+      sources: [...sourceFilters.values()].sort((left, right) => left.label.localeCompare(right.label, "it")),
+    },
+    results: revisions.map((revision) => {
+      const edition = editionById.get(id(revision.itemEditionId));
+      const item = edition ? itemById.get(id(edition.itemId)) : null;
+      const choice = selectedByEdition.get(id(revision.itemEditionId));
+      if (!edition || !item || !choice) return null;
+      const selected = choice.selected;
+      return {
+        itemId: edition.itemId,
+        itemEditionId: revision.itemEditionId,
+        itemRevisionId: revision._id,
+        primarySubjectId: item.primarySubjectId || null,
+        label: revision.label,
+        authorCredits: revision.authorCredits || [],
+        license: revision.metadata?.license || null,
+        presentationProfiles: presentationProfiles(revision),
+        contentSource: selected.sourceType === "editorial_release"
+          ? { sourceType: "editorial_release", editorialReleaseId: selected.editorialReleaseId }
+          : { sourceType: "item_revision", itemRevisionId: revision._id },
+        availability: choice.reasons.map((reason) => ({
+          sourceKey: reason.sourceKey,
+          accessKind: reason.accessKind,
+          label: reason.label,
+          sourceName: reason.sourceName,
+        })),
+      };
+    }).filter(Boolean),
+  };
+}
+
 async function searchVisitAuthoringContent({
   actorUserId,
   editorialReleaseId,
@@ -367,4 +600,5 @@ module.exports = {
   hydrateVisitRevision,
   getVisitAuthoringProjection,
   searchVisitAuthoringContent,
+  searchVisitAuthoringCandidates,
 };

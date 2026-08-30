@@ -6,12 +6,27 @@ const EditorialSourceSchema = new Schema({
   editorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", required: true },
 }, { _id: true });
 
+const ContentSourceSchema = new Schema({
+  sourceType: { type: String, enum: ["editorial_release", "item_revision"], required: true },
+  editorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null },
+  itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", default: null },
+}, { _id: true });
+
+ContentSourceSchema.pre("validate", function validateContentSource(next) {
+  if (this.sourceType === "editorial_release" && !this.editorialReleaseId) this.invalidate("editorialReleaseId", "La fonte editoriale richiede una EditorialRelease");
+  if (this.sourceType === "item_revision" && !this.itemRevisionId) this.invalidate("itemRevisionId", "La fonte diretta richiede una ItemRevision");
+  if (this.sourceType === "editorial_release") this.itemRevisionId = null;
+  if (this.sourceType === "item_revision") this.editorialReleaseId = null;
+  next();
+});
+
 const VisitAnchorSchema = new Schema({
   venueTargetId: { type: Schema.Types.ObjectId, ref: "VenueTarget", required: true },
 }, { _id: true });
 
 const ContentEntrySchema = new Schema({
-  editorialSourceId: { type: Schema.Types.ObjectId, required: true },
+  contentSourceId: { type: Schema.Types.ObjectId, default: null },
+  editorialSourceId: { type: Schema.Types.ObjectId, default: null },
   itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
   itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
@@ -56,6 +71,7 @@ const VisitRevisionV2Schema = new Schema({
   basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null },
   title: { type: String, required: true, trim: true },
   description: { type: String, trim: true, default: null },
+  contentSources: { type: [ContentSourceSchema], default: [] },
   editorialSources: { type: [EditorialSourceSchema], default: [] },
   contentEntries: { type: [ContentEntrySchema], default: [] },
   visitAnchors: { type: [VisitAnchorSchema], default: [] },
@@ -83,6 +99,8 @@ const VisitRevisionV2Schema = new Schema({
 VisitRevisionV2Schema.index({ visitId: 1, version: 1 }, { unique: true });
 VisitRevisionV2Schema.index({ visitId: 1, status: 1, updatedAt: -1 });
 VisitRevisionV2Schema.index({ "editorialSources.editorialReleaseId": 1 });
+VisitRevisionV2Schema.index({ "contentSources.editorialReleaseId": 1 });
+VisitRevisionV2Schema.index({ "contentSources.itemRevisionId": 1 });
 VisitRevisionV2Schema.index({ "contentEntries.itemEditionId": 1, "contentEntries.itemRevisionId": 1 });
 VisitRevisionV2Schema.index({ "visitAnchors.venueTargetId": 1 });
 VisitRevisionV2Schema.index({ title: "text", description: "text" });

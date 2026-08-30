@@ -9,10 +9,10 @@ const { markRevisionEdited } = require("./revisionWorkflow.service");
 const { normalizeVisitV2Payload, validateVisitV2Payload } = require("./validation/visitV2.validation");
 const { cloneDetachedVisitRevision } = require("./visitV2Copy.service");
 const { assertCapabilitySource } = require("./capabilityAuthorization.service");
-const { authorizeVisitEditorialSources } = require("./visitEditorialUsageAuthorization.service");
+const { authorizeVisitEditorialSources, authorizeVisitContentSources } = require("./visitEditorialUsageAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 
-const REVISION_FIELDS = ["title", "description", "editorialSources", "contentEntries", "visitAnchors", "presentationBaseline", "logistics"];
+const REVISION_FIELDS = ["title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "presentationBaseline", "logistics"];
 function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
 function plain(value) { return value?.toObject ? value.toObject() : value || {}; }
 function sameId(a, b) { return String(a || "") === String(b || ""); }
@@ -53,6 +53,13 @@ function editorialReleaseIds(editorialSources = []) {
   return new Set((editorialSources || []).map((source) => String(source?.editorialReleaseId || "")).filter(Boolean));
 }
 
+function contentSourceKeys(contentSources = []) {
+  return new Set((contentSources || []).map((source) => {
+    const resourceId = source?.sourceType === "editorial_release" ? source?.editorialReleaseId : source?.itemRevisionId;
+    return resourceId ? `${source.sourceType}:${String(resourceId)}` : "";
+  }).filter(Boolean));
+}
+
 async function recordVisitSourceAdoptions({ authorizations, actorUserId, visitId, onlyReleaseIds = null }) {
   const adoptionIds = [];
   for (const authorization of authorizations || []) {
@@ -64,6 +71,36 @@ async function recordVisitSourceAdoptions({ authorizations, actorUserId, visitId
       action: "context_reference",
       sourceResourceRef: { resourceType: "editorial_context", resourceId: authorization.context._id },
       sourceSnapshotRef: { resourceType: "editorial_release", resourceId: authorization.release._id },
+      resultResourceRef: { resourceType: "visit", resourceId: visitId },
+    });
+    if (adoption) adoptionIds.push(adoption._id);
+  }
+  return adoptionIds;
+}
+
+async function recordVisitContentSourceAdoptions({ authorizations, actorUserId, visitId, onlySourceKeys = null }) {
+  const adoptionIds = [];
+  for (const authorization of authorizations || []) {
+    const sourceId = authorization.sourceType === "editorial_release" ? authorization.release?._id : authorization.revision?._id;
+    const sourceKey = `${authorization.sourceType}:${String(sourceId || "")}`;
+    if (onlySourceKeys && !onlySourceKeys.has(sourceKey)) continue;
+    if (authorization.sourceType === "editorial_release") {
+      const adoption = await recordAdoptionFromAccess({
+        access: authorization.access,
+        actorUserId,
+        action: "context_reference",
+        sourceResourceRef: { resourceType: "editorial_context", resourceId: authorization.context._id },
+        sourceSnapshotRef: { resourceType: "editorial_release", resourceId: authorization.release._id },
+        resultResourceRef: { resourceType: "visit", resourceId: visitId },
+      });
+      if (adoption) adoptionIds.push(adoption._id);
+      continue;
+    }
+    const adoption = await recordAdoptionFromAccess({
+      access: authorization.access,
+      actorUserId,
+      action: "content_visit",
+      sourceSnapshotRef: { resourceType: "item_revision", resourceId: authorization.revision._id },
       resultResourceRef: { resourceType: "visit", resourceId: visitId },
     });
     if (adoption) adoptionIds.push(adoption._id);
@@ -125,6 +162,12 @@ async function createVisitV2({ payload, actorUserId }) {
     principalType: normalized.ownerType,
     principalId: normalized.ownerId,
   });
+  const contentSourceAuthorizations = await authorizeVisitContentSources({
+    contentSources: normalized.contentSources || [],
+    actorUserId,
+    principalType: normalized.ownerType,
+    principalId: normalized.ownerId,
+  });
   const visit = await VisitV2.create({ ownerType: normalized.ownerType, ownerId: normalized.ownerId, createdBy: actorUserId });
   let revision;
   let adoptionIds = [];
@@ -134,6 +177,7 @@ async function createVisitV2({ payload, actorUserId }) {
       version: 1,
       title: normalized.title,
       description: normalized.description || null,
+      contentSources: normalized.contentSources || [],
       editorialSources: normalized.editorialSources || [],
       contentEntries: normalized.contentEntries || [],
       visitAnchors: normalized.visitAnchors || [],
@@ -145,6 +189,7 @@ async function createVisitV2({ payload, actorUserId }) {
     visit.workingRevisionId = revision._id;
     await visit.save();
     adoptionIds = await recordVisitSourceAdoptions({ authorizations: sourceAuthorizations, actorUserId, visitId: visit._id });
+    adoptionIds.push(...await recordVisitContentSourceAdoptions({ authorizations: contentSourceAuthorizations, actorUserId, visitId: visit._id }));
     return { visit, revision };
   } catch (error) {
     await deleteAdoptions(adoptionIds).catch(() => {});
@@ -162,6 +207,7 @@ async function updateVisitV2({ visitId, payload, actorUserId }) {
   if (issues.length) throw new AppError("Payload Visit v2 non valido", 400, issues);
   const revision = await getWorkingVisitRevisionV2({ visit, actorUserId });
   const beforeSourceIds = editorialReleaseIds(revision.editorialSources || []);
+  const beforeContentSourceKeys = contentSourceKeys(revision.contentSources || []);
   const merged = mergedRevisionPayload(revision, payload || {}, normalized);
   const sourceAuthorizations = hasOwn(payload || {}, "editorialSources")
     ? await authorizeVisitEditorialSources({
@@ -172,6 +218,15 @@ async function updateVisitV2({ visitId, payload, actorUserId }) {
       })
     : [];
   const addedSourceIds = new Set([...editorialReleaseIds(merged.editorialSources || [])].filter((entry) => !beforeSourceIds.has(entry)));
+  const contentSourceAuthorizations = hasOwn(payload || {}, "contentSources")
+    ? await authorizeVisitContentSources({
+        contentSources: merged.contentSources || [],
+        actorUserId,
+        principalType: visit.ownerType,
+        principalId: visit.ownerId,
+      })
+    : [];
+  const addedContentSourceKeys = new Set([...contentSourceKeys(merged.contentSources || [])].filter((entry) => !beforeContentSourceKeys.has(entry)));
   try { markRevisionEdited(revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   Object.assign(revision, merged);
@@ -184,6 +239,12 @@ async function updateVisitV2({ visitId, payload, actorUserId }) {
       visitId: visit._id,
       onlyReleaseIds: addedSourceIds,
     });
+    adoptionIds.push(...await recordVisitContentSourceAdoptions({
+      authorizations: contentSourceAuthorizations,
+      actorUserId,
+      visitId: visit._id,
+      onlySourceKeys: addedContentSourceKeys,
+    }));
     await revision.save();
     return { visit, revision };
   } catch (error) {

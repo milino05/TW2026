@@ -20,6 +20,7 @@ const { assertSelfContainedOffer } = require("./marketplaceOfferIntegrity.servic
 
 const CAPABILITY_LABELS = Object.freeze({
   "content.consume": "Fruisci il contenuto",
+  "content.use_in_visit": "Usa il contenuto in una visita",
   "content.use_in_editorial_release": "Usa in una release editoriale",
   "content.fork": "Crea una derivazione del contenuto",
   "context.generate": "Genera visite da questo contesto",

@@ -9,6 +9,17 @@ function cloneDetachedVisitRevision(sourceRevision, { title = null } = {}) {
   const sourceMap = new Map();
   const anchorMap = new Map();
 
+  const contentSources = (source.contentSources || []).map((entry) => {
+    const nextId = oid();
+    sourceMap.set(id(entry._id), nextId);
+    return {
+      _id: nextId,
+      sourceType: entry.sourceType,
+      editorialReleaseId: entry.editorialReleaseId || null,
+      itemRevisionId: entry.itemRevisionId || null,
+    };
+  });
+
   const editorialSources = (source.editorialSources || []).map((entry) => {
     const nextId = oid();
     sourceMap.set(id(entry._id), nextId);
@@ -23,7 +34,8 @@ function cloneDetachedVisitRevision(sourceRevision, { title = null } = {}) {
 
   const contentEntries = (source.contentEntries || []).map((entry) => ({
     _id: oid(),
-    editorialSourceId: sourceMap.get(id(entry.editorialSourceId)),
+    contentSourceId: entry.contentSourceId ? sourceMap.get(id(entry.contentSourceId)) : null,
+    editorialSourceId: entry.editorialSourceId ? sourceMap.get(id(entry.editorialSourceId)) : null,
     itemId: entry.itemId,
     itemEditionId: entry.itemEditionId,
     itemRevisionId: entry.itemRevisionId,
@@ -44,6 +56,7 @@ function cloneDetachedVisitRevision(sourceRevision, { title = null } = {}) {
   return {
     title: title || source.title,
     description: source.description || null,
+    contentSources,
     editorialSources,
     contentEntries,
     visitAnchors,

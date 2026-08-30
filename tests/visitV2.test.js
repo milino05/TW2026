@@ -52,6 +52,25 @@ test("detached Visit copy remaps local structure and preserves immutable externa
   assert.equal(String(copy.contentEntries[0].deliveryAnchorId), String(copy.visitAnchors[0]._id));
 });
 
+test("detached Visit copy preserva e rimappa una fonte contenuto diretta", () => {
+  const contentSourceId = oid();
+  const itemRevisionId = oid();
+  const sourceRevision = {
+    title: "Visita diretta",
+    contentSources: [{ _id: contentSourceId, sourceType: "item_revision", itemRevisionId }],
+    editorialSources: [],
+    visitAnchors: [],
+    contentEntries: [{ _id: oid(), contentSourceId, itemId: oid(), itemEditionId: oid(), itemRevisionId, role: "recommended" }],
+    logistics: { preVisitNotes: [], routeHints: [] },
+  };
+  const copy = cloneDetachedVisitRevision(sourceRevision);
+  assert.equal(copy.contentSources.length, 1);
+  assert.equal(copy.contentSources[0].sourceType, "item_revision");
+  assert.equal(String(copy.contentSources[0].itemRevisionId), String(itemRevisionId));
+  assert.notEqual(String(copy.contentSources[0]._id), String(contentSourceId));
+  assert.equal(String(copy.contentEntries[0].contentSourceId), String(copy.contentSources[0]._id));
+});
+
 test("Visit v2 allows repeated VenueTarget occurrences through distinct anchors", () => {
   const targetId = oid();
   const raw = {

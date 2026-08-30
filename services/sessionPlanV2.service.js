@@ -15,29 +15,34 @@ function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boole
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
 
 function visitRevisionSourceSnapshotV2({ visit, revision }) {
-  const sourceById = new Map((revision.editorialSources || []).map((entry) => [id(entry._id), entry]));
-  const contentEntries = (revision.contentEntries || []).map((entry) => {
-    const source = sourceById.get(id(entry.editorialSourceId));
-    if (!source) throw new AppError("ContentEntry senza EditorialSource risolvibile", 409);
+  const revisionSnapshot = revision?.toObject ? revision.toObject() : revision;
+  const sources = [
+    ...(revisionSnapshot.contentSources || []),
+    ...(revisionSnapshot.editorialSources || []).map((entry) => ({ ...entry, sourceType: "editorial_release" })),
+  ];
+  const sourceById = new Map(sources.map((entry) => [id(entry._id), entry]));
+  const contentEntries = (revisionSnapshot.contentEntries || []).map((entry) => {
+    const source = sourceById.get(id(entry.contentSourceId || entry.editorialSourceId));
+    if (!source) throw new AppError("Contenuto della visita senza fonte risolvibile", 409);
     return {
       ...entry,
-      sourceEditorialReleaseIds: [source.editorialReleaseId],
+      sourceEditorialReleaseIds: source.sourceType === "editorial_release" ? [source.editorialReleaseId] : [],
       generatedBaseline: null,
     };
   });
-  const sourceLegHints = new Map((revision.logistics?.routeHints || []).map((entry) => [`${id(entry.fromAnchorId)}>${id(entry.toAnchorId)}`, entry]));
+  const sourceLegHints = new Map((revisionSnapshot.logistics?.routeHints || []).map((entry) => [`${id(entry.fromAnchorId)}>${id(entry.toAnchorId)}`, entry]));
   return {
     origin: { sourceType: "visit", visitRevisionId: revision._id, generatedVisitPlanId: null },
     visitId: visit._id,
     visitRevisionId: revision._id,
-    sourceEditorialReleaseIds: uniqueIds((revision.editorialSources || []).map((entry) => entry.editorialReleaseId)),
-    visitBaseline: revision.presentationBaseline || null,
+    sourceEditorialReleaseIds: uniqueIds(sources.filter((entry) => entry.sourceType === "editorial_release").map((entry) => entry.editorialReleaseId)),
+    visitBaseline: revisionSnapshot.presentationBaseline || null,
     navigationBaseline: null,
     contentEntries,
-    sourceAnchors: revision.visitAnchors || [],
+    sourceAnchors: revisionSnapshot.visitAnchors || [],
     sourceLegHints,
     reservedSeconds: 0,
-    explanation: { source: "visit_revision", preVisitNotes: revision.logistics?.preVisitNotes || [] },
+    explanation: { source: "visit_revision", preVisitNotes: revisionSnapshot.logistics?.preVisitNotes || [] },
   };
 }
 
@@ -92,15 +97,17 @@ async function materializeContentEntries({ source, userPreference = null, explic
   const revisionIds = uniqueIds(source.contentEntries.map((entry) => entry.itemRevisionId));
   const revisions = await ItemRevisionV2.find({ _id: { $in: revisionIds } }).lean();
   const revisionById = new Map(revisions.map((entry) => [id(entry._id), entry]));
-  const namespaceRevisionIds = uniqueIds(releases.map((entry) => entry.namespaceRevisionId));
+  const namespaceRevisionIds = uniqueIds([
+    ...releases.map((entry) => entry.namespaceRevisionId),
+    ...revisions.map((entry) => entry.authoredAgainstNamespaceRevisionId),
+  ]);
   const namespaceRevisions = await NamespaceRevision.find({ _id: { $in: namespaceRevisionIds } }).lean();
   const namespaceRevisionById = new Map(namespaceRevisions.map((entry) => [id(entry._id), entry]));
   return source.contentEntries.map((entry) => {
     const revision = revisionById.get(id(entry.itemRevisionId));
     if (!revision || id(revision.itemEditionId) !== id(entry.itemEditionId)) throw new AppError("ItemRevision della sorgente non risolvibile", 409);
     const release = (entry.sourceEditorialReleaseIds || []).map((releaseId) => releaseById.get(id(releaseId))).find(Boolean);
-    if (!release) throw new AppError("EditorialRelease della ContentEntry non risolvibile", 409);
-    const namespaceRevision = namespaceRevisionById.get(id(release.namespaceRevisionId));
+    const namespaceRevision = namespaceRevisionById.get(id(release?.namespaceRevisionId || revision.authoredAgainstNamespaceRevisionId));
     if (!namespaceRevision) throw new AppError("NamespaceRevision della ContentEntry non risolvibile", 409);
     const baselinePresentation = resolveInitialPresentation({
       revision,

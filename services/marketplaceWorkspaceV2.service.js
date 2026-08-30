@@ -26,6 +26,7 @@ function key(type, value) { return `${type}:${id(value)}`; }
 
 const EXTERNAL_OPERATION_BY_CAPABILITY = Object.freeze({
   "content.consume": { code: "content.consume", label: "Fruisci contenuto" },
+  "content.use_in_visit": { code: "content.use_in_visit", label: "Usa in una visita" },
   "content.use_in_editorial_release": { code: "content.link", label: "Usa in una release editoriale" },
   "content.fork": { code: "content.fork", label: "Crea derivazione" },
   "context.generate": { code: "context.generate", label: "Genera da questo contesto" },

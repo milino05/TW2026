@@ -1,6 +1,6 @@
 const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
 const { getEditorialReleaseComposer } = require("../services/editorialReleaseComposerV2.service");
-const { getVisitAuthoringProjection, searchVisitAuthoringContent } = require("../services/visitAuthoringV2.service");
+const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
 async function venueAuthoringTargets(req, res, next) {
   try {
@@ -50,10 +50,26 @@ async function visitAuthoringContent(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function visitAuthoringCandidates(req, res, next) {
+  try {
+    res.status(200).json(await searchVisitAuthoringCandidates({
+      actorUserId: req.user._id,
+      visitId: req.params.visitId,
+      queryText: req.query?.q || "",
+      access: req.query?.access || "all",
+      source: req.query?.source || "all",
+      venueId: req.query?.venueId || null,
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
 module.exports = {
   venueAuthoringTargets,
   editorialReleaseComposer,
   newVisitAuthoring,
   visitAuthoring,
   visitAuthoringContent,
+  visitAuthoringCandidates,
 };

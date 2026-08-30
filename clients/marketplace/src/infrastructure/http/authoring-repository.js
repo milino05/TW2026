@@ -95,6 +95,10 @@ export const authoringRepository = {
     const query = queryString({ principalType, principalId, q, page, limit });
     return apiClient.request(`/v2/marketplace/visit-authoring/releases/${encodeURIComponent(editorialReleaseId)}/content?${query}`);
   },
+  searchVisitContentCandidates(visitId, { q = "", access = "all", source = "all", venueId = null, page = 1, limit = 30 } = {}) {
+    const query = queryString({ q, access, source, venueId, page, limit });
+    return apiClient.request(`/v2/marketplace/visit-authoring/${encodeURIComponent(visitId)}/content-candidates?${query}`);
+  },
   createVisit(payload) {
     return apiClient.request("/v2/visits", { method: "POST", body: JSON.stringify(payload) });
   },

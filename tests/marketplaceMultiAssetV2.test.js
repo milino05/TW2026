@@ -183,7 +183,7 @@ test("paid ItemRevision acquisition preserves commercial snapshot and grants con
     assert.equal(commercial.listings[0].offers[0].acquisitionCount, 1);
     assert.deepEqual(
       commercial.listings[0].offerConfiguration.capabilityOptions.map((entry) => entry.code),
-      ["content.consume", "content.use_in_editorial_release", "content.fork"],
+      ["content.consume", "content.use_in_visit", "content.use_in_editorial_release", "content.fork"],
     );
 
     const legacyDuplicate = await MarketplaceListing.create({

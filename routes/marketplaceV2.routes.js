@@ -39,6 +39,7 @@ router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, cont
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/release-composer", editorialContextId, authoringController.editorialReleaseComposer);
 router.get("/v2/marketplace/visit-authoring/new", authoringController.newVisitAuthoring);
 router.get("/v2/marketplace/visit-authoring/releases/:editorialReleaseId/content", editorialReleaseId, authoringController.visitAuthoringContent);
+router.get("/v2/marketplace/visit-authoring/:visitId/content-candidates", visitId, authoringController.visitAuthoringCandidates);
 router.get("/v2/marketplace/visit-authoring/:visitId", visitId, authoringController.visitAuthoring);
 router.get("/v2/marketplace/venue-targets/:venueTargetId/authoring-context", venueTargetId, controller.venueTargetAuthoringContext);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);

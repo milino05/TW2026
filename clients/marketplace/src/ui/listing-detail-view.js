@@ -6,6 +6,7 @@ import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-
 
 const RIGHT_LABELS = Object.freeze({
   "content.consume": "Leggi e usa il contenuto",
+  "content.use_in_visit": "Inserisci il contenuto in una visita",
   "content.use_in_editorial_release": "Inserisci il contenuto in una raccolta editoriale",
   "content.fork": "Crea una derivazione del contenuto",
   "context.generate": "Genera visite usando questa raccolta",

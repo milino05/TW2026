@@ -11,6 +11,7 @@ const { capabilityLabel } = require("./marketplaceV2.service");
 
 const ADOPTION_ACTION_LABELS = Object.freeze({
   content_link: "Contenuto usato in una raccolta",
+  content_visit: "Contenuto usato in una visita",
   content_fork: "Contenuto riutilizzato come nuova derivazione",
   namespace_use: "Regole editoriali usate per creare contenuti",
   namespace_fork: "Regole editoriali riutilizzate come nuova derivazione",

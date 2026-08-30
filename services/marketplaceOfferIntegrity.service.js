@@ -35,6 +35,9 @@ async function snapshotDependencies(ref) {
     const revision = await VisitRevisionV2.findById(ref.resourceId).lean();
     if (!revision) throw new AppError("VisitRevision dipendente non disponibile", 409, [{ code: "MARKETPLACE_DEPENDENCY_NOT_FOUND", context: ref }]);
     return [
+      ...(revision.contentSources || []).flatMap((source) => source.sourceType === "editorial_release"
+        ? [{ resourceType: "editorial_release", resourceId: source.editorialReleaseId }]
+        : [{ resourceType: "item_revision", resourceId: source.itemRevisionId }]),
       ...(revision.editorialSources || []).map((source) => ({ resourceType: "editorial_release", resourceId: source.editorialReleaseId })),
       ...(revision.contentEntries || []).map((entry) => ({ resourceType: "item_revision", resourceId: entry.itemRevisionId })),
     ];

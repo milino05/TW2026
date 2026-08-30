@@ -4,7 +4,7 @@ const { pushError, hasOwn, trimIfString, isPlainObject } = require("./validation
 const OWNER_TYPES = ["user", "organization"];
 const CONTENT_ENTRY_ROLES = ["core", "recommended", "optional"];
 const ROUTE_HINT_TYPES = ["indoor", "inter_venue"];
-const TOP_LEVEL_FIELDS = new Set(["ownerType", "ownerId", "title", "description", "editorialSources", "contentEntries", "visitAnchors", "presentationBaseline", "logistics"]);
+const TOP_LEVEL_FIELDS = new Set(["ownerType", "ownerId", "title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "presentationBaseline", "logistics"]);
 
 function normalizeIdObject(value, fields) {
   if (!isPlainObject(value)) return value;
@@ -21,12 +21,19 @@ function normalizeVisitV2Payload(payload = {}) {
   if (hasOwn(payload, "editorialSources")) normalized.editorialSources = Array.isArray(payload.editorialSources)
     ? payload.editorialSources.map((entry) => normalizeIdObject(entry, ["editorialReleaseId"]))
     : payload.editorialSources;
+  if (hasOwn(payload, "contentSources")) normalized.contentSources = Array.isArray(payload.contentSources)
+    ? payload.contentSources.map((entry) => {
+      const result = normalizeIdObject(entry, ["sourceType", "editorialReleaseId", "itemRevisionId"]);
+      if (isPlainObject(result) && hasOwn(result, "sourceType")) result.sourceType = trimIfString(result.sourceType)?.toLowerCase();
+      return result;
+    })
+    : payload.contentSources;
   if (hasOwn(payload, "visitAnchors")) normalized.visitAnchors = Array.isArray(payload.visitAnchors)
     ? payload.visitAnchors.map((entry) => normalizeIdObject(entry, ["venueTargetId"]))
     : payload.visitAnchors;
   if (hasOwn(payload, "contentEntries")) normalized.contentEntries = Array.isArray(payload.contentEntries)
     ? payload.contentEntries.map((entry) => {
-      const result = normalizeIdObject(entry, ["editorialSourceId", "itemId", "itemEditionId", "itemRevisionId", "deliveryAnchorId", "role"]);
+      const result = normalizeIdObject(entry, ["contentSourceId", "editorialSourceId", "itemId", "itemEditionId", "itemRevisionId", "deliveryAnchorId", "role"]);
       if (isPlainObject(result) && hasOwn(result, "role")) result.role = trimIfString(result.role)?.toLowerCase();
       return result;
     })
@@ -92,6 +99,18 @@ function validateVisitV2Payload({ payload, rawPayload = payload, creating = fals
     });
   }
 
+  if (hasOwn(rawPayload, "contentSources")) {
+    if (!Array.isArray(payload.contentSources)) pushError(errors, "contentSources", "INVALID_TYPE", "contentSources deve essere un array");
+    else payload.contentSources.forEach((entry, index) => {
+      const field = `contentSources[${index}]`;
+      if (!isPlainObject(entry)) return pushError(errors, field, "INVALID_TYPE", "ContentSource deve essere un oggetto");
+      rejectUnknownFields(rawPayload.contentSources?.[index] || {}, errors, new Set(["_id", "sourceType", "editorialReleaseId", "itemRevisionId"]), field);
+      if (!["editorial_release", "item_revision"].includes(entry.sourceType)) pushError(errors, `${field}.sourceType`, "INVALID_ENUM", "sourceType non valido");
+      if (entry.sourceType === "editorial_release" && !validId(entry.editorialReleaseId)) pushError(errors, `${field}.editorialReleaseId`, "INVALID_OBJECT_ID", "editorialReleaseId non valido");
+      if (entry.sourceType === "item_revision" && !validId(entry.itemRevisionId)) pushError(errors, `${field}.itemRevisionId`, "INVALID_OBJECT_ID", "itemRevisionId non valido");
+    });
+  }
+
   if (hasOwn(rawPayload, "visitAnchors")) {
     if (!Array.isArray(payload.visitAnchors)) pushError(errors, "visitAnchors", "INVALID_TYPE", "visitAnchors deve essere un array");
     else payload.visitAnchors.forEach((anchor, index) => {
@@ -107,8 +126,9 @@ function validateVisitV2Payload({ payload, rawPayload = payload, creating = fals
     else payload.contentEntries.forEach((entry, index) => {
       const field = `contentEntries[${index}]`;
       if (!isPlainObject(entry)) return pushError(errors, field, "INVALID_TYPE", "ContentEntry deve essere un oggetto");
-      rejectUnknownFields(rawPayload.contentEntries?.[index] || {}, errors, new Set(["_id", "editorialSourceId", "itemId", "itemEditionId", "itemRevisionId", "deliveryAnchorId", "role"]), field);
-      for (const idField of ["editorialSourceId", "itemId", "itemEditionId", "itemRevisionId"]) if (!validId(entry[idField])) pushError(errors, `${field}.${idField}`, "INVALID_OBJECT_ID", `${idField} non valido`);
+      rejectUnknownFields(rawPayload.contentEntries?.[index] || {}, errors, new Set(["_id", "contentSourceId", "editorialSourceId", "itemId", "itemEditionId", "itemRevisionId", "deliveryAnchorId", "role"]), field);
+      if (!validId(entry.contentSourceId) && !validId(entry.editorialSourceId)) pushError(errors, `${field}.contentSourceId`, "INVALID_OBJECT_ID", "contentSourceId non valido");
+      for (const idField of ["itemId", "itemEditionId", "itemRevisionId"]) if (!validId(entry[idField])) pushError(errors, `${field}.${idField}`, "INVALID_OBJECT_ID", `${idField} non valido`);
       if (entry.deliveryAnchorId != null && !validId(entry.deliveryAnchorId)) pushError(errors, `${field}.deliveryAnchorId`, "INVALID_OBJECT_ID", "deliveryAnchorId non valido");
       if (!CONTENT_ENTRY_ROLES.includes(entry.role || "recommended")) pushError(errors, `${field}.role`, "INVALID_ENUM", "role non valido", { allowedValues: CONTENT_ENTRY_ROLES });
     });

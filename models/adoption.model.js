@@ -4,6 +4,7 @@ const { Schema } = mongoose;
 
 const ADOPTION_ACTIONS = Object.freeze([
   "content_link",
+  "content_visit",
   "content_fork",
   "namespace_use",
   "namespace_fork",

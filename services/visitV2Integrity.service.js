@@ -13,21 +13,28 @@ function issue(field, code, message, severity = "error", context = undefined) {
 
 async function computeVisitV2Integrity(revision) {
   const issues = [];
-  const sourceById = new Map((revision.editorialSources || []).map((source) => [id(source._id), source]));
-  const releaseIds = [...new Set((revision.editorialSources || []).map((source) => id(source.editorialReleaseId)).filter(Boolean))];
+  const contentSources = [
+    ...(revision.contentSources || []),
+    ...(revision.editorialSources || []).map((source) => ({ ...(source.toObject?.() || source), sourceType: "editorial_release", legacy: true })),
+  ];
+  const sourceById = new Map(contentSources.map((source) => [id(source._id), source]));
+  const releaseIds = [...new Set(contentSources.filter((source) => source.sourceType === "editorial_release").map((source) => id(source.editorialReleaseId)).filter(Boolean))];
   const releases = await EditorialRelease.find({ _id: { $in: releaseIds } }).lean();
   const releaseById = new Map(releases.map((release) => [id(release._id), release]));
 
   if (!(revision.contentEntries || []).length) issues.push(issue("contentEntries", "EMPTY_VISIT_CONTENT", "Una Visit pubblicabile deve contenere almeno una ContentEntry"));
   if (!(revision.visitAnchors || []).length) issues.push(issue("visitAnchors", "EMPTY_PHYSICAL_ITINERARY", "Una Visit pubblicabile deve contenere almeno un VisitAnchor"));
 
-  const seenReleaseIds = new Set();
-  (revision.editorialSources || []).forEach((source, index) => {
-    const field = `editorialSources[${index}].editorialReleaseId`;
-    const releaseId = id(source.editorialReleaseId);
-    if (!releaseById.has(releaseId)) issues.push(issue(field, "EDITORIAL_RELEASE_NOT_FOUND", "EditorialRelease non disponibile"));
-    if (seenReleaseIds.has(releaseId)) issues.push(issue(field, "DUPLICATE_EDITORIAL_SOURCE", "La stessa EditorialRelease non deve essere dichiarata due volte"));
-    seenReleaseIds.add(releaseId);
+  const seenSources = new Set();
+  contentSources.forEach((source, index) => {
+    const prefix = source.legacy ? "editorialSources" : "contentSources";
+    const resourceId = source.sourceType === "editorial_release" ? id(source.editorialReleaseId) : id(source.itemRevisionId);
+    const field = `${prefix}[${index}].${source.sourceType === "editorial_release" ? "editorialReleaseId" : "itemRevisionId"}`;
+    const sourceKey = `${source.sourceType}:${resourceId}`;
+    if (source.sourceType === "editorial_release" && !releaseById.has(resourceId)) issues.push(issue(field, "EDITORIAL_RELEASE_NOT_FOUND", "Raccolta sorgente non disponibile"));
+    if (source.sourceType === "item_revision" && !resourceId) issues.push(issue(field, "ITEM_REVISION_NOT_FOUND", "Versione del contenuto sorgente non disponibile"));
+    if (seenSources.has(sourceKey)) issues.push(issue(field, "DUPLICATE_CONTENT_SOURCE", "La stessa fonte non deve essere dichiarata due volte"));
+    seenSources.add(sourceKey);
   });
 
   const editionIds = [...new Set((revision.contentEntries || []).map((entry) => id(entry.itemEditionId)).filter(Boolean))];
@@ -45,13 +52,13 @@ async function computeVisitV2Integrity(revision) {
 
   (revision.contentEntries || []).forEach((entry, index) => {
     const base = `contentEntries[${index}]`;
-    const source = sourceById.get(id(entry.editorialSourceId));
+    const source = sourceById.get(id(entry.contentSourceId || entry.editorialSourceId));
     if (!source) {
-      issues.push(issue(`${base}.editorialSourceId`, "UNKNOWN_EDITORIAL_SOURCE", "ContentEntry riferisce un EditorialSource non presente nella revisione"));
+      issues.push(issue(`${base}.contentSourceId`, "UNKNOWN_CONTENT_SOURCE", "Il contenuto riferisce una fonte non presente nella visita"));
       return;
     }
-    const release = releaseById.get(id(source.editorialReleaseId));
-    if (!release) return;
+    const release = source.sourceType === "editorial_release" ? releaseById.get(id(source.editorialReleaseId)) : null;
+    if (source.sourceType === "editorial_release" && !release) return;
     const edition = editionById.get(id(entry.itemEditionId));
     const itemRevision = itemRevisionById.get(id(entry.itemRevisionId));
     if (!edition) issues.push(issue(`${base}.itemEditionId`, "ITEM_EDITION_NOT_FOUND", "ItemEdition non trovata"));
@@ -59,8 +66,12 @@ async function computeVisitV2Integrity(revision) {
     if (edition && id(edition.itemId) !== id(entry.itemId)) issues.push(issue(`${base}.itemId`, "ITEM_EDITION_MISMATCH", "itemId non appartiene alla ItemEdition indicata"));
     if (edition && !activeItemIds.has(id(edition.itemId))) issues.push(issue(`${base}.itemId`, "ITEM_NOT_ACTIVE", "Item non disponibile"));
     if (itemRevision && id(itemRevision.itemEditionId) !== id(entry.itemEditionId)) issues.push(issue(`${base}.itemRevisionId`, "ITEM_REVISION_MISMATCH", "ItemRevision non appartiene alla ItemEdition indicata"));
-    const releasedBinding = (release.itemBindings || []).find((binding) => id(binding.itemEditionId) === id(entry.itemEditionId) && id(binding.itemRevisionId) === id(entry.itemRevisionId));
-    if (!releasedBinding) issues.push(issue(base, "CONTENT_NOT_IN_EDITORIAL_RELEASE", "La ItemEdition/ItemRevision non e inclusa nella EditorialRelease dichiarata"));
+    if (source.sourceType === "editorial_release") {
+      const releasedBinding = (release.itemBindings || []).find((binding) => id(binding.itemEditionId) === id(entry.itemEditionId) && id(binding.itemRevisionId) === id(entry.itemRevisionId));
+      if (!releasedBinding) issues.push(issue(base, "CONTENT_NOT_IN_EDITORIAL_RELEASE", "Il contenuto non è incluso nella raccolta dichiarata"));
+    } else if (id(source.itemRevisionId) !== id(entry.itemRevisionId)) {
+      issues.push(issue(base, "CONTENT_SOURCE_REVISION_MISMATCH", "La fonte diretta non corrisponde alla versione del contenuto"));
+    }
     if (entry.deliveryAnchorId) {
       const anchorId = id(entry.deliveryAnchorId);
       if (!anchorById.has(anchorId)) issues.push(issue(`${base}.deliveryAnchorId`, "UNKNOWN_VISIT_ANCHOR", "deliveryAnchorId non appartiene alla VisitRevision"));
