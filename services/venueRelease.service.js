@@ -16,6 +16,11 @@ const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service")
 const { runPostCommitAudit } = require("./postCommitAudit.service");
 const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
 const { assertCanAuthorLayoutAgainstRevision, loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const {
+  removedExhibitSlotIds,
+  restoreExhibitSlots,
+  retireExhibitSlots,
+} = require("./exhibitSlotLifecycle.service");
 
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
 function workflowSnapshot(release) { const source = plain(release); return { status: source.status, review: source.review, publication: source.publication, integrity: source.integrity, updatedBy: source.updatedBy }; }
@@ -180,12 +185,15 @@ async function requestVenueReleaseChanges({ venueId, actorUserId, message }) {
   return { venue, release, layout };
 }
 
-async function compensateVenueReleasePublish({ venue, release, layout, oldRelease, oldLayout, previousReleaseState }) {
+async function compensateVenueReleasePublish({ venue, release, layout, oldRelease, oldLayout, previousReleaseState, retiredExhibitSlotIds = [] }) {
   await Venue.updateOne({ _id: venue._id, publishedReleaseId: release._id }, { $set: { publishedReleaseId: oldRelease?._id || null, workingReleaseId: release._id } });
   await VenueRelease.updateOne({ _id: release._id }, { $set: previousReleaseState });
   await LayoutRevision.updateOne({ _id: layout._id }, { $set: { status: "draft" } });
   if (oldRelease) await VenueRelease.updateOne({ _id: oldRelease._id }, { $set: { status: "published" } });
   if (oldLayout) await LayoutRevision.updateOne({ _id: oldLayout._id }, { $set: { status: "published" } });
+  if (retiredExhibitSlotIds.length) {
+    await restoreExhibitSlots({ venueId: venue._id, exhibitSlotIds: retiredExhibitSlotIds });
+  }
 }
 
 async function publishVenueRelease({ venueId, actorUserId }) {
@@ -205,6 +213,7 @@ async function publishVenueRelease({ venueId, actorUserId }) {
 
   const oldRelease = venue.publishedReleaseId ? await VenueRelease.findById(venue.publishedReleaseId) : null;
   const oldLayout = oldRelease ? await LayoutRevision.findById(oldRelease.layoutRevisionId) : null;
+  const retiredExhibitSlotIds = oldLayout ? removedExhibitSlotIds(oldLayout, layout) : [];
   try {
     const pointer = await Venue.updateOne(
       { _id: venue._id, workingReleaseId: release._id, lifecycleStatus: "active" },
@@ -219,8 +228,21 @@ async function publishVenueRelease({ venueId, actorUserId }) {
       oldLayout.status = "superseded";
       await oldLayout.save();
     }
+    await retireExhibitSlots({
+      venueId: venue._id,
+      exhibitSlotIds: retiredExhibitSlotIds,
+      actorUserId,
+    });
   } catch (error) {
-    await compensateVenueReleasePublish({ venue, release, layout, oldRelease, oldLayout, previousReleaseState }).catch(() => {});
+    await compensateVenueReleasePublish({
+      venue,
+      release,
+      layout,
+      oldRelease,
+      oldLayout,
+      previousReleaseState,
+      retiredExhibitSlotIds,
+    }).catch(() => {});
     if (error instanceof AppError) throw error;
     throw new AppError("Pubblicazione VenueRelease annullata", 500, [{ code: "VENUE_RELEASE_PUBLISH_FAILED", message: error.message }]);
   }
