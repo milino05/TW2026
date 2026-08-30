@@ -11,7 +11,7 @@ const { resolveInitialPresentation } = require("./presentationRuntimeV2.service"
 const { id } = require("./physicalExecutionV2.service");
 const { resolveNavigationPreparation } = require("./navigationPreparationV2.service");
 const { canonicalizeContentEntries } = require("./visitSequenceV2.service");
-const { resolveSessionSemanticGraphPins } = require("./sessionSemanticScopeV2.service");
+const { resolveSessionSemanticScope } = require("./sessionSemanticScopeV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
@@ -149,7 +149,7 @@ async function prepareInitialSessionPlan({ source, navigation, userPreference = 
     resolveNavigationPreparation({ sourceAnchors: source.sourceAnchors, sourceLegHints: source.sourceLegHints, navigation }),
     materializeContentEntries({ source, userPreference, explicitPreference }),
   ]);
-  const semanticGraphPins = await resolveSessionSemanticGraphPins({ source, contentEntries });
+  const { semanticGraphPins, semanticContentPins } = await resolveSessionSemanticScope({ source, contentEntries });
   const anchorIds = new Set((physical.visitAnchors || []).map((entry) => id(entry._id)));
   for (const entry of contentEntries) if (entry.deliveryAnchorId && !anchorIds.has(id(entry.deliveryAnchorId))) throw new AppError("ContentEntry punta a un VisitAnchor non risolto nella Session", 409);
   return {
@@ -162,6 +162,7 @@ async function prepareInitialSessionPlan({ source, navigation, userPreference = 
       executedThroughEntryIndex: -1,
       sourceEditorialReleaseIds: source.sourceEditorialReleaseIds || [],
       semanticGraphPins,
+      semanticContentPins,
       contentEntries,
       visitAnchors: physical.visitAnchors,
       physicalRoute: physical.physicalRoute,
