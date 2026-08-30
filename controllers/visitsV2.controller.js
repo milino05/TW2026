@@ -1,6 +1,7 @@
 const visitService = require("../services/visitV2.service");
 const publicationService = require("../services/visitV2Publication.service");
 const authoringCommandService = require("../services/visitAuthoringCommandV2.service");
+const authoringSequenceCommandService = require("../services/visitAuthoringSequenceCommandV2.service");
 const authoringLogisticsCommandService = require("../services/visitAuthoringLogisticsCommandV2.service");
 
 async function list(req, res, next) { try { res.status(200).json(await visitService.listManageableVisitsV2({ actorUserId: req.user._id })); } catch (error) { next(error); } }
@@ -32,6 +33,16 @@ async function addContentToStop(req, res, next) {
       anchorId: req.params.anchorId,
       actorUserId: req.user._id,
       payload: req.body || {},
+    }));
+  } catch (error) { next(error); }
+}
+async function reorderVisitContent(req, res, next) {
+  try {
+    res.status(200).json(await authoringSequenceCommandService.reorderVisitContent({
+      visitId: req.params.visitId,
+      contentEntryId: req.params.contentEntryId,
+      actorUserId: req.user._id,
+      toIndex: req.body?.toIndex,
     }));
   } catch (error) { next(error); }
 }
@@ -129,6 +140,7 @@ module.exports = {
   publish,
   addContentToVisit,
   addContentToStop,
+  reorderVisitContent,
   attachContentToStop,
   detachContentFromStop,
   setContentRole,

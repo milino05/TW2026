@@ -10,6 +10,7 @@ const { resolveExecutableVisitRevisionV2 } = require("./visitExecutionAccessV2.s
 const { resolveInitialPresentation } = require("./presentationRuntimeV2.service");
 const { id } = require("./physicalExecutionV2.service");
 const { resolveNavigationPreparation } = require("./navigationPreparationV2.service");
+const { canonicalizeContentEntries } = require("./visitSequenceV2.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
@@ -21,7 +22,8 @@ function visitRevisionSourceSnapshotV2({ visit, revision }) {
     ...(revisionSnapshot.editorialSources || []).map((entry) => ({ ...entry, sourceType: "editorial_release" })),
   ];
   const sourceById = new Map(sources.map((entry) => [id(entry._id), entry]));
-  const contentEntries = (revisionSnapshot.contentEntries || []).map((entry) => {
+  const orderedContentEntries = canonicalizeContentEntries(revisionSnapshot.contentEntries || [], revisionSnapshot.visitAnchors || []);
+  const contentEntries = orderedContentEntries.map((entry) => {
     const source = sourceById.get(id(entry.contentSourceId || entry.editorialSourceId));
     if (!source) throw new AppError("Contenuto della visita senza fonte risolvibile", 409);
     return {

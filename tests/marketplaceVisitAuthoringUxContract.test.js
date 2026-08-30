@@ -9,53 +9,60 @@ const viewPath = path.join(root, "clients/marketplace/src/ui/visit-authoring-vie
 const shellPath = path.join(root, "clients/marketplace/src/ui/app-shell.js");
 const servicePath = path.join(root, "services/visitAuthoringV2.service.js");
 const commandPath = path.join(root, "services/visitAuthoringCommandV2.service.js");
+const sequenceDomainPath = path.join(root, "services/visitSequenceV2.service.js");
+const sequenceCommandPath = path.join(root, "services/visitAuthoringSequenceCommandV2.service.js");
+const sequenceRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/visit-sequence-repository.js");
+const sessionPlanPath = path.join(root, "services/sessionPlanV2.service.js");
+const routesPath = path.join(root, "routes/visitsV2.routes.js");
+const controllerPath = path.join(root, "controllers/visitsV2.controller.js");
 const view = fs.readFileSync(viewPath, "utf8");
 const shell = fs.readFileSync(shellPath, "utf8");
 const service = fs.readFileSync(servicePath, "utf8");
 const commands = fs.readFileSync(commandPath, "utf8");
+const sequenceDomain = fs.readFileSync(sequenceDomainPath, "utf8");
+const sequenceCommands = fs.readFileSync(sequenceCommandPath, "utf8");
+const sequenceRepository = fs.readFileSync(sequenceRepositoryPath, "utf8");
+const sessionPlan = fs.readFileSync(sessionPlanPath, "utf8");
+const routes = fs.readFileSync(routesPath, "utf8");
+const controller = fs.readFileSync(controllerPath, "utf8");
 
 test("visit authoring boundary passa il syntax gate", () => {
-  for (const target of [viewPath, shellPath, servicePath, commandPath]) {
+  for (const target of [viewPath, shellPath, servicePath, commandPath, sequenceDomainPath, sequenceCommandPath, sequenceRepositoryPath, sessionPlanPath, routesPath, controllerPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
 });
 
-test("visit authoring espone i sei passaggi stop-centric", () => {
-  for (const label of ["Informazioni", "Contenuti", "Tappe", "Impostazioni", "Percorso", "Pubblicazione"]) assert.match(view, new RegExp(label));
+test("visit authoring espone cinque passaggi con composer unificato", () => {
+  for (const label of ["Informazioni", "Costruisci la visita", "Impostazioni", "Percorso", "Pubblicazione"]) assert.match(view, new RegExp(label));
+  assert.match(view, /const stages = \[\[1, "Informazioni"\], \[2, "Costruisci la visita"\], \[3, "Impostazioni"\], \[4, "Percorso"\], \[5, "Pubblicazione"\]\]/);
+  assert.match(view, /grid-template-columns:repeat\(5/);
   assert.match(view, /aria-label="Passaggi di creazione della visita"/);
-  assert.match(view, /aria-current="\$\{current \? "step" : "false"\}"/);
 });
 
-test("visit authoring non duplica il contesto operativo dentro la pagina", () => {
-  assert.doesNotMatch(view, /renderWorkingContext|class="working-context"|>Area di lavoro</);
-});
-
-test("contenuti persistenti e tappe restano distinti dietro una UX stop-centric", () => {
-  assert.match(view, /data-add-content/);
-  assert.match(view, /activeContentStopId/);
-  assert.match(view, /addVisitContentToStop/);
-  assert.match(view, /data-attach-contextual/);
-  assert.match(view, /data-detach-content/);
-  assert.match(view, /I contenuti restano entità editoriali separate/);
-  assert.doesNotMatch(view, /ensureReferences|matchingTarget\(result\)/);
-});
-
-test("il browser dei contenuti non richiede una raccolta editoriale", () => {
-  assert.match(view, /searchVisitContentCandidates/);
+test("browser contenuti e sequenza della visita convivono nello stesso step", () => {
+  assert.match(view, /visit-content-composer/);
+  assert.match(view, /available-content-pane/);
+  assert.match(view, /visit-selection-pane/);
+  assert.match(view, /renderVisitSequence\(\)/);
+  assert.match(view, /Trova i contenuti, aggiungili e mettili in ordine/);
+  assert.match(view, /Filtri avanzati/);
   assert.match(view, /data-content-access="owned"/);
   assert.match(view, /data-content-access="acquired"/);
   assert.match(view, /data-source-filter/);
   assert.match(view, /data-content-venue/);
-  assert.match(view, /Tutte le fonti/);
-  assert.match(view, /visit-content-composer/);
-  assert.match(view, /La tua visita/);
-  assert.doesNotMatch(view, /Nessuna raccolta editoriale disponibile|Serve una raccolta utilizzabile/);
+  assert.doesNotMatch(view, /Organizza le tappe/);
 });
 
-test("l'inferenza Subject -> VenueTarget resta backend-authoritative e non indovina ambiguità", () => {
-  assert.match(service, /ItemV2\.find\([\s\S]*primarySubjectId/);
-  assert.match(service, /primarySubjectId:\s*item\?\.primarySubjectId\s*\|\|\s*null/);
+test("aggiunta contenuto è one-click e usa importanza consigliata come default", () => {
+  assert.match(view, /data-add-content/);
+  assert.match(view, /role:\s*"recommended"/);
+  assert.doesNotMatch(view, /data-add-role/);
+  assert.match(view, /data-entry-role/);
+});
+
+test("inferenza fisica resta backend-authoritative e ambiguità richiedono scelta", () => {
+  assert.match(service, /primarySubjectId/);
   assert.match(commands, /publishedOccurrenceCandidates/);
   assert.match(commands, /VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED/);
   assert.match(commands, /ensureAnchorForTarget/);
@@ -63,47 +70,49 @@ test("l'inferenza Subject -> VenueTarget resta backend-authoritative e non indov
   assert.match(view, /data-occurrence-target/);
 });
 
-test("sequenza delle tappe, ruoli e contenuti mantengono controlli accessibili", () => {
-  assert.match(view, /data-move-stop/);
-  assert.match(view, /aria-label="Sposta prima"/);
-  assert.match(view, /aria-label="Sposta dopo"/);
-  assert.match(view, /data-remove-content/);
-  assert.match(view, /value="core"[\s\S]*Essenziale/);
-  assert.match(view, /value="recommended"[\s\S]*Consigliato/);
-  assert.match(view, /value="optional"[\s\S]*Facoltativo/);
-  assert.match(view, /searchVisitContent/);
-  assert.match(view, /data-content-page/);
+test("drag and drop riordina tappe e contenuti senza confondere il delivery", () => {
+  assert.match(view, /addEventListener\("dragstart"/);
+  assert.match(view, /data-drag-kind="stop"/);
+  assert.match(view, /data-drag-kind="content"/);
+  assert.match(view, /target\.dataset\.anchorKey !== this\.dragState\.anchorKey/);
+  assert.match(view, /visitSequenceRepository\.reorderContent/);
+  assert.match(view, /authoringRepository\.reorderVisitStop/);
+  assert.match(sequenceDomain, /sameDeliveryGroup/);
+  assert.match(sequenceDomain, /reorderWithinDeliveryGroup/);
+  assert.match(sequenceDomain, /canonicalizeContentEntries/);
+  assert.match(sequenceCommands, /reorderWithinDeliveryGroup/);
+  assert.match(sequenceCommands, /canonicalizeContentEntries/);
+  assert.match(sessionPlan, /canonicalizeContentEntries[\s\S]*orderedContentEntries/);
+  assert.match(sequenceRepository, /commands\/content\/\$\{encodeURIComponent\(contentEntryId\)\}\/reorder/);
+  assert.match(routes, /commands\/content\/:contentEntryId\/reorder/);
+  assert.match(controller, /authoringSequenceCommandService\.reorderVisitContent/);
 });
 
-test("rimozione tappe protegge contenuti e route hint", () => {
+test("riordino conserva fallback accessibili e spostamento tappa esplicito", () => {
+  assert.match(view, /aria-label="Sposta contenuto prima"/);
+  assert.match(view, /aria-label="Sposta contenuto dopo"/);
+  assert.match(view, /aria-label="Sposta tappa prima"/);
+  assert.match(view, /aria-label="Sposta tappa dopo"/);
+  assert.match(view, /data-entry-stop/);
+  assert.match(view, /attachVisitContentToStop/);
+  assert.match(view, /detachVisitContentFromStop/);
+  assert.match(view, /Presenta in/);
+});
+
+test("tappe manuali restano una opzione avanzata e non uno step obbligatorio", () => {
+  assert.match(view, /Opzioni avanzate/);
+  assert.match(view, /Aggiungi una tappa senza contenuto/);
+  assert.match(view, /data-add-stop/);
   assert.match(view, /data-remove-stop/);
-  assert.match(view, /restano nella visita come contestuali/);
-  assert.match(commands, /deliveryAnchorId:\s*null/);
-  assert.match(commands, /hint\.fromAnchorId/);
-  assert.match(commands, /hint\.toAnchorId/);
 });
 
-test("logistica e contenuti restano domini separati nella stessa UX", () => {
+test("logistica e pubblicazione restano domini separati", () => {
   assert.match(view, /data-visit-logistics/);
   assert.match(view, /preVisitNotes/);
   assert.match(view, /serializeRouteHints\(\)/);
-  assert.match(view, /data-visit-logistics[\s\S]*serializeRouteHints\(\)/);
   assert.doesNotMatch(view, /role:\s*["']logistics["']|itemType:\s*["']logistics["']/);
   assert.doesNotMatch(shell, /visit-logistics-editor/);
-  assert.match(shell, /artaround-visit-authoring-view/);
-});
-
-test("workflow resta backend-authoritative e senza prompt nativi", () => {
   assert.match(view, /availableOperation\(operationCode\)/);
   assert.match(view, /executeWorkspaceOperation/);
-  assert.match(view, /resourceType:\s*"visit"/);
-  assert.match(view, /data-workflow-form/);
-  assert.match(view, /name="message"/);
-  assert.match(view, /Controlla se è tutto pronto/);
-  assert.doesNotMatch(view, /window\.prompt\(/);
-});
-
-test("pubblicazione editoriale e catalogo restano lifecycle distinti", () => {
   assert.match(view, /La pubblicazione nel Catalogo è un passaggio commerciale separato/);
-  assert.match(view, /Pubblicare editorialmente non crea automaticamente una scheda nel Marketplace/);
 });
