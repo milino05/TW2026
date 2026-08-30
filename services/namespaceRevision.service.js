@@ -165,6 +165,65 @@ async function evaluateNamespace({ namespaceId, actorUserId, allowInReview = fal
   return { namespace, revision, issues };
 }
 
+async function checkNamespaceConsistency({ namespaceId, actorUserId }) {
+  const result = await evaluateNamespace({ namespaceId, actorUserId, allowInReview: true });
+  const { namespace, revision, issues } = result;
+  if (issues.some((issue) => issue.severity !== "warning")) {
+    return { ...result, finalized: false, visibility: "draft" };
+  }
+
+  const previousId = namespace.publishedRevisionId;
+  const previousRevisionState = workflowSnapshot(revision);
+  try {
+    if (revision.status === "in_review") withdrawReview(revision, actorUserId);
+    if (revision.status === "changes_requested") revision.status = "draft";
+    publishWithoutReview(revision, actorUserId);
+    revision.updatedBy = actorUserId;
+  } catch (error) {
+    throw new AppError(error.message, 409, [{ code: error.code }]);
+  }
+  await revision.save();
+
+  let pointerSwitched = false;
+  let previousSuperseded = false;
+  try {
+    const pointer = await Namespace.updateOne(
+      { _id: namespace._id, workingRevisionId: revision._id, lifecycleStatus: "active" },
+      { $set: { publishedRevisionId: revision._id, workingRevisionId: null } },
+    );
+    if (pointer.modifiedCount !== 1) throw new AppError("La revisione Namespace è cambiata durante il controllo", 409);
+    pointerSwitched = true;
+    if (previousId && String(previousId) !== String(revision._id)) {
+      const previous = await NamespaceRevision.updateOne(
+        { _id: previousId, status: "published" },
+        { $set: { status: "superseded" } },
+      );
+      if (previous.modifiedCount !== 1) throw new Error("Impossibile archiviare la versione privata precedente");
+      previousSuperseded = true;
+    }
+  } catch (error) {
+    if (pointerSwitched) {
+      try {
+        await compensateNamespacePublish({ namespace, revision, previousId, previousRevisionState, previousSuperseded });
+      } catch (rollbackError) {
+        if (rollbackError instanceof AppError) throw rollbackError;
+        throw new AppError("Ripristino delle regole editoriali incompleto", 500, [
+          { code: "NAMESPACE_PRIVATE_FINALIZE_ROLLBACK_FAILED", message: rollbackError.message },
+          { code: "ORIGINAL_ERROR", message: error.message },
+        ]);
+      }
+    } else {
+      await NamespaceRevision.updateOne({ _id: revision._id }, { $set: previousRevisionState }).catch(() => {});
+    }
+    if (error instanceof AppError) throw error;
+    throw new AppError("Controllo delle regole editoriali annullato", 500, [{ code: "NAMESPACE_PRIVATE_FINALIZE_FAILED", message: error.message }]);
+  }
+
+  namespace.publishedRevisionId = revision._id;
+  namespace.workingRevisionId = null;
+  return { namespace, revision, issues: [], finalized: true, visibility: "private" };
+}
+
 async function requestNamespaceReview({ namespaceId, actorUserId }) {
   const result = await evaluateNamespace({ namespaceId, actorUserId });
   if (result.namespace.ownerType !== "organization") throw new AppError("I Namespace personali non richiedono review manageriale", 409);
@@ -291,6 +350,7 @@ module.exports = {
   getWorkingNamespaceRevision,
   updateNamespaceDraft,
   evaluateNamespace,
+  checkNamespaceConsistency,
   requestNamespaceReview,
   withdrawNamespaceReview,
   requestNamespaceChanges,

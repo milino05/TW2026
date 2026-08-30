@@ -21,6 +21,12 @@ const ADOPTION_ACTION_LABELS = Object.freeze({
 });
 
 function id(value) { return String(value?._id || value || ""); }
+function listingResourceKey(listing) { return `${listing.resourceType}:${id(listing.resourceId)}`; }
+function canonicalListing(listings) {
+  return listings.find((listing) => listing.status === "published")
+    || listings.find((listing) => listing.status === "draft")
+    || listings[0];
+}
 function publicPrincipal(principal) {
   if (!principal) return principal;
   const { effectivePermissions, ...projected } = principal;
@@ -113,12 +119,25 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(50, Math.max(1, Number(limit) || 10));
   const listingQuery = { sellerType: principalType, sellerId: principalId };
-  const [listings, total, rawDistribution] = await Promise.all([
-    MarketplaceListing.find(listingQuery).sort({ updatedAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
-    MarketplaceListing.countDocuments(listingQuery),
+  const [allListings, rawDistribution] = await Promise.all([
+    MarketplaceListing.find(listingQuery).sort({ updatedAt: -1, _id: -1 }).lean(),
     getDistributionDashboard({ actorUserId, principalType, principalId, limit: 8 }),
   ]);
-  const listingIds = listings.map((entry) => entry._id);
+  const listingGroups = new Map();
+  for (const listing of allListings) {
+    const key = listingResourceKey(listing);
+    if (!listingGroups.has(key)) listingGroups.set(key, []);
+    listingGroups.get(key).push(listing);
+  }
+  const groupedListings = [...listingGroups.values()];
+  const total = groupedListings.length;
+  const selectedGroups = groupedListings.slice((safePage - 1) * safeLimit, safePage * safeLimit);
+  const listings = selectedGroups.map(canonicalListing);
+  const groupIdsByCanonicalId = new Map(selectedGroups.map((group) => [
+    id(canonicalListing(group)._id),
+    group.map((listing) => listing._id),
+  ]));
+  const listingIds = selectedGroups.flatMap((group) => group.map((listing) => listing._id));
   const [offers, acquisitions] = await Promise.all([
     listingIds.length ? MarketplaceOffer.find({ listingId: { $in: listingIds }, status: "active" }).sort({ createdAt: -1 }).lean() : [],
     listingIds.length ? MarketplaceAcquisition.find({ listingId: { $in: listingIds } }).lean() : [],
@@ -157,8 +176,11 @@ async function getCommercialManagement({ actorUserId, principalType = "user", pr
       if (![404, 409].includes(error?.status)) throw error;
       marketableAvailable = false;
     }
-    const listingOffers = offersByListing.get(id(listing._id)) || [];
-    const listingAcquisitions = acquisitionsByListing.get(id(listing._id)) || [];
+    const groupListingIds = groupIdsByCanonicalId.get(id(listing._id)) || [listing._id];
+    const listingOffers = groupListingIds
+      .flatMap((listingId) => offersByListing.get(id(listingId)) || []);
+    const listingAcquisitions = groupListingIds
+      .flatMap((listingId) => acquisitionsByListing.get(id(listingId)) || []);
     const policyLabels = new Map(versionPolicyOptions(listing.resourceType).map((entry) => [entry.code, entry.label]));
     projectedListings.push({
       id: listing._id,

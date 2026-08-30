@@ -96,7 +96,7 @@ function withWorkflowOperations({ baseOperations, principal, resourceType, revis
     ownerType: principal.type,
     capabilities: workflowCapabilities(principal, resourceType),
     revision,
-    finalizePrivatelyOnCheck: resourceType === "item_edition",
+    finalizePrivatelyOnCheck: ["item_edition", "namespace"].includes(resourceType),
   })];
 }
 
@@ -171,8 +171,10 @@ function projectOwnedCandidate(candidate, { principal, listings }) {
       authoringRef: { resourceType: "namespace", resourceId: candidate._id },
       title: candidate.name, summary: candidate.description || "",
       ...modificationProjection(candidate, revision),
-      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "published" : "empty"),
-      editorialWorkflow: workflowState(revision),
+      state: candidate.workingRevisionId ? "working" : (candidate.publishedRevisionId ? "private" : "empty"),
+      editorialWorkflow: candidate.publishedRevisionId && !candidate.workingRevisionId
+        ? { ...workflowState(revision), status: "private" }
+        : workflowState(revision),
       publishedSnapshotRef: candidate.publishedRevisionId ? { resourceType: "namespace_revision", resourceId: candidate.publishedRevisionId } : null,
       listing,
       availableOperations: withRemovalOperation(

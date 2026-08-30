@@ -17,8 +17,18 @@ test("item authoring e picker semantico passano il syntax gate", () => {
   }
 });
 
+test("la creazione dei contenuti usa il tema museale del Marketplace", () => {
+  assert.match(source, /class="page-header authoring-header"/);
+  assert.match(source, /\.authoring-page>\.authoring-header\{[^}]*background:linear-gradient\([^}]*var\(--surface\)[^}]*var\(--sage-50\)/);
+  assert.match(source, /\.authoring-progress li\[data-current="true"\] button[^}]*background:var\(--ink-900\)/);
+  assert.match(source, /\.step-number\{background:var\(--ink-900\);color:#fff\}/);
+  assert.match(source, /\.private-success-overlay\{background:rgba\(36,21,29,\.7\)\}/);
+  assert.match(pickerSource, /\.resolver\{[^}]*border:1px solid var\(--line\)[^}]*background:var\(--sage-50\)/);
+  assert.match(pickerSource, /\.resolver button\{[^}]*background:var\(--ink-900\)/);
+});
+
 test("item authoring espone cinque passaggi includendo i collegamenti facoltativi", () => {
-  for (const label of ["Di cosa parla", "Informazioni generali", "Regole e testi", "Collegamenti", "Controllo finale"]) {
+  for (const label of ["Di cosa parla", "Info generali", "Regole e testi", "Collegamenti", "Controllo finale"]) {
     assert.match(source, new RegExp(label));
   }
   assert.doesNotMatch(source, /<span class="eyebrow">Personalizzazione<\/span>/);

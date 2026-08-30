@@ -65,7 +65,7 @@ test("Management projections expose only workflow operations valid for the curre
       revision: { status: "draft" },
       permissions: editor,
     }).map((entry) => entry.code),
-    ["namespace.update", "namespace.revision.update", "namespace.revision.check", "namespace.revision.request_review"],
+    ["namespace.update", "namespace.revision.update", "namespace.revision.check"],
   );
   assert.deepEqual(
     venueOperations({ release: { status: "in_review" }, permissions: new Set(["venue.profile.manage", "venue.physical.edit"]), hasWorking: true }).map((entry) => entry.code),

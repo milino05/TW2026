@@ -46,11 +46,12 @@ test("dettagli e azioni espone una rimozione confermata che preserva lo storico"
   assert.match(view, /data-removal-ack/);
 });
 
-test("un contenuto controllato resta privato finché listing e offerta non sono pubblici", () => {
+test("contenuti e regole controllati restano privati finché listing e offerta non sono pubblici", () => {
   for (const source of [projector, workspaceProjector]) {
     assert.match(source, /function itemState/);
     assert.match(source, /listing\?\.status === "published" && Number\(listing\.activeOfferCount\) > 0/);
-    assert.match(source, /finalizePrivatelyOnCheck: resourceType === "item_edition"/);
+    assert.match(source, /finalizePrivatelyOnCheck: \["item_edition", "namespace"\]\.includes\(resourceType\)/);
+    assert.match(source, /publishedRevisionId \? "private" : "empty"/);
   }
   assert.match(presentation, /private: "Privato"/);
 });

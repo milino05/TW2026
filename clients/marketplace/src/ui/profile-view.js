@@ -114,7 +114,7 @@ export class ArtAroundProfileView extends HTMLElement {
     return cards || `<div class="empty-state account-empty">${icon("building", { size: 26 })}<h3>Nessuna organizzazione</h3><p>Puoi crearne una dalla schermata in cui scegli l'area di lavoro.</p></div>`;
   }
   renderPersonalRules(personalNamespaces) {
-    const cards = personalNamespaces.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("book", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(stateLabel(entry, "Pubblicate"))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Nessuna descrizione disponibile.")}</p><button type="button" data-namespace="${escapeHtml(entry.id)}">Modifica regole editoriali ${icon("chevron", { size: 15 })}</button></article>`).join("");
+    const cards = personalNamespaces.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("book", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(stateLabel(entry, "Private"))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Nessuna descrizione disponibile.")}</p><button type="button" data-namespace="${escapeHtml(entry.id)}">Modifica regole editoriali ${icon("chevron", { size: 15 })}</button></article>`).join("");
     return cards || `<div class="empty-state account-empty">${icon("book", { size: 26 })}<h3>Nessuna regola editoriale personale</h3><p>Creale se vuoi definire un vocabolario e criteri editoriali di tua proprietà.</p></div>`;
   }
   renderPersonalPhysicalVocabularies(personalPhysicalVocabularies) {
