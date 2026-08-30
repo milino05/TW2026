@@ -17,6 +17,7 @@
     "start": "node index.js",
     "dev:container": "nodemon index.js",
     "seed:users": "node -r ./config/mongoUnitOfWork.js scripts/seedRequiredUsers.js",
+    "seed:visit-ui": "node -r ./config/mongoUnitOfWork.js scripts/seedVisitAuthoringPlayground.js",
     "migrate:organization-rbac": "node -r ./config/mongoUnitOfWork.js scripts/migrateOrganizationRbac.js",
     "migrate:exhibit-slots": "node -r ./config/mongoUnitOfWork.js scripts/migrateVenueExhibitSlots.js",
     "seed:demo": "node -r ./config/mongoUnitOfWork.js scripts/seedExamDataset.js && node -r ./config/mongoUnitOfWork.js scripts/enrichExamPresentationMatrix.js",
