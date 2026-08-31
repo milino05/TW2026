@@ -203,6 +203,19 @@ async function hydrateVisitRevision(revision) {
     },
     title: revision.title,
     description: revision.description || "",
+    deliveryMode: revision.deliveryMode || "self_guided",
+    synchronization: {
+      joinAlias: revision.synchronization?.joinAlias || "",
+    },
+    quiz: {
+      questions: (revision.quiz?.questions || []).map((question) => ({
+        id: question._id,
+        question: question.question || "",
+        options: [...(question.options || [])],
+        correctOptionIndex: Number(question.correctOptionIndex) || 0,
+        points: question.points ?? null,
+      })),
+    },
     contentSources: projectedContentSources,
     editorialSources: (revision.editorialSources || []).map((source) => {
       const release = releaseById.get(id(source.editorialReleaseId));

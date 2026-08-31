@@ -84,7 +84,8 @@ test("slot QR resolves current publication while an active Session keeps its pin
       adaptivePolicyVersion: 1,
     });
     const plan = await SessionPlanRevisionV2.create({
-      sessionId: session._id,
+      planOwnerType: "visit_session",
+      planOwnerId: session._id,
       version: 1,
       origin: { sourceType: "generated_plan", generatedVisitPlanId: session.generatedVisitPlanId },
       status: "active",

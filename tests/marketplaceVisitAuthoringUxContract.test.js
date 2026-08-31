@@ -40,6 +40,18 @@ test("visit authoring espone cinque passaggi con composer unificato", () => {
   assert.match(view, /aria-label="Passaggi di creazione della visita"/);
 });
 
+test("la modalità sincronizzata estende i cinque step senza creare un altro wizard", () => {
+  assert.match(view, /Visita sincronizzata/);
+  assert.match(view, /deliveryMode:\s*synchronized \? "synchronized" : "self_guided"/);
+  assert.match(view, /name="joinAlias"/);
+  assert.match(view, /data-add-quiz-question/);
+  assert.match(view, /data-quiz-question/);
+  assert.match(view, /data-quiz-option/);
+  assert.match(view, /data-quiz-correct/);
+  assert.match(view, /synchronized \? this\.renderQuizEditor\(\) : ""/);
+  assert.doesNotMatch(view, /\[6,\s*"/);
+});
+
 test("browser contenuti e sequenza della visita convivono nello stesso step", () => {
   assert.match(view, /visit-content-composer/);
   assert.match(view, /available-content-pane/);

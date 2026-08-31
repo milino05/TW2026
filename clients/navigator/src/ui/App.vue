@@ -78,6 +78,7 @@ async function logout() {
       </RouterLink>
 
       <nav v-if="authenticated" aria-label="Navigazione principale">
+        <RouterLink :to="{ name: 'together-join' }">Entra in una visita</RouterLink>
         <RouterLink v-if="selectedVenueId" :to="{ name: 'museums' }">Cambia museo</RouterLink>
         <RouterLink
           v-if="selectedVenueId"

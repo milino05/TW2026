@@ -6,6 +6,7 @@ const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VisitSessionV2 = require("../models/visitSessionV2.model");
 const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
+const SynchronizedVisitSession = require("../models/synchronizedVisitSession.model");
 const ExecutionPreparation = require("../models/executionPreparation.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
@@ -21,6 +22,10 @@ const {
 } = require("./sessionPlanV2.service");
 const { resolveMovementSpeed, resolveSessionVenuePins } = require("./physicalExecutionV2.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
+const {
+  createSynchronizedVisitRuntime,
+  projectSynchronizedVisitSession,
+} = require("./synchronizedVisitSession.service");
 const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
 const { normalizeRoutingProfileSelections } = require("./routingProfileSelectionV2.service");
 const { projectExecutionNavigationOptions } = require("./executionNavigationOptionsV2.service");
@@ -114,6 +119,7 @@ async function resolveExactSource({ userId, payload = {} }) {
         visitRevisionId: revision._id,
         generatedVisitPlanId: null,
         versionPolicy: access.entitlement?.versionPolicy === "pinned" ? "pinned" : "follow_current",
+        deliveryMode: revision.deliveryMode || "self_guided",
       },
       sourceSnapshot: visitRevisionSourceSnapshotV2({ visit, revision }),
     };
@@ -128,6 +134,7 @@ async function resolveExactSource({ userId, payload = {} }) {
       visitRevisionId: null,
       generatedVisitPlanId: plan._id,
       versionPolicy: "fixed_generated_plan",
+      deliveryMode: "self_guided",
     },
     sourceSnapshot: generatedPlanSourceSnapshotV2(plan),
   };
@@ -270,7 +277,9 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
       source: sourceSnapshot,
       navigation,
       userPreference: null,
-      explicitPreference: presentation,
+      // Il piano di gruppo conserva la baseline editoriale comune. Le preferenze
+      // dell'host vengono applicate soltanto alla sua VisitSession personale.
+      explicitPreference: sourceSnapshot.deliveryMode === "synchronized" ? null : presentation,
     });
     return {
       venuePins: prepared.venuePins,
@@ -307,6 +316,7 @@ function publicProjection(preparation) {
       visitRevisionId: preparation.source.visitRevisionId || null,
       generatedVisitPlanId: preparation.source.generatedVisitPlanId || null,
       versionPolicy: preparation.source.versionPolicy,
+      deliveryMode: preparation.source.deliveryMode || "self_guided",
     },
     effectivePresentationPreference: preparation.effectivePresentationPreference || null,
     navigation: {
@@ -319,6 +329,7 @@ function publicProjection(preparation) {
     logisticsPreview: preparation.logisticsPreview,
     expiresAt: preparation.expiresAt,
     sessionId: preparation.sessionId || null,
+    synchronizedSessionId: preparation.synchronizedSessionId || null,
   };
 }
 
@@ -410,12 +421,16 @@ async function consumedStartResult(preparation, userId) {
   if (!preparation.sessionId) throw new AppError("Preparation consumata senza Session", 500);
   const session = await VisitSessionV2.findOne({ _id: preparation.sessionId, userId });
   if (!session) throw new AppError("Session della preparation non disponibile", 409);
-  return {
+  const result = {
     session,
     current: await currentSessionProjection({ sessionId: session._id, userId }),
     preparation: publicProjection(preparation),
     alreadyStarted: true,
   };
+  if (preparation.synchronizedSessionId) {
+    result.synchronized = await projectSynchronizedVisitSession({ synchronizedSessionId: preparation.synchronizedSessionId, userId });
+  }
+  return result;
 }
 
 async function startExecutionPreparation({ preparationId, userId, expectedVersion }) {
@@ -445,37 +460,68 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
   }
 
   let session = null;
+  let synchronizedSession = null;
   try {
     const claimed = await ExecutionPreparation.findById(preparation._id).lean();
-    await loadExactSourceForPreparation(claimed, { revalidateAuthorization: true });
+    const sourceSnapshot = await loadExactSourceForPreparation(claimed, { revalidateAuthorization: true });
     await assertPhysicalSnapshotCurrent(claimed);
-    session = await VisitSessionV2.create({
-      userId,
-      sourceType: claimed.source.sourceType,
-      visitId: claimed.source.visitId || null,
-      visitRevisionId: claimed.source.visitRevisionId || null,
-      generatedVisitPlanId: claimed.source.generatedVisitPlanId || null,
-      venuePins: claimed.venuePins || [],
-      navigationSnapshot: claimed.navigationSnapshot,
-      sessionMovementSpeedMps: claimed.sessionMovementSpeedMps,
-      adaptivePolicyVersion: claimed.adaptivePolicyVersion,
-    });
-    await createInitialSessionPlan({ session, plan: claimed.preparedPlanCandidate });
+    if (sourceSnapshot.deliveryMode === "synchronized") {
+      if (claimed.source.sourceType !== "visit") throw new AppError("Solo una Visit può avviare una sessione sincronizzata", 409);
+      const runtime = await createSynchronizedVisitRuntime({
+        hostUserId: userId,
+        visitId: claimed.source.visitId,
+        visitRevisionId: claimed.source.visitRevisionId,
+        preferredAlias: sourceSnapshot.synchronization?.joinAlias,
+        plan: claimed.preparedPlanCandidate,
+        venuePins: claimed.venuePins || [],
+        navigationSnapshot: claimed.navigationSnapshot,
+        sessionMovementSpeedMps: claimed.sessionMovementSpeedMps,
+        adaptivePolicyVersion: claimed.adaptivePolicyVersion,
+        hostPresentationPreference: claimed.effectivePresentationPreference,
+      });
+      synchronizedSession = runtime.synchronizedSession;
+      session = runtime.hostVisitSession;
+    } else {
+      session = await VisitSessionV2.create({
+        userId,
+        sourceType: claimed.source.sourceType,
+        visitId: claimed.source.visitId || null,
+        visitRevisionId: claimed.source.visitRevisionId || null,
+        generatedVisitPlanId: claimed.source.generatedVisitPlanId || null,
+        venuePins: claimed.venuePins || [],
+        navigationSnapshot: claimed.navigationSnapshot,
+        sessionMovementSpeedMps: claimed.sessionMovementSpeedMps,
+        adaptivePolicyVersion: claimed.adaptivePolicyVersion,
+      });
+      await createInitialSessionPlan({ session, plan: claimed.preparedPlanCandidate });
+    }
     const consumed = await ExecutionPreparation.findOneAndUpdate(
       { _id: claimed._id, userId, status: "starting", version: claimed.version },
-      { $set: { status: "consumed", sessionId: session._id, consumedAt: new Date() } },
+      { $set: { status: "consumed", sessionId: session._id, synchronizedSessionId: synchronizedSession?._id || null, consumedAt: new Date() } },
       { new: true },
     ).lean();
     if (!consumed) throw new Error("Impossibile marcare la preparation come consumata");
-    return {
+    const result = {
       session,
       current: await currentSessionProjection({ sessionId: session._id, userId }),
       preparation: publicProjection(consumed),
       alreadyStarted: false,
     };
+    if (synchronizedSession) {
+      result.synchronized = await projectSynchronizedVisitSession({ synchronizedSessionId: synchronizedSession._id, userId });
+    }
+    return result;
   } catch (error) {
-    if (session?._id) {
-      await SessionPlanRevisionV2.deleteMany({ sessionId: session._id }).catch(() => {});
+    if (synchronizedSession?._id) {
+      // Il service di creazione effettua già il rollback prima di restituire;
+      // qui gestiamo i fallimenti successivi (es. consumo preparation).
+      const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
+      await SynchronizedVisitMembership.deleteMany({ synchronizedSessionId: synchronizedSession._id }).catch(() => {});
+      await VisitSessionV2.deleteMany({ synchronizedSessionId: synchronizedSession._id }).catch(() => {});
+      await SessionPlanRevisionV2.deleteMany({ planOwnerType: "synchronized_visit_session", planOwnerId: synchronizedSession._id }).catch(() => {});
+      await SynchronizedVisitSession.deleteOne({ _id: synchronizedSession._id }).catch(() => {});
+    } else if (session?._id) {
+      await SessionPlanRevisionV2.deleteMany({ planOwnerType: "visit_session", planOwnerId: session._id }).catch(() => {});
       await VisitSessionV2.deleteOne({ _id: session._id }).catch(() => {});
     }
     await ExecutionPreparation.updateOne(

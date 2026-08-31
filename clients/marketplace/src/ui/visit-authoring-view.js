@@ -62,6 +62,9 @@ function preferenceLabel(kind, value) {
     : ["Molto semplice", "Semplice", "Equilibrato", "Ricco", "Specialistico"];
   return labels[Math.round(preferenceValue(value) * (labels.length - 1))];
 }
+function suggestedJoinAlias(title) {
+  return String(title || "").trim().replace(/\s+/g, " ").slice(0, 60) || "Visita insieme";
+}
 
 export class ArtAroundVisitAuthoringView extends HTMLElement {
   context = readOperatingContext();
@@ -81,6 +84,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   activeStep = 1;
   pendingOccurrence = null;
   dragState = null;
+  quizDraft = [];
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -140,6 +144,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     try {
       const params = currentParams();
       this.projection = await authoringRepository.visitProjection({ ...params, ...selected });
+      this.resetQuizDraft();
       if (this.projection?.principal && (this.projection.principal.type !== selected.principalType || id(this.projection.principal.id) !== id(selected.principalId))) {
         throw new Error("Questa visita appartiene a un'altra area di lavoro. Cambia area prima di modificarla.");
       }
@@ -164,6 +169,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const selected = operatingPrincipal(this.context);
     if (!selected) throw new Error("Area di lavoro non selezionata");
     this.projection = await authoringRepository.visitProjection({ visitId: this.visitId });
+    this.resetQuizDraft();
     if (this.projection?.principal && (this.projection.principal.type !== selected.principalType || id(this.projection.principal.id) !== id(selected.principalId))) {
       throw new Error("Questa visita appartiene a un'altra area di lavoro.");
     }
@@ -215,6 +221,44 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       instructionOverride: hint.instructionOverride || null,
       note: hint.note || null,
       estimatedTransferSeconds: hint.estimatedTransferSeconds ?? null,
+    }));
+  }
+
+  resetQuizDraft() {
+    this.quizDraft = (this.revision?.quiz?.questions || []).map((question) => ({
+      id: id(question.id) || null,
+      question: question.question || "",
+      options: [...(question.options || [])],
+      correctOptionIndex: Number.isInteger(question.correctOptionIndex) ? question.correctOptionIndex : 0,
+      points: question.points ?? null,
+    }));
+  }
+
+  captureQuizDraft() {
+    const cards = [...this.querySelectorAll("[data-quiz-question-card]")];
+    if (!cards.length) return this.quizDraft;
+    this.quizDraft = cards.map((card) => {
+      const options = [...card.querySelectorAll("[data-quiz-option]")].map((input) => String(input.value || ""));
+      const selected = card.querySelector("[data-quiz-correct]:checked");
+      const pointsText = String(card.querySelector("[data-quiz-points]")?.value ?? "").trim();
+      return {
+        id: card.dataset.quizQuestionId || null,
+        question: String(card.querySelector("[data-quiz-question]")?.value || ""),
+        options,
+        correctOptionIndex: selected ? Number(selected.value) : 0,
+        points: pointsText === "" ? null : Number(pointsText),
+      };
+    });
+    return this.quizDraft;
+  }
+
+  quizPayload() {
+    return this.captureQuizDraft().map((question) => ({
+      ...(question.id ? { _id: question.id } : {}),
+      question: question.question,
+      options: [...question.options],
+      correctOptionIndex: question.correctOptionIndex,
+      points: question.points,
     }));
   }
 
@@ -283,7 +327,11 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   stepComplete(step) {
     if (step === 1) return Boolean(this.revision?.title);
     if (step === 2) return (this.revision?.entries || []).length > 0 && (this.revision?.stops || []).length > 0;
-    if (step === 3) return Boolean(this.revision?.presentationBaseline);
+    if (step === 3) {
+      if (!this.revision?.presentationBaseline) return false;
+      if (this.revision?.deliveryMode !== "synchronized") return true;
+      return Boolean(this.revision?.synchronization?.joinAlias && this.revision?.quiz?.questions?.length);
+    }
     if (step === 4) return this.revision?.routeReview?.status === "ready";
     if (step === 5) return this.revision?.status === "published";
     return false;
@@ -298,20 +346,30 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     if (form.matches("[data-create-visit]")) {
       if (!this.availableOperation("visit.create")) return;
       await this.execute(async () => {
+        const title = String(data.get("title") || "").trim();
+        const synchronized = data.has("synchronized");
         const response = await authoringRepository.createVisit({
           ownerType: this.principal.type,
           ownerId: this.principal.id,
-          title: String(data.get("title") || "").trim(),
+          title,
           description: String(data.get("description") || "").trim(),
+          deliveryMode: synchronized ? "synchronized" : "self_guided",
+          ...(synchronized ? { synchronization: { joinAlias: suggestedJoinAlias(title) } } : {}),
         });
         navigate(`/workspace/visit-authoring?visitId=${encodeURIComponent(response.visit._id)}&step=2`);
       }, "Bozza visita creata");
       return;
     }
     if (form.matches("[data-visit-main]")) {
+      const title = String(data.get("title") || "").trim();
+      const deliveryMode = data.has("synchronized") ? "synchronized" : "self_guided";
       await this.execute(() => authoringRepository.updateVisit(this.visitId, {
-        title: String(data.get("title") || "").trim(),
+        title,
         description: String(data.get("description") || "").trim(),
+        deliveryMode,
+        ...(deliveryMode === "synchronized" && !this.revision?.synchronization?.joinAlias
+          ? { synchronization: { joinAlias: suggestedJoinAlias(title) } }
+          : {}),
       }), "Informazioni principali salvate");
       return;
     }
@@ -328,13 +386,18 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       return;
     }
     if (form.matches("[data-visit-settings]")) {
-      await this.execute(() => authoringRepository.updateVisit(this.visitId, {
+      const payload = {
         presentationBaseline: {
           depthPreference: asNullableNumber(data.get("depthPreference")),
           languageComplexityPreference: asNullableNumber(data.get("languageComplexityPreference")),
           locale: String(data.get("locale") || "").trim() || null,
         },
-      }), "Impostazioni della visita salvate");
+      };
+      if (this.revision?.deliveryMode === "synchronized") {
+        payload.synchronization = { joinAlias: String(data.get("joinAlias") || "").trim() || null };
+        payload.quiz = { questions: this.quizPayload() };
+      }
+      await this.execute(() => authoringRepository.updateVisit(this.visitId, payload), "Impostazioni della visita salvate");
       return;
     }
     if (form.matches("[data-visit-logistics]")) {
@@ -411,11 +474,14 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   };
 
   onInput = (event) => {
-    const target = event.target instanceof HTMLInputElement ? event.target : null;
-    if (!target?.matches("[data-preference-range]")) return;
-    const card = target.closest(".preference-card");
-    const output = card?.querySelector("[data-preference-output]");
-    if (output) output.textContent = preferenceLabel(target.dataset.preferenceRange, target.value);
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target instanceof HTMLInputElement && target.matches("[data-preference-range]")) {
+      const card = target.closest(".preference-card");
+      const output = card?.querySelector("[data-preference-output]");
+      if (output) output.textContent = preferenceLabel(target.dataset.preferenceRange, target.value);
+    }
+    if (target.closest("[data-quiz-question-card]")) this.captureQuizDraft();
   };
 
   onClick = async (event) => {
@@ -424,8 +490,44 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     if (target.closest("button[data-back]")) { navigate("/workspace"); return; }
     const stepButton = target.closest("button[data-step]");
     if (stepButton) {
+      if (this.activeStep === 3) this.captureQuizDraft();
       const step = Number(stepButton.dataset.step) || 1;
       if (this.canOpenStep(step)) { this.activeStep = step; this.error = null; this.render(); }
+      return;
+    }
+    if (target.closest("button[data-add-quiz-question]")) {
+      this.captureQuizDraft();
+      this.quizDraft.push({ id: null, question: "", options: ["", ""], correctOptionIndex: 0, points: null });
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-quiz-question-card]:last-of-type [data-quiz-question]")?.focus());
+      return;
+    }
+    const removeQuestion = target.closest("button[data-remove-quiz-question]");
+    if (removeQuestion) {
+      this.captureQuizDraft();
+      this.quizDraft.splice(Number(removeQuestion.dataset.removeQuizQuestion), 1);
+      this.render();
+      return;
+    }
+    const addOption = target.closest("button[data-add-quiz-option]");
+    if (addOption) {
+      this.captureQuizDraft();
+      const question = this.quizDraft[Number(addOption.dataset.addQuizOption)];
+      if (question) question.options.push("");
+      this.render();
+      return;
+    }
+    const removeOption = target.closest("button[data-remove-quiz-option]");
+    if (removeOption) {
+      this.captureQuizDraft();
+      const question = this.quizDraft[Number(removeOption.dataset.questionIndex)];
+      const optionIndex = Number(removeOption.dataset.removeQuizOption);
+      if (question && question.options.length > 2) {
+        question.options.splice(optionIndex, 1);
+        if (question.correctOptionIndex === optionIndex) question.correctOptionIndex = 0;
+        else if (question.correctOptionIndex > optionIndex) question.correctOptionIndex -= 1;
+      }
+      this.render();
       return;
     }
     const pageButton = target.closest("button[data-content-page]");
@@ -541,13 +643,14 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   renderCreate() {
-    return `<main class="page visit-authoring-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Libreria</button><span>/</span><span>Nuova visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>Nuova visita</h1><p>Definisci le informazioni essenziali, poi scegli i contenuti e mettili in ordine.</p></div></header><section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><h2>Come si presenta questa visita?</h2></div></header><form data-create-visit class="editor-form"><label>Titolo<input name="title" required maxlength="160"></label><label>Descrizione<textarea name="description" rows="5"></textarea></label><button type="submit" ${this.busy ? "disabled" : ""}>Crea la bozza e scegli i contenuti ${icon("chevron", { size: 15 })}</button></form></section>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}</main>`;
+    return `<main class="page visit-authoring-page"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Libreria</button><span>/</span><span>Nuova visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>Nuova visita</h1><p>Definisci le informazioni essenziali, poi scegli i contenuti e mettili in ordine.</p></div></header><section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><h2>Come si presenta questa visita?</h2></div></header><form data-create-visit class="editor-form"><label>Titolo<input name="title" required maxlength="160"></label><label>Descrizione<textarea name="description" rows="5"></textarea></label><label class="synchronized-toggle"><input type="checkbox" name="synchronized"><span><strong>Visita sincronizzata</strong><small>Una guida controlla la tappa comune; ogni partecipante può adattare il modo in cui legge o ascolta i contenuti.</small></span></label><button type="submit" ${this.busy ? "disabled" : ""}>Crea la bozza e scegli i contenuti ${icon("chevron", { size: 15 })}</button></form></section>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}</main>`;
   }
 
   renderStepOne() {
     if (this.activeStep !== 1) return "";
-    if (!this.editable) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><h2>${escapeHtml(this.revision?.title || "Visita")}</h2><p>${escapeHtml(this.revision?.description || "Nessuna descrizione")}</p></div></header></section>`;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni</span><h2>Presenta la visita</h2></div></header><form data-visit-main class="editor-form"><label>Titolo<input name="title" required maxlength="160" value="${escapeHtml(this.revision?.title || "")}"></label><label>Descrizione<textarea name="description" rows="5">${escapeHtml(this.revision?.description || "")}</textarea></label><div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>Salva</button><button class="button-secondary" type="button" data-step="2">Costruisci la visita</button></div></form></section>`;
+    const synchronized = this.revision?.deliveryMode === "synchronized";
+    if (!this.editable) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><h2>${escapeHtml(this.revision?.title || "Visita")}</h2><p>${escapeHtml(this.revision?.description || "Nessuna descrizione")}</p><span class="chip">${synchronized ? "Visita sincronizzata" : "Visita autonoma"}</span></div></header></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni</span><h2>Presenta la visita</h2></div></header><form data-visit-main class="editor-form"><label>Titolo<input name="title" required maxlength="160" value="${escapeHtml(this.revision?.title || "")}"></label><label>Descrizione<textarea name="description" rows="5">${escapeHtml(this.revision?.description || "")}</textarea></label><label class="synchronized-toggle"><input type="checkbox" name="synchronized" ${synchronized ? "checked" : ""}><span><strong>Visita sincronizzata</strong><small>La guida controlla l'avanzamento comune dal Navigator. I partecipanti mantengono i propri adattamenti di lettura e ascolto.</small></span></label><div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>Salva</button><button class="button-secondary" type="button" data-step="2">Costruisci la visita</button></div></form></section>`;
   }
 
   renderOccurrenceChoice() {
@@ -606,12 +709,22 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Costruisci la visita</span><h2>Trova i contenuti, aggiungili e mettili in ordine</h2><p>ArtAround propone la collocazione fisica quando è univoca. Trascina le tappe o i contenuti della stessa tappa per cambiare la sequenza.</p></div><span class="count">${count}</span></header><div class="visit-content-composer"><section class="available-content-pane" aria-label="Contenuti disponibili">${this.renderContentSearch()}</section><aside class="visit-selection-pane" aria-label="Sequenza della visita"><header><span class="eyebrow">La tua visita</span><h3>${escapeHtml(this.revision?.title || "Visita")}</h3><p>${count} ${count === 1 ? "contenuto" : "contenuti"}</p></header>${this.renderVisitSequence()}</aside></div><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
   }
 
+  renderQuizEditor() {
+    const cards = this.quizDraft.map((question, questionIndex) => {
+      const options = question.options.length ? question.options : ["", ""];
+      const correctOptionIndex = Math.max(0, Math.min(options.length - 1, Number(question.correctOptionIndex) || 0));
+      return `<article class="quiz-question-card" data-quiz-question-card data-quiz-question-id="${escapeHtml(question.id || "")}"><header><div><span class="eyebrow">Domanda ${questionIndex + 1}</span><h4>Domanda a scelta multipla</h4></div><button class="button-secondary danger" type="button" data-remove-quiz-question="${questionIndex}">${icon("trash", { size: 14 })} Rimuovi</button></header><label>Domanda<input data-quiz-question value="${escapeHtml(question.question)}" placeholder="Es. Chi ha realizzato quest'opera?"></label><div class="quiz-option-list"><span class="field-label">Risposte</span>${options.map((option, optionIndex) => `<div class="quiz-option-row"><label class="quiz-correct-choice"><input type="radio" name="quiz-correct-${questionIndex}" value="${optionIndex}" data-quiz-correct ${optionIndex === correctOptionIndex ? "checked" : ""}><span>Corretta</span></label><label><span>Risposta ${optionIndex + 1}</span><input data-quiz-option value="${escapeHtml(option)}" placeholder="Scrivi una possibile risposta"></label><button class="button-secondary icon-button danger" type="button" data-question-index="${questionIndex}" data-remove-quiz-option="${optionIndex}" aria-label="Rimuovi risposta ${optionIndex + 1}" ${options.length <= 2 ? "disabled" : ""}>×</button></div>`).join("")}</div><div class="quiz-question-footer"><button class="button-secondary" type="button" data-add-quiz-option="${questionIndex}">${icon("plus", { size: 14 })} Aggiungi risposta</button><label>Punti facoltativi<input type="number" min="0" step="1" data-quiz-points value="${escapeHtml(question.points ?? "")}" placeholder="1"></label></div></article>`;
+    }).join("");
+    return `<section class="synchronized-settings" aria-labelledby="synchronized-settings-title"><header><span class="synchronized-settings__icon">${icon("users", { size: 20 })}</span><div><span class="eyebrow">Visita sincronizzata</span><h3 id="synchronized-settings-title">Ingresso dei partecipanti e quiz finale</h3><p>L'alias serve agli studenti per entrare nella lobby. Le domande restano nello snapshot della visita; risposte e punteggi verranno registrati soltanto durante l'esecuzione.</p></div></header><label class="join-alias-setting">Alias di ingresso<input name="joinAlias" maxlength="80" value="${escapeHtml(this.revision?.synchronization?.joinAlias || "")}" placeholder="Es. Fenice rossa"><small>Usa due o tre parole facili da leggere, ricordare e digitare.</small></label><div class="quiz-editor"><div class="quiz-editor-heading"><div><h4>Quiz finale</h4><p>${this.quizDraft.length ? `${this.quizDraft.length} ${this.quizDraft.length === 1 ? "domanda configurata" : "domande configurate"}.` : "Non hai ancora aggiunto domande."}</p></div><button class="button-secondary" type="button" data-add-quiz-question>${icon("plus", { size: 14 })} Aggiungi domanda</button></div>${cards || `<div class="empty-state compact"><h4>Nessuna domanda</h4><p>Aggiungi almeno una domanda prima del controllo finale.</p></div>`}</div></section>`;
+  }
+
   renderStepThree() {
     if (this.activeStep !== 3) return "";
     const baseline = this.revision?.presentationBaseline || {};
     const depth = preferenceValue(baseline.depthPreference);
     const language = preferenceValue(baseline.languageComplexityPreference);
-    const content = this.editable ? `<form data-visit-settings class="visit-settings-form"><article class="preference-card"><div class="preference-card__copy"><span class="eyebrow">Quanto approfondire</span><h3>Livello di approfondimento</h3><p>Indica quanta parte dei contenuti proporre durante la visita. Un valore basso privilegia testi brevi ed essenziali; un valore alto favorisce spiegazioni più articolate.</p></div><div class="range-control"><div class="range-value"><span>Scelta attuale</span><output data-preference-output>${escapeHtml(preferenceLabel("depth", depth))}</output></div><input name="depthPreference" type="range" min="0" max="1" step="0.1" value="${depth}" data-preference-range="depth" aria-label="Livello di approfondimento"><div class="range-ends"><span>Essenziale</span><span>Molto approfondita</span></div></div></article><article class="preference-card"><div class="preference-card__copy"><span class="eyebrow">Come parlare</span><h3>Complessità del linguaggio</h3><p>Guida la scelta dei testi in base al pubblico. Verso sinistra ArtAround preferisce un linguaggio immediato; verso destra può usare termini più ricchi e specialistici.</p></div><div class="range-control"><div class="range-value"><span>Scelta attuale</span><output data-preference-output>${escapeHtml(preferenceLabel("language", language))}</output></div><input name="languageComplexityPreference" type="range" min="0" max="1" step="0.1" value="${language}" data-preference-range="language" aria-label="Complessità del linguaggio"><div class="range-ends"><span>Molto semplice</span><span>Specialistico</span></div></div></article><label class="locale-setting">Lingua preferita<input name="locale" value="${escapeHtml(baseline.locale || "")}" placeholder="es. it-IT"><small>Verranno privilegiati i testi disponibili in questa lingua.</small></label><button type="submit" ${this.busy ? "disabled" : ""}>Salva impostazioni</button></form>` : `<div class="review-grid"><article><span>Approfondimento</span><strong>${escapeHtml(preferenceLabel("depth", depth))}</strong></article><article><span>Linguaggio</span><strong>${escapeHtml(preferenceLabel("language", language))}</strong></article><article><span>Lingua</span><strong>${escapeHtml(baseline.locale || "Non impostata")}</strong></article></div>`;
+    const synchronized = this.revision?.deliveryMode === "synchronized";
+    const content = this.editable ? `<form data-visit-settings class="visit-settings-form"><article class="preference-card"><div class="preference-card__copy"><span class="eyebrow">Quanto approfondire</span><h3>Livello di approfondimento</h3><p>Indica quanta parte dei contenuti proporre durante la visita. Un valore basso privilegia testi brevi ed essenziali; un valore alto favorisce spiegazioni più articolate.</p></div><div class="range-control"><div class="range-value"><span>Scelta attuale</span><output data-preference-output>${escapeHtml(preferenceLabel("depth", depth))}</output></div><input name="depthPreference" type="range" min="0" max="1" step="0.1" value="${depth}" data-preference-range="depth" aria-label="Livello di approfondimento"><div class="range-ends"><span>Essenziale</span><span>Molto approfondita</span></div></div></article><article class="preference-card"><div class="preference-card__copy"><span class="eyebrow">Come parlare</span><h3>Complessità del linguaggio</h3><p>Guida la scelta dei testi in base al pubblico. Verso sinistra ArtAround preferisce un linguaggio immediato; verso destra può usare termini più ricchi e specialistici.</p></div><div class="range-control"><div class="range-value"><span>Scelta attuale</span><output data-preference-output>${escapeHtml(preferenceLabel("language", language))}</output></div><input name="languageComplexityPreference" type="range" min="0" max="1" step="0.1" value="${language}" data-preference-range="language" aria-label="Complessità del linguaggio"><div class="range-ends"><span>Molto semplice</span><span>Specialistico</span></div></div></article><label class="locale-setting">Lingua preferita<input name="locale" value="${escapeHtml(baseline.locale || "")}" placeholder="es. it-IT"><small>Verranno privilegiati i testi disponibili in questa lingua.</small></label>${synchronized ? this.renderQuizEditor() : ""}<button type="submit" ${this.busy ? "disabled" : ""}>Salva impostazioni</button></form>` : `<div class="review-grid"><article><span>Approfondimento</span><strong>${escapeHtml(preferenceLabel("depth", depth))}</strong></article><article><span>Linguaggio</span><strong>${escapeHtml(preferenceLabel("language", language))}</strong></article><article><span>Lingua</span><strong>${escapeHtml(baseline.locale || "Non impostata")}</strong></article>${synchronized ? `<article><span>Alias di ingresso</span><strong>${escapeHtml(this.revision?.synchronization?.joinAlias || "Non impostato")}</strong></article><article><span>Quiz finale</span><strong>${this.revision?.quiz?.questions?.length || 0} domande</strong></article>` : ""}</div>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">3</span><div><span class="eyebrow">Impostazioni</span><h2>Adatta la visita al tuo pubblico</h2><p>Queste preferenze non modificano i contenuti: aiutano il Navigator a scegliere, tra i testi disponibili, quelli più adatti alla visita.</p></div></header>${content}<div class="step-actions"><button class="button-secondary" type="button" data-step="2">Indietro</button><button type="button" data-step="4">Controlla il percorso</button></div></section>`;
   }
 
@@ -643,7 +756,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const roles = { core: 0, recommended: 0, optional: 0 };
     for (const entry of entries) roles[entry.role || "recommended"] = (roles[entry.role || "recommended"] || 0) + 1;
     const venues = [...new Set(stops.map((stop) => stop.venue?.name).filter(Boolean))];
-    return `<div class="review-grid"><article><span>Contenuti</span><strong>${entries.length}</strong><small>${roles.core} essenziali · ${roles.recommended} consigliati · ${roles.optional} facoltativi</small></article><article><span>Tappe</span><strong>${stops.length}</strong></article><article><span>Sedi</span><strong>${venues.length}</strong><small>${escapeHtml(venues.join(", ") || "Nessuna")}</small></article><article><span>Percorso</span><strong>${escapeHtml(this.revision?.routeReview?.status === "ready" ? "Verificabile" : "Da controllare")}</strong></article><article><span>Stato</span><strong>${escapeHtml(this.revision?.status || "draft")}</strong></article></div>`;
+    return `<div class="review-grid"><article><span>Contenuti</span><strong>${entries.length}</strong><small>${roles.core} essenziali · ${roles.recommended} consigliati · ${roles.optional} facoltativi</small></article><article><span>Tappe</span><strong>${stops.length}</strong></article><article><span>Sedi</span><strong>${venues.length}</strong><small>${escapeHtml(venues.join(", ") || "Nessuna")}</small></article><article><span>Modalità</span><strong>${this.revision?.deliveryMode === "synchronized" ? "Sincronizzata" : "Autonoma"}</strong></article><article><span>Percorso</span><strong>${escapeHtml(this.revision?.routeReview?.status === "ready" ? "Verificabile" : "Da controllare")}</strong></article><article><span>Stato</span><strong>${escapeHtml(this.revision?.status || "draft")}</strong></article></div>`;
   }
   renderWorkflowOperation(operation) {
     if (operation.requiresMessage) return `<form data-workflow-form class="workflow-message-form"><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><label>Motivazione<textarea name="message" rows="3" required></textarea></label><button class="button-secondary" type="submit" ${this.busy ? "disabled" : ""}>${escapeHtml(workflowLabel(operation))}</button></form>`;
@@ -674,9 +787,10 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       .sequence-group{padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.sequence-group>header{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:.55rem;align-items:center}.sequence-group>header small,.sequence-entry small{display:block;color:var(--sage-600)}.sequence-entry{grid-template-columns:auto minmax(0,1fr);margin-top:.55rem}.entry-controls{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:.55rem}.entry-controls .compact-actions{grid-column:1/-1;margin-top:0}.drag-handle{cursor:grab;color:var(--sage-600);font-weight:900;letter-spacing:-.18rem;padding-right:.18rem}.sequence-group[data-dragging=true],.sequence-entry[data-dragging=true]{opacity:.45}.contextual-group{border-style:dashed}.icon-button{min-width:2.25rem;padding:.4rem}.danger{color:var(--red-700)}
       .advanced-panel{padding:.8rem;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--surface)}.missing-stop-notice{padding:.9rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.missing-stop-notice p{margin:.3rem 0 0}.stop-builder{display:grid;gap:.8rem;padding:1rem;border:1px solid var(--sage-300);border-radius:var(--radius-lg);background:var(--sage-50)}.stop-builder>header{display:flex;align-items:flex-start;gap:.75rem}.stop-builder h4,.stop-builder p{margin:0}.stop-builder p{margin-top:.2rem;color:var(--sage-600)}.stop-builder__icon{display:grid;place-items:center;flex:0 0 2.5rem;height:2.5rem;border-radius:.7rem;background:var(--ink-900);color:#fff}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:.1rem}.target-grid--scroll{max-height:20rem;overflow-y:auto;padding-right:.25rem}.target-card{grid-template-columns:1fr auto}.occurrence-choice{display:grid;gap:.75rem;padding:1rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.occurrence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.occurrence-card{display:grid;text-align:left;padding:.8rem}
       .visit-settings-form{display:grid;gap:1rem;margin-top:1.2rem}.preference-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(18rem,.8fr);gap:1.25rem;align-items:center;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50)}.preference-card__copy h3,.preference-card__copy p{margin:0}.preference-card__copy h3{margin:.15rem 0 .35rem}.preference-card__copy p{color:var(--sage-600)}.range-control{display:grid;gap:.55rem;padding:.85rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.range-value{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;color:var(--sage-600);font-size:.78rem}.range-value output{color:var(--ink-900);font-size:1rem;font-weight:800}.range-control input[type=range]{width:100%;accent-color:var(--ink-900)}.range-ends{display:flex;justify-content:space-between;gap:1rem;color:var(--sage-600);font-size:.72rem}.locale-setting{max-width:28rem}.locale-setting small{color:var(--sage-600);font-weight:400}
+      .synchronized-toggle{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.75rem;align-items:start;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50);cursor:pointer}.synchronized-toggle input{width:1.15rem;height:1.15rem;margin-top:.15rem;accent-color:var(--ink-900)}.synchronized-toggle span{display:grid;gap:.2rem}.synchronized-toggle small{color:var(--sage-600);font-weight:400;line-height:1.45}.synchronized-settings{display:grid;gap:1rem;padding:1rem;border:1px solid var(--sage-300);border-radius:var(--radius-lg);background:var(--sage-50)}.synchronized-settings>header{display:flex;gap:.8rem;align-items:flex-start}.synchronized-settings>header h3,.synchronized-settings>header p{margin:0}.synchronized-settings>header h3{margin:.12rem 0 .3rem}.synchronized-settings>header p{color:var(--sage-600)}.synchronized-settings__icon{display:grid;place-items:center;flex:0 0 2.6rem;height:2.6rem;border-radius:.75rem;background:var(--ink-900);color:#fff}.join-alias-setting{max-width:34rem}.join-alias-setting small{color:var(--sage-600);font-weight:400}.quiz-editor{display:grid;gap:.8rem;padding-top:.25rem}.quiz-editor-heading,.quiz-question-card>header,.quiz-question-footer{display:flex;justify-content:space-between;gap:.75rem;align-items:center}.quiz-editor-heading h4,.quiz-editor-heading p,.quiz-question-card h4{margin:0}.quiz-editor-heading p{margin-top:.2rem;color:var(--sage-600)}.quiz-question-card{display:grid;gap:.9rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.quiz-option-list{display:grid;gap:.55rem}.field-label{font-size:.78rem;font-weight:800;color:var(--ink-800)}.quiz-option-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.65rem;align-items:end;padding:.65rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.quiz-option-row label{margin:0}.quiz-correct-choice{align-self:center;display:flex;gap:.35rem;align-items:center;font-size:.75rem;white-space:nowrap}.quiz-correct-choice input{width:1rem;height:1rem;accent-color:var(--ink-900)}.quiz-question-footer label{max-width:10rem}.empty-state.compact{padding:1rem}
       .pagination{display:flex;justify-content:space-between;align-items:center}.route-blockers{display:grid;gap:.6rem;padding:0;list-style:none}.route-blockers li{display:flex;justify-content:space-between;gap:.75rem;align-items:center}.transfer-form{display:grid;grid-template-columns:8rem minmax(12rem,1fr) auto;gap:.6rem;align-items:end}.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}.review-grid article{display:grid;gap:.18rem;padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.workflow-panel{display:grid;grid-template-columns:minmax(12rem,.75fr) minmax(0,1.25fr);gap:1rem}.note{color:var(--sage-600)}
       @media(max-width:68rem){.entry-controls,.workflow-panel,.transfer-form,.preference-card{grid-template-columns:1fr}.target-grid,.occurrence-grid{grid-template-columns:1fr}.sequence-group>header{grid-template-columns:auto auto 1fr}.sequence-group>header .compact-actions{grid-column:1/-1}}
-      @media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(5,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}.search-inline,.content-filter-bar{grid-template-columns:1fr}}
+      @media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(5,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}.search-inline,.content-filter-bar{grid-template-columns:1fr}.quiz-option-row{grid-template-columns:1fr auto}.quiz-correct-choice{grid-column:1/-1}.quiz-editor-heading,.quiz-question-card>header,.quiz-question-footer{align-items:stretch;flex-direction:column}.quiz-question-footer label{max-width:none}}
       @media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}}
     </style>`;
   }

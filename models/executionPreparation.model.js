@@ -13,6 +13,7 @@ const ExecutionSourceSchema = new Schema({
   visitRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null },
   generatedVisitPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlanV2", default: null },
   versionPolicy: { type: String, enum: ["follow_current", "pinned", "fixed_generated_plan"], required: true },
+  deliveryMode: { type: String, enum: ["self_guided", "synchronized"], default: "self_guided" },
 }, { _id: false });
 
 const PresentationPreferenceSchema = new Schema({
@@ -49,6 +50,7 @@ const ExecutionPreparationSchema = new Schema({
   logisticsPreview: { type: Schema.Types.Mixed, required: true },
   preVisit: { type: Schema.Types.Mixed, default: () => ({ visitNotes: [], venues: [] }) },
   sessionId: { type: Schema.Types.ObjectId, ref: "VisitSessionV2", default: null, index: true },
+  synchronizedSessionId: { type: Schema.Types.ObjectId, ref: "SynchronizedVisitSession", default: null, index: true },
   consumedAt: { type: Date, default: null },
   expiresAt: { type: Date, required: true },
 }, { timestamps: true, collection: "execution_preparations_v2" });

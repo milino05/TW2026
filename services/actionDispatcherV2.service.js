@@ -1,4 +1,6 @@
 const VisitSessionV2 = require("../models/visitSessionV2.model");
+const SynchronizedVisitSession = require("../models/synchronizedVisitSession.model");
+const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
 const AppError = require("../utils/AppError");
 const {
   deriveRuntimeActions,
@@ -17,6 +19,15 @@ const {
   projectNavigationRoute,
   projectNextRouteObstacles,
 } = require("./navigationProjectionV2.service");
+const {
+  startSynchronizedVisit,
+  startSynchronizedQuiz,
+  completeSynchronizedVisit,
+  cancelSynchronizedVisit,
+  controlSynchronizedPlayback,
+} = require("./synchronizedVisitSession.service");
+const { notifySynchronizedVisitChanged } = require("./synchronizedVisitRealtime.service");
+const { submitSynchronizedQuiz } = require("./synchronizedVisitQuiz.service");
 
 const INTERACTION_CHANNELS = new Set(["button", "controlled_voice", "natural_language", "system"]);
 
@@ -84,8 +95,46 @@ async function claimRuntimeVersion({ sessionId, userId, expectedRuntimeVersion }
   throw new AppError("La Session e stata modificata", 409, [{ code: "RUNTIME_VERSION_CONFLICT", context: { currentRuntimeVersion: current.runtimeVersion } }]);
 }
 
-async function executeDescriptor({ sessionId, userId, descriptor }) {
+async function claimSynchronizedRuntimeVersion({ synchronizedSessionId, userId, expectedRuntimeVersion }) {
+  const membership = await SynchronizedVisitMembership.findOne({ synchronizedSessionId, userId, role: "host", status: "active" }).select("_id").lean();
+  if (!membership) throw new AppError("Operazione riservata alla guida", 403, [{ code: "SYNCHRONIZED_HOST_REQUIRED" }]);
+  const claimed = await SynchronizedVisitSession.findOneAndUpdate(
+    { _id: synchronizedSessionId, runtimeVersion: expectedRuntimeVersion },
+    { $inc: { runtimeVersion: 1 } },
+    { new: true },
+  ).select("_id runtimeVersion").lean();
+  if (claimed) return claimed.runtimeVersion;
+  const current = await SynchronizedVisitSession.findById(synchronizedSessionId).select("runtimeVersion").lean();
+  if (!current) throw new AppError("Sessione sincronizzata non disponibile", 404);
+  throw new AppError("La sessione di gruppo è stata modificata", 409, [{ code: "RUNTIME_VERSION_CONFLICT", context: { currentRuntimeVersion: current.runtimeVersion } }]);
+}
+
+async function executeDescriptor({ sessionId, userId, descriptor, input = null }) {
   switch (descriptor.type) {
+    case "SYNCHRONIZED_START":
+      await startSynchronizedVisit({ synchronizedSessionId: descriptor.synchronizedSessionId, userId }); return null;
+    case "SYNCHRONIZED_START_QUIZ":
+      await startSynchronizedQuiz({ synchronizedSessionId: descriptor.synchronizedSessionId, userId }); return null;
+    case "SYNCHRONIZED_COMPLETE":
+      await completeSynchronizedVisit({ synchronizedSessionId: descriptor.synchronizedSessionId, userId }); return null;
+    case "SYNCHRONIZED_CANCEL":
+      await cancelSynchronizedVisit({ synchronizedSessionId: descriptor.synchronizedSessionId, userId }); return null;
+    case "SYNCHRONIZED_SUBMIT_QUIZ": {
+      const attempt = await submitSynchronizedQuiz({
+        synchronizedSessionId: descriptor.synchronizedSessionId,
+        userId,
+        answers: input?.answers,
+      });
+      return { type: "quiz_submitted", score: attempt.score, maxScore: attempt.maxScore };
+    }
+    case "SYNCHRONIZED_PLAYBACK_PLAY":
+      await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "play" }); return null;
+    case "SYNCHRONIZED_PLAYBACK_PAUSE":
+      await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "pause" }); return null;
+    case "SYNCHRONIZED_PLAYBACK_RESUME":
+      await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "resume" }); return null;
+    case "SYNCHRONIZED_PLAYBACK_STOP":
+      await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "stop" }); return null;
     case "PROGRESS_NEXT": await advanceSession({ sessionId, userId, direction: "next" }); return null;
     case "PROGRESS_PREVIOUS": await advanceSession({ sessionId, userId, direction: "previous" }); return null;
     case "PRESENTATION_DEPTH_INCREASE": await changePresentationDepthV2({ sessionId, userId, direction: "up" }); return null;
@@ -158,20 +207,37 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     throw new AppError("Action non disponibile nello stato corrente", 409, [{ code: "ACTION_NOT_AVAILABLE" }]);
   }
   const descriptor = withCurrentSemanticContext(rawDescriptor, derived.session);
-  if (derived.session.runtimeVersion !== expectedRuntimeVersion) {
-    throw new AppError("La Session e stata modificata", 409, [{ code: "RUNTIME_VERSION_CONFLICT", context: { currentRuntimeVersion: derived.session.runtimeVersion } }]);
+  descriptor.synchronizedSessionId = derived.synchronizedSession?._id || null;
+  const descriptorVersion = descriptor.runtimeScope === "synchronized_visit_session"
+    ? derived.synchronizedSession?.runtimeVersion
+    : derived.session.runtimeVersion;
+  if (descriptorVersion !== expectedRuntimeVersion) {
+    throw new AppError("La Session e stata modificata", 409, [{ code: "RUNTIME_VERSION_CONFLICT", context: { currentRuntimeVersion: descriptorVersion } }]);
   }
 
-  await claimRuntimeVersion({ sessionId, userId, expectedRuntimeVersion });
+  if (descriptor.runtimeScope === "synchronized_visit_session") {
+    await claimSynchronizedRuntimeVersion({ synchronizedSessionId: derived.synchronizedSession._id, userId, expectedRuntimeVersion });
+  } else {
+    await claimRuntimeVersion({ sessionId, userId, expectedRuntimeVersion });
+  }
   let effect = null;
   try {
-    effect = await executeDescriptor({ sessionId, userId, descriptor });
+    effect = await executeDescriptor({ sessionId, userId, descriptor, input: payload.input || null });
   } catch (error) {
     await VisitSessionV2.updateOne(
       { _id: sessionId, userId },
       { $push: { interactionEvents: interactionEvent({ userId, descriptor, interactionChannel, status: "rejected", code: errorCode(error) }) } },
     ).catch(() => {});
     throw error;
+  }
+
+  if (descriptor.runtimeScope === "synchronized_visit_session" || descriptor.type === "SYNCHRONIZED_SUBMIT_QUIZ") {
+    notifySynchronizedVisitChanged({
+      synchronizedSessionId: derived.synchronizedSession._id,
+      runtimeVersion: descriptor.runtimeScope === "synchronized_visit_session"
+        ? expectedRuntimeVersion + 1
+        : derived.synchronizedSession.runtimeVersion,
+    });
   }
 
   await VisitSessionV2.updateOne(

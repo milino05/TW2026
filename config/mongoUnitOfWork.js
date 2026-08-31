@@ -1,6 +1,47 @@
 const mongoose = require("mongoose");
 
 const INSTALL_MARKER = Symbol.for("artaround.mongoUnitOfWork.installed");
+const DROP_GUARD_MARKER = Symbol.for("artaround.databaseDropGuard.installed");
+
+function databaseNameFromMongoUri(value) {
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    return decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  } catch {
+    return "";
+  }
+}
+
+function assertDatabaseDropAllowed({
+  connectionDatabaseName,
+  configuredMongoUri = process.env.MONGO_URI,
+  allowConfiguredDatabaseDrop = process.env.ARTAROUND_ALLOW_CONFIGURED_DATABASE_DROP === "true",
+} = {}) {
+  const configuredDatabaseName = databaseNameFromMongoUri(configuredMongoUri);
+  if (
+    !allowConfiguredDatabaseDrop
+    && configuredDatabaseName
+    && connectionDatabaseName === configuredDatabaseName
+  ) {
+    throw new Error(
+      `Refusing to drop the configured application database "${configuredDatabaseName}". Use an isolated test database.`,
+    );
+  }
+}
+
+function installDatabaseDropGuard() {
+  const prototype = mongoose.Connection.prototype;
+  if (prototype[DROP_GUARD_MARKER]) return;
+  const nativeDropDatabase = prototype.dropDatabase;
+  prototype.dropDatabase = function guardedDropDatabase(...args) {
+    assertDatabaseDropAllowed({
+      connectionDatabaseName: this.name || this.db?.databaseName || "",
+    });
+    return nativeDropDatabase.apply(this, args);
+  };
+  prototype[DROP_GUARD_MARKER] = true;
+}
 
 function supportsNativeTransactionsFromHello(hello) {
   return Boolean(hello?.setName || hello?.msg === "isdbgrid");
@@ -43,10 +84,14 @@ function installMongoUnitOfWorkCompatibility(connection = mongoose.connection) {
   return state;
 }
 
+installDatabaseDropGuard();
 installMongoUnitOfWorkCompatibility();
 
 module.exports = {
+  assertDatabaseDropAllowed,
+  databaseNameFromMongoUri,
   detectNativeTransactionSupport,
+  installDatabaseDropGuard,
   installMongoUnitOfWorkCompatibility,
   supportsNativeTransactionsFromHello,
 };

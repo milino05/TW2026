@@ -60,6 +60,19 @@ function cloneDetachedVisitRevision(sourceRevision, { title = null } = {}) {
     editorialSources,
     contentEntries,
     visitAnchors,
+    deliveryMode: source.deliveryMode || "self_guided",
+    synchronization: {
+      joinAlias: source.synchronization?.joinAlias || null,
+    },
+    quiz: {
+      questions: (source.quiz?.questions || []).map((question) => ({
+        _id: oid(),
+        question: question.question || "",
+        options: [...(question.options || [])],
+        correctOptionIndex: Number(question.correctOptionIndex) || 0,
+        points: question.points ?? null,
+      })),
+    },
     presentationBaseline: source.presentationBaseline || null,
     logistics: {
       preVisitNotes: [...(source.logistics?.preVisitNotes || [])],

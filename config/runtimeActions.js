@@ -1,4 +1,67 @@
 const ACTION_DEFINITIONS = Object.freeze({
+  SYNCHRONIZED_START: Object.freeze({
+    actionId: "synchronization.start",
+    type: "SYNCHRONIZED_START",
+    family: "synchronization",
+    label: "Avvia la visita",
+    controlledVoiceAliases: ["avvia la visita", "inizia la visita"],
+  }),
+  SYNCHRONIZED_START_QUIZ: Object.freeze({
+    actionId: "synchronization.quiz.start",
+    type: "SYNCHRONIZED_START_QUIZ",
+    family: "synchronization",
+    label: "Avvia il quiz",
+    controlledVoiceAliases: ["avvia il quiz", "inizia il quiz"],
+  }),
+  SYNCHRONIZED_COMPLETE: Object.freeze({
+    actionId: "synchronization.complete",
+    type: "SYNCHRONIZED_COMPLETE",
+    family: "synchronization",
+    label: "Concludi la visita",
+    controlledVoiceAliases: ["concludi la visita", "termina la visita di gruppo"],
+  }),
+  SYNCHRONIZED_CANCEL: Object.freeze({
+    actionId: "synchronization.cancel",
+    type: "SYNCHRONIZED_CANCEL",
+    family: "synchronization",
+    label: "Annulla la sessione",
+    controlledVoiceAliases: [],
+  }),
+  SYNCHRONIZED_SUBMIT_QUIZ: Object.freeze({
+    actionId: "synchronization.quiz.submit",
+    type: "SYNCHRONIZED_SUBMIT_QUIZ",
+    family: "quiz",
+    label: "Invia le risposte",
+    controlledVoiceAliases: [],
+  }),
+  SYNCHRONIZED_PLAYBACK_PLAY: Object.freeze({
+    actionId: "synchronization.playback.play",
+    type: "SYNCHRONIZED_PLAYBACK_PLAY",
+    family: "playback",
+    label: "Ascolta il contenuto",
+    controlledVoiceAliases: ["ascolta il contenuto", "avvia la lettura", "leggi il contenuto"],
+  }),
+  SYNCHRONIZED_PLAYBACK_PAUSE: Object.freeze({
+    actionId: "synchronization.playback.pause",
+    type: "SYNCHRONIZED_PLAYBACK_PAUSE",
+    family: "playback",
+    label: "Metti in pausa",
+    controlledVoiceAliases: ["metti in pausa", "pausa lettura"],
+  }),
+  SYNCHRONIZED_PLAYBACK_RESUME: Object.freeze({
+    actionId: "synchronization.playback.resume",
+    type: "SYNCHRONIZED_PLAYBACK_RESUME",
+    family: "playback",
+    label: "Riprendi lettura",
+    controlledVoiceAliases: ["riprendi lettura", "continua a leggere"],
+  }),
+  SYNCHRONIZED_PLAYBACK_STOP: Object.freeze({
+    actionId: "synchronization.playback.stop",
+    type: "SYNCHRONIZED_PLAYBACK_STOP",
+    family: "playback",
+    label: "Ferma ascolto",
+    controlledVoiceAliases: ["ferma ascolto", "ferma la lettura"],
+  }),
   PROGRESS_NEXT: Object.freeze({
     actionId: "progress.next",
     type: "PROGRESS_NEXT",
@@ -102,6 +165,8 @@ function publicAction(definition) {
     family: definition.family,
     label: definition.label,
     controlledVoiceAliases: [...(definition.controlledVoiceAliases || [])],
+    ...(definition.runtimeScope ? { runtimeScope: definition.runtimeScope } : {}),
+    ...(definition.runtimeVersion ? { runtimeVersion: definition.runtimeVersion } : {}),
   };
 }
 

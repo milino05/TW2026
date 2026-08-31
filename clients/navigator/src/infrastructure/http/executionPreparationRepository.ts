@@ -1,5 +1,6 @@
 import { apiClient } from "./apiClient";
 import type { SessionProjection } from "./sessionRepository";
+import type { SynchronizedVisitProjection } from "./synchronizedVisitRepository";
 
 export type RoutingProfileSelection = {
   venueId: string;
@@ -16,6 +17,7 @@ export interface ExecutionPreparationProjection {
     visitRevisionId: string | null;
     generatedVisitPlanId: string | null;
     versionPolicy: "follow_current" | "pinned" | "fixed_generated_plan";
+    deliveryMode: "self_guided" | "synchronized";
   };
   effectivePresentationPreference: null | {
     depthPreference: number | null;
@@ -72,6 +74,7 @@ export interface ExecutionPreparationProjection {
   };
   expiresAt: string;
   sessionId: string | null;
+  synchronizedSessionId: string | null;
 }
 
 export interface PreparationUpdate {
@@ -89,6 +92,7 @@ interface StartPreparationResponse {
   current: SessionProjection;
   preparation: ExecutionPreparationProjection;
   alreadyStarted: boolean;
+  synchronized?: SynchronizedVisitProjection;
 }
 
 async function createPreparation(payload: { visitId?: string; generatedVisitPlanId?: string }) {

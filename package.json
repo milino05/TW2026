@@ -3,7 +3,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.22.2",
-    "mongoose": "^7.8.11"
+    "mongoose": "^7.8.11",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
@@ -33,6 +34,6 @@
     "build:navigator": "npm --prefix clients/navigator run build",
     "build:marketplace": "npm --prefix clients/marketplace run build",
     "build:clients": "npm run build:navigator && npm run build:marketplace",
-    "test": "node -r ./config/mongoUnitOfWork.js --test --test-concurrency=1 tests/*.test.js"
+    "test": "node -r ./config/testMongoEnvironment.js -r ./config/mongoUnitOfWork.js --test --test-concurrency=1 tests/*.test.js"
   }
 }

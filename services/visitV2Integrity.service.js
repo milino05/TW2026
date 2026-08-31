@@ -13,6 +13,20 @@ function issue(field, code, message, severity = "error", context = undefined) {
 
 async function computeVisitV2Integrity(revision) {
   const issues = [];
+  if ((revision.deliveryMode || "self_guided") === "synchronized") {
+    const joinAlias = String(revision.synchronization?.joinAlias || "").trim();
+    if (!joinAlias) issues.push(issue("synchronization.joinAlias", "SYNCHRONIZED_JOIN_ALIAS_REQUIRED", "Scegli un alias semplice che i partecipanti useranno per entrare nella visita"));
+    const questions = revision.quiz?.questions || [];
+    if (!questions.length) issues.push(issue("quiz.questions", "SYNCHRONIZED_QUIZ_REQUIRED", "Aggiungi almeno una domanda per il quiz finale"));
+    questions.forEach((question, index) => {
+      const base = `quiz.questions[${index}]`;
+      const options = question.options || [];
+      if (!String(question.question || "").trim()) issues.push(issue(`${base}.question`, "QUIZ_QUESTION_REQUIRED", "Scrivi il testo della domanda"));
+      if (options.length < 2 || options.some((option) => !String(option || "").trim())) issues.push(issue(`${base}.options`, "QUIZ_OPTIONS_REQUIRED", "Aggiungi almeno due risposte complete"));
+      if (!Number.isInteger(question.correctOptionIndex) || question.correctOptionIndex < 0 || question.correctOptionIndex >= options.length) issues.push(issue(`${base}.correctOptionIndex`, "QUIZ_CORRECT_OPTION_REQUIRED", "Indica quale risposta è corretta"));
+      if (question.points != null && (!Number.isFinite(Number(question.points)) || Number(question.points) < 0)) issues.push(issue(`${base}.points`, "QUIZ_POINTS_INVALID", "I punti devono essere un numero maggiore o uguale a zero"));
+    });
+  }
   const contentSources = [
     ...(revision.contentSources || []),
     ...(revision.editorialSources || []).map((source) => ({ ...(source.toObject?.() || source), sourceType: "editorial_release", legacy: true })),

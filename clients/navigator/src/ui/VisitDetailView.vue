@@ -127,7 +127,14 @@ async function start() {
     const response = await executionPreparationRepository.start(preparation.value);
     preparation.value = response.preparation;
     runtimeStore.applySnapshot(response.current);
-    await router.push({ name: "museum-session", params: { venueId: venueId.value, sessionId: response.session._id } });
+    if (response.synchronized) {
+      await router.push({
+        name: "together-session",
+        params: { synchronizedSessionId: response.synchronized.synchronizedSession.id },
+      });
+    } else {
+      await router.push({ name: "museum-session", params: { venueId: venueId.value, sessionId: response.session._id } });
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile avviare la visita";
   } finally {
@@ -277,7 +284,7 @@ async function start() {
           <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
 
           <button class="start-visit" type="button" :disabled="starting || updating || !canStart" @click="start">
-            {{ starting ? "Avvio…" : "Inizia visita →" }}
+            {{ starting ? "Avvio…" : detail.visit.deliveryMode === "synchronized" ? "Crea la lobby →" : "Inizia visita →" }}
           </button>
         </aside>
       </div>

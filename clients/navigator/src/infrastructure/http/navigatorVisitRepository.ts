@@ -25,6 +25,7 @@ export interface LibraryVisit {
   owner: PrincipalSummary;
   physicalScope: VenueSummary[];
   stopCount: number;
+  deliveryMode: "self_guided" | "synchronized";
 }
 
 export interface NavigatorVisitDetail {
@@ -39,6 +40,7 @@ export interface NavigatorVisitDetail {
     physicalScope: VenueSummary[];
     stopCount: number;
     contentCount: number;
+    deliveryMode: "self_guided" | "synchronized";
   };
   preparation: {
     available: boolean;

@@ -135,6 +135,9 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
         ownerType: "user",
         ownerId: user._id,
         title: "Visita originale",
+        deliveryMode: "synchronized",
+        synchronization: { joinAlias: "Fenice rossa" },
+        quiz: { questions: [{ question: "Chi è l'autore?", options: ["Autore", "Altro"], correctOptionIndex: 0, points: 2 }] },
         editorialSources: [{ _id: editorialSourceId, editorialReleaseId: editorialRelease._id }],
         visitAnchors: [{ _id: anchorId, venueTargetId: target._id }],
         contentEntries: [{ editorialSourceId, itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, deliveryAnchorId: anchorId, role: "core" }],
@@ -161,6 +164,10 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     assert.equal(String(copied.revision.visitAnchors[0].venueTargetId), String(target._id));
     assert.notEqual(String(copied.revision.editorialSources[0]._id), String(published.revision.editorialSources[0]._id));
     assert.notEqual(String(copied.revision.visitAnchors[0]._id), String(published.revision.visitAnchors[0]._id));
+    assert.equal(copied.revision.deliveryMode, "synchronized");
+    assert.equal(copied.revision.synchronization.joinAlias, "Fenice rossa");
+    assert.equal(copied.revision.quiz.questions[0].question, "Chi è l'autore?");
+    assert.notEqual(String(copied.revision.quiz.questions[0]._id), String(published.revision.quiz.questions[0]._id));
 
     await updateVisitV2({ visitId: created.visit._id, payload: { title: "Originale modificata dopo la copia" }, actorUserId: user._id });
     const refreshedCopy = await VisitRevisionV2.findById(copied.visit.workingRevisionId).lean();
@@ -185,5 +192,21 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     assert.deepEqual(audit.affectedVisits[0].unavailableVenueTargetIds, [String(target._id)]);
     const sourcePublishedAfterAudit = await VisitRevisionV2.findById(published.revision._id).lean();
     assert.equal(sourcePublishedAfterAudit.status, "published");
+
+    const incompleteSynchronized = await createVisitV2({
+      actorUserId: user._id,
+      payload: {
+        ownerType: "user",
+        ownerId: user._id,
+        title: "Sincronizzata incompleta",
+        deliveryMode: "synchronized",
+        synchronization: { joinAlias: "" },
+        quiz: { questions: [] },
+      },
+    });
+    const incompleteCheck = await evaluateVisitV2Consistency({ visitId: incompleteSynchronized.visit._id, actorUserId: user._id });
+    const issueCodes = incompleteCheck.revision.integrity.issues.map((issue) => issue.code);
+    assert.ok(issueCodes.includes("SYNCHRONIZED_JOIN_ALIAS_REQUIRED"));
+    assert.ok(issueCodes.includes("SYNCHRONIZED_QUIZ_REQUIRED"));
   });
 });

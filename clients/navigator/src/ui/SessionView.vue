@@ -192,7 +192,7 @@ async function dispatch(action: AvailableAction, channel: InteractionChannel = "
     const response = await sessionRepository.dispatchAction(
       sessionId.value,
       action.actionId,
-      snapshot.value.session.runtimeVersion,
+      action.runtimeVersion || snapshot.value.session.runtimeVersion,
       channel,
     );
     runtimeStore.applySnapshot(response.runtime);
@@ -587,6 +587,7 @@ async function listenControlledVoice() {
 }
 
 .session-header {
+  flex: 0 0 auto;
   min-height: 68px;
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) 46px;
@@ -652,6 +653,7 @@ async function listenControlledVoice() {
 }
 
 .session-progress {
+  flex: 0 0 auto;
   padding: .25rem 1.25rem .7rem;
 }
 
@@ -725,8 +727,10 @@ async function listenControlledVoice() {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: .35rem 1.25rem calc(7rem + env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: .35rem 1.25rem 1.25rem;
   scrollbar-width: thin;
 }
 
@@ -928,11 +932,9 @@ async function listenControlledVoice() {
 }
 
 .session-bottom {
-  position: absolute;
+  position: relative;
   z-index: 10;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 0 0 auto;
   min-height: 84px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);

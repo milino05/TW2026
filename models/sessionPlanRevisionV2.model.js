@@ -68,7 +68,8 @@ const TimingSchema = new Schema({
 }, { _id: false });
 
 const SessionPlanRevisionV2Schema = new Schema({
-  sessionId: { type: Schema.Types.ObjectId, ref: "VisitSessionV2", required: true, index: true },
+  planOwnerType: { type: String, enum: ["visit_session", "synchronized_visit_session"], required: true, index: true, immutable: true },
+  planOwnerId: { type: Schema.Types.ObjectId, required: true, index: true, immutable: true },
   version: { type: Number, required: true, min: 1 },
   basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "SessionPlanRevisionV2", default: null },
   status: { type: String, enum: ["active", "superseded"], default: "active", index: true },
@@ -90,6 +91,6 @@ const SessionPlanRevisionV2Schema = new Schema({
   explanation: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true, collection: "session_plan_revisions_v2" });
 
-SessionPlanRevisionV2Schema.index({ sessionId: 1, version: 1 }, { unique: true });
-SessionPlanRevisionV2Schema.index({ sessionId: 1, status: 1 });
+SessionPlanRevisionV2Schema.index({ planOwnerType: 1, planOwnerId: 1, version: 1 }, { unique: true });
+SessionPlanRevisionV2Schema.index({ planOwnerType: 1, planOwnerId: 1, status: 1 });
 module.exports = mongoose.model("SessionPlanRevisionV2", SessionPlanRevisionV2Schema);

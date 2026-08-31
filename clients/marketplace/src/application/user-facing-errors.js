@@ -22,6 +22,14 @@ const FIELD_LABELS = Object.freeze({
   relatedSubjectIds: "Soggetti collegati",
   contentEntries: "Contenuti",
   visitAnchors: "Tappe",
+  synchronization: "Visita sincronizzata",
+  joinAlias: "Alias di ingresso",
+  quiz: "Quiz finale",
+  questions: "Domande",
+  question: "Domanda",
+  options: "Risposte",
+  correctOptionIndex: "Risposta corretta",
+  points: "Punti",
   authorCredits: "Autore",
   metadata: "Informazioni aggiuntive",
   semanticRefs: "Collegamenti esterni",
@@ -61,6 +69,12 @@ const CODE_MESSAGES = Object.freeze({
   LISTING_NOT_PUBLISHABLE: "La pubblicazione non può essere completata nello stato corrente.",
   EMPTY_VISIT_CONTENT: "Aggiungi almeno un contenuto prima di eseguire il controllo finale.",
   EMPTY_PHYSICAL_ITINERARY: "Aggiungi almeno una tappa fisica alla visita. Se nessun contenuto propone automaticamente una tappa, puoi sceglierla nella sezione “La tua visita”.",
+  SYNCHRONIZED_JOIN_ALIAS_REQUIRED: "Scegli un alias semplice che i partecipanti useranno per entrare.",
+  SYNCHRONIZED_QUIZ_REQUIRED: "Aggiungi almeno una domanda per il quiz finale.",
+  QUIZ_QUESTION_REQUIRED: "Scrivi il testo della domanda.",
+  QUIZ_OPTIONS_REQUIRED: "Aggiungi almeno due risposte complete.",
+  QUIZ_CORRECT_OPTION_REQUIRED: "Seleziona la risposta corretta.",
+  QUIZ_POINTS_INVALID: "Inserisci zero o un numero positivo di punti.",
 });
 
 function sentence(value) {
@@ -144,6 +158,9 @@ export function userFacingErrorMessage(message, { status = null, details = [] } 
     const visible = issues.slice(0, 4).join(" ");
     const remaining = issues.length > 4 ? ` Ci sono altri ${issues.length - 4} campi da correggere.` : "";
     return `${summary} ${visible}${remaining}`.trim();
+  }
+  if (status === 401 && /credenziali non valide|invalid credentials/i.test(String(message || ""))) {
+    return "Nome utente o password non corretti.";
   }
   if (status === 401) return "La sessione è scaduta. Accedi di nuovo per continuare.";
   if (status === 403) return "Non hai i permessi necessari per questa operazione.";
