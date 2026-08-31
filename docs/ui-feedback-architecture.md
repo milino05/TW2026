@@ -14,6 +14,18 @@ Do not choose a component from its color or from whether the message contains th
 
 A tone never decides lifecycle by itself. A danger field error, a danger callout and a danger action dialog have different behavior.
 
+## Global visibility invariant
+
+Global feedback must not be obscured by ArtAround application UI.
+
+- Toast and Action Dialog are mounted outside local page stacking contexts: Marketplace appends them to `body`; Navigator uses Vue `Teleport to="body"`.
+- `--artaround-layer-dialog` is `2147483200`.
+- `--artaround-layer-toast` is `2147483400` and intentionally sits above the dialog layer.
+- Drawers, sticky panels, bottom sheets, maps, media overlays and ordinary domain dialogs must remain below these layers.
+- Global surfaces respect safe-area insets.
+
+This guarantee applies to **global** surfaces. Inline Callout, Issue Panel, Field Feedback, Status Indicator, Empty State and Progress State remain in the content they describe; making them globally floating would destroy their contextual meaning.
+
 ## Surfaces
 
 ### Toast / Notification
@@ -23,7 +35,7 @@ Use when **something just happened** and the user does not need to do anything t
 Examples: details saved, mapping saved, venue removed, connection added, draft restored.
 
 Contract:
-- rendered by the single global `artaround-toast-center`;
+- rendered by one global notification host per client;
 - does not participate in page layout;
 - default lifetime is 3000 ms;
 - every toast owns its timer;
@@ -82,7 +94,8 @@ Contract:
 - `Escape` cancels when dismissal is allowed;
 - focus returns to the invoking control;
 - destructive confirmations use `tone="danger"`;
-- use `openActionDialog(...)` for programmatic confirmation flows.
+- global layer remains above ordinary application dialogs;
+- Marketplace uses `openActionDialog(...)` for programmatic confirmation flows; Navigator exposes `FeedbackActionDialog.vue`.
 
 ### Status Indicator
 
@@ -131,7 +144,7 @@ Contract:
    - No content exists -> **Empty State**.
    - Work is still running -> **Progress / Busy State**.
 
-## APIs and elements
+## Marketplace API and elements
 
 ```js
 import { notify } from "../application/ui-feedback.js";
@@ -156,7 +169,7 @@ const confirmed = await openActionDialog({
 });
 ```
 
-Declarative primitives are available as:
+Declarative Marketplace primitives are available as:
 
 - `artaround-callout`
 - `artaround-issue-panel`
@@ -167,8 +180,27 @@ Declarative primitives are available as:
 - `artaround-progress-state`
 - `artaround-toast-center`
 
+## Navigator API and components
+
+Navigator exposes the same notification protocol and default lifetime from `src/application/uiFeedback.ts`.
+
+Vue surfaces are:
+
+- `FeedbackToastHost.vue`
+- `FeedbackCallout.vue`
+- `FeedbackIssuePanel.vue`
+- `FeedbackFieldFeedback.vue`
+- `FeedbackActionDialog.vue`
+- `FeedbackStatusIndicator.vue`
+- `FeedbackEmptyState.vue`
+- `FeedbackProgressState.vue`
+
+The toast host is mounted once in `App.vue` and teleported to `body`.
+
 ## Migration rule
 
 Never migrate by searching for every `role="status"` or `role="alert"` and turning it into a toast. Those roles are also used by busy states, contextual search feedback, field errors and persistent blockers.
 
-The current migration adapter only registers legacy properties that were verified to be explicit transient post-action channels. Other feedback must be classified before migration.
+A legacy property is not a semantic contract either. A single `message`/`notice` property may contain both transient events and actionable contextual guidance. Every migration therefore needs an action-aware resolver, and that resolver may explicitly keep a message inline.
+
+The concrete audit is maintained in `docs/ui-feedback-action-mapping.md`.
