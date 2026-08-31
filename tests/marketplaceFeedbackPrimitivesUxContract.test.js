@@ -16,6 +16,12 @@ const main = read("clients/marketplace/src/main.js");
 const index = read("clients/marketplace/index.html");
 const router = read("clients/marketplace/src/application/router.js");
 const docs = read("docs/ui-feedback-architecture.md");
+const mapping = read("docs/ui-feedback-action-mapping.md");
+
+function cssNumber(source, name) {
+  const match = source.match(new RegExp(`${name}\\s*:\\s*(\\d+)`));
+  return match ? Number(match[1]) : NaN;
+}
 
 test("i moduli del feedback condiviso superano il syntax check", () => {
   for (const relative of [
@@ -47,6 +53,16 @@ test("lo stack mantiene il FIFO visivo: i nuovi toast vengono aggiunti sotto", (
   assert.match(styles, /artaround-toast-center\s*\{[\s\S]*position:fixed/);
 });
 
+test("toast e action dialog globali stanno sopra ogni normale scheda applicativa", () => {
+  const dialogLayer = cssNumber(styles, "--artaround-layer-dialog");
+  const toastLayer = cssNumber(styles, "--artaround-layer-toast");
+  assert.ok(dialogLayer > 2_000_000_000);
+  assert.ok(toastLayer > dialogLayer);
+  assert.match(styles, /z-index:var\(--artaround-layer-toast/);
+  assert.match(styles, /z-index:var\(--artaround-layer-dialog/);
+  assert.match(styles, /safe-area-inset-top/);
+});
+
 test("l'action dialog implementa il comportamento modale riusabile", () => {
   assert.match(primitives, /role=\"dialog\" aria-modal=\"true\"/);
   assert.match(primitives, /event\.key === "Escape"/);
@@ -74,15 +90,17 @@ test("issue panel e callout inequivocabili vengono migrati alle primitive condiv
   assert.match(surfaceAdapter, /ArtAroundVisitAuthoringView/);
 });
 
-test("la migrazione converte solo canali transitori verificati", () => {
-  assert.match(adapter, /ArtAroundNamespaceEditorView, "message"/);
-  assert.match(adapter, /ArtAroundPhysicalVocabularyEditorView, "message"/);
-  assert.match(adapter, /ArtAroundVisitAuthoringView, "message"/);
-  assert.match(adapter, /ArtAroundVenueEditorView, "message"/);
-  assert.match(adapter, /ItemAuthoringView, "notice"/);
+test("la migrazione è action-aware e non converte i canali per nome della proprietà", () => {
+  assert.match(adapter, /namespaceMessageMapping/);
+  assert.match(adapter, /physicalMessageMapping/);
+  assert.match(adapter, /visitMessageMapping/);
+  assert.match(adapter, /venueMessageMapping/);
+  assert.match(adapter, /itemNoticeMapping/);
+  assert.match(adapter, /editor\.pendingOccurrence/);
+  assert.match(adapter, /return null/);
   assert.doesNotMatch(adapter, /mediaNotice/);
   assert.doesNotMatch(adapter, /SemanticEntityPicker/);
-  assert.match(adapter, /Persistent errors, busy states, search-result/);
+  assert.match(adapter, /property name such as `message`/);
 });
 
 test("il sistema globale viene caricato prima delle view", () => {
@@ -98,7 +116,10 @@ test("il router non costruisce più notifiche DOM proprie", () => {
   assert.doesNotMatch(router, /dataRouteFeedback|data-route-feedback|createElement\("p"\)/);
 });
 
-test("la documentazione distingue tutte le surface approvate", () => {
+test("la documentazione distingue surface, mapping concreto e visibilità", () => {
   for (const heading of ["Toast / Notification", "Inline Callout", "Issue Panel", "Field Feedback", "Action Dialog", "Status Indicator", "Empty State", "Progress / Busy State"]) assert.match(docs, new RegExp(heading.replace("/", "\\/"), "i"));
   assert.match(docs, /Never migrate by searching for every `role="status"` or `role="alert"`/);
+  assert.match(mapping, /Visibility invariant/);
+  assert.match(mapping, /Visit occurrence is ambiguous/);
+  assert.match(mapping, /must not be converted to toast/i);
 });
