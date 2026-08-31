@@ -44,7 +44,7 @@ test("Navigator espone lo stesso contratto tone del Marketplace", () => {
 
 test("il toast host Navigator è globale, FIFO e con timer indipendenti", () => {
   assert.match(toastHost, /<Teleport to="body">/);
-  assert.match(toastHost, /notifications\.value\.push\(\{ \.\.\.detail, state: "visible" \}\)/);
+  assert.match(toastHost, /notifications\.value\.push\(\{ \.\.\.detail \}\)/);
   assert.match(toastHost, /const timers = new Map/);
   assert.match(toastHost, /setTimeout\(\(\) => dismiss\(detail\.id\), detail\.duration\)/);
   assert.match(toastHost, /flex-direction: column/);
@@ -52,6 +52,14 @@ test("il toast host Navigator è globale, FIFO e con timer indipendenti", () => 
   assert.match(toastHost, /position: fixed/);
   assert.match(toastHost, /safe-area-inset-top/);
   assert.match(app, /<FeedbackToastHost \/>/);
+});
+
+test("lo stack Navigator anima entrata, uscita e riordino senza ricreare i toast", () => {
+  assert.match(toastHost, /<TransitionGroup name="feedback-toast"/);
+  assert.match(toastHost, /\.feedback-toast-enter-active/);
+  assert.match(toastHost, /\.feedback-toast-leave-active/);
+  assert.match(toastHost, /\.feedback-toast-move/);
+  assert.doesNotMatch(toastHost, /data-state="entry\.state"/);
 });
 
 test("dialog e toast globali non possono essere coperti dalle normali schede dell'app", () => {
