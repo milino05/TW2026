@@ -12,6 +12,7 @@ const physicalSource = fs.readFileSync(path.join(root, "clients/marketplace/src/
 const shellPath = path.join(root, "clients/marketplace/src/ui/vocabulary-editor-shell.js");
 const shellSource = fs.readFileSync(shellPath, "utf8");
 const sharedStyles = fs.readFileSync(path.join(root, "clients/marketplace/src/styles/vocabulary-editor-shell.css"), "utf8");
+const disclosureStyles = fs.readFileSync(path.join(root, "clients/marketplace/src/styles/vocabulary-editor-disclosure.css"), "utf8");
 
 test("lo shell condiviso dei vocabolari passa il syntax gate", () => {
   const result = spawnSync(process.execPath, ["--check", shellPath], { encoding: "utf8" });
@@ -23,13 +24,15 @@ test("lo shell viene installato prima del bootstrap dell'applicazione", () => {
   assert.ok(mainSource.indexOf("vocabulary-editor-shell.js") < mainSource.indexOf("app-shell.js"));
 });
 
-test("Namespace e Physical Vocabulary caricano un unico contratto visuale dopo gli stili specifici", () => {
+test("Namespace e Physical Vocabulary caricano il contratto visuale dopo gli stili specifici", () => {
   const namespaceCss = indexSource.indexOf("namespace-editor.css");
   const physicalCss = indexSource.indexOf("physical-vocabulary-editor.css");
   const sharedCss = indexSource.indexOf("vocabulary-editor-shell.css");
-  assert.ok(namespaceCss >= 0 && physicalCss >= 0 && sharedCss >= 0);
+  const disclosureCss = indexSource.indexOf("vocabulary-editor-disclosure.css");
+  assert.ok(namespaceCss >= 0 && physicalCss >= 0 && sharedCss >= 0 && disclosureCss >= 0);
   assert.ok(sharedCss > namespaceCss);
   assert.ok(sharedCss > physicalCss);
+  assert.ok(disclosureCss > sharedCss);
 });
 
 test("il contratto visuale accoppia esplicitamente le superfici principali dei due editor", () => {
@@ -56,6 +59,23 @@ test("il Physical Vocabulary usa lo stesso header action/status pattern e la ste
   assert.match(shellSource, /button\.setAttribute\("role", "tab"\)/);
   assert.match(shellSource, /section\.setAttribute\("role", "tabpanel"\)/);
   for (const key of ["ArrowDown", "ArrowUp", "Home", "End"]) assert.match(shellSource, new RegExp(key));
+});
+
+test("le sezioni fisiche riusano gerarchia, guidance e disclosure del Namespace", () => {
+  assert.match(shellSource, /section\.classList\.add\("namespace-section"\)/);
+  assert.match(shellSource, /guidance\.className = "namespace-guidance physical-shared-guidance"/);
+  assert.match(shellSource, /grid\.classList\.add\("namespace-definition-list"\)/);
+  assert.match(shellSource, /card\.classList\.toggle\("namespace-definition--collapsed"/);
+  assert.match(shellSource, /__sharedPhysicalOpenAfterAdd/);
+  assert.match(shellSource, /\["Enter", " "\]/);
+  assert.match(disclosureStyles, /physical-definition-card\.namespace-definition--collapsed/);
+  assert.match(disclosureStyles, /physical-mapping-list\.namespace-mapping-grid/);
+});
+
+test("le card read-only non vengono esposte come controlli interattivi", () => {
+  assert.match(shellSource, /if \(editable\) \{/);
+  assert.match(shellSource, /card\.removeAttribute\("role"\)/);
+  assert.match(shellSource, /card\.removeAttribute\("tabindex"\)/);
 });
 
 test("la simmetria non cancella i campi specifici dei due domini", () => {
