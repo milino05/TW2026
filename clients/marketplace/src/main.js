@@ -10,4 +10,5 @@ import "./ui/media-viewer-adapter.js";
 import "./ui/revision-workflow-adapter.js";
 import "./ui/authoring-stepper-adapter.js";
 import "./ui/visit-reorder-adapter.js";
+import "./ui/guided-tour-adapter.js";
 import "./ui/app-shell.js";
