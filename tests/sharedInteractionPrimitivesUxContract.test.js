@@ -18,6 +18,7 @@ const queryState = read("clients/marketplace/src/application/query-state.js");
 const searchController = read("clients/marketplace/src/application/search-controller.js");
 const resourceBrowser = read("clients/marketplace/src/application/resource-browser-controller.js");
 const catalog = read("clients/marketplace/src/ui/catalog-view.js");
+const workspaceBrowser = read("clients/marketplace/src/ui/workspace-browser-view.js");
 const reorderable = read("clients/marketplace/src/ui/reorderable-list.js");
 const mediaViewer = read("clients/marketplace/src/ui/media-viewer.js");
 const formField = read("clients/marketplace/src/ui/form-field.js");
@@ -88,6 +89,19 @@ test("Catalog usa QueryState e ResourceBrowserController senza cambiare il contr
   assert.doesNotMatch(catalog, /this\.state\s*=\s*\{\s*q:/);
   assert.match(resourceBrowser, /result: null/);
   assert.match(resourceBrowser, /this\.state\.result = result/);
+});
+
+test("Workspace browser usa lo stesso query lifecycle senza cambiare route e repository contract", () => {
+  assert.match(workspaceBrowser, /import \{ QueryState \}/);
+  assert.match(workspaceBrowser, /import \{ ResourceBrowserController \}/);
+  assert.match(workspaceBrowser, /class WorkspaceQueryState extends QueryState/);
+  assert.match(workspaceBrowser, /new ResourceBrowserController/);
+  assert.match(workspaceBrowser, /marketplaceRepository\.workspaceContext\(principal\)/);
+  assert.match(workspaceBrowser, /marketplaceRepository\.workspaceResources\(principal, \{/);
+  for (const field of ["ownership", "q", "resourceTypes", "page"]) assert.match(workspaceBrowser, new RegExp(`${field}:`));
+  assert.match(workspaceBrowser, /navigate\(`\/workspace\$\{p\.toString\(\)/);
+  assert.match(workspaceBrowser, /this\.browser\.dispose\(\)/);
+  assert.doesNotMatch(workspaceBrowser, /this\.busy = true; this\.error = null; this\.render\(\);\s*try/s);
 });
 
 test("SearchController cancella richieste superseded e non lascia Promise debounce pendenti", () => {
