@@ -17,6 +17,7 @@ const feedbackCss = read("clients/marketplace/src/styles/feedback-primitives.css
 const queryState = read("clients/marketplace/src/application/query-state.js");
 const searchController = read("clients/marketplace/src/application/search-controller.js");
 const resourceBrowser = read("clients/marketplace/src/application/resource-browser-controller.js");
+const catalog = read("clients/marketplace/src/ui/catalog-view.js");
 const reorderable = read("clients/marketplace/src/ui/reorderable-list.js");
 const mediaViewer = read("clients/marketplace/src/ui/media-viewer.js");
 const formField = read("clients/marketplace/src/ui/form-field.js");
@@ -71,6 +72,22 @@ test("QueryState non inventa uno store globale e resetta la pagina sui criteri",
   assert.doesNotMatch(queryState, /window\.|localStorage|sessionStorage/);
   assert.match(resourceBrowser, /new QueryState\(\)/);
   assert.match(navigatorQueryState, /export class QueryState/);
+});
+
+test("Catalog usa QueryState e ResourceBrowserController senza cambiare il contratto repository", () => {
+  assert.match(catalog, /import \{ QueryState \}/);
+  assert.match(catalog, /import \{ ResourceBrowserController \}/);
+  assert.match(catalog, /class CatalogQueryState extends QueryState/);
+  assert.match(catalog, /new ResourceBrowserController/);
+  assert.match(catalog, /marketplaceRepository\.catalog\(\{/);
+  for (const field of ["selectedVenueIds", "page", "q", "resourceTypes"]) assert.match(catalog, new RegExp(`${field}:`));
+  assert.match(catalog, /this\.state\.setQuery/);
+  assert.match(catalog, /this\.state\.setFilter\("type"/);
+  assert.match(catalog, /this\.state\.setFilter\("selectedVenueIds"/);
+  assert.match(catalog, /this\.state\.setPage/);
+  assert.doesNotMatch(catalog, /this\.state\s*=\s*\{\s*q:/);
+  assert.match(resourceBrowser, /result: null/);
+  assert.match(resourceBrowser, /this\.state\.result = result/);
 });
 
 test("SearchController cancella richieste superseded e non lascia Promise debounce pendenti", () => {
