@@ -28,6 +28,9 @@ const theme = read("clients/navigator/src/ui/theme.css");
 const login = read("clients/navigator/src/ui/LoginView.vue");
 const generatedPlan = read("clients/navigator/src/ui/GeneratedPlanView.vue");
 const library = read("clients/navigator/src/ui/LibraryView.vue");
+const actionMenu = read("clients/navigator/src/ui/ActionMenu.vue");
+const sessionActionSheet = read("clients/navigator/src/ui/SessionActionSheet.vue");
+const interactionLayers = read("clients/navigator/src/ui/interaction-layers.css");
 const mapping = read("docs/ui-feedback-action-mapping.md");
 const marketplaceAdapter = read("clients/marketplace/src/ui/transient-feedback-adapter.js");
 const marketplaceStyles = read("clients/marketplace/src/styles/feedback-primitives.css");
@@ -78,6 +81,19 @@ test("dialog e toast globali non possono essere coperti dalle normali schede del
   assert.match(dialog, /<Teleport to="body">/);
   assert.match(dialog, /var\(--artaround-layer-dialog/);
   assert.match(toastHost, /var\(--artaround-layer-toast/);
+});
+
+test("drawer e popover Navigator stanno sotto feedback globale e fuori dai layout locali", () => {
+  const popover = cssNumber(interactionLayers, "--artaround-layer-popover");
+  const drawer = cssNumber(interactionLayers, "--artaround-layer-drawer");
+  const dialogLayer = cssNumber(theme, "--artaround-layer-dialog");
+  assert.ok(popover < drawer && drawer < dialogLayer);
+  assert.match(actionMenu, /<Teleport to="body">/);
+  assert.match(actionMenu, /var\(--artaround-layer-popover/);
+  assert.match(sessionActionSheet, /<Teleport to="body">/);
+  assert.match(sessionActionSheet, /var\(--artaround-layer-drawer/);
+  assert.match(sessionActionSheet, /event\.key !== "Tab"/);
+  assert.match(sessionActionSheet, /returnFocus/);
 });
 
 test("l'action dialog Navigator implementa una vera decisione modale", () => {
@@ -135,32 +151,35 @@ test("tutti i canali reattivi di errore/notice del Navigator sono inventariati",
   assert.deepEqual(withError, ["GenerateView.vue", "GeneratedPlanView.vue", "LibraryView.vue", "LoginView.vue", "SessionView.vue", "VisitDetailView.vue"]);
   assert.deepEqual(withNotice, ["SessionView.vue"]);
 
-  for (const selector of [
-    "error-card",
-    "session-feedback.error-feedback",
-    "previsit-state.error-state",
-    "inline-error",
-    "library-state.error-state",
-    "session-action-error",
-  ]) assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
+  for (const selector of ["error-card", "session-feedback.error-feedback", "previsit-state.error-state", "inline-error"]) {
+    assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
+  }
+  for (const migratedSelector of ["library-state.error-state", "session-action-error", "removal-dialog", "confirm-removal"]) {
+    assert.doesNotMatch(adapter, new RegExp(migratedSelector.replace(".", "\\.")));
+  }
 });
 
-test("Library mantiene errori persistenti e proietta la rimozione distruttiva sull'Action Dialog", () => {
-  assert.match(library, /library-state error-state/);
-  assert.match(library, /session-action-error/);
-  assert.match(adapter, /\.library-state\.error-state\[role=\"alert\"\]/);
-  assert.match(adapter, /\.session-action-error\[role=\"alert\"\]/);
-  assert.match(adapter, /\.removal-dialog\[role=\"alertdialog\"\]/);
-  assert.match(adapter, /\.confirm-removal/);
+test("Library usa direttamente command runner, feedback e ActionMenu condivisi", () => {
+  assert.match(library, /import \{ runUiCommand \}/);
+  assert.match(library, /import ActionMenu/);
+  assert.match(library, /import AsyncBoundary/);
+  assert.match(library, /import FeedbackCallout/);
+  assert.match(library, /import FeedbackEmptyState/);
+  assert.match(library, /import FeedbackActionDialog/);
+  assert.match(library, /<ActionMenu/);
+  assert.match(library, /<FeedbackCallout v-if="sessionActionError" tone="danger" semantic-role="alert">/);
+  assert.match(library, /<FeedbackEmptyState v-if="!visits\.length">/);
+  assert.match(library, /<FeedbackActionDialog/);
+  assert.match(library, /library\.dismiss-session:/);
+  assert.match(library, /successFeedback: \{ tone: "success", message: "Visita rimossa da quelle da riprendere\." \}/);
+  assert.doesNotMatch(library, /removal-overlay|removal-dialog|resume-popover/);
 });
 
-test("le conferme di fine visita e rimozione Library usano l'Action Dialog condiviso", () => {
+test("la conferma di fine visita legacy resta proiettata sull'Action Dialog condiviso", () => {
   assert.match(adapter, /\.confirm-sheet\[role=\"alertdialog\"\]/);
-  assert.match(adapter, /\.removal-dialog\[role=\"alertdialog\"\]/);
   assert.match(adapter, /<FeedbackActionDialog/);
   assert.match(adapter, /tone="danger"/);
   assert.match(adapter, /\.confirm-completion/);
-  assert.match(adapter, /\.confirm-removal/);
   assert.match(adapter, /resolveDialog\(true\)/);
 });
 
