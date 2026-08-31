@@ -9,4 +9,5 @@ import "./ui/legacy-feedback-surface-adapter.js";
 import "./ui/media-viewer-adapter.js";
 import "./ui/revision-workflow-adapter.js";
 import "./ui/authoring-stepper-adapter.js";
+import "./ui/visit-reorder-adapter.js";
 import "./ui/app-shell.js";
