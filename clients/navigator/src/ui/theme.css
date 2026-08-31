@@ -13,6 +13,10 @@
   --navigator-muted: #69706b;
   --navigator-border: #d8d0c4;
   --navigator-shadow: rgba(64, 48, 38, .14);
+  /* Global feedback layers are intentionally near the browser z-index ceiling.
+   * Client drawers, sticky panels, maps and ordinary modals must remain below them. */
+  --artaround-layer-dialog: 2147483200;
+  --artaround-layer-toast: 2147483400;
   color: var(--navigator-ink);
   background: var(--navigator-surface);
   font-synthesis: none;
@@ -54,6 +58,9 @@ body {
   color: var(--navigator-ink);
   background: var(--navigator-surface);
 }
+
+html.artaround-dialog-open,
+body.artaround-dialog-open { overflow: hidden; }
 
 button,
 input,
