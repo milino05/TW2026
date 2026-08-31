@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { FeedbackTone } from "../application/uiFeedback";
-withDefaults(defineProps<{ tone?: FeedbackTone }>(), { tone: "neutral" });
+withDefaults(defineProps<{ tone?: FeedbackTone; semanticRole?: "note" | "status" | "alert" }>(), { tone: "neutral", semanticRole: "note" });
 </script>
 
 <template>
-  <aside class="feedback-callout" :data-tone="tone" role="note"><slot /></aside>
+  <aside class="feedback-callout" :data-tone="tone" :role="semanticRole" :aria-live="semanticRole === 'alert' ? 'assertive' : undefined"><slot /></aside>
 </template>
 
 <style scoped>
