@@ -122,19 +122,49 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
         edges: [{ sourceSubjectId: work._id, targetSubjectId: person._id, relationTypeDefinitionId: "rel-created-by", weight: 10 }],
       },
     });
+    const revisedGraph = await createGraphRevision({
+      editorialContextId: context._id,
+      actorUserId: user._id,
+      payload: {
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        basedOnRevisionId: graph.revision._id,
+        subjectBindings: [
+          { subjectId: work._id, subjectClassDefinitionIds: ["class-work"] },
+          { subjectId: person._id, subjectClassDefinitionIds: ["class-person"] },
+        ],
+        edges: [{ sourceSubjectId: work._id, targetSubjectId: person._id, relationTypeDefinitionId: "rel-created-by", weight: 9 }],
+      },
+    });
+    await assert.rejects(
+      () => createGraphRevision({
+        editorialContextId: context._id,
+        actorUserId: user._id,
+        payload: {
+          authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+          basedOnRevisionId: graph.revision._id,
+          subjectBindings: [
+            { subjectId: work._id, subjectClassDefinitionIds: ["class-work"] },
+            { subjectId: person._id, subjectClassDefinitionIds: ["class-person"] },
+          ],
+          edges: [{ sourceSubjectId: work._id, targetSubjectId: person._id, relationTypeDefinitionId: "rel-created-by", weight: 8 }],
+        },
+      }),
+      (error) => error?.status === 409 && error?.details?.some((entry) => entry.code === "GRAPH_REVISION_CONFLICT"),
+      "una snapshot basata su una revisione superata non deve sostituire il grafo corrente",
+    );
     const release = await createEditorialRelease({
       editorialContextId: context._id,
       actorUserId: user._id,
       payload: {
         namespaceRevisionId: namespaceRevision._id,
-        graphRevisionId: graph.revision._id,
+        graphRevisionId: revisedGraph.revision._id,
         itemBindings: [{ itemEditionId: edition._id, itemRevisionId: revision._id, curationSignals: [] }],
       },
     });
 
     const refreshedContext = await EditorialContext.findById(context._id);
     assert.equal(String(refreshedContext.publishedReleaseId), String(release._id));
-    assert.equal(String(release.graphRevisionId), String(graph.revision._id));
+    assert.equal(String(release.graphRevisionId), String(revisedGraph.revision._id));
     assert.equal(String(release.itemBindings[0].itemRevisionId), String(revision._id));
 
     const summary = await projectEditorialContext({ editorialContext: refreshedContext, contentSpace, namespace });

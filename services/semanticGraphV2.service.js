@@ -22,6 +22,9 @@ const graphCache = new Map();
 function id(value) { return String(value?._id || value || ""); }
 function semanticRefKey(ref) { return `${normalizeKey(ref?.scheme)}::${String(ref?.id || ref?.refId || "").trim()}`; }
 function touchCache(key, value) { graphCache.delete(key); graphCache.set(key, value); while (graphCache.size > MAX_CACHE_ENTRIES) graphCache.delete(graphCache.keys().next().value); }
+function graphRevisionConflict() {
+  return new AppError("Il grafo è stato modificato da un’altra operazione", 409, [{ code: "GRAPH_REVISION_CONFLICT" }]);
+}
 
 async function findContextOrFail(editorialContextId) {
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
@@ -116,6 +119,13 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
 
   const expectedWorkingGraphRevisionId = context.workingGraphRevisionId || null;
   const expectedPublishedReleaseId = context.publishedReleaseId || null;
+  // The snapshot may have been prepared before this function loaded the Context.
+  // Reject a stale explicit base before the pointer CAS, otherwise a later writer
+  // could legitimately match the fresh pointer while replacing newer graph data.
+  if (normalized.basedOnRevisionId && expectedWorkingGraphRevisionId
+    && id(normalized.basedOnRevisionId) !== id(expectedWorkingGraphRevisionId)) {
+    throw graphRevisionConflict();
+  }
   let graphRevision = null;
   try {
     graphRevision = await SemanticGraphRevision.create({
@@ -150,7 +160,7 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
       publishedReleaseId: expectedPublishedReleaseId,
     }, { $set: { workingGraphRevisionId: graphRevision._id } });
     if (pointer.modifiedCount !== 1) {
-      throw new AppError("Il grafo è stato modificato da un’altra operazione", 409, [{ code: "GRAPH_REVISION_CONFLICT" }]);
+      throw graphRevisionConflict();
     }
   } catch (error) {
     if (graphRevision?._id) {
@@ -161,7 +171,7 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
       ]);
     }
     if ([11000, 112, 251].includes(Number(error?.code))) {
-      throw new AppError("Il grafo è stato modificato da un’altra operazione", 409, [{ code: "GRAPH_REVISION_CONFLICT" }]);
+      throw graphRevisionConflict();
     }
     throw error;
   }
