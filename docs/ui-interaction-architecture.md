@@ -45,6 +45,8 @@ Il componente:
 
 Non contiene capability checks locali.
 
+Namespace e Physical Vocabulary usano attualmente una compatibility projection che nasconde soltanto la riga di pulsanti legacy e delega l'operazione selezionata al relativo handler esistente. In questo modo `request_changes` del Physical conserva il proprio input di motivazione e nessuna repository call viene duplicata nel componente condiviso.
+
 ## 4. AsyncBoundary
 
 Loading, errore persistente ed empty state sono tre stati strutturali ricorrenti e devono usare una boundary coerente:
@@ -55,6 +57,8 @@ Loading, errore persistente ed empty state sono tre stati strutturali ricorrenti
 - success → contenuto normale.
 
 Un errore di caricamento persistente non è un Toast.
+
+`GeneratedPlanView` e `LibraryView` nel Navigator sono consumer diretti.
 
 ## 5. AuthoringStepper
 
@@ -101,10 +105,15 @@ Le ricerche asincrone incrementali condividono:
 - `AbortController`;
 - sequence guard contro risposte obsolete;
 - loading/error/results;
+- risultato completo opzionale oltre alla lista di risultati;
+- `getResults` per payload provider-specific;
+- query vuote quando il dominio le ammette;
 - retry;
 - selezione opzionale.
 
 Il controller non definisce provider, ranking o criteri semantici: questi restano del consumer.
+
+La primitive è pronta per payload ricchi come quelli del Generator (`results`, resolver metadata e warnings), ma quei consumer non sono ancora migrati: l'adozione deve avvenire con un refactor diretto che preservi tutti i metadati del provider.
 
 ## 8. Layer contract
 
@@ -122,6 +131,8 @@ Le superfici applicative non-feedback usano una gerarchia esplicita:
 Popover, drawer e modal applicativi devono essere montati/teletrasportati sotto `document.body` per evitare stacking context e `overflow` locali.
 
 Action Dialog e Toast restano sempre sopra le normali superfici ArtAround. Il browser top layer nativo (`<dialog>.showModal()`, popover API, ecc.) non deve essere introdotto nelle normali UI senza revisione dell'architettura.
+
+`SessionActionSheet` nel Navigator usa direttamente il layer drawer e resta quindi sotto feedback globale.
 
 ## 9. ActionMenu
 
@@ -143,6 +154,8 @@ La decisione distruttiva usa `ActionDialog`; l'esecuzione successiva usa `UiComm
 
 La conferma non deve contenere direttamente una seconda implementazione del lifecycle API. I destructive flow complessi possono fornire contenuto/acknowledgement specializzato, mantenendo comune il command lifecycle.
 
+`LibraryView` applica direttamente questa composizione in Vue. La helper Marketplace `runDestructiveAction` è disponibile ma non viene applicata tramite adapter a operazioni legacy asincrone: un adapter che si limitasse a `click()` non potrebbe attendere in modo affidabile l'effettivo completamento del comando.
+
 ## 11. ReorderableList
 
 La primitive di reorder deve mantenere più modalità di input:
@@ -155,6 +168,8 @@ La primitive di reorder deve mantenere più modalità di input:
 
 Il callback del consumer è responsabile della persistenza e delle regole di dominio sull'ordinamento.
 
+La Visit non è ancora migrata intenzionalmente. Il suo reorder distingue tappe e contenuti, usa repository differenti, limita i contenuti allo stesso `anchorKey` e vieta drop tra gruppi di delivery. Qualunque adozione della primitive deve preservare esplicitamente queste invarianti invece di sostituire meccanicamente gli handler attuali.
+
 ## 12. FormField
 
 La primitive di campo coordina automaticamente label, help text e field feedback attraverso:
@@ -164,6 +179,8 @@ La primitive di campo coordina automaticamente label, help text e field feedback
 - `aria-invalid`.
 
 La validazione di dominio resta del form/consumer.
+
+La primitive non viene applicata automaticamente ai form legacy: molti editor usano `<label>` come parte della struttura CSS e una wrapper migration indiscriminata potrebbe alterare layout e selettori. Nuovi form dovrebbero adottarla direttamente; i form esistenti richiedono refactor puntuali.
 
 ## 13. Media
 
@@ -178,11 +195,37 @@ La validazione di dominio resta del form/consumer.
 - scroll lock;
 - nessun autoplay implicito.
 
+Le preview immagini di `ItemAuthoringView` e del relativo riepilogo finale sono consumer reali del `MediaViewer`. `MediaField` non sostituisce ancora l'editor media Item, perché quel flusso incorpora suggerimento Wikidata, ottimizzazione/upload, attribution e persistenza della bozza.
+
 ## 14. GuidedTour
 
 Il controller del tour gestisce step, progressione, target DOM e preferenza “seen”. Il contenuto del tour e i target appartengono al consumer.
 
-## 15. Migration policy
+Namespace e Physical Vocabulary non sono ancora migrati al controller condiviso. I loro tutorial includono anche cambio sezione, snapshot della bozza, overlay/spotlight e apertura dello starter; un adapter superficiale introdurrebbe due fonti di verità. L'adozione richiede un refactor diretto del tutorial state.
+
+## 15. Adoption status
+
+| Pattern | Adozione reale | Stato |
+| --- | --- | --- |
+| UiCommandRunner | Navigator GeneratedPlan, Library | diretto |
+| Operation presentation | workflow condiviso | diretto |
+| RevisionWorkflowControls | Namespace, Physical Vocabulary | compatibility projection backend-authoritative |
+| AsyncBoundary | Navigator GeneratedPlan, Library | diretto |
+| AuthoringStepper | Marketplace Item, Visit | compatibility projection limitata |
+| QueryState / ResourceBrowserController | Marketplace Catalog | diretto |
+| SearchController | nessun consumer finale ancora | contratto pronto per payload ricchi |
+| LayerManager | Marketplace ActionMenu/MediaViewer; Navigator SessionActionSheet/ActionMenu | diretto |
+| ActionMenu | Navigator Library | diretto |
+| Destructive flow | Navigator Library tramite ActionDialog + UiCommandRunner | diretto; helper Marketplace non ancora adottata |
+| ReorderableList | nessun consumer finale ancora | richiede preservazione invarianti Visit |
+| FormField | nessun form legacy ancora | usare direttamente nei nuovi form; refactor puntuale per gli esistenti |
+| MediaViewer | Marketplace Item preview | diretto |
+| MediaField | nessun consumer finale ancora | Item richiede refactor domain-aware |
+| GuidedTourController | nessun consumer finale ancora | Namespace/Physical richiedono refactor diretto |
+
+“Disponibile” non significa “da applicare ovunque”. Una primitive che non rappresenta integralmente il contratto del consumer deve essere estesa o lasciata non adottata; non va forzata tramite adapter.
+
+## 16. Migration policy
 
 Ordine preferito:
 
@@ -192,7 +235,7 @@ Ordine preferito:
 
 Un adapter non deve diventare una seconda architettura permanente.
 
-## 16. Regression gates
+## 17. Regression gates
 
 I contract test devono fallire quando:
 
