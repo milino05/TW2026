@@ -1,3 +1,5 @@
+import { QueryState } from "../application/query-state.js";
+import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
 import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
@@ -20,15 +22,32 @@ const TYPE_OPTIONS = [
 ];
 const MIN_VENUE_QUERY_LENGTH = 2;
 
+class CatalogQueryState extends QueryState {
+  constructor({ q = "", type = "all", selectedVenueIds = [], page = 1 } = {}) {
+    super({
+      query: String(q || "").trim(),
+      filters: {
+        type: Object.hasOwn(TYPE_FILTERS, type) ? type : "all",
+        selectedVenueIds: [...new Set((selectedVenueIds || []).map(String).filter(Boolean))],
+      },
+      page,
+    });
+  }
+
+  get q() { return this.query; }
+  get type() { return Object.hasOwn(TYPE_FILTERS, this.filters.type) ? this.filters.type : "all"; }
+  get selectedVenueIds() { return Array.isArray(this.filters.selectedVenueIds) ? this.filters.selectedVenueIds : []; }
+}
+
 function readState() {
   const params = new URLSearchParams(window.location.search);
   const type = Object.hasOwn(TYPE_FILTERS, params.get("type")) ? params.get("type") : "all";
-  return {
+  return new CatalogQueryState({
     q: String(params.get("q") || "").trim(),
     type,
-    selectedVenueIds: [...new Set(String(params.get("selectedVenueIds") || "").split(",").map((value) => value.trim()).filter(Boolean))],
+    selectedVenueIds: String(params.get("selectedVenueIds") || "").split(",").map((value) => value.trim()).filter(Boolean),
     page: Math.max(1, Number(params.get("page")) || 1),
-  };
+  });
 }
 
 function firstOfferSummary(offers = []) {
@@ -49,24 +68,44 @@ export class ArtAroundCatalogView extends HTMLElement {
   error = null;
   state = readState();
   venueQuery = "";
+  browser = new ResourceBrowserController({
+    queryState: this.state,
+    load: async ({ query, filters, page }) => {
+      if (!this.venueSelector) this.venueSelector = await marketplaceRepository.venueSelector();
+      const catalog = await marketplaceRepository.catalog({
+        selectedVenueIds: Array.isArray(filters.selectedVenueIds) ? filters.selectedVenueIds : [],
+        page,
+        q: query,
+        resourceTypes: TYPE_FILTERS[Object.hasOwn(TYPE_FILTERS, filters.type) ? filters.type : "all"],
+      });
+      return { ...catalog, items: Array.isArray(catalog?.results) ? catalog.results : [] };
+    },
+    onStateChange: (browserState) => {
+      this.busy = browserState.loading;
+      this.error = browserState.error;
+      if (browserState.result) this.catalog = browserState.result;
+      if (this.isConnected) this.render();
+    },
+  });
 
-  connectedCallback() { this.addEventListener("submit", this.onSubmit); this.addEventListener("click", this.onClick); this.addEventListener("input", this.onInput); this.addEventListener("keydown", this.onKeyDown); this.load(); }
-  disconnectedCallback() { this.removeEventListener("submit", this.onSubmit); this.removeEventListener("click", this.onClick); this.removeEventListener("input", this.onInput); this.removeEventListener("keydown", this.onKeyDown); }
+  connectedCallback() {
+    this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("click", this.onClick);
+    this.addEventListener("input", this.onInput);
+    this.addEventListener("keydown", this.onKeyDown);
+    void this.load();
+  }
+  disconnectedCallback() {
+    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("click", this.onClick);
+    this.removeEventListener("input", this.onInput);
+    this.removeEventListener("keydown", this.onKeyDown);
+    this.browser.dispose();
+  }
 
   async load() {
-    this.busy = true;
-    this.error = null;
-    this.render();
-    try {
-      if (!this.venueSelector) this.venueSelector = await marketplaceRepository.venueSelector();
-      this.catalog = await marketplaceRepository.catalog({ selectedVenueIds: this.state.selectedVenueIds, page: this.state.page, q: this.state.q, resourceTypes: TYPE_FILTERS[this.state.type] });
-      this.syncUrl();
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Catalogo non disponibile";
-    } finally {
-      this.busy = false;
-      this.render();
-    }
+    const browserState = await this.browser.refresh();
+    if (!browserState.error && browserState.result) this.syncUrl();
   }
 
   syncUrl() {
@@ -84,12 +123,11 @@ export class ArtAroundCatalogView extends HTMLElement {
     if (!form?.matches("form[data-catalog-search]")) return;
     event.preventDefault();
     const data = new FormData(form);
-    this.state = {
-      q: String(data.get("q") || "").trim(),
-      type: Object.hasOwn(TYPE_FILTERS, String(data.get("type") || "")) ? String(data.get("type")) : "all",
-      selectedVenueIds: [...new Set(data.getAll("selectedVenueIds").map(String).filter(Boolean))],
-      page: 1,
-    };
+    const type = Object.hasOwn(TYPE_FILTERS, String(data.get("type") || "")) ? String(data.get("type")) : "all";
+    const selectedVenueIds = [...new Set(data.getAll("selectedVenueIds").map(String).filter(Boolean))];
+    this.state.setQuery(String(data.get("q") || "").trim());
+    this.state.setFilter("type", type);
+    this.state.setFilter("selectedVenueIds", selectedVenueIds);
     await this.load();
   };
 
@@ -105,20 +143,22 @@ export class ArtAroundCatalogView extends HTMLElement {
     }
     const removeVenue = target?.closest("button[data-remove-selected-venue]");
     if (removeVenue) {
-      this.state.selectedVenueIds = this.state.selectedVenueIds.filter((venueId) => String(venueId) !== String(removeVenue.dataset.removeSelectedVenue));
-      this.state.page = 1;
+      this.state.setFilter("selectedVenueIds", this.state.selectedVenueIds.filter((venueId) => String(venueId) !== String(removeVenue.dataset.removeSelectedVenue)));
       await this.load();
       return;
     }
     const pageButton = target?.closest("button[data-catalog-page]");
     if (pageButton) {
-      this.state.page = Math.max(1, Number(pageButton.dataset.catalogPage) || 1);
+      this.state.setPage(Math.max(1, Number(pageButton.dataset.catalogPage) || 1));
       await this.load();
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     if (target?.closest("button[data-clear-catalog]")) {
-      this.state = { q: "", type: "all", selectedVenueIds: [], page: 1 };
+      this.state.setQuery("");
+      this.state.setFilter("type", "all");
+      this.state.setFilter("selectedVenueIds", []);
+      this.state.setPage(1);
       this.venueQuery = "";
       await this.load();
     }
