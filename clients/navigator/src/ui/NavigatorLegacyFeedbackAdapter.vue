@@ -66,20 +66,10 @@ function consumeSessionNotice(element: Element) {
   markSurface(element, "callout", mapping.tone);
 }
 
-function bridgeDialog(root: ParentNode, {
-  dialogSelector,
-  overlaySelector,
-  confirmSelector,
-  cancelSelector = "button",
-}: {
-  dialogSelector: string;
-  overlaySelector: string;
-  confirmSelector: string;
-  cancelSelector?: string;
-}) {
-  const legacy = root.querySelector?.(dialogSelector);
+function bridgeCompletionDialog(root: ParentNode) {
+  const legacy = root.querySelector?.('.confirm-sheet[role="alertdialog"]');
   if (!(legacy instanceof HTMLElement)) return;
-  const overlay = legacy.closest(overlaySelector);
+  const overlay = legacy.closest(".modal-overlay");
   if (!(overlay instanceof HTMLElement) || overlay.dataset.artaroundFeedbackDialogBridged === "true") return;
 
   overlay.dataset.artaroundFeedbackDialogBridged = "true";
@@ -89,32 +79,17 @@ function bridgeDialog(root: ParentNode, {
     overlay,
     title: text(legacy.querySelector("h2")) || "Conferma azione",
     message: text(legacy.querySelector("h2")?.nextElementSibling ?? null),
-    cancelLabel: text(legacy.querySelector(cancelSelector)) || text(buttons[0] ?? null) || "Annulla",
-    confirmLabel: text(legacy.querySelector(confirmSelector)) || text(buttons.at(-1) ?? null) || "Conferma",
-    confirmSelector,
-    cancelSelector,
-  };
-}
-
-function bridgeKnownDialogs(root: ParentNode) {
-  if (dialogBridge.value) return;
-  bridgeDialog(root, {
-    dialogSelector: '.confirm-sheet[role="alertdialog"]',
-    overlaySelector: ".modal-overlay",
+    cancelLabel: text(buttons[0] ?? null) || "Annulla",
+    confirmLabel: text(legacy.querySelector(".confirm-completion")) || text(buttons.at(-1) ?? null) || "Conferma",
     confirmSelector: ".confirm-completion",
-  });
-  if (dialogBridge.value) return;
-  bridgeDialog(root, {
-    dialogSelector: '.removal-dialog[role="alertdialog"]',
-    overlaySelector: ".removal-overlay",
-    confirmSelector: ".confirm-removal",
-  });
+    cancelSelector: "button",
+  };
 }
 
 function scan(root: ParentNode = document) {
   for (const notice of root.querySelectorAll?.('.session-feedback[role="status"]') || []) consumeSessionNotice(notice);
 
-  for (const error of root.querySelectorAll?.('.session-feedback.error-feedback[role="alert"], .error-card[role="alert"], .previsit-state.error-state[role="alert"], .inline-error[role="alert"], .library-state.error-state[role="alert"], .session-action-error[role="alert"]') || []) {
+  for (const error of root.querySelectorAll?.('.session-feedback.error-feedback[role="alert"], .error-card[role="alert"], .previsit-state.error-state[role="alert"], .inline-error[role="alert"]') || []) {
     markSurface(error, "callout", "danger");
   }
 
@@ -123,7 +98,7 @@ function scan(root: ParentNode = document) {
   for (const warningList of root.querySelectorAll?.(".warning-list, .session-map > ul") || []) markSurface(warningList, "issue-panel", "warning");
   for (const blockerList of root.querySelectorAll?.('.blocker-list[role="alert"]') || []) markSurface(blockerList, "issue-panel", "danger");
 
-  bridgeKnownDialogs(root);
+  bridgeCompletionDialog(root);
 }
 
 function queueScan() {
