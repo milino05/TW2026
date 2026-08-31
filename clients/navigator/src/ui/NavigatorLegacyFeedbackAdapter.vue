@@ -9,6 +9,8 @@ type DialogBridge = {
   message: string;
   confirmLabel: string;
   cancelLabel: string;
+  confirmSelector: string;
+  cancelSelector: string;
 };
 
 type NoticeMapping = {
@@ -64,10 +66,20 @@ function consumeSessionNotice(element: Element) {
   markSurface(element, "callout", mapping.tone);
 }
 
-function bridgeCompletionDialog(root: ParentNode) {
-  const legacy = root.querySelector?.('.confirm-sheet[role="alertdialog"]');
+function bridgeDialog(root: ParentNode, {
+  dialogSelector,
+  overlaySelector,
+  confirmSelector,
+  cancelSelector = "button",
+}: {
+  dialogSelector: string;
+  overlaySelector: string;
+  confirmSelector: string;
+  cancelSelector?: string;
+}) {
+  const legacy = root.querySelector?.(dialogSelector);
   if (!(legacy instanceof HTMLElement)) return;
-  const overlay = legacy.closest(".modal-overlay");
+  const overlay = legacy.closest(overlaySelector);
   if (!(overlay instanceof HTMLElement) || overlay.dataset.artaroundFeedbackDialogBridged === "true") return;
 
   overlay.dataset.artaroundFeedbackDialogBridged = "true";
@@ -77,15 +89,32 @@ function bridgeCompletionDialog(root: ParentNode) {
     overlay,
     title: text(legacy.querySelector("h2")) || "Conferma azione",
     message: text(legacy.querySelector("h2")?.nextElementSibling ?? null),
-    cancelLabel: text(buttons[0] ?? null) || "Annulla",
-    confirmLabel: text(legacy.querySelector(".confirm-completion")) || text(buttons.at(-1) ?? null) || "Conferma",
+    cancelLabel: text(legacy.querySelector(cancelSelector)) || text(buttons[0] ?? null) || "Annulla",
+    confirmLabel: text(legacy.querySelector(confirmSelector)) || text(buttons.at(-1) ?? null) || "Conferma",
+    confirmSelector,
+    cancelSelector,
   };
+}
+
+function bridgeKnownDialogs(root: ParentNode) {
+  if (dialogBridge.value) return;
+  bridgeDialog(root, {
+    dialogSelector: '.confirm-sheet[role="alertdialog"]',
+    overlaySelector: ".modal-overlay",
+    confirmSelector: ".confirm-completion",
+  });
+  if (dialogBridge.value) return;
+  bridgeDialog(root, {
+    dialogSelector: '.removal-dialog[role="alertdialog"]',
+    overlaySelector: ".removal-overlay",
+    confirmSelector: ".confirm-removal",
+  });
 }
 
 function scan(root: ParentNode = document) {
   for (const notice of root.querySelectorAll?.('.session-feedback[role="status"]') || []) consumeSessionNotice(notice);
 
-  for (const error of root.querySelectorAll?.('.session-feedback.error-feedback[role="alert"], .error-card[role="alert"], .previsit-state.error-state[role="alert"], .inline-error[role="alert"]') || []) {
+  for (const error of root.querySelectorAll?.('.session-feedback.error-feedback[role="alert"], .error-card[role="alert"], .previsit-state.error-state[role="alert"], .inline-error[role="alert"], .library-state.error-state[role="alert"], .session-action-error[role="alert"]') || []) {
     markSurface(error, "callout", "danger");
   }
 
@@ -94,7 +123,7 @@ function scan(root: ParentNode = document) {
   for (const warningList of root.querySelectorAll?.(".warning-list, .session-map > ul") || []) markSurface(warningList, "issue-panel", "warning");
   for (const blockerList of root.querySelectorAll?.('.blocker-list[role="alert"]') || []) markSurface(blockerList, "issue-panel", "danger");
 
-  bridgeCompletionDialog(root);
+  bridgeKnownDialogs(root);
 }
 
 function queueScan() {
@@ -110,7 +139,7 @@ function resolveDialog(confirmed: boolean) {
   const bridge = dialogBridge.value;
   if (!bridge) return;
   dialogBridge.value = null;
-  const legacy = bridge.overlay.querySelector<HTMLElement>(confirmed ? ".confirm-completion" : "button");
+  const legacy = bridge.overlay.querySelector<HTMLElement>(confirmed ? bridge.confirmSelector : bridge.cancelSelector);
   legacy?.click();
 }
 
