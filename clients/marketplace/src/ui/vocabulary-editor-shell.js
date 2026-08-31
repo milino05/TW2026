@@ -50,6 +50,22 @@ function enhancePhysicalVocabularyShell(editor) {
     button.tabIndex = selected ? 0 : -1;
   }
 
+  nav.addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const tabs = [...nav.querySelectorAll("[data-section]")];
+    const current = tabs.indexOf(document.activeElement);
+    if (current < 0 || !tabs.length) return;
+    event.preventDefault();
+    let nextIndex = current;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    else if (event.key === "ArrowDown") nextIndex = (current + 1) % tabs.length;
+    else nextIndex = (current - 1 + tabs.length) % tabs.length;
+    const nextSection = tabs[nextIndex].dataset.section;
+    editor.goToSection(nextSection);
+    requestAnimationFrame(() => editor.querySelector(`#physical-tab-${nextSection}`)?.focus({ preventScroll: true }));
+  });
+
   section.id ||= `physical-${editor.activeSection}`;
   section.setAttribute("role", "tabpanel");
   section.setAttribute("aria-labelledby", `physical-tab-${editor.activeSection}`);
