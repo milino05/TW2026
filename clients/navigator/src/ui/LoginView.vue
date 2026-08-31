@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useAuthStore, useConfiguredVenueStore } from "../application/stores";
 import { authRepository } from "../infrastructure/http/authRepository";
+import FeedbackCallout from "./FeedbackCallout.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -76,7 +77,7 @@ async function submit() {
           {{ busy ? (isRegistering ? "Creazione account…" : "Accesso…") : (isRegistering ? "Registrati" : "Accedi") }}
         </button>
       </form>
-      <p v-if="error" role="alert">{{ error }}</p>
+      <FeedbackCallout v-if="error" tone="danger" semantic-role="alert">{{ error }}</FeedbackCallout>
       <div class="auth-switch">
         <span>{{ isRegistering ? "Hai già un account?" : "Non hai ancora un account?" }}</span>
         <button type="button" class="auth-switch-button" :disabled="busy" @click="switchMode">
