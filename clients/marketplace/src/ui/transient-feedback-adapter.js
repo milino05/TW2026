@@ -1,7 +1,7 @@
 import { notify } from "../application/ui-feedback.js";
 import { ArtAroundNamespaceEditorView } from "./namespace-editor-view.js";
 import { ArtAroundPhysicalVocabularyEditorView } from "./physical-vocabulary-editor-view.js";
-import { ArtAroundItemAuthoringView } from "./item-authoring-view.js";
+import { ItemAuthoringView } from "./item-authoring-view.js";
 import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
 import { ArtAroundVenueEditorView } from "./venue-editor-view.js";
 
@@ -51,4 +51,4 @@ installTransientPropertyAdapter(ArtAroundNamespaceEditorView, "message");
 installTransientPropertyAdapter(ArtAroundPhysicalVocabularyEditorView, "message");
 installTransientPropertyAdapter(ArtAroundVisitAuthoringView, "message");
 installTransientPropertyAdapter(ArtAroundVenueEditorView, "message");
-installTransientPropertyAdapter(ArtAroundItemAuthoringView, "notice");
+installTransientPropertyAdapter(ItemAuthoringView, "notice");
