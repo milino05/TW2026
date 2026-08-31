@@ -45,7 +45,7 @@ Il componente:
 
 Non contiene capability checks locali.
 
-Namespace e Physical Vocabulary usano attualmente una compatibility projection che nasconde soltanto la riga di pulsanti legacy e delega l'operazione selezionata al relativo handler esistente. In questo modo `request_changes` del Physical conserva il proprio input di motivazione e nessuna repository call viene duplicata nel componente condiviso.
+Namespace e Physical Vocabulary usano una compatibility projection che nasconde soltanto la riga di pulsanti legacy e delega l'operazione selezionata al relativo handler esistente. In questo modo `request_changes` del Physical conserva il proprio input di motivazione e nessuna repository call viene duplicata nel componente condiviso.
 
 ## 4. AsyncBoundary
 
@@ -70,7 +70,7 @@ Un errore di caricamento persistente non è un Toast.
 - `aria-current="step"`;
 - tastiera e responsive presentation.
 
-Item e Visit sono attualmente migrati tramite una compatibility projection limitata ai due custom element. La projection legge il vecchio progress indicator e conserva `data-step` come alias per gli handler di dominio esistenti. Non introduce nuove precondizioni.
+Item e Visit sono migrati tramite una compatibility projection limitata ai due custom element. La projection legge il vecchio progress indicator e conserva `data-step` come alias per gli handler di dominio esistenti. Non introduce nuove precondizioni.
 
 Nuovi editor dovrebbero usare direttamente la primitive anziché aggiungere un secondo stepper locale.
 
@@ -95,7 +95,7 @@ Cambiare query, filtro o sort resetta la pagina a 1. Non esiste uno store global
 - risultato autorevole restituito dal repository;
 - protezione da risultati asincroni superseded.
 
-I consumer Marketplace diretti sono attualmente Catalog, Libreria Workspace, directory Organizzazioni, directory Sedi e storico Acquisizioni. Ogni consumer mantiene il proprio contratto repository e la propria forma URL; il controller coordina soltanto stato query e lifecycle asincrono.
+I consumer Marketplace diretti sono Catalog, Libreria Workspace, directory Organizzazioni, directory Sedi e storico Acquisizioni. Ogni consumer mantiene il proprio contratto repository e la propria forma URL; il controller coordina soltanto stato query e lifecycle asincrono.
 
 ## 7. SearchController
 
@@ -113,7 +113,7 @@ Le ricerche asincrone incrementali condividono:
 
 Il controller non definisce provider, ranking o criteri semantici: questi restano del consumer.
 
-La primitive è pronta per payload ricchi come quelli del Generator (`results`, resolver metadata e warnings), ma quei consumer non sono ancora migrati: l'adozione deve avvenire con un refactor diretto che preservi tutti i metadati del provider.
+`GenerateView` nel Navigator è un consumer diretto. La ricerca dei Subject mantiene integralmente il payload `results + resolver + warnings`; l'`AbortSignal` viene inoltrato dal controller fino al `fetch` del repository. Il `SemanticEntityPicker` resta invece un orchestratore di dominio specializzato perché implementa la cascata ArtAround/Venue/Wikidata, retry provider e creazione manuale.
 
 ## 8. Layer contract
 
@@ -154,11 +154,11 @@ La decisione distruttiva usa `ActionDialog`; l'esecuzione successiva usa `UiComm
 
 La conferma non deve contenere direttamente una seconda implementazione del lifecycle API. I destructive flow complessi possono fornire contenuto/acknowledgement specializzato, mantenendo comune il command lifecycle.
 
-`LibraryView` applica direttamente questa composizione in Vue. La helper Marketplace `runDestructiveAction` è disponibile ma non viene applicata tramite adapter a operazioni legacy asincrone: un adapter che si limitasse a `click()` non potrebbe attendere in modo affidabile l'effettivo completamento del comando.
+`LibraryView` applica direttamente questa composizione in Vue. La helper Marketplace `runDestructiveAction` è disponibile per consumer che possono affidarle l'intero lifecycle asincrono; non viene usata come adapter superficiale sopra operazioni legacy che non potrebbero essere attese in modo affidabile.
 
 ## 11. ReorderableList
 
-La primitive di reorder deve mantenere più modalità di input:
+La primitive di reorder mantiene più modalità di input:
 
 - drag/drop;
 - controlli espliciti before/after;
@@ -168,7 +168,7 @@ La primitive di reorder deve mantenere più modalità di input:
 
 Il callback del consumer è responsabile della persistenza e delle regole di dominio sull'ordinamento.
 
-La Visit non è ancora migrata intenzionalmente. Il suo reorder distingue tappe e contenuti, usa repository differenti, limita i contenuti allo stesso `anchorKey` e vieta drop tra gruppi di delivery. Qualunque adozione della primitive deve preservare esplicitamente queste invarianti invece di sostituire meccanicamente gli handler attuali.
+La Visit usa il reorder condiviso attraverso un adapter domain-aware. Le tappe sono installate in una lista dedicata e persistono tramite `authoringRepository.reorderVisitStop`; ciascuna lista di contenuti appartenente a una singola `anchorKey` riceve una propria istanza e persiste tramite `visitSequenceRepository.reorderContent`. Il cross-group drop è quindi escluso strutturalmente e i vecchi drag listener vengono disattivati per evitare doppie repository call.
 
 ## 12. FormField
 
@@ -180,7 +180,7 @@ La primitive di campo coordina automaticamente label, help text e field feedback
 
 La validazione di dominio resta del form/consumer.
 
-La primitive non viene applicata automaticamente ai form legacy: molti editor usano `<label>` come parte della struttura CSS e una wrapper migration indiscriminata potrebbe alterare layout e selettori. Nuovi form dovrebbero adottarla direttamente; i form esistenti richiedono refactor puntuali.
+Le directory Marketplace di Organizzazioni e Sedi sono consumer diretti dei campi di ricerca. I form legacy più complessi non vengono avvolti indiscriminatamente: l'adozione avviene solo dove il wrapper non altera selettori o struttura CSS.
 
 ## 13. Media
 
@@ -195,13 +195,13 @@ La primitive non viene applicata automaticamente ai form legacy: molti editor us
 - scroll lock;
 - nessun autoplay implicito.
 
-Le preview immagini di `ItemAuthoringView` e del relativo riepilogo finale sono consumer reali del `MediaViewer`. `MediaField` non sostituisce ancora l'editor media Item, perché quel flusso incorpora suggerimento Wikidata, ottimizzazione/upload, attribution e persistenza della bozza.
+Le preview immagini di `ItemAuthoringView` e del relativo riepilogo finale sono consumer reali del `MediaViewer`. L'upload Item usa inoltre `MediaField` come enhancement layout-neutral: il file input resta gestito dall'unico handler Item che esegue ottimizzazione/upload/persistenza, mentre la primitive fornisce lifecycle media e preview locale quando una preview esistente è disponibile. L'adapter non contiene repository call.
 
 ## 14. GuidedTour
 
-Il controller del tour gestisce step, progressione, target DOM e preferenza “seen”. Il contenuto del tour e i target appartengono al consumer.
+Il controller del tour gestisce step, progressione e preferenza “seen”. Il contenuto del tour e i target appartengono al consumer.
 
-Namespace e Physical Vocabulary non sono ancora migrati al controller condiviso. I loro tutorial includono anche cambio sezione, snapshot della bozza, overlay/spotlight e apertura dello starter; un adapter superficiale introdurrebbe due fonti di verità. L'adozione richiede un refactor diretto del tutorial state.
+Namespace e Physical Vocabulary usano il lifecycle condiviso tramite una compatibility projection che non duplica `TUTORIAL_STEPS`: il numero di step viene derivato dalla progress UI renderizzata e il controller governa indice/apertura/seen. Gli editor conservano la logica di dominio specifica: snapshot e ripristino della bozza nel Namespace; section switching, spotlight e starter nel Physical Vocabulary.
 
 ## 15. Adoption status
 
@@ -213,17 +213,17 @@ Namespace e Physical Vocabulary non sono ancora migrati al controller condiviso.
 | AsyncBoundary | Navigator GeneratedPlan/Library; Marketplace Organizzazioni/Sedi | diretto |
 | AuthoringStepper | Marketplace Item, Visit | compatibility projection limitata |
 | QueryState / ResourceBrowserController | Marketplace Catalog, Workspace, Organizzazioni, Sedi, Acquisizioni | diretto |
-| SearchController | nessun consumer finale ancora | contratto pronto per payload ricchi |
+| SearchController | Navigator Generate | diretto, payload ricco + AbortSignal |
 | LayerManager | Marketplace ActionMenu/MediaViewer; Navigator SessionActionSheet/ActionMenu | diretto |
 | ActionMenu | Navigator Library | diretto |
-| Destructive flow | Navigator Library tramite ActionDialog + UiCommandRunner | diretto; helper Marketplace non ancora adottata |
-| ReorderableList | nessun consumer finale ancora | richiede preservazione invarianti Visit |
-| FormField | nessun form legacy ancora | usare direttamente nei nuovi form; refactor puntuale per gli esistenti |
+| Destructive flow | Navigator Library tramite ActionDialog + UiCommandRunner | diretto |
+| ReorderableList | Marketplace Visit | adapter domain-aware con liste separate |
+| FormField | Marketplace Organizzazioni/Sedi | diretto |
 | MediaViewer | Marketplace Item preview | diretto |
-| MediaField | nessun consumer finale ancora | Item richiede refactor domain-aware |
-| GuidedTourController | nessun consumer finale ancora | Namespace/Physical richiedono refactor diretto |
+| MediaField | Marketplace Item upload | enhancement domain-safe, senza repository nell'adapter |
+| GuidedTourController | Namespace, Physical Vocabulary | compatibility lifecycle projection |
 
-“Disponibile” non significa “da applicare ovunque”. Una primitive che non rappresenta integralmente il contratto del consumer deve essere estesa o lasciata non adottata; non va forzata tramite adapter.
+“Disponibile” non significa “da applicare ovunque”. Una primitive che non rappresenta integralmente il contratto del consumer deve essere estesa o lasciata al dominio; non va forzata tramite adapter.
 
 ## 16. Migration policy
 
@@ -245,4 +245,5 @@ I contract test devono fallire quando:
 - viene introdotto browser top layer fuori dall'architettura approvata;
 - un nuovo error/notice channel non viene inventariato;
 - una compatibility projection si estende a nuovi domini senza decisione esplicita;
-- una primitive accessibile perde il proprio fallback tastiera/focus/ARIA.
+- una primitive accessibile perde il proprio fallback tastiera/focus/ARIA;
+- un adapter di interazione introduce una seconda repository call o duplica la logica di dominio che dovrebbe soltanto orchestrare.
