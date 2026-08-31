@@ -1,3 +1,5 @@
+import { notify } from "./ui-feedback.js";
+
 const BASE_PATH = "/marketplace";
 const ROUTES = new Set([
   "/",
@@ -49,19 +51,7 @@ function routeFeedback(pathname, search) {
 }
 
 function showRouteFeedback(message) {
-  if (!message) return;
-  const shell = document.querySelector(".market-shell");
-  if (!shell) return;
-  const previous = shell.querySelector("[data-route-feedback]");
-  previous?.remove();
-  const feedback = document.createElement("p");
-  feedback.dataset.routeFeedback = "true";
-  feedback.className = "feedback-success route-feedback";
-  feedback.setAttribute("role", "status");
-  feedback.textContent = message;
-  const header = shell.querySelector(".market-header");
-  if (header?.nextSibling) shell.insertBefore(feedback, header.nextSibling);
-  else shell.append(feedback);
+  if (message) notify.success(message);
 }
 
 export function currentRoute() {
