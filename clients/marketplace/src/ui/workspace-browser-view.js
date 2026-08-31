@@ -1,5 +1,7 @@
 import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { QueryState } from "../application/query-state.js";
+import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
@@ -7,7 +9,37 @@ import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "
 const OWNED_TYPES = [["", "Tutte le risorse"], ["item_edition", "Contenuti"], ["visit", "Visite"], ["editorial_context", "Raccolte editoriali"], ["namespace", "Regole editoriali"], ["physical_vocabulary", "Vocabolari fisici"]];
 const LICENSED_TYPES = [["", "Tutte le risorse"], ["item_edition", "Contenuti"], ["item_revision", "Versioni dei contenuti"], ["visit", "Visite"], ["visit_revision", "Versioni delle visite"], ["editorial_context", "Raccolte editoriali"], ["editorial_release", "Versioni delle raccolte"], ["namespace", "Regole editoriali"], ["namespace_revision", "Versioni delle regole editoriali"], ["physical_vocabulary", "Vocabolari fisici"], ["physical_vocabulary_revision", "Versioni dei vocabolari fisici"]];
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
-function initialState() { const p = new URLSearchParams(window.location.search); const removed = ["content", "namespace", "physical_vocabulary"].includes(p.get("removed")) ? p.get("removed") : ""; return { ownership: p.get("ownership") === "licensed" ? "licensed" : "owned", q: p.get("q") || "", resourceType: p.get("resourceType") || "", page: Math.max(1, Number(p.get("page")) || 1), removed }; }
+
+class WorkspaceQueryState extends QueryState {
+  constructor({ ownership = "owned", q = "", resourceType = "", page = 1, removed = "" } = {}) {
+    super({
+      query: String(q || ""),
+      filters: {
+        ownership: ownership === "licensed" ? "licensed" : "owned",
+        resourceType: String(resourceType || ""),
+        removed: ["content", "namespace", "physical_vocabulary"].includes(removed) ? removed : "",
+      },
+      page,
+      pageSize: 12,
+    });
+  }
+
+  get q() { return this.query; }
+  get ownership() { return this.filters.ownership === "licensed" ? "licensed" : "owned"; }
+  get resourceType() { return String(this.filters.resourceType || ""); }
+  get removed() { return String(this.filters.removed || ""); }
+}
+
+function initialState() {
+  const p = new URLSearchParams(window.location.search);
+  return new WorkspaceQueryState({
+    ownership: p.get("ownership") === "licensed" ? "licensed" : "owned",
+    q: p.get("q") || "",
+    resourceType: p.get("resourceType") || "",
+    page: Math.max(1, Number(p.get("page")) || 1),
+    removed: p.get("removed") || "",
+  });
+}
 function authoringHref(ref) { const type = String(ref?.resourceType || ""); const id = String(ref?.resourceId || ""); if (!id) return null; if (type === "item") return `/workspace/item-authoring?itemId=${encodeURIComponent(id)}`; if (type === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(id)}`; if (type === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(id)}`; if (type === "physical_vocabulary") return `/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(id)}`; if (type === "editorial_context") return `/workspace/context-compose?editorialContextId=${encodeURIComponent(id)}`; return null; }
 
 export class ArtAroundWorkspaceBrowserView extends HTMLElement {
@@ -17,31 +49,57 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   busy = false;
   error = null;
   state = initialState();
+  browser = new ResourceBrowserController({
+    queryState: this.state,
+    load: async ({ query, filters, page }) => {
+      const principal = this.principal();
+      if (!principal) throw new Error("Area di lavoro non selezionata");
+      const [workspaceContext, resources] = await Promise.all([
+        marketplaceRepository.workspaceContext(principal),
+        marketplaceRepository.workspaceResources(principal, {
+          ownership: filters.ownership === "licensed" ? "licensed" : "owned",
+          q: query,
+          resourceTypes: filters.resourceType ? [String(filters.resourceType)] : null,
+          page,
+        }),
+      ]);
+      this.workspaceContext = workspaceContext;
+      this.state.page = Math.max(1, Number(resources?.page) || page);
+      return { ...resources, items: Array.isArray(resources?.results) ? resources.results : [] };
+    },
+    onStateChange: (browserState) => {
+      this.busy = browserState.loading;
+      this.error = browserState.error;
+      if (browserState.result) this.resources = browserState.result;
+      if (this.isConnected) this.render();
+    },
+  });
 
-  connectedCallback() { this.addEventListener("click", this.onClick); this.addEventListener("submit", this.onSubmit); this.load(); }
-  disconnectedCallback() { this.removeEventListener("click", this.onClick); this.removeEventListener("submit", this.onSubmit); }
+  connectedCallback() {
+    this.addEventListener("click", this.onClick);
+    this.addEventListener("submit", this.onSubmit);
+    void this.load();
+  }
+  disconnectedCallback() {
+    this.removeEventListener("click", this.onClick);
+    this.removeEventListener("submit", this.onSubmit);
+    this.browser.dispose();
+  }
   principal() { return operatingPrincipal(this.context); }
   createHref() { return "/create"; }
   ownedLabel() { return this.context?.type === "organization" ? "Dell'organizzazione" : "Personali"; }
 
   async load() {
-    const principal = this.principal();
-    if (!principal) { this.error = "Area di lavoro non selezionata"; this.render(); return; }
-    this.busy = true; this.error = null; this.render();
-    try {
-      const [workspaceContext, resources] = await Promise.all([
-        marketplaceRepository.workspaceContext(principal),
-        marketplaceRepository.workspaceResources(principal, { ownership: this.state.ownership, q: this.state.q, resourceTypes: this.state.resourceType ? [this.state.resourceType] : null, page: this.state.page }),
-      ]);
-      this.workspaceContext = workspaceContext;
-      this.resources = resources;
-      this.state.page = resources.page;
-    } catch (error) { this.error = error instanceof Error ? error.message : "La libreria non è disponibile"; }
-    finally { this.busy = false; this.render(); }
+    await this.browser.refresh();
   }
 
   navigateWith(patch) {
-    const next = { ...this.state, ...patch, removed: "" };
+    const next = {
+      ownership: patch.ownership ?? this.state.ownership,
+      q: patch.q ?? this.state.q,
+      resourceType: patch.resourceType ?? this.state.resourceType,
+      page: patch.page ?? this.state.page,
+    };
     const p = new URLSearchParams();
     if (next.ownership !== "owned") p.set("ownership", next.ownership);
     if (next.q) p.set("q", next.q);
