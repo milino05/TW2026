@@ -23,23 +23,12 @@ test("i moduli del feedback condiviso superano il syntax check", () => {
     "clients/marketplace/src/ui/feedback-primitives.js",
     "clients/marketplace/src/ui/transient-feedback-adapter.js",
     "clients/marketplace/src/ui/legacy-feedback-surface-adapter.js",
-  ]) {
-    execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
-  }
+  ]) execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
 });
 
 test("surface e tone sono contratti separati", () => {
   for (const tone of ["neutral", "info", "success", "warning", "danger"]) assert.match(application, new RegExp(`"${tone}"`));
-  for (const element of [
-    "artaround-toast-center",
-    "artaround-callout",
-    "artaround-issue-panel",
-    "artaround-field-feedback",
-    "artaround-action-dialog",
-    "artaround-status-indicator",
-    "artaround-empty-state",
-    "artaround-progress-state",
-  ]) assert.match(primitives, new RegExp(element));
+  for (const element of ["artaround-toast-center", "artaround-callout", "artaround-issue-panel", "artaround-field-feedback", "artaround-action-dialog", "artaround-status-indicator", "artaround-empty-state", "artaround-progress-state"]) assert.match(primitives, new RegExp(element));
   assert.match(docs, /surface/i);
   assert.match(docs, /tone/i);
 });
@@ -75,9 +64,12 @@ test("le conferme semplici già classificate usano l'action dialog condiviso", (
   assert.match(surfaceAdapter, /data-confirm-action/);
 });
 
-test("gli issue panel inequivocabili vengono migrati alla primitive condivisa", () => {
-  assert.match(surfaceAdapter, /document\.createElement\("artaround-issue-panel"\)/);
-  assert.match(surfaceAdapter, /panel\.setAttribute\("tone", "warning"\)/);
+test("issue panel e callout inequivocabili vengono migrati alle primitive condivise", () => {
+  assert.match(surfaceAdapter, /replaceElement\(legacy, "artaround-issue-panel", "warning"\)/);
+  assert.match(surfaceAdapter, /replaceElement\(legacy, "artaround-callout", "warning"\)/);
+  assert.match(surfaceAdapter, /\.namespace-workflow \.issues/);
+  assert.match(surfaceAdapter, /physical-integrity--warning/);
+  assert.match(surfaceAdapter, /blocker-panel/);
   assert.match(surfaceAdapter, /ArtAroundItemAuthoringView/);
   assert.match(surfaceAdapter, /ArtAroundVisitAuthoringView/);
 });
@@ -107,15 +99,6 @@ test("il router non costruisce più notifiche DOM proprie", () => {
 });
 
 test("la documentazione distingue tutte le surface approvate", () => {
-  for (const heading of [
-    "Toast / Notification",
-    "Inline Callout",
-    "Issue Panel",
-    "Field Feedback",
-    "Action Dialog",
-    "Status Indicator",
-    "Empty State",
-    "Progress / Busy State",
-  ]) assert.match(docs, new RegExp(heading.replace("/", "\\/"), "i"));
+  for (const heading of ["Toast / Notification", "Inline Callout", "Issue Panel", "Field Feedback", "Action Dialog", "Status Indicator", "Empty State", "Progress / Busy State"]) assert.match(docs, new RegExp(heading.replace("/", "\\/"), "i"));
   assert.match(docs, /Never migrate by searching for every `role="status"` or `role="alert"`/);
 });
