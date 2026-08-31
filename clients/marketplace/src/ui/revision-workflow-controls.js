@@ -11,6 +11,7 @@ function escapeHtml(value = "") {
  */
 export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   _availableOperations = [];
+  _presentationOverrides = {};
 
   static get observedAttributes() { return ["status", "integrity-status", "busy", "actions-only"]; }
 
@@ -20,6 +21,12 @@ export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   }
   get availableOperations() { return this._availableOperations; }
 
+  set presentationOverrides(value) {
+    this._presentationOverrides = value && typeof value === "object" ? value : {};
+    if (this.isConnected) this.render();
+  }
+  get presentationOverrides() { return this._presentationOverrides; }
+
   connectedCallback() {
     this.addEventListener("click", this.onClick);
     this.render();
@@ -28,10 +35,12 @@ export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   disconnectedCallback() { this.removeEventListener("click", this.onClick); }
   attributeChangedCallback() { if (this.isConnected) this.render(); }
 
+  operations() { return revisionWorkflowOperations(this._availableOperations, this._presentationOverrides); }
+
   onClick = (event) => {
     const button = event.target instanceof Element ? event.target.closest("button[data-revision-workflow-operation]") : null;
     if (!button || this.hasAttribute("busy")) return;
-    const operation = revisionWorkflowOperations(this._availableOperations).find((entry) => entry.code === button.dataset.revisionWorkflowOperation);
+    const operation = this.operations().find((entry) => entry.code === button.dataset.revisionWorkflowOperation);
     if (!operation) return;
     this.dispatchEvent(new CustomEvent("artaround:revision-workflow-operation", {
       detail: { operation },
@@ -41,7 +50,7 @@ export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   };
 
   render() {
-    const operations = revisionWorkflowOperations(this._availableOperations);
+    const operations = this.operations();
     const revision = statusPresentation("revision", this.getAttribute("status") || "");
     const integrityState = this.getAttribute("integrity-status");
     const integrity = integrityState ? statusPresentation("integrity", integrityState) : null;
