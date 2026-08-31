@@ -3,11 +3,17 @@ import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useConfiguredVenueStore } from "../application/stores";
+import { runUiCommand } from "../application/uiCommand";
 import {
   navigatorVisitRepository,
   type LibraryVisit,
   type ResumableSession,
 } from "../infrastructure/http/navigatorVisitRepository";
+import ActionMenu from "./ActionMenu.vue";
+import AsyncBoundary from "./AsyncBoundary.vue";
+import FeedbackActionDialog from "./FeedbackActionDialog.vue";
+import FeedbackCallout from "./FeedbackCallout.vue";
+import FeedbackEmptyState from "./FeedbackEmptyState.vue";
 
 const route = useRoute();
 const configuredVenueStore = useConfiguredVenueStore();
@@ -17,24 +23,28 @@ const resumableSessions = ref<ResumableSession[]>([]);
 const busy = ref(true);
 const error = ref<string | null>(null);
 const venueId = computed(() => String(route.params.venueId));
-const openSessionMenuId = ref<string | null>(null);
 const pendingRemoval = ref<ResumableSession | null>(null);
 const removingSessionId = ref<string | null>(null);
 const sessionActionError = ref<string | null>(null);
 
-onMounted(async () => {
-  try {
-    const [library, sessions] = await Promise.all([
+onMounted(() => {
+  void runUiCommand({
+    key: `library.load:${venueId.value}`,
+    execute: () => Promise.all([
       navigatorVisitRepository.library(venueId.value),
       navigatorVisitRepository.resumableSessions(venueId.value),
-    ]);
-    visits.value = library.visits;
-    resumableSessions.value = sessions.sessions;
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : "Impossibile caricare la Library";
-  } finally {
-    busy.value = false;
-  }
+    ]),
+    lifecycle: {
+      setPending: (pending) => { busy.value = pending; },
+      clearError: () => { error.value = null; },
+      setError: (message) => { error.value = message; },
+    },
+    errorFallback: "Impossibile caricare la Library",
+    onSuccess: ([library, sessions]) => {
+      visits.value = library.visits;
+      resumableSessions.value = sessions.sessions;
+    },
+  });
 });
 
 function sessionStatus(status: ResumableSession["status"]) {
@@ -43,12 +53,7 @@ function sessionStatus(status: ResumableSession["status"]) {
   return "In corso";
 }
 
-function toggleSessionMenu(sessionId: string) {
-  openSessionMenuId.value = openSessionMenuId.value === sessionId ? null : sessionId;
-}
-
 function requestSessionRemoval(session: ResumableSession) {
-  openSessionMenuId.value = null;
   pendingRemoval.value = session;
   sessionActionError.value = null;
 }
@@ -58,22 +63,24 @@ function closeRemovalConfirm() {
   pendingRemoval.value = null;
 }
 
-async function confirmSessionRemoval() {
+function confirmSessionRemoval() {
   const session = pendingRemoval.value;
-  if (!session || removingSessionId.value) return;
-  removingSessionId.value = session.id;
-  sessionActionError.value = null;
-  try {
-    await navigatorVisitRepository.dismissResumableSession(session.id);
-    resumableSessions.value = resumableSessions.value.filter((entry) => entry.id !== session.id);
-    pendingRemoval.value = null;
-  } catch (cause) {
-    sessionActionError.value = cause instanceof Error
-      ? cause.message
-      : "Impossibile rimuovere la visita da quelle da riprendere";
-  } finally {
-    removingSessionId.value = null;
-  }
+  if (!session) return;
+  void runUiCommand({
+    key: `library.dismiss-session:${session.id}`,
+    execute: () => navigatorVisitRepository.dismissResumableSession(session.id),
+    lifecycle: {
+      setPending: (pending) => { removingSessionId.value = pending ? session.id : null; },
+      clearError: () => { sessionActionError.value = null; },
+      setError: (message) => { sessionActionError.value = message; },
+    },
+    errorFallback: "Impossibile rimuovere la visita da quelle da riprendere",
+    successFeedback: { tone: "success", message: "Visita rimossa da quelle da riprendere." },
+    onSuccess: () => {
+      resumableSessions.value = resumableSessions.value.filter((entry) => entry.id !== session.id);
+      pendingRemoval.value = null;
+    },
+  });
 }
 </script>
 
@@ -96,10 +103,12 @@ async function confirmSessionRemoval() {
     </section>
 
     <section class="library-content">
-      <p v-if="busy" class="library-state">Caricamento delle tue visite…</p>
-      <p v-else-if="error" class="library-state error-state" role="alert">{{ error }}</p>
-
-      <template v-else>
+      <AsyncBoundary
+        :loading="busy"
+        :error="error"
+        loading-message="Caricamento delle tue visite…"
+        error-title="Library non disponibile"
+      >
         <section v-if="resumableSessions.length" aria-labelledby="resume-title">
           <div class="section-heading">
             <div>
@@ -108,7 +117,9 @@ async function confirmSessionRemoval() {
             </div>
             <span>{{ resumableSessions.length }}</span>
           </div>
-          <p v-if="sessionActionError" class="session-action-error" role="alert">{{ sessionActionError }}</p>
+          <FeedbackCallout v-if="sessionActionError" tone="danger" semantic-role="alert">
+            {{ sessionActionError }}
+          </FeedbackCallout>
           <ul class="resume-list">
             <li v-for="session in resumableSessions" :key="session.id">
               <article class="resume-card">
@@ -122,25 +133,18 @@ async function confirmSessionRemoval() {
                     class="resume-link"
                     :to="{ name: 'museum-session', params: { venueId, sessionId: session.id } }"
                   >Riprendi visita</RouterLink>
-                  <div class="resume-menu">
-                    <button
-                      class="resume-menu-trigger"
-                      type="button"
-                      :aria-expanded="openSessionMenuId === session.id"
-                      :aria-controls="'resume-menu-' + session.id"
-                      :aria-label="'Opzioni per ' + session.title"
-                      @click="toggleSessionMenu(session.id)"
-                    >
+                  <ActionMenu :label="'Opzioni per ' + session.title">
+                    <template #trigger>
                       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
                         <circle cx="5" cy="12" r="1.7" fill="currentColor"/>
                         <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
                         <circle cx="19" cy="12" r="1.7" fill="currentColor"/>
                       </svg>
+                    </template>
+                    <button class="resume-delete-action" type="button" role="menuitem" @click="requestSessionRemoval(session)">
+                      Elimina visita
                     </button>
-                    <div v-if="openSessionMenuId === session.id" :id="'resume-menu-' + session.id" class="resume-popover" role="menu">
-                      <button type="button" role="menuitem" @click="requestSessionRemoval(session)">Elimina visita</button>
-                    </div>
-                  </div>
+                  </ActionMenu>
                 </div>
               </article>
             </li>
@@ -160,9 +164,14 @@ async function confirmSessionRemoval() {
             >+ Genera visita</RouterLink>
           </div>
 
-          <p v-if="!visits.length" class="library-empty">
-            Non possiedi ancora visite per questo museo.
-          </p>
+          <FeedbackEmptyState v-if="!visits.length">
+            <h3>Non possiedi ancora visite per questo museo</h3>
+            <p>Genera una visita per aggiungerla alla tua raccolta.</p>
+            <RouterLink
+              class="generate-link"
+              :to="{ name: 'museum-generate', params: { venueId } }"
+            >Genera visita</RouterLink>
+          </FeedbackEmptyState>
           <ul v-else class="visit-list">
             <li v-for="visit in visits" :key="visit.id">
               <RouterLink
@@ -185,25 +194,20 @@ async function confirmSessionRemoval() {
             </li>
           </ul>
         </section>
-      </template>
+      </AsyncBoundary>
     </section>
 
-    <div v-if="pendingRemoval" class="removal-overlay" @click.self="closeRemovalConfirm">
-      <section class="removal-dialog" role="alertdialog" aria-modal="true" aria-labelledby="removal-title">
-        <p class="eyebrow">Rimuovi dalle visite da riprendere</p>
-        <h2 id="removal-title">Eliminare “{{ pendingRemoval.title }}”?</h2>
-        <p>
-          Verrà rimossa soltanto questa sessione interrotta. La visita resterà disponibile
-          nella sezione “Le mie visite” e potrai iniziarla di nuovo.
-        </p>
-        <div>
-          <button type="button" :disabled="Boolean(removingSessionId)" @click="closeRemovalConfirm">Annulla</button>
-          <button class="confirm-removal" type="button" :disabled="Boolean(removingSessionId)" @click="confirmSessionRemoval">
-            {{ removingSessionId ? "Rimozione…" : "Elimina visita" }}
-          </button>
-        </div>
-      </section>
-    </div>
+    <FeedbackActionDialog
+      :open="Boolean(pendingRemoval)"
+      tone="danger"
+      :dismissible="!removingSessionId"
+      :title="pendingRemoval ? `Eliminare “${pendingRemoval.title}”?` : 'Eliminare visita?'"
+      message="Verrà rimossa soltanto questa sessione interrotta. La visita resterà disponibile nella sezione “Le mie visite” e potrai iniziarla di nuovo."
+      :confirm-label="removingSessionId ? 'Rimozione…' : 'Elimina visita'"
+      cancel-label="Annulla"
+      @cancel="closeRemovalConfirm"
+      @confirm="confirmSessionRemoval"
+    />
   </main>
 </template>
 
@@ -330,47 +334,12 @@ async function confirmSessionRemoval() {
   text-decoration: none;
 }
 .resume-actions { display: flex; align-items: center; gap: .5rem; }
-.resume-menu { position: relative; }
-.resume-menu-trigger {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  display: grid;
-  place-items: center;
+.resume-actions :deep(.action-menu-trigger) {
   border-color: color-mix(in srgb, var(--navigator-on-primary) 45%, transparent);
   color: var(--navigator-on-primary);
   background: color-mix(in srgb, var(--navigator-on-primary) 10%, transparent);
 }
-.resume-popover {
-  position: absolute;
-  z-index: 12;
-  right: 0;
-  top: calc(100% + .45rem);
-  min-width: 12rem;
-  padding: .35rem;
-  border: 1px solid var(--navigator-border);
-  border-radius: .8rem;
-  color: var(--navigator-ink);
-  background: var(--navigator-surface-raised);
-  box-shadow: 0 14px 34px var(--navigator-shadow);
-}
-.resume-popover button {
-  width: 100%;
-  border: 0;
-  color: #b33138;
-  background: transparent;
-  font-weight: 750;
-  text-align: left;
-}
-.resume-popover button:hover { background: color-mix(in srgb, #b33138 9%, transparent); }
-.session-action-error {
-  margin: -.35rem 0 .8rem;
-  padding: .7rem .8rem;
-  border: 1px solid color-mix(in srgb, #b33138 45%, var(--navigator-border));
-  border-radius: .75rem;
-  color: #b33138;
-  background: color-mix(in srgb, #b33138 7%, var(--navigator-surface-raised));
-}
+.resume-delete-action { color: #b33138 !important; font-weight: 750; }
 
 .generate-link {
   min-height: 44px;
@@ -414,47 +383,6 @@ async function confirmSessionRemoval() {
 .visit-copy > span { overflow: hidden; color: var(--navigator-muted); text-overflow: ellipsis; white-space: nowrap; }
 .visit-copy small { color: var(--navigator-muted); }
 .visit-arrow { color: var(--navigator-primary); font-size: 1.4rem; }
-.library-state,
-.library-empty { padding: 1.5rem; border: 1px solid var(--navigator-border); border-radius: 1rem; background: var(--navigator-surface-raised); }
-.error-state { color: #b33138; }
-
-.removal-overlay {
-  position: fixed;
-  z-index: 60;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(7, 12, 11, .58);
-}
-.removal-dialog {
-  width: min(100%, 31rem);
-  padding: clamp(1.25rem, 4vw, 2rem);
-  border: 1px solid var(--navigator-border);
-  border-radius: 1.3rem;
-  color: var(--navigator-ink);
-  background: var(--navigator-surface-raised);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, .32);
-}
-.removal-dialog h2 {
-  margin: .25rem 0 .8rem;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.65rem, 5vw, 2.2rem);
-  font-weight: 500;
-}
-.removal-dialog > p:not(.eyebrow) { color: var(--navigator-muted); line-height: 1.55; }
-.removal-dialog > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .65rem;
-  margin-top: 1.25rem;
-}
-.confirm-removal {
-  border-color: #a72e36;
-  color: #fff;
-  background: #a72e36;
-  font-weight: 760;
-}
 
 @media (max-width: 620px) {
   .library-page { padding-inline: .75rem; }
