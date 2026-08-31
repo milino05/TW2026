@@ -100,7 +100,8 @@ function enhanceDefinitionDisclosure(editor, main) {
     const definition = editor.definition(field, index);
     if (!definition) continue;
     const key = definitionKey(field, definition, index);
-    const expanded = editor.canEdit() && editor.__sharedPhysicalEditingDefinitionKey === key;
+    const editable = editor.canEdit();
+    const expanded = editable && editor.__sharedPhysicalEditingDefinitionKey === key;
     const remove = card.querySelector("[data-remove-definition]");
 
     card.classList.add("namespace-definition");
@@ -115,9 +116,15 @@ function enhanceDefinitionDisclosure(editor, main) {
     const header = card.querySelector(":scope > header");
     const heading = header?.querySelector(":scope > div");
     if (!expanded) {
-      card.setAttribute("role", "button");
-      card.tabIndex = editor.canEdit() ? 0 : -1;
-      card.setAttribute("aria-expanded", "false");
+      if (editable) {
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
+        card.setAttribute("aria-expanded", "false");
+      } else {
+        card.removeAttribute("role");
+        card.removeAttribute("tabindex");
+        card.removeAttribute("aria-expanded");
+      }
       if (remove) remove.hidden = true;
       if (heading) {
         const summary = document.createElement("div");
