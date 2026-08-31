@@ -10,13 +10,13 @@ import {
 type VisibleNotification = NotificationDetail & { state: "visible" | "exiting" };
 
 const notifications = ref<VisibleNotification[]>([]);
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const timers = new Map<string, number>();
 
 function dismiss(id: string) {
   const current = notifications.value.find((entry) => entry.id === id);
   if (!current || current.state === "exiting") return;
   const timer = timers.get(id);
-  if (timer) clearTimeout(timer);
+  if (timer) window.clearTimeout(timer);
   timers.delete(id);
   current.state = "exiting";
   window.setTimeout(() => {
@@ -33,7 +33,7 @@ function onNotification(event: Event) {
 
   if (detail.duration > 0) {
     const previous = timers.get(detail.id);
-    if (previous) clearTimeout(previous);
+    if (previous) window.clearTimeout(previous);
     timers.set(detail.id, window.setTimeout(() => dismiss(detail.id), detail.duration));
   }
 }
@@ -56,7 +56,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener(UI_NOTIFICATION_EVENT, onNotification);
   window.removeEventListener(UI_NOTIFICATION_DISMISS_EVENT, onExternalDismiss);
-  for (const timer of timers.values()) clearTimeout(timer);
+  for (const timer of timers.values()) window.clearTimeout(timer);
   timers.clear();
 });
 </script>
