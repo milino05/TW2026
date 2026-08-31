@@ -6,6 +6,7 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const indexSource = fs.readFileSync(path.join(root, "clients/marketplace/index.html"), "utf8");
+const mainSource = fs.readFileSync(path.join(root, "clients/marketplace/src/main.js"), "utf8");
 const namespaceSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/namespace-editor-view.js"), "utf8");
 const physicalSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js"), "utf8");
 const shellPath = path.join(root, "clients/marketplace/src/ui/vocabulary-editor-shell.js");
@@ -15,6 +16,11 @@ const sharedStyles = fs.readFileSync(path.join(root, "clients/marketplace/src/st
 test("lo shell condiviso dei vocabolari passa il syntax gate", () => {
   const result = spawnSync(process.execPath, ["--check", shellPath], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("lo shell viene installato prima del bootstrap dell'applicazione", () => {
+  assert.ok(mainSource.indexOf("vocabulary-editor-shell.js") >= 0);
+  assert.ok(mainSource.indexOf("vocabulary-editor-shell.js") < mainSource.indexOf("app-shell.js"));
 });
 
 test("Namespace e Physical Vocabulary caricano un unico contratto visuale dopo gli stili specifici", () => {
@@ -49,6 +55,7 @@ test("il Physical Vocabulary usa lo stesso header action/status pattern e la ste
   assert.match(shellSource, /nav\.setAttribute\("aria-orientation", "vertical"\)/);
   assert.match(shellSource, /button\.setAttribute\("role", "tab"\)/);
   assert.match(shellSource, /section\.setAttribute\("role", "tabpanel"\)/);
+  for (const key of ["ArrowDown", "ArrowUp", "Home", "End"]) assert.match(shellSource, new RegExp(key));
 });
 
 test("la simmetria non cancella i campi specifici dei due domini", () => {
