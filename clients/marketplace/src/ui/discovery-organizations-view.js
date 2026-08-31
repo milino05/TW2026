@@ -2,6 +2,7 @@ import { navigate } from "../application/router.js";
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { discoveryRepository } from "../infrastructure/http/discovery-repository.js";
+import { renderAsyncBoundary } from "./async-boundary.js";
 import { icon } from "./icons.js";
 import { renderExploreNavigation } from "./explore-navigation.js";
 
@@ -76,7 +77,18 @@ export class ArtAroundDiscoveryOrganizationsView extends HTMLElement {
     const results = this.data?.results || [];
     const total = Number(this.data?.total || 0);
     const pageSize = Number(this.data?.pageSize || 12);
-    this.innerHTML = `<main class="page discovery-directory" aria-busy="${this.busy}">${renderExploreNavigation("organizations")}<header class="page-header"><div><span class="eyebrow">Esplora ArtAround</span><h1>Organizzazioni</h1><p>Trova musei, fondazioni e altri enti culturali presenti in ArtAround.</p></div></header><form class="panel inline-form" role="search"><label>Cerca organizzazioni<input name="q" value="${escapeHtml(this.state.q)}" placeholder="Nome o descrizione"></label><button>${icon("search", { size: 15 })} Cerca</button></form>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section><div class="section-heading"><h2>Risultati</h2><span class="count">${total}</span></div>${this.busy && !this.data ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div></div>` : results.length ? `<div class="discovery-grid">${results.map((entry) => `<button class="discovery-card" type="button" data-public-organization="${escapeHtml(entry.id)}"><span class="resource-mark">${icon("building", { size: 20 })}</span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Organizzazione culturale")}</small><span>${entry.counts.venues} sedi · ${entry.counts.publications} pubblicazioni</span></span>${icon("chevron", { size: 15 })}</button>`).join("")}</div>` : `<div class="empty-state"><h3>Nessuna organizzazione trovata</h3><p>Prova a cambiare la ricerca.</p></div>`}</section>${total > pageSize ? `<nav class="pagination"><button type="button" data-page="${this.state.page - 1}" ${this.state.page <= 1 ? "disabled" : ""}>Precedente</button><span>Pagina ${this.state.page}</span><button type="button" data-page="${this.state.page + 1}" ${this.state.page * pageSize >= total ? "disabled" : ""}>Successiva</button></nav>` : ""}</main>`;
+    const ready = results.length ? `<div class="discovery-grid">${results.map((entry) => `<button class="discovery-card" type="button" data-public-organization="${escapeHtml(entry.id)}"><span class="resource-mark">${icon("building", { size: 20 })}</span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Organizzazione culturale")}</small><span>${entry.counts.venues} sedi · ${entry.counts.publications} pubblicazioni</span></span>${icon("chevron", { size: 15 })}</button>`).join("")}</div>` : "";
+    const resultsBoundary = renderAsyncBoundary({
+      loading: this.busy && !this.data,
+      error: this.error,
+      empty: Boolean(this.data) && !this.busy && !this.error && !results.length,
+      loadingMessage: "Caricamento organizzazioni…",
+      errorTitle: "Organizzazioni non disponibili",
+      emptyTitle: "Nessuna organizzazione trovata",
+      emptyMessage: "Prova a cambiare la ricerca.",
+      ready,
+    });
+    this.innerHTML = `<main class="page discovery-directory" aria-busy="${this.busy}">${renderExploreNavigation("organizations")}<header class="page-header"><div><span class="eyebrow">Esplora ArtAround</span><h1>Organizzazioni</h1><p>Trova musei, fondazioni e altri enti culturali presenti in ArtAround.</p></div></header><form class="panel inline-form" role="search"><label>Cerca organizzazioni<input name="q" value="${escapeHtml(this.state.q)}" placeholder="Nome o descrizione"></label><button>${icon("search", { size: 15 })} Cerca</button></form><section><div class="section-heading"><h2>Risultati</h2><span class="count">${total}</span></div>${resultsBoundary}</section>${!this.error && total > pageSize ? `<nav class="pagination"><button type="button" data-page="${this.state.page - 1}" ${this.state.page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${this.state.page}</span><button type="button" data-page="${this.state.page + 1}" ${this.state.page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva</button></nav>` : ""}</main>`;
   }
 }
 
