@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import "./ui/theme.css";
+import "./ui/interaction-layers.css";
 import App from "./ui/App.vue";
 import { router } from "./application/router";
 import { useAuthStore, useConfiguredVenueStore } from "./application/stores";
