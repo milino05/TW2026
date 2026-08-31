@@ -30,7 +30,7 @@ test("l'adapter disabilita i vecchi drag listener e neutralizza i vecchi move bu
   for (const name of ["onDragStart", "onDragOver", "onDrop", "onDragEnd"]) assert.match(adapter, new RegExp(name));
   assert.match(adapter, /removeEventListener\(eventName, handler\)/);
   assert.match(adapter, /removeAttribute\(legacyAttribute\)/);
-  assert.match(adapter, /data-reorder-move/);
+  assert.match(adapter, /dataset\.reorderMove\s*=/);
   assert.match(visit, /data-move-stop/);
   assert.match(visit, /data-move-content/);
 });
