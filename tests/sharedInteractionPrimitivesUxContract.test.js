@@ -19,6 +19,7 @@ const searchController = read("clients/marketplace/src/application/search-contro
 const resourceBrowser = read("clients/marketplace/src/application/resource-browser-controller.js");
 const catalog = read("clients/marketplace/src/ui/catalog-view.js");
 const workspaceBrowser = read("clients/marketplace/src/ui/workspace-browser-view.js");
+const discoveryOrganizations = read("clients/marketplace/src/ui/discovery-organizations-view.js");
 const reorderable = read("clients/marketplace/src/ui/reorderable-list.js");
 const mediaViewer = read("clients/marketplace/src/ui/media-viewer.js");
 const formField = read("clients/marketplace/src/ui/form-field.js");
@@ -102,6 +103,17 @@ test("Workspace browser usa lo stesso query lifecycle senza cambiare route e rep
   assert.match(workspaceBrowser, /navigate\(`\/workspace\$\{p\.toString\(\)/);
   assert.match(workspaceBrowser, /this\.browser\.dispose\(\)/);
   assert.doesNotMatch(workspaceBrowser, /this\.busy = true; this\.error = null; this\.render\(\);\s*try/s);
+});
+
+test("Organization discovery usa lo stesso query lifecycle e preserva q/page", () => {
+  assert.match(discoveryOrganizations, /import \{ QueryState \}/);
+  assert.match(discoveryOrganizations, /import \{ ResourceBrowserController \}/);
+  assert.match(discoveryOrganizations, /class DiscoveryQueryState extends QueryState/);
+  assert.match(discoveryOrganizations, /new ResourceBrowserController/);
+  assert.match(discoveryOrganizations, /discoveryRepository\.organizations\(\{ q: query, page \}\)/);
+  assert.match(discoveryOrganizations, /navigate\(`\/organizations\$\{p\.toString\(\)/);
+  assert.match(discoveryOrganizations, /this\.browser\.dispose\(\)/);
+  assert.doesNotMatch(discoveryOrganizations, /this\.busy = true;\s*this\.error = null;\s*this\.render\(\);\s*try/s);
 });
 
 test("SearchController cancella richieste superseded e non lascia Promise debounce pendenti", () => {
