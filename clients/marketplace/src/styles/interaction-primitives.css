@@ -115,6 +115,10 @@ artaround-form-field [data-field-help] {
   font-size: .8rem;
 }
 
+artaround-media-field[data-artaround-media-enhancement="item-upload"] {
+  display: contents;
+}
+
 [data-action-menu-panel] {
   min-width: 12rem;
   max-width: min(22rem, calc(100vw - 1rem));
