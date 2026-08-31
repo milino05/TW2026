@@ -60,13 +60,18 @@ const PERSISTENT_ERROR_ROOTS = [
   "artaround-context-hub-view",
   "artaround-catalog-view",
 ];
+const PERSISTENT_ERROR_ROOT_SELECTOR = PERSISTENT_ERROR_ROOTS.join(",");
+const PERSISTENT_ERROR_SELECTOR = '[role="alert"]:not(artaround-callout):not(artaround-issue-panel)';
 
 function replaceKnownPersistentErrors(root = document) {
-  for (const rootSelector of PERSISTENT_ERROR_ROOTS) {
-    for (const legacy of root.querySelectorAll?.(`${rootSelector} [role="alert"]:not(artaround-callout):not(artaround-issue-panel)`) || []) {
-      replaceElement(legacy, "artaround-callout", "danger", { role: "alert" });
-    }
+  const candidates = [];
+  if (root instanceof Element && root.matches(PERSISTENT_ERROR_SELECTOR) && root.closest(PERSISTENT_ERROR_ROOT_SELECTOR)) {
+    candidates.push(root);
   }
+  for (const legacy of root.querySelectorAll?.(PERSISTENT_ERROR_SELECTOR) || []) {
+    if (legacy.closest(PERSISTENT_ERROR_ROOT_SELECTOR)) candidates.push(legacy);
+  }
+  for (const legacy of new Set(candidates)) replaceElement(legacy, "artaround-callout", "danger", { role: "alert" });
 }
 
 function installPersistentErrorObserver() {
@@ -75,8 +80,7 @@ function installPersistentErrorObserver() {
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) {
-          if (!(node instanceof Element)) continue;
-          replaceKnownPersistentErrors(node.matches(PERSISTENT_ERROR_ROOTS.join(",")) ? node.parentElement || document : node);
+          if (node instanceof Element) replaceKnownPersistentErrors(node);
         }
       }
     });
