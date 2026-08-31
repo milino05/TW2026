@@ -14,7 +14,11 @@ export class ArtAroundMediaField extends HTMLElement {
   }
 
   get input() { return this.querySelector('input[type="file"]'); }
-  get preview() { return this.querySelector("[data-media-preview]"); }
+  get preview() {
+    const local = this.querySelector("[data-media-preview]");
+    if (local) return local;
+    return this.closest("[data-media-field-scope]")?.querySelector("[data-media-preview]") || null;
+  }
 
   revokePreview() {
     if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
