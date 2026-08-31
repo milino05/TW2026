@@ -49,6 +49,7 @@ Inline surfaces are intentionally different. Callouts, issue panels, field feedb
 | Venue removal completes and route changes | Toast | success | emitted by router after navigation |
 | Venue consistency/workflow check completes with issues | Toast + Issue Panel | warning | issue list persists |
 | Venue search failure or editor load failure | Inline Callout | danger | relevant until retry/context change |
+| Workspace Home / Create Hub / Context Hub / Catalog / Venue Target Chooser persistent load or action failure | Inline Callout | danger | limited to individually audited roots; persists while failure matters |
 | Visit draft created / metadata/settings/logistics saved | Toast | success | post-action event |
 | Visit content added/removed/reordered | Toast | success | post-action event |
 | Visit content detached from a stop and remains contextual | Toast | info | describes resulting placement mode |
@@ -74,6 +75,7 @@ The migration bridge has explicit per-view resolvers. In particular:
 - `ItemAuthoringView.notice` is mapped by concrete message family rather than treated as universally successful.
 - `mediaNotice` and Semantic Entity Picker notices are excluded from the bridge.
 - error and busy properties are excluded from the transient bridge.
+- persistent error projection is restricted to the explicitly audited Marketplace roots; a `role="alert"` outside those roots is not converted generically.
 
 ## Navigator
 
@@ -89,6 +91,15 @@ The Navigator uses the same surface/tone model but renders it with Vue component
 | Generator subject search is running | Progress / Busy State | info | until search returns |
 | Generator subject-search provider warnings | Inline Callout / Issue Panel | warning | warnings remain relevant with results |
 | Generator generation request fails | Inline Callout | danger | user must change/retry generation inputs |
+| Generated-plan load/preparation | Progress / Busy State | info | direct `AsyncBoundary` migration |
+| Generated-plan action fails | Inline Callout | danger | direct shared surface; not adapter-owned |
+| Generated-plan readiness warnings/blockers | Issue Panel | warning/danger | direct shared surface |
+| Library initial load | Progress / Busy State → content | info | direct `AsyncBoundary`; failure is a persistent danger Callout |
+| Library has no owned visits | Empty State | neutral | legitimate absence, with generate-visit action |
+| Library resumable-session removal decision | Action Dialog | danger | explicit decision required; direct shared component |
+| Library resumable-session removal succeeds | Toast | success | transient completion event |
+| Library resumable-session removal fails | Inline Callout | danger | remains visible until retry/context change |
+| Library resumable-session options menu | ActionMenu popover, **not feedback** | neutral | interaction layer below Action Dialog/Toast |
 | Visit preparation load | Progress / Busy State | info | until preparation exists |
 | Visit preparation load fails | Inline Callout | danger | blocking page failure |
 | Visit preparation update fails | Inline Callout | danger | remains next to preparation summary |
@@ -106,7 +117,7 @@ The Navigator uses the same surface/tone model but renders it with Vue component
 | Voice command not recognized / unavailable | Toast | warning | transient attempt result |
 | Voice command recognized | Toast | info | transient acknowledgement before action result |
 | Finish-session request | Action Dialog | danger | explicit confirmation required |
-| Session action sheet | Domain dialog/sheet, **not feedback** | neutral | command chooser; must stay below feedback layers |
+| Session action sheet | Domain drawer/sheet, **not feedback** | neutral | teleported to body on drawer layer; remains below Action Dialog/Toast |
 | Session media lightbox | Domain dialog, **not feedback** | neutral | content viewer; must stay below feedback layers |
 | Map asset unavailable | Inline Callout | info/warning | remains relevant while viewing that floor |
 | Map venue warnings | Issue Panel | warning | persistent while map context is active |
@@ -123,6 +134,8 @@ The implementation contract tests must verify all of the following:
 5. Both stacks use FIFO visual order.
 6. Both global hosts escape local stacking contexts (`body` / `Teleport`).
 7. `--artaround-layer-toast` is greater than `--artaround-layer-dialog`, and both are far above ordinary application layers.
-8. The Marketplace Visit occurrence-selection branch is explicitly excluded from transient toast conversion.
-9. Search/provider feedback, field validation, busy states and persistent errors are not migrated by generic DOM-role matching.
-10. The mapping tables above are updated whenever a new feedback-producing action family is introduced.
+8. Application popover/drawer/modal layers remain below Action Dialog and Toast.
+9. The Marketplace Visit occurrence-selection branch is explicitly excluded from transient toast conversion.
+10. Search/provider feedback, field validation, busy states and persistent errors are not migrated by generic DOM-role matching.
+11. Directly migrated Navigator views (currently GeneratedPlan and Library among the audited set) are removed from overlapping legacy adapter selectors.
+12. The mapping tables above are updated whenever a new feedback-producing action family is introduced.
