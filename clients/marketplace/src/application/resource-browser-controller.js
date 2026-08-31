@@ -6,7 +6,7 @@ export class ResourceBrowserController {
     this.query = queryState;
     this.load = load;
     this.onStateChange = onStateChange;
-    this.state = { loading: false, error: null, items: [], total: 0 };
+    this.state = { loading: false, error: null, items: [], total: 0, result: null };
     this.sequence = 0;
   }
 
@@ -21,11 +21,13 @@ export class ResourceBrowserController {
     try {
       const result = await this.load(this.query.snapshot());
       if (sequence !== this.sequence) return this.snapshot();
+      this.state.result = result ?? null;
       this.state.items = Array.isArray(result?.items) ? result.items : [];
       this.state.total = Number(result?.total ?? this.state.items.length) || 0;
     } catch (error) {
       if (sequence !== this.sequence) return this.snapshot();
       this.state.error = error instanceof Error ? error.message : "Risorse non disponibili";
+      this.state.result = null;
       this.state.items = [];
       this.state.total = 0;
     } finally {
