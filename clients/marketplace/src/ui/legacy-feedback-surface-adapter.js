@@ -144,40 +144,71 @@ function showPhysicalConfirmationDialog(editor) {
   });
 }
 
-function installDirtyNavigationGuard(constructor, flag, { message }) {
-  const prototype = constructor.prototype;
-  if (prototype[flag]) return;
-  const connected = prototype.connectedCallback;
-  const disconnected = prototype.disconnectedCallback;
+/* Custom-element lifecycle callbacks are captured by customElements.define().
+ * Namespace/Physical are already defined by the time this adapter imports them,
+ * so patching prototype.connectedCallback here would never run in browsers.
+ * Observe actual editor nodes instead and register/unregister blockers when they
+ * enter/leave the document. This makes the guard a real runtime integration. */
+const DIRTY_EDITOR_GUARDS = [
+  {
+    selector: "artaround-namespace-editor-view",
+    message: "Le modifiche non salvate alle regole editoriali andranno perse.",
+  },
+  {
+    selector: "artaround-physical-vocabulary-editor-view",
+    message: "Le modifiche non ancora salvate nel vocabolario fisico andranno perse.",
+  },
+];
+const registeredDirtyEditors = new WeakMap();
 
-  prototype.connectedCallback = function connectedWithNavigationLossGuard(...args) {
-    const result = connected?.apply(this, args);
-    this.__unregisterNavigationLossGuard?.();
-    this.__unregisterNavigationLossGuard = registerNavigationLossBlocker({
-      isBlocking: () => this.isConnected && Boolean(this.dirty),
-      confirm: () => openActionDialog({
-        tone: "danger",
-        title: "Uscire senza salvare?",
-        message,
-        confirmLabel: "Esci senza salvare",
-        cancelLabel: "Resta nell'editor",
-      }),
-      discard: () => {
-        this.dirty = false;
-        if ("leaveConfirmation" in this) this.leaveConfirmation = false;
-        if (this.pendingConfirmation?.type === "leave") this.pendingConfirmation = null;
-      },
+function registerDirtyEditor(editor, message) {
+  if (!(editor instanceof HTMLElement) || registeredDirtyEditors.has(editor)) return;
+  const unregister = registerNavigationLossBlocker({
+    isBlocking: () => editor.isConnected && Boolean(editor.dirty),
+    confirm: () => openActionDialog({
+      tone: "danger",
+      title: "Uscire senza salvare?",
+      message,
+      confirmLabel: "Esci senza salvare",
+      cancelLabel: "Resta nell'editor",
+    }),
+    discard: () => {
+      editor.dirty = false;
+      if ("leaveConfirmation" in editor) editor.leaveConfirmation = false;
+      if (editor.pendingConfirmation?.type === "leave") editor.pendingConfirmation = null;
+    },
+  });
+  registeredDirtyEditors.set(editor, unregister);
+}
+
+function unregisterDirtyEditor(editor) {
+  const unregister = registeredDirtyEditors.get(editor);
+  if (!unregister) return;
+  unregister();
+  registeredDirtyEditors.delete(editor);
+}
+
+function visitDirtyEditors(root, callback) {
+  if (!(root instanceof Element)) return;
+  for (const definition of DIRTY_EDITOR_GUARDS) {
+    if (root.matches(definition.selector)) callback(root, definition.message);
+    for (const editor of root.querySelectorAll(definition.selector)) callback(editor, definition.message);
+  }
+}
+
+function installDirtyNavigationGuardObserver() {
+  const start = () => {
+    visitDirtyEditors(document.body, registerDirtyEditor);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes) visitDirtyEditors(node, (editor) => unregisterDirtyEditor(editor));
+        for (const node of record.addedNodes) visitDirtyEditors(node, registerDirtyEditor);
+      }
     });
-    return result;
+    observer.observe(document.body, { childList: true, subtree: true });
   };
-
-  prototype.disconnectedCallback = function disconnectedWithNavigationLossGuard(...args) {
-    this.__unregisterNavigationLossGuard?.();
-    this.__unregisterNavigationLossGuard = null;
-    return disconnected?.apply(this, args);
-  };
-
-  Object.defineProperty(prototype, flag, { value: true });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
 }
 
 /* Logout performs an authentication side effect before its route change, so it
@@ -208,13 +239,6 @@ function installRenderAdapter(constructor, flag, enhance) {
   Object.defineProperty(prototype, flag, { value: true });
 }
 
-installDirtyNavigationGuard(ArtAroundNamespaceEditorView, "__sharedNavigationLossGuard", {
-  message: "Le modifiche non salvate alle regole editoriali andranno perse.",
-});
-installDirtyNavigationGuard(ArtAroundPhysicalVocabularyEditorView, "__sharedNavigationLossGuard", {
-  message: "Le modifiche non ancora salvate nel vocabolario fisico andranno perse.",
-});
-
 installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", (editor) => {
   replaceIssuePanels(editor);
   replaceNamespaceWorkflowCallout(editor);
@@ -232,5 +256,6 @@ installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => 
 });
 
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
+installDirtyNavigationGuardObserver();
 installPersistentErrorObserver();
 installGuardedGlobalActions();
