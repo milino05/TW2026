@@ -33,6 +33,15 @@ const marketplaceDialogLayer = cssNumber(marketplaceStyles, "--artaround-layer-d
 const marketplaceToastLayer = cssNumber(marketplaceStyles, "--artaround-layer-toast");
 const navigatorDialogLayer = cssNumber(navigatorTheme, "--artaround-layer-dialog");
 const navigatorToastLayer = cssNumber(navigatorTheme, "--artaround-layer-toast");
+const clientFiles = [...filesBelow(marketplaceRoot), ...filesBelow(navigatorRoot)];
+
+const globalFeedbackFiles = new Set([
+  path.normalize("clients/marketplace/src/styles/feedback-primitives.css"),
+  path.normalize("clients/marketplace/src/ui/feedback-primitives.js"),
+  path.normalize("clients/navigator/src/ui/FeedbackToastHost.vue"),
+  path.normalize("clients/navigator/src/ui/FeedbackActionDialog.vue"),
+  path.normalize("clients/navigator/src/ui/theme.css"),
+]);
 
 test("la scala globale riserva toast sopra dialog in entrambi i client", () => {
   for (const [dialog, toast] of [
@@ -48,17 +57,10 @@ test("la scala globale riserva toast sopra dialog in entrambi i client", () => {
 });
 
 test("nessun overlay applicativo ordinario può superare il layer dei dialog globali", () => {
-  const exemptions = new Set([
-    path.normalize("clients/marketplace/src/styles/feedback-primitives.css"),
-    path.normalize("clients/navigator/src/ui/FeedbackToastHost.vue"),
-    path.normalize("clients/navigator/src/ui/FeedbackActionDialog.vue"),
-    path.normalize("clients/navigator/src/ui/theme.css"),
-  ]);
-
   const violations = [];
-  for (const file of [...filesBelow(marketplaceRoot), ...filesBelow(navigatorRoot)]) {
+  for (const file of clientFiles) {
     const relative = path.normalize(path.relative(root, file));
-    if (exemptions.has(relative)) continue;
+    if (globalFeedbackFiles.has(relative)) continue;
     for (const value of numericZIndexes(read(file))) {
       const budget = relative.startsWith(path.normalize("clients/navigator/"))
         ? navigatorDialogLayer
@@ -67,6 +69,21 @@ test("nessun overlay applicativo ordinario può superare il layer dei dialog glo
     }
   }
   assert.deepEqual(violations, [], violations.join("\n"));
+});
+
+test("nessuna UI ordinaria entra nel browser top layer sopra il feedback", () => {
+  const violations = [];
+  const topLayerPattern = /<dialog\b|\bpopover\s*=|\.showModal\s*\(|\.showPopover\s*\(/i;
+  for (const file of clientFiles) {
+    const relative = path.normalize(path.relative(root, file));
+    if (globalFeedbackFiles.has(relative)) continue;
+    if (topLayerPattern.test(read(file))) violations.push(relative);
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    `UI top-layer trovata fuori dal sistema feedback; richiede revisione della gerarchia globale:\n${violations.join("\n")}`,
+  );
 });
 
 test("gli host globali sfuggono agli stacking context locali", () => {
