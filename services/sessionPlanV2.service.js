@@ -4,6 +4,8 @@ const EditorialRelease = require("../models/editorialRelease.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const VisitSessionV2 = require("../models/visitSessionV2.model");
+const SynchronizedVisitSession = require("../models/synchronizedVisitSession.model");
+const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
 const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const AppError = require("../utils/AppError");
 const { resolveExecutableVisitRevisionV2 } = require("./visitExecutionAccessV2.service");
@@ -39,6 +41,19 @@ function visitRevisionSourceSnapshotV2({ visit, revision }) {
     principal: { type: visit.ownerType, id: visit.ownerId },
     visitId: visit._id,
     visitRevisionId: revision._id,
+    deliveryMode: revisionSnapshot.deliveryMode || "self_guided",
+    synchronization: {
+      joinAlias: revisionSnapshot.synchronization?.joinAlias || null,
+    },
+    quiz: {
+      questions: (revisionSnapshot.quiz?.questions || []).map((question) => ({
+        _id: question._id,
+        question: question.question,
+        options: [...(question.options || [])],
+        correctOptionIndex: question.correctOptionIndex,
+        points: question.points ?? null,
+      })),
+    },
     sourceEditorialReleaseIds: uniqueIds(sources.filter((entry) => entry.sourceType === "editorial_release").map((entry) => entry.editorialReleaseId)),
     visitBaseline: revisionSnapshot.presentationBaseline || null,
     navigationBaseline: null,
@@ -173,11 +188,34 @@ async function prepareInitialSessionPlan({ source, navigation, userPreference = 
 }
 
 async function createInitialSessionPlan({ session, plan }) {
-  const revision = await SessionPlanRevisionV2.create({ sessionId: session._id, version: 1, status: "active", ...plan });
+  return createInitialOwnedSessionPlan({
+    planOwnerType: "visit_session",
+    planOwner: session,
+    plan,
+  });
+}
+
+async function createInitialSynchronizedSessionPlan({ synchronizedSession, plan }) {
+  return createInitialOwnedSessionPlan({
+    planOwnerType: "synchronized_visit_session",
+    planOwner: synchronizedSession,
+    plan,
+  });
+}
+
+async function createInitialOwnedSessionPlan({ planOwnerType, planOwner, plan }) {
+  const revision = await SessionPlanRevisionV2.create({
+    planOwnerType,
+    planOwnerId: planOwner._id,
+    version: 1,
+    status: "active",
+    ...plan,
+  });
   try {
-    const pointer = await VisitSessionV2.updateOne({ _id: session._id, currentPlanRevisionId: null }, { $set: { currentPlanRevisionId: revision._id } });
-    if (pointer.modifiedCount !== 1) throw new Error("Session possiede gia un piano corrente");
-    session.currentPlanRevisionId = revision._id;
+    const OwnerModel = planOwnerType === "visit_session" ? VisitSessionV2 : SynchronizedVisitSession;
+    const pointer = await OwnerModel.updateOne({ _id: planOwner._id, currentPlanRevisionId: null }, { $set: { currentPlanRevisionId: revision._id } });
+    if (pointer.modifiedCount !== 1) throw new Error("Il runtime possiede già un piano corrente");
+    planOwner.currentPlanRevisionId = revision._id;
     return revision;
   } catch (error) {
     await SessionPlanRevisionV2.deleteOne({ _id: revision._id }).catch(() => {});
@@ -190,10 +228,70 @@ async function getCurrentSessionPlanV2({ sessionId, userId, allowCompleted = fal
   if (!allowCompleted) query.status = { $in: ["active", "paused", "route_completed"] };
   const session = await VisitSessionV2.findOne(query);
   if (!session) throw new AppError("Session v2 non trovata", 404);
-  if (!session.currentPlanRevisionId) throw new AppError("Session senza SessionPlan", 409);
-  const plan = await SessionPlanRevisionV2.findOne({ _id: session.currentPlanRevisionId, sessionId: session._id });
+
+  let planOwnerType = "visit_session";
+  let planOwner = session;
+  let synchronizedSession = null;
+  let membership = null;
+  if (session.synchronizedSessionId) {
+    [synchronizedSession, membership] = await Promise.all([
+      SynchronizedVisitSession.findById(session.synchronizedSessionId),
+      SynchronizedVisitMembership.findOne({ synchronizedSessionId: session.synchronizedSessionId, userId, visitSessionId: session._id }),
+    ]);
+    if (!synchronizedSession || !membership || membership.status === "removed") {
+      throw new AppError("Partecipazione alla visita sincronizzata non disponibile", 403, [{ code: "SYNCHRONIZED_MEMBERSHIP_REQUIRED" }]);
+    }
+    if (!allowCompleted && ["completed", "cancelled"].includes(synchronizedSession.status)) {
+      throw new AppError("Sessione sincronizzata conclusa", 409, [{ code: "SYNCHRONIZED_SESSION_FINISHED" }]);
+    }
+    planOwnerType = "synchronized_visit_session";
+    planOwner = synchronizedSession;
+  }
+
+  if (!planOwner.currentPlanRevisionId) throw new AppError("Session senza SessionPlan", 409);
+  const plan = await SessionPlanRevisionV2.findOne({
+    _id: planOwner.currentPlanRevisionId,
+    planOwnerType,
+    planOwnerId: planOwner._id,
+  });
   if (!plan) throw new AppError("SessionPlan corrente non trovato", 409);
-  return { session, plan };
+  return {
+    session,
+    plan,
+    synchronizedSession,
+    membership,
+    planOwnerType,
+    currentEntryIndex: synchronizedSession ? synchronizedSession.currentEntryIndex : session.currentEntryIndex,
+    runtimeVersion: synchronizedSession ? synchronizedSession.runtimeVersion : session.runtimeVersion,
+    effectiveStatus: synchronizedSession ? synchronizedSession.status : session.status,
+    physicalSession: synchronizedSession || session,
+  };
+}
+
+async function buildPersonalPresentationOverrides({ plan, presentationPreference = null }) {
+  if (!presentationPreference || !plan?.contentEntries?.length) return [];
+  const revisionIds = uniqueIds(plan.contentEntries.map((entry) => entry.itemRevisionId));
+  const namespaceRevisionIds = uniqueIds(plan.contentEntries.map((entry) => entry.namespaceRevisionId));
+  const [revisions, namespaceRevisions] = await Promise.all([
+    ItemRevisionV2.find({ _id: { $in: revisionIds } }).lean(),
+    NamespaceRevision.find({ _id: { $in: namespaceRevisionIds } }).lean(),
+  ]);
+  const revisionById = new Map(revisions.map((entry) => [id(entry._id), entry]));
+  const namespaceRevisionById = new Map(namespaceRevisions.map((entry) => [id(entry._id), entry]));
+  return plan.contentEntries.map((entry) => {
+    const revision = revisionById.get(id(entry.itemRevisionId));
+    const namespaceRevision = namespaceRevisionById.get(id(entry.namespaceRevisionId));
+    if (!revision || !namespaceRevision) throw new AppError("Snapshot editoriale personale non disponibile", 409);
+    const selection = resolveInitialPresentation({
+      revision,
+      namespaceRevision,
+      generatedBaseline: null,
+      visitBaseline: null,
+      userPreference: presentationPreference,
+      explicitPreference: null,
+    });
+    return { contentEntryId: entry._id, ...selection, updatedAt: new Date() };
+  });
 }
 
 module.exports = {
@@ -206,5 +304,7 @@ module.exports = {
   timingFromMaterialized,
   prepareInitialSessionPlan,
   createInitialSessionPlan,
+  createInitialSynchronizedSessionPlan,
   getCurrentSessionPlanV2,
+  buildPersonalPresentationOverrides,
 };

@@ -71,6 +71,7 @@ async function projectLibraryCard({ visit, userId }) {
     owner: resolved.owner,
     physicalScope: resolved.physicalScope.venues,
     stopCount: resolved.physicalScope.stopCount,
+    deliveryMode: resolved.revision.deliveryMode || "self_guided",
   };
 }
 
@@ -117,6 +118,7 @@ async function getNavigatorVisitDetail({ userId, visitId, configuredVenueId = nu
       physicalScope: resolved.physicalScope.venues,
       stopCount: resolved.physicalScope.stopCount,
       contentCount: (resolved.revision.contentEntries || []).length,
+      deliveryMode: resolved.revision.deliveryMode || "self_guided",
     },
     preparation: { available: true },
   };
@@ -126,6 +128,7 @@ async function listResumableNavigatorSessions({ userId, configuredVenueId = null
   validateConfiguredVenueId(configuredVenueId);
   const sessions = await VisitSessionV2.find({
     userId,
+    synchronizedSessionId: null,
     status: { $in: ["active", "paused", "route_completed"] },
   }).sort({ updatedAt: -1 }).limit(20).lean();
   const filteredSessions = configuredVenueId

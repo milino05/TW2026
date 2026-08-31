@@ -8,12 +8,21 @@ import GenerateView from "../ui/GenerateView.vue";
 import GeneratedPlanView from "../ui/GeneratedPlanView.vue";
 import SessionView from "../ui/SessionView.vue";
 import PlaceholderView from "../ui/PlaceholderView.vue";
+import SynchronizedJoinView from "../ui/SynchronizedJoinView.vue";
+import SynchronizedSessionView from "../ui/SynchronizedSessionView.vue";
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: "/", name: "home", component: LoginView },
     { path: "/museums", name: "museums", component: MuseumSelectorView, meta: { requiresAuth: true } },
+    { path: "/together", name: "together-join", component: SynchronizedJoinView, meta: { requiresAuth: true } },
+    {
+      path: "/together/:synchronizedSessionId",
+      name: "together-session",
+      component: SynchronizedSessionView,
+      meta: { requiresAuth: true, immersive: true },
+    },
     {
       path: "/museums/:venueId/library",
       name: "museum-library",

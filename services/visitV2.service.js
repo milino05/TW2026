@@ -12,7 +12,7 @@ const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 const { authorizeVisitEditorialSources, authorizeVisitContentSources } = require("./visitEditorialUsageAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 
-const REVISION_FIELDS = ["title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "presentationBaseline", "logistics"];
+const REVISION_FIELDS = ["title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "deliveryMode", "synchronization", "quiz", "presentationBaseline", "logistics"];
 function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
 function plain(value) { return value?.toObject ? value.toObject() : value || {}; }
 function sameId(a, b) { return String(a || "") === String(b || ""); }
@@ -181,6 +181,9 @@ async function createVisitV2({ payload, actorUserId }) {
       editorialSources: normalized.editorialSources || [],
       contentEntries: normalized.contentEntries || [],
       visitAnchors: normalized.visitAnchors || [],
+      deliveryMode: normalized.deliveryMode || "self_guided",
+      synchronization: normalized.synchronization || { joinAlias: null },
+      quiz: normalized.quiz || { questions: [] },
       presentationBaseline: normalized.presentationBaseline || null,
       logistics: normalized.logistics || { preVisitNotes: [], routeHints: [] },
       createdBy: actorUserId,

@@ -40,6 +40,7 @@ test("server and DB scripts install the Mongo unit-of-work compatibility boundar
   ]) {
     assert.match(packageJson.scripts[scriptName], /mongoUnitOfWork\.js/, `${scriptName} must preload Mongo compatibility`);
   }
+  assert.match(packageJson.scripts.test, /testMongoEnvironment\.js/, "test must isolate its Mongo database");
 });
 
 test("deployment documentation declares standalone MongoDB support", () => {

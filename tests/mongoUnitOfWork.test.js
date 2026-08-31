@@ -1,9 +1,31 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  assertDatabaseDropAllowed,
+  databaseNameFromMongoUri,
   installMongoUnitOfWorkCompatibility,
   supportsNativeTransactionsFromHello,
 } = require("../config/mongoUnitOfWork");
+const { isolatedTestMongoUri } = require("../config/testMongoEnvironment");
+
+test("the test runner rewrites the configured URI to a disposable database", () => {
+  const isolated = isolatedTestMongoUri("mongodb://127.0.0.1:27017/artaround?directConnection=true");
+  assert.equal(new URL(isolated).pathname, "/artaround_test_suite");
+  assert.equal(new URL(isolated).searchParams.get("directConnection"), "true");
+});
+
+test("the configured application database cannot be dropped accidentally", () => {
+  const configuredMongoUri = "mongodb://127.0.0.1:27017/artaround";
+  assert.equal(databaseNameFromMongoUri(configuredMongoUri), "artaround");
+  assert.throws(
+    () => assertDatabaseDropAllowed({ connectionDatabaseName: "artaround", configuredMongoUri }),
+    /Refusing to drop/,
+  );
+  assert.doesNotThrow(() => assertDatabaseDropAllowed({
+    connectionDatabaseName: "artaround_test_suite",
+    configuredMongoUri,
+  }));
+});
 
 test("Mongo capability detection distinguishes standalone from transaction-capable topologies", () => {
   assert.equal(supportsNativeTransactionsFromHello({ isWritablePrimary: true }), false);

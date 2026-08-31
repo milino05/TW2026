@@ -22,6 +22,35 @@ test("Visit v2 validation rejects legacy coupling fields", () => {
   assert.ok(issues.some((entry) => entry.field === "contentEntries[0].spatialMode" && entry.code === "UNKNOWN_FIELD"));
 });
 
+test("Visit v2 normalizza la configurazione editoriale sincronizzata", () => {
+  const raw = {
+    ownerType: "user",
+    ownerId: oid(),
+    title: "Visita di classe",
+    deliveryMode: "synchronized",
+    synchronization: { joinAlias: "  Fenice   rossa  " },
+    quiz: {
+      questions: [{
+        question: "  Chi ha realizzato l'opera?  ",
+        options: ["  Leonardo  ", "Raffaello"],
+        correctOptionIndex: "0",
+        points: "2",
+      }],
+    },
+  };
+  const normalized = normalizeVisitV2Payload(raw);
+  const issues = validateVisitV2Payload({ payload: normalized, rawPayload: raw, creating: true });
+  assert.equal(issues.length, 0);
+  assert.equal(normalized.deliveryMode, "synchronized");
+  assert.equal(normalized.synchronization.joinAlias, "Fenice rossa");
+  assert.deepEqual(normalized.quiz.questions[0], {
+    question: "Chi ha realizzato l'opera?",
+    options: ["Leonardo", "Raffaello"],
+    correctOptionIndex: 0,
+    points: 2,
+  });
+});
+
 test("detached Visit copy remaps local structure and preserves immutable external pins", () => {
   const sourceId = oid();
   const anchorId = oid();
@@ -30,9 +59,13 @@ test("detached Visit copy remaps local structure and preserves immutable externa
   const itemId = oid();
   const editionId = oid();
   const revisionId = oid();
+  const quizQuestionId = oid();
   const sourceRevision = {
     title: "Originale",
     description: "Descrizione",
+    deliveryMode: "synchronized",
+    synchronization: { joinAlias: "Fenice rossa" },
+    quiz: { questions: [{ _id: quizQuestionId, question: "Domanda?", options: ["A", "B"], correctOptionIndex: 1, points: 3 }] },
     editorialSources: [{ _id: sourceId, editorialReleaseId: releaseId }],
     visitAnchors: [{ _id: anchorId, venueTargetId: targetId }],
     contentEntries: [{ _id: oid(), editorialSourceId: sourceId, itemId, itemEditionId: editionId, itemRevisionId: revisionId, deliveryAnchorId: anchorId, role: "core" }],
@@ -50,6 +83,10 @@ test("detached Visit copy remaps local structure and preserves immutable externa
   assert.equal(String(copy.contentEntries[0].itemRevisionId), String(revisionId));
   assert.equal(String(copy.contentEntries[0].editorialSourceId), String(copy.editorialSources[0]._id));
   assert.equal(String(copy.contentEntries[0].deliveryAnchorId), String(copy.visitAnchors[0]._id));
+  assert.equal(copy.deliveryMode, "synchronized");
+  assert.equal(copy.synchronization.joinAlias, "Fenice rossa");
+  assert.equal(copy.quiz.questions[0].question, "Domanda?");
+  assert.notEqual(String(copy.quiz.questions[0]._id), String(quizQuestionId));
 });
 
 test("detached Visit copy preserva e rimappa una fonte contenuto diretta", () => {

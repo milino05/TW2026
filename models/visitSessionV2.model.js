@@ -28,6 +28,7 @@ const PresentationOverrideSchema = new Schema({
 }, { _id: false });
 
 const SemanticPresentationSchema = new Schema({
+  sourceContentEntryId: { type: Schema.Types.ObjectId, default: null },
   sourceActionId: { type: String, required: true, trim: true },
   sourceType: { type: String, enum: ["editorial_release", "direct_item"], default: "editorial_release" },
   sourceEditorialReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null },
@@ -114,6 +115,7 @@ const VisitSessionV2Schema = new Schema({
   visitId: { type: Schema.Types.ObjectId, ref: "VisitV2", default: null, index: true },
   visitRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null },
   generatedVisitPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlanV2", default: null, index: true },
+  synchronizedSessionId: { type: Schema.Types.ObjectId, ref: "SynchronizedVisitSession", default: null, index: true, immutable: true },
   currentPlanRevisionId: { type: Schema.Types.ObjectId, ref: "SessionPlanRevisionV2", default: null, index: true },
   venuePins: { type: [VenuePinSchema], default: [] },
   status: { type: String, enum: ["active", "paused", "route_completed", "completed", "abandoned"], default: "active", index: true },
@@ -124,7 +126,7 @@ const VisitSessionV2Schema = new Schema({
     routingProfileSelections: { type: [RoutingProfileSelectionSchema], default: [] },
     requirements: { type: [Schema.Types.Mixed], default: [] },
   },
-  sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
+  sessionMovementSpeedMps: { type: Number, min: 0.1, default: null },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
   presentationOverrides: { type: [PresentationOverrideSchema], default: [] },
   semanticPresentation: { type: SemanticPresentationSchema, default: null },
@@ -141,6 +143,14 @@ const VisitSessionV2Schema = new Schema({
 VisitSessionV2Schema.pre("validate", function validateSource(next) {
   if (this.sourceType === "visit" && (!this.visitId || !this.visitRevisionId)) this.invalidate("visitId", "visitId e visitRevisionId sono obbligatori");
   if (this.sourceType === "generated_plan" && !this.generatedVisitPlanId) this.invalidate("generatedVisitPlanId", "generatedVisitPlanId e obbligatorio");
+  if (this.synchronizedSessionId) {
+    if (this.sourceType !== "visit") this.invalidate("synchronizedSessionId", "Una sessione sincronizzata richiede una source Visit");
+    if (this.currentPlanRevisionId) this.invalidate("currentPlanRevisionId", "Il piano sincronizzato appartiene alla sessione di gruppo");
+    if (this.currentEntryIndex != null) this.invalidate("currentEntryIndex", "La progressione sincronizzata appartiene alla sessione di gruppo");
+  } else {
+    if (!Number.isInteger(this.currentEntryIndex) || this.currentEntryIndex < 0) this.invalidate("currentEntryIndex", "currentEntryIndex è obbligatorio");
+    if (!Number.isFinite(this.sessionMovementSpeedMps) || this.sessionMovementSpeedMps < 0.1) this.invalidate("sessionMovementSpeedMps", "sessionMovementSpeedMps è obbligatorio");
+  }
   const venueIds = new Set();
   for (const pin of this.venuePins || []) {
     const key = String(pin.venueId || "");

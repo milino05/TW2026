@@ -216,17 +216,54 @@ L'host può ricevere azioni quali avvio visita, progressione, avvio quiz e compl
 - Navigator e Marketplace mantengono le responsabilità già stabilite.
 - La soluzione deve poter evolvere verso le capability 18–33 senza richiedere un secondo modello di sessione o presentation.
 
-# Questioni ancora da progettare
+# Contratti implementativi definiti per i vertical slice 18–27
 
-Le seguenti parti non sono ancora decisioni definitive e devono essere progettate prima dell'implementazione dei relativi slice:
+La richiesta di implementazione 18–27 del 31 agosto 2026 ha chiuso le precedenti questioni aperte con i contratti seguenti.
 
-- relazione esatta fra host `VisitSessionV2` e `SynchronizedVisitSession` e necessità effettiva di una sessione personale per l'host;
-- schema Mongo/API esatto della generalizzazione `SessionPlanRevisionV2` e compatibilità con i service attuali;
-- command/API wire definitivi del group runtime e projection host/participant;
-- schema preciso degli eventi realtime e strategia tecnica di reconnect/presence;
-- aggregazione efficiente della telemetria per la dashboard docente;
-- persistenza esatta dei quiz attempts e della valutazione;
-- policy di completamento/abbandono delle `VisitSessionV2` participant quando la sessione di gruppo termina;
-- dettagli di authorization del join e del temporary execution access ai contenuti privati nei service esistenti.
+## SV-31 — Anche l'host possiede una VisitSession personale
 
-Queste questioni verranno aggiunte alla sezione delle decisioni approvate solo dopo la relativa approvazione.
+L'host ha una `VisitSessionV2` personale, come ogni participant. Serve per presentation override, esplorazione semantica, telemetria e navigazione personale della guida; non possiede piano o indice strutturale. Piano e progressione restano esclusivamente nella `SynchronizedVisitSession`.
+
+## SV-32 — Ownership tipizzata del SessionPlan
+
+`SessionPlanRevisionV2` usa `planOwnerType = visit_session | synchronized_visit_session` e `planOwnerId`. Una sessione autonoma conserva un piano proprio; una sessione sincronizzata possiede un solo piano di gruppo. Le `VisitSessionV2` collegate mantengono `currentPlanRevisionId = null` e `currentEntryIndex = null` e le projection risolvono entrambi dal runtime di gruppo.
+
+## SV-33 — Wire API e Action Protocol
+
+Il boundary autenticato del runtime di gruppo espone:
+
+```text
+POST  /api/v2/synchronized-visit-sessions/join
+GET   /api/v2/synchronized-visit-sessions/:sessionId
+GET   /api/v2/synchronized-visit-sessions/:sessionId/quiz
+PATCH /api/v2/synchronized-visit-sessions/:sessionId/quiz-results/:participantUserId/evaluation
+```
+
+Avvio, progressione, avvio quiz, invio quiz, completamento e annullamento passano dall'Action Protocol esistente e usano la versione del runtime corretto. Le projection participant non contengono azioni di progressione globale.
+
+## SV-34 — Realtime minimale e recuperabile
+
+Socket.IO usa una room per `SynchronizedVisitSession`. Gli unici eventi applicativi sono:
+
+```text
+synchronized:invalidated { sessionId, runtimeVersion }
+synchronized:presence    { sessionId, userId, online }
+```
+
+Alla connessione o riconnessione il client ripete una subscribe autenticata, riceve uno snapshot degli user ID online e rilegge sempre le projection REST dopo un'invalidazione. Un polling lento resta soltanto recupero per notifiche perse. La presence è una mappa in memoria di connessioni attive e non modifica `SynchronizedVisitMembership`.
+
+## SV-35 — Dashboard derivata dalla telemetria esistente
+
+La projection host aggrega `ContentEntryExperience`, `InteractionEvent`, presentation override ed esplorazione semantica delle VisitSession personali rispetto al `ContentEntry` corrente. Espone stato osservabile, completion ratio, adattamento personale e ultima attività senza introdurre documenti di attenzione, webcam o una seconda pipeline di telemetria.
+
+## SV-36 — Tentativo quiz runtime separato
+
+`SynchronizedVisitQuizAttempt` conserva una sola submission iniziale per sessione/utente con risposte, correttezza, punti, score e conferma/valutazione host. Le domande e le risposte corrette restano esclusivamente nella `VisitRevision`; la projection participant non riceve la risposta corretta prima della submission.
+
+## SV-37 — Chiusura e annullamento
+
+Il completamento del gruppo porta le membership attive a `completed` e le VisitSession personali a `completed`. L'annullamento rimuove immediatamente l'alias dalla ricerca, porta le membership allo stato terminale `completed` e le VisitSession personali a `abandoned`. In entrambi i casi la cronologia runtime resta disponibile ai membri autorizzati, ma non è più possibile un nuovo join tramite alias.
+
+## SV-38 — Authority temporanea tramite membership
+
+Il join richiede un normale User autenticato e una sessione joinable. Una membership attiva autorizza esclusivamente la lettura/esecuzione della VisitRevision e del SessionPlan pinzati attraverso la relativa VisitSession personale. I service non creano `MarketplaceAcquisition` o `Entitlement`, non pubblicano Item privati e non espongono quei contenuti fuori dal runtime di gruppo.

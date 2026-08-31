@@ -40,6 +40,21 @@ const PresentationBaselineSchema = new Schema({
   locale: { type: String, trim: true, default: null },
 }, { _id: false });
 
+const SynchronizationSchema = new Schema({
+  joinAlias: { type: String, trim: true, default: null },
+}, { _id: false });
+
+const QuizQuestionSchema = new Schema({
+  question: { type: String, trim: true, default: "" },
+  options: { type: [{ type: String, trim: true }], default: [] },
+  correctOptionIndex: { type: Number, min: 0, default: 0 },
+  points: { type: Number, min: 0, default: null },
+}, { _id: true });
+
+const QuizSchema = new Schema({
+  questions: { type: [QuizQuestionSchema], default: [] },
+}, { _id: false });
+
 const RouteHintSchema = new Schema({
   fromAnchorId: { type: Schema.Types.ObjectId, required: true },
   toAnchorId: { type: Schema.Types.ObjectId, required: true },
@@ -75,6 +90,9 @@ const VisitRevisionV2Schema = new Schema({
   editorialSources: { type: [EditorialSourceSchema], default: [] },
   contentEntries: { type: [ContentEntrySchema], default: [] },
   visitAnchors: { type: [VisitAnchorSchema], default: [] },
+  deliveryMode: { type: String, enum: ["self_guided", "synchronized"], default: "self_guided" },
+  synchronization: { type: SynchronizationSchema, default: () => ({}) },
+  quiz: { type: QuizSchema, default: () => ({}) },
   presentationBaseline: { type: PresentationBaselineSchema, default: null },
   logistics: {
     preVisitNotes: { type: [{ type: String, trim: true }], default: [] },

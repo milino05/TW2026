@@ -64,6 +64,18 @@ test("gli errori di rete non espongono il messaggio inglese del browser", async 
   );
 });
 
+test("il rifiuto delle credenziali non viene presentato come sessione scaduta", async () => {
+  const { userFacingErrorMessage } = await import(errorsUrl);
+  assert.equal(
+    userFacingErrorMessage("Credenziali non valide", { status: 401 }),
+    "Nome utente o password non corretti.",
+  );
+  assert.equal(
+    userFacingErrorMessage("Autenticazione richiesta", { status: 401 }),
+    "La sessione è scaduta. Accedi di nuovo per continuare.",
+  );
+});
+
 test("il controllo visita spiega in italiano come aggiungere la tappa mancante", async () => {
   const { userFacingIssueMessage } = await import(errorsUrl);
   const message = userFacingIssueMessage({

@@ -169,7 +169,8 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
     const secondSlotId = new mongoose.Types.ObjectId();
     const contentEntryId = new mongoose.Types.ObjectId();
     const plan = await SessionPlanRevisionV2.create({
-      sessionId: session._id,
+      planOwnerType: "visit_session",
+      planOwnerId: session._id,
       version: 1,
       status: "active",
       origin: { sourceType: "generated_plan", generatedVisitPlanId: session.generatedVisitPlanId },

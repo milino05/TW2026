@@ -8,6 +8,7 @@ require("dotenv").config({
 });
 
 const mongoose = require("mongoose");
+const http = require("http");
 require("./config/mongoUnitOfWork");
 const { ensureDatabaseSchemaReadiness } = require("./services/databaseSchemaReadiness.service");
 
@@ -28,11 +29,16 @@ async function startServer() {
     if (schemaReadiness.venueTargetPublicCodeIndex?.changed) {
       console.log("Schema MongoDB riallineato: indice VenueTarget.publicCode aggiornato");
     }
+    if (schemaReadiness.sessionPlanOwnerShape?.changed) {
+      console.log(`Schema MongoDB riallineato: ${schemaReadiness.sessionPlanOwnerShape.migratedDocuments} SessionPlan migrati all'owner tipizzato`);
+    }
 
     // Carichiamo l'app soltanto dopo il controllo degli indici legacy, così i
     // model Mongoose vedono uno schema Mongo già coerente con il dominio attuale.
     const app = require("./app");
-    app.listen(PORT, () => {
+    const server = http.createServer(app);
+    require("./services/synchronizedVisitRealtime.service").initializeSynchronizedVisitRealtime(server);
+    server.listen(PORT, () => {
       console.log(`Server avviato su porta ${PORT}`);
     });
   } catch (err) {

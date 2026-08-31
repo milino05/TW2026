@@ -10,6 +10,8 @@ export interface AvailableAction {
   controlledVoiceAliases: string[];
   semanticChoice?: boolean;
   semanticChoiceRequestVersion?: number;
+  runtimeScope?: "visit_session" | "synchronized_visit_session";
+  runtimeVersion?: number;
 }
 
 export interface SessionProjection {
@@ -17,6 +19,15 @@ export interface SessionProjection {
     id: string;
     status: string;
     sourceType?: string;
+    currentEntryIndex: number;
+    runtimeVersion: number;
+    deliveryMode?: "self_guided" | "synchronized";
+  };
+  synchronization: null | {
+    id: string;
+    status: "lobby" | "active" | "quiz" | "completed" | "cancelled";
+    role: "host" | "participant";
+    joinAlias: string | null;
     currentEntryIndex: number;
     runtimeVersion: number;
   };
@@ -89,10 +100,11 @@ export const sessionRepository = {
     actionId: string,
     expectedRuntimeVersion: number,
     interactionChannel: InteractionChannel = "button",
+    input: unknown = null,
   ) {
     return apiClient.request<ActionResult>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/actions`, {
       method: "POST",
-      body: JSON.stringify({ actionId, expectedRuntimeVersion, interactionChannel }),
+      body: JSON.stringify({ actionId, expectedRuntimeVersion, interactionChannel, input }),
     });
   },
 };
