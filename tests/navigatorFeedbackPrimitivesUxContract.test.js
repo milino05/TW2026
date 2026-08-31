@@ -5,6 +5,13 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+const navigatorUi = path.join(root, "clients/navigator/src/ui");
+
+function vueFiles() {
+  return fs.readdirSync(navigatorUi)
+    .filter((name) => name.endsWith(".vue"))
+    .map((name) => ({ name, source: fs.readFileSync(path.join(navigatorUi, name), "utf8") }));
+}
 
 const application = read("clients/navigator/src/application/uiFeedback.ts");
 const app = read("clients/navigator/src/ui/App.vue");
@@ -30,9 +37,7 @@ function cssNumber(source, name) {
 
 test("Navigator espone lo stesso contratto tone del Marketplace", () => {
   assert.match(application, /DEFAULT_NOTIFICATION_DURATION = 3000/);
-  for (const tone of ["neutral", "info", "success", "warning", "danger"]) {
-    assert.match(application, new RegExp(`"${tone}"`));
-  }
+  for (const tone of ["neutral", "info", "success", "warning", "danger"]) assert.match(application, new RegExp(`"${tone}"`));
   assert.match(application, /artaround:notification/);
   assert.match(application, /artaround:notification:dismiss/);
 });
@@ -54,7 +59,6 @@ test("dialog e toast globali non possono essere coperti dalle normali schede del
   const navigatorToast = cssNumber(theme, "--artaround-layer-toast");
   const marketplaceDialog = cssNumber(marketplaceStyles, "--artaround-layer-dialog");
   const marketplaceToast = cssNumber(marketplaceStyles, "--artaround-layer-toast");
-
   for (const value of [navigatorDialog, navigatorToast, marketplaceDialog, marketplaceToast]) {
     assert.ok(Number.isFinite(value));
     assert.ok(value > 2_000_000_000, `layer globale troppo basso: ${value}`);
@@ -76,9 +80,7 @@ test("l'action dialog Navigator implementa una vera decisione modale", () => {
 });
 
 test("Navigator dispone di tutte le surface approvate", () => {
-  for (const source of [callout, issuePanel, fieldFeedback, status, emptyState, progress, dialog, toastHost]) {
-    assert.ok(source.length > 0);
-  }
+  for (const source of [callout, issuePanel, fieldFeedback, status, emptyState, progress, dialog, toastHost]) assert.ok(source.length > 0);
   assert.match(callout, /feedback-callout/);
   assert.match(issuePanel, /feedback-issue-panel/);
   assert.match(fieldFeedback, /feedback-field/);
@@ -104,6 +106,17 @@ test("l'adapter Navigator mappa le azioni legacy per semantica, non per role gen
   assert.match(adapter, /markSurface\(warningList, "issue-panel", "warning"\)/);
   assert.match(adapter, /markSurface\(blockerList, "issue-panel", "danger"\)/);
   assert.doesNotMatch(adapter, /querySelectorAll\?\.\('\[role="status"\]'/);
+});
+
+test("tutti i canali reattivi di errore/notice del Navigator sono inventariati", () => {
+  const files = vueFiles();
+  const withError = files.filter(({ source }) => /const error = ref</.test(source)).map(({ name }) => name).sort();
+  const withNotice = files.filter(({ source }) => /const notice = ref</.test(source)).map(({ name }) => name).sort();
+
+  assert.deepEqual(withError, ["GenerateView.vue", "LoginView.vue", "SessionView.vue", "VisitDetailView.vue"]);
+  assert.deepEqual(withNotice, ["SessionView.vue"]);
+
+  for (const selector of ["error-card", "session-feedback.error-feedback", "previsit-state.error-state", "inline-error"]) assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
 });
 
 test("la conferma di fine visita viene proiettata sull'Action Dialog condiviso", () => {
