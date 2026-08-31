@@ -25,7 +25,7 @@ export const venueActionMixin = {
     if (action.type === "floor") return () => managementRepository.removeVenueFloor(this.id, action.id);
     if (action.type === "place") return () => managementRepository.removeVenuePlace(this.id, action.id);
     if (action.type === "connection") return () => managementRepository.removeVenueConnection(this.id, action.id);
-    if (action.type === "slot") return () => managementRepository.removeExhibitSlot(this.id, action.id);
+    if (["slot", "exhibit-slot"].includes(action.type)) return () => managementRepository.removeExhibitSlot(this.id, action.id);
     if (action.type === "target_detach") return () => managementRepository.detachVenueTarget(this.id, action.id);
     if (action.type === "recognition_media") {
       return () => managementRepository.removeVenueTargetRecognitionMedia(this.id, action.targetId, action.mediaId);

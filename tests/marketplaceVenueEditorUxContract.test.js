@@ -8,15 +8,33 @@ const root = path.resolve(__dirname, "..");
 const files = [
   "clients/marketplace/src/ui/venue-editor-view.js",
   "clients/marketplace/src/ui/venue-editor-action-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-contextual-workspace-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-floor-dialog-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-inventory-search-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-live-connection-preview-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-map-creation-dialog-mixin.js",
   "clients/marketplace/src/ui/venue-editor-targets-mixin.js",
   "clients/marketplace/src/ui/venue-editor-spatial-mixin.js",
   "clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-map-refinement-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-spatial-detail-mixin.js",
   "clients/marketplace/src/ui/venue-editor-spatial-diagnostics-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-spatial-interaction-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-spatial-overlay-mixin.js",
   "clients/marketplace/src/ui/venue-editor-section-mixin.js",
 ];
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 const source = Object.values(sources).join("\n");
-const styleSource = ["venue-editor.css", "venue-map-authoring.css"].map((file) => fs.readFileSync(path.join(root, `clients/marketplace/src/styles/${file}`), "utf8")).join("\n");
+const styleSource = [
+  "venue-editor.css",
+  "venue-floor-dialog.css",
+  "venue-inventory-search.css",
+  "venue-map-authoring.css",
+  "venue-map-refinement.css",
+  "venue-slot-inventory-browser.css",
+  "venue-spatial-detail.css",
+].map((file) => fs.readFileSync(path.join(root, `clients/marketplace/src/styles/${file}`), "utf8")).join("\n");
 const physicalVocabularyEditorSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js"), "utf8");
 
 test("Sedi e spazi fisici passa il syntax gate", () => {
@@ -80,7 +98,7 @@ test("Gestisci vocabolario apre la rotta reale e torna alla sede", () => {
 
 test("Venue entities, recognition media e Subject restano separati dagli Item", () => {
   for (const token of ["createVenueTarget", "updateVenueTarget", "trashVenueTarget", "subjectId", "recognitionMedia", "configuration", "binding"]) assert.match(source, new RegExp(token));
-  assert.match(source, /distinto dagli Item/);
+  assert.match(source, /distint[oe] dagli Item/);
   assert.doesNotMatch(source, /managementRepository\.createItem|managementRepository\.updateItem|itemId\s*:/);
 });
 
@@ -90,7 +108,8 @@ test("Allestimento usa la terminologia user-facing e preserva istruzioni multipl
   assert.doesNotMatch(source, />Venue entities</);
   assert.match(source, /data-remove-slot-override/);
   assert.match(source, /data-detach-target/);
-  assert.match(source, /Le istruzioni già presenti vengono conservate/);
+  assert.match(source, /approachGuidance/);
+  assert.match(source, /Indicazioni specifiche configurate/);
   assert.match(source, /connection\.directionality === "bidirectional"/);
   assert.match(source, /data-add-floor-shortcut/);
   assert.match(source, /data-floor-settings-shortcut/);
@@ -105,9 +124,12 @@ test("il picker Venue-aware estende automaticamente la ricerca quando manca un e
 });
 
 test("la creazione dell'inventario non assegna implicitamente uno slot", () => {
-  const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
-  assert.match(actionSource, /managementRepository\.createVenueTarget/);
-  assert.match(source, /type: "placing-slot"/);
+  const inventorySource = sources["clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js"];
+  assert.match(inventorySource, /managementRepository\.createVenueTarget/);
+  assert.match(inventorySource, /non la colloca automaticamente/);
+  assert.match(inventorySource, /data-assign-selected-inventory-target/);
+  assert.match(inventorySource, /assignVenueTargetToExhibitSlot/);
+  assert.doesNotMatch(source, /type: "placing-slot"/);
   assert.doesNotMatch(source, /type: "place-target"/);
   assert.match(source, /Scollega dallo slot/);
 });
@@ -118,7 +140,7 @@ test("Layout authoring usa command granulari e controlli guidati dal PhysicalVoc
     "moveVenuePlace", "createVenueConnection", "updateVenueConnection", "createExhibitSlot", "assignVenueTargetToExhibitSlot",
   ]) assert.match(source, new RegExp(token));
   assert.match(source, /Editor spaziale/);
-  assert.match(source, /Caratteristiche fisiche/);
+  assert.match(source, /caratteristiche fisiche/i);
   assert.match(source, /Non verificato/);
   assert.doesNotMatch(source, /routingAttributes|routingPresets|canonicalKey|snapshotDraft|captureDraft|applyDraft|preserveDraft/);
 });
@@ -129,15 +151,17 @@ test("mappa resta una projection fisica e non introduce posizionamento automatic
   assert.doesNotMatch(source, /navigator\.geolocation|getCurrentPosition|watchPosition|teleport|QRScanner/);
 });
 
-test("la macchina a stati della mappa usa soltanto gli otto modi canonici", () => {
+test("la macchina a stati della mappa usa soltanto i sette modi canonici", () => {
   for (const mode of [
     "idle", "placing_place", "connecting_select_from", "connecting_select_to",
-    "placing_slot", "calibrating", "editing_geometry", "dragging_place",
+    "calibrating", "editing_geometry", "dragging_place",
   ]) assert.match(source, new RegExp(`"${mode}"`));
   for (const mode of [
     "placing_place", "connecting_select_from", "connecting_select_to",
-    "placing_slot", "calibrating", "editing_geometry", "dragging_place",
+    "calibrating", "editing_geometry", "dragging_place",
   ]) assert.match(styleSource, new RegExp(`data-map-mode=${mode}`));
+  assert.doesNotMatch(source, /"placing_slot"/);
+  assert.doesNotMatch(styleSource, /data-map-mode=placing_slot/);
   assert.doesNotMatch(styleSource, /data-map-mode=(?:create-place|connect|calibrate|geometry)\]/);
 });
 
@@ -163,6 +187,8 @@ test("azioni distruttive e request changes usano conferme inline", () => {
   assert.match(source, /data-cancel-target-removal/);
   assert.match(source, /pendingWorkflow/);
   assert.match(source, /data-confirm-workflow/);
+  assert.match(source, /\["slot", "exhibit-slot"\]\.includes\(action\.type\)/);
+  assert.match(source, /removeExhibitSlot/);
 });
 
 test("ritorno alla Organization riapre direttamente la sezione Sedi", () => {

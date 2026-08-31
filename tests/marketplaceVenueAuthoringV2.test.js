@@ -78,13 +78,34 @@ async function createPublishedEdition({ ItemV2, ItemEdition, ItemRevisionV2, sub
 }
 
 async function publishVenueTargets({ VenueRelease, venue, targetIds, userId }) {
+  const ExhibitSlot = require("../models/exhibitSlot.model");
+  const LayoutRevision = require("../models/layoutRevision.model");
+  const floorId = oid();
+  const placeId = oid();
+  const slots = await ExhibitSlot.create(targetIds.map(() => ({ venueId: venue._id, createdBy: userId })));
+  const layout = await LayoutRevision.create({
+    venueId: venue._id,
+    version: 1,
+    authoredAgainstPhysicalVocabularyRevisionId: oid(),
+    floors: [{ _id: floorId, label: "Piano test" }],
+    places: [{ _id: placeId, floorId, placeTypeDefinitionId: "gallery", label: "Sala test", position: { x: 0.5, y: 0.5 } }],
+    exhibitSlots: slots.map((slot, index) => ({
+      exhibitSlotId: slot._id,
+      placeId,
+      label: `Slot test ${index + 1}`,
+      order: index,
+    })),
+    status: "published",
+    createdBy: userId,
+    updatedBy: userId,
+  });
   const release = await VenueRelease.create({
     venueId: venue._id,
     version: 1,
-    layoutRevisionId: oid(),
-    targetBindings: targetIds.map((targetId) => ({
+    layoutRevisionId: layout._id,
+    targetBindings: targetIds.map((targetId, index) => ({
       venueTargetId: targetId,
-      exhibitSlotId: oid(),
+      exhibitSlotId: slots[index]._id,
       availability: "active",
       recognitionMedia: [{ url: `https://example.test/${targetId}.jpg`, altText: "Riconoscimento" }],
     })),
@@ -294,6 +315,9 @@ test("VenueTarget authoring context keeps recognition media physical and separat
     assert.equal(context.recognitionMedia.length, 1);
     assert.equal(context.illustrativeMedia, undefined);
     assert.equal(context.venueTarget.subjectId, undefined);
+    assert.equal(context.venueTarget.inventoryState, "exposed");
+    assert.equal(context.venueTarget.inventory.slot.label, "Slot test 1");
+    assert.equal(context.venueTarget.inventory.place.label, "Sala test");
   });
 });
 
@@ -334,8 +358,8 @@ test("Item physical intent atomically creates or reuses the Venue inventory enti
     assert.equal(candidates.venue.name, "Physical intent Venue");
     assert.equal(String(candidates.venue.ownerOrganizationId), String(organization._id));
     assert.equal(candidates.permissions.canEditInventory, true);
-    assert.equal(String(candidates.exact[0].venueTargetId), String(first.venueEntity._id));
-    assert.equal(candidates.exact[0].state, "unplaced");
+    assert.equal(String(candidates.exact[0].inventory.venueTargetId), String(first.venueEntity._id));
+    assert.equal(candidates.exact[0].inventory.status, "unplaced");
 
     await assert.rejects(
       () => createItemWithPhysicalIntent({ venueId: venue._id, payload: { ...payload, primarySubjectId: oid() }, actorUserId: user._id }),
