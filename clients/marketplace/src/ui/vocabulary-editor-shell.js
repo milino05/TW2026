@@ -12,10 +12,6 @@ function has(operations, code) {
   return (operations || []).some((entry) => entry.code === code);
 }
 
-function stableId(value) {
-  return String(value?.id || value?._id || "");
-}
-
 function enhancePhysicalVocabularyShell(editor) {
   const main = editor.querySelector(".physical-editor-page");
   const header = main?.querySelector(".physical-editor-header");
@@ -25,8 +21,7 @@ function enhancePhysicalVocabularyShell(editor) {
   if (!main || !header || !state || !nav || !section) return;
 
   /* Header actions live in the same place as Namespace actions. */
-  const existingGeneralActions = main.querySelector(".physical-overview-copy > .button-row");
-  existingGeneralActions?.remove();
+  main.querySelector(".physical-overview-copy > .button-row")?.remove();
 
   const side = document.createElement("div");
   side.className = "namespace-editor-side";
@@ -58,20 +53,6 @@ function enhancePhysicalVocabularyShell(editor) {
   section.id ||= `physical-${editor.activeSection}`;
   section.setAttribute("role", "tabpanel");
   section.setAttribute("aria-labelledby", `physical-tab-${editor.activeSection}`);
-
-  /* The technical identity block is deliberately symmetric too. */
-  const technical = document.createElement("details");
-  technical.className = "technical-details physical-technical-details";
-  const vocabularyId = stableId(editor.data?.physicalVocabulary);
-  const revisionId = stableId(editor.data?.revision);
-  technical.innerHTML = `
-    <summary>Dettagli tecnici</summary>
-    <dl class="definition-list">
-      <div><dt>PhysicalVocabulary ID</dt><dd><code>${vocabularyId}</code></dd></div>
-      ${revisionId ? `<div><dt>PhysicalVocabularyRevision ID</dt><dd><code>${revisionId}</code></dd></div>` : ""}
-    </dl>
-  `;
-  nav.append(technical);
 }
 
 const prototype = ArtAroundPhysicalVocabularyEditorView.prototype;
