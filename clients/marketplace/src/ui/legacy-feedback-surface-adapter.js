@@ -9,17 +9,37 @@ import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
  * unambiguous. Complex workflow dialogs and contextual panels stay untouched
  * until they can be mapped without losing domain-specific interaction.
  */
-function replaceIssuePanels(root) {
-  for (const legacy of root.querySelectorAll(".issue-panel:not(artaround-issue-panel)")) {
-    const panel = document.createElement("artaround-issue-panel");
-    panel.setAttribute("tone", "warning");
-    panel.className = legacy.className;
-    panel.innerHTML = legacy.innerHTML;
-    for (const attribute of legacy.attributes) {
-      if (attribute.name !== "class") panel.setAttribute(attribute.name, attribute.value);
-    }
-    legacy.replaceWith(panel);
+function replaceElement(legacy, tagName, tone) {
+  if (!legacy || legacy.tagName.toLowerCase() === tagName) return legacy;
+  const replacement = document.createElement(tagName);
+  replacement.setAttribute("tone", tone);
+  replacement.className = legacy.className;
+  replacement.innerHTML = legacy.innerHTML;
+  for (const attribute of legacy.attributes) {
+    if (attribute.name !== "class" && attribute.name !== "role") replacement.setAttribute(attribute.name, attribute.value);
   }
+  legacy.replaceWith(replacement);
+  return replacement;
+}
+
+function replaceIssuePanels(root) {
+  const candidates = [
+    ...root.querySelectorAll(".issue-panel:not(artaround-issue-panel)"),
+    ...root.querySelectorAll(".namespace-workflow .issues:not(artaround-issue-panel)"),
+    ...root.querySelectorAll(".physical-integrity--warning:has(ul):not(artaround-issue-panel)"),
+  ];
+  for (const legacy of new Set(candidates)) replaceElement(legacy, "artaround-issue-panel", "warning");
+}
+
+function replaceNamespaceWorkflowCallout(editor) {
+  if (!editor.pendingWorkflow || editor.leaveConfirmation) return;
+  const legacy = editor.querySelector(".namespace-confirmation");
+  if (legacy) replaceElement(legacy, "artaround-callout", "warning");
+}
+
+function replaceItemBlockerCallout(editor) {
+  const legacy = editor.querySelector(".blocker-panel:not(artaround-callout)");
+  if (legacy) replaceElement(legacy, "artaround-callout", "warning");
 }
 
 function legacyDialogKey(value) {
@@ -89,6 +109,7 @@ function installRenderAdapter(constructor, flag, enhance) {
 
 installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", (editor) => {
   replaceIssuePanels(editor);
+  replaceNamespaceWorkflowCallout(editor);
   showNamespaceLeaveDialog(editor);
 });
 
@@ -97,5 +118,9 @@ installRenderAdapter(ArtAroundPhysicalVocabularyEditorView, "__sharedFeedbackSur
   showPhysicalConfirmationDialog(editor);
 });
 
-installRenderAdapter(ArtAroundItemAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
+installRenderAdapter(ArtAroundItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => {
+  replaceIssuePanels(editor);
+  replaceItemBlockerCallout(editor);
+});
+
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
