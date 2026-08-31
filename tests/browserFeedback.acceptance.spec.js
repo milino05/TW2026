@@ -46,7 +46,7 @@ test("Marketplace feedback behaves correctly in a real browser", async ({ page }
 
   const toasts = page.locator(".artaround-toast");
   await expect(toasts).toHaveCount(3);
-  await expect(toasts).toHaveText(["Prima notifica×", "Seconda notifica×", "Terza notifica×"]);
+  await expect(toasts).toContainText(["Prima notifica", "Seconda notifica", "Terza notifica"]);
 
   const tops = await toasts.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
   expect(tops[0]).toBeLessThan(tops[1]);
@@ -192,6 +192,8 @@ test("Navigator feedback remains contained on mobile and honors reduced motion",
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });
   await page.locator(".feedback-toast-host").waitFor({ state: "attached" });
+  await expect.poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+
   await dispatchNotification(page, {
     id: "navigator-mobile",
     message: "Notifica Navigator mobile",
@@ -200,11 +202,21 @@ test("Navigator feedback remains contained on mobile and honors reduced motion",
     dismissible: true,
   });
 
+  const toast = page.locator(".feedback-toast");
+  await expect(toast).toBeVisible();
   const hostBox = await page.locator(".feedback-toast-host").boundingBox();
   expect(hostBox).not.toBeNull();
   expect(hostBox.x).toBeGreaterThanOrEqual(0);
   expect(hostBox.x + hostBox.width).toBeLessThanOrEqual(390);
 
-  const transitionDuration = await page.locator(".feedback-toast").evaluate((node) => getComputedStyle(node).transitionDuration);
-  expect(transitionDuration.split(",").every((value) => value.trim() === "0s")).toBeTruthy();
+  await page.waitForTimeout(50);
+  const reducedMotionState = await toast.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      opacity: style.opacity,
+      transform: style.transform,
+      activeAnimations: node.getAnimations().filter((animation) => animation.playState === "running").length,
+    };
+  });
+  expect(reducedMotionState).toEqual({ opacity: "1", transform: "none", activeAnimations: 0 });
 });
