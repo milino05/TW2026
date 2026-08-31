@@ -18,7 +18,7 @@ for (const [name, relative, repositoryCall, route] of targets) {
     assert.match(source, /class DiscoveryQueryState extends QueryState/);
     assert.match(source, /new ResourceBrowserController/);
     assert.ok(source.includes(`${repositoryCall}({ q: query, page })`));
-    assert.ok(source.includes(`navigate(\`${route}\${p.toString()`));
+    assert.ok(source.includes("navigate(`" + route + "${p.toString()"));
     assert.match(source, /this\.browser\.dispose\(\)/);
     assert.doesNotMatch(source, /this\.busy = true;\s*this\.error = null;\s*this\.render\(\);\s*try/s);
     execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
