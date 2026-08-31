@@ -23,12 +23,13 @@ function replaceElement(legacy, tagName, tone) {
 }
 
 function replaceIssuePanels(root) {
-  const candidates = [
+  const standard = [
     ...root.querySelectorAll(".issue-panel:not(artaround-issue-panel)"),
     ...root.querySelectorAll(".namespace-workflow .issues:not(artaround-issue-panel)"),
-    ...root.querySelectorAll(".physical-integrity--warning:has(ul):not(artaround-issue-panel)"),
   ];
-  for (const legacy of new Set(candidates)) replaceElement(legacy, "artaround-issue-panel", "warning");
+  const physical = [...root.querySelectorAll(".physical-integrity--warning:not(artaround-issue-panel)")]
+    .filter((legacy) => legacy.querySelector("ul"));
+  for (const legacy of new Set([...standard, ...physical])) replaceElement(legacy, "artaround-issue-panel", "warning");
 }
 
 function replaceNamespaceWorkflowCallout(editor) {
