@@ -26,6 +26,8 @@ const progress = read("clients/navigator/src/ui/FeedbackProgressState.vue");
 const adapter = read("clients/navigator/src/ui/NavigatorLegacyFeedbackAdapter.vue");
 const theme = read("clients/navigator/src/ui/theme.css");
 const login = read("clients/navigator/src/ui/LoginView.vue");
+const generatedPlan = read("clients/navigator/src/ui/GeneratedPlanView.vue");
+const library = read("clients/navigator/src/ui/LibraryView.vue");
 const mapping = read("docs/ui-feedback-action-mapping.md");
 const marketplaceAdapter = read("clients/marketplace/src/ui/transient-feedback-adapter.js");
 const marketplaceStyles = read("clients/marketplace/src/styles/feedback-primitives.css");
@@ -102,6 +104,15 @@ test("gli errori di autenticazione Navigator usano già il callout condiviso", (
   assert.match(login, /<FeedbackCallout v-if="error" tone="danger" semantic-role="alert">/);
 });
 
+test("GeneratedPlan usa direttamente le surface condivise e non richiede adapter legacy", () => {
+  assert.match(generatedPlan, /import AsyncBoundary/);
+  assert.match(generatedPlan, /import FeedbackCallout/);
+  assert.match(generatedPlan, /import FeedbackIssuePanel/);
+  assert.match(generatedPlan, /<AsyncBoundary/);
+  assert.match(generatedPlan, /<FeedbackCallout v-if="error" tone="danger" semantic-role="alert">/);
+  assert.match(generatedPlan, /<FeedbackIssuePanel v-if="preparation\.readiness\.blockers\.length" tone="danger"/);
+});
+
 test("l'adapter Navigator mappa le azioni legacy per semantica, non per role generico", () => {
   assert.match(app, /<NavigatorLegacyFeedbackAdapter \/>/);
   assert.match(adapter, /function sessionNoticeMapping/);
@@ -121,17 +132,35 @@ test("tutti i canali reattivi di errore/notice del Navigator sono inventariati",
   const withError = files.filter(({ source }) => /const error = ref</.test(source)).map(({ name }) => name).sort();
   const withNotice = files.filter(({ source }) => /const notice = ref</.test(source)).map(({ name }) => name).sort();
 
-  assert.deepEqual(withError, ["GenerateView.vue", "LoginView.vue", "SessionView.vue", "VisitDetailView.vue"]);
+  assert.deepEqual(withError, ["GenerateView.vue", "GeneratedPlanView.vue", "LibraryView.vue", "LoginView.vue", "SessionView.vue", "VisitDetailView.vue"]);
   assert.deepEqual(withNotice, ["SessionView.vue"]);
 
-  for (const selector of ["error-card", "session-feedback.error-feedback", "previsit-state.error-state", "inline-error"]) assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
+  for (const selector of [
+    "error-card",
+    "session-feedback.error-feedback",
+    "previsit-state.error-state",
+    "inline-error",
+    "library-state.error-state",
+    "session-action-error",
+  ]) assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
 });
 
-test("la conferma di fine visita viene proiettata sull'Action Dialog condiviso", () => {
+test("Library mantiene errori persistenti e proietta la rimozione distruttiva sull'Action Dialog", () => {
+  assert.match(library, /library-state error-state/);
+  assert.match(library, /session-action-error/);
+  assert.match(adapter, /\.library-state\.error-state\[role=\"alert\"\]/);
+  assert.match(adapter, /\.session-action-error\[role=\"alert\"\]/);
+  assert.match(adapter, /\.removal-dialog\[role=\"alertdialog\"\]/);
+  assert.match(adapter, /\.confirm-removal/);
+});
+
+test("le conferme di fine visita e rimozione Library usano l'Action Dialog condiviso", () => {
   assert.match(adapter, /\.confirm-sheet\[role=\"alertdialog\"\]/);
+  assert.match(adapter, /\.removal-dialog\[role=\"alertdialog\"\]/);
   assert.match(adapter, /<FeedbackActionDialog/);
   assert.match(adapter, /tone="danger"/);
   assert.match(adapter, /\.confirm-completion/);
+  assert.match(adapter, /\.confirm-removal/);
   assert.match(adapter, /resolveDialog\(true\)/);
 });
 
