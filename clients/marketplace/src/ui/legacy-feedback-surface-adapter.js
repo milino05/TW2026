@@ -1,7 +1,7 @@
 import { openActionDialog } from "./feedback-primitives.js";
 import { ArtAroundNamespaceEditorView } from "./namespace-editor-view.js";
 import { ArtAroundPhysicalVocabularyEditorView } from "./physical-vocabulary-editor-view.js";
-import { ArtAroundItemAuthoringView } from "./item-authoring-view.js";
+import { ItemAuthoringView } from "./item-authoring-view.js";
 import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
 
 /*
@@ -119,7 +119,7 @@ installRenderAdapter(ArtAroundPhysicalVocabularyEditorView, "__sharedFeedbackSur
   showPhysicalConfirmationDialog(editor);
 });
 
-installRenderAdapter(ArtAroundItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => {
+installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => {
   replaceIssuePanels(editor);
   replaceItemBlockerCallout(editor);
 });
