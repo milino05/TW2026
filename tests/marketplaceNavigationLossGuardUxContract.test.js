@@ -21,13 +21,19 @@ test("i moduli del navigation-loss guard superano il syntax check", () => {
   ]) execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
 });
 
-test("Namespace e Physical registrano lo stesso guard centralizzato quando dirty", () => {
-  assert.match(adapter, /installDirtyNavigationGuard\(ArtAroundNamespaceEditorView/);
-  assert.match(adapter, /installDirtyNavigationGuard\(ArtAroundPhysicalVocabularyEditorView/);
-  assert.match(adapter, /isBlocking: \(\) => this\.isConnected && Boolean\(this\.dirty\)/);
+test("Namespace e Physical registrano lo stesso guard centralizzato quando entrano realmente nel DOM", () => {
+  assert.match(adapter, /DIRTY_EDITOR_GUARDS/);
+  assert.match(adapter, /artaround-namespace-editor-view/);
+  assert.match(adapter, /artaround-physical-vocabulary-editor-view/);
+  assert.match(adapter, /installDirtyNavigationGuardObserver/);
+  assert.match(adapter, /new MutationObserver/);
+  assert.match(adapter, /visitDirtyEditors\(node, registerDirtyEditor\)/);
+  assert.match(adapter, /visitDirtyEditors\(node, \(editor\) => unregisterDirtyEditor\(editor\)\)/);
+  assert.match(adapter, /isBlocking: \(\) => editor\.isConnected && Boolean\(editor\.dirty\)/);
   assert.match(adapter, /registerNavigationLossBlocker/);
   assert.match(adapter, /openActionDialog\(\{/);
   assert.match(adapter, /title: "Uscire senza salvare\?"/);
+  assert.doesNotMatch(adapter, /prototype\.connectedCallback =/);
 });
 
 test("tutte le route programmatiche consultano il guard prima di pushState", () => {
