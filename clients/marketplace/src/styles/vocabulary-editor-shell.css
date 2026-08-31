@@ -1,0 +1,450 @@
+/* Shared visual contract for the two vocabulary editors.
+ * Namespace and Physical Vocabulary represent symmetric revisioned vocabularies;
+ * this layer keeps their information architecture and interaction surfaces aligned
+ * while leaving domain-specific fields to their dedicated editor styles.
+ */
+
+.namespace-editor-page,
+.physical-editor-page {
+  display:grid;
+  gap:1.15rem;
+  scroll-padding-top:calc(var(--header-height) + 1rem);
+}
+
+.namespace-editor-header,
+.physical-editor-header {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:2rem;
+  padding:1.35rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-xl);
+  background:var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+
+.namespace-editor-header h1,
+.physical-editor-header h1 {
+  margin:.2rem 0;
+  font-size:clamp(2rem,4vw,3.5rem);
+  line-height:1;
+}
+
+.namespace-editor-header p,
+.physical-editor-header p {
+  max-width:48rem;
+  margin:.45rem 0 0;
+  color:var(--sage-600);
+}
+
+/* Physical Vocabulary uses the same two-column desktop grammar as Namespace.
+ * Its existing DOM remains functionally unchanged: the main grid itself supplies
+ * the navigation/content columns instead of adding a redundant wrapper.
+ */
+.physical-editor-page {
+  grid-template-columns:13.5rem minmax(0,1fr);
+  align-items:start;
+  max-width:none;
+  margin:0;
+}
+
+.physical-editor-page > .breadcrumb,
+.physical-editor-page > .physical-editor-header {
+  grid-column:1/-1;
+}
+
+.physical-editor-page > p[role="status"],
+.physical-editor-page > p[role="alert"],
+.physical-editor-page > .feedback-success {
+  grid-column:2;
+}
+
+.physical-editor-state {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:.45rem;
+  flex-wrap:wrap;
+  min-width:0;
+  max-width:30rem;
+}
+
+.physical-editor-state > strong,
+.physical-editor-state > span,
+.physical-editor-state > small,
+.physical-editor-state > em {
+  display:inline-flex;
+  align-items:center;
+  gap:.3rem;
+  min-height:1.85rem;
+  padding:.25rem .58rem;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--sage-50);
+  color:var(--sage-700);
+  font-size:.76rem;
+  font-style:normal;
+  font-weight:750;
+}
+
+.physical-editor-state > em {
+  border-color:var(--warning-border,var(--line-strong));
+  background:var(--warning-soft,#fff5df);
+  color:var(--warning,#8a5a12);
+}
+
+/* Navigation: identical visual language to Namespace's vertical section rail. */
+.physical-editor-tabs {
+  grid-column:1;
+  position:sticky;
+  top:calc(var(--header-height) + 1rem);
+  z-index:5;
+  display:grid;
+  gap:.15rem;
+  overflow:visible;
+  padding:.55rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+
+.physical-editor-tabs button {
+  display:flex;
+  width:100%;
+  min-height:2.35rem;
+  align-items:center;
+  justify-content:space-between;
+  gap:.6rem;
+  border:0;
+  border-radius:.55rem;
+  padding:.58rem .65rem;
+  background:transparent;
+  color:var(--ink-800);
+  font-size:.78rem;
+  font-weight:750;
+  text-align:left;
+  white-space:normal;
+  box-shadow:none;
+}
+
+.physical-editor-tabs button:hover,
+.physical-editor-tabs button:focus-visible,
+.physical-editor-tabs button[aria-current="page"] {
+  background:var(--sage-100);
+  color:var(--ink-950);
+  transform:none;
+  box-shadow:none;
+}
+
+.physical-editor-tabs button[aria-current="page"] {
+  box-shadow:inset .2rem 0 0 var(--sage-500);
+}
+
+.physical-editor-tabs small {
+  display:inline;
+  min-width:0;
+  height:auto;
+  border-radius:0;
+  background:transparent;
+  color:var(--sage-600);
+  font-size:inherit;
+}
+
+/* Section surface and headings share Namespace geometry. */
+.physical-editor-section {
+  grid-column:2;
+  display:grid;
+  gap:1rem;
+  min-width:0;
+  padding:1.15rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-xl);
+  background:var(--surface);
+  box-shadow:var(--shadow-sm);
+  scroll-margin-top:calc(var(--header-height) + 1rem);
+}
+
+.physical-section-intro {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+}
+
+.physical-section-intro h2 {
+  margin:.15rem 0;
+}
+
+.physical-section-intro p {
+  max-width:48rem;
+  margin:.25rem 0 0;
+  color:var(--sage-600);
+}
+
+.physical-example {
+  margin:.55rem 0 0!important;
+  padding:.65rem .75rem;
+  border:1px solid var(--line);
+  border-left:.2rem solid var(--sage-500);
+  border-radius:var(--radius-md);
+  background:var(--sage-50);
+}
+
+/* General tab mirrors Namespace: purpose, metadata and workflow are stacked. */
+.physical-overview-grid {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.8rem;
+}
+
+.physical-count-grid {
+  display:none;
+}
+
+.physical-overview-copy,
+.physical-overview-grid > .panel {
+  display:grid;
+  gap:.7rem;
+  padding:.9rem 1rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:linear-gradient(135deg,var(--sage-50),var(--surface));
+  box-shadow:none;
+}
+
+.physical-overview-copy h2,
+.physical-overview-grid > .panel h3 {
+  margin:.15rem 0;
+}
+
+.physical-overview-copy p,
+.physical-overview-grid > .panel p {
+  margin:.2rem 0;
+  color:var(--sage-700);
+  line-height:1.5;
+}
+
+.physical-metadata-form {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.8rem;
+  padding:1rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:var(--sage-50);
+  box-shadow:none;
+}
+
+.physical-metadata-form .section-heading {
+  grid-column:1/-1;
+}
+
+.physical-metadata-form label {
+  min-width:0;
+}
+
+.physical-metadata-form label:nth-of-type(2),
+.physical-metadata-form > button {
+  grid-column:1/-1;
+}
+
+.physical-workflow {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.8rem;
+  align-items:stretch;
+  padding:1rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:var(--sage-50);
+}
+
+.physical-workflow h3 { margin:.15rem 0; }
+.physical-workflow p { margin:.2rem 0 0; color:var(--sage-600); }
+
+.physical-integrity {
+  margin-top:.7rem;
+  padding:.75rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+}
+
+/* Definition cards use the same hierarchy and density as Namespace cards. */
+.physical-definition-grid,
+.physical-mapping-list {
+  display:grid;
+  gap:.8rem;
+}
+
+.physical-definition-card,
+.physical-mapping-card {
+  display:grid;
+  gap:.85rem;
+  padding:1rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:var(--sage-50);
+}
+
+.physical-definition-card > header,
+.physical-mapping-card > header {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+
+.physical-definition-card h3 { margin:.15rem 0; }
+
+.physical-definition-fields,
+.physical-definition-special {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.8rem;
+}
+
+.physical-definition-fields .wide,
+.physical-definition-special .wide {
+  grid-column:1/-1;
+}
+
+.physical-definition-fields small,
+.physical-definition-special small {
+  color:var(--sage-600);
+  line-height:1.45;
+}
+
+.physical-navigation-target {
+  padding:.7rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+}
+
+.physical-advanced {
+  padding:.7rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+}
+
+.physical-advanced > summary {
+  color:var(--ink-800);
+  font-size:.84rem;
+}
+
+.physical-advanced[open] > summary { margin-bottom:.8rem; }
+
+.physical-requirements {
+  display:grid;
+  gap:.7rem;
+  padding:.8rem;
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+}
+
+.physical-requirement {
+  border:1px solid var(--line);
+  background:var(--sage-50);
+}
+
+.physical-mapping-card {
+  align-content:start;
+}
+
+.physical-mapping-add {
+  padding-top:.7rem;
+  border-top:1px solid var(--line);
+}
+
+/* Same sticky save affordance as Namespace. */
+.physical-sticky-actions,
+.namespace-savebar {
+  position:sticky;
+  z-index:12;
+  bottom:1rem;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  margin-top:1rem;
+  padding:.85rem 1rem;
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius-lg);
+  background:rgba(251,250,247,.96);
+  backdrop-filter:blur(14px);
+  box-shadow:var(--shadow-lg);
+}
+
+@media(max-width:68rem) {
+  .physical-editor-page {
+    grid-template-columns:1fr;
+  }
+
+  .physical-editor-page > .breadcrumb,
+  .physical-editor-page > .physical-editor-header,
+  .physical-editor-page > .physical-editor-tabs,
+  .physical-editor-page > .physical-editor-section,
+  .physical-editor-page > p[role="status"],
+  .physical-editor-page > p[role="alert"],
+  .physical-editor-page > .feedback-success {
+    grid-column:1;
+  }
+
+  .physical-editor-tabs {
+    position:static;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+
+  .physical-editor-tabs button {
+    align-items:center;
+  }
+}
+
+@media(max-width:52rem) {
+  .namespace-editor-header,
+  .physical-editor-header,
+  .physical-section-intro,
+  .physical-definition-card > header,
+  .physical-mapping-card > header,
+  .physical-sticky-actions {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .physical-editor-state {
+    justify-content:flex-start;
+    max-width:none;
+  }
+
+  .physical-editor-tabs {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .physical-metadata-form,
+  .physical-definition-fields,
+  .physical-definition-special,
+  .physical-requirement,
+  .physical-mapping-add {
+    grid-template-columns:1fr;
+  }
+
+  .physical-metadata-form label:nth-of-type(2),
+  .physical-metadata-form > button,
+  .physical-metadata-form .section-heading,
+  .physical-definition-fields .wide,
+  .physical-definition-special .wide {
+    grid-column:auto;
+  }
+
+  .physical-sticky-actions button {
+    width:100%;
+  }
+}

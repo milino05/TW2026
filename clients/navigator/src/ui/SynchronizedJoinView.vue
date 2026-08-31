@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { synchronizedVisitRepository } from "../infrastructure/http/synchronizedVisitRepository";
+import FeedbackCallout from "./FeedbackCallout.vue";
 
 const router = useRouter();
 const joinAlias = ref("");
@@ -43,7 +44,7 @@ async function join() {
           placeholder="Per esempio: Fenice rossa"
           autofocus
         >
-        <p v-if="error" class="join-error" role="alert">{{ error }}</p>
+        <FeedbackCallout v-if="error" class="join-error" tone="danger" semantic-role="alert">{{ error }}</FeedbackCallout>
         <button type="submit" :disabled="busy || !joinAlias.trim()">
           {{ busy ? "Sto entrando…" : "Entra" }}
         </button>

@@ -3,6 +3,7 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
 import { semanticRepository } from "../infrastructure/http/semantic-repository.js";
 import { userFacingIssueMessage } from "../application/user-facing-errors.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
 
@@ -660,7 +661,7 @@ export class ItemAuthoringView extends HTMLElement {
         const item = created.item || created;
         if (created.venueEntity) this.venueTargetId = id(created.venueEntity);
         this.itemId = item._id || item.id;
-        const url = new URL(window.location.href); url.search = ""; url.searchParams.set("itemId", this.itemId); window.history.replaceState({}, "", url);
+        const url = new URL(window.location.href); url.search = ""; url.searchParams.set("itemId", this.itemId); replaceCurrentHistoryUrl(url);
         await this.reloadProjection(); await this.prepareNewEdition();
         this.notice = "Soggetto confermato. Ora completa le informazioni generali.";
       } else if (form.matches("[data-content-details]")) {

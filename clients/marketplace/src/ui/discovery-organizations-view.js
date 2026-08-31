@@ -1,31 +1,56 @@
 import { navigate } from "../application/router.js";
+import { QueryState } from "../application/query-state.js";
+import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { discoveryRepository } from "../infrastructure/http/discovery-repository.js";
+import { renderAsyncBoundary } from "./async-boundary.js";
 import { icon } from "./icons.js";
 import { renderExploreNavigation } from "./explore-navigation.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
-function state() { const p = new URLSearchParams(window.location.search); return { q: p.get("q") || "", page: Math.max(1, Number(p.get("page")) || 1) }; }
+class DiscoveryQueryState extends QueryState {
+  constructor({ q = "", page = 1 } = {}) { super({ query: String(q || ""), page, pageSize: 12 }); }
+  get q() { return this.query; }
+}
+function state() {
+  const p = new URLSearchParams(window.location.search);
+  return new DiscoveryQueryState({ q: p.get("q") || "", page: Math.max(1, Number(p.get("page")) || 1) });
+}
 
 export class ArtAroundDiscoveryOrganizationsView extends HTMLElement {
   state = state();
   data = null;
   busy = false;
   error = null;
+  browser = new ResourceBrowserController({
+    queryState: this.state,
+    load: async ({ query, page }) => {
+      const data = await discoveryRepository.organizations({ q: query, page });
+      this.state.page = Math.max(1, Number(data?.page) || page);
+      return { ...data, items: Array.isArray(data?.results) ? data.results : [] };
+    },
+    onStateChange: (browserState) => {
+      this.busy = browserState.loading;
+      this.error = browserState.error;
+      if (browserState.result) this.data = browserState.result;
+      if (this.isConnected) this.render();
+    },
+  });
 
-  connectedCallback() { this.addEventListener("submit", this.onSubmit); this.addEventListener("click", this.onClick); this.load(); }
-  disconnectedCallback() { this.removeEventListener("submit", this.onSubmit); this.removeEventListener("click", this.onClick); }
-
-  async load() {
-    this.busy = true;
-    this.error = null;
-    this.render();
-    try { this.data = await discoveryRepository.organizations(this.state); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Organizzazioni non disponibili"; }
-    finally { this.busy = false; this.render(); }
+  connectedCallback() {
+    this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("click", this.onClick);
+    void this.load();
+  }
+  disconnectedCallback() {
+    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("click", this.onClick);
+    this.browser.dispose();
   }
 
+  async load() { await this.browser.refresh(); }
+
   go(patch) {
-    const next = { ...this.state, ...patch };
+    const next = { q: patch.q ?? this.state.q, page: patch.page ?? this.state.page };
     const p = new URLSearchParams();
     if (next.q) p.set("q", next.q);
     if (next.page > 1) p.set("page", String(next.page));
@@ -52,7 +77,18 @@ export class ArtAroundDiscoveryOrganizationsView extends HTMLElement {
     const results = this.data?.results || [];
     const total = Number(this.data?.total || 0);
     const pageSize = Number(this.data?.pageSize || 12);
-    this.innerHTML = `<main class="page discovery-directory" aria-busy="${this.busy}">${renderExploreNavigation("organizations")}<header class="page-header"><div><span class="eyebrow">Esplora ArtAround</span><h1>Organizzazioni</h1><p>Trova musei, fondazioni e altri enti culturali presenti in ArtAround.</p></div></header><form class="panel inline-form" role="search"><label>Cerca organizzazioni<input name="q" value="${escapeHtml(this.state.q)}" placeholder="Nome o descrizione"></label><button>${icon("search", { size: 15 })} Cerca</button></form>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section><div class="section-heading"><h2>Risultati</h2><span class="count">${total}</span></div>${this.busy && !this.data ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div></div>` : results.length ? `<div class="discovery-grid">${results.map((entry) => `<button class="discovery-card" type="button" data-public-organization="${escapeHtml(entry.id)}"><span class="resource-mark">${icon("building", { size: 20 })}</span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Organizzazione culturale")}</small><span>${entry.counts.venues} sedi · ${entry.counts.publications} pubblicazioni</span></span>${icon("chevron", { size: 15 })}</button>`).join("")}</div>` : `<div class="empty-state"><h3>Nessuna organizzazione trovata</h3><p>Prova a cambiare la ricerca.</p></div>`}</section>${total > pageSize ? `<nav class="pagination"><button type="button" data-page="${this.state.page - 1}" ${this.state.page <= 1 ? "disabled" : ""}>Precedente</button><span>Pagina ${this.state.page}</span><button type="button" data-page="${this.state.page + 1}" ${this.state.page * pageSize >= total ? "disabled" : ""}>Successiva</button></nav>` : ""}</main>`;
+    const ready = results.length ? `<div class="discovery-grid">${results.map((entry) => `<button class="discovery-card" type="button" data-public-organization="${escapeHtml(entry.id)}"><span class="resource-mark">${icon("building", { size: 20 })}</span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Organizzazione culturale")}</small><span>${entry.counts.venues} sedi · ${entry.counts.publications} pubblicazioni</span></span>${icon("chevron", { size: 15 })}</button>`).join("")}</div>` : "";
+    const resultsBoundary = renderAsyncBoundary({
+      loading: this.busy && !this.data,
+      error: this.error,
+      empty: Boolean(this.data) && !this.busy && !this.error && !results.length,
+      loadingMessage: "Caricamento organizzazioni…",
+      errorTitle: "Organizzazioni non disponibili",
+      emptyTitle: "Nessuna organizzazione trovata",
+      emptyMessage: "Prova a cambiare la ricerca.",
+      ready,
+    });
+    this.innerHTML = `<main class="page discovery-directory" aria-busy="${this.busy}">${renderExploreNavigation("organizations")}<header class="page-header"><div><span class="eyebrow">Esplora ArtAround</span><h1>Organizzazioni</h1><p>Trova musei, fondazioni e altri enti culturali presenti in ArtAround.</p></div></header><form class="panel inline-form" role="search"><artaround-form-field><label>Cerca organizzazioni<input name="q" value="${escapeHtml(this.state.q)}" placeholder="Nome o descrizione"></label><span data-field-help>Cerca per nome o descrizione dell’organizzazione.</span></artaround-form-field><button>${icon("search", { size: 15 })} Cerca</button></form><section><div class="section-heading"><h2>Risultati</h2><span class="count">${total}</span></div>${resultsBoundary}</section>${!this.error && total > pageSize ? `<nav class="pagination"><button type="button" data-page="${this.state.page - 1}" ${this.state.page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${this.state.page}</span><button type="button" data-page="${this.state.page + 1}" ${this.state.page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva</button></nav>` : ""}</main>`;
   }
 }
 

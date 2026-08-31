@@ -1,0 +1,11 @@
+:root {
+  --artaround-layer-floating: 1000;
+  --artaround-layer-popover: 100000;
+  --artaround-layer-drawer: 400000;
+  --artaround-layer-modal: 1000000;
+}
+
+html.artaround-layer-open,
+body.artaround-layer-open {
+  overflow: hidden;
+}

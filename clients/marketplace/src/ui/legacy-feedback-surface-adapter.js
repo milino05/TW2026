@@ -1,0 +1,265 @@
+import {
+  confirmNavigationLoss,
+  hasNavigationLossRisk,
+  registerNavigationLossBlocker,
+} from "../application/navigation-loss-guard.js";
+import { openActionDialog } from "./feedback-primitives.js";
+import { ArtAroundNamespaceEditorView } from "./namespace-editor-view.js";
+import { ArtAroundPhysicalVocabularyEditorView } from "./physical-vocabulary-editor-view.js";
+import { ItemAuthoringView } from "./item-authoring-view.js";
+import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
+
+/*
+ * Incremental migration for legacy feedback surfaces whose semantics are already
+ * unambiguous. Complex workflow dialogs and contextual search/provider panels
+ * stay specialized until they can be mapped without losing domain interaction.
+ */
+function replaceElement(legacy, tagName, tone, { role = null } = {}) {
+  if (!legacy || legacy.tagName.toLowerCase() === tagName) return legacy;
+  const replacement = document.createElement(tagName);
+  replacement.setAttribute("tone", tone);
+  if (role) replacement.setAttribute("role", role);
+  replacement.className = legacy.className;
+  replacement.innerHTML = legacy.innerHTML;
+  for (const attribute of legacy.attributes) {
+    if (!["class", "role"].includes(attribute.name)) replacement.setAttribute(attribute.name, attribute.value);
+  }
+  legacy.replaceWith(replacement);
+  return replacement;
+}
+
+function replaceIssuePanels(root) {
+  const standard = [
+    ...root.querySelectorAll(".issue-panel:not(artaround-issue-panel)"),
+    ...root.querySelectorAll(".namespace-workflow .issues:not(artaround-issue-panel)"),
+  ];
+  const physical = [...root.querySelectorAll(".physical-integrity--warning:not(artaround-issue-panel)")]
+    .filter((legacy) => legacy.querySelector("ul"));
+  for (const legacy of new Set([...standard, ...physical])) replaceElement(legacy, "artaround-issue-panel", "warning");
+}
+
+function replaceNamespaceWorkflowCallout(editor) {
+  if (!editor.pendingWorkflow || editor.leaveConfirmation) return;
+  const legacy = editor.querySelector(".namespace-confirmation");
+  if (legacy) replaceElement(legacy, "artaround-callout", "warning");
+}
+
+function replaceItemBlockerCallout(editor) {
+  const legacy = editor.querySelector(".blocker-panel:not(artaround-callout)");
+  if (legacy) replaceElement(legacy, "artaround-callout", "warning");
+}
+
+/* These roots were audited individually. Their role=alert nodes represent
+ * persistent page/form failures, therefore Inline Callout danger is correct.
+ * Do not broaden this selector to every role=alert in Marketplace: the semantic
+ * entity picker and domain-specific workflow surfaces remain contextual. */
+const PERSISTENT_ERROR_ROOTS = [
+  "artaround-create-hub-view",
+  "artaround-venue-target-chooser",
+  "artaround-home-view",
+  "artaround-context-hub-view",
+  "artaround-catalog-view",
+];
+const PERSISTENT_ERROR_ROOT_SELECTOR = PERSISTENT_ERROR_ROOTS.join(",");
+const PERSISTENT_ERROR_SELECTOR = '[role="alert"]:not(artaround-callout):not(artaround-issue-panel)';
+
+function replaceKnownPersistentErrors(root = document) {
+  const candidates = [];
+  if (root instanceof Element && root.matches(PERSISTENT_ERROR_SELECTOR) && root.closest(PERSISTENT_ERROR_ROOT_SELECTOR)) {
+    candidates.push(root);
+  }
+  for (const legacy of root.querySelectorAll?.(PERSISTENT_ERROR_SELECTOR) || []) {
+    if (legacy.closest(PERSISTENT_ERROR_ROOT_SELECTOR)) candidates.push(legacy);
+  }
+  for (const legacy of new Set(candidates)) replaceElement(legacy, "artaround-callout", "danger", { role: "alert" });
+}
+
+function installPersistentErrorObserver() {
+  const start = () => {
+    replaceKnownPersistentErrors(document);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) replaceKnownPersistentErrors(node);
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+}
+
+function legacyDialogKey(value) {
+  if (!value) return "";
+  return [value.type, value.field, value.definitionId, value.title].filter(Boolean).join(":");
+}
+
+function showNamespaceLeaveDialog(editor) {
+  const legacy = editor.querySelector(".namespace-confirmation");
+  if (!editor.leaveConfirmation || !legacy || editor.__sharedLeaveDialogOpen) return;
+  legacy.hidden = true;
+  editor.__sharedLeaveDialogOpen = true;
+
+  openActionDialog({
+    tone: "danger",
+    title: "Uscire senza salvare?",
+    message: "Le modifiche non salvate alle regole editoriali andranno perse.",
+    confirmLabel: "Esci senza salvare",
+    cancelLabel: "Resta nell'editor",
+  }).then((confirmed) => {
+    editor.__sharedLeaveDialogOpen = false;
+    if (!editor.isConnected || !editor.leaveConfirmation) return;
+    /* The local Back button already obtained the explicit discard decision.
+     * Clear dirty before replaying its legacy control so the central route guard
+     * does not ask the same question a second time. */
+    if (confirmed) editor.dirty = false;
+    const control = editor.querySelector(confirmed ? "[data-confirm-leave]" : "[data-cancel-leave]");
+    control?.click();
+    if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
+  });
+}
+
+function showPhysicalConfirmationDialog(editor) {
+  const confirmation = editor.pendingConfirmation;
+  const legacy = editor.querySelector("[data-confirm-action]")?.closest('[role="dialog"]');
+  if (!confirmation || !legacy) return;
+  const key = legacyDialogKey(confirmation);
+  if (!key || editor.__sharedPhysicalConfirmationKey === key) {
+    if (key) legacy.hidden = true;
+    return;
+  }
+
+  legacy.hidden = true;
+  editor.__sharedPhysicalConfirmationKey = key;
+  openActionDialog({
+    tone: "danger",
+    title: confirmation.title,
+    message: confirmation.detail,
+    confirmLabel: confirmation.confirmLabel,
+    cancelLabel: "Annulla",
+  }).then((confirmed) => {
+    if (editor.__sharedPhysicalConfirmationKey === key) editor.__sharedPhysicalConfirmationKey = null;
+    if (!editor.isConnected || legacyDialogKey(editor.pendingConfirmation) !== key) return;
+    if (confirmed && confirmation.type === "leave") editor.dirty = false;
+    const control = editor.querySelector(confirmed ? "[data-confirm-action]" : "[data-confirm-cancel]");
+    control?.click();
+    if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
+  });
+}
+
+/* Custom-element lifecycle callbacks are captured by customElements.define().
+ * Namespace/Physical are already defined by the time this adapter imports them,
+ * so patching prototype.connectedCallback here would never run in browsers.
+ * Observe actual editor nodes instead and register/unregister blockers when they
+ * enter/leave the document. This makes the guard a real runtime integration. */
+const DIRTY_EDITOR_GUARDS = [
+  {
+    selector: "artaround-namespace-editor-view",
+    message: "Le modifiche non salvate alle regole editoriali andranno perse.",
+  },
+  {
+    selector: "artaround-physical-vocabulary-editor-view",
+    message: "Le modifiche non ancora salvate nel vocabolario fisico andranno perse.",
+  },
+];
+const registeredDirtyEditors = new WeakMap();
+
+function registerDirtyEditor(editor, message) {
+  if (!(editor instanceof HTMLElement) || registeredDirtyEditors.has(editor)) return;
+  const unregister = registerNavigationLossBlocker({
+    isBlocking: () => editor.isConnected && Boolean(editor.dirty),
+    confirm: () => openActionDialog({
+      tone: "danger",
+      title: "Uscire senza salvare?",
+      message,
+      confirmLabel: "Esci senza salvare",
+      cancelLabel: "Resta nell'editor",
+    }),
+    discard: () => {
+      editor.dirty = false;
+      if ("leaveConfirmation" in editor) editor.leaveConfirmation = false;
+      if (editor.pendingConfirmation?.type === "leave") editor.pendingConfirmation = null;
+    },
+  });
+  registeredDirtyEditors.set(editor, unregister);
+}
+
+function unregisterDirtyEditor(editor) {
+  const unregister = registeredDirtyEditors.get(editor);
+  if (!unregister) return;
+  unregister();
+  registeredDirtyEditors.delete(editor);
+}
+
+function visitDirtyEditors(root, callback) {
+  if (!(root instanceof Element)) return;
+  for (const definition of DIRTY_EDITOR_GUARDS) {
+    if (root.matches(definition.selector)) callback(root, definition.message);
+    for (const editor of root.querySelectorAll(definition.selector)) callback(editor, definition.message);
+  }
+}
+
+function installDirtyNavigationGuardObserver() {
+  const start = () => {
+    visitDirtyEditors(document.body, registerDirtyEditor);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes) visitDirtyEditors(node, (editor) => unregisterDirtyEditor(editor));
+        for (const node of record.addedNodes) visitDirtyEditors(node, registerDirtyEditor);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+}
+
+/* Logout performs an authentication side effect before its route change, so it
+ * cannot rely on router.navigate() alone. Stop it in capture phase while a dirty
+ * editor exists; after confirmation discard() clears the blocker and the same
+ * button can safely replay its original application handler. */
+function installGuardedGlobalActions() {
+  document.addEventListener("click", async (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const logout = target?.closest("button[data-logout]");
+    if (!logout || !hasNavigationLossRisk()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const confirmed = await confirmNavigationLoss({ kind: "logout" });
+    if (confirmed && logout.isConnected) logout.click();
+  }, true);
+}
+
+function installRenderAdapter(constructor, flag, enhance) {
+  const prototype = constructor.prototype;
+  if (prototype[flag]) return;
+  const render = prototype.render;
+  prototype.render = function renderWithSharedFeedbackSurfaces(...args) {
+    const result = render.apply(this, args);
+    enhance(this);
+    return result;
+  };
+  Object.defineProperty(prototype, flag, { value: true });
+}
+
+installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", (editor) => {
+  replaceIssuePanels(editor);
+  replaceNamespaceWorkflowCallout(editor);
+  showNamespaceLeaveDialog(editor);
+});
+
+installRenderAdapter(ArtAroundPhysicalVocabularyEditorView, "__sharedFeedbackSurfaces", (editor) => {
+  replaceIssuePanels(editor);
+  showPhysicalConfirmationDialog(editor);
+});
+
+installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => {
+  replaceIssuePanels(editor);
+  replaceItemBlockerCallout(editor);
+});
+
+installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
+installDirtyNavigationGuardObserver();
+installPersistentErrorObserver();
+installGuardedGlobalActions();

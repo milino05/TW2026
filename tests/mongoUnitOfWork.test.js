@@ -18,12 +18,17 @@ test("the configured application database cannot be dropped accidentally", () =>
   const configuredMongoUri = "mongodb://127.0.0.1:27017/artaround";
   assert.equal(databaseNameFromMongoUri(configuredMongoUri), "artaround");
   assert.throws(
-    () => assertDatabaseDropAllowed({ connectionDatabaseName: "artaround", configuredMongoUri }),
+    () => assertDatabaseDropAllowed({
+      connectionDatabaseName: "artaround",
+      configuredMongoUri,
+      allowConfiguredDatabaseDrop: false,
+    }),
     /Refusing to drop/,
   );
   assert.doesNotThrow(() => assertDatabaseDropAllowed({
     connectionDatabaseName: "artaround_test_suite",
     configuredMongoUri,
+    allowConfiguredDatabaseDrop: false,
   }));
 });
 

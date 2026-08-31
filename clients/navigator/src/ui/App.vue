@@ -4,6 +4,8 @@ import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useAuthStore, useConfiguredVenueStore, useRuntimeStore } from "../application/stores";
 import { authRepository } from "../infrastructure/http/authRepository";
+import FeedbackToastHost from "./FeedbackToastHost.vue";
+import NavigatorLegacyFeedbackAdapter from "./NavigatorLegacyFeedbackAdapter.vue";
 
 type NavigatorTheme = "light" | "dark";
 const THEME_STORAGE_KEY = "artaround.navigator.theme";
@@ -112,5 +114,7 @@ async function logout() {
       </svg>
       <span>{{ themeActionLabel }}</span>
     </button>
+    <NavigatorLegacyFeedbackAdapter />
+    <FeedbackToastHost />
   </div>
 </template>

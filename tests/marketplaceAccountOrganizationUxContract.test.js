@@ -39,7 +39,9 @@ test("le scorciatoie Account navigano alle sezioni e mantengono il deep link", (
     assert.match(profile, new RegExp(`id="${section}" tabindex="-1"`));
   }
   assert.match(profile, /event\.preventDefault\(\);[\s\S]*?scrollToSection\(accountSection\.dataset\.accountSection/);
-  assert.match(profile, /window\.history\.pushState/);
+  assert.match(profile, /import \{ navigate, pushSameDocumentHistory \} from "\.\.\/application\/router\.js"/);
+  assert.match(profile, /pushSameDocumentHistory\(nextUrl\)/);
+  assert.doesNotMatch(profile, /window\.history\.pushState/);
   assert.match(profile, /section\.scrollIntoView\(\{ behavior, block: "start" \}\)/);
   assert.match(profile, /section\.focus\(\{ preventScroll: true \}\)/);
   assert.match(profile, /accountSectionFromHash/);

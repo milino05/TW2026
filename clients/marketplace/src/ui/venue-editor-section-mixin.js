@@ -1,5 +1,6 @@
 import { icon } from "./icons.js";
 import { userFacingFieldLabel, userFacingIssueMessage } from "../application/user-facing-errors.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
 
 const SECTIONS = [
   ["overview", "Panoramica"],
@@ -43,7 +44,7 @@ export const venueSectionMixin = {
   showSection(section, { scroll = false } = {}) {
     if (!SECTIONS.some(([key]) => key === section)) return;
     this.activeSection = section;
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#venue-${section}`);
+    replaceCurrentHistoryUrl(`${window.location.pathname}${window.location.search}#venue-${section}`);
     this.syncSectionNavigation({ scroll });
   },
 

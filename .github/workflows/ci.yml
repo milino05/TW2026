@@ -56,3 +56,66 @@ jobs:
 
       - name: Audit Navigator dependencies
         run: npm audit --prefix clients/navigator --audit-level=high
+
+  browser-acceptance:
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/artaround_browser_acceptance
+      NODE_ENV: test
+      ADAPTIVE_CONTRIBUTOR_SECRET: ci-only-stable-secret-for-tests
+      ARTAROUND_ACCEPTANCE_BASE_URL: http://127.0.0.1:8000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install application dependencies
+        run: |
+          npm ci
+          npm install --prefix clients/navigator --no-audit --no-fund
+
+      - name: Install Playwright browser harness
+        run: |
+          npm install --no-save --no-package-lock @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start standalone MongoDB
+        run: |
+          docker run --detach --name artaround-browser-mongo --publish 27017:27017 mongo:7 --bind_ip_all
+          for attempt in {1..30}; do
+            if docker exec artaround-browser-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then break; fi
+            sleep 1
+          done
+
+      - name: Build clients
+        run: npm run build:clients
+
+      - name: Start ArtAround server
+        run: |
+          node index.js > /tmp/artaround-browser.log 2>&1 &
+          echo $! > /tmp/artaround-browser.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/ping > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/ping > /dev/null
+
+      - name: Run browser acceptance tests
+        run: npx playwright test tests/browserFeedback.acceptance.spec.js --reporter=line --workers=1
+
+      - name: Print server log on browser failure
+        if: failure()
+        run: cat /tmp/artaround-browser.log || true
+
+      - name: Stop browser acceptance services
+        if: always()
+        run: |
+          if [ -f /tmp/artaround-browser.pid ]; then kill "$(cat /tmp/artaround-browser.pid)" || true; fi
+          docker rm --force artaround-browser-mongo || true

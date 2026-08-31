@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
+import { SearchController } from "../application/searchController";
 import { useConfiguredVenueStore } from "../application/stores";
 import ReliableSelect from "./ReliableSelect.vue";
 import {
@@ -76,6 +77,28 @@ function selectedSources(): GenerationSourceRef[] {
     .map((entry) => entry.sourceRef)
     .filter((source) => selected.has(sourceKey(source)));
 }
+
+const subjectSearch = new SearchController<GenerationSubjectOption, GenerationSubjectSearchResponse>({
+  debounceMs: 0,
+  allowEmptyQuery: true,
+  search: (query, { signal }) => {
+    const sources = selectedSources();
+    if (!sources.length) throw new Error("Seleziona almeno una sorgente editoriale prima di cercare gli interessi.");
+    return generatorRepository.searchSubjects(sources, query, 30, locale.value.trim() || "it-IT", signal);
+  },
+  getResults: (response) => response.results,
+  onStateChange: (state) => {
+    searchingSubjects.value = state.loading;
+    subjectResults.value = state.results;
+    subjectSearchMeta.value = state.result?.resolver ?? null;
+    subjectSearchWarnings.value = state.result?.warnings ?? [];
+    if (state.error) error.value = state.error;
+    if (state.result) {
+      const available = new Set(state.results.map((entry) => entry.id));
+      selectedSubjectIds.value = selectedSubjectIds.value.filter((id) => available.has(id));
+    }
+  },
+});
 
 function venueLabel(targetVenueId: string) {
   for (const organization of options.value?.physicalScope.organizations || []) {
@@ -165,14 +188,14 @@ onMounted(async () => {
   await loadOptions();
 });
 
+onBeforeUnmount(() => subjectSearch.dispose());
+
 async function onVenueChanged() {
   await loadOptions({ preserveSources: true });
 }
 
 function clearSemanticSelection() {
-  subjectResults.value = [];
-  subjectSearchMeta.value = null;
-  subjectSearchWarnings.value = [];
+  subjectSearch.clear();
   selectedSubjectIds.value = [];
 }
 
@@ -182,23 +205,12 @@ function onSourceChanged() {
 }
 
 async function searchSubjects() {
-  const sources = selectedSources();
-  if (!sources.length) {
+  if (!selectedSources().length) {
     error.value = "Seleziona almeno una sorgente editoriale prima di cercare gli interessi.";
     return;
   }
-  searchingSubjects.value = true;
   error.value = null;
-  try {
-    const response = await generatorRepository.searchSubjects(sources, subjectQuery.value.trim(), 30, locale.value.trim() || "it-IT");
-    subjectResults.value = response.results;
-    subjectSearchMeta.value = response.resolver;
-    subjectSearchWarnings.value = response.warnings;
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : "Impossibile cercare gli interessi";
-  } finally {
-    searchingSubjects.value = false;
-  }
+  await subjectSearch.setQuery(subjectQuery.value.trim(), { immediate: true });
 }
 
 function routingProfileSelections(): GenerationRoutingProfileSelection[] {

@@ -191,10 +191,11 @@ export const generatorRepository = {
   options(selectedVenueIds: string[] = []) {
     return apiClient.request<GenerationOptionsProjection>(`/v2/navigator/generation-options${selectedVenueQuery(selectedVenueIds)}`);
   },
-  searchSubjects(editorialSources: GenerationSourceRef[], query = "", limit = 20, locale = "it") {
+  searchSubjects(editorialSources: GenerationSourceRef[], query = "", limit = 20, locale = "it", signal?: AbortSignal) {
     return apiClient.request<GenerationSubjectSearchResponse>("/v2/navigator/generation-subjects/search", {
       method: "POST",
       body: JSON.stringify({ editorialSources, query, limit, locale }),
+      signal,
     });
   },
   generate(request: GenerationRequest) {

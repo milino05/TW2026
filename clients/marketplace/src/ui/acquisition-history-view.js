@@ -1,4 +1,7 @@
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { QueryState } from "../application/query-state.js";
+import { ResourceBrowserController } from "../application/resource-browser-controller.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
 import { escapeHtml, formatDate, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
@@ -8,33 +11,50 @@ function readPage() { return Math.max(1, Number(new URLSearchParams(window.locat
 export class ArtAroundAcquisitionHistoryView extends HTMLElement {
   context = readOperatingContext();
   history = null;
-  page = readPage();
+  state = new QueryState({ page: readPage(), pageSize: 20 });
   busy = false;
   error = null;
+  browser = new ResourceBrowserController({
+    queryState: this.state,
+    load: async ({ page }) => {
+      const beneficiary = this.beneficiary();
+      if (!beneficiary) throw new Error("Area di lavoro non selezionata");
+      const history = await marketplaceRepository.acquisitionHistory({ ...beneficiary, page });
+      this.state.page = Math.max(1, Number(history?.page) || page);
+      return { ...history, items: Array.isArray(history?.results) ? history.results : [] };
+    },
+    onStateChange: (browserState) => {
+      this.busy = browserState.loading;
+      this.error = browserState.error;
+      if (browserState.result) this.history = browserState.result;
+      if (this.isConnected) this.render();
+    },
+  });
 
-  connectedCallback() { this.addEventListener("click", this.onClick); this.load(); }
-  disconnectedCallback() { this.removeEventListener("click", this.onClick); }
+  connectedCallback() {
+    this.addEventListener("click", this.onClick);
+    void this.load();
+  }
+  disconnectedCallback() {
+    this.removeEventListener("click", this.onClick);
+    this.browser.dispose();
+  }
   beneficiary() { const principal = operatingPrincipal(this.context); return principal ? { beneficiaryType: principal.principalType, beneficiaryId: principal.principalId } : null; }
 
-  async load() {
-    const beneficiary = this.beneficiary();
-    if (!beneficiary) { this.error = "Area di lavoro non selezionata"; this.render(); return; }
-    this.busy = true; this.error = null; this.render();
-    try { this.history = await marketplaceRepository.acquisitionHistory({ ...beneficiary, page: this.page }); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Licenze non disponibili"; }
-    finally { this.busy = false; this.render(); }
-  }
+  async load() { await this.browser.refresh(); }
 
   syncUrl() {
     const url = new URL(window.location.href); url.search = "";
-    if (this.page > 1) url.searchParams.set("page", String(this.page));
-    window.history.replaceState({}, "", url);
+    if (this.state.page > 1) url.searchParams.set("page", String(this.state.page));
+    replaceCurrentHistoryUrl(url);
   }
 
   onClick = async (event) => {
     const button = event.target instanceof Element ? event.target.closest("button[data-history-page]") : null;
     if (!button) return;
-    this.page = Math.max(1, Number(button.dataset.historyPage) || 1); this.syncUrl(); await this.load(); window.scrollTo({ top: 0, behavior: "smooth" });
+    const browserState = await this.browser.setPage(Math.max(1, Number(button.dataset.historyPage) || 1));
+    if (!browserState.error) this.syncUrl();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   renderCurrentRights(entry) {
@@ -58,7 +78,7 @@ export class ArtAroundAcquisitionHistoryView extends HTMLElement {
     const pageSize = Number(this.history?.pageSize) || 20;
     const cards = results.map((entry) => this.renderCard(entry)).join("");
     const areaName = this.context?.type === "organization" ? this.context.name : "Area personale";
-    this.innerHTML = `<main class="page licenses-page" aria-busy="${this.busy}"><header class="page-header"><div><span class="eyebrow">Marketplace · ${escapeHtml(areaName)}</span><h1>Acquisizioni e licenze</h1><p>Controlla ciò che è stato aggiunto o acquistato in questa area e i diritti disponibili adesso.</p></div></header><nav class="consumer-tabs" aria-label="Marketplace"><a data-route href="/acquisitions" aria-current="page">Acquisizioni</a><a data-route href="/workspace/commerce">Vendite</a></nav>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.history ? `<div class="empty-state"><div class="skeleton skeleton-line" style="width:12rem"></div><p>Caricamento licenze…</p></div>` : results.length ? `<section class="license-list">${cards}</section>` : `<div class="empty-state"><span>${icon("shield", { size: 28 })}</span><h3>Nessuna acquisizione ancora</h3><p>Le risorse gratuite o acquistate per questa area compariranno qui.</p><a class="button-link" data-route href="/catalog">Esplora il catalogo</a></div>`}${total ? `<nav class="pagination" aria-label="Pagine delle licenze"><button type="button" data-history-page="${this.page - 1}" ${this.page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${this.page}</span><button type="button" data-history-page="${this.page + 1}" ${this.page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</main>`;
+    this.innerHTML = `<main class="page licenses-page" aria-busy="${this.busy}"><header class="page-header"><div><span class="eyebrow">Marketplace · ${escapeHtml(areaName)}</span><h1>Acquisizioni e licenze</h1><p>Controlla ciò che è stato aggiunto o acquistato in questa area e i diritti disponibili adesso.</p></div></header><nav class="consumer-tabs" aria-label="Marketplace"><a data-route href="/acquisitions" aria-current="page">Acquisizioni</a><a data-route href="/workspace/commerce">Vendite</a></nav>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.history ? `<div class="empty-state"><div class="skeleton skeleton-line" style="width:12rem"></div><p>Caricamento licenze…</p></div>` : results.length ? `<section class="license-list">${cards}</section>` : `<div class="empty-state"><span>${icon("shield", { size: 28 })}</span><h3>Nessuna acquisizione ancora</h3><p>Le risorse gratuite o acquistate per questa area compariranno qui.</p><a class="button-link" data-route href="/catalog">Esplora il catalogo</a></div>`}${total ? `<nav class="pagination" aria-label="Pagine delle licenze"><button type="button" data-history-page="${this.state.page - 1}" ${this.state.page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${this.state.page}</span><button type="button" data-history-page="${this.state.page + 1}" ${this.state.page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</main>`;
   }
 }
 customElements.define("artaround-acquisition-history-view", ArtAroundAcquisitionHistoryView);

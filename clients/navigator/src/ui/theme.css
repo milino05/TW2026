@@ -13,6 +13,10 @@
   --navigator-muted: #69706b;
   --navigator-border: #d8d0c4;
   --navigator-shadow: rgba(64, 48, 38, .14);
+  /* Global feedback layers are intentionally near the browser z-index ceiling.
+   * Client drawers, sticky panels, maps and ordinary modals must remain below them. */
+  --artaround-layer-dialog: 2147483200;
+  --artaround-layer-toast: 2147483400;
   color: var(--navigator-ink);
   background: var(--navigator-surface);
   font-synthesis: none;
@@ -55,6 +59,9 @@ body {
   background: var(--navigator-surface);
 }
 
+html.artaround-dialog-open,
+body.artaround-dialog-open { overflow: hidden; }
+
 button,
 input,
 select,
@@ -89,6 +96,34 @@ input:focus-visible,
 select:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--navigator-primary) 52%, transparent);
   outline-offset: 2px;
+}
+
+/* Migration projection for legacy Navigator nodes. New views should render the
+ * Vue feedback components directly; this keeps existing large views aligned
+ * without duplicating their domain logic. */
+[data-artaround-feedback-surface="callout"],
+[data-artaround-feedback-surface="issue-panel"] {
+  --artaround-feedback-accent: var(--navigator-primary);
+  border: 1px solid var(--navigator-border) !important;
+  border-left: .22rem solid var(--artaround-feedback-accent) !important;
+  border-radius: .85rem !important;
+  padding: .8rem .95rem !important;
+  color: var(--navigator-ink) !important;
+  background: var(--navigator-surface-raised) !important;
+}
+
+[data-artaround-feedback-surface="callout"][data-artaround-feedback-tone="info"],
+[data-artaround-feedback-surface="issue-panel"][data-artaround-feedback-tone="info"] { --artaround-feedback-accent: #47799a; }
+[data-artaround-feedback-surface="callout"][data-artaround-feedback-tone="success"],
+[data-artaround-feedback-surface="issue-panel"][data-artaround-feedback-tone="success"] { --artaround-feedback-accent: #36785c; }
+[data-artaround-feedback-surface="callout"][data-artaround-feedback-tone="warning"],
+[data-artaround-feedback-surface="issue-panel"][data-artaround-feedback-tone="warning"] { --artaround-feedback-accent: #9a681d; }
+[data-artaround-feedback-surface="callout"][data-artaround-feedback-tone="danger"],
+[data-artaround-feedback-surface="issue-panel"][data-artaround-feedback-tone="danger"] { --artaround-feedback-accent: #b33e45; }
+
+[data-artaround-feedback-surface="issue-panel"] {
+  display: grid !important;
+  gap: .45rem;
 }
 
 .app-shell { min-height: 100vh; }

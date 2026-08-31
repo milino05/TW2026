@@ -1,4 +1,4 @@
-import { navigate } from "../application/router.js";
+import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { userFacingFieldLabel, userFacingIssueMessage } from "../application/user-facing-errors.js";
@@ -412,7 +412,7 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
   showSection(section, { scroll = false } = {}) {
     if (!SECTIONS.some(([key]) => key === section)) return;
     this.activeSection = section;
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#namespace-${section}`);
+    replaceCurrentHistoryUrl(`${window.location.pathname}${window.location.search}#namespace-${section}`);
     this.syncSectionNavigation({ scroll });
   }
 

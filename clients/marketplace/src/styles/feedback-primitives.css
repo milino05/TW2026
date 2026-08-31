@@ -1,0 +1,273 @@
+/* ArtAround feedback primitives
+ * Surface answers "how must this information behave?".
+ * Tone answers "what does it mean?". Keep the two concepts independent.
+ */
+
+:root {
+  /* Deliberately near the browser z-index ceiling: application drawers, sticky
+   * panels, maps and ordinary modals must never cover global feedback. */
+  --artaround-layer-dialog:2147483200;
+  --artaround-layer-toast:2147483400;
+}
+
+artaround-callout,
+artaround-issue-panel,
+artaround-field-feedback,
+artaround-empty-state,
+artaround-progress-state {
+  box-sizing:border-box;
+}
+
+artaround-callout,
+artaround-issue-panel {
+  display:block;
+  padding:.85rem 1rem;
+  border:1px solid var(--feedback-border,var(--line));
+  border-left:.22rem solid var(--feedback-accent,var(--sage-500));
+  border-radius:var(--radius-md);
+  background:var(--feedback-bg,var(--sage-50));
+  color:var(--feedback-ink,var(--ink-900));
+}
+
+artaround-callout[data-tone="info"],
+artaround-issue-panel[data-tone="info"] {
+  --feedback-accent:var(--info,#376b8d);
+  --feedback-bg:var(--info-soft,#eef6fb);
+}
+
+artaround-callout[data-tone="success"],
+artaround-issue-panel[data-tone="success"] {
+  --feedback-accent:var(--success,#2f7558);
+  --feedback-bg:var(--success-soft,#edf8f1);
+}
+
+artaround-callout[data-tone="warning"],
+artaround-issue-panel[data-tone="warning"] {
+  --feedback-accent:var(--warning,#8a5a12);
+  --feedback-bg:var(--warning-soft,#fff5df);
+}
+
+artaround-callout[data-tone="danger"],
+artaround-issue-panel[data-tone="danger"] {
+  --feedback-accent:var(--danger,#a23c35);
+  --feedback-bg:var(--danger-soft,#fff0ee);
+}
+
+artaround-issue-panel {
+  display:grid;
+  gap:.65rem;
+}
+
+artaround-field-feedback {
+  display:block;
+  margin-top:.32rem;
+  color:var(--danger,#a23c35);
+  font-size:.78rem;
+  font-weight:700;
+  line-height:1.35;
+}
+
+artaround-status-indicator {
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  min-height:1.75rem;
+  padding:.2rem .55rem;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--sage-50);
+  color:var(--sage-700);
+  font-size:.76rem;
+  font-weight:750;
+}
+
+artaround-status-indicator[data-tone="success"] { background:var(--success-soft,#edf8f1); color:var(--success,#2f7558); }
+artaround-status-indicator[data-tone="warning"] { background:var(--warning-soft,#fff5df); color:var(--warning,#8a5a12); }
+artaround-status-indicator[data-tone="danger"] { background:var(--danger-soft,#fff0ee); color:var(--danger,#a23c35); }
+artaround-status-indicator[data-tone="info"] { background:var(--info-soft,#eef6fb); color:var(--info,#376b8d); }
+
+artaround-empty-state {
+  display:grid;
+  place-items:center;
+  gap:.65rem;
+  min-height:9rem;
+  padding:1.25rem;
+  border:1px dashed var(--line-strong,var(--line));
+  border-radius:var(--radius-lg);
+  background:var(--sage-50);
+  text-align:center;
+}
+
+artaround-progress-state {
+  display:inline-flex;
+  align-items:center;
+  gap:.55rem;
+  color:var(--sage-700);
+  font-size:.84rem;
+  font-weight:700;
+}
+
+/* Toasts are global and never participate in page layout. Oldest stays on top,
+ * newer notifications are appended below it. Every toast owns its own timer. */
+artaround-toast-center {
+  position:fixed;
+  z-index:var(--artaround-layer-toast,2147483400);
+  top:max(calc(var(--header-height,0px) + 1rem),env(safe-area-inset-top));
+  right:max(1rem,env(safe-area-inset-right));
+  width:min(30rem,calc(100vw - 2rem));
+  pointer-events:none;
+}
+
+.artaround-toast-stack {
+  display:flex;
+  flex-direction:column;
+  gap:.6rem;
+}
+
+.artaround-toast {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:start;
+  gap:.7rem;
+  width:100%;
+  padding:.8rem .85rem;
+  border:1px solid var(--toast-border,var(--line-strong,var(--line)));
+  border-left:.22rem solid var(--toast-accent,var(--sage-500));
+  border-radius:var(--radius-lg);
+  background:rgba(251,250,247,.98);
+  box-shadow:var(--shadow-lg);
+  color:var(--ink-900);
+  pointer-events:auto;
+  animation:artaround-toast-enter .18s ease-out both;
+  transition:opacity .18s ease,transform .18s ease;
+}
+
+.artaround-toast[data-state="exiting"] {
+  opacity:0;
+  transform:translateX(.8rem);
+}
+
+.artaround-toast[data-tone="info"] { --toast-accent:var(--info,#376b8d); --toast-border:color-mix(in srgb,var(--info,#376b8d) 35%,var(--line)); }
+.artaround-toast[data-tone="success"] { --toast-accent:var(--success,#2f7558); --toast-border:color-mix(in srgb,var(--success,#2f7558) 35%,var(--line)); }
+.artaround-toast[data-tone="warning"] { --toast-accent:var(--warning,#8a5a12); --toast-border:color-mix(in srgb,var(--warning,#8a5a12) 35%,var(--line)); }
+.artaround-toast[data-tone="danger"] { --toast-accent:var(--danger,#a23c35); --toast-border:color-mix(in srgb,var(--danger,#a23c35) 35%,var(--line)); }
+
+.artaround-toast__icon {
+  display:inline-flex;
+  color:var(--toast-accent,var(--sage-600));
+}
+
+.artaround-toast p {
+  margin:0;
+  line-height:1.45;
+}
+
+.artaround-toast button {
+  display:grid;
+  place-items:center;
+  width:1.7rem;
+  height:1.7rem;
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:var(--sage-700);
+  font-size:1.25rem;
+  line-height:1;
+  box-shadow:none;
+}
+
+.artaround-toast button:hover,
+.artaround-toast button:focus-visible {
+  background:var(--sage-100);
+  transform:none;
+}
+
+@keyframes artaround-toast-enter {
+  from { opacity:0; transform:translateX(.8rem); }
+  to { opacity:1; transform:translateX(0); }
+}
+
+/* Action dialog: use only when the initiating action must pause until the user
+ * explicitly decides. Contextual warnings that do not block belong in callouts. */
+artaround-action-dialog:not([hidden]) {
+  position:fixed;
+  z-index:var(--artaround-layer-dialog,2147483200);
+  inset:0;
+  display:grid;
+  place-items:center;
+  padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));
+}
+
+artaround-action-dialog[hidden] { display:none; }
+
+.artaround-action-dialog__backdrop {
+  position:absolute;
+  inset:0;
+  background:rgba(15,24,22,.58);
+  backdrop-filter:blur(3px);
+}
+
+.artaround-action-dialog__panel {
+  position:relative;
+  z-index:1;
+  display:grid;
+  gap:1.15rem;
+  width:min(34rem,100%);
+  max-height:calc(100dvh - 2rem);
+  overflow:auto;
+  padding:1.2rem;
+  border:1px solid var(--line-strong,var(--line));
+  border-radius:var(--radius-xl);
+  background:var(--surface);
+  box-shadow:var(--shadow-lg);
+}
+
+.artaround-action-dialog__heading {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:.8rem;
+  align-items:start;
+}
+
+.artaround-action-dialog__heading > span {
+  display:grid;
+  place-items:center;
+  width:2.35rem;
+  height:2.35rem;
+  border-radius:999px;
+  background:var(--sage-100);
+  color:var(--sage-700);
+}
+
+artaround-action-dialog[data-tone="danger"] .artaround-action-dialog__heading > span {
+  background:var(--danger-soft,#fff0ee);
+  color:var(--danger,#a23c35);
+}
+
+.artaround-action-dialog__heading h2 { margin:0; }
+.artaround-action-dialog__heading p { margin:.4rem 0 0; color:var(--sage-700); line-height:1.5; }
+.artaround-action-dialog__actions { display:flex; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; }
+
+html.artaround-dialog-open,
+body.artaround-dialog-open { overflow:hidden; }
+
+@media(max-width:40rem) {
+  artaround-toast-center {
+    top:max(.65rem,env(safe-area-inset-top));
+    right:max(.65rem,env(safe-area-inset-right));
+    left:max(.65rem,env(safe-area-inset-left));
+    width:auto;
+  }
+
+  .artaround-action-dialog__actions {
+    flex-direction:column-reverse;
+  }
+
+  .artaround-action-dialog__actions button { width:100%; }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .artaround-toast { animation:none; transition:none; }
+}

@@ -1,0 +1,61 @@
+/* Definition disclosure states shared by the vocabulary editor experience. */
+.physical-definition-card.namespace-definition--collapsed {
+  gap:.55rem;
+  padding:.8rem 1rem;
+  background:var(--surface);
+  transition:border-color .16s ease,background .16s ease,box-shadow .16s ease;
+}
+
+.physical-definition-card.namespace-definition--collapsed[role="button"] {
+  cursor:pointer;
+}
+
+.physical-definition-card.namespace-definition--collapsed[role="button"]:hover {
+  border-color:var(--sage-400);
+  background:var(--sage-50);
+  box-shadow:var(--shadow-md);
+}
+
+.physical-definition-card.namespace-definition--collapsed[role="button"]:focus-visible {
+  outline:2px solid var(--sage-500);
+  outline-offset:3px;
+}
+
+.physical-definition-card[data-expanded="true"] {
+  border-color:var(--sage-400);
+  box-shadow:inset .2rem 0 0 var(--sage-500);
+}
+
+.physical-definition-card .namespace-definition-summary {
+  display:flex;
+  align-items:center;
+  gap:.65rem;
+  margin-top:.25rem;
+}
+
+.physical-definition-card .namespace-definition-summary p {
+  display:-webkit-box;
+  overflow:hidden;
+  max-width:46rem;
+  margin:0;
+  color:var(--sage-600);
+  font-size:.84rem;
+  line-height:1.4;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+.physical-mapping-list.namespace-mapping-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+
+@media(max-width:52rem) {
+  .physical-definition-card .namespace-definition-summary {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .physical-mapping-list.namespace-mapping-grid {
+    grid-template-columns:1fr;
+  }
+}
