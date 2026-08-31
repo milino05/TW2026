@@ -10,6 +10,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const application = read("clients/marketplace/src/application/ui-feedback.js");
 const primitives = read("clients/marketplace/src/ui/feedback-primitives.js");
 const adapter = read("clients/marketplace/src/ui/transient-feedback-adapter.js");
+const surfaceAdapter = read("clients/marketplace/src/ui/legacy-feedback-surface-adapter.js");
 const styles = read("clients/marketplace/src/styles/feedback-primitives.css");
 const main = read("clients/marketplace/src/main.js");
 const index = read("clients/marketplace/index.html");
@@ -21,6 +22,7 @@ test("i moduli del feedback condiviso superano il syntax check", () => {
     "clients/marketplace/src/application/ui-feedback.js",
     "clients/marketplace/src/ui/feedback-primitives.js",
     "clients/marketplace/src/ui/transient-feedback-adapter.js",
+    "clients/marketplace/src/ui/legacy-feedback-surface-adapter.js",
   ]) {
     execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
   }
@@ -50,8 +52,9 @@ test("le notifiche hanno durata predefinita di tre secondi e timer indipendenti"
 });
 
 test("lo stack mantiene il FIFO visivo: i nuovi toast vengono aggiunti sotto", () => {
-  assert.match(styles, /\.artaround-toast-stack\s*\{[\s\S]*flex-direction:column/);
-  assert.doesNotMatch(styles, /flex-direction:column-reverse/);
+  const stackRule = styles.match(/\.artaround-toast-stack\s*\{([^}]*)\}/)?.[1] || "";
+  assert.match(stackRule, /flex-direction:column/);
+  assert.doesNotMatch(stackRule, /column-reverse/);
   assert.match(styles, /artaround-toast-center\s*\{[\s\S]*position:fixed/);
 });
 
@@ -61,6 +64,22 @@ test("l'action dialog implementa il comportamento modale riusabile", () => {
   assert.match(primitives, /event\.key !== "Tab"/);
   assert.match(primitives, /this\.returnFocus\?\.focus/);
   assert.match(primitives, /export function openActionDialog/);
+});
+
+test("le conferme semplici già classificate usano l'action dialog condiviso", () => {
+  assert.match(surfaceAdapter, /showNamespaceLeaveDialog/);
+  assert.match(surfaceAdapter, /showPhysicalConfirmationDialog/);
+  assert.match(surfaceAdapter, /openActionDialog\(\{/);
+  assert.match(surfaceAdapter, /tone: "danger"/);
+  assert.match(surfaceAdapter, /data-confirm-leave/);
+  assert.match(surfaceAdapter, /data-confirm-action/);
+});
+
+test("gli issue panel inequivocabili vengono migrati alla primitive condivisa", () => {
+  assert.match(surfaceAdapter, /document\.createElement\("artaround-issue-panel"\)/);
+  assert.match(surfaceAdapter, /panel\.setAttribute\("tone", "warning"\)/);
+  assert.match(surfaceAdapter, /ArtAroundItemAuthoringView/);
+  assert.match(surfaceAdapter, /ArtAroundVisitAuthoringView/);
 });
 
 test("la migrazione converte solo canali transitori verificati", () => {
@@ -77,6 +96,7 @@ test("la migrazione converte solo canali transitori verificati", () => {
 test("il sistema globale viene caricato prima delle view", () => {
   assert.ok(main.indexOf('import "./ui/feedback-primitives.js"') < main.indexOf('import "./ui/app-shell.js"'));
   assert.ok(main.indexOf('import "./ui/transient-feedback-adapter.js"') < main.indexOf('import "./ui/app-shell.js"'));
+  assert.ok(main.indexOf('import "./ui/legacy-feedback-surface-adapter.js"') < main.indexOf('import "./ui/app-shell.js"'));
   assert.match(index, /styles\/feedback-primitives\.css/);
 });
 
