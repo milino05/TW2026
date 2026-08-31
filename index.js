@@ -9,7 +9,7 @@ require("dotenv").config({
 
 const mongoose = require("mongoose");
 require("./config/mongoUnitOfWork");
-const app = require("./app");
+const { ensureDatabaseSchemaReadiness } = require("./services/databaseSchemaReadiness.service");
 
 const mongoURI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 8000;
@@ -24,6 +24,14 @@ async function startServer() {
     await mongoose.connect(mongoURI);
     console.log("Connessione a MongoDB riuscita");
 
+    const schemaReadiness = await ensureDatabaseSchemaReadiness();
+    if (schemaReadiness.venueTargetPublicCodeIndex?.changed) {
+      console.log("Schema MongoDB riallineato: indice VenueTarget.publicCode aggiornato");
+    }
+
+    // Carichiamo l'app soltanto dopo il controllo degli indici legacy, così i
+    // model Mongoose vedono uno schema Mongo già coerente con il dominio attuale.
+    const app = require("./app");
     app.listen(PORT, () => {
       console.log(`Server avviato su porta ${PORT}`);
     });

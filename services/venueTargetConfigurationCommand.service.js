@@ -6,10 +6,10 @@ const AppError = require("../utils/AppError");
 const { assertVenuePermission } = require("./venueAuthorization.service");
 const { markRevisionEdited } = require("./revisionWorkflow.service");
 
-function id(value) { return String(value?._id || value || ""); }
 function commandError(message, code, field = null, statusCode = 400, extra = {}) {
   throw new AppError(message, statusCode, [{ ...(field ? { field } : {}), code, ...extra }]);
 }
+function id(value) { return String(value?._id || value || ""); }
 
 async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetId, actorUserId }) {
   const { venue } = await assertVenuePermission({
@@ -68,4 +68,6 @@ async function detachVenueTargetFromWorkingConfiguration({ venueId, venueTargetI
   }
 }
 
-module.exports = { detachVenueTargetFromWorkingConfiguration };
+module.exports = {
+  detachVenueTargetFromWorkingConfiguration,
+};
