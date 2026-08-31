@@ -76,9 +76,9 @@ function bridgeCompletionDialog(root: ParentNode) {
   dialogBridge.value = {
     overlay,
     title: text(legacy.querySelector("h2")) || "Conferma azione",
-    message: text(legacy.querySelector("h2")?.nextElementSibling),
-    cancelLabel: text(buttons[0]) || "Annulla",
-    confirmLabel: text(legacy.querySelector(".confirm-completion")) || text(buttons.at(-1) || null) || "Conferma",
+    message: text(legacy.querySelector("h2")?.nextElementSibling ?? null),
+    cancelLabel: text(buttons[0] ?? null) || "Annulla",
+    confirmLabel: text(legacy.querySelector(".confirm-completion")) || text(buttons.at(-1) ?? null) || "Conferma",
   };
 }
 
