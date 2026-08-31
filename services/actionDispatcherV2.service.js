@@ -1,9 +1,6 @@
 const VisitSessionV2 = require("../models/visitSessionV2.model");
 const AppError = require("../utils/AppError");
 const {
-  deriveRuntimeActions,
-  currentSessionProjection,
-  advanceSession,
   changePresentationDepthV2,
   changePresentationComplexityV2,
   openSemanticPresentationV2,
@@ -13,6 +10,11 @@ const {
   resumeSessionV2,
   completeSessionV2,
 } = require("./visitSessionV2.service");
+const {
+  deriveRuntimeActionsWithLogistics,
+  currentSessionProjectionWithLogistics,
+  advanceSessionWithLogistics,
+} = require("./sessionLogisticsProgressionV2.service");
 const {
   projectNavigationRoute,
   projectNextRouteObstacles,
@@ -86,8 +88,8 @@ async function claimRuntimeVersion({ sessionId, userId, expectedRuntimeVersion }
 
 async function executeDescriptor({ sessionId, userId, descriptor }) {
   switch (descriptor.type) {
-    case "PROGRESS_NEXT": await advanceSession({ sessionId, userId, direction: "next" }); return null;
-    case "PROGRESS_PREVIOUS": await advanceSession({ sessionId, userId, direction: "previous" }); return null;
+    case "PROGRESS_NEXT": await advanceSessionWithLogistics({ sessionId, userId, direction: "next" }); return null;
+    case "PROGRESS_PREVIOUS": await advanceSessionWithLogistics({ sessionId, userId, direction: "previous" }); return null;
     case "PRESENTATION_DEPTH_INCREASE": await changePresentationDepthV2({ sessionId, userId, direction: "up" }); return null;
     case "PRESENTATION_DEPTH_DECREASE": await changePresentationDepthV2({ sessionId, userId, direction: "down" }); return null;
     case "PRESENTATION_COMPLEXITY_INCREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "up" }); return null;
@@ -151,7 +153,7 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
   const expectedRuntimeVersion = normalizeExpectedRuntimeVersion(payload.expectedRuntimeVersion);
   const interactionChannel = normalizeInteractionChannel(payload.interactionChannel);
 
-  const derived = await deriveRuntimeActions({ sessionId, userId });
+  const derived = await deriveRuntimeActionsWithLogistics({ sessionId, userId });
   const rawDescriptor = derived.actions.find((entry) => entry.actionId === actionId) || null;
   if (!rawDescriptor) {
     await recordRejectedUnavailable({ sessionId, userId, actionId, interactionChannel });
@@ -178,7 +180,7 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     { _id: sessionId, userId },
     { $push: { interactionEvents: interactionEvent({ userId, descriptor, interactionChannel, status: "applied" }) } },
   );
-  const runtime = appendSemanticChoices(await currentSessionProjection({ sessionId, userId }), effect);
+  const runtime = appendSemanticChoices(await currentSessionProjectionWithLogistics({ sessionId, userId }), effect);
   return {
     action: { actionId: descriptor.actionId, type: descriptor.type, family: descriptor.family },
     runtime,
