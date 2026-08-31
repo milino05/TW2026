@@ -70,7 +70,7 @@ test("issue panel e callout inequivocabili vengono migrati alle primitive condiv
   assert.match(surfaceAdapter, /\.namespace-workflow \.issues/);
   assert.match(surfaceAdapter, /physical-integrity--warning/);
   assert.match(surfaceAdapter, /blocker-panel/);
-  assert.match(surfaceAdapter, /ArtAroundItemAuthoringView/);
+  assert.match(surfaceAdapter, /ItemAuthoringView/);
   assert.match(surfaceAdapter, /ArtAroundVisitAuthoringView/);
 });
 
@@ -79,7 +79,7 @@ test("la migrazione converte solo canali transitori verificati", () => {
   assert.match(adapter, /ArtAroundPhysicalVocabularyEditorView, "message"/);
   assert.match(adapter, /ArtAroundVisitAuthoringView, "message"/);
   assert.match(adapter, /ArtAroundVenueEditorView, "message"/);
-  assert.match(adapter, /ArtAroundItemAuthoringView, "notice"/);
+  assert.match(adapter, /ItemAuthoringView, "notice"/);
   assert.doesNotMatch(adapter, /mediaNotice/);
   assert.doesNotMatch(adapter, /SemanticEntityPicker/);
   assert.match(adapter, /Persistent errors, busy states, search-result/);
