@@ -3,6 +3,13 @@
  * Tone answers "what does it mean?". Keep the two concepts independent.
  */
 
+:root {
+  /* Deliberately near the browser z-index ceiling: application drawers, sticky
+   * panels, maps and ordinary modals must never cover global feedback. */
+  --artaround-layer-dialog:2147483200;
+  --artaround-layer-toast:2147483400;
+}
+
 artaround-callout,
 artaround-issue-panel,
 artaround-field-feedback,
@@ -104,9 +111,9 @@ artaround-progress-state {
  * newer notifications are appended below it. Every toast owns its own timer. */
 artaround-toast-center {
   position:fixed;
-  z-index:140;
-  top:calc(var(--header-height,0px) + 1rem);
-  right:1rem;
+  z-index:var(--artaround-layer-toast,2147483400);
+  top:max(calc(var(--header-height,0px) + 1rem),env(safe-area-inset-top));
+  right:max(1rem,env(safe-area-inset-right));
   width:min(30rem,calc(100vw - 2rem));
   pointer-events:none;
 }
@@ -186,11 +193,11 @@ artaround-toast-center {
  * explicitly decides. Contextual warnings that do not block belong in callouts. */
 artaround-action-dialog:not([hidden]) {
   position:fixed;
-  z-index:130;
+  z-index:var(--artaround-layer-dialog,2147483200);
   inset:0;
   display:grid;
   place-items:center;
-  padding:1rem;
+  padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));
 }
 
 artaround-action-dialog[hidden] { display:none; }
@@ -208,6 +215,8 @@ artaround-action-dialog[hidden] { display:none; }
   display:grid;
   gap:1.15rem;
   width:min(34rem,100%);
+  max-height:calc(100dvh - 2rem);
+  overflow:auto;
   padding:1.2rem;
   border:1px solid var(--line-strong,var(--line));
   border-radius:var(--radius-xl);
@@ -246,10 +255,9 @@ body.artaround-dialog-open { overflow:hidden; }
 
 @media(max-width:40rem) {
   artaround-toast-center {
-    top:auto;
-    right:.65rem;
-    bottom:.65rem;
-    left:.65rem;
+    top:max(.65rem,env(safe-area-inset-top));
+    right:max(.65rem,env(safe-area-inset-right));
+    left:max(.65rem,env(safe-area-inset-left));
     width:auto;
   }
 
