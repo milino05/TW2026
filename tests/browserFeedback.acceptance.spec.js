@@ -34,7 +34,7 @@ async function installOrdinaryOverlay(page) {
 
 test("Marketplace feedback behaves correctly in a real browser", async ({ page }) => {
   await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
-  await page.locator("artaround-toast-center").waitFor();
+  await page.locator("artaround-toast-center").waitFor({ state: "attached" });
   await installOrdinaryOverlay(page);
 
   const entries = [
@@ -128,7 +128,7 @@ test("Marketplace feedback behaves correctly in a real browser", async ({ page }
 test("Marketplace global feedback stays inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
-  await page.locator("artaround-toast-center").waitFor();
+  await page.locator("artaround-toast-center").waitFor({ state: "attached" });
   await dispatchNotification(page, {
     id: "acceptance-mobile-marketplace",
     message: "Notifica mobile con testo sufficientemente lungo da verificare il contenimento nel viewport.",
@@ -145,7 +145,7 @@ test("Marketplace global feedback stays inside a mobile viewport", async ({ page
 
 test("Navigator toast stack is FIFO, stable and globally layered in a real browser", async ({ page }) => {
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });
-  await page.locator(".feedback-toast-host").waitFor();
+  await page.locator(".feedback-toast-host").waitFor({ state: "attached" });
   await installOrdinaryOverlay(page);
 
   const entries = [
@@ -191,7 +191,7 @@ test("Navigator feedback remains contained on mobile and honors reduced motion",
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });
-  await page.locator(".feedback-toast-host").waitFor();
+  await page.locator(".feedback-toast-host").waitFor({ state: "attached" });
   await dispatchNotification(page, {
     id: "navigator-mobile",
     message: "Notifica Navigator mobile",
