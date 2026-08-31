@@ -12,6 +12,8 @@ function escapeHtml(value = "") {
 export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   _availableOperations = [];
 
+  static get observedAttributes() { return ["status", "integrity-status", "busy", "actions-only"]; }
+
   set availableOperations(value) {
     this._availableOperations = Array.isArray(value) ? value : [];
     if (this.isConnected) this.render();
@@ -24,6 +26,7 @@ export class ArtAroundRevisionWorkflowControls extends HTMLElement {
   }
 
   disconnectedCallback() { this.removeEventListener("click", this.onClick); }
+  attributeChangedCallback() { if (this.isConnected) this.render(); }
 
   onClick = (event) => {
     const button = event.target instanceof Element ? event.target.closest("button[data-revision-workflow-operation]") : null;
@@ -43,11 +46,12 @@ export class ArtAroundRevisionWorkflowControls extends HTMLElement {
     const integrityState = this.getAttribute("integrity-status");
     const integrity = integrityState ? statusPresentation("integrity", integrityState) : null;
     const busy = this.hasAttribute("busy");
+    const actionsOnly = this.hasAttribute("actions-only");
     this.innerHTML = `<section class="artaround-revision-workflow" aria-label="Workflow editoriale">
-      <div class="artaround-revision-workflow__status">
+      ${actionsOnly ? "" : `<div class="artaround-revision-workflow__status">
         ${revision.state ? `<artaround-status-indicator tone="${escapeHtml(revision.tone)}">${escapeHtml(revision.label)}</artaround-status-indicator>` : ""}
         ${integrity ? `<artaround-status-indicator tone="${escapeHtml(integrity.tone)}">${escapeHtml(integrity.label)}</artaround-status-indicator>` : ""}
-      </div>
+      </div>`}
       <div class="artaround-revision-workflow__actions">
         ${operations.map((operation) => `<button type="button" data-revision-workflow-operation="${escapeHtml(operation.code)}" data-intent="${escapeHtml(operation.presentation.intent)}" ${busy ? "disabled" : ""}>${escapeHtml(operation.presentation.label)}</button>`).join("")}
       </div>
