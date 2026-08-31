@@ -46,7 +46,7 @@ test("AuthoringStepper proietta solo Item e Visit mantenendo l'handler legacy", 
   assert.match(stepper, /aria-current="step"/);
   assert.match(stepper, /aria-disabled="true" disabled/);
   assert.match(stepperAdapter, /button\[data-step\]/);
-  assert.match(stepperAdapter, /data-artaround-legacy-projection/);
+  assert.match(stepperAdapter, /dataset\.artaroundLegacyProjection\s*=\s*"authoring-progress"/);
 });
 
 test("i layer applicativi restano ordinati sotto dialog e toast", () => {
