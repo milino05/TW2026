@@ -7,21 +7,18 @@ import {
   type NotificationDetail,
 } from "../application/uiFeedback";
 
-type VisibleNotification = NotificationDetail & { state: "visible" | "exiting" };
+type VisibleNotification = NotificationDetail;
 
 const notifications = ref<VisibleNotification[]>([]);
 const timers = new Map<string, number>();
 
 function dismiss(id: string) {
   const current = notifications.value.find((entry) => entry.id === id);
-  if (!current || current.state === "exiting") return;
+  if (!current) return;
   const timer = timers.get(id);
   if (timer) window.clearTimeout(timer);
   timers.delete(id);
-  current.state = "exiting";
-  window.setTimeout(() => {
-    notifications.value = notifications.value.filter((entry) => entry.id !== id);
-  }, 180);
+  notifications.value = notifications.value.filter((entry) => entry.id !== id);
 }
 
 function onNotification(event: Event) {
@@ -29,7 +26,7 @@ function onNotification(event: Event) {
   if (!detail?.id || !detail.message) return;
   const existing = notifications.value.findIndex((entry) => entry.id === detail.id);
   if (existing >= 0) notifications.value.splice(existing, 1);
-  notifications.value.push({ ...detail, state: "visible" });
+  notifications.value.push({ ...detail });
 
   if (detail.duration > 0) {
     const previous = timers.get(detail.id);
@@ -64,13 +61,12 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <aside class="feedback-toast-host" aria-label="Notifiche">
-      <div class="feedback-toast-stack">
+      <TransitionGroup name="feedback-toast" tag="div" class="feedback-toast-stack">
         <section
           v-for="entry in notifications"
           :key="entry.id"
           class="feedback-toast"
           :data-tone="entry.tone"
-          :data-state="entry.state"
           :role="entry.tone === 'danger' ? 'alert' : 'status'"
           :aria-live="entry.tone === 'danger' ? 'assertive' : 'polite'"
         >
@@ -84,7 +80,7 @@ onBeforeUnmount(() => {
             @click="dismiss(entry.id)"
           >×</button>
         </section>
-      </div>
+      </TransitionGroup>
     </aside>
   </Teleport>
 </template>
@@ -120,15 +116,28 @@ onBeforeUnmount(() => {
   box-shadow: 0 18px 46px rgba(0, 0, 0, .24);
   backdrop-filter: blur(16px);
   pointer-events: auto;
-  animation: feedback-toast-enter .18s ease-out both;
+}
+
+.feedback-toast-enter-active,
+.feedback-toast-leave-active,
+.feedback-toast-move {
   transition: opacity .18s ease, transform .18s ease;
+}
+
+.feedback-toast-enter-from,
+.feedback-toast-leave-to {
+  opacity: 0;
+  transform: translateX(.8rem);
+}
+
+.feedback-toast-leave-active {
+  position: relative;
 }
 
 .feedback-toast[data-tone="info"] { --feedback-accent: #47799a; }
 .feedback-toast[data-tone="success"] { --feedback-accent: #36785c; }
 .feedback-toast[data-tone="warning"] { --feedback-accent: #9a681d; }
 .feedback-toast[data-tone="danger"] { --feedback-accent: #b33e45; }
-.feedback-toast[data-state="exiting"] { opacity: 0; transform: translateX(.8rem); }
 
 .feedback-toast__icon {
   display: grid;
@@ -165,11 +174,6 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--navigator-primary) 9%, transparent);
 }
 
-@keyframes feedback-toast-enter {
-  from { opacity: 0; transform: translateX(.8rem); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
 @media (max-width: 640px) {
   .feedback-toast-host {
     right: max(.65rem, env(safe-area-inset-right));
@@ -179,6 +183,8 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .feedback-toast { animation: none; transition: none; }
+  .feedback-toast-enter-active,
+  .feedback-toast-leave-active,
+  .feedback-toast-move { transition: none; }
 }
 </style>
