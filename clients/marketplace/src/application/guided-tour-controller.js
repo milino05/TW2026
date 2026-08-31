@@ -11,6 +11,12 @@ export class GuidedTourController {
   get current() { return this.steps[this.index] || null; }
   get progress() { return { current: this.steps.length ? this.index + 1 : 0, total: this.steps.length }; }
 
+  setSteps(steps = []) {
+    this.steps = [...steps];
+    this.index = this.steps.length ? Math.max(0, Math.min(this.steps.length - 1, this.index)) : 0;
+    return this.current;
+  }
+
   wasSeen() {
     if (!this.storageKey) return false;
     try { return localStorage.getItem(this.storageKey) === "seen"; } catch { return false; }
