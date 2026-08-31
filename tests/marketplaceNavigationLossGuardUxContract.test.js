@@ -12,6 +12,11 @@ const router = read("clients/marketplace/src/application/router.js");
 const adapter = read("clients/marketplace/src/ui/legacy-feedback-surface-adapter.js");
 const namespace = read("clients/marketplace/src/ui/namespace-editor-view.js");
 const physical = read("clients/marketplace/src/ui/physical-vocabulary-editor-view.js");
+const catalog = read("clients/marketplace/src/ui/catalog-view.js");
+const acquisitions = read("clients/marketplace/src/ui/acquisition-history-view.js");
+const item = read("clients/marketplace/src/ui/item-authoring-view.js");
+const profile = read("clients/marketplace/src/ui/profile-view.js");
+const venueSections = read("clients/marketplace/src/ui/venue-editor-section-mixin.js");
 
 test("i moduli del navigation-loss guard superano il syntax check", () => {
   for (const relative of [
@@ -51,6 +56,18 @@ test("Back e Forward browser vengono ripristinati e riprodotti solo dopo conferm
   assert.match(router, /window\.history\.go\(pending\.to - pending\.from\)/);
 });
 
+test("query, hash e sezioni preservano l'indice del navigation guard", () => {
+  assert.match(router, /export function replaceCurrentHistoryUrl/);
+  assert.match(router, /export function pushSameDocumentHistory/);
+  assert.match(router, /\[HISTORY_INDEX_KEY\]: currentHistoryIndex/);
+  for (const source of [catalog, acquisitions, item, namespace, physical, venueSections]) {
+    assert.match(source, /replaceCurrentHistoryUrl/);
+    assert.doesNotMatch(source, /window\.history\.replaceState/);
+  }
+  assert.match(profile, /pushSameDocumentHistory/);
+  assert.doesNotMatch(profile, /window\.history\.pushState/);
+});
+
 test("logout viene fermato prima dell'effetto di autenticazione quando esistono modifiche locali", () => {
   assert.match(adapter, /button\[data-logout\]/);
   assert.match(adapter, /hasNavigationLossRisk\(\)/);
@@ -63,6 +80,12 @@ test("refresh e chiusura tab conservano la protezione nativa beforeunload", () =
   assert.match(namespace, /event\.returnValue = ""/);
   assert.match(physical, /beforeunload/);
   assert.match(physical, /event\.returnValue = ""/);
+});
+
+test("anche i metadati modificabili del Physical Vocabulary attivano subito il guard", () => {
+  assert.match(physical, /input\.closest\("\[data-metadata-form\]"\)\) \{ this\.markDirty\(\); return; \}/);
+  assert.match(physical, /data-dirty-indicator/);
+  assert.match(physical, /markDirty\(\) \{/);
 });
 
 test("una conferma locale di uscita non provoca un secondo dialog centrale", () => {

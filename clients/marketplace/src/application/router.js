@@ -66,6 +66,22 @@ if (!Number.isFinite(currentHistoryIndex)) {
   window.history.replaceState({ ...(window.history.state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex }, "", currentBrowserUrl());
 }
 
+/**
+ * Preserve the router's same-document index when a view only normalizes its
+ * query string or hash. Dropping this state breaks guarded Back/Forward replay.
+ */
+export function replaceCurrentHistoryUrl(url, state = window.history.state) {
+  window.history.replaceState({ ...(state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex }, "", url);
+}
+
+/** Adds a same-document entry without forcing the app shell to rerender. */
+export function pushSameDocumentHistory(url, state = {}) {
+  currentHistoryIndex += 1;
+  const nextState = { ...(state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex };
+  window.history.pushState(nextState, "", url);
+  return nextState;
+}
+
 let pendingHistoryNavigation = null;
 let allowedHistoryIndex = null;
 
@@ -142,8 +158,7 @@ function commitNavigation(path) {
   const parsed = parseLogicalUrl(path);
   const pathname = ROUTES.has(parsed.pathname) ? parsed.pathname : "/404";
   const deployedPath = pathname === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${pathname}`;
-  currentHistoryIndex += 1;
-  window.history.pushState({ [HISTORY_INDEX_KEY]: currentHistoryIndex }, "", `${deployedPath}${parsed.search}${parsed.hash}`);
+  pushSameDocumentHistory(`${deployedPath}${parsed.search}${parsed.hash}`);
   window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
   showRouteFeedback(routeFeedback(pathname, parsed.search));
   return true;

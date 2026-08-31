@@ -111,6 +111,7 @@ test("la migrazione è action-aware e non converte i canali per nome della propr
   assert.match(adapter, /venueMessageMapping/);
   assert.match(adapter, /itemNoticeMapping/);
   assert.match(adapter, /editor\.pendingOccurrence/);
+  assert.match(adapter, /Testo rimosso dalla bozza/);
   assert.match(adapter, /return null/);
   assert.doesNotMatch(adapter, /mediaNotice/);
   assert.doesNotMatch(adapter, /SemanticEntityPicker/);

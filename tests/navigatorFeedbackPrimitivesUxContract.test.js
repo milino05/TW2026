@@ -30,6 +30,8 @@ const generatedPlan = read("clients/navigator/src/ui/GeneratedPlanView.vue");
 const library = read("clients/navigator/src/ui/LibraryView.vue");
 const actionMenu = read("clients/navigator/src/ui/ActionMenu.vue");
 const sessionActionSheet = read("clients/navigator/src/ui/SessionActionSheet.vue");
+const synchronizedJoin = read("clients/navigator/src/ui/SynchronizedJoinView.vue");
+const synchronizedSession = read("clients/navigator/src/ui/SynchronizedSessionView.vue");
 const interactionLayers = read("clients/navigator/src/ui/interaction-layers.css");
 const mapping = read("docs/ui-feedback-action-mapping.md");
 const marketplaceAdapter = read("clients/marketplace/src/ui/transient-feedback-adapter.js");
@@ -86,14 +88,20 @@ test("dialog e toast globali non possono essere coperti dalle normali schede del
 test("drawer e popover Navigator stanno sotto feedback globale e fuori dai layout locali", () => {
   const popover = cssNumber(interactionLayers, "--artaround-layer-popover");
   const drawer = cssNumber(interactionLayers, "--artaround-layer-drawer");
+  const modal = cssNumber(interactionLayers, "--artaround-layer-modal");
   const dialogLayer = cssNumber(theme, "--artaround-layer-dialog");
-  assert.ok(popover < drawer && drawer < dialogLayer);
+  assert.ok(popover < drawer && drawer < modal && modal < dialogLayer);
   assert.match(actionMenu, /<Teleport to="body">/);
   assert.match(actionMenu, /var\(--artaround-layer-popover/);
   assert.match(sessionActionSheet, /<Teleport to="body">/);
   assert.match(sessionActionSheet, /var\(--artaround-layer-drawer/);
   assert.match(sessionActionSheet, /event\.key !== "Tab"/);
   assert.match(sessionActionSheet, /returnFocus/);
+  assert.match(synchronizedSession, /<Teleport to="body">/);
+  assert.match(synchronizedSession, /var\(--artaround-layer-modal/);
+  assert.match(synchronizedSession, /trapModalFocus/);
+  assert.match(synchronizedSession, /groupReturnFocus/);
+  assert.match(synchronizedSession, /voiceReturnFocus/);
 });
 
 test("l'action dialog Navigator implementa una vera decisione modale", () => {
@@ -148,8 +156,8 @@ test("tutti i canali reattivi di errore/notice del Navigator sono inventariati",
   const withError = files.filter(({ source }) => /const error = ref</.test(source)).map(({ name }) => name).sort();
   const withNotice = files.filter(({ source }) => /const notice = ref</.test(source)).map(({ name }) => name).sort();
 
-  assert.deepEqual(withError, ["GenerateView.vue", "GeneratedPlanView.vue", "LibraryView.vue", "LoginView.vue", "SessionView.vue", "VisitDetailView.vue"]);
-  assert.deepEqual(withNotice, ["SessionView.vue"]);
+  assert.deepEqual(withError, ["GenerateView.vue", "GeneratedPlanView.vue", "LibraryView.vue", "LoginView.vue", "SessionView.vue", "SynchronizedJoinView.vue", "SynchronizedSessionView.vue", "VisitDetailView.vue"]);
+  assert.deepEqual(withNotice, ["SessionView.vue", "SynchronizedSessionView.vue"]);
 
   for (const selector of ["error-card", "session-feedback.error-feedback", "previsit-state.error-state", "inline-error"]) {
     assert.match(adapter, new RegExp(selector.replace(".", "\\.")));
@@ -157,6 +165,19 @@ test("tutti i canali reattivi di errore/notice del Navigator sono inventariati",
   for (const migratedSelector of ["library-state.error-state", "session-action-error", "removal-dialog", "confirm-removal"]) {
     assert.doesNotMatch(adapter, new RegExp(migratedSelector.replace(".", "\\.")));
   }
+});
+
+test("la Visita sincronizzata usa direttamente feedback e layer condivisi", () => {
+  assert.match(synchronizedJoin, /import FeedbackCallout/);
+  assert.match(synchronizedJoin, /<FeedbackCallout v-if="error"[^>]*tone="danger"[^>]*semantic-role="alert"/);
+  assert.match(synchronizedSession, /import \{ notify \}/);
+  assert.match(synchronizedSession, /import FeedbackActionDialog/);
+  assert.match(synchronizedSession, /import FeedbackCallout/);
+  assert.match(synchronizedSession, /import FeedbackProgressState/);
+  assert.match(synchronizedSession, /<FeedbackActionDialog/);
+  assert.match(synchronizedSession, /notify\.info\(/);
+  assert.match(synchronizedSession, /notify\.warning\(/);
+  assert.doesNotMatch(synchronizedSession, /z-index\s*:\s*50/);
 });
 
 test("Library usa direttamente command runner, feedback e ActionMenu condivisi", () => {
@@ -197,6 +218,7 @@ test("il mapping azione -> surface copre le famiglie concrete dei due client", (
     "Session obstacle check returns a warning",
     "Finish-session request",
     "Map venue warnings",
+    "Synchronized Visit cancellation",
   ]) assert.match(mapping, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
 });
 
@@ -204,5 +226,6 @@ test("il bridge Marketplace non trasforma più la selezione di occorrenza in toa
   assert.match(marketplaceAdapter, /editor\.pendingOccurrence/);
   assert.match(marketplaceAdapter, /scegli l\['’\]occorrenza fisica corretta/);
   assert.match(marketplaceAdapter, /return null/);
+  assert.match(marketplaceAdapter, /Testo rimosso dalla bozza/);
   assert.doesNotMatch(marketplaceAdapter, /SemanticEntityPicker/);
 });

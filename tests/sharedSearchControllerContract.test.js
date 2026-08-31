@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { execFileSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
@@ -36,5 +37,41 @@ test("una ricerca superseded non può pubblicare il proprio risultato", () => {
     assert.match(source, /controller\.signal\.aborted/);
     assert.match(source, /this\.abortController\?\.abort\(\)/);
     assert.match(source, /this\.state\.result = null/);
+    assert.match(source, /setQuery[\s\S]*this\.state\.results = \[\]/);
   }
+});
+
+test("cambiare query invalida subito una richiesta in volo anche durante il debounce", async (context) => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { setTimeout, clearTimeout };
+  context.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  });
+
+  const moduleUrl = pathToFileURL(path.join(root, "clients/marketplace/src/application/search-controller.js")).href;
+  const { SearchController } = await import(moduleUrl);
+  let resolveFirst;
+  let firstSignal;
+  const controller = new SearchController({
+    debounceMs: 100,
+    search: (query, { signal }) => {
+      if (query === "prima") {
+        firstSignal = signal;
+        return new Promise((resolve) => { resolveFirst = resolve; });
+      }
+      return Promise.resolve({ results: [query] });
+    },
+  });
+
+  const firstRun = controller.setQuery("prima", { immediate: true });
+  assert.equal(firstSignal?.aborted, false);
+  await controller.setQuery("seconda");
+  assert.equal(firstSignal?.aborted, true);
+  resolveFirst({ results: ["risultato obsoleto"] });
+  await firstRun;
+  assert.equal(controller.state.query, "seconda");
+  assert.deepEqual(controller.state.results, []);
+  assert.equal(controller.state.result, null);
+  controller.dispose();
 });

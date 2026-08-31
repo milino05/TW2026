@@ -1,6 +1,7 @@
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
 import { escapeHtml, formatDate, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
@@ -45,7 +46,7 @@ export class ArtAroundAcquisitionHistoryView extends HTMLElement {
   syncUrl() {
     const url = new URL(window.location.href); url.search = "";
     if (this.state.page > 1) url.searchParams.set("page", String(this.state.page));
-    window.history.replaceState({}, "", url);
+    replaceCurrentHistoryUrl(url);
   }
 
   onClick = async (event) => {

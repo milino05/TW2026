@@ -46,6 +46,11 @@ test("la visita sincronizzata riusa ascolto e comandi vocali senza concedere pro
   assert.match(view, /groupPanelOpen/);
   assert.match(view, /class="group-sheet"/);
   assert.match(view, /class="group-sheet-scroll"/);
+  assert.match(view, /aria-label="Apri controllo del gruppo"/);
+  assert.match(view, /<Teleport to="body">/);
+  assert.match(view, /var\(--artaround-layer-modal/);
+  assert.match(view, /trapModalFocus/);
+  assert.match(view, /<FeedbackActionDialog/);
   assert.match(view, /synchronizedSession\.playback\.commandVersion/);
   assert.match(view, /applySharedPlayback/);
   assert.match(view, /\["progress", "synchronization", "navigation", "lifecycle", "quiz"\]/);

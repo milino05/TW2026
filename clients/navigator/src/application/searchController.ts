@@ -52,10 +52,16 @@ export class SearchController<T, TResult = T[]> {
   }
 
   setQuery(query: string, { immediate = false } = {}) {
-    this.state.query = String(query || "").trim();
-    this.state.error = null;
-    this.emit();
     this.cancelScheduled();
+    this.abortController?.abort();
+    this.abortController = null;
+    this.sequence += 1;
+    this.state.query = String(query || "").trim();
+    this.state.loading = false;
+    this.state.error = null;
+    this.state.results = [];
+    this.state.result = null;
+    this.emit();
     if (!this.state.query && !this.options.allowEmptyQuery) return Promise.resolve(this.clear());
     const debounceMs = Math.max(0, Number(this.options.debounceMs ?? 250) || 0);
     if (immediate || debounceMs === 0) return this.run();

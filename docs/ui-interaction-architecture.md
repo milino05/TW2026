@@ -132,7 +132,7 @@ Popover, drawer e modal applicativi devono essere montati/teletrasportati sotto 
 
 Action Dialog e Toast restano sempre sopra le normali superfici ArtAround. Il browser top layer nativo (`<dialog>.showModal()`, popover API, ecc.) non deve essere introdotto nelle normali UI senza revisione dell'architettura.
 
-`SessionActionSheet` nel Navigator usa direttamente il layer drawer e resta quindi sotto feedback globale.
+`SessionActionSheet` nel Navigator usa direttamente il layer drawer. I pannelli gruppo/voce della Visita sincronizzata sono teletrasportati sotto `body`, usano il layer modal, intrappolano il focus e lo restituiscono al trigger. Tutte queste superfici restano sotto il feedback globale.
 
 ## 9. ActionMenu
 
@@ -214,7 +214,7 @@ Namespace e Physical Vocabulary usano il lifecycle condiviso tramite una compati
 | AuthoringStepper | Marketplace Item, Visit | compatibility projection limitata |
 | QueryState / ResourceBrowserController | Marketplace Catalog, Workspace, Organizzazioni, Sedi, Acquisizioni | diretto |
 | SearchController | Navigator Generate | diretto, payload ricco + AbortSignal |
-| LayerManager | Marketplace ActionMenu/MediaViewer; Navigator SessionActionSheet/ActionMenu | diretto |
+| LayerManager | Marketplace ActionMenu/MediaViewer; Navigator SessionActionSheet/ActionMenu e modal della Visita sincronizzata | diretto |
 | ActionMenu | Navigator Library | diretto |
 | Destructive flow | Navigator Library tramite ActionDialog + UiCommandRunner | diretto |
 | ReorderableList | Marketplace Visit | adapter domain-aware con liste separate |

@@ -1,4 +1,4 @@
-import { navigate } from "../application/router.js";
+import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { icon } from "./icons.js";
 
@@ -265,7 +265,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   goToSection(section) {
     if (!SECTIONS.some(([key]) => key === section)) return;
     this.activeSection = section;
-    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}#physical-${section}`);
+    replaceCurrentHistoryUrl(`${window.location.pathname}${window.location.search}#physical-${section}`);
     this.render();
   }
   definition(field, index) { return this.definitions[field]?.[Number(index)] || null; }
@@ -275,6 +275,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement ? event.target : null;
     if (!input) return;
     if (input.matches("[data-workflow-message-input]")) { this.workflowMessage = input.value; return; }
+    if (input.closest("[data-metadata-form]")) { this.markDirty(); return; }
     if (!input.dataset.collection) return;
     const definition = this.definition(input.dataset.collection, input.dataset.index);
     if (!definition) return;
@@ -303,8 +304,14 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
         requirement.value = parseRequirementValue(input.value, attribute, requirement.operator);
       }
     }
-    this.dirty = true;
+    this.markDirty();
   };
+
+  markDirty() {
+    this.dirty = true;
+    const indicator = this.querySelector("[data-dirty-indicator]");
+    if (indicator) indicator.innerHTML = `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>`;
+  }
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -498,7 +505,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.syncOverlayLock();
     if (!this.data) { this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`; return; }
     const vocabulary = this.data.physicalVocabulary;
-    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span>${this.dirty ? `<em>Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}`;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span><span data-dirty-indicator>${this.dirty ? `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</span></div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}`;
     if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial());
   }
 }

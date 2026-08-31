@@ -65,6 +65,7 @@ Inline surfaces are intentionally different. Callouts, issue panels, field feedb
 | Item prerequisite missing | Inline Callout | warning | actionable blocker |
 | Item media suggestion/upload state | Inline contextual feedback / Progress | info/warning | `mediaNotice` is intentionally not a generic toast channel |
 | Item field validation | Field Feedback | danger | stays next to invalid input |
+| Item text removed from the local draft but not saved yet | Inline contextual feedback | warning/info | remains actionable until the draft is saved; must not become a success toast |
 | Semantic picker search results/provider state | Inline contextual feedback | info/warning/danger | results remain relevant; never infer toast from `role=status` |
 
 ### Marketplace legacy bridge exceptions
@@ -122,6 +123,14 @@ The Navigator uses the same surface/tone model but renders it with Vue component
 | Map asset unavailable | Inline Callout | info/warning | remains relevant while viewing that floor |
 | Map venue warnings | Issue Panel | warning | persistent while map context is active |
 | Current session/route/progress | Status Indicator / Progress | neutral/info | state, never toast |
+| Synchronized Visit join fails | Inline Callout | danger | form-level failure; direct `FeedbackCallout` |
+| Synchronized Visit initial load / command / quiz evaluation fails | Inline Callout | danger | remains visible until retry or context change |
+| Synchronized Visit browser TTS / voice recognition unsupported | Inline Callout | warning | capability remains unavailable on the device |
+| Synchronized Visit shared playback needs a local user gesture | Inline Callout | warning | actionable until local playback is enabled |
+| Synchronized Visit playback starts / voice listening is cancelled | Toast | info | transient event |
+| Synchronized Visit voice command recognized / unavailable | Toast | info/warning | transient attempt result |
+| Synchronized Visit group / voice panels | Domain modal, **not feedback** | neutral | teleported to body on modal layer with focus trap and return focus |
+| Synchronized Visit cancellation | Action Dialog | danger | explicit global decision before closing the session for everyone |
 
 ## Completeness checks
 
@@ -137,5 +146,5 @@ The implementation contract tests must verify all of the following:
 8. Application popover/drawer/modal layers remain below Action Dialog and Toast.
 9. The Marketplace Visit occurrence-selection branch is explicitly excluded from transient toast conversion.
 10. Search/provider feedback, field validation, busy states and persistent errors are not migrated by generic DOM-role matching.
-11. Directly migrated Navigator views (currently GeneratedPlan and Library among the audited set) are removed from overlapping legacy adapter selectors.
+11. Directly migrated Navigator views (currently GeneratedPlan, Library and Synchronized Visit among the audited set) are removed from overlapping legacy adapter selectors.
 12. The mapping tables above are updated whenever a new feedback-producing action family is introduced.

@@ -75,6 +75,10 @@ function venueMessageMapping(editor, message) {
 
 function itemNoticeMapping(editor, message) {
   if (/^Controllo completato:/i.test(message) && issueCount(editor) > 0) return { tone: "warning" };
+  /* Removing an unsaved text is still actionable until the draft is saved.
+   * Keep the legacy message inline instead of turning the only reminder into a
+   * transient success toast. */
+  if (/^Testo rimosso dalla bozza\. Salva il contenuto/i.test(message)) return null;
   if (/^(Bozza ripristinata|Soggetto selezionato|Identità già presente|Testo aggiunto)/i.test(message)) return { tone: "info" };
   return { tone: "success" };
 }

@@ -41,10 +41,16 @@ export class SearchController {
   }
 
   setQuery(query, { immediate = false } = {}) {
-    this.state.query = String(query || "").trim();
-    this.state.error = null;
-    this.emit();
     this.cancelScheduled();
+    this.abortController?.abort();
+    this.abortController = null;
+    this.sequence += 1;
+    this.state.query = String(query || "").trim();
+    this.state.loading = false;
+    this.state.error = null;
+    this.state.results = [];
+    this.state.result = null;
+    this.emit();
     if (!this.state.query && !this.allowEmptyQuery) return Promise.resolve(this.clear());
     if (immediate || this.debounceMs === 0) return this.run();
     this.timer = window.setTimeout(() => {

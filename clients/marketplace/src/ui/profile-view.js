@@ -1,4 +1,4 @@
-import { navigate } from "../application/router.js";
+import { navigate, pushSameDocumentHistory } from "../application/router.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { icon } from "./icons.js";
 
@@ -65,7 +65,7 @@ export class ArtAroundProfileView extends HTMLElement {
     this.querySelectorAll("a[data-account-section]").forEach((link) => link.setAttribute("aria-current", link.dataset.accountSection === normalized ? "page" : "false"));
     if (updateHistory) {
       const nextUrl = `${window.location.pathname}${window.location.search}#${normalized}`;
-      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) window.history.pushState({}, "", nextUrl);
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) pushSameDocumentHistory(nextUrl);
     }
     requestAnimationFrame(() => { section.scrollIntoView({ behavior, block: "start" }); section.focus({ preventScroll: true }); });
   }

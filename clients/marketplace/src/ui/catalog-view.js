@@ -1,5 +1,6 @@
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
 import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
@@ -115,7 +116,7 @@ export class ArtAroundCatalogView extends HTMLElement {
     if (this.state.type !== "all") url.searchParams.set("type", this.state.type);
     if (this.state.selectedVenueIds.length) url.searchParams.set("selectedVenueIds", this.state.selectedVenueIds.join(","));
     if (this.state.page > 1) url.searchParams.set("page", String(this.state.page));
-    window.history.replaceState({}, "", url);
+    replaceCurrentHistoryUrl(url);
   }
 
   onSubmit = async (event) => {
