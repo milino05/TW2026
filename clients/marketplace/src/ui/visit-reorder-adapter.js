@@ -29,7 +29,6 @@ function annotateItems(root, { itemSelector, idAttribute }) {
 }
 
 function disableLegacyDrag(editor) {
-  if (editor.dataset.artaroundSharedReorder === "true") return;
   editor.dataset.artaroundSharedReorder = "true";
   for (const [eventName, handlerName] of [
     ["dragstart", "onDragStart"],
@@ -43,13 +42,25 @@ function disableLegacyDrag(editor) {
   editor.dragState = null;
 }
 
-function installStops(editor, root, cleanups) {
+function registerInstallation(state, root, cleanup) {
+  state.entries.push({ root, cleanup });
+}
+
+function cleanupDetachedRoots(state) {
+  state.entries = state.entries.filter((entry) => {
+    if (entry.root?.isConnected) return true;
+    entry.cleanup?.();
+    return false;
+  });
+}
+
+function installStops(editor, root, state) {
   if (!(root instanceof HTMLElement) || root.dataset.artaroundReorderInstalled === "true") return;
   const stopSelector = ':scope > .sequence-group[data-drag-kind="stop"]';
   annotateItems(root, { itemSelector: stopSelector, idAttribute: "data-stop-id" });
   annotateMoveButtons(root, "data-move-stop");
   root.dataset.artaroundReorderInstalled = "true";
-  cleanups.push(installReorderableList(root, {
+  registerInstallation(state, root, installReorderableList(root, {
     itemSelector: stopSelector,
     handleSelector: "[data-reorder-handle]",
     canReorder: () => Boolean(editor.editable && !editor.busy),
@@ -60,13 +71,13 @@ function installStops(editor, root, cleanups) {
   }));
 }
 
-function installContentGroup(editor, root, cleanups) {
+function installContentGroup(editor, root, state) {
   if (!(root instanceof HTMLElement) || root.dataset.artaroundReorderInstalled === "true") return;
   const contentSelector = ':scope > .sequence-entry[data-drag-kind="content"]';
   annotateItems(root, { itemSelector: contentSelector, idAttribute: "data-content-id" });
   annotateMoveButtons(root, "data-move-content");
   root.dataset.artaroundReorderInstalled = "true";
-  cleanups.push(installReorderableList(root, {
+  registerInstallation(state, root, installReorderableList(root, {
     itemSelector: contentSelector,
     handleSelector: "[data-reorder-handle]",
     canReorder: () => Boolean(editor.editable && !editor.busy),
@@ -81,17 +92,17 @@ function synchronizeEditor(editor) {
   disableLegacyDrag(editor);
   let state = installations.get(editor);
   if (!state) {
-    state = { cleanups: [] };
+    state = { entries: [] };
     installations.set(editor, state);
   }
-  state.cleanups = state.cleanups.filter((cleanup) => typeof cleanup === "function");
+  cleanupDetachedRoots(state);
 
   const sequence = editor.querySelector(".visit-sequence");
-  installStops(editor, sequence, state.cleanups);
-  for (const group of editor.querySelectorAll(".sequence-entry-list")) installContentGroup(editor, group, state.cleanups);
+  installStops(editor, sequence, state);
+  for (const group of editor.querySelectorAll(".sequence-entry-list")) installContentGroup(editor, group, state);
 }
 
-function cleanupDetachedEditors() {
+function scanEditors() {
   for (const editor of document.querySelectorAll(EDITOR_SELECTOR)) synchronizeEditor(editor);
 }
 
@@ -100,7 +111,7 @@ function queueScan() {
   scanQueued = true;
   queueMicrotask(() => {
     scanQueued = false;
-    cleanupDetachedEditors();
+    scanEditors();
   });
 }
 
