@@ -25,7 +25,7 @@ export function renderAuthoringStepper({
         const active = index === activeIndex;
         const complete = Boolean(isComplete(step, index));
         const navigable = Boolean(canNavigate(step, index));
-        return `<li data-current="${active}" data-complete="${complete}"><button type="button" data-authoring-step="${escapeHtml(step.id)}" ${active ? 'aria-current="step"' : ""} ${navigable ? "" : 'aria-disabled="true"'}><span aria-hidden="true">${index + 1}</span><strong>${escapeHtml(step.label)}</strong></button></li>`;
+        return `<li data-current="${active}" data-complete="${complete}"><button type="button" data-authoring-step="${escapeHtml(step.id)}" data-step="${escapeHtml(step.id)}" ${active ? 'aria-current="step"' : ""} ${navigable ? "" : 'aria-disabled="true" disabled'}><span aria-hidden="true">${complete ? "✓" : index + 1}</span><strong>${escapeHtml(step.label)}</strong></button></li>`;
       }).join("")}
     </ol>
   </nav>`;
