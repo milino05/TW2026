@@ -12,6 +12,8 @@ const TONE_ICONS = {
   danger: "warning",
 };
 
+const TOAST_MOTION_MS = 180;
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -96,13 +98,45 @@ export class ArtAroundToastCenter extends HTMLElement {
     this.timers.clear();
   }
 
+  get stack() {
+    return this.querySelector(".artaround-toast-stack");
+  }
+
+  render() {
+    if (!this.stack) this.innerHTML = '<div class="artaround-toast-stack"></div>';
+  }
+
+  toastNode(id) {
+    return [...(this.stack?.children || [])].find((entry) => entry.dataset.toastId === id) || null;
+  }
+
+  createToast(entry) {
+    const currentTone = tone(entry.tone);
+    const assertive = currentTone === "danger";
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = `<section class="artaround-toast" data-toast-id="${escapeHtml(entry.id)}" data-tone="${currentTone}" data-state="${entry.state}" role="${assertive ? "alert" : "status"}" aria-live="${assertive ? "assertive" : "polite"}">
+      <span class="artaround-toast__icon" aria-hidden="true">${icon(TONE_ICONS[currentTone], { size: 18 })}</span>
+      <p>${escapeHtml(entry.message)}</p>
+      ${entry.dismissible ? `<button type="button" data-toast-dismiss="${escapeHtml(entry.id)}" aria-label="Chiudi notifica">×</button>` : ""}
+    </section>`;
+    return wrapper.firstElementChild;
+  }
+
+  upsertToast(entry) {
+    const existing = this.toastNode(entry.id);
+    const next = this.createToast(entry);
+    if (!next || !this.stack) return;
+    if (existing) existing.replaceWith(next);
+    else this.stack.append(next);
+  }
+
   onNotification = (event) => {
     const incoming = event.detail;
     if (!incoming?.id || !incoming.message) return;
     const existing = this.notifications.findIndex((entry) => entry.id === incoming.id);
     if (existing >= 0) this.notifications.splice(existing, 1);
     this.notifications.push({ ...incoming, state: "visible" });
-    this.render();
+    this.upsertToast(this.notifications.at(-1));
 
     if (incoming.duration > 0) {
       const previousTimer = this.timers.get(incoming.id);
@@ -118,30 +152,41 @@ export class ArtAroundToastCenter extends HTMLElement {
     if (button) this.dismiss(button.dataset.toastDismiss);
   };
 
+  animateReflow(previousRects) {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    for (const node of this.stack?.children || []) {
+      const previous = previousRects.get(node.dataset.toastId);
+      if (!previous) continue;
+      const current = node.getBoundingClientRect();
+      const deltaY = previous.top - current.top;
+      if (Math.abs(deltaY) < 1) continue;
+      node.animate(
+        [{ transform: `translateY(${deltaY}px)` }, { transform: "translateY(0)" }],
+        { duration: TOAST_MOTION_MS, easing: "ease-out" },
+      );
+    }
+  }
+
   dismiss(id) {
     const notification = this.notifications.find((entry) => entry.id === id);
-    if (!notification || notification.state === "exiting") return;
+    const node = this.toastNode(id);
+    if (!notification || !node || notification.state === "exiting") return;
     const timer = this.timers.get(id);
     if (timer) clearTimeout(timer);
     this.timers.delete(id);
     notification.state = "exiting";
-    this.render();
-    setTimeout(() => {
-      this.notifications = this.notifications.filter((entry) => entry.id !== id);
-      this.render();
-    }, 180);
-  }
+    node.dataset.state = "exiting";
 
-  render() {
-    this.innerHTML = `<div class="artaround-toast-stack">${this.notifications.map((entry) => {
-      const currentTone = tone(entry.tone);
-      const assertive = currentTone === "danger";
-      return `<section class="artaround-toast" data-tone="${currentTone}" data-state="${entry.state}" role="${assertive ? "alert" : "status"}" aria-live="${assertive ? "assertive" : "polite"}">
-        <span class="artaround-toast__icon" aria-hidden="true">${icon(TONE_ICONS[currentTone], { size: 18 })}</span>
-        <p>${escapeHtml(entry.message)}</p>
-        ${entry.dismissible ? `<button type="button" data-toast-dismiss="${escapeHtml(entry.id)}" aria-label="Chiudi notifica">×</button>` : ""}
-      </section>`;
-    }).join("")}</div>`;
+    setTimeout(() => {
+      const previousRects = new Map(
+        [...(this.stack?.children || [])]
+          .filter((entry) => entry !== node)
+          .map((entry) => [entry.dataset.toastId, entry.getBoundingClientRect()]),
+      );
+      node.remove();
+      this.notifications = this.notifications.filter((entry) => entry.id !== id);
+      requestAnimationFrame(() => this.animateReflow(previousRects));
+    }, TOAST_MOTION_MS);
   }
 }
 
