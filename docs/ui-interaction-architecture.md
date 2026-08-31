@@ -58,7 +58,7 @@ Loading, errore persistente ed empty state sono tre stati strutturali ricorrenti
 
 Un errore di caricamento persistente non è un Toast.
 
-`GeneratedPlanView` e `LibraryView` nel Navigator sono consumer diretti.
+`GeneratedPlanView` e `LibraryView` nel Navigator, insieme alle directory Marketplace di Organizzazioni e Sedi, sono consumer diretti.
 
 ## 5. AuthoringStepper
 
@@ -95,7 +95,7 @@ Cambiare query, filtro o sort resetta la pagina a 1. Non esiste uno store global
 - risultato autorevole restituito dal repository;
 - protezione da risultati asincroni superseded.
 
-Il Catalog Marketplace è il primo consumer diretto. Il suo URL pubblico e i parametri repository restano invariati.
+I consumer Marketplace diretti sono attualmente Catalog, Libreria Workspace, directory Organizzazioni, directory Sedi e storico Acquisizioni. Ogni consumer mantiene il proprio contratto repository e la propria forma URL; il controller coordina soltanto stato query e lifecycle asincrono.
 
 ## 7. SearchController
 
@@ -210,9 +210,9 @@ Namespace e Physical Vocabulary non sono ancora migrati al controller condiviso.
 | UiCommandRunner | Navigator GeneratedPlan, Library | diretto |
 | Operation presentation | workflow condiviso | diretto |
 | RevisionWorkflowControls | Namespace, Physical Vocabulary | compatibility projection backend-authoritative |
-| AsyncBoundary | Navigator GeneratedPlan, Library | diretto |
+| AsyncBoundary | Navigator GeneratedPlan/Library; Marketplace Organizzazioni/Sedi | diretto |
 | AuthoringStepper | Marketplace Item, Visit | compatibility projection limitata |
-| QueryState / ResourceBrowserController | Marketplace Catalog | diretto |
+| QueryState / ResourceBrowserController | Marketplace Catalog, Workspace, Organizzazioni, Sedi, Acquisizioni | diretto |
 | SearchController | nessun consumer finale ancora | contratto pronto per payload ricchi |
 | LayerManager | Marketplace ActionMenu/MediaViewer; Navigator SessionActionSheet/ActionMenu | diretto |
 | ActionMenu | Navigator Library | diretto |
