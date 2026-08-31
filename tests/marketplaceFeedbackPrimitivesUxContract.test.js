@@ -90,6 +90,20 @@ test("issue panel e callout inequivocabili vengono migrati alle primitive condiv
   assert.match(surfaceAdapter, /ArtAroundVisitAuthoringView/);
 });
 
+test("gli errori persistenti delle superfici Marketplace auditate diventano callout danger", () => {
+  for (const rootSelector of [
+    "artaround-create-hub-view",
+    "artaround-venue-target-chooser",
+    "artaround-home-view",
+    "artaround-context-hub-view",
+    "artaround-catalog-view",
+  ]) assert.match(surfaceAdapter, new RegExp(rootSelector));
+  assert.match(surfaceAdapter, /replaceKnownPersistentErrors/);
+  assert.match(surfaceAdapter, /"artaround-callout", "danger", \{ role: "alert" \}/);
+  assert.match(surfaceAdapter, /Do not broaden this selector to every role=alert/);
+  assert.doesNotMatch(surfaceAdapter, /artaround-semantic-entity-picker/);
+});
+
 test("la migrazione è action-aware e non converte i canali per nome della proprietà", () => {
   assert.match(adapter, /namespaceMessageMapping/);
   assert.match(adapter, /physicalMessageMapping/);
