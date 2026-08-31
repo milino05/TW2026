@@ -16,6 +16,7 @@ const fieldFeedback = read("clients/navigator/src/ui/FeedbackFieldFeedback.vue")
 const status = read("clients/navigator/src/ui/FeedbackStatusIndicator.vue");
 const emptyState = read("clients/navigator/src/ui/FeedbackEmptyState.vue");
 const progress = read("clients/navigator/src/ui/FeedbackProgressState.vue");
+const adapter = read("clients/navigator/src/ui/NavigatorLegacyFeedbackAdapter.vue");
 const theme = read("clients/navigator/src/ui/theme.css");
 const login = read("clients/navigator/src/ui/LoginView.vue");
 const mapping = read("docs/ui-feedback-action-mapping.md");
@@ -89,6 +90,28 @@ test("Navigator dispone di tutte le surface approvate", () => {
 test("gli errori di autenticazione Navigator usano già il callout condiviso", () => {
   assert.match(login, /import FeedbackCallout/);
   assert.match(login, /<FeedbackCallout v-if="error" tone="danger" semantic-role="alert">/);
+});
+
+test("l'adapter Navigator mappa le azioni legacy per semantica, non per role generico", () => {
+  assert.match(app, /<NavigatorLegacyFeedbackAdapter \/>/);
+  assert.match(adapter, /function sessionNoticeMapping/);
+  assert.match(adapter, /Percorso verso/);
+  assert.match(adapter, /Visita completata/);
+  assert.match(adapter, /Comando riconosciuto/);
+  assert.match(adapter, /Nessun comando riconosciuto/);
+  assert.match(adapter, /Obstacle checks/);
+  assert.match(adapter, /markSurface\(error, "callout", "danger"\)/);
+  assert.match(adapter, /markSurface\(warningList, "issue-panel", "warning"\)/);
+  assert.match(adapter, /markSurface\(blockerList, "issue-panel", "danger"\)/);
+  assert.doesNotMatch(adapter, /querySelectorAll\?\.\('\[role="status"\]'/);
+});
+
+test("la conferma di fine visita viene proiettata sull'Action Dialog condiviso", () => {
+  assert.match(adapter, /\.confirm-sheet\[role=\"alertdialog\"\]/);
+  assert.match(adapter, /<FeedbackActionDialog/);
+  assert.match(adapter, /tone="danger"/);
+  assert.match(adapter, /\.confirm-completion/);
+  assert.match(adapter, /resolveDialog\(true\)/);
 });
 
 test("il mapping azione -> surface copre le famiglie concrete dei due client", () => {
