@@ -1,3 +1,8 @@
+import {
+  confirmNavigationLoss,
+  hasNavigationLossRisk,
+  registerNavigationLossBlocker,
+} from "../application/navigation-loss-guard.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { ArtAroundNamespaceEditorView } from "./namespace-editor-view.js";
 import { ArtAroundPhysicalVocabularyEditorView } from "./physical-vocabulary-editor-view.js";
@@ -101,6 +106,10 @@ function showNamespaceLeaveDialog(editor) {
   }).then((confirmed) => {
     editor.__sharedLeaveDialogOpen = false;
     if (!editor.isConnected || !editor.leaveConfirmation) return;
+    /* The local Back button already obtained the explicit discard decision.
+     * Clear dirty before replaying its legacy control so the central route guard
+     * does not ask the same question a second time. */
+    if (confirmed) editor.dirty = false;
     const control = editor.querySelector(confirmed ? "[data-confirm-leave]" : "[data-cancel-leave]");
     control?.click();
     if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
@@ -128,10 +137,63 @@ function showPhysicalConfirmationDialog(editor) {
   }).then((confirmed) => {
     if (editor.__sharedPhysicalConfirmationKey === key) editor.__sharedPhysicalConfirmationKey = null;
     if (!editor.isConnected || legacyDialogKey(editor.pendingConfirmation) !== key) return;
+    if (confirmed && confirmation.type === "leave") editor.dirty = false;
     const control = editor.querySelector(confirmed ? "[data-confirm-action]" : "[data-confirm-cancel]");
     control?.click();
     if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
   });
+}
+
+function installDirtyNavigationGuard(constructor, flag, { message }) {
+  const prototype = constructor.prototype;
+  if (prototype[flag]) return;
+  const connected = prototype.connectedCallback;
+  const disconnected = prototype.disconnectedCallback;
+
+  prototype.connectedCallback = function connectedWithNavigationLossGuard(...args) {
+    const result = connected?.apply(this, args);
+    this.__unregisterNavigationLossGuard?.();
+    this.__unregisterNavigationLossGuard = registerNavigationLossBlocker({
+      isBlocking: () => this.isConnected && Boolean(this.dirty),
+      confirm: () => openActionDialog({
+        tone: "danger",
+        title: "Uscire senza salvare?",
+        message,
+        confirmLabel: "Esci senza salvare",
+        cancelLabel: "Resta nell'editor",
+      }),
+      discard: () => {
+        this.dirty = false;
+        if ("leaveConfirmation" in this) this.leaveConfirmation = false;
+        if (this.pendingConfirmation?.type === "leave") this.pendingConfirmation = null;
+      },
+    });
+    return result;
+  };
+
+  prototype.disconnectedCallback = function disconnectedWithNavigationLossGuard(...args) {
+    this.__unregisterNavigationLossGuard?.();
+    this.__unregisterNavigationLossGuard = null;
+    return disconnected?.apply(this, args);
+  };
+
+  Object.defineProperty(prototype, flag, { value: true });
+}
+
+/* Logout performs an authentication side effect before its route change, so it
+ * cannot rely on router.navigate() alone. Stop it in capture phase while a dirty
+ * editor exists; after confirmation discard() clears the blocker and the same
+ * button can safely replay its original application handler. */
+function installGuardedGlobalActions() {
+  document.addEventListener("click", async (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const logout = target?.closest("button[data-logout]");
+    if (!logout || !hasNavigationLossRisk()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const confirmed = await confirmNavigationLoss({ kind: "logout" });
+    if (confirmed && logout.isConnected) logout.click();
+  }, true);
 }
 
 function installRenderAdapter(constructor, flag, enhance) {
@@ -145,6 +207,13 @@ function installRenderAdapter(constructor, flag, enhance) {
   };
   Object.defineProperty(prototype, flag, { value: true });
 }
+
+installDirtyNavigationGuard(ArtAroundNamespaceEditorView, "__sharedNavigationLossGuard", {
+  message: "Le modifiche non salvate alle regole editoriali andranno perse.",
+});
+installDirtyNavigationGuard(ArtAroundPhysicalVocabularyEditorView, "__sharedNavigationLossGuard", {
+  message: "Le modifiche non ancora salvate nel vocabolario fisico andranno perse.",
+});
 
 installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", (editor) => {
   replaceIssuePanels(editor);
@@ -164,3 +233,4 @@ installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => 
 
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
 installPersistentErrorObserver();
+installGuardedGlobalActions();
