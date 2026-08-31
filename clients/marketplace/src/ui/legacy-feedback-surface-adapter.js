@@ -6,17 +6,18 @@ import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
 
 /*
  * Incremental migration for legacy feedback surfaces whose semantics are already
- * unambiguous. Complex workflow dialogs and contextual panels stay untouched
- * until they can be mapped without losing domain-specific interaction.
+ * unambiguous. Complex workflow dialogs and contextual search/provider panels
+ * stay specialized until they can be mapped without losing domain interaction.
  */
-function replaceElement(legacy, tagName, tone) {
+function replaceElement(legacy, tagName, tone, { role = null } = {}) {
   if (!legacy || legacy.tagName.toLowerCase() === tagName) return legacy;
   const replacement = document.createElement(tagName);
   replacement.setAttribute("tone", tone);
+  if (role) replacement.setAttribute("role", role);
   replacement.className = legacy.className;
   replacement.innerHTML = legacy.innerHTML;
   for (const attribute of legacy.attributes) {
-    if (attribute.name !== "class" && attribute.name !== "role") replacement.setAttribute(attribute.name, attribute.value);
+    if (!["class", "role"].includes(attribute.name)) replacement.setAttribute(attribute.name, attribute.value);
   }
   legacy.replaceWith(replacement);
   return replacement;
@@ -41,6 +42,43 @@ function replaceNamespaceWorkflowCallout(editor) {
 function replaceItemBlockerCallout(editor) {
   const legacy = editor.querySelector(".blocker-panel:not(artaround-callout)");
   if (legacy) replaceElement(legacy, "artaround-callout", "warning");
+}
+
+/* These roots were audited individually. Their role=alert nodes represent
+ * persistent page/form failures, therefore Inline Callout danger is correct.
+ * Do not broaden this selector to every role=alert in Marketplace: the semantic
+ * entity picker and domain-specific workflow surfaces remain contextual. */
+const PERSISTENT_ERROR_ROOTS = [
+  "artaround-create-hub-view",
+  "artaround-venue-target-chooser",
+  "artaround-home-view",
+  "artaround-context-hub-view",
+  "artaround-catalog-view",
+];
+
+function replaceKnownPersistentErrors(root = document) {
+  for (const rootSelector of PERSISTENT_ERROR_ROOTS) {
+    for (const legacy of root.querySelectorAll?.(`${rootSelector} [role="alert"]:not(artaround-callout):not(artaround-issue-panel)`) || []) {
+      replaceElement(legacy, "artaround-callout", "danger", { role: "alert" });
+    }
+  }
+}
+
+function installPersistentErrorObserver() {
+  const start = () => {
+    replaceKnownPersistentErrors(document);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          replaceKnownPersistentErrors(node.matches(PERSISTENT_ERROR_ROOTS.join(",")) ? node.parentElement || document : node);
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
 }
 
 function legacyDialogKey(value) {
@@ -125,3 +163,4 @@ installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => 
 });
 
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
+installPersistentErrorObserver();
