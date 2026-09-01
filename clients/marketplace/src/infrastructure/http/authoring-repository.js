@@ -35,16 +35,6 @@ export const authoringRepository = {
     const query = queryString({ principalType: principal?.type || "user", principalId: principal?.id || null });
     return apiClient.request(`/v2/marketplace/namespace-authoring/${encodeURIComponent(namespaceId)}?${query}`);
   },
-  venueTargets(venueId) {
-    return apiClient.request(`/v2/marketplace/venues/${encodeURIComponent(venueId)}/authoring-targets`);
-  },
-  venueSubjectCandidates(venueId, query = "", { limit = 25 } = {}) {
-    const search = queryString({ query, limit });
-    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/subject-candidates${search ? `?${search}` : ""}`);
-  },
-  venueTargetContext(venueTargetId) {
-    return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
-  },
   createEdition(itemId, payload) {
     return apiClient.request(`/items/${encodeURIComponent(itemId)}/editions`, { method: "POST", body: JSON.stringify(payload) });
   },
