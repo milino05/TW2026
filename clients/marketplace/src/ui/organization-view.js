@@ -1,4 +1,5 @@
-import { navigate } from "../application/router.js";
+import { navigate, pushSameDocumentHistory } from "../application/router.js";
+import { confirmNavigationLoss, hasNavigationLossRisk } from "../application/navigation-loss-guard.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { icon } from "./icons.js";
@@ -29,6 +30,10 @@ function sectionRoute(state, overrides = {}) {
   if (next.namespacePage > 1) params.set("namespacePage", String(next.namespacePage));
   if (next.physicalVocabularyPage > 1) params.set("physicalVocabularyPage", String(next.physicalVocabularyPage));
   return `/organizations/detail?${params.toString()}`;
+}
+function sectionBrowserUrl(state, overrides = {}) {
+  const logical = new URL(sectionRoute(state, overrides), window.location.origin);
+  return `${window.location.pathname}${logical.search}${logical.hash}`;
 }
 function pagination(kind, data) {
   if (!data || data.total <= data.pageSize) return "";
@@ -72,12 +77,31 @@ export class ArtAroundOrganizationView extends HTMLElement {
   }
   selectedRoleIds(formData) { return formData.getAll("roleIds").map(String).filter(Boolean); }
 
+  async setSection(section) {
+    const normalized = this.availableSectionCodes().has(section) ? section : "overview";
+    if (normalized === this.state.section) return;
+    if (hasNavigationLossRisk()) {
+      const confirmed = await confirmNavigationLoss({ kind: "section", from: this.state.section, to: normalized });
+      if (!confirmed) return;
+    }
+    this.state = { ...this.state, section: normalized };
+    this.memberEditor = null;
+    this.roleEditor = null;
+    this.confirmation = null;
+    this.error = null;
+    const nextUrl = sectionBrowserUrl(this.state);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (currentUrl !== nextUrl) pushSameDocumentHistory(nextUrl);
+    this.render();
+    requestAnimationFrame(() => this.querySelector(".organization-section, .organization-overview")?.focus({ preventScroll: true }));
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("[data-context-hub]")) { navigate("/context"); return; }
     if (target?.closest("[data-public-profile]")) { navigate(`/organizations/public?organizationId=${encodeURIComponent(this.state.organizationId)}`); return; }
     const section = target?.closest("[data-organization-section]");
-    if (section) { navigate(sectionRoute(this.state, { section: section.dataset.organizationSection })); return; }
+    if (section) { await this.setSection(section.dataset.organizationSection); return; }
     const venue = target?.closest("[data-venue]");
     if (venue) { navigate(`/venues/editor?venueId=${encodeURIComponent(venue.dataset.venue)}`); return; }
     const namespace = target?.closest("[data-namespace]");
@@ -180,7 +204,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
       sections.has("rules") ? ["rules", icon("book", { size: 20 }), this.data.namespaces.total, "Regole"] : null,
       sections.has("physical") ? ["physical", icon("route", { size: 20 }), this.data.physicalVocabularies.total, "Vocabolari fisici"] : null,
     ].filter(Boolean).map(([section, mark, count, label]) => `<button type="button" data-organization-section="${section}"><span>${mark}</span><strong>${count}</strong><small>${label}</small></button>`).join("");
-    return `<section class="organization-overview"><div class="organization-overview__intro"><span class="eyebrow">Panoramica</span><h2>Uno spazio costruito sulle tue responsabilità</h2><p>Vedi soltanto dati e strumenti necessari ai tuoi permessi. I ruoli si combinano senza richiedere un ruolo attivo.</p></div>${cards ? `<div class="organization-summary-grid">${cards}</div>` : `<div class="empty-state compact"><h3>Accesso essenziale</h3><p>Se ti servono altri strumenti, chiedi al referente dell'organizzazione di aggiornare i tuoi ruoli.</p></div>`}</section>`;
+    return `<section class="organization-overview" tabindex="-1"><div class="organization-overview__intro"><span class="eyebrow">Panoramica</span><h2>Uno spazio costruito sulle tue responsabilità</h2><p>Vedi soltanto dati e strumenti necessari ai tuoi permessi. I ruoli si combinano senza richiedere un ruolo attivo.</p></div>${cards ? `<div class="organization-summary-grid">${cards}</div>` : `<div class="empty-state compact"><h3>Accesso essenziale</h3><p>Se ti servono altri strumenti, chiedi al referente dell'organizzazione di aggiornare i tuoi ruoli.</p></div>`}</section>`;
   }
 
   renderPeople() {
@@ -195,7 +219,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
       ].join("");
       return `<li class="organization-person"><span class="avatar">${escapeHtml(member.username[0].toUpperCase())}</span><span class="identity"><strong>${escapeHtml(member.username)}</strong><small>${escapeHtml(roleNames(member.roles))}</small>${member.isOwner ? `<span class="owner-badge">Owner</span>` : ""}</span><span class="actions">${actions}</span>${editing ? `<form class="member-role-editor" data-update-member-roles><input type="hidden" name="userId" value="${escapeHtml(member.id)}">${this.renderRoleChoices(member.roles.map((role) => role.id))}<div class="button-row"><button>Salva ruoli</button><button class="button-secondary" type="button" data-member-edit-cancel>Annulla</button></div></form>` : ""}</li>`;
     }).join("");
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Persone</span><h2>Membri e responsabilità</h2><p>Ogni membro ha uno o più ruoli. Il badge Owner rappresenta un'autorità separata.</p></div><span class="count">${members.total}</span></div>${this.renderConfirmation()}<ul class="organization-people">${rows || `<li class="empty-state">Nessun membro visibile.</li>`}</ul>${pagination("member", members)}${has(organization.availableOperations, "organization.member.add") ? `<details class="account-create" ${roles.length ? "" : "hidden"}><summary>${icon("plus", { size: 16 })} Aggiungi persona</summary><form data-add-member><label>Username esatto<input name="username" required placeholder="username"></label>${this.renderRoleChoices()}<p class="note">La membership viene creata solo con almeno un ruolo.</p><button>${icon("plus", { size: 16 })} Aggiungi persona</button></form></details>` : ""}</section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Persone</span><h2>Membri e responsabilità</h2><p>Ogni membro ha uno o più ruoli. Il badge Owner rappresenta un'autorità separata.</p></div><span class="count">${members.total}</span></div>${this.renderConfirmation()}<ul class="organization-people">${rows || `<li class="empty-state">Nessun membro visibile.</li>`}</ul>${pagination("member", members)}${has(organization.availableOperations, "organization.member.add") ? `<details class="account-create" ${roles.length ? "" : "hidden"}><summary>${icon("plus", { size: 16 })} Aggiungi persona</summary><form data-add-member><label>Username esatto<input name="username" required placeholder="username"></label>${this.renderRoleChoices()}<p class="note">La membership viene creata solo con almeno un ruolo.</p><button>${icon("plus", { size: 16 })} Aggiungi persona</button></form></details>` : ""}</section>`;
   }
   roleForEditor() { return this.roleEditor?.mode === "edit" ? this.data.roles.find((role) => String(role.id || role._id) === this.roleEditor.roleId) : null; }
   renderRoleEditor() {
@@ -206,7 +230,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
   renderRoles() {
     const canCreate = has(this.data.organization.availableOperations, "organization.role.create");
     const cards = this.data.roles.map((role) => `<article class="role-card"><header><div><span class="resource-mark">${icon("shield", { size: 18 })}</span><div><h3>${escapeHtml(role.name)}</h3><p>${escapeHtml(role.description || "Ruolo personalizzato dell'organizzazione.")}</p></div></div><span class="count">${role.assignmentCount} ${role.assignmentCount === 1 ? "persona" : "persone"}</span></header><div class="role-card__permissions"><strong>${role.permissionCodes.length} permessi effettivi</strong><small>${escapeHtml(role.permissionCodes.slice(0, 5).join(" · "))}${role.permissionCodes.length > 5 ? " …" : ""}</small></div><div class="button-row">${has(role.availableOperations, "organization.role.update") ? `<button type="button" data-role-edit="${escapeHtml(role.id || role._id)}">${icon("edit", { size: 14 })} Modifica</button>` : ""}${has(role.availableOperations, "organization.role.remove") ? `<button class="danger" type="button" data-role-remove="${escapeHtml(role.id || role._id)}" data-role-name="${escapeHtml(role.name)}">${icon("trash", { size: 14 })} Elimina</button>` : ""}</div></article>`).join("");
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Ruoli</span><h2>Ruoli locali e permessi</h2><p>Le modifiche hanno effetto immediato su tutte le persone a cui il ruolo è assegnato.</p></div>${canCreate ? `<button type="button" data-role-create>${icon("plus", { size: 15 })} Nuovo ruolo</button>` : ""}</div>${this.renderConfirmation()}${this.renderRoleEditor()}<div class="role-card-grid">${cards || `<div class="empty-state">Nessun ruolo disponibile.</div>`}</div></section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Ruoli</span><h2>Ruoli locali e permessi</h2><p>Le modifiche hanno effetto immediato su tutte le persone a cui il ruolo è assegnato.</p></div>${canCreate ? `<button type="button" data-role-create>${icon("plus", { size: 15 })} Nuovo ruolo</button>` : ""}</div>${this.renderConfirmation()}${this.renderRoleEditor()}<div class="role-card-grid">${cards || `<div class="empty-state">Nessun ruolo disponibile.</div>`}</div></section>`;
   }
 
   renderVenues() {
@@ -214,18 +238,18 @@ export class ArtAroundOrganizationView extends HTMLElement {
     const cards = venues.results.map((venue) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("building", { size: 19 })}</span><div><span class="eyebrow">${escapeHtml(venueStateLabel(venue.physicalState))}</span><h3>${escapeHtml(venue.name)}</h3></div></header><p>${escapeHtml(venue.description || "Nessuna descrizione disponibile.")}</p>${venue.availableOperations.length ? `<button type="button" data-venue="${escapeHtml(venue.id)}">${has(venue.availableOperations, "venue.edit") ? "Gestisci sede e spazi fisici" : "Modifica profilo sede"} ${icon("chevron", { size: 15 })}</button>` : ""}</article>`).join("");
     const physicalHint = this.availableSectionCodes().has("physical") && physicalVocabularies.total === 0
       ? `<div class="empty-state compact"><h3>Prima sede fisica?</h3><p>Per configurare mappa e routing serve un vocabolario fisico. Puoi prepararlo prima oppure seguire l'onboarding quando inizi la configurazione della sede.</p><button type="button" class="button-secondary" data-organization-section="physical">Prepara vocabolario fisico</button></div>` : "";
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Sedi</span><h2>Sedi e spazi fisici</h2><p>Profilo pubblico e configurazione fisica sono capability indipendenti.</p></div><span class="count">${venues.total}</span></div>${physicalHint}<div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("building", { size: 25 })}<h3>Nessuna sede</h3></div>`}</div>${pagination("venue", venues)}${has(organization.availableOperations, "venue.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuova sede</summary><form data-create-venue><label>Nome<input name="name" required placeholder="Nome della sede"></label><label>Descrizione<textarea name="description" placeholder="Caratteristiche e funzione della sede"></textarea></label><button>${icon("plus", { size: 16 })} Crea sede</button></form></details>` : ""}</section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Sedi</span><h2>Sedi e spazi fisici</h2><p>Profilo pubblico e configurazione fisica sono capability indipendenti.</p></div><span class="count">${venues.total}</span></div>${physicalHint}<div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("building", { size: 25 })}<h3>Nessuna sede</h3></div>`}</div>${pagination("venue", venues)}${has(organization.availableOperations, "venue.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuova sede</summary><form data-create-venue><label>Nome<input name="name" required placeholder="Nome della sede"></label><label>Descrizione<textarea name="description" placeholder="Caratteristiche e funzione della sede"></textarea></label><button>${icon("plus", { size: 16 })} Crea sede</button></form></details>` : ""}</section>`;
   }
   renderRules() {
     const { organization, namespaces } = this.data;
     const cards = namespaces.results.map((namespace) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("book", { size: 19 })}</span><div><span class="eyebrow">${escapeHtml(resourceStateLabel(namespace.state, "Privata"))}</span><h3>${escapeHtml(namespace.name)}</h3></div></header><p>${escapeHtml(namespace.description || "Nessuna descrizione disponibile.")}</p>${namespace.availableOperations.length ? `<button type="button" data-namespace="${escapeHtml(namespace.id)}">${has(namespace.availableOperations, "namespace.edit") ? "Modifica regole editoriali" : "Visualizza regole editoriali"} ${icon("chevron", { size: 15 })}</button>` : ""}</article>`).join("");
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Namespace</h2><p>Definiscono linguaggio, durate, presentazione e criteri editoriali usati dai contenuti dell'organizzazione.</p></div><span class="count">${namespaces.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 25 })}<h3>Nessuna regola editoriale</h3></div>`}</div>${pagination("namespace", namespaces)}${has(organization.availableOperations, "namespace.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuove regole editoriali</summary><form data-create-namespace><label>Nome<input name="name" required placeholder="Es. Regole della collezione permanente"></label><label>Scopo e pubblico<textarea name="description" placeholder="A chi sono destinate e per quali contenuti?"></textarea></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details>` : ""}</section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Namespace</h2><p>Definiscono linguaggio, durate, presentazione e criteri editoriali usati dai contenuti dell'organizzazione.</p></div><span class="count">${namespaces.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 25 })}<h3>Nessuna regola editoriale</h3></div>`}</div>${pagination("namespace", namespaces)}${has(organization.availableOperations, "namespace.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuove regole editoriali</summary><form data-create-namespace><label>Nome<input name="name" required placeholder="Es. Regole della collezione permanente"></label><label>Scopo e pubblico<textarea name="description" placeholder="A chi sono destinate e per quali contenuti?"></textarea></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details>` : ""}</section>`;
   }
   renderPhysicalVocabularies() {
     const { organization, physicalVocabularies } = this.data;
     const cards = physicalVocabularies.results.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("route", { size: 19 })}</span><div><span class="eyebrow">${escapeHtml(resourceStateLabel(entry.state))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Linguaggio fisico riutilizzabile per spazi, collegamenti e routing.")}</p>${entry.availableOperations.length ? `<button type="button" data-physical-vocabulary="${escapeHtml(entry.id)}">${has(entry.availableOperations, "physical_vocabulary.edit") ? "Configura vocabolario fisico" : "Visualizza vocabolario fisico"} ${icon("chevron", { size: 15 })}</button>` : ""}</article>`).join("");
     const create = has(organization.availableOperations, "physical_vocabulary.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuovo vocabolario fisico</summary><form data-create-physical-vocabulary><div class="namespace-create-intro"><strong>Ti accompagniamo nella configurazione</strong><p>Dopo la creazione troverai una guida facoltativa. Alla fine potrai scegliere una configurazione base già pronta oppure partire da zero.</p></div><label>Nome<input name="name" required placeholder="Es. Vocabolario fisico del museo"></label><label>Descrizione<textarea name="description" placeholder="Quali sedi o esigenze deve coprire?"></textarea></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details>` : "";
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Dominio fisico</span><h2>Vocabolari fisici</h2><p>Definiscono tipi di luoghi, collegamenti, caratteristiche e profili di routing. Sono risorse autonome: le sedi adottano una loro revisione pubblicata.</p></div><span class="count">${physicalVocabularies.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("route", { size: 25 })}<h3>Nessun vocabolario fisico</h3><p>Creane uno per iniziare a configurare mappe e routing delle sedi.</p></div>`}</div>${pagination("physicalVocabulary", physicalVocabularies)}${create}</section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Dominio fisico</span><h2>Vocabolari fisici</h2><p>Definiscono tipi di luoghi, collegamenti, caratteristiche e profili di routing. Sono risorse autonome: le sedi adottano una loro revisione pubblicata.</p></div><span class="count">${physicalVocabularies.total}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("route", { size: 25 })}<h3>Nessun vocabolario fisico</h3><p>Creane uno per iniziare a configurare mappe e routing delle sedi.</p></div>`}</div>${pagination("physicalVocabulary", physicalVocabularies)}${create}</section>`;
   }
 
   renderAudit() {
@@ -236,7 +260,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
   }
   renderSettings() {
     const { organization, settings } = this.data;
-    return `<section class="organization-section"><div class="section-heading"><div><span class="eyebrow">Impostazioni</span><h2>Governance e profilo</h2><p>Owner e permessi ordinari restano deliberatamente separati.</p></div></div>${settings.canManageProfile ? `<section class="settings-card"><div><h3>Profilo dell'organizzazione</h3><p>Nome e descrizione usati nelle superfici pubbliche.</p></div><form data-update-organization><label>Nome<input name="name" value="${escapeHtml(organization.name)}" required></label><label>Descrizione<textarea name="description">${escapeHtml(organization.description || "")}</textarea></label><button>${icon("check", { size: 15 })} Salva profilo</button></form></section>` : ""}${settings.canManageOwners ? `<section class="settings-card"><div><h3>Autorità Owner</h3><p>Puoi nominare o revocare Owner nella sezione Persone. L'ultimo Owner non può essere rimosso.</p></div><button class="button-secondary" type="button" data-organization-section="people">Apri Persone</button></section>` : ""}${this.renderAudit()}</section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Impostazioni</span><h2>Governance e profilo</h2><p>Owner e permessi ordinari restano deliberatamente separati.</p></div></div>${settings.canManageProfile ? `<section class="settings-card"><div><h3>Profilo dell'organizzazione</h3><p>Nome e descrizione usati nelle superfici pubbliche.</p></div><form data-update-organization><label>Nome<input name="name" value="${escapeHtml(organization.name)}" required></label><label>Descrizione<textarea name="description">${escapeHtml(organization.description || "")}</textarea></label><button>${icon("check", { size: 15 })} Salva profilo</button></form></section>` : ""}${settings.canManageOwners ? `<section class="settings-card"><div><h3>Autorità Owner</h3><p>Puoi nominare o revocare Owner nella sezione Persone. L'ultimo Owner non può essere rimosso.</p></div><button class="button-secondary" type="button" data-organization-section="people">Apri Persone</button></section>` : ""}${this.renderAudit()}</section>`;
   }
 
   renderCurrentSection() {
