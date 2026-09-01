@@ -97,13 +97,13 @@ rejectPattern(
 );
 requirePattern(
   "clients/marketplace/src/ui/item-authoring-view.js",
-  /workflowOperations\(\)\s*\{[\s\S]*projection\?\.availableOperations[\s\S]*isWorkflowOperation\(operation\.code\)/,
-  "Item editor derives workflow actions from the backend projection",
+  /workflowOperations\(\)\s*\{[\s\S]*projection\?\.availableOperations[\s\S]*isWorkflowOperation\(operation\.code\)[\s\S]*operation\.code === ["']workflow\.check["']/,
+  "Item editor derives its private-finalization check from the backend projection",
 );
 requirePattern(
   "clients/marketplace/src/ui/item-authoring-view.js",
-  /form\.matches\(["']\[data-workflow-form\]["']\)[\s\S]*availableOperation\(operationCode\)[\s\S]*executeWorkflow\(operationCode, message\)/,
-  "Item editor validates and submits projected workflow operations",
+  /form\.matches\(["']\[data-workflow-form\]["']\)[\s\S]*availableOperation\(operationCode\)[\s\S]*operationCode !== ["']workflow\.check["'][\s\S]*executeWorkflow\(operationCode\)/,
+  "Item editor validates the projected private-finalization operation before dispatch",
 );
 requirePattern(
   "clients/marketplace/src/ui/item-authoring-view.js",
@@ -113,7 +113,7 @@ requirePattern(
 requirePattern(
   "clients/marketplace/src/ui/item-authoring-view.js",
   /data-workflow-form[\s\S]*name=["']operationCode["']/,
-  "Item editor renders projected workflow operations as submitted forms",
+  "Item editor renders the projected private-finalization operation as a submitted form",
 );
 requirePattern(
   "clients/marketplace/src/ui/workspace-view.js",
