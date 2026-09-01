@@ -1,5 +1,6 @@
 import { navigate } from "../application/router.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -73,7 +74,13 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     }
     const remove = target?.closest("button[data-remove-entry]");
     if (remove && this.editable && !this.locked) {
-      if (!window.confirm("Rimuovere questo contenuto dalla raccolta? L'Item e lo spazio editoriale resteranno invariati.")) return;
+      const confirmed = await openActionDialog({
+        title: "Rimuovere questo contenuto dalla raccolta?",
+        message: "L'Item e lo spazio editoriale resteranno invariati.",
+        confirmLabel: "Rimuovi",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       await this.mutate(() => editorialRepository.removeEntry(this.editorialContextId, remove.dataset.removeEntry));
       return;
     }
