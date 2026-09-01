@@ -659,7 +659,11 @@ export class ItemAuthoringView extends HTMLElement {
           ? await authoringRepository.createItemWithPhysicalIntent(this.venueId, itemPayload)
           : await authoringRepository.createItem(itemPayload);
         const item = created.item || created;
-        if (created.venueEntity) this.venueTargetId = id(created.venueEntity);
+        if (created.venueEntity) {
+          this.venueTargetId = id(created.venueEntity);
+          this.venueTargetContext = await authoringRepository.venueTargetContext(this.venueTargetId);
+          this.venueInventoryMatch = null;
+        }
         this.itemId = item._id || item.id;
         const url = new URL(window.location.href); url.search = ""; url.searchParams.set("itemId", this.itemId); replaceCurrentHistoryUrl(url);
         await this.reloadProjection(); await this.prepareNewEdition();
