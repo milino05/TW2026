@@ -5,21 +5,12 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
-const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
-const Venue = require("../models/venue.model");
-const VenueRelease = require("../models/venueRelease.model");
-const VenueTarget = require("../models/venueTarget.model");
 const AppError = require("../utils/AppError");
 const itemService = require("./itemV2.service");
 const { listContentSpaces } = require("./contentSpace.service");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
-const { hasOrganizationPermission } = require("./organizationAuthorization.service");
-const {
-  projectVenueSubjectContext,
-  venueSubjectContextMap,
-} = require("./venueSubjectContextProjection.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -144,27 +135,10 @@ function projectNamespaceControls(namespace, revision) {
     revision: {
       id: revision._id,
       version: revision.version,
-      durationTypes: (revision.durationTypes || []).map((entry) => ({
-        definitionId: entry.definitionId,
-        label: entry.label,
-        description: entry.description || "",
-        targetSeconds: entry.targetSeconds,
-      })),
-      languageLevels: (revision.languageLevels || []).map((entry) => ({
-        definitionId: entry.definitionId,
-        label: entry.label,
-        description: entry.description || "",
-      })),
-      presentationAspects: (revision.presentationAspects || []).map((entry) => ({
-        definitionId: entry.definitionId,
-        label: entry.label,
-        description: entry.description || "",
-      })),
-      selectionSignals: (revision.selectionSignals || []).map((entry) => ({
-        definitionId: entry.definitionId,
-        label: entry.label,
-        description: entry.description || "",
-      })),
+      durationTypes: (revision.durationTypes || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "", targetSeconds: entry.targetSeconds })),
+      languageLevels: (revision.languageLevels || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
+      presentationAspects: (revision.presentationAspects || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
+      selectionSignals: (revision.selectionSignals || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
     },
   };
 }
@@ -241,9 +215,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non disponibile", 409);
     const maps = definitionMaps(namespaceRevision);
     const referencedSubjectIds = revision ? collectRevisionSubjectIds(revision) : [];
-    const referencedSubjects = referencedSubjectIds.length
-      ? await Subject.find({ _id: { $in: referencedSubjectIds } }).lean()
-      : [];
+    const referencedSubjects = referencedSubjectIds.length ? await Subject.find({ _id: { $in: referencedSubjectIds } }).lean() : [];
     const subjectById = new Map(referencedSubjects.map((entry) => [id(entry), entry]));
     selected = {
       edition: { id: selectedEdition._id },
@@ -269,15 +241,8 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
           key: variant.key,
           label: variant.label,
           description: variant.description || "",
-          semanticFocus: (variant.semanticFocus || []).map((focus) => ({
-            subject: projectSubject(subjectById.get(id(focus.subjectId))) || { id: focus.subjectId, missing: true },
-            weight: focus.weight,
-          })),
-          presentationAspects: (variant.presentationAspects || []).map((aspect) => ({
-            definitionId: aspect.definitionId,
-            label: maps.aspect.get(aspect.definitionId)?.label || aspect.definitionId,
-            weight: aspect.weight,
-          })),
+          semanticFocus: (variant.semanticFocus || []).map((focus) => ({ subject: projectSubject(subjectById.get(id(focus.subjectId))) || { id: focus.subjectId, missing: true }, weight: focus.weight })),
+          presentationAspects: (variant.presentationAspects || []).map((aspect) => ({ definitionId: aspect.definitionId, label: maps.aspect.get(aspect.definitionId)?.label || aspect.definitionId, weight: aspect.weight })),
           knowledgeRequirements: (variant.knowledgeRequirements || []).map((requirement) => ({
             subject: projectSubject(subjectById.get(id(requirement.subjectId))) || { id: requirement.subjectId, missing: true },
             minLevel: requirement.minLevel,
@@ -314,57 +279,9 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     } : null,
     availableOperations: [
       ...(editAllowed ? [{ code: "item.edit", label: "Modifica contenuto" }, { code: "item.create_edition", label: "Crea Edition" }] : []),
-      ...(item.ownerType === "user" || actorAuthority.effectivePermissions.includes("editorial_space.manage")
-        ? [{ code: "content_space.membership", label: "Gestisci ContentSpace" }]
-        : []),
+      ...(item.ownerType === "user" || actorAuthority.effectivePermissions.includes("editorial_space.manage") ? [{ code: "content_space.membership", label: "Gestisci ContentSpace" }] : []),
       ...workflowOperations,
     ],
-  };
-}
-
-async function getVenueTargetAuthoringContext({ venueTargetId, actorUserId = null }) {
-  const target = await VenueTarget.findOne({ _id: venueTargetId, lifecycleStatus: "active" }).lean();
-  if (!target) throw new AppError("VenueTarget non disponibile", 404);
-  const [venue, subject] = await Promise.all([
-    Venue.findOne({ _id: target.venueId, lifecycleStatus: "active" }).select("name description ownerOrganizationId workingReleaseId publishedReleaseId").lean(),
-    Subject.findById(target.subjectId).lean(),
-  ]);
-  if (!venue || !subject) throw new AppError("Contesto fisico del VenueTarget non coerente", 409);
-  const canViewWorking = actorUserId ? await hasOrganizationPermission({
-    userId: actorUserId,
-    organizationId: venue.ownerOrganizationId,
-    permissionCode: "venue.view",
-  }) : false;
-  const view = canViewWorking && venue.workingReleaseId ? "working" : "published";
-  const contextProjection = await projectVenueSubjectContext({
-    venueId: venue._id,
-    subjectIds: [target.subjectId],
-    view,
-  });
-  const subjectContext = venueSubjectContextMap(contextProjection).get(id(target.subjectId)) || {
-    inventory: null,
-    museumContent: { availableCount: 0, draftCount: 0 },
-  };
-  if (!canViewWorking && subjectContext.inventory?.status !== "exposed") {
-    throw new AppError("Entità pubblicata non disponibile", 404);
-  }
-  const release = contextProjection.releaseId
-    ? await VenueRelease.findById(contextProjection.releaseId).select("targetBindings").lean()
-    : null;
-  const binding = (release?.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(target._id));
-  const recognitionMedia = (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null }));
-  return {
-    venue: { id: venue._id, name: venue.name, description: venue.description || "" },
-    venueTarget: {
-      id: target._id,
-      label: target.displayLabelOverride || subject.preferredLabel,
-      description: target.inventoryNote || subject.description || "",
-      inventoryState: subjectContext.inventory?.status || "unplaced",
-      inventory: subjectContext.inventory,
-      museumContent: subjectContext.museumContent,
-    },
-    subject: projectSubject(subject),
-    recognitionMedia,
   };
 }
 
@@ -373,5 +290,4 @@ module.exports = {
   validateReferencedSubjects,
   checkEditionConsistency,
   getItemAuthoringProjection,
-  getVenueTargetAuthoringContext,
 };
