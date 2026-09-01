@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const EditorialContext = require("../models/editorialContext.model");
+const EditorialContextEntry = require("../models/editorialContextEntry.model");
+const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
@@ -101,9 +104,31 @@ async function addItemMembership({ contentSpaceId, itemId, actorUserId }) {
   }
 }
 
+async function assertItemNotUsedByActiveEditorialContext({ contentSpaceId, itemId }) {
+  const contexts = await EditorialContext.find({ contentSpaceId, lifecycleStatus: "active" }).select("_id displayName").lean();
+  if (!contexts.length) return;
+  const editions = await ItemEdition.find({ itemId }).select("_id").lean();
+  if (!editions.length) return;
+  const entry = await EditorialContextEntry.findOne({
+    editorialContextId: { $in: contexts.map((context) => context._id) },
+    itemEditionId: { $in: editions.map((edition) => edition._id) },
+  }).select("editorialContextId").lean();
+  if (!entry) return;
+  const context = contexts.find((candidate) => String(candidate._id) === String(entry.editorialContextId));
+  throw new AppError("Rimuovi prima il contenuto dalle raccolte editoriali che lo usano", 409, [{
+    code: "ITEM_USED_BY_EDITORIAL_CONTEXT",
+    field: "itemId",
+    context: {
+      editorialContextId: entry.editorialContextId,
+      editorialContextName: context?.displayName || null,
+    },
+  }]);
+}
+
 async function removeItemMembership({ contentSpaceId, itemId, actorUserId }) {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertItemNotUsedByActiveEditorialContext({ contentSpaceId: contentSpace._id, itemId });
   const result = await ContentSpaceMembership.deleteOne({ contentSpaceId: contentSpace._id, itemId });
   if (result.deletedCount !== 1) throw new AppError("Membership non trovata", 404);
   return { removed: true };
@@ -122,6 +147,7 @@ async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId
   await assertCanManageContentSpace(toSpace, actorUserId);
   const sourceMembership = await ContentSpaceMembership.findOne({ contentSpaceId: fromSpace._id, itemId });
   if (!sourceMembership) throw new AppError("Membership sorgente non trovata", 404);
+  await assertItemNotUsedByActiveEditorialContext({ contentSpaceId: fromSpace._id, itemId });
   let targetMembership;
   try {
     targetMembership = await ContentSpaceMembership.create({ contentSpaceId: toSpace._id, itemId, addedBy: actorUserId });
@@ -168,6 +194,7 @@ module.exports = {
   listContentSpaces,
   getContentSpace,
   addItemMembership,
+  assertItemNotUsedByActiveEditorialContext,
   removeItemMembership,
   moveItemMembership,
   listItemMemberships,
