@@ -12,6 +12,7 @@ const PROTECTED_HOST_SELECTOR = [
 ].join(",");
 
 const dirtyForms = new Set();
+const dirtyItemSelections = new Set();
 const TRANSIENT_FIELD_NAME = /^(?:q|query|search|filter|sort|page|tab)$/i;
 
 function mutableNamedControls(form) {
@@ -32,8 +33,11 @@ function shouldProtect(form) {
   return Boolean(form.querySelector('button:not([type]), button[type="submit"], input[type="submit"]'));
 }
 
-function pruneDirtyForms() {
+function pruneDirtyState() {
   for (const form of dirtyForms) if (!form.isConnected) dirtyForms.delete(form);
+  for (const editor of dirtyItemSelections) {
+    if (!editor.isConnected || editor.itemId) dirtyItemSelections.delete(editor);
+  }
 }
 
 function formHasDedicatedDraftBlocker(form) {
@@ -41,9 +45,9 @@ function formHasDedicatedDraftBlocker(form) {
   return Boolean(itemEditor?.readWorkingDraft?.());
 }
 
-function hasUncoveredDirtyForm() {
-  pruneDirtyForms();
-  return [...dirtyForms].some((form) => !formHasDedicatedDraftBlocker(form));
+function hasUncoveredDirtyState() {
+  pruneDirtyState();
+  return dirtyItemSelections.size > 0 || [...dirtyForms].some((form) => !formHasDedicatedDraftBlocker(form));
 }
 
 function markFromEvent(event) {
@@ -55,19 +59,24 @@ function markFromEvent(event) {
 
 document.addEventListener("input", markFromEvent, true);
 document.addEventListener("change", markFromEvent, true);
+document.addEventListener("subject-selected", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const editor = target?.closest("artaround-item-authoring-view");
+  if (editor && !editor.itemId) dirtyItemSelections.add(editor);
+}, true);
 document.addEventListener("reset", (event) => {
   if (event.target instanceof HTMLFormElement) dirtyForms.delete(event.target);
 }, true);
 
 const observerStart = () => {
-  const observer = new MutationObserver(pruneDirtyForms);
+  const observer = new MutationObserver(pruneDirtyState);
   observer.observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observerStart, { once: true });
 else observerStart();
 
 registerNavigationLossBlocker({
-  isBlocking: hasUncoveredDirtyForm,
+  isBlocking: hasUncoveredDirtyState,
   confirm: () => openActionDialog({
     tone: "danger",
     title: "Uscire senza salvare?",
@@ -75,5 +84,5 @@ registerNavigationLossBlocker({
     confirmLabel: "Esci senza salvare",
     cancelLabel: "Resta nella pagina",
   }),
-  discard: () => dirtyForms.clear(),
+  discard: () => { dirtyForms.clear(); dirtyItemSelections.clear(); },
 });
