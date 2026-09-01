@@ -2,7 +2,6 @@ const service = require("../services/itemV2.service");
 const authoring = require("../services/itemAuthoringV2.service");
 const mediaUpload = require("../services/itemMediaUpload.service");
 async function create(req, res, next) { try { res.status(201).json(await service.createItem({ payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
-async function createWithPhysicalIntent(req, res, next) { try { res.status(201).json(await service.createItemWithPhysicalIntent({ venueId: req.params.venueId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function list(req, res, next) { try { res.status(200).json(await service.listItems(req.query || {})); } catch (error) { next(error); } }
 async function get(req, res, next) { try { res.status(200).json(await service.getItem({ itemId: req.params.itemId })); } catch (error) { next(error); } }
 async function createEdition(req, res, next) { try { res.status(201).json(await service.createEdition({ itemId: req.params.itemId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
@@ -16,7 +15,6 @@ async function fork(req, res, next) { try { res.status(201).json(await service.f
 async function uploadMedia(req, res, next) { try { res.status(201).json(await mediaUpload.storeItemMedia({ payload: req.body || {} })); } catch (error) { next(error); } }
 module.exports = {
   create,
-  createWithPhysicalIntent,
   list,
   get,
   createEdition,
