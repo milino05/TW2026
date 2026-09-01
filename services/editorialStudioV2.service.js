@@ -12,7 +12,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
-const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { resolveOrganizationAuthority } = require("./organizationAuthorization.service");
 const { checkEditorialContextReadiness } = require("./editorialContextReview.service");
@@ -77,6 +77,86 @@ async function resolveNamespaceProjection({ context, contentSpace, actorUserId }
       })),
       selectionSignals: (revision.selectionSignals || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
     } : null,
+  };
+}
+
+async function listEditorialSpaceSummaries({ actorUserId, ownerType = null, ownerId = null }) {
+  const spaces = await listContentSpaces({ actorUserId, ownerType, ownerId });
+  if (!spaces.length) return [];
+  const spaceIds = spaces.map((space) => space._id);
+  const [membershipCounts, contextCounts, publishedCounts] = await Promise.all([
+    ContentSpaceMembership.aggregate([
+      { $match: { contentSpaceId: { $in: spaceIds } } },
+      { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
+    ]),
+    EditorialContext.aggregate([
+      { $match: { contentSpaceId: { $in: spaceIds }, lifecycleStatus: "active" } },
+      { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
+    ]),
+    EditorialContext.aggregate([
+      { $match: { contentSpaceId: { $in: spaceIds }, lifecycleStatus: "active", publishedReleaseId: { $ne: null } } },
+      { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
+    ]),
+  ]);
+  const membershipById = new Map(membershipCounts.map((entry) => [id(entry._id), entry.count]));
+  const contextById = new Map(contextCounts.map((entry) => [id(entry._id), entry.count]));
+  const publishedById = new Map(publishedCounts.map((entry) => [id(entry._id), entry.count]));
+  return spaces.map((space) => ({
+    id: space._id,
+    name: space.name,
+    description: space.description || "",
+    ownerType: space.ownerType,
+    ownerId: space.ownerId,
+    stats: {
+      itemCount: membershipById.get(id(space._id)) || 0,
+      collectionCount: contextById.get(id(space._id)) || 0,
+      publishedCollectionCount: publishedById.get(id(space._id)) || 0,
+    },
+  }));
+}
+
+async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.view");
+  const authority = await resolveAuthority({ contentSpace, actorUserId });
+  const [itemCount, contexts] = await Promise.all([
+    ContentSpaceMembership.countDocuments({ contentSpaceId: contentSpace._id }),
+    EditorialContext.find({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }).sort({ displayName: 1, createdAt: 1 }).lean(),
+  ]);
+  const namespaces = contexts.length
+    ? await Namespace.find({ _id: { $in: contexts.map((context) => context.namespaceId) } }).select("name").lean()
+    : [];
+  const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
+  const entryCounts = contexts.length
+    ? await EditorialContextEntry.aggregate([
+      { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
+      { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
+    ])
+    : [];
+  const entryCountByContext = new Map(entryCounts.map((entry) => [id(entry._id), entry.count]));
+  const permissions = {
+    canManageSpace: hasPermission(contentSpace, authority, "editorial_space.manage"),
+    canCreateCollection: hasPermission(contentSpace, authority, "editorial_context.create"),
+  };
+  return {
+    space: {
+      id: contentSpace._id,
+      name: contentSpace.name,
+      description: contentSpace.description || "",
+      ownerType: contentSpace.ownerType,
+      ownerId: contentSpace.ownerId,
+    },
+    stats: { itemCount, collectionCount: contexts.length },
+    collections: contexts.map((context) => ({
+      id: context._id,
+      name: context.displayName,
+      shortDescription: context.shortDescription || null,
+      namespace: { id: context.namespaceId, name: namespaceById.get(id(context.namespaceId))?.name || "Regole editoriali" },
+      itemCount: entryCountByContext.get(id(context._id)) || 0,
+      published: Boolean(context.publishedReleaseId),
+      reviewActive: Boolean(context.activeReviewRevisionId),
+    })),
+    permissions,
   };
 }
 
@@ -235,4 +315,9 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
   };
 }
 
-module.exports = { getEditorialStudioProjection, listEditorialStudioCandidates };
+module.exports = {
+  listEditorialSpaceSummaries,
+  getEditorialSpaceProjection,
+  getEditorialStudioProjection,
+  listEditorialStudioCandidates,
+};
