@@ -80,10 +80,6 @@ async function namespaceAuthoringControls(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-async function venueTargetAuthoringContext(req, res, next) {
-  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
 async function createListing(req, res, next) {
   try {
     const resourceType = req.body?.resourceType || (req.body?.visitId ? "visit" : null);
@@ -262,7 +258,6 @@ module.exports = {
   detail,
   itemAuthoringProjection,
   namespaceAuthoringControls,
-  venueTargetAuthoringContext,
   createListing,
   createOffer,
   acquire,
