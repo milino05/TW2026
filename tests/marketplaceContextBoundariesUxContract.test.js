@@ -13,13 +13,17 @@ const paths = {
   appShell: "clients/marketplace/src/ui/app-shell.js",
   createHub: "clients/marketplace/src/ui/create-hub-view.js",
   item: "clients/marketplace/src/ui/item-authoring-view.js",
+  subjectPresence: "clients/marketplace/src/ui/subject-presence.js",
   organization: "clients/marketplace/src/ui/organization-view.js",
-  venueChooser: "clients/marketplace/src/ui/venue-target-chooser.js",
   venueEditorTargets: "clients/marketplace/src/ui/venue-editor-targets-mixin.js",
   venueEditorSlots: "clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js",
+  venueInventoryProposals: "clients/marketplace/src/ui/venue-editor-inventory-proposals-mixin.js",
+  venueMap: "clients/marketplace/src/ui/venue-map.js",
+  publicVenue: "clients/marketplace/src/ui/public-venue-view.js",
   policy: "clients/marketplace/src/application/management-context-policy.js",
   managementRepository: "clients/marketplace/src/infrastructure/http/management-repository.js",
   venueAuthoringTargets: "services/venueAuthoringTargetsV2.service.js",
+  discovery: "services/marketplaceDiscoveryV2.service.js",
   venueTargetModel: "models/venueTarget.model.js",
 };
 const read = (key) => fs.readFileSync(path.join(root, paths[key]), "utf8");
@@ -40,6 +44,7 @@ test("la navigazione di management cambia semanticamente col contesto operativo"
   assert.match(source.appShell, /route === "\/organizations\/detail"/);
   assert.match(source.appShell, /String\(context\.id\) === String\(organizationId\)/);
   assert.match(source.appShell, /Cambia o crea area/);
+  assert.doesNotMatch(source.appShell, /venue-target-chooser|\/workspace\/venue-targets/);
 });
 
 test("Organization management torna al Context Hub invece di attraversare l'Account personale", () => {
@@ -60,21 +65,20 @@ test("le projection di management verificano l'owner contro l'area corrente", ()
   assert.match(source.managementRepository, /projection\?\.venue\?\.organizationId/);
 });
 
-test("la creazione item in organization context può selezionare la Venue senza renderla obbligatoria", () => {
-  assert.match(source.createHub, /Sede di riferimento/);
-  assert.match(source.createHub, /Nessuna sede specifica/);
-  assert.match(source.createHub, /organizationVenues\(\)/);
-  assert.match(source.createHub, /\/workspace\/item-authoring\$\{venueId \? `\?venueId=/);
-  assert.match(source.createHub, /this\.context\?\.type === "organization"/);
+test("Create Hub avvia l'Item dal Subject e non da una Venue o da un VenueTarget", () => {
+  assert.match(source.createHub, /Parti dal Subject di cui vuoi parlare/);
+  assert.match(source.createHub, /\/workspace\/item-authoring/);
+  assert.doesNotMatch(source.createHub, /Sede di riferimento|Nessuna sede specifica|organizationVenues\(|venueTargetId|physicalIntent/);
 });
 
-test("l'item editor riusa il physical intent esistente, non duplica l'inventario e ricarica il contesto autorevole", () => {
-  assert.match(source.item, /Destinato all’esposizione/);
-  assert.match(source.item, /createItemWithPhysicalIntent\(this\.venueId/);
-  assert.match(source.item, /!this\.venueInventoryMatch/);
-  assert.match(source.item, /Già nell’inventario della sede/);
-  assert.match(source.item, /this\.venueTargetContext = await authoringRepository\.venueTargetContext\(this\.venueTargetId\)/);
-  assert.match(source.item, /this\.venueInventoryMatch = null/);
+test("Item Authoring usa il Subject come identità editoriale e mostra la presenza fisica come contesto separato", () => {
+  assert.match(source.item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
+  assert.match(source.item, /import "\.\/subject-presence\.js"/);
+  assert.match(source.item, /artaround-subject-presence/);
+  assert.doesNotMatch(source.item, /venueTargetId|physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
+  assert.match(source.subjectPresence, /La presenza fisica è informativa e resta separata dal contenuto editoriale/);
+  assert.match(source.subjectPresence, /Proponi alla sede/);
+  assert.match(source.subjectPresence, /Mostra sulla mappa/);
 });
 
 test("l'inventario authoring legge tutti i VenueTarget attivi sulla configurazione effettiva", () => {
@@ -83,27 +87,46 @@ test("l'inventario authoring legge tutti i VenueTarget attivi sulla configurazio
   assert.match(source.venueAuthoringTargets, /view: "effective"/);
   assert.match(source.venueAuthoringTargets, /status: "unplaced"/);
   assert.match(source.venueAuthoringTargets, /inventoryRank/);
-  assert.match(source.venueChooser, /exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile"/);
-  assert.match(source.venueChooser, /indipendentemente dal fatto che l’entità sia esposta, da collocare o temporaneamente non disponibile/);
 });
 
-test("creazione contenuti e modifica fisica sono capability indipendenti", () => {
+test("creazione contenuti e gestione inventario sono capability indipendenti", () => {
   assert.match(source.venueAuthoringTargets, /canCreateContent: authority\.effectivePermissions\.includes\("item\.create"\)/);
-  assert.match(source.venueAuthoringTargets, /canEditInventory: authority\.effectivePermissions\.includes\("venue\.physical\.edit"\)/);
-  assert.match(source.venueChooser, /const canCreateContent = Boolean\(this\.data\?\.permissions\?\.canCreateContent\)/);
-  assert.match(source.venueChooser, /Sola consultazione/);
+  assert.match(source.venueAuthoringTargets, /canEditInventory: authority\.effectivePermissions\.includes\("venue\.inventory\.manage"\)/);
   assert.match(source.managementRepository, /authoringPermissions: authoring\.permissions \|\| \{\}/);
   assert.match(source.venueEditorTargets, /canCreateContent = false/);
   assert.match(source.venueEditorTargets, /const createContent = canCreateContent/);
+  assert.match(source.venueEditorTargets, /subjectId=\$\{encodeURIComponent\(id\(entry\.subject\?\.id\)\)\}/);
   assert.match(source.venueEditorSlots, /this\.data\.authoringPermissions\?\.canCreateContent/);
   assert.match(source.venueEditorSlots, /const physicalActions = editable/);
   assert.match(source.venueEditorSlots, /const contentAction = canCreateContent/);
+});
+
+test("l'inbox Venue decide l'appartenenza all'inventario senza collocazione automatica", () => {
+  assert.match(source.venueInventoryProposals, /canEditInventory/);
+  assert.match(source.venueInventoryProposals, /acceptVenueInventoryProposal/);
+  assert.match(source.venueInventoryProposals, /rejectVenueInventoryProposal/);
+  assert.match(source.venueInventoryProposals, /Scrivi una motivazione prima di rifiutare la proposta/);
+  assert.match(source.venueInventoryProposals, /senza collocazione automatica/);
+  assert.match(source.venueInventoryProposals, /Nessuno slot verrà assegnato automaticamente/);
+  assert.match(source.venueInventoryProposals, /La collocazione fisica resta nella sezione Spazi e mappa/);
 });
 
 test("l'inventario fisico resta scoped alla Venue", () => {
   assert.match(source.venueTargetModel, /venueId: \{ type: Schema\.Types\.ObjectId, ref: "Venue", required: true/);
   assert.match(source.venueTargetModel, /\{ venueId: 1, subjectId: 1 \}/);
   assert.match(source.venueTargetModel, /unique_active_venue_subject/);
+});
+
+test("la mappa pubblica deriva soltanto dalla release e dal layout pubblicati", () => {
+  assert.match(source.discovery, /publishedReleaseId: \{ \$ne: null \}/);
+  assert.match(source.discovery, /VenueRelease\.findOne\(\{ _id: venue\.publishedReleaseId, venueId: venue\._id, status: "published" \}\)/);
+  assert.match(source.discovery, /LayoutRevision\.findOne\(\{ _id: release\.layoutRevisionId, venueId: venue\._id \}\)/);
+  assert.match(source.discovery, /assignedVenueTargetId/);
+  assert.match(source.publicVenue, /import "\.\/venue-map\.js"/);
+  assert.match(source.publicVenue, /focusTargetId/);
+  assert.match(source.publicVenue, /La mappa usa esclusivamente la VenueRelease pubblicata/);
+  assert.match(source.venueMap, /Mostra esclusivamente la configurazione fisica pubblicata/);
+  assert.match(source.venueMap, /focusContext\(\)/);
 });
 
 test("Item Authoring partecipa al navigation-loss guard usando la bozza reale", () => {
@@ -122,9 +145,9 @@ test("i form di authoring e management diventano dirty solo dopo modifiche utent
     "artaround-venue-editor-view",
     "artaround-visit-authoring-view",
     "artaround-item-authoring-view",
-    "artaround-context-release-composer",
     "artaround-commerce-management-view",
   ]) assert.match(source.formGuard, new RegExp(host));
+  assert.doesNotMatch(source.formGuard, /artaround-context-release-composer/);
   assert.match(source.formGuard, /document\.addEventListener\("input", markFromEvent, true\)/);
   assert.match(source.formGuard, /document\.addEventListener\("change", markFromEvent, true\)/);
   assert.match(source.formGuard, /dirtyForms\.add\(form\)/);
