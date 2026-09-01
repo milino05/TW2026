@@ -78,16 +78,25 @@ test("Item Authoring partecipa al navigation-loss guard usando la bozza reale", 
 
 test("i form di authoring e management diventano dirty solo dopo modifiche utente", () => {
   assert.match(source.main, /import "\.\/ui\/form-navigation-loss-guard\.js"/);
-  for (const host of ["profile", "organization", "venue-editor", "visit-authoring", "context-release-composer", "commerce-management"]) {
+  for (const host of ["profile", "organization", "venue-editor", "visit-authoring", "item-authoring", "context-release-composer", "commerce-management"]) {
     assert.match(source.formGuard, new RegExp(`artaround-${host}-view`));
   }
   assert.match(source.formGuard, /document\.addEventListener\("input", markFromEvent, true\)/);
   assert.match(source.formGuard, /document\.addEventListener\("change", markFromEvent, true\)/);
   assert.match(source.formGuard, /dirtyForms\.add\(form\)/);
   assert.match(source.formGuard, /if \(!form\.isConnected\) dirtyForms\.delete\(form\)/);
+  assert.match(source.formGuard, /formHasDedicatedDraftBlocker/);
+  assert.match(source.formGuard, /itemEditor\?\.readWorkingDraft\?\.\(\)/);
   assert.match(source.formGuard, /registerNavigationLossBlocker/);
   assert.match(source.formGuard, /dirtyForms\.clear\(\)/);
   assert.match(source.formGuard, /TRANSIENT_FIELD_NAME/);
+});
+
+test("la selezione soggetto pre-creazione dell'Item è protetta senza bloccare preselezioni già persistite", () => {
+  assert.match(source.formGuard, /dirtyItemSelections/);
+  assert.match(source.formGuard, /document\.addEventListener\("subject-selected"/);
+  assert.match(source.formGuard, /if \(editor && !editor\.itemId\) dirtyItemSelections\.add\(editor\)/);
+  assert.match(source.formGuard, /if \(!editor\.isConnected \|\| editor\.itemId\) dirtyItemSelections\.delete\(editor\)/);
 });
 
 test("la validazione usa feedback inline condiviso invece del tooltip nativo", () => {
