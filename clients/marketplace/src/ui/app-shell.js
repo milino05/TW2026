@@ -16,7 +16,6 @@ import "./workspace-browser-view.js";
 import "./workspace-view.js";
 import "./item-authoring-view.js";
 import "./visit-authoring-view.js";
-import "./venue-target-chooser.js";
 import "./editorial-spaces-view.js";
 import "./editorial-space-view.js";
 import "./editorial-collection-create-view.js";
@@ -35,7 +34,7 @@ const TITLES = {
   "/organizations": "Organizzazioni", "/organizations/public": "Organizzazione", "/organizations/detail": "Gestione organizzazione",
   "/venues": "Musei e sedi", "/venues/public": "Sede", "/venues/editor": "Gestione sede",
   "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
-  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Entità della sede",
+  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita",
   "/workspace/editorial-spaces": "Spazi editoriali", "/workspace/editorial-space": "Spazio editoriale",
   "/workspace/editorial-collection-new": "Nuova raccolta", "/workspace/editorial-studio": "Studio editoriale",
   "/profile": "Account", "/namespaces/editor": "Regole editoriali",
@@ -47,7 +46,6 @@ function current(route, paths) { return paths.includes(route) ? "page" : "false"
 function authoringIsCreation(route) {
   const params = new URLSearchParams(window.location.search);
   if (["/create", "/workspace/editorial-collection-new"].includes(route)) return true;
-  if (route === "/workspace/venue-targets") return true;
   if (route === "/workspace/item-authoring") return !params.get("itemId");
   if (route === "/workspace/visit-authoring") return !params.get("visitId");
   return false;
@@ -251,7 +249,6 @@ export class MarketplaceAppShell extends HTMLElement {
     if (route === "/workspace/commerce") return "<artaround-commerce-management-view></artaround-commerce-management-view>";
     if (route === "/workspace/item-authoring") return "<artaround-item-authoring-view></artaround-item-authoring-view>";
     if (route === "/workspace/visit-authoring") return "<artaround-visit-authoring-view></artaround-visit-authoring-view>";
-    if (route === "/workspace/venue-targets") return "<artaround-venue-target-chooser></artaround-venue-target-chooser>";
     if (route === "/workspace/editorial-spaces") return "<artaround-editorial-spaces-view></artaround-editorial-spaces-view>";
     if (route === "/workspace/editorial-space") return "<artaround-editorial-space-view></artaround-editorial-space-view>";
     if (route === "/workspace/editorial-collection-new") return "<artaround-editorial-collection-create-view></artaround-editorial-collection-create-view>";
