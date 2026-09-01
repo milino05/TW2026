@@ -251,7 +251,7 @@ test("dangling relatedSubject, semanticFocus and knowledgeRequirement keep ItemR
   });
 });
 
-test("EditorialReleaseComposer exposes only ContentSpace members that the Context owner principal may use", { skip: !mongoUri }, async () => {
+test("Editorial Studio candidates expose only ContentSpace members usable by the collection owner", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -259,11 +259,10 @@ test("EditorialReleaseComposer exposes only ContentSpace members that the Contex
     const ContentSpace = require("../models/contentSpace.model");
     const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
-    const { getEditorialReleaseComposer } = require("../services/editorialReleaseComposerV2.service");
+    const { listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
 
-    const owner = await User.create({ username: "composer-owner", passwordHash: "hash" });
-    const external = await User.create({ username: "composer-external", passwordHash: "hash" });
+    const owner = await User.create({ username: "studio-owner", passwordHash: "hash" });
+    const external = await User.create({ username: "studio-external", passwordHash: "hash" });
     const [subjectOwned, subjectExternal, subjectNonMember] = await Subject.create([
       { preferredLabel: "Owned", createdBy: owner._id },
       { preferredLabel: "External", createdBy: external._id },
@@ -277,14 +276,6 @@ test("EditorialReleaseComposer exposes only ContentSpace members that the Contex
       displayName: "Contesto demo",
       createdBy: owner._id,
     });
-    const graph = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-      createdBy: owner._id,
-    });
-    context.workingGraphRevisionId = graph._id;
-    await context.save();
 
     const ownedItem = await ItemV2.create({ primarySubjectId: subjectOwned._id, ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const externalItem = await ItemV2.create({ primarySubjectId: subjectExternal._id, ownerType: "user", ownerId: external._id, createdBy: external._id });
@@ -297,13 +288,11 @@ test("EditorialReleaseComposer exposes only ContentSpace members that the Contex
       { contentSpaceId: space._id, itemId: externalItem._id, addedBy: owner._id },
     ]);
 
-    const projection = await getEditorialReleaseComposer({ editorialContextId: context._id, actorUserId: owner._id });
-    assert.equal(projection.context.name, "Contesto demo");
-    assert.equal(String(projection.releaseInputs.namespaceRevisionId), String(namespaceRevision._id));
-    assert.equal(String(projection.releaseInputs.graphRevisionId), String(graph._id));
-    assert.equal(projection.candidates.length, 1);
-    assert.equal(projection.candidates[0].title, "Owned content");
-    assert.equal(String(projection.candidates[0].itemEditionId), String(ownedEdition.edition._id));
-    assert.equal(projection.candidates[0].accessBasis, "ownership");
+    const projection = await listEditorialStudioCandidates({ editorialContextId: context._id, actorUserId: owner._id, page: 1, limit: 20 });
+    assert.equal(projection.results.length, 1);
+    assert.equal(projection.results[0].revision.label, "Owned content");
+    assert.equal(String(projection.results[0].itemEditionId), String(ownedEdition.edition._id));
+    assert.equal(projection.results.some((entry) => String(entry.itemId) === String(externalItem._id)), false);
+    assert.equal(projection.results.some((entry) => String(entry.itemId) === String(nonMemberItem._id)), false);
   });
 });
