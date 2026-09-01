@@ -2,6 +2,7 @@ import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 import "./editorial-collection-content-manager.js";
 import "./semantic-graph-editor.js";
@@ -19,6 +20,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   releases = [];
   busy = false;
   error = null;
+  requestingChanges = false;
 
   connectedCallback() {
     const params = new URLSearchParams(window.location.search);
@@ -74,26 +76,59 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data?.contentSpace?.id || "")}`);
       return;
     }
+    if (target?.closest("button[data-request-changes-cancel]")) {
+      this.requestingChanges = false;
+      this.error = null;
+      this.render();
+      return;
+    }
     const action = target?.closest("button[data-studio-action]");
     if (!action) return;
     const code = action.dataset.studioAction;
     if (code === "collection.review.request") await this.run(() => editorialRepository.requestReview(this.editorialContextId));
     else if (code === "collection.review.withdraw") {
-      if (window.confirm("Ritirare la raccolta dalla revisione e riaprire il working state?")) await this.run(() => editorialRepository.withdrawReview(this.editorialContextId));
+      const confirmed = await openActionDialog({
+        title: "Ritirare la raccolta dalla revisione?",
+        message: "La snapshot in revisione verrà ritirata e il working state tornerà modificabile.",
+        confirmLabel: "Ritira revisione",
+      });
+      if (confirmed) await this.run(() => editorialRepository.withdrawReview(this.editorialContextId));
     } else if (code === "collection.review.approve") {
-      if (window.confirm("Approvare esattamente questa snapshot della raccolta?")) await this.run(() => editorialRepository.approveReview(this.editorialContextId, this.data.review.id));
+      const confirmed = await openActionDialog({
+        title: "Approvare questa snapshot?",
+        message: "L'approvazione riguarda esattamente la snapshot attualmente in revisione.",
+        confirmLabel: "Approva snapshot",
+      });
+      if (confirmed) await this.run(() => editorialRepository.approveReview(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.review.request_changes") {
-      const message = window.prompt("Descrivi le modifiche richieste al curatore:");
-      if (message?.trim()) await this.run(() => editorialRepository.requestChanges(this.editorialContextId, this.data.review.id, message.trim()));
+      this.requestingChanges = true;
+      this.error = null;
+      this.render();
+      requestAnimationFrame(() => this.querySelector("[data-request-changes-message]")?.focus());
     } else if (code === "collection.publish") {
-      if (window.confirm("Pubblicare la revisione approvata come nuova versione della raccolta?")) await this.run(() => editorialRepository.publish(this.editorialContextId, this.data.review.id));
+      const confirmed = await openActionDialog({
+        title: "Pubblicare una nuova versione della raccolta?",
+        message: "Verrà pubblicata la revisione approvata come nuova EditorialRelease immutabile.",
+        confirmLabel: "Pubblica versione",
+      });
+      if (confirmed) await this.run(() => editorialRepository.publish(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.check") await this.run(() => editorialRepository.check(this.editorialContextId));
     else if (code === "collection.remove") await this.removeCollection();
   };
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form?.matches("[data-collection-settings]")) return;
+    if (!form) return;
+    if (form.matches("[data-request-changes-form]")) {
+      event.preventDefault();
+      const data = new FormData(form);
+      const message = String(data.get("message") || "").trim();
+      if (!message) { this.error = "Inserisci il motivo delle modifiche richieste."; this.render(); return; }
+      this.requestingChanges = false;
+      await this.run(() => editorialRepository.requestChanges(this.editorialContextId, this.data.review.id, message));
+      return;
+    }
+    if (!form.matches("[data-collection-settings]")) return;
     event.preventDefault();
     const data = new FormData(form);
     await this.run(() => editorialRepository.updateCollection(this.editorialContextId, {
@@ -111,7 +146,13 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
 
   async removeCollection() {
     if (!this.data?.permissions?.canRemove) return;
-    if (!window.confirm(`Eliminare la raccolta “${this.data.context.name}”? Le versioni già acquisite resteranno valide; gli Item non verranno eliminati.`)) return;
+    const confirmed = await openActionDialog({
+      title: `Eliminare la raccolta “${this.data.context.name}”?`,
+      message: "Le versioni già acquisite resteranno valide e gli Item non verranno eliminati.",
+      confirmLabel: "Elimina raccolta",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     const principal = operatingPrincipal(this.context);
     if (!principal) return;
     try {
@@ -154,10 +195,15 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     return buttons.join("");
   }
 
+  renderRequestChangesForm() {
+    if (!this.requestingChanges || !this.hasOperation("collection.review.request_changes")) return "";
+    return `<form class="panel request-changes-form" data-request-changes-form><span class="eyebrow">Richiedi modifiche</span><h3>Che cosa deve essere rivisto?</h3><p>Il messaggio verrà associato alla revisione corrente e guiderà il curatore nelle correzioni.</p><label>Messaggio<textarea name="message" rows="4" required data-request-changes-message></textarea></label><div class="button-row"><button type="submit">Invia richiesta</button><button type="button" class="button-secondary" data-request-changes-cancel>Annulla</button></div></form>`;
+  }
+
   renderPublication() {
     const review = this.data.review;
     const readiness = this.data.readiness || {};
-    return `<section class="studio-section publication-flow"><article class="flow-step ${readiness.ready ? "complete" : "blocked"}"><span class="step-number">1</span><div><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Raccolta coerente" : "Controllo da completare"}</h2><p>${readiness.ready ? "Composizione, grafo e regole editoriali possono essere congelati in una snapshot." : "Risolvi i problemi mostrati in Panoramica prima di inviare la raccolta in revisione."}</p></div></article><article class="flow-step ${review ? "active" : ""}"><span class="step-number">2</span><div><span class="eyebrow">Revisione</span><h2>${review ? statusLabel(review.status) : "Non ancora richiesta"}</h2>${review ? `<p>Snapshot v${escapeHtml(review.version)}, ${escapeHtml(review.itemCount)} contenuti. Il working state è bloccato finché questa revisione resta attiva.</p>` : `<p>La revisione congela esattamente contenuti, grafo e Namespace che verranno pubblicati.</p>`}<div class="button-row">${this.renderPublicationActions()}</div></div></article><article class="flow-step ${this.data.published ? "complete" : ""}"><span class="step-number">3</span><div><span class="eyebrow">Versione</span><h2>${this.data.published ? `Release v${escapeHtml(this.data.published.version)}` : "Nessuna release"}</h2><p>${this.data.published ? `Pubblicata ${escapeHtml(formatDate(this.data.published.releasedAt))}.` : "Dopo l'approvazione, un publisher può creare l'EditorialRelease immutabile."}</p></div></article><article class="panel history-panel"><h2>Storico</h2><div class="history-grid"><div><h3>Revisioni</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna revisione.</p>`}</div><div><h3>Release</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna release.</p>`}</div></div></article></section>`;
+    return `<section class="studio-section publication-flow"><article class="flow-step ${readiness.ready ? "complete" : "blocked"}"><span class="step-number">1</span><div><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Raccolta coerente" : "Controllo da completare"}</h2><p>${readiness.ready ? "Composizione, grafo e regole editoriali possono essere congelati in una snapshot." : "Risolvi i problemi mostrati in Panoramica prima di inviare la raccolta in revisione."}</p></div></article><article class="flow-step ${review ? "active" : ""}"><span class="step-number">2</span><div><span class="eyebrow">Revisione</span><h2>${review ? statusLabel(review.status) : "Non ancora richiesta"}</h2>${review ? `<p>Snapshot v${escapeHtml(review.version)}, ${escapeHtml(review.itemCount)} contenuti. Il working state è bloccato finché questa revisione resta attiva.</p>` : `<p>La revisione congela esattamente contenuti, grafo e Namespace che verranno pubblicati.</p>`}<div class="button-row">${this.renderPublicationActions()}</div>${this.renderRequestChangesForm()}</div></article><article class="flow-step ${this.data.published ? "complete" : ""}"><span class="step-number">3</span><div><span class="eyebrow">Versione</span><h2>${this.data.published ? `Release v${escapeHtml(this.data.published.version)}` : "Nessuna release"}</h2><p>${this.data.published ? `Pubblicata ${escapeHtml(formatDate(this.data.published.releasedAt))}.` : "Dopo l'approvazione, un publisher può creare l'EditorialRelease immutabile."}</p></div></article><article class="panel history-panel"><h2>Storico</h2><div class="history-grid"><div><h3>Revisioni</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna revisione.</p>`}</div><div><h3>Release</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna release.</p>`}</div></div></article></section>`;
   }
 
   renderSettings() {
@@ -196,6 +242,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       artaround-editorial-studio-view .studio-section{display:grid;gap:1rem}artaround-editorial-studio-view .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem}artaround-editorial-studio-view .metric{display:grid;gap:.2rem}artaround-editorial-studio-view .metric strong{font-size:1.8rem}artaround-editorial-studio-view .metric span{color:var(--muted)}
       artaround-editorial-studio-view .overview-grid,artaround-editorial-studio-view .settings-grid,artaround-editorial-studio-view .history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}artaround-editorial-studio-view .issue-list{padding-left:1.25rem}
       artaround-editorial-studio-view .publication-flow{max-width:60rem}artaround-editorial-studio-view .flow-step{display:grid;grid-template-columns:2.4rem minmax(0,1fr);gap:.9rem;padding:1rem;border-left:3px solid var(--border);background:var(--surface)}artaround-editorial-studio-view .flow-step.complete{border-left-color:#4c8a63}artaround-editorial-studio-view .flow-step.active{border-left-color:currentColor}artaround-editorial-studio-view .flow-step.blocked{opacity:.75}artaround-editorial-studio-view .step-number{width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;border:1px solid var(--border);font-weight:700}
+      artaround-editorial-studio-view .request-changes-form{margin-top:1rem;display:grid;gap:.75rem}artaround-editorial-studio-view .request-changes-form h3,artaround-editorial-studio-view .request-changes-form p{margin:0}artaround-editorial-studio-view .request-changes-form textarea{width:100%;box-sizing:border-box}
       artaround-editorial-studio-view .history-panel ol{padding-left:1.25rem}artaround-editorial-studio-view .history-panel li{margin:.45rem 0}artaround-editorial-studio-view .danger-zone{align-self:start}
       @media(max-width:54rem){artaround-editorial-studio-view .metric-grid{grid-template-columns:1fr 1fr}artaround-editorial-studio-view .overview-grid,artaround-editorial-studio-view .settings-grid{grid-template-columns:1fr}}
     </style><main class="page studio-page" aria-busy="${this.busy}"><header class="studio-header"><div><button type="button" class="text-button" data-back-space>${icon("arrowLeft", { size: 15 })} ${escapeHtml(this.data.contentSpace.name)}</button><span class="eyebrow">Studio della raccolta</span><h1>${escapeHtml(this.data.context.name)}</h1><p>${escapeHtml(this.data.context.shortDescription || this.data.context.description || "Componi contenuti, relazioni e pubblicazioni in un unico contesto editoriale.")}</p><p class="note">Regole: ${escapeHtml(this.data.namespace.name)}${this.data.namespace.revision ? ` · v${escapeHtml(this.data.namespace.revision.version)}` : ""}</p></div>${this.data.context.locked ? `<span class="status-pill">${icon("lock", { size: 14 })} ${escapeHtml(statusLabel(this.data.review?.status))}</span>` : `<span class="status-pill success">Working</span>`}</header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}${section}</main>`;
