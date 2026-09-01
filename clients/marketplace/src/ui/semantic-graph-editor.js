@@ -1,4 +1,5 @@
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -64,7 +65,13 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (node) { this.selectedSubjectId = node.dataset.graphSubject; this.render(); return; }
     const remove = target?.closest("button[data-remove-edge]");
     if (remove && this.editable && !this.locked) {
-      if (!window.confirm("Rimuovere questa relazione dal grafo della raccolta?")) return;
+      const confirmed = await openActionDialog({
+        title: "Rimuovere questa relazione?",
+        message: "La relazione verrà rimossa soltanto dal grafo di lavoro della raccolta.",
+        confirmLabel: "Rimuovi relazione",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       await this.mutate(() => editorialRepository.removeGraphEdge(this.editorialContextId, remove.dataset.removeEdge));
     }
   };
