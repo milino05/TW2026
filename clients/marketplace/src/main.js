@@ -1,5 +1,6 @@
 import "./ui/feedback-primitives.js";
 import "./ui/form-field.js";
+import "./ui/form-validation.js";
 import "./ui/action-menu.js";
 import "./ui/media-field.js";
 import "./ui/revision-workflow-controls.js";
