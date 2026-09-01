@@ -20,12 +20,7 @@ async function findContentSpaceOrFail({ contentSpaceId, includeTrashed = false }
 }
 
 async function assertCanManageContentSpace(contentSpace, actorUserId, permissionCode = "editorial_space.manage") {
-  return assertCanActForOwner({
-    actorUserId,
-    ownerType: contentSpace.ownerType,
-    ownerId: contentSpace.ownerId,
-    permissionCode,
-  });
+  return assertCanActForOwner({ actorUserId, ownerType: contentSpace.ownerType, ownerId: contentSpace.ownerId, permissionCode });
 }
 
 function validateMetadata(rawPayload, { creating }) {
@@ -37,19 +32,8 @@ function validateMetadata(rawPayload, { creating }) {
 
 async function createContentSpace({ payload, actorUserId }) {
   const normalized = validateMetadata(payload || {}, { creating: true });
-  await assertCanActForOwner({
-    actorUserId,
-    ownerType: normalized.ownerType,
-    ownerId: normalized.ownerId,
-    permissionCode: "editorial_space.manage",
-  });
-  return ContentSpace.create({
-    name: normalized.name,
-    description: normalized.description ?? null,
-    ownerType: normalized.ownerType,
-    ownerId: normalized.ownerId,
-    createdBy: actorUserId,
-  });
+  await assertCanActForOwner({ actorUserId, ownerType: normalized.ownerType, ownerId: normalized.ownerId, permissionCode: "editorial_space.manage" });
+  return ContentSpace.create({ name: normalized.name, description: normalized.description ?? null, ownerType: normalized.ownerType, ownerId: normalized.ownerId, createdBy: actorUserId });
 }
 
 async function updateContentSpace({ contentSpaceId, payload, actorUserId }) {
@@ -62,11 +46,36 @@ async function updateContentSpace({ contentSpaceId, payload, actorUserId }) {
   return contentSpace;
 }
 
+async function trashContentSpace({ contentSpaceId, actorUserId }) {
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.manage");
+  const activeContexts = await EditorialContext.find({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }).select("_id displayName").lean();
+  if (activeContexts.length) {
+    throw new AppError("Lo spazio contiene ancora raccolte editoriali attive", 409, [{
+      code: "CONTENT_SPACE_HAS_ACTIVE_COLLECTIONS",
+      field: "contentSpaceId",
+      context: {
+        collectionCount: activeContexts.length,
+        collections: activeContexts.slice(0, 20).map((entry) => ({ id: entry._id, name: entry.displayName })),
+      },
+    }]);
+  }
+  const now = new Date();
+  await mongoose.connection.transaction(async (session) => {
+    await ContentSpaceMembership.deleteMany({ contentSpaceId: contentSpace._id }, { session });
+    const result = await ContentSpace.updateOne(
+      { _id: contentSpace._id, lifecycleStatus: "active" },
+      { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
+      { session },
+    );
+    if (result.modifiedCount !== 1) throw new AppError("Lo spazio editoriale è stato modificato da un'altra operazione", 409, [{ code: "CONTENT_SPACE_LIFECYCLE_CONFLICT" }]);
+  });
+  return { contentSpaceId: contentSpace._id, lifecycleStatus: "trashed", removedMemberships: true, removedAt: now };
+}
+
 async function listContentSpaces({ actorUserId, ownerType = null, ownerId = null } = {}) {
   const user = await getActiveUserOrFail(actorUserId);
-  if ((ownerType && !ownerId) || (!ownerType && ownerId)) {
-    throw new AppError("ownerType e ownerId devono essere specificati insieme", 400);
-  }
+  if ((ownerType && !ownerId) || (!ownerType && ownerId)) throw new AppError("ownerType e ownerId devono essere specificati insieme", 400);
   const query = { lifecycleStatus: "active" };
   if (ownerType && ownerId) {
     if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400);
@@ -87,8 +96,12 @@ async function listContentSpaces({ actorUserId, ownerType = null, ownerId = null
 
 async function getContentSpace({ contentSpaceId, actorUserId }) {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId);
-  return contentSpace;
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.view");
+  const [itemCount, collectionCount] = await Promise.all([
+    ContentSpaceMembership.countDocuments({ contentSpaceId: contentSpace._id }),
+    EditorialContext.countDocuments({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }),
+  ]);
+  return { ...contentSpace.toObject(), counts: { items: itemCount, collections: collectionCount } };
 }
 
 async function addItemMembership({ contentSpaceId, itemId, actorUserId }) {
@@ -96,12 +109,8 @@ async function addItemMembership({ contentSpaceId, itemId, actorUserId }) {
   await assertCanManageContentSpace(contentSpace, actorUserId);
   const item = await ItemV2.findOne({ _id: itemId, lifecycleStatus: "active" });
   if (!item) throw new AppError("Item non trovato", 404);
-  try {
-    return await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: actorUserId });
-  } catch (error) {
-    if (error?.code === 11000) throw new AppError("Item gia presente nel ContentSpace", 409);
-    throw error;
-  }
+  try { return await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: actorUserId }); }
+  catch (error) { if (error?.code === 11000) throw new AppError("Item gia presente nel ContentSpace", 409); throw error; }
 }
 
 async function assertItemNotUsedByActiveEditorialContext({ contentSpaceId, itemId }) {
@@ -109,19 +118,13 @@ async function assertItemNotUsedByActiveEditorialContext({ contentSpaceId, itemI
   if (!contexts.length) return;
   const editions = await ItemEdition.find({ itemId }).select("_id").lean();
   if (!editions.length) return;
-  const entry = await EditorialContextEntry.findOne({
-    editorialContextId: { $in: contexts.map((context) => context._id) },
-    itemEditionId: { $in: editions.map((edition) => edition._id) },
-  }).select("editorialContextId").lean();
+  const entry = await EditorialContextEntry.findOne({ editorialContextId: { $in: contexts.map((context) => context._id) }, itemEditionId: { $in: editions.map((edition) => edition._id) } }).select("editorialContextId").lean();
   if (!entry) return;
   const context = contexts.find((candidate) => String(candidate._id) === String(entry.editorialContextId));
   throw new AppError("Rimuovi prima il contenuto dalle raccolte editoriali che lo usano", 409, [{
     code: "ITEM_USED_BY_EDITORIAL_CONTEXT",
     field: "itemId",
-    context: {
-      editorialContextId: entry.editorialContextId,
-      editorialContextName: context?.displayName || null,
-    },
+    context: { editorialContextId: entry.editorialContextId, editorialContextName: context?.displayName || null },
   }]);
 }
 
@@ -136,25 +139,16 @@ async function removeItemMembership({ contentSpaceId, itemId, actorUserId }) {
 
 async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId, actorUserId }) {
   if (!mongoose.isValidObjectId(toContentSpaceId)) throw new AppError("targetContentSpaceId non valido", 400);
-  if (String(fromContentSpaceId) === String(toContentSpaceId)) {
-    throw new AppError("ContentSpace sorgente e destinazione devono essere diversi", 400);
-  }
-  const [fromSpace, toSpace] = await Promise.all([
-    findContentSpaceOrFail({ contentSpaceId: fromContentSpaceId }),
-    findContentSpaceOrFail({ contentSpaceId: toContentSpaceId }),
-  ]);
+  if (String(fromContentSpaceId) === String(toContentSpaceId)) throw new AppError("ContentSpace sorgente e destinazione devono essere diversi", 400);
+  const [fromSpace, toSpace] = await Promise.all([findContentSpaceOrFail({ contentSpaceId: fromContentSpaceId }), findContentSpaceOrFail({ contentSpaceId: toContentSpaceId })]);
   await assertCanManageContentSpace(fromSpace, actorUserId);
   await assertCanManageContentSpace(toSpace, actorUserId);
   const sourceMembership = await ContentSpaceMembership.findOne({ contentSpaceId: fromSpace._id, itemId });
   if (!sourceMembership) throw new AppError("Membership sorgente non trovata", 404);
   await assertItemNotUsedByActiveEditorialContext({ contentSpaceId: fromSpace._id, itemId });
   let targetMembership;
-  try {
-    targetMembership = await ContentSpaceMembership.create({ contentSpaceId: toSpace._id, itemId, addedBy: actorUserId });
-  } catch (error) {
-    if (error?.code === 11000) throw new AppError("Item gia presente nel ContentSpace di destinazione", 409);
-    throw error;
-  }
+  try { targetMembership = await ContentSpaceMembership.create({ contentSpaceId: toSpace._id, itemId, addedBy: actorUserId }); }
+  catch (error) { if (error?.code === 11000) throw new AppError("Item gia presente nel ContentSpace di destinazione", 409); throw error; }
   const deletion = await ContentSpaceMembership.deleteOne({ _id: sourceMembership._id });
   if (deletion.deletedCount !== 1) {
     await ContentSpaceMembership.deleteOne({ _id: targetMembership._id }).catch(() => {});
@@ -165,17 +159,13 @@ async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId
 
 async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limit = 50 }) {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.view");
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const query = { contentSpaceId };
   const [total, memberships] = await Promise.all([
     ContentSpaceMembership.countDocuments(query),
-    ContentSpaceMembership.find(query)
-      .sort({ createdAt: 1, _id: 1 })
-      .skip((normalizedPage - 1) * normalizedLimit)
-      .limit(normalizedLimit)
-      .lean(),
+    ContentSpaceMembership.find(query).sort({ createdAt: 1, _id: 1 }).skip((normalizedPage - 1) * normalizedLimit).limit(normalizedLimit).lean(),
   ]);
   const itemIds = memberships.map((entry) => entry.itemId);
   const items = await ItemV2.find({ _id: { $in: itemIds } }).lean();
@@ -191,6 +181,7 @@ module.exports = {
   assertCanManageContentSpace,
   createContentSpace,
   updateContentSpace,
+  trashContentSpace,
   listContentSpaces,
   getContentSpace,
   addItemMembership,
