@@ -14,6 +14,7 @@ const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
+const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { resolveOrganizationAuthority } = require("./organizationAuthorization.service");
 const { checkEditorialContextReadiness } = require("./editorialContextReview.service");
 
@@ -284,12 +285,27 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
   ]);
   const itemById = new Map(items.map((item) => [id(item), item]));
   const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
-  const revisionIds = editions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
+  const usableEditionIds = new Set();
+  await Promise.all(editions.map(async (edition) => {
+    try {
+      await assertCanUseItemEditionForEditorialRelease({
+        itemEditionId: edition._id,
+        actorUserId,
+        principalType: contentSpace.ownerType,
+        principalId: contentSpace.ownerId,
+      });
+      usableEditionIds.add(id(edition._id));
+    } catch (error) {
+      if (error?.status !== 403) throw error;
+    }
+  }));
+  const usableEditions = editions.filter((edition) => usableEditionIds.has(id(edition._id)));
+  const revisionIds = usableEditions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
   const subjectIds = items.map((item) => item.primarySubjectId).filter(Boolean);
   const [revisions, subjects, existingEntries] = await Promise.all([
     revisionIds.length ? ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [],
     subjectIds.length ? Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean() : [],
-    editions.length ? EditorialContextEntry.find({ editorialContextId: context._id, itemEditionId: { $in: editions.map((edition) => edition._id) } }).select("itemEditionId").lean() : [],
+    usableEditions.length ? EditorialContextEntry.find({ editorialContextId: context._id, itemEditionId: { $in: usableEditions.map((edition) => edition._id) } }).select("itemEditionId").lean() : [],
   ]);
   const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
   const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
@@ -299,7 +315,7 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
     results: memberships.map((membership) => {
       const item = itemById.get(id(membership.itemId));
       const edition = editionByItemId.get(id(membership.itemId));
-      if (!item || !edition) return null;
+      if (!item || !edition || !usableEditionIds.has(id(edition._id))) return null;
       const revision = revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null;
       const subject = subjectById.get(id(item.primarySubjectId)) || null;
       return {
