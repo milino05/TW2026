@@ -40,7 +40,7 @@ function initialState() {
     removed: p.get("removed") || "",
   });
 }
-function authoringHref(ref) { const type = String(ref?.resourceType || ""); const id = String(ref?.resourceId || ""); if (!id) return null; if (type === "item") return `/workspace/item-authoring?itemId=${encodeURIComponent(id)}`; if (type === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(id)}`; if (type === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(id)}`; if (type === "physical_vocabulary") return `/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(id)}`; if (type === "editorial_context") return `/workspace/context-compose?editorialContextId=${encodeURIComponent(id)}`; return null; }
+function authoringHref(ref) { const type = String(ref?.resourceType || ""); const id = String(ref?.resourceId || ""); if (!id) return null; if (type === "item") return `/workspace/item-authoring?itemId=${encodeURIComponent(id)}`; if (type === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(id)}`; if (type === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(id)}`; if (type === "physical_vocabulary") return `/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(id)}`; if (type === "editorial_context") return `/workspace/editorial-studio?editorialContextId=${encodeURIComponent(id)}`; return null; }
 
 export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   context = readOperatingContext();
