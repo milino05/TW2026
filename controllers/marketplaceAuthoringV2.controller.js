@@ -1,5 +1,10 @@
 const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
-const { getEditorialStudioProjection, listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
+const {
+  listEditorialSpaceSummaries,
+  getEditorialSpaceProjection,
+  getEditorialStudioProjection,
+  listEditorialStudioCandidates,
+} = require("../services/editorialStudioV2.service");
 const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
@@ -7,6 +12,21 @@ async function venueAuthoringTargets(req, res, next) {
   try {
     res.status(200).json(await listVenueAuthoringTargets({ venueId: req.params.venueId, actorUserId: req.user._id }));
   } catch (error) { next(error); }
+}
+
+async function editorialSpaces(req, res, next) {
+  try {
+    res.status(200).json(await listEditorialSpaceSummaries({
+      actorUserId: req.user._id,
+      ownerType: req.query?.ownerType || null,
+      ownerId: req.query?.ownerId || null,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function editorialSpace(req, res, next) {
+  try { res.status(200).json(await getEditorialSpaceProjection({ contentSpaceId: req.params.contentSpaceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function editorialStudio(req, res, next) {
@@ -77,6 +97,8 @@ async function visitAuthoringCandidates(req, res, next) {
 
 module.exports = {
   venueAuthoringTargets,
+  editorialSpaces,
+  editorialSpace,
   editorialStudio,
   editorialStudioCandidates,
   createEditorialCollection,
