@@ -4,7 +4,10 @@ const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAut
 
 async function venueAuthoringTargets(req, res, next) {
   try {
-    res.status(200).json(await listVenueAuthoringTargets({ venueId: req.params.venueId }));
+    res.status(200).json(await listVenueAuthoringTargets({
+      venueId: req.params.venueId,
+      actorUserId: req.user._id,
+    }));
   } catch (error) { next(error); }
 }
 
