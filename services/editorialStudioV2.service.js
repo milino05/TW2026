@@ -2,6 +2,11 @@ const EditorialContext = require("../models/editorialContext.model");
 const EditorialContextEntry = require("../models/editorialContextEntry.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const EditorialRelease = require("../models/editorialRelease.model");
+const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ItemEdition = require("../models/itemEdition.model");
+const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+const ItemV2 = require("../models/itemV2.model");
+const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -13,6 +18,7 @@ const { resolveOrganizationAuthority } = require("./organizationAuthorization.se
 const { checkEditorialContextReadiness } = require("./editorialContextReview.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function hasPermission(contentSpace, authority, code) {
   if (contentSpace.ownerType === "user") return true;
   return (authority?.effectivePermissions || []).includes(code);
@@ -21,6 +27,14 @@ function hasPermission(contentSpace, authority, code) {
 async function resolveAuthority({ contentSpace, actorUserId }) {
   if (contentSpace.ownerType === "user") return null;
   return resolveOrganizationAuthority({ userId: actorUserId, organizationId: contentSpace.ownerId });
+}
+
+async function loadContextAndSpace({ editorialContextId, actorUserId, permissionCode = "editorial_context.view" }) {
+  const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" }).lean();
+  if (!context) throw new AppError("Raccolta editoriale non trovata", 404);
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId, permissionCode);
+  return { context, contentSpace };
 }
 
 async function resolveNamespaceProjection({ context, contentSpace, actorUserId }) {
@@ -67,10 +81,7 @@ async function resolveNamespaceProjection({ context, contentSpace, actorUserId }
 }
 
 async function getEditorialStudioProjection({ editorialContextId, actorUserId }) {
-  const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" }).lean();
-  if (!context) throw new AppError("Raccolta editoriale non trovata", 404);
-  const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
+  const { context, contentSpace } = await loadContextAndSpace({ editorialContextId, actorUserId });
   const authority = await resolveAuthority({ contentSpace, actorUserId });
   const [namespace, readiness, entryCount, activeRevision, publishedRelease] = await Promise.all([
     resolveNamespaceProjection({ context, contentSpace, actorUserId }),
@@ -153,4 +164,75 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
   };
 }
 
-module.exports = { getEditorialStudioProjection };
+async function listEditorialStudioCandidates({ editorialContextId, actorUserId, query = "", page = 1, limit = 30 }) {
+  const { context, contentSpace } = await loadContextAndSpace({ editorialContextId, actorUserId });
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
+  const normalizedQuery = String(query || "").trim();
+
+  const compatibleItemIds = await ItemEdition.distinct("itemId", { namespaceId: context.namespaceId });
+  let candidateItemIds = compatibleItemIds;
+  if (normalizedQuery) {
+    const regex = new RegExp(escapeRegex(normalizedQuery), "i");
+    const [subjects, matchingRevisions] = await Promise.all([
+      Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(500).lean(),
+      ItemRevisionV2.find({ label: regex }).select("itemEditionId").limit(500).lean(),
+    ]);
+    const revisionEditions = matchingRevisions.length
+      ? await ItemEdition.find({ _id: { $in: matchingRevisions.map((entry) => entry.itemEditionId) }, namespaceId: context.namespaceId }).select("itemId").lean()
+      : [];
+    const subjectItems = subjects.length
+      ? await ItemV2.find({ primarySubjectId: { $in: subjects.map((entry) => entry._id) }, lifecycleStatus: "active" }).select("_id").lean()
+      : [];
+    const matchingIds = new Set([...revisionEditions.map((entry) => id(entry.itemId)), ...subjectItems.map((entry) => id(entry._id))]);
+    candidateItemIds = compatibleItemIds.filter((itemId) => matchingIds.has(id(itemId)));
+  }
+
+  const membershipQuery = { contentSpaceId: contentSpace._id, itemId: { $in: candidateItemIds } };
+  const [total, memberships] = await Promise.all([
+    ContentSpaceMembership.countDocuments(membershipQuery),
+    ContentSpaceMembership.find(membershipQuery)
+      .sort({ createdAt: 1, _id: 1 })
+      .skip((normalizedPage - 1) * normalizedLimit)
+      .limit(normalizedLimit)
+      .lean(),
+  ]);
+  const itemIds = memberships.map((entry) => entry.itemId);
+  const [items, editions] = await Promise.all([
+    ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(),
+    ItemEdition.find({ itemId: { $in: itemIds }, namespaceId: context.namespaceId }).lean(),
+  ]);
+  const itemById = new Map(items.map((item) => [id(item), item]));
+  const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
+  const revisionIds = editions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
+  const subjectIds = items.map((item) => item.primarySubjectId).filter(Boolean);
+  const [revisions, subjects, existingEntries] = await Promise.all([
+    revisionIds.length ? ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [],
+    subjectIds.length ? Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean() : [],
+    editions.length ? EditorialContextEntry.find({ editorialContextId: context._id, itemEditionId: { $in: editions.map((edition) => edition._id) } }).select("itemEditionId").lean() : [],
+  ]);
+  const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
+  const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
+  const existingEditionIds = new Set(existingEntries.map((entry) => id(entry.itemEditionId)));
+
+  return {
+    results: memberships.map((membership) => {
+      const item = itemById.get(id(membership.itemId));
+      const edition = editionByItemId.get(id(membership.itemId));
+      if (!item || !edition) return null;
+      const revision = revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null;
+      const subject = subjectById.get(id(item.primarySubjectId)) || null;
+      return {
+        itemId: item._id,
+        itemEditionId: edition._id,
+        inCollection: existingEditionIds.has(id(edition._id)),
+        subject: subject ? { id: subject._id, label: subject.preferredLabel, description: subject.description || "" } : null,
+        revision: revision ? { id: revision._id, label: revision.label, status: revision.status, version: revision.version } : null,
+      };
+    }).filter(Boolean),
+    pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
+    query: normalizedQuery,
+  };
+}
+
+module.exports = { getEditorialStudioProjection, listEditorialStudioCandidates };
