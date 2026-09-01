@@ -14,14 +14,14 @@ test("l'observer dei persistent error gestisce anche il nodo alert aggiunto dire
   assert.match(source, /node instanceof Element\) replaceKnownPersistentErrors\(node\)/);
 });
 
-test("il filtro resta limitato alle root Marketplace auditate", () => {
+test("il filtro resta limitato alle root Marketplace auditate e non include superfici rimosse", () => {
   for (const selector of [
     "artaround-create-hub-view",
-    "artaround-venue-target-chooser",
     "artaround-home-view",
     "artaround-context-hub-view",
     "artaround-catalog-view",
   ]) assert.match(source, new RegExp(selector));
+  assert.doesNotMatch(source, /artaround-venue-target-chooser/);
   assert.match(source, /legacy\.closest\(PERSISTENT_ERROR_ROOT_SELECTOR\)/);
   assert.doesNotMatch(source, /artaround-semantic-entity-picker/);
 });
