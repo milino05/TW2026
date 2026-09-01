@@ -13,6 +13,9 @@ function id(value) { return String(value?._id || value || ""); }
 function assertObjectId(value, field) {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`${field} non valido`, 400, [{ field, code: "INVALID_OBJECT_ID" }]);
 }
+function workingConflict() {
+  return new AppError("La raccolta è stata modificata da un'altra operazione", 409, [{ code: "EDITORIAL_CONTEXT_WORKING_CONFLICT" }]);
+}
 function normalizeCurationSignals(value) {
   if (value === undefined) return null;
   if (!Array.isArray(value)) throw new AppError("curationSignals deve essere un array", 400, [{ field: "curationSignals", code: "INVALID_TYPE" }]);
@@ -28,8 +31,10 @@ function normalizeCurationSignals(value) {
   });
 }
 
-async function findContextOrFail(editorialContextId) {
-  const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
+async function findContextOrFail(editorialContextId, { session = null } = {}) {
+  const query = EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
+  if (session) query.session(session);
+  const context = await query;
   if (!context) throw new AppError("Raccolta editoriale non trovata", 404);
   return context;
 }
@@ -49,9 +54,11 @@ async function assertCanEditContext(context, actorUserId) {
   return contentSpace;
 }
 
-async function resolveEligibleEdition(context, itemEditionId) {
+async function resolveEligibleEdition(context, itemEditionId, { session = null } = {}) {
   assertObjectId(itemEditionId, "itemEditionId");
-  const edition = await ItemEdition.findById(itemEditionId).lean();
+  let editionQuery = ItemEdition.findById(itemEditionId);
+  if (session) editionQuery = editionQuery.session(session);
+  const edition = await editionQuery.lean();
   if (!edition) throw new AppError("Versione editoriale non trovata", 404);
   if (id(edition.namespaceId) !== id(context.namespaceId)) {
     throw new AppError("La versione editoriale usa regole diverse dalla raccolta", 409, [{
@@ -59,10 +66,10 @@ async function resolveEligibleEdition(context, itemEditionId) {
       code: "ITEM_EDITION_NAMESPACE_MISMATCH",
     }]);
   }
-  const [item, membership] = await Promise.all([
-    ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" }).lean(),
-    ContentSpaceMembership.findOne({ contentSpaceId: context.contentSpaceId, itemId: edition.itemId }).lean(),
-  ]);
+  let itemQuery = ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" });
+  let membershipQuery = ContentSpaceMembership.findOne({ contentSpaceId: context.contentSpaceId, itemId: edition.itemId });
+  if (session) { itemQuery = itemQuery.session(session); membershipQuery = membershipQuery.session(session); }
+  const [item, membership] = await Promise.all([itemQuery.lean(), membershipQuery.lean()]);
   if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE" }]);
   if (!membership) {
     throw new AppError("Il contenuto deve appartenere allo spazio editoriale della raccolta", 409, [{
@@ -73,20 +80,37 @@ async function resolveEligibleEdition(context, itemEditionId) {
   return { edition, item };
 }
 
+async function bumpWorkingVersion({ context, session }) {
+  const pointer = await EditorialContext.updateOne({
+    _id: context._id,
+    lifecycleStatus: "active",
+    activeReviewRevisionId: null,
+    workingVersion: Number(context.workingVersion || 0),
+  }, { $inc: { workingVersion: 1 } }, { session });
+  if (pointer.modifiedCount !== 1) throw workingConflict();
+}
+
 async function addEditorialContextEntry({ editorialContextId, itemEditionId, curationSignals = [], actorUserId }) {
-  const context = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(context, actorUserId);
-  assertWorkingStateEditable(context);
-  await resolveEligibleEdition(context, itemEditionId);
+  const initial = await findContextOrFail(editorialContextId);
+  await assertCanEditContext(initial, actorUserId);
+  assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals) || [];
+  let created = null;
   try {
-    return await EditorialContextEntry.create({
-      editorialContextId: context._id,
-      itemEditionId,
-      curationSignals: normalizedSignals,
-      addedBy: actorUserId,
-      updatedBy: actorUserId,
+    await mongoose.connection.transaction(async (session) => {
+      const context = await findContextOrFail(editorialContextId, { session });
+      assertWorkingStateEditable(context);
+      await resolveEligibleEdition(context, itemEditionId, { session });
+      [created] = await EditorialContextEntry.create([{
+        editorialContextId: context._id,
+        itemEditionId,
+        curationSignals: normalizedSignals,
+        addedBy: actorUserId,
+        updatedBy: actorUserId,
+      }], { session });
+      await bumpWorkingVersion({ context, session });
     });
+    return created;
   } catch (error) {
     if (error?.code === 11000) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "EDITORIAL_CONTEXT_ENTRY_EXISTS" }]);
     throw error;
@@ -95,27 +119,39 @@ async function addEditorialContextEntry({ editorialContextId, itemEditionId, cur
 
 async function updateEditorialContextEntry({ editorialContextId, entryId, curationSignals, actorUserId }) {
   assertObjectId(entryId, "entryId");
-  const context = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(context, actorUserId);
-  assertWorkingStateEditable(context);
-  const entry = await EditorialContextEntry.findOne({ _id: entryId, editorialContextId: context._id });
-  if (!entry) throw new AppError("Contenuto della raccolta non trovato", 404);
-  await resolveEligibleEdition(context, entry.itemEditionId);
+  const initial = await findContextOrFail(editorialContextId);
+  await assertCanEditContext(initial, actorUserId);
+  assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals);
   if (normalizedSignals === null) throw new AppError("Nessuna modifica specificata", 400);
-  entry.curationSignals = normalizedSignals;
-  entry.updatedBy = actorUserId;
-  await entry.save();
-  return entry;
+  let updated = null;
+  await mongoose.connection.transaction(async (session) => {
+    const context = await findContextOrFail(editorialContextId, { session });
+    assertWorkingStateEditable(context);
+    const entry = await EditorialContextEntry.findOne({ _id: entryId, editorialContextId: context._id }).session(session);
+    if (!entry) throw new AppError("Contenuto della raccolta non trovato", 404);
+    await resolveEligibleEdition(context, entry.itemEditionId, { session });
+    entry.curationSignals = normalizedSignals;
+    entry.updatedBy = actorUserId;
+    await entry.save({ session });
+    await bumpWorkingVersion({ context, session });
+    updated = entry;
+  });
+  return updated;
 }
 
 async function removeEditorialContextEntry({ editorialContextId, entryId, actorUserId }) {
   assertObjectId(entryId, "entryId");
-  const context = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(context, actorUserId);
-  assertWorkingStateEditable(context);
-  const result = await EditorialContextEntry.deleteOne({ _id: entryId, editorialContextId: context._id });
-  if (result.deletedCount !== 1) throw new AppError("Contenuto della raccolta non trovato", 404);
+  const initial = await findContextOrFail(editorialContextId);
+  await assertCanEditContext(initial, actorUserId);
+  assertWorkingStateEditable(initial);
+  await mongoose.connection.transaction(async (session) => {
+    const context = await findContextOrFail(editorialContextId, { session });
+    assertWorkingStateEditable(context);
+    const result = await EditorialContextEntry.deleteOne({ _id: entryId, editorialContextId: context._id }, { session });
+    if (result.deletedCount !== 1) throw new AppError("Contenuto della raccolta non trovato", 404);
+    await bumpWorkingVersion({ context, session });
+  });
   return { removed: true };
 }
 
@@ -149,7 +185,7 @@ async function listEditorialContextEntries({ editorialContextId, actorUserId, pa
   const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
 
   return {
-    context: { id: context._id, name: context.displayName, activeReviewRevisionId: context.activeReviewRevisionId || null },
+    context: { id: context._id, name: context.displayName, workingVersion: context.workingVersion || 0, activeReviewRevisionId: context.activeReviewRevisionId || null },
     results: entries.map((entry) => {
       const edition = editionById.get(id(entry.itemEditionId)) || null;
       const item = edition ? itemById.get(id(edition.itemId)) || null : null;
