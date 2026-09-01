@@ -3,10 +3,12 @@ const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 const controller = require("../controllers/venues.controller");
 const lifecycleController = require("../controllers/venueLifecycle.controller");
+const inventoryProposalController = require("../controllers/venueInventoryProposals.controller");
 
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
 const venueTargetId = validateObjectIdParam("venueTargetId");
+const proposalId = validateObjectIdParam("proposalId");
 const mediaId = validateObjectIdParam("mediaId");
 const floorId = validateObjectIdParam("floorId");
 const placeId = validateObjectIdParam("placeId");
@@ -28,6 +30,12 @@ router.get("/venues/:venueId/targets", venueId, controller.listTargets);
 router.post("/venues/:venueId/targets", requireAuth, venueId, controller.createTarget);
 router.patch("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.updateTarget);
 router.delete("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.trashTarget);
+
+router.get("/venues/:venueId/inventory-proposals", requireAuth, venueId, inventoryProposalController.list);
+router.post("/venues/:venueId/inventory-proposals", requireAuth, venueId, inventoryProposalController.submit);
+router.post("/venues/:venueId/inventory-proposals/:proposalId/accept", requireAuth, venueId, proposalId, inventoryProposalController.accept);
+router.post("/venues/:venueId/inventory-proposals/:proposalId/reject", requireAuth, venueId, proposalId, inventoryProposalController.reject);
+router.post("/venues/:venueId/inventory-proposals/:proposalId/withdraw", requireAuth, venueId, proposalId, inventoryProposalController.withdraw);
 
 router.get("/venues/:venueId/physical-state", venueId, controller.getPhysicalState);
 router.get("/venues/:venueId/physical-onboarding", requireAuth, venueId, controller.getPhysicalOnboarding);
