@@ -19,6 +19,7 @@ router.post("/content-spaces/:contentSpaceId/items/:itemId/move", contentSpaceId
 router.route("/content-spaces/:contentSpaceId")
   .all(contentSpaceId)
   .get(controller.get)
-  .patch(controller.update);
+  .patch(controller.update)
+  .delete(controller.remove);
 
 module.exports = router;
