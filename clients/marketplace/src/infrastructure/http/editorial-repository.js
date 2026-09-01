@@ -17,8 +17,15 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId });
     return apiClient.request(`/content-spaces${query ? `?${query}` : ""}`);
   },
+  spaceSummaries({ ownerType = null, ownerId = null } = {}) {
+    const query = queryString({ ownerType, ownerId });
+    return apiClient.request(`/v2/marketplace/editorial-spaces${query ? `?${query}` : ""}`);
+  },
   getSpace(contentSpaceId) {
     return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}`);
+  },
+  spaceProjection(contentSpaceId) {
+    return apiClient.request(`/v2/marketplace/editorial-spaces/${encodeURIComponent(contentSpaceId)}`);
   },
   listSpaceItems(contentSpaceId, { page = 1, limit = 30 } = {}) {
     const query = queryString({ page, limit });
