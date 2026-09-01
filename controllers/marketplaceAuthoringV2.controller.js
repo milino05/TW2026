@@ -1,5 +1,5 @@
 const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
-const { getEditorialStudioProjection } = require("../services/editorialStudioV2.service");
+const { getEditorialStudioProjection, listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
 const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
@@ -12,6 +12,18 @@ async function venueAuthoringTargets(req, res, next) {
 async function editorialStudio(req, res, next) {
   try { res.status(200).json(await getEditorialStudioProjection({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
+}
+
+async function editorialStudioCandidates(req, res, next) {
+  try {
+    res.status(200).json(await listEditorialStudioCandidates({
+      editorialContextId: req.params.editorialContextId,
+      actorUserId: req.user._id,
+      query: req.query?.q || "",
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
 }
 
 async function createEditorialCollection(req, res, next) {
@@ -66,6 +78,7 @@ async function visitAuthoringCandidates(req, res, next) {
 module.exports = {
   venueAuthoringTargets,
   editorialStudio,
+  editorialStudioCandidates,
   createEditorialCollection,
   newVisitAuthoring,
   visitAuthoring,
