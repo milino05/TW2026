@@ -32,6 +32,15 @@ async function loadContextDependencies(editorialContext) {
   return { contentSpace, namespace };
 }
 
+function assertContextWorkingStateEditable(editorialContext) {
+  if (editorialContext.activeReviewRevisionId) {
+    throw new AppError("La raccolta è bloccata mentre una revisione è attiva", 409, [{
+      code: "EDITORIAL_CONTEXT_REVIEW_LOCKED",
+      context: { activeReviewRevisionId: editorialContext.activeReviewRevisionId },
+    }]);
+  }
+}
+
 async function createEditorialContext({ payload, actorUserId }) {
   const normalized = validateMetadata(payload || {}, { creating: true });
   const [contentSpace, namespace] = await Promise.all([
@@ -39,7 +48,7 @@ async function createEditorialContext({ payload, actorUserId }) {
     Namespace.findOne({ _id: normalized.namespaceId, lifecycleStatus: "active" }),
   ]);
   if (!namespace) throw new AppError("Namespace non trovato", 404);
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.create");
   const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
     namespace,
     actorUserId,
@@ -68,7 +77,6 @@ async function createEditorialContext({ payload, actorUserId }) {
   } catch (error) {
     if (adoption) await adoption.deleteOne().catch(() => {});
     if (editorialContext?._id) await editorialContext.deleteOne().catch(() => {});
-    if (error?.code === 11000) throw new AppError("Esiste gia un EditorialContext per questo ContentSpace e Namespace", 409);
     throw error;
   }
   return projectEditorialContext({ editorialContext, contentSpace, namespace });
@@ -77,7 +85,8 @@ async function createEditorialContext({ payload, actorUserId }) {
 async function updateEditorialContext({ editorialContextId, payload, actorUserId }) {
   const editorialContext = await findEditorialContextOrFail({ editorialContextId });
   const { contentSpace, namespace } = await loadContextDependencies(editorialContext);
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.edit");
+  assertContextWorkingStateEditable(editorialContext);
   const normalized = validateMetadata(payload || {}, { creating: false });
   if (Object.prototype.hasOwnProperty.call(normalized, "displayName")) editorialContext.displayName = normalized.displayName;
   if (Object.prototype.hasOwnProperty.call(normalized, "shortDescription")) editorialContext.shortDescription = normalized.shortDescription ?? null;
@@ -89,7 +98,7 @@ async function updateEditorialContext({ editorialContextId, payload, actorUserId
 async function getEditorialContext({ editorialContextId, actorUserId }) {
   const editorialContext = await findEditorialContextOrFail({ editorialContextId });
   const { contentSpace, namespace } = await loadContextDependencies(editorialContext);
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
   return projectEditorialContext({ editorialContext, contentSpace, namespace });
 }
 
@@ -99,7 +108,7 @@ async function listEditorialContexts({ actorUserId, contentSpaceId = null, names
   const query = { lifecycleStatus: "active" };
   if (contentSpaceId) {
     const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
-    await assertCanManageContentSpace(contentSpace, actorUserId);
+    await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
     query.contentSpaceId = contentSpace._id;
   } else {
     const accessibleSpaces = await listContentSpaces({ actorUserId });
@@ -110,6 +119,12 @@ async function listEditorialContexts({ actorUserId, contentSpaceId = null, names
   const results = [];
   for (const editorialContext of contexts) {
     const { contentSpace, namespace } = await loadContextDependencies(editorialContext);
+    try {
+      await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
+    } catch (error) {
+      if (error?.status === 403) continue;
+      throw error;
+    }
     results.push(await projectEditorialContext({ editorialContext, contentSpace, namespace }));
   }
   return results;
@@ -117,6 +132,8 @@ async function listEditorialContexts({ actorUserId, contentSpaceId = null, names
 
 module.exports = {
   findEditorialContextOrFail,
+  loadContextDependencies,
+  assertContextWorkingStateEditable,
   createEditorialContext,
   updateEditorialContext,
   getEditorialContext,
