@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
+const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
@@ -7,7 +9,6 @@ const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAu
 const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 const { validateEditorialReleaseCoherence } = require("./editorialReleaseIntegrity.service");
-const { normalizeEditorialReleasePayload, validateEditorialReleasePayload } = require("./validation/editorialRelease.validation");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
@@ -26,22 +27,16 @@ async function assertCanManageContext(context, actorUserId, permissionCode = "ed
 async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionId, itemBindings, actorUserId, principalType, principalId }) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
-  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
-    namespace,
-    actorUserId,
-    principalType,
-    principalId,
-  });
+  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId, principalType, principalId });
   if (namespaceAccess?.basis === "entitlement") {
     const ref = namespaceAccess.resolvedSnapshotRef;
     if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, namespaceRevisionId)) {
-      throw new AppError("La NamespaceRevision della Release non e autorizzata", 403, [{
+      throw new AppError("La NamespaceRevision approvata non è più autorizzata", 403, [{
         code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
         context: { namespaceRevisionId, authorizedRevisionId: ref?.resourceId || null },
       }]);
     }
   }
-
   const itemAccesses = [];
   for (const binding of itemBindings || []) {
     const usage = await assertCanUseItemEditionForEditorialRelease({
@@ -54,7 +49,7 @@ async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionI
     if (access?.basis === "entitlement") {
       const ref = access.resolvedSnapshotRef;
       if (ref?.resourceType !== "item_revision" || !sameId(ref.resourceId, binding.itemRevisionId)) {
-        throw new AppError("La ItemRevision della Release non e autorizzata", 403, [{
+        throw new AppError("Una ItemRevision approvata non è più autorizzata", 403, [{
           code: "ITEM_REVISION_NOT_AUTHORIZED",
           context: { itemEditionId: binding.itemEditionId, itemRevisionId: binding.itemRevisionId, authorizedRevisionId: ref?.resourceId || null },
         }]);
@@ -65,48 +60,50 @@ async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionI
   return { namespace, namespaceAccess, itemAccesses };
 }
 
-async function nextVersion(editorialContextId) {
-  const latest = await EditorialRelease.findOne({ editorialContextId }).sort({ version: -1 }).select("version").lean();
+async function nextVersion(editorialContextId, session = null) {
+  let query = EditorialRelease.findOne({ editorialContextId }).sort({ version: -1 }).select("version");
+  if (session) query = query.session(session);
+  const latest = await query.lean();
   return (latest?.version || 0) + 1;
 }
 
-async function createEditorialRelease({ editorialContextId, payload, actorUserId }) {
-  const rawPayload = payload || {};
-  const shapeIssues = validateEditorialReleasePayload(rawPayload);
-  if (shapeIssues.length) throw new AppError("Payload EditorialRelease non valido", 400, shapeIssues);
-  const normalized = normalizeEditorialReleasePayload(rawPayload);
+async function loadApprovedRevision({ context, editorialContextRevisionId = null }) {
+  const revisionId = editorialContextRevisionId || context.activeReviewRevisionId;
+  if (!revisionId || !sameId(revisionId, context.activeReviewRevisionId)) {
+    throw new AppError("La raccolta non ha una revisione approvata attiva", 409, [{ code: "APPROVED_CONTEXT_REVISION_REQUIRED" }]);
+  }
+  const revision = await EditorialContextRevision.findOne({ _id: revisionId, editorialContextId: context._id });
+  if (!revision || revision.status !== "approved") {
+    throw new AppError("La revisione della raccolta deve essere approvata prima della pubblicazione", 409, [{ code: "APPROVED_CONTEXT_REVISION_REQUIRED" }]);
+  }
+  return revision;
+}
+
+async function createEditorialRelease({ editorialContextId, editorialContextRevisionId = null, actorUserId }) {
   const context = await findContextOrFail(editorialContextId);
   const contentSpace = await assertCanManageContext(context, actorUserId, "editorial_release.publish");
+  const revision = await loadApprovedRevision({ context, editorialContextRevisionId });
+  const frozenBindings = (revision.itemBindings || []).map((binding) => ({
+    itemEditionId: binding.itemEditionId,
+    itemRevisionId: binding.itemRevisionId,
+    curationSignals: (binding.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
+  }));
+
   const dependencyAccess = await assertReleaseDependenciesAuthorized({
     context,
-    namespaceRevisionId: normalized.namespaceRevisionId,
-    itemBindings: normalized.itemBindings,
+    namespaceRevisionId: revision.namespaceRevisionId,
+    itemBindings: frozenBindings,
     actorUserId,
     principalType: contentSpace.ownerType,
     principalId: contentSpace.ownerId,
   });
-  const graphRevisionId = normalized.graphRevisionId || context.workingGraphRevisionId;
-  if (!graphRevisionId) throw new AppError("EditorialContext privo di GraphRevision", 409);
-
   const issues = await validateEditorialReleaseCoherence({
     editorialContextId: context._id,
-    namespaceRevisionId: normalized.namespaceRevisionId,
-    graphRevisionId,
-    itemBindings: normalized.itemBindings,
+    namespaceRevisionId: revision.namespaceRevisionId,
+    graphRevisionId: revision.graphRevisionId,
+    itemBindings: frozenBindings,
   });
-  if (issues.length) throw new AppError("EditorialRelease non coerente", 409, issues);
-
-  const release = await EditorialRelease.create({
-    editorialContextId: context._id,
-    version: await nextVersion(context._id),
-    basedOnReleaseId: context.publishedReleaseId || null,
-    namespaceRevisionId: normalized.namespaceRevisionId,
-    graphRevisionId,
-    itemBindings: normalized.itemBindings,
-    integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: actorUserId },
-    releasedAt: new Date(),
-    releasedBy: actorUserId,
-  });
+  if (issues.length) throw new AppError("La revisione approvata non è più pubblicabile", 409, issues);
 
   const adoptionIds = [];
   try {
@@ -115,11 +112,10 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
       actorUserId,
       action: "namespace_use",
       sourceResourceRef: { resourceType: "namespace", resourceId: dependencyAccess.namespace._id },
-      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: normalized.namespaceRevisionId },
+      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: revision.namespaceRevisionId },
       resultResourceRef: { resourceType: "editorial_context", resourceId: context._id },
     });
     if (namespaceAdoption) adoptionIds.push(namespaceAdoption._id);
-
     for (const { binding, access } of dependencyAccess.itemAccesses) {
       const adoption = await recordAdoptionFromAccess({
         access,
@@ -133,12 +129,44 @@ async function createEditorialRelease({ editorialContextId, payload, actorUserId
       if (adoption) adoptionIds.push(adoption._id);
     }
 
-    context.publishedReleaseId = release._id;
-    await context.save();
+    let release = null;
+    await mongoose.connection.transaction(async (session) => {
+      const lockedContext = await EditorialContext.findOne({
+        _id: context._id,
+        lifecycleStatus: "active",
+        activeReviewRevisionId: revision._id,
+      }).session(session);
+      if (!lockedContext) throw new AppError("La revisione attiva della raccolta è cambiata", 409, [{ code: "EDITORIAL_CONTEXT_REVIEW_CONFLICT" }]);
+      const lockedRevision = await EditorialContextRevision.findOne({
+        _id: revision._id,
+        editorialContextId: context._id,
+        status: "approved",
+      }).session(session);
+      if (!lockedRevision) throw new AppError("La revisione non è più approvata", 409, [{ code: "APPROVED_CONTEXT_REVISION_REQUIRED" }]);
+      const now = new Date();
+      [release] = await EditorialRelease.create([{
+        editorialContextId: lockedContext._id,
+        sourceContextRevisionId: lockedRevision._id,
+        version: await nextVersion(lockedContext._id, session),
+        basedOnReleaseId: lockedContext.publishedReleaseId || null,
+        namespaceRevisionId: lockedRevision.namespaceRevisionId,
+        graphRevisionId: lockedRevision.graphRevisionId,
+        itemBindings: frozenBindings,
+        integrity: { status: "valid", issues: [], checkedAt: now, checkedBy: actorUserId },
+        releasedAt: now,
+        releasedBy: actorUserId,
+      }], { session });
+      lockedContext.publishedReleaseId = release._id;
+      lockedContext.activeReviewRevisionId = null;
+      await lockedContext.save({ session });
+      lockedRevision.status = "published";
+      lockedRevision.publication = { publishedAt: now, publishedBy: actorUserId, editorialReleaseId: release._id };
+      lockedRevision.review.events.push({ action: "published", actorUserId, at: now });
+      await lockedRevision.save({ session });
+    });
     return release;
   } catch (error) {
     await deleteAdoptions(adoptionIds).catch(() => {});
-    await EditorialRelease.deleteOne({ _id: release._id }).catch(() => {});
     throw error;
   }
 }
