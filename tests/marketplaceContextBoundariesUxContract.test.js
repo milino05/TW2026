@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const paths = {
   main: "clients/marketplace/src/main.js",
   validation: "clients/marketplace/src/ui/form-validation.js",
+  formGuard: "clients/marketplace/src/ui/form-navigation-loss-guard.js",
   guardAdapter: "clients/marketplace/src/ui/legacy-feedback-surface-adapter.js",
   appShell: "clients/marketplace/src/ui/app-shell.js",
   createHub: "clients/marketplace/src/ui/create-hub-view.js",
@@ -73,6 +74,20 @@ test("Item Authoring partecipa al navigation-loss guard usando la bozza reale", 
   assert.match(source.guardAdapter, /editor\.clearWorkingDraft\?\.\(\)/);
   assert.match(source.guardAdapter, /window\.addEventListener\("beforeunload"/);
   assert.match(source.guardAdapter, /hasNavigationLossRisk\(\)/);
+});
+
+test("i form di authoring e management diventano dirty solo dopo modifiche utente", () => {
+  assert.match(source.main, /import "\.\/ui\/form-navigation-loss-guard\.js"/);
+  for (const host of ["profile", "organization", "venue-editor", "visit-authoring", "context-release-composer", "commerce-management"]) {
+    assert.match(source.formGuard, new RegExp(`artaround-${host}-view`));
+  }
+  assert.match(source.formGuard, /document\.addEventListener\("input", markFromEvent, true\)/);
+  assert.match(source.formGuard, /document\.addEventListener\("change", markFromEvent, true\)/);
+  assert.match(source.formGuard, /dirtyForms\.add\(form\)/);
+  assert.match(source.formGuard, /if \(!form\.isConnected\) dirtyForms\.delete\(form\)/);
+  assert.match(source.formGuard, /registerNavigationLossBlocker/);
+  assert.match(source.formGuard, /dirtyForms\.clear\(\)/);
+  assert.match(source.formGuard, /TRANSIENT_FIELD_NAME/);
 });
 
 test("la validazione usa feedback inline condiviso invece del tooltip nativo", () => {
