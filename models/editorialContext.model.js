@@ -17,7 +17,10 @@ const EditorialContextSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
 }, { timestamps: true });
 
-EditorialContextSchema.index({ contentSpaceId: 1, namespaceId: 1, lifecycleStatus: 1 });
+EditorialContextSchema.index(
+  { contentSpaceId: 1, namespaceId: 1 },
+  { unique: true, partialFilterExpression: { lifecycleStatus: "active" } },
+);
 EditorialContextSchema.index({ contentSpaceId: 1, lifecycleStatus: 1, displayName: 1 });
 EditorialContextSchema.index({ namespaceId: 1, lifecycleStatus: 1, displayName: 1 });
 EditorialContextSchema.index({ publishedReleaseId: 1 });
