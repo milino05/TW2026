@@ -55,7 +55,6 @@ function replaceItemBlockerCallout(editor) {
  * entity picker and domain-specific workflow surfaces remain contextual. */
 const PERSISTENT_ERROR_ROOTS = [
   "artaround-create-hub-view",
-  "artaround-venue-target-chooser",
   "artaround-home-view",
   "artaround-context-hub-view",
   "artaround-catalog-view",
