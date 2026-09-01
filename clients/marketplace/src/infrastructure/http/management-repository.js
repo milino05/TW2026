@@ -1,23 +1,31 @@
 import { apiClient } from "./api-client.js";
+import { assertOrganizationOperatingContext, assertOwnerOperatingContext } from "../../application/management-context-policy.js";
 
 function encoded(value) { return encodeURIComponent(String(value || "")); }
 function body(payload) { return { body: JSON.stringify(payload ?? {}) }; }
 
 export const managementRepository = {
   organization(organizationId, query = {}) {
+    assertOrganizationOperatingContext(organizationId, { resourceLabel: "Questa organizzazione" });
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) if (value) params.set(key, String(value));
     const suffix = params.toString() ? `?${params}` : "";
     return apiClient.request(`/v2/marketplace/management/organizations/${encoded(organizationId)}${suffix}`);
   },
-  namespace(namespaceId) {
-    return apiClient.request(`/v2/marketplace/management/namespaces/${encoded(namespaceId)}`);
+  async namespace(namespaceId) {
+    const projection = await apiClient.request(`/v2/marketplace/management/namespaces/${encoded(namespaceId)}`);
+    assertOwnerOperatingContext(projection?.namespace?.owner, { resourceLabel: "Queste regole editoriali" });
+    return projection;
   },
-  physicalVocabulary(physicalVocabularyId) {
-    return apiClient.request(`/v2/marketplace/management/physical-vocabularies/${encoded(physicalVocabularyId)}`);
+  async physicalVocabulary(physicalVocabularyId) {
+    const projection = await apiClient.request(`/v2/marketplace/management/physical-vocabularies/${encoded(physicalVocabularyId)}`);
+    assertOwnerOperatingContext(projection?.physicalVocabulary?.owner, { resourceLabel: "Questo vocabolario fisico" });
+    return projection;
   },
-  venue(venueId) {
-    return apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
+  async venue(venueId) {
+    const projection = await apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
+    assertOrganizationOperatingContext(projection?.venue?.organizationId, { resourceLabel: "Questa sede" });
+    return projection;
   },
   venueLifecycleImpact(venueId) {
     return apiClient.request(`/venues/${encoded(venueId)}/lifecycle-impact`);
