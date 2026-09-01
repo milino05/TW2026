@@ -1,7 +1,6 @@
-const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
-const AppError = require("../utils/AppError");
+const { assertVenuePermission } = require("./venueAuthorization.service");
 const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
 const {
   projectVenueSubjectContext,
@@ -24,49 +23,67 @@ function projectSubject(subject, fallbackSubjectId) {
     })),
   };
 }
+function inventoryRank(status) {
+  return { exposed: 0, unplaced: 1, unavailable: 2 }[status] ?? 3;
+}
 
-async function listVenueAuthoringTargets({ venueId }) {
-  const venue = await Venue.findOne({ _id: venueId, lifecycleStatus: "active" })
-    .select("name description publishedReleaseId")
+async function listVenueAuthoringTargets({ venueId, actorUserId }) {
+  const { venue, authority } = await assertVenuePermission({
+    userId: actorUserId,
+    venueId,
+    permissionCode: "venue.view",
+  });
+  const targets = await VenueTarget.find({ venueId: venue._id, lifecycleStatus: "active" })
+    .sort({ createdAt: 1 })
     .lean();
-  if (!venue) throw new AppError("Venue non disponibile", 404);
-  if (!venue.publishedReleaseId) {
-    return { venue: { id: venue._id, name: venue.name, description: venue.description || "" }, targets: [] };
-  }
-  const release = await VenueRelease.findById(venue.publishedReleaseId).select("targetBindings").lean();
-  if (!release) throw new AppError("VenueRelease pubblicata non disponibile", 409);
-  const activeBindings = (release.targetBindings || []).filter((binding) => binding.availability === "active" && binding.exhibitSlotId);
-  const targetIds = activeBindings.map((binding) => binding.venueTargetId);
-  if (!targetIds.length) return { venue: { id: venue._id, name: venue.name, description: venue.description || "" }, targets: [] };
-  const targets = await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).lean();
-  const targetById = new Map(targets.map((target) => [id(target), target]));
-  const bindingByTarget = new Map(activeBindings.map((binding) => [id(binding.venueTargetId), binding]));
-  const [identityByTargetId, contextProjection] = await Promise.all([
-    venueTargetIdentityMap(targets),
-    projectVenueSubjectContext({ venueId: venue._id, subjectIds: targets.map((target) => target.subjectId), view: "published" }),
-  ]);
+  const contextProjection = await projectVenueSubjectContext({
+    venueId: venue._id,
+    subjectIds: targets.map((target) => target.subjectId),
+    view: "effective",
+  });
+  const release = contextProjection.releaseId
+    ? await VenueRelease.findOne({ _id: contextProjection.releaseId, venueId: venue._id }).select("targetBindings").lean()
+    : null;
+  const bindingByTarget = new Map((release?.targetBindings || []).map((binding) => [id(binding.venueTargetId), binding]));
+  const identityByTargetId = await venueTargetIdentityMap(targets);
   const contextBySubjectId = venueSubjectContextMap(contextProjection);
+  const projectedTargets = targets.map((target) => {
+    const identity = identityByTargetId.get(id(target)) || {};
+    const binding = bindingByTarget.get(id(target));
+    const subjectContext = contextBySubjectId.get(id(target.subjectId)) || {
+      inventory: null,
+      museumContent: { availableCount: 0, draftCount: 0 },
+    };
+    return {
+      id: target._id,
+      label: identity.label || "Entità della sede",
+      description: identity.description || "",
+      subject: projectSubject(identity.subject, target.subjectId),
+      inventory: subjectContext.inventory || {
+        venueTargetId: target._id,
+        status: "unplaced",
+        availability: null,
+        slot: null,
+        place: null,
+      },
+      museumContent: subjectContext.museumContent,
+      recognitionMedia: (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null })),
+    };
+  }).sort((left, right) => inventoryRank(left.inventory?.status) - inventoryRank(right.inventory?.status)
+    || String(left.label || "").localeCompare(String(right.label || ""), "it"));
+
   return {
-    venue: { id: venue._id, name: venue.name, description: venue.description || "" },
-    targets: targetIds.map((targetId) => {
-      const target = targetById.get(id(targetId));
-      if (!target) return null;
-      const identity = identityByTargetId.get(id(targetId)) || {};
-      const binding = bindingByTarget.get(id(targetId));
-      const subjectContext = contextBySubjectId.get(id(target.subjectId)) || {
-        inventory: null,
-        museumContent: { availableCount: 0, draftCount: 0 },
-      };
-      return {
-        id: target._id,
-        label: identity.label || "Entità della sede",
-        description: identity.description || "",
-        subject: projectSubject(identity.subject, target.subjectId),
-        inventory: subjectContext.inventory,
-        museumContent: subjectContext.museumContent,
-        recognitionMedia: (binding?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || null })),
-      };
-    }).filter(Boolean),
+    venue: {
+      id: venue._id,
+      name: venue.name,
+      description: venue.description || "",
+      ownerOrganizationId: venue.ownerOrganizationId,
+    },
+    permissions: {
+      canEditInventory: authority.effectivePermissions.includes("venue.physical.edit"),
+    },
+    view: contextProjection.view,
+    targets: projectedTargets,
   };
 }
 
