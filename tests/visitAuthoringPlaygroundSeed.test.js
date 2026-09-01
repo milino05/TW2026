@@ -29,7 +29,7 @@ test("visit authoring playground crea cinque tappe pubblicate, una mappa ed è i
   const floorPlanRoot = await fs.mkdtemp(path.join(os.tmpdir(), "artaround-visit-ui-map-"));
   try {
     await withFreshDatabase(async () => {
-      await User.create({ username: "visit-ui-test", passwordHash: "test-hash" });
+      const actor = await User.create({ username: "visit-ui-test", passwordHash: "test-hash" });
 
       const first = await seedVisitAuthoringPlayground({ username: "visit-ui-test", floorPlanRoot });
       const second = await seedVisitAuthoringPlayground({ username: "visit-ui-test", floorPlanRoot });
@@ -77,11 +77,14 @@ test("visit authoring playground crea cinque tappe pubblicate, una mappa ed è i
       });
       assert.deepEqual(readiness.blockers, []);
 
-      const projection = await listVenueAuthoringTargets({ venueId: first.venue._id });
+      const projection = await listVenueAuthoringTargets({
+        venueId: first.venue._id,
+        actorUserId: actor._id,
+      });
       assert.equal(projection.targets.length, 5);
       assert.deepEqual(
-        projection.targets.map((target) => target.label),
-        WORKS.map(([, label]) => label),
+        projection.targets.map((target) => target.label).sort(),
+        WORKS.map(([, label]) => label).sort(),
       );
     });
   } finally {
