@@ -46,6 +46,20 @@ function authoringIsCreation(route) {
   if (route === "/workspace/visit-authoring") return !params.get("visitId");
   return false;
 }
+function organizationManagementHref(context, section = "overview") {
+  if (context?.type !== "organization" || !context.id) return "/profile";
+  const params = new URLSearchParams({ organizationId: String(context.id), section });
+  return `/organizations/detail?${params.toString()}`;
+}
+function routeMatchesOperatingContext(route, context) {
+  if (!context) return false;
+  if (route === "/profile") return context.type === "user";
+  if (route === "/organizations/detail") {
+    const organizationId = new URLSearchParams(window.location.search).get("organizationId");
+    return context.type === "organization" && Boolean(organizationId) && String(context.id) === String(organizationId);
+  }
+  return true;
+}
 
 export class MarketplaceAppShell extends HTMLElement {
   user = null;
@@ -189,13 +203,30 @@ export class MarketplaceAppShell extends HTMLElement {
 
   renderNavigation(route) {
     const creation = authoringIsCreation(route);
-    const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose", "/physical-vocabularies/editor"].includes(route) || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
+    const organizationContext = this.context?.type === "organization";
+    const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose"].includes(route) || (!organizationContext && route === "/physical-vocabularies/editor") || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
     const exploreActive = ["/catalog", "/catalog/detail", "/organizations", "/organizations/public", "/venues", "/venues/public"].includes(route);
-    return `${this.renderContextIdentity()}<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="${this.menuOpen}" aria-label="Apri navigazione">${icon("menu")}</button><nav class="market-nav" data-open="${this.menuOpen}" aria-label="Navigazione principale"><a data-route href="/home" aria-current="${current(route, ["/", "/home"])}">${icon("home")}<span>Home</span></a><a data-route href="/catalog" aria-current="${exploreActive ? "page" : "false"}">${icon("search")}<span>Esplora</span></a><a data-route href="/workspace" aria-current="${libraryActive ? "page" : "false"}">${icon("workspace")}<span>Libreria</span></a><a class="nav-create" data-route href="/create" aria-current="${creation ? "page" : "false"}">${icon("plus")}<span>Crea</span></a><a data-route href="/acquisitions" aria-current="${current(route, ["/acquisitions", "/workspace/commerce"])}">${icon("store")}<span>Attività</span></a><a class="nav-profile" data-route href="/profile" aria-current="${current(route, ["/profile"])}" title="${escapeHtml(this.user.username)}">${icon("user")}<span>Account</span></a><button type="button" data-logout title="Esci">${icon("logout")}<span>Esci</span></button></nav>`;
+    const managementHref = organizationContext ? organizationManagementHref(this.context) : "/profile";
+    const managementLabel = organizationContext ? "Gestisci" : "Account";
+    const managementIcon = organizationContext ? "building" : "user";
+    const managementActive = organizationContext
+      ? ["/organizations/detail", "/venues/editor", "/namespaces/editor", "/physical-vocabularies/editor"].includes(route)
+      : route === "/profile";
+    return `${this.renderContextIdentity()}<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="${this.menuOpen}" aria-label="Apri navigazione">${icon("menu")}</button><nav class="market-nav" data-open="${this.menuOpen}" aria-label="Navigazione principale"><a data-route href="/home" aria-current="${current(route, ["/", "/home"])}">${icon("home")}<span>Home</span></a><a data-route href="/catalog" aria-current="${exploreActive ? "page" : "false"}">${icon("search")}<span>Esplora</span></a><a data-route href="/workspace" aria-current="${libraryActive ? "page" : "false"}">${icon("workspace")}<span>Libreria</span></a><a class="nav-create" data-route href="/create" aria-current="${creation ? "page" : "false"}">${icon("plus")}<span>Crea</span></a><a data-route href="/acquisitions" aria-current="${current(route, ["/acquisitions", "/workspace/commerce"])}">${icon("store")}<span>Attività</span></a><a class="nav-profile" data-route href="${escapeHtml(managementHref)}" aria-current="${managementActive ? "page" : "false"}" title="${escapeHtml(managementLabel)}">${icon(managementIcon)}<span>${managementLabel}</span></a><button type="button" data-logout title="Esci">${icon("logout")}<span>Esci</span></button></nav>`;
+  }
+
+  renderContextMismatch(route) {
+    const personalRequested = route === "/profile";
+    const title = personalRequested ? "Passa alla tua area personale" : "Passa all'organizzazione corretta";
+    const detail = personalRequested
+      ? "Le impostazioni personali si modificano soltanto nell'area personale."
+      : "Gli strumenti di gestione di un'organizzazione si usano soltanto mentre stai operando per quella stessa organizzazione.";
+    return `<main class="page"><section class="empty-state"><span>${icon("lock", { size: 28 })}</span><h1>${title}</h1><p>${detail}</p><button type="button" data-change-context>Cambia o crea area</button></section></main>`;
   }
 
   renderRoute(route) {
     if (route === "/context") return "<artaround-context-hub-view></artaround-context-hub-view>";
+    if (!routeMatchesOperatingContext(route, this.context)) return this.renderContextMismatch(route);
     if (["/", "/home"].includes(route)) return "<artaround-home-view></artaround-home-view>";
     if (route === "/catalog") return "<artaround-catalog-view></artaround-catalog-view>";
     if (route === "/catalog/detail") return "<artaround-listing-detail-view></artaround-listing-detail-view>";
