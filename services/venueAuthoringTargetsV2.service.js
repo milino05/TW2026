@@ -80,6 +80,7 @@ async function listVenueAuthoringTargets({ venueId, actorUserId }) {
       ownerOrganizationId: venue.ownerOrganizationId,
     },
     permissions: {
+      canCreateContent: authority.effectivePermissions.includes("item.create"),
       canEditInventory: authority.effectivePermissions.includes("venue.physical.edit"),
     },
     view: contextProjection.view,
