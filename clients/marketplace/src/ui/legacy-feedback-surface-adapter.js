@@ -110,9 +110,6 @@ function showNamespaceLeaveDialog(editor) {
   }).then((confirmed) => {
     editor.__sharedLeaveDialogOpen = false;
     if (!editor.isConnected || !editor.leaveConfirmation) return;
-    /* The local Back button already obtained the explicit discard decision.
-     * Clear dirty before replaying its legacy control so the central route guard
-     * does not ask the same question a second time. */
     if (confirmed) editor.dirty = false;
     const control = editor.querySelector(confirmed ? "[data-confirm-leave]" : "[data-cancel-leave]");
     control?.click();
@@ -152,7 +149,9 @@ function showPhysicalConfirmationDialog(editor) {
  * Namespace/Physical are already defined by the time this adapter imports them,
  * so patching prototype.connectedCallback here would never run in browsers.
  * Observe actual editor nodes instead and register/unregister blockers when they
- * enter/leave the document. This makes the guard a real runtime integration. */
+ * enter/leave the document. Item authoring exposes its persisted working draft as
+ * the authoritative unsaved-state signal, so the same guard can protect it
+ * without inventing a parallel dirty flag. */
 const DIRTY_EDITOR_GUARDS = [
   {
     selector: "artaround-namespace-editor-view",
@@ -162,22 +161,29 @@ const DIRTY_EDITOR_GUARDS = [
     selector: "artaround-physical-vocabulary-editor-view",
     message: "Le modifiche non ancora salvate nel vocabolario fisico andranno perse.",
   },
+  {
+    selector: "artaround-item-authoring-view",
+    message: "Le modifiche non ancora salvate al contenuto andranno perse.",
+    isBlocking: (editor) => Boolean(editor.readWorkingDraft?.()),
+    discard: (editor) => editor.clearWorkingDraft?.(),
+  },
 ];
 const registeredDirtyEditors = new WeakMap();
 
-function registerDirtyEditor(editor, message) {
+function registerDirtyEditor(editor, definition) {
   if (!(editor instanceof HTMLElement) || registeredDirtyEditors.has(editor)) return;
   const unregister = registerNavigationLossBlocker({
-    isBlocking: () => editor.isConnected && Boolean(editor.dirty),
+    isBlocking: () => editor.isConnected && (definition.isBlocking ? definition.isBlocking(editor) : Boolean(editor.dirty)),
     confirm: () => openActionDialog({
       tone: "danger",
       title: "Uscire senza salvare?",
-      message,
+      message: definition.message,
       confirmLabel: "Esci senza salvare",
       cancelLabel: "Resta nell'editor",
     }),
     discard: () => {
-      editor.dirty = false;
+      if (definition.discard) definition.discard(editor);
+      else editor.dirty = false;
       if ("leaveConfirmation" in editor) editor.leaveConfirmation = false;
       if (editor.pendingConfirmation?.type === "leave") editor.pendingConfirmation = null;
     },
@@ -195,8 +201,8 @@ function unregisterDirtyEditor(editor) {
 function visitDirtyEditors(root, callback) {
   if (!(root instanceof Element)) return;
   for (const definition of DIRTY_EDITOR_GUARDS) {
-    if (root.matches(definition.selector)) callback(root, definition.message);
-    for (const editor of root.querySelectorAll(definition.selector)) callback(editor, definition.message);
+    if (root.matches(definition.selector)) callback(root, definition);
+    for (const editor of root.querySelectorAll(definition.selector)) callback(editor, definition);
   }
 }
 
@@ -213,6 +219,17 @@ function installDirtyNavigationGuardObserver() {
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
   else start();
+}
+
+/* One native unload guard covers every registered editor. Browsers intentionally
+ * control the wording of this dialog; in-app navigation uses the ArtAround dialog
+ * above, while refresh/close/tab navigation gets the platform confirmation. */
+function installBeforeUnloadGuard() {
+  window.addEventListener("beforeunload", (event) => {
+    if (!hasNavigationLossRisk()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
 }
 
 /* Logout performs an authentication side effect before its route change, so it
@@ -262,4 +279,5 @@ installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => 
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
 installDirtyNavigationGuardObserver();
 installPersistentErrorObserver();
+installBeforeUnloadGuard();
 installGuardedGlobalActions();
