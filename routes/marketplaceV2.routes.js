@@ -13,6 +13,7 @@ const itemId = validateObjectIdParam("itemId");
 const namespaceId = validateObjectIdParam("namespaceId");
 const physicalVocabularyId = validateObjectIdParam("physicalVocabularyId");
 const organizationId = validateObjectIdParam("organizationId");
+const contentSpaceId = validateObjectIdParam("contentSpaceId");
 const editorialContextId = validateObjectIdParam("editorialContextId");
 const editorialReleaseId = validateObjectIdParam("editorialReleaseId");
 const venueId = validateObjectIdParam("venueId");
@@ -31,6 +32,8 @@ router.get("/v2/marketplace/authoring/preflight", preflightController.authoringP
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
+router.get("/v2/marketplace/editorial-spaces", authoringController.editorialSpaces);
+router.get("/v2/marketplace/editorial-spaces/:contentSpaceId", contentSpaceId, authoringController.editorialSpace);
 router.post("/v2/marketplace/editorial-collections", authoringController.createEditorialCollection);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/studio", editorialContextId, authoringController.editorialStudio);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/candidates", editorialContextId, authoringController.editorialStudioCandidates);
