@@ -33,7 +33,7 @@ async function getEditorialContextGraph({ editorialContextId, view = "working", 
   if (!["working", "published"].includes(view)) throw new AppError("view deve essere working o published", 400);
   const context = await findEditorialContextOrFail({ editorialContextId });
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
 
   if (view === "working") {
     if (!context.workingGraphRevisionId) return null;
