@@ -4,6 +4,8 @@ const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam"
 const controller = require("../controllers/editorialContexts.controller");
 const router = express.Router();
 const editorialContextId = validateObjectIdParam("editorialContextId");
+const entryId = validateObjectIdParam("entryId");
+const revisionId = validateObjectIdParam("revisionId");
 
 router.use(requireAuth);
 router.route("/editorial-contexts")
@@ -15,8 +17,27 @@ router.route("/editorial-contexts/:editorialContextId")
   .get(controller.get)
   .patch(controller.update);
 
+router.route("/editorial-contexts/:editorialContextId/entries")
+  .all(editorialContextId)
+  .get(controller.listEntries)
+  .post(controller.addEntry);
+router.route("/editorial-contexts/:editorialContextId/entries/:entryId")
+  .all(editorialContextId, entryId)
+  .patch(controller.updateEntry)
+  .delete(controller.removeEntry);
+
 router.post("/editorial-contexts/:editorialContextId/graph-revisions", editorialContextId, controller.createGraph);
 router.get("/editorial-contexts/:editorialContextId/semantic-graph", editorialContextId, controller.getGraph);
+
+router.post("/editorial-contexts/:editorialContextId/check", editorialContextId, controller.checkReadiness);
+router.route("/editorial-contexts/:editorialContextId/review")
+  .all(editorialContextId)
+  .post(controller.requestReview)
+  .delete(controller.withdrawReview);
+router.post("/editorial-contexts/:editorialContextId/review/:revisionId/request-changes", editorialContextId, revisionId, controller.requestChanges);
+router.post("/editorial-contexts/:editorialContextId/review/:revisionId/approve", editorialContextId, revisionId, controller.approveReview);
+router.get("/editorial-contexts/:editorialContextId/revisions", editorialContextId, controller.listRevisions);
+
 router.route("/editorial-contexts/:editorialContextId/releases")
   .all(editorialContextId)
   .get(controller.listReleases)
