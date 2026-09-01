@@ -73,8 +73,9 @@ export function targetInspector(entry, { editable, canCreateContent = false, pen
   const state = entry.configuration?.state || "unplaced";
   const slot = entry.exhibitSlot;
   const counts = entry.museumContent || { available: 0, draft: 0 };
-  const createContent = canCreateContent
-    ? `<a class="button-link small secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(entry.id))}">Crea contenuto</a>`
+  const subjectId = id(entry.subject?.id);
+  const createContent = canCreateContent && subjectId
+    ? `<a class="button-link small secondary" data-route href="/workspace/item-authoring?subjectId=${encodeURIComponent(subjectId)}">Crea contenuto</a>`
     : "";
   const unassign = editable && slot ? `<button class="button-secondary small" type="button" data-unassign-target="${escapeHtml(entry.id)}">Scollega dallo slot</button>` : "";
   const actions = createContent || unassign ? `<div class="button-row">${createContent}${unassign}</div>` : "";
