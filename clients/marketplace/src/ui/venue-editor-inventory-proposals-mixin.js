@@ -22,13 +22,31 @@ function inventoryStateLabel(value) {
   return { exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[value] || "Inventario";
 }
 function toneForStatus(value) {
-  return value === "accepted" ? "success" : value === "rejected" ? "warning" : value === "pending" ? "neutral" : "neutral";
+  return value === "accepted" ? "success" : value === "rejected" ? "warning" : "neutral";
 }
 function dateLabel(value) {
   if (!value) return "";
   try {
     return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   } catch { return String(value); }
+}
+function styles() {
+  return `<style>
+    .venue-editor-page .venue-proposal-inbox,.venue-editor-page .venue-inventory-summary{display:grid;gap:1rem;margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
+    .venue-editor-page .venue-proposal-filters{display:flex;gap:.45rem;flex-wrap:wrap}
+    .venue-editor-page .venue-proposal-list,.venue-editor-page .venue-inventory-summary-list{display:grid;gap:.7rem}
+    .venue-editor-page .venue-proposal-card{display:grid;gap:.7rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}
+    .venue-editor-page .venue-proposal-card>header,.venue-editor-page .venue-inventory-summary-card{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem}
+    .venue-editor-page .venue-proposal-card h3,.venue-editor-page .venue-proposal-card p,.venue-editor-page .venue-proposal-card blockquote{margin:0}
+    .venue-editor-page .venue-proposal-card blockquote{display:grid;gap:.25rem;padding:.7rem .8rem;border-left:3px solid var(--sage-400);border-radius:.2rem var(--radius-sm) var(--radius-sm) .2rem;background:var(--surface)}
+    .venue-editor-page .venue-proposal-meta{display:flex;gap:.8rem;flex-wrap:wrap;color:var(--sage-600);font-size:.78rem}
+    .venue-editor-page .venue-proposal-meta span{display:inline-flex;align-items:center;gap:.3rem}
+    .venue-editor-page .venue-proposal-decision{display:grid;gap:.7rem;padding:.9rem;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface)}
+    .venue-editor-page .venue-proposal-decision label{display:grid;gap:.35rem}.venue-editor-page .venue-proposal-decision p{margin:.2rem 0 0;color:var(--sage-600)}
+    .venue-editor-page .venue-inventory-summary-card{padding:.7rem .8rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--sage-50)}
+    .venue-editor-page .venue-inventory-summary-card>div{display:grid;gap:.1rem}.venue-editor-page .venue-inventory-summary-card small{color:var(--sage-600)}
+    @media(max-width:42rem){.venue-editor-page .venue-proposal-card>header,.venue-editor-page .venue-inventory-summary-card{align-items:stretch;flex-direction:column}.venue-editor-page .venue-proposal-card .button-row>*{width:100%}}
+  </style>`;
 }
 
 export const venueInventoryProposalsMixin = {
@@ -132,7 +150,7 @@ export const venueInventoryProposalsMixin = {
     const decision = proposal.decision?.message
       ? `<blockquote class="venue-proposal-decision-note"><strong>Decisione</strong><p>${escapeHtml(proposal.decision.message)}</p></blockquote>`
       : "";
-    return `<article class="venue-proposal-card" data-status="${escapeHtml(status)}"><header><div><span class="eyebrow">${escapeHtml(subject.preferredLabel || "Subject")}</span><h3>${escapeHtml(subject.preferredLabel || "Identità non disponibile")}</h3></div><span class="chip" data-tone="${toneForStatus(status)}">${escapeHtml(statusLabel(status))}</span></header><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile.")}</p>${proposal.message ? `<blockquote><strong>Motivazione della proposta</strong><p>${escapeHtml(proposal.message)}</p></blockquote>` : ""}<div class="venue-proposal-meta">${source}${proposal.createdAt ? `<span>${icon("history", { size: 14 })} ${escapeHtml(dateLabel(proposal.createdAt))}</span>` : ""}</div>${pending ? `<div class="button-row"><button type="button" data-inventory-proposal-action="accept" data-proposal-id="${escapeHtml(id(proposal._id))}">${icon("check", { size: 15 })} Accetta</button><button class="button-secondary" type="button" data-inventory-proposal-action="reject" data-proposal-id="${escapeHtml(id(proposal._id))}">Rifiuta</button></div>` : decision}${this.renderInventoryProposalDecision(proposal)}</article>`;
+    return `<article class="venue-proposal-card" data-status="${escapeHtml(status)}"><header><div><span class="eyebrow">Subject proposto</span><h3>${escapeHtml(subject.preferredLabel || "Identità non disponibile")}</h3></div><span class="chip" data-tone="${toneForStatus(status)}">${escapeHtml(statusLabel(status))}</span></header><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile.")}</p>${proposal.message ? `<blockquote><strong>Motivazione della proposta</strong><p>${escapeHtml(proposal.message)}</p></blockquote>` : ""}<div class="venue-proposal-meta">${source}${proposal.createdAt ? `<span>${icon("history", { size: 14 })} ${escapeHtml(dateLabel(proposal.createdAt))}</span>` : ""}</div>${pending ? `<div class="button-row"><button type="button" data-inventory-proposal-action="accept" data-proposal-id="${escapeHtml(id(proposal._id))}">${icon("check", { size: 15 })} Accetta</button><button class="button-secondary" type="button" data-inventory-proposal-action="reject" data-proposal-id="${escapeHtml(id(proposal._id))}">Rifiuta</button></div>` : decision}${this.renderInventoryProposalDecision(proposal)}</article>`;
   },
 
   renderInventorySummary() {
@@ -163,6 +181,6 @@ export const venueInventoryProposalsMixin = {
   },
 
   renderInventorySection() {
-    return `<section class="venue-section" id="venue-inventory"><div class="section-heading"><div><span class="eyebrow">Inventario</span><h2>Entità della sede e proposte</h2><p>Decidi quali Subject appartengono alla sede senza confondere questa scelta con slot, planimetrie o percorsi.</p></div></div>${this.renderInventoryProposals()}${this.renderInventorySummary()}</section>`;
+    return `${styles()}<section class="venue-section" id="venue-inventory"><div class="section-heading"><div><span class="eyebrow">Inventario</span><h2>Entità della sede e proposte</h2><p>Decidi quali Subject appartengono alla sede senza confondere questa scelta con slot, planimetrie o percorsi.</p></div></div>${this.renderInventoryProposals()}${this.renderInventorySummary()}</section>`;
   },
 };
