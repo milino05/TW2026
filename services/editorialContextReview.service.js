@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialContextEntry = require("../models/editorialContextEntry.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
+const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
@@ -33,7 +34,7 @@ async function loadContextAndSpace({ editorialContextId, actorUserId, permission
 
 async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
   const issues = [];
-  const namespace = await mongoose.model("Namespace").findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
+  const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) {
     return { issues: [issue("namespaceId", "NAMESPACE_NOT_AVAILABLE", "Le regole editoriali della raccolta non sono disponibili")], snapshot: null };
   }
@@ -158,6 +159,7 @@ async function requestEditorialContextReview({ editorialContextId, actorUserId }
         editorialContextId: current._id,
         version: lineage.version,
         basedOnRevisionId: lineage.basedOnRevisionId,
+        sourceWorkingVersion: expectedWorkingVersion,
         displayName: current.displayName,
         shortDescription: current.shortDescription || null,
         description: current.description || null,
