@@ -16,8 +16,9 @@ import { venueSpatialInteractionMixin } from "./venue-editor-spatial-interaction
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 import { venueSlotInventoryMixin } from "./venue-editor-slot-inventory-mixin.js";
+import { venueInventoryProposalsMixin } from "./venue-editor-inventory-proposals-mixin.js";
 
-const SECTIONS = ["overview", "map", "visitors", "publication"];
+const SECTIONS = ["overview", "inventory", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
 function initialVenueSection() {
   const requested = String(window.location.hash || "").replace(/^#venue-/, "");
@@ -63,8 +64,14 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   venueSubjectQuery = "";
   pendingMapAction = null;
   draggingPlace = null;
+  inventoryProposals = null;
+  inventoryProposalStatus = "pending";
+  pendingProposalDecision = null;
+  proposalDecisionMessage = "";
 
   connectedCallback() {
+    this.addEventListener("click", this.onInventoryProposalClick);
+    this.addEventListener("submit", this.onInventoryProposalSubmit);
     this.addEventListener("click", this.onClick);
     this.addEventListener("keydown", this.onSectionKeyDown);
     this.addEventListener("submit", this.onSubmit);
@@ -80,6 +87,8 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.removeEventListener("click", this.onInventoryProposalClick);
+    this.removeEventListener("submit", this.onInventoryProposalSubmit);
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("keydown", this.onSectionKeyDown);
     this.removeEventListener("submit", this.onSubmit);
@@ -96,6 +105,22 @@ export class ArtAroundVenueEditorView extends HTMLElement {
       this._venueGlobalEscapeHandler = null;
     }
   }
+
+  onInventoryProposalClick = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.closest("[data-inventory-proposal-status],[data-inventory-proposal-action],[data-cancel-inventory-proposal-decision]")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void this.handleInventoryProposalClick?.(event);
+  };
+
+  onInventoryProposalSubmit = (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form?.matches("form[data-inventory-proposal-decision]")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void this.handleInventoryProposalSubmit?.(form, new FormData(form));
+  };
 
   validateSpatialEditor() {
     if (!this.spatialEditor || !this.data?.layout) return;
@@ -130,6 +155,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     if (!floorIds.has(String(this.selectedFloorId || ""))) this.selectedFloorId = [...floorIds][0] || null;
     this.validateSpatialEditor();
     this.validateInventoryState();
+    await this.refreshInventoryProposals?.();
     const needsSetup = !this.data?.release && !this.data?.layout && has(this.data?.availableOperations, "venue.release.ensure");
     this.onboarding = needsSetup ? await managementRepository.venuePhysicalOnboarding(this.id) : null;
     this.lifecycleImpact = null;
@@ -202,6 +228,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   };
 
   onInput = (event) => {
+    if (this.handleInventoryProposalInput?.(event)) return;
     const target = event.target instanceof HTMLTextAreaElement ? event.target : null;
     if (!target?.matches("[data-workflow-message]")) return;
     this.workflowMessage = target.value;
@@ -228,5 +255,6 @@ Object.assign(
   venueSpatialOverlayMixin,
   venueMapRefinementMixin,
   venueSlotInventoryMixin,
+  venueInventoryProposalsMixin,
 );
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
