@@ -1,23 +1,22 @@
 const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
-const { getEditorialReleaseComposer } = require("../services/editorialReleaseComposerV2.service");
+const { getEditorialStudioProjection } = require("../services/editorialStudioV2.service");
+const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
 async function venueAuthoringTargets(req, res, next) {
   try {
-    res.status(200).json(await listVenueAuthoringTargets({
-      venueId: req.params.venueId,
-      actorUserId: req.user._id,
-    }));
+    res.status(200).json(await listVenueAuthoringTargets({ venueId: req.params.venueId, actorUserId: req.user._id }));
   } catch (error) { next(error); }
 }
 
-async function editorialReleaseComposer(req, res, next) {
-  try {
-    res.status(200).json(await getEditorialReleaseComposer({
-      editorialContextId: req.params.editorialContextId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+async function editorialStudio(req, res, next) {
+  try { res.status(200).json(await getEditorialStudioProjection({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+
+async function createEditorialCollection(req, res, next) {
+  try { res.status(201).json(await createEditorialStudioCollection({ payload: req.body || {}, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 
 async function newVisitAuthoring(req, res, next) {
@@ -31,12 +30,8 @@ async function newVisitAuthoring(req, res, next) {
 }
 
 async function visitAuthoring(req, res, next) {
-  try {
-    res.status(200).json(await getVisitAuthoringProjection({
-      actorUserId: req.user._id,
-      visitId: req.params.visitId,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await getVisitAuthoringProjection({ actorUserId: req.user._id, visitId: req.params.visitId })); }
+  catch (error) { next(error); }
 }
 
 async function visitAuthoringContent(req, res, next) {
@@ -70,7 +65,8 @@ async function visitAuthoringCandidates(req, res, next) {
 
 module.exports = {
   venueAuthoringTargets,
-  editorialReleaseComposer,
+  editorialStudio,
+  createEditorialCollection,
   newVisitAuthoring,
   visitAuthoring,
   visitAuthoringContent,
