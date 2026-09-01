@@ -34,6 +34,7 @@ const EditorialContextRevisionSchema = new Schema({
   editorialContextId: { type: Schema.Types.ObjectId, ref: "EditorialContext", required: true, immutable: true, index: true },
   version: { type: Number, required: true, min: 1, immutable: true },
   basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "EditorialContextRevision", default: null, immutable: true },
+  sourceWorkingVersion: { type: Number, required: true, min: 0, immutable: true },
   displayName: { type: String, required: true, trim: true, immutable: true },
   shortDescription: { type: String, trim: true, default: null, immutable: true },
   description: { type: String, trim: true, default: null, immutable: true },
