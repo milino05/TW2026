@@ -14,6 +14,9 @@ function validateMetadata(rawPayload, { creating }) {
   if (issues.length) throw new AppError("Payload EditorialContext non valido", 400, issues);
   return normalized;
 }
+function workingConflict() {
+  return new AppError("La raccolta è stata modificata da un'altra operazione", 409, [{ code: "EDITORIAL_CONTEXT_WORKING_CONFLICT" }]);
+}
 
 async function findEditorialContextOrFail({ editorialContextId, includeTrashed = false }) {
   const query = { _id: editorialContextId };
@@ -88,11 +91,23 @@ async function updateEditorialContext({ editorialContextId, payload, actorUserId
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.edit");
   assertContextWorkingStateEditable(editorialContext);
   const normalized = validateMetadata(payload || {}, { creating: false });
-  if (Object.prototype.hasOwnProperty.call(normalized, "displayName")) editorialContext.displayName = normalized.displayName;
-  if (Object.prototype.hasOwnProperty.call(normalized, "shortDescription")) editorialContext.shortDescription = normalized.shortDescription ?? null;
-  if (Object.prototype.hasOwnProperty.call(normalized, "description")) editorialContext.description = normalized.description ?? null;
-  await editorialContext.save();
-  return projectEditorialContext({ editorialContext, contentSpace, namespace });
+  const set = {};
+  if (Object.prototype.hasOwnProperty.call(normalized, "displayName")) set.displayName = normalized.displayName;
+  if (Object.prototype.hasOwnProperty.call(normalized, "shortDescription")) set.shortDescription = normalized.shortDescription ?? null;
+  if (Object.prototype.hasOwnProperty.call(normalized, "description")) set.description = normalized.description ?? null;
+  if (!Object.keys(set).length) return projectEditorialContext({ editorialContext, contentSpace, namespace });
+
+  const updated = await EditorialContext.findOneAndUpdate({
+    _id: editorialContext._id,
+    lifecycleStatus: "active",
+    activeReviewRevisionId: null,
+    workingVersion: Number(editorialContext.workingVersion || 0),
+  }, {
+    $set: set,
+    $inc: { workingVersion: 1 },
+  }, { new: true });
+  if (!updated) throw workingConflict();
+  return projectEditorialContext({ editorialContext: updated, contentSpace, namespace });
 }
 
 async function getEditorialContext({ editorialContextId, actorUserId }) {
