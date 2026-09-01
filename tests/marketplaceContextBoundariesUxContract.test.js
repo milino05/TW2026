@@ -95,7 +95,8 @@ test("creazione contenuti e gestione inventario sono capability indipendenti", (
   assert.match(source.managementRepository, /authoringPermissions: authoring\.permissions \|\| \{\}/);
   assert.match(source.venueEditorTargets, /canCreateContent = false/);
   assert.match(source.venueEditorTargets, /const createContent = canCreateContent/);
-  assert.match(source.venueEditorTargets, /subjectId=\$\{encodeURIComponent\(id\(entry\.subject\?\.id\)\)\}/);
+  assert.match(source.venueEditorTargets, /const subjectId = id\(entry\.subject\?\.id\)/);
+  assert.match(source.venueEditorTargets, /subjectId=\$\{encodeURIComponent\(subjectId\)\}/);
   assert.match(source.venueEditorSlots, /this\.data\.authoringPermissions\?\.canCreateContent/);
   assert.match(source.venueEditorSlots, /const physicalActions = editable/);
   assert.match(source.venueEditorSlots, /const contentAction = canCreateContent/);
