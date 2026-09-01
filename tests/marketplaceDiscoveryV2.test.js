@@ -22,6 +22,7 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
     const Subject = require("../models/subject.model");
+    const LayoutRevision = require("../models/layoutRevision.model");
     const VenueRelease = require("../models/venueRelease.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
     const MarketplaceOffer = require("../models/marketplaceOffer.model");
@@ -50,14 +51,43 @@ test("Marketplace discovery projects only published Venue state and keeps publis
       { venueId: publishedVenue._id, subjectId: activeSubject._id, createdBy: actorId },
       { venueId: publishedVenue._id, subjectId: unavailableSubject._id, createdBy: actorId },
     ]);
+    const floorId = oid();
+    const placeId = oid();
+    const activeSlotId = oid();
+    const unavailableSlotId = oid();
+    const layout = await LayoutRevision.create({
+      venueId: publishedVenue._id,
+      version: 1,
+      authoredAgainstPhysicalVocabularyRevisionId: oid(),
+      floors: [{
+        _id: floorId,
+        label: "Piano terra",
+        mapAsset: { url: "https://example.test/discovery-map.svg", mimeType: "image/svg+xml", width: 1000, height: 700 },
+      }],
+      places: [{
+        _id: placeId,
+        floorId,
+        placeTypeDefinitionId: "gallery",
+        label: "Sala pubblica",
+        position: { x: 0.5, y: 0.5 },
+      }],
+      connections: [],
+      exhibitSlots: [
+        { exhibitSlotId: activeSlotId, placeId, label: "Parete A", order: 0 },
+        { exhibitSlotId: unavailableSlotId, placeId, label: "Parete B", order: 1 },
+      ],
+      status: "published",
+      createdBy: actorId,
+      updatedBy: actorId,
+    });
     const release = await VenueRelease.create({
       venueId: publishedVenue._id,
       version: 1,
-      layoutRevisionId: oid(),
+      layoutRevisionId: layout._id,
       status: "published",
       targetBindings: [
-        { venueTargetId: activeTarget._id, exhibitSlotId: oid(), availability: "active", recognitionMedia: [{ url: "https://example.test/opera.jpg", altText: "Opera" }] },
-        { venueTargetId: unavailableTarget._id, exhibitSlotId: oid(), availability: "unavailable" },
+        { venueTargetId: activeTarget._id, exhibitSlotId: activeSlotId, availability: "active", recognitionMedia: [{ url: "https://example.test/opera.jpg", altText: "Opera" }] },
+        { venueTargetId: unavailableTarget._id, exhibitSlotId: unavailableSlotId, availability: "unavailable" },
       ],
       preVisitInformation: ["Presentarsi dieci minuti prima"],
       createdBy: actorId,
@@ -103,6 +133,7 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     const publicVenue = await venuePublicProfile({ venueId: publishedVenue._id });
     assert.equal(publicVenue.venue.version, 1);
     assert.deepEqual(publicVenue.venue.preVisitInformation, ["Presentarsi dieci minuti prima"]);
+    assert.equal(String(publicVenue.map.layoutRevisionId), String(layout._id));
     assert.equal(publicVenue.targets.length, 1);
     assert.equal(publicVenue.targets[0].label, "Opera pubblica");
     assert.deepEqual(publicVenue.targets[0].recognitionMedia, [{ url: "https://example.test/opera.jpg", altText: "Opera" }]);
