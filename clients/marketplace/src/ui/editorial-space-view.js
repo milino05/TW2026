@@ -1,5 +1,6 @@
 import { navigate } from "../application/router.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -55,7 +56,13 @@ export class ArtAroundEditorialSpaceView extends HTMLElement {
 
   async removeSpace() {
     if (!this.data?.permissions?.canManageSpace) return;
-    if (!window.confirm(`Eliminare lo spazio “${this.data.space.name}”? Gli Item resteranno disponibili, ma le membership dello spazio verranno rimosse. L'operazione è bloccata se esistono raccolte attive.`)) return;
+    const confirmed = await openActionDialog({
+      title: `Eliminare lo spazio “${this.data.space.name}”?`,
+      message: "Gli Item resteranno disponibili, ma le membership dello spazio verranno rimosse. L'operazione è bloccata se esistono raccolte attive.",
+      confirmLabel: "Elimina spazio",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     this.busy = true; this.render();
     try { await editorialRepository.removeSpace(this.contentSpaceId); navigate("/workspace/editorial-spaces"); }
     catch (error) { this.error = error instanceof Error ? error.message : "Eliminazione non completata"; this.busy = false; this.render(); }
