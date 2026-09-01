@@ -1,4 +1,5 @@
 import { navigate, pushSameDocumentHistory } from "../application/router.js";
+import { confirmNavigationLoss, hasNavigationLossRisk } from "../application/navigation-loss-guard.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { icon } from "./icons.js";
 
@@ -44,19 +45,26 @@ export class ArtAroundProfileView extends HTMLElement {
     return result;
   }
 
-  setSection(section) {
+  async setSection(section) {
     const normalized = ACCOUNT_SECTION_CODES.has(section) ? section : "account-overview";
+    if (normalized === this.activeSection) return;
+    if (hasNavigationLossRisk()) {
+      const confirmed = await confirmNavigationLoss({ kind: "section", from: this.activeSection, to: normalized });
+      if (!confirmed) return;
+    }
     this.activeSection = normalized;
+    this.message = null;
+    this.error = null;
     const nextUrl = `${window.location.pathname}${window.location.search}#${normalized}`;
     if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) pushSameDocumentHistory(nextUrl);
     this.render();
     requestAnimationFrame(() => this.querySelector(".organization-section, .organization-overview")?.focus({ preventScroll: true }));
   }
 
-  onClick = (event) => {
+  onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     const section = target?.closest("[data-account-section]");
-    if (section) { this.setSection(section.dataset.accountSection); return; }
+    if (section) { await this.setSection(section.dataset.accountSection); return; }
     if (target?.closest("[data-context-hub]")) { navigate("/context"); return; }
     const namespace = target?.closest("[data-namespace]");
     if (namespace) { navigate(`/namespaces/editor?namespaceId=${encodeURIComponent(namespace.dataset.namespace)}`); return; }
