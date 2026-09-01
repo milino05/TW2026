@@ -5,6 +5,7 @@ const { Schema } = mongoose;
 
 const EditorialReleaseSchema = new Schema({
   editorialContextId: { type: Schema.Types.ObjectId, ref: "EditorialContext", required: true, index: true, immutable: true },
+  sourceContextRevisionId: { type: Schema.Types.ObjectId, ref: "EditorialContextRevision", default: null, index: true, immutable: true },
   version: { type: Number, required: true, min: 1, immutable: true },
   basedOnReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null, immutable: true },
   namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true, index: true, immutable: true },
