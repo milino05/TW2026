@@ -31,7 +31,7 @@ async function createVenueTarget({ venueId, payload, actorUserId }) {
 }
 
 async function ensureVenueEntity({ venueId, payload, actorUserId, session = null, skipAuthorization = false }) {
-  if (!skipAuthorization) await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
+  if (!skipAuthorization) await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.inventory.manage" });
   const normalized = validatedTargetPayload(payload, { creating: true });
   let subjectQuery = Subject.exists({ _id: normalized.subjectId });
   if (session) subjectQuery = subjectQuery.session(session);
@@ -61,7 +61,7 @@ async function ensureVenueEntity({ venueId, payload, actorUserId, session = null
 }
 
 async function updateVenueTarget({ venueId, venueTargetId, payload, actorUserId }) {
-  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
+  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.inventory.manage" });
   const target = await findVenueTargetOrFail({ venueId, venueTargetId });
   const normalized = validatedTargetPayload(payload, { creating: false });
   if (Object.prototype.hasOwnProperty.call(normalized, "displayLabelOverride")) target.displayLabelOverride = normalized.displayLabelOverride;
@@ -138,7 +138,7 @@ async function publishedVisitReferencesTarget({ venueTargetId, session = null })
 }
 
 async function trashVenueTarget({ venueId, venueTargetId, actorUserId }) {
-  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.lifecycle.manage" });
+  await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.inventory.manage" });
   let trashedTarget = null;
   try {
     await mongoose.connection.transaction(async (session) => {
