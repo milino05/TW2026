@@ -6,6 +6,8 @@ const router = express.Router();
 const editorialContextId = validateObjectIdParam("editorialContextId");
 const entryId = validateObjectIdParam("entryId");
 const revisionId = validateObjectIdParam("revisionId");
+const edgeId = validateObjectIdParam("edgeId");
+const subjectId = validateObjectIdParam("subjectId");
 
 router.use(requireAuth);
 router.route("/editorial-contexts")
@@ -26,8 +28,10 @@ router.route("/editorial-contexts/:editorialContextId/entries/:entryId")
   .patch(controller.updateEntry)
   .delete(controller.removeEntry);
 
-router.post("/editorial-contexts/:editorialContextId/graph-revisions", editorialContextId, controller.createGraph);
 router.get("/editorial-contexts/:editorialContextId/semantic-graph", editorialContextId, controller.getGraph);
+router.post("/editorial-contexts/:editorialContextId/semantic-graph/edges", editorialContextId, controller.addGraphEdge);
+router.delete("/editorial-contexts/:editorialContextId/semantic-graph/edges/:edgeId", editorialContextId, edgeId, controller.removeGraphEdge);
+router.put("/editorial-contexts/:editorialContextId/semantic-graph/subjects/:subjectId/classes", editorialContextId, subjectId, controller.setGraphSubjectClasses);
 
 router.post("/editorial-contexts/:editorialContextId/check", editorialContextId, controller.checkReadiness);
 router.route("/editorial-contexts/:editorialContextId/review")
