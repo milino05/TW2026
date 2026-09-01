@@ -93,17 +93,24 @@ rejectPattern(
   "Item authoring round-trip must preserve dangling Subject references",
 );
 
-// Context composition must resolve the Namespace snapshot through the same capability
-// boundary as the write service, including pinned Entitlements.
+// A new Editorial Studio collection must resolve its Namespace through the same
+// capability boundary used by other editorial-context writes. This includes pinned
+// Entitlements: the authorized NamespaceRevision is persisted into the initial graph,
+// rather than silently switching to the Namespace's current live revision.
 requirePattern(
-  "services/editorialReleaseComposerV2.service.js",
+  "services/editorialStudioCreationV2.service.js",
   /assertCanUseNamespaceForEditorialContext/,
-  "EditorialReleaseComposer Namespace capability resolution",
+  "Editorial Studio Namespace capability resolution",
 );
 requirePattern(
-  "services/editorialReleaseComposerV2.service.js",
+  "services/editorialStudioCreationV2.service.js",
   /resolvedSnapshotRef/,
-  "EditorialReleaseComposer authorized Namespace snapshot",
+  "Editorial Studio authorized Namespace snapshot",
+);
+requirePattern(
+  "services/editorialStudioCreationV2.service.js",
+  /authoredAgainstNamespaceRevisionId:\s*namespaceRevision\._id/,
+  "Editorial Studio initial graph NamespaceRevision pin",
 );
 
 if (failed) process.exit(1);
