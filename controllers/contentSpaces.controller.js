@@ -16,6 +16,10 @@ async function update(req, res, next) {
   try { res.status(200).json(await contentSpaceService.updateContentSpace({ contentSpaceId: req.params.contentSpaceId, payload: req.body || {}, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
+async function remove(req, res, next) {
+  try { res.status(200).json(await contentSpaceService.trashContentSpace({ contentSpaceId: req.params.contentSpaceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
 async function listItems(req, res, next) {
   try { res.status(200).json(await contentSpaceService.listItemMemberships({ contentSpaceId: req.params.contentSpaceId, actorUserId: req.user._id, page: req.query?.page, limit: req.query?.limit })); }
   catch (error) { next(error); }
@@ -33,4 +37,4 @@ async function moveItem(req, res, next) {
   catch (error) { next(error); }
 }
 
-module.exports = { create, list, get, update, listItems, addItem, removeItem, moveItem };
+module.exports = { create, list, get, update, remove, listItems, addItem, removeItem, moveItem };
