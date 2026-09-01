@@ -6,6 +6,7 @@ const PROTECTED_HOST_SELECTOR = [
   "artaround-organization-view",
   "artaround-venue-editor-view",
   "artaround-visit-authoring-view",
+  "artaround-item-authoring-view",
   "artaround-context-release-composer",
   "artaround-commerce-management-view",
 ].join(",");
@@ -35,6 +36,16 @@ function pruneDirtyForms() {
   for (const form of dirtyForms) if (!form.isConnected) dirtyForms.delete(form);
 }
 
+function formHasDedicatedDraftBlocker(form) {
+  const itemEditor = form.closest("artaround-item-authoring-view");
+  return Boolean(itemEditor?.readWorkingDraft?.());
+}
+
+function hasUncoveredDirtyForm() {
+  pruneDirtyForms();
+  return [...dirtyForms].some((form) => !formHasDedicatedDraftBlocker(form));
+}
+
 function markFromEvent(event) {
   const control = event.target;
   if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) return;
@@ -56,7 +67,7 @@ if (document.readyState === "loading") document.addEventListener("DOMContentLoad
 else observerStart();
 
 registerNavigationLossBlocker({
-  isBlocking: () => { pruneDirtyForms(); return dirtyForms.size > 0; },
+  isBlocking: hasUncoveredDirtyForm,
   confirm: () => openActionDialog({
     tone: "danger",
     title: "Uscire senza salvare?",
