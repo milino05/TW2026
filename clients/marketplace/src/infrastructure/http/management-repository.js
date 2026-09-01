@@ -25,7 +25,8 @@ export const managementRepository = {
   async venue(venueId) {
     const projection = await apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
     assertOrganizationOperatingContext(projection?.venue?.organizationId, { resourceLabel: "Questa sede" });
-    return projection;
+    const authoring = await apiClient.request(`/v2/marketplace/venues/${encoded(venueId)}/authoring-targets`);
+    return { ...projection, authoringPermissions: authoring.permissions || {} };
   },
   venueLifecycleImpact(venueId) {
     return apiClient.request(`/venues/${encoded(venueId)}/lifecycle-impact`);
