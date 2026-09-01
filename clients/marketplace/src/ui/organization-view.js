@@ -5,6 +5,7 @@ import { managementRepository } from "../infrastructure/http/management-reposito
 import { icon } from "./icons.js";
 
 const SECTIONS = new Set(["overview", "people", "roles", "venues", "rules", "physical", "settings"]);
+const PAGE_STATE_KEYS = Object.freeze({ member: "memberPage", venue: "venuePage", namespace: "namespacePage", physicalVocabulary: "physicalVocabularyPage" });
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
 function roleNames(roles = []) { return roles.map((role) => role.name).join(" · ") || "Nessun ruolo"; }
@@ -77,22 +78,45 @@ export class ArtAroundOrganizationView extends HTMLElement {
   }
   selectedRoleIds(formData) { return formData.getAll("roleIds").map(String).filter(Boolean); }
 
+  async confirmLocalNavigation(to) {
+    if (!hasNavigationLossRisk()) return true;
+    return confirmNavigationLoss({ kind: "section", from: sectionRoute(this.state), to });
+  }
+
   async setSection(section) {
     const normalized = this.availableSectionCodes().has(section) ? section : "overview";
     if (normalized === this.state.section) return;
-    if (hasNavigationLossRisk()) {
-      const confirmed = await confirmNavigationLoss({ kind: "section", from: this.state.section, to: normalized });
-      if (!confirmed) return;
-    }
-    this.state = { ...this.state, section: normalized };
+    const nextState = { ...this.state, section: normalized };
+    if (!await this.confirmLocalNavigation(sectionRoute(nextState))) return;
+    this.state = nextState;
     this.memberEditor = null;
     this.roleEditor = null;
     this.confirmation = null;
+    this.message = null;
     this.error = null;
     const nextUrl = sectionBrowserUrl(this.state);
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (currentUrl !== nextUrl) pushSameDocumentHistory(nextUrl);
     this.render();
+    requestAnimationFrame(() => this.querySelector(".organization-section, .organization-overview")?.focus({ preventScroll: true }));
+  }
+
+  async setPage(kind, page) {
+    const stateKey = PAGE_STATE_KEYS[kind];
+    const normalizedPage = Math.max(1, Number(page) || 1);
+    if (!stateKey || normalizedPage === this.state[stateKey]) return;
+    const nextState = { ...this.state, [stateKey]: normalizedPage };
+    if (!await this.confirmLocalNavigation(sectionRoute(nextState))) return;
+    this.state = nextState;
+    this.memberEditor = null;
+    this.roleEditor = null;
+    this.confirmation = null;
+    this.message = null;
+    this.error = null;
+    const nextUrl = sectionBrowserUrl(this.state);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (currentUrl !== nextUrl) pushSameDocumentHistory(nextUrl);
+    await this.load();
     requestAnimationFrame(() => this.querySelector(".organization-section, .organization-overview")?.focus({ preventScroll: true }));
   }
 
@@ -109,7 +133,7 @@ export class ArtAroundOrganizationView extends HTMLElement {
     const physicalVocabulary = target?.closest("[data-physical-vocabulary]");
     if (physicalVocabulary) { navigate(`/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(physicalVocabulary.dataset.physicalVocabulary)}`); return; }
     const page = target?.closest("[data-page-kind]");
-    if (page && Number(page.dataset.page) > 0) { navigate(sectionRoute(this.state, { [`${page.dataset.pageKind}Page`]: Number(page.dataset.page) })); return; }
+    if (page && Number(page.dataset.page) > 0) { await this.setPage(page.dataset.pageKind, Number(page.dataset.page)); return; }
 
     const editMember = target?.closest("[data-member-edit]");
     if (editMember) { this.memberEditor = editMember.dataset.memberEdit; this.render(); return; }
