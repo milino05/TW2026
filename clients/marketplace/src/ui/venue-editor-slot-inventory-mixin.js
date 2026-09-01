@@ -324,7 +324,14 @@ export const venueSlotInventoryMixin = {
     const current = assigned
       ? `<article class="venue-slot-current-entity"><span class="venue-inventory-browser-card-status" data-tone="success">Già esposto</span><h3>${escapeHtml(assigned.label || "Entità")}</h3><p>${escapeHtml(assigned.subject?.preferredLabel || assigned.subject?.description || "Entità dell’inventario")}</p><small>Collocazione: ${escapeHtml(assigned.exhibitSlot?.label || slot.label)}</small></article>`
       : `<div class="empty-state compact venue-slot-empty-entity"><h3>Slot libero</h3><p>Nessuna entità dell’inventario è assegnata a questa posizione.</p></div>`;
-    const actions = editable ? `<div class="button-row venue-slot-entity-actions"><button type="button" data-open-inventory-browser="${escapeHtml(id(slot.exhibitSlotId))}">${assigned ? "Cambia entità" : "Apri inventario"}</button>${assigned ? `<button class="button-secondary" type="button" data-unassign-slot-current="${escapeHtml(id(assigned.id))}">Libera slot</button><a class="button-link secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(assigned.id))}">Crea contenuto</a>` : ""}</div>` : "";
+    const canCreateContent = Boolean(assigned && this.data.authoringPermissions?.canCreateContent);
+    const physicalActions = editable
+      ? `<button type="button" data-open-inventory-browser="${escapeHtml(id(slot.exhibitSlotId))}">${assigned ? "Cambia entità" : "Apri inventario"}</button>${assigned ? `<button class="button-secondary" type="button" data-unassign-slot-current="${escapeHtml(id(assigned.id))}">Libera slot</button>` : ""}`
+      : "";
+    const contentAction = canCreateContent
+      ? `<a class="button-link secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(assigned.id))}">Crea contenuto</a>`
+      : "";
+    const actions = physicalActions || contentAction ? `<div class="button-row venue-slot-entity-actions">${physicalActions}${contentAction}</div>` : "";
     const panel = `<div class="venue-slot-entity-panel">${current}${actions}<p class="note">Aggiungere un’entità all’inventario non la colloca automaticamente: l’assegnazione a questo slot resta un gesto esplicito.</p></div>`;
     const breadcrumb = `<button class="button-link" type="button" data-open-spatial-place="${escapeHtml(id(place._id))}">‹ ${escapeHtml(place.label || "Luogo")}</button>`;
     const danger = editable ? `<section class="venue-detail-danger"><div><strong>Rimuovi slot</strong><p>L’entità eventualmente esposta resterà nell’inventario della sede.</p></div><button class="danger" type="button" data-remove-slot="${escapeHtml(id(slot.exhibitSlotId))}" data-label="${escapeHtml(slot.label)}">Rimuovi slot</button></section>` : "";
@@ -377,7 +384,7 @@ export const venueSlotInventoryMixin = {
     if (!this.inventoryDetailTargetId) return "";
     const entry = (this.data.targets || []).find((target) => id(target.id) === id(this.inventoryDetailTargetId));
     if (!entry) return "";
-    return `<div class="venue-modal-backdrop venue-inventory-detail-backdrop" role="presentation"><section class="venue-modal-card venue-inventory-detail-dialog" role="dialog" aria-modal="true" aria-label="Dettaglio inventario">${targetInspector(entry, { editable, pendingTargetRemovalId: this.pendingTargetRemovalId, busy: this.busy })}</section></div>`;
+    return `<div class="venue-modal-backdrop venue-inventory-detail-backdrop" role="presentation"><section class="venue-modal-card venue-inventory-detail-dialog" role="dialog" aria-modal="true" aria-label="Dettaglio inventario">${targetInspector(entry, { editable, canCreateContent: Boolean(this.data.authoringPermissions?.canCreateContent), pendingTargetRemovalId: this.pendingTargetRemovalId, busy: this.busy })}</section></div>`;
   },
 
   renderMapCreationDialog(editable) {

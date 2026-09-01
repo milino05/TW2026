@@ -26,15 +26,18 @@ test("i moduli del navigation-loss guard superano il syntax check", () => {
   ]) execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
 });
 
-test("Namespace e Physical registrano lo stesso guard centralizzato quando entrano realmente nel DOM", () => {
+test("gli editor con modifiche locali registrano lo stesso guard centralizzato", () => {
   assert.match(adapter, /DIRTY_EDITOR_GUARDS/);
   assert.match(adapter, /artaround-namespace-editor-view/);
   assert.match(adapter, /artaround-physical-vocabulary-editor-view/);
+  assert.match(adapter, /artaround-item-authoring-view/);
   assert.match(adapter, /installDirtyNavigationGuardObserver/);
   assert.match(adapter, /new MutationObserver/);
   assert.match(adapter, /visitDirtyEditors\(node, registerDirtyEditor\)/);
   assert.match(adapter, /visitDirtyEditors\(node, \(editor\) => unregisterDirtyEditor\(editor\)\)/);
-  assert.match(adapter, /isBlocking: \(\) => editor\.isConnected && Boolean\(editor\.dirty\)/);
+  assert.match(adapter, /definition\.isBlocking \? definition\.isBlocking\(editor\) : Boolean\(editor\.dirty\)/);
+  assert.match(adapter, /editor\.readWorkingDraft\?\.\(\)/);
+  assert.match(adapter, /editor\.clearWorkingDraft\?\.\(\)/);
   assert.match(adapter, /registerNavigationLossBlocker/);
   assert.match(adapter, /openActionDialog\(\{/);
   assert.match(adapter, /title: "Uscire senza salvare\?"/);
@@ -75,11 +78,12 @@ test("logout viene fermato prima dell'effetto di autenticazione quando esistono 
   assert.match(adapter, /event\.stopImmediatePropagation\(\)/);
 });
 
-test("refresh e chiusura tab conservano la protezione nativa beforeunload", () => {
+test("refresh e chiusura tab usano un guard nativo centralizzato", () => {
+  assert.match(adapter, /window\.addEventListener\("beforeunload"/);
+  assert.match(adapter, /if \(!hasNavigationLossRisk\(\)\) return/);
+  assert.match(adapter, /event\.returnValue = ""/);
   assert.match(namespace, /beforeunload/);
-  assert.match(namespace, /event\.returnValue = ""/);
   assert.match(physical, /beforeunload/);
-  assert.match(physical, /event\.returnValue = ""/);
 });
 
 test("anche i metadati modificabili del Physical Vocabulary attivano subito il guard", () => {

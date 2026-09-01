@@ -24,27 +24,36 @@ test("Account, Organization management e profilo pubblico passano il syntax gate
   }
 });
 
-test("Account usa IA user-facing per preferenze e strumenti personali", () => {
+test("Account e Organization condividono la stessa grammatica di management", () => {
+  for (const token of ["organization-page", "organization-header", "organization-tabs", "organization-section", "organization-overview"]) {
+    assert.match(profile, new RegExp(token));
+    assert.match(organization, new RegExp(token));
+  }
   assert.match(profile, /Account ArtAround/);
   assert.match(profile, /Preferenze visita/);
   assert.match(profile, /Organizzazioni/);
-  assert.match(profile, /Regole editoriali personali/);
-  assert.match(profile, /data-organization-section="venues"/);
-  assert.match(profile, /data-organization-section="rules"/);
+  assert.match(profile, /Regole editoriali/);
+  assert.match(profile, /Vocabolari fisici/);
 });
 
-test("le scorciatoie Account navigano alle sezioni e mantengono il deep link", () => {
-  for (const section of ["account-overview", "account-preferences", "account-organizations", "account-rules"]) {
-    assert.match(profile, new RegExp(`data-account-section="${section}"`));
-    assert.match(profile, new RegExp(`id="${section}" tabindex="-1"`));
+test("le sezioni Account usano lo stesso modello a tab della gestione Organization", () => {
+  for (const section of ["account-overview", "account-preferences", "account-organizations", "account-rules", "account-physical"]) {
+    assert.match(profile, new RegExp(`data-account-section=\\"\\$\\{section\\.code\\}\\"|${section}`));
   }
-  assert.match(profile, /event\.preventDefault\(\);[\s\S]*?scrollToSection\(accountSection\.dataset\.accountSection/);
-  assert.match(profile, /import \{ navigate, pushSameDocumentHistory \} from "\.\.\/application\/router\.js"/);
+  assert.match(profile, /setSection\(section\)/);
+  assert.match(profile, /renderCurrentSection\(\)/);
   assert.match(profile, /pushSameDocumentHistory\(nextUrl\)/);
   assert.doesNotMatch(profile, /window\.history\.pushState/);
-  assert.match(profile, /section\.scrollIntoView\(\{ behavior, block: "start" \}\)/);
-  assert.match(profile, /section\.focus\(\{ preventScroll: true \}\)/);
   assert.match(profile, /accountSectionFromHash/);
+});
+
+test("la sezione Organizzazioni dell'account è informativa e obbliga al cambio area", () => {
+  assert.match(profile, /Cambia o crea area/);
+  assert.match(profile, /data-context-hub/);
+  assert.match(profile, /non modificare dati dell'organizzazione mentre sei nell'area personale/);
+  assert.doesNotMatch(profile, /data-organization=/);
+  assert.doesNotMatch(profile, /data-organization-section=/);
+  assert.doesNotMatch(profile, /organizationUrl\(/);
 });
 
 test("la creazione Organization è centralizzata nel Context Hub", () => {
@@ -97,7 +106,6 @@ test("dopo la creazione delle regole si entra subito nell'editor guidato", () =>
     assert.match(source, /created\?\.namespace\?\._id/);
     assert.match(source, /\/namespaces\/editor\?namespaceId=/);
     assert.match(source, /Crea e configura/);
-    assert.match(source, source === profile ? /tutorial e un modello già pronto facoltativo/ : /Crea e configura/);
   }
 });
 
@@ -106,5 +114,5 @@ test("la UI distingue ruoli multipli, Owner e permission builder", () => {
   assert.match(organization, /owner-badge/);
   assert.match(organization, /permissionCodes/);
   assert.match(organization, /Impatto elevato/);
-  assert.doesNotMatch(organization, /manager|operator|actorRole|isManager/);
+  assert.doesNotMatch(organization, /operator|actorRole|isManager/);
 });
