@@ -53,6 +53,8 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const { createGraphRevision } = require("../services/semanticGraphV2.service");
+    const { addEditorialContextEntry } = require("../services/editorialContextEntry.service");
+    const { requestEditorialContextReview, approveEditorialContextReview } = require("../services/editorialContextReview.service");
     const { createEditorialRelease } = require("../services/editorialRelease.service");
     const { projectEditorialContext } = require("../services/editorialContextProjection.service");
 
@@ -152,14 +154,19 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
       (error) => error?.status === 409 && error?.details?.some((entry) => entry.code === "GRAPH_REVISION_CONFLICT"),
       "una snapshot basata su una revisione superata non deve sostituire il grafo corrente",
     );
+
+    await addEditorialContextEntry({
+      editorialContextId: context._id,
+      itemEditionId: edition._id,
+      curationSignals: [],
+      actorUserId: user._id,
+    });
+    const reviewRevision = await requestEditorialContextReview({ editorialContextId: context._id, actorUserId: user._id });
+    await approveEditorialContextReview({ editorialContextId: context._id, revisionId: reviewRevision._id, actorUserId: user._id });
     const release = await createEditorialRelease({
       editorialContextId: context._id,
+      editorialContextRevisionId: reviewRevision._id,
       actorUserId: user._id,
-      payload: {
-        namespaceRevisionId: namespaceRevision._id,
-        graphRevisionId: revisedGraph.revision._id,
-        itemBindings: [{ itemEditionId: edition._id, itemRevisionId: revision._id, curationSignals: [] }],
-      },
     });
 
     const refreshedContext = await EditorialContext.findById(context._id);
