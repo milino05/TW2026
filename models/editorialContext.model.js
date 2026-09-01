@@ -8,6 +8,7 @@ const EditorialContextSchema = new Schema({
   shortDescription: { type: String, trim: true, default: null },
   description: { type: String, trim: true, default: null },
   workingGraphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", default: null },
+  workingVersion: { type: Number, min: 0, default: 0 },
   activeReviewRevisionId: { type: Schema.Types.ObjectId, ref: "EditorialContextRevision", default: null, index: true },
   publishedReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null },
   lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
