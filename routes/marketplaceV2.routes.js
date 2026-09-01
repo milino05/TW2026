@@ -10,6 +10,7 @@ const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
 const itemId = validateObjectIdParam("itemId");
+const subjectId = validateObjectIdParam("subjectId");
 const namespaceId = validateObjectIdParam("namespaceId");
 const physicalVocabularyId = validateObjectIdParam("physicalVocabularyId");
 const organizationId = validateObjectIdParam("organizationId");
@@ -29,6 +30,7 @@ router.get("/v2/marketplace/discovery/organizations/:organizationId", organizati
 router.get("/v2/marketplace/discovery/venues", discoveryController.venues);
 router.get("/v2/marketplace/discovery/venues/:venueId", venueId, discoveryController.venue);
 router.get("/v2/marketplace/authoring/preflight", preflightController.authoringPreflight);
+router.get("/v2/marketplace/subjects/:subjectId/venue-presence", subjectId, authoringController.subjectVenuePresence);
 router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
