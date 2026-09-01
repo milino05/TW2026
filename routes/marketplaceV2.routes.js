@@ -18,7 +18,6 @@ const contentSpaceId = validateObjectIdParam("contentSpaceId");
 const editorialContextId = validateObjectIdParam("editorialContextId");
 const editorialReleaseId = validateObjectIdParam("editorialReleaseId");
 const venueId = validateObjectIdParam("venueId");
-const venueTargetId = validateObjectIdParam("venueTargetId");
 const visitId = validateObjectIdParam("visitId");
 const resourceId = validateObjectIdParam("resourceId");
 
@@ -43,7 +42,6 @@ router.get("/v2/marketplace/visit-authoring/new", authoringController.newVisitAu
 router.get("/v2/marketplace/visit-authoring/releases/:editorialReleaseId/content", editorialReleaseId, authoringController.visitAuthoringContent);
 router.get("/v2/marketplace/visit-authoring/:visitId/content-candidates", visitId, authoringController.visitAuthoringCandidates);
 router.get("/v2/marketplace/visit-authoring/:visitId", visitId, authoringController.visitAuthoring);
-router.get("/v2/marketplace/venue-targets/:venueTargetId/authoring-context", venueTargetId, controller.venueTargetAuthoringContext);
 router.get("/v2/marketplace/acquisitions", controller.acquisitionHistory);
 router.get("/v2/marketplace/commerce", controller.commercialManagement);
 router.get("/v2/marketplace/account-workspace", controller.marketplaceAccountWorkspace);
