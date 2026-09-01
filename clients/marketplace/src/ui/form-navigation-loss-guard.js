@@ -7,7 +7,6 @@ const PROTECTED_HOST_SELECTOR = [
   "artaround-venue-editor-view",
   "artaround-visit-authoring-view",
   "artaround-item-authoring-view",
-  "artaround-context-release-composer",
   "artaround-commerce-management-view",
 ].join(",");
 
