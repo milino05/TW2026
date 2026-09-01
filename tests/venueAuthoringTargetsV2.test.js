@@ -35,7 +35,7 @@ async function createRoleMembership({ OrganizationRole, OrganizationMembership, 
   return role;
 }
 
-test("Venue authoring inventory includes exposed, unplaced and unavailable targets while keeping item and physical capabilities independent", { skip: !mongoUri }, async () => {
+test("Venue authoring inventory includes exposed, unplaced and unavailable targets while keeping item and inventory capabilities independent", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Organization = require("../models/organization.model");
@@ -49,10 +49,10 @@ test("Venue authoring inventory includes exposed, unplaced and unavailable targe
     const VenueRelease = require("../models/venueRelease.model");
     const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
 
-    const [owner, contributor, venueManager] = await User.create([
+    const [owner, contributor, inventoryManager] = await User.create([
       { username: "venue-authoring-owner", passwordHash: "hash" },
       { username: "venue-authoring-contributor", passwordHash: "hash" },
-      { username: "venue-authoring-manager", passwordHash: "hash" },
+      { username: "venue-authoring-inventory-manager", passwordHash: "hash" },
     ]);
     const organization = await Organization.create({ name: "Museo authoring", createdBy: owner._id });
 
@@ -69,10 +69,10 @@ test("Venue authoring inventory includes exposed, unplaced and unavailable targe
       OrganizationRole,
       OrganizationMembership,
       organizationId: organization._id,
-      userId: venueManager._id,
+      userId: inventoryManager._id,
       assignedBy: owner._id,
-      name: "Venue manager authoring",
-      permissionCodes: ["venue.view", "venue.physical.edit"],
+      name: "Inventory manager authoring",
+      permissionCodes: ["venue.view", "venue.inventory.manage"],
     });
 
     const venue = await Venue.create({
@@ -152,7 +152,7 @@ test("Venue authoring inventory includes exposed, unplaced and unavailable targe
 
     const managerProjection = await listVenueAuthoringTargets({
       venueId: venue._id,
-      actorUserId: venueManager._id,
+      actorUserId: inventoryManager._id,
     });
     assert.equal(managerProjection.permissions.canCreateContent, false);
     assert.equal(managerProjection.permissions.canEditInventory, true);
