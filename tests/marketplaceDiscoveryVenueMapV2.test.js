@@ -53,7 +53,7 @@ test("public Venue profile projects only the published layout and active exposed
       floors: [{
         _id: publishedFloorId,
         label: "Piano pubblico",
-        mapAsset: { url: "https://example.test/public-map.png", width: 1200, height: 800 },
+        mapAsset: { url: "https://example.test/public-map.png", mimeType: "image/png", width: 1200, height: 800 },
       }],
       places: [{
         _id: publishedPlaceId,
