@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
@@ -10,9 +9,6 @@ const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const { assertCanForkItemEdition } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
-const Venue = require("../models/venue.model");
-const { assertVenuePermission } = require("./venueAuthorization.service");
-const { ensureVenueEntity } = require("./venueTarget.service");
 const {
   markRevisionEdited,
   requestReview,
@@ -69,49 +65,6 @@ async function createItem({ payload, actorUserId }) {
     provenance: payload.provenance || { origin: "human" },
     createdBy: actorUserId,
   });
-}
-
-async function createItemWithPhysicalIntent({ venueId, payload, actorUserId }) {
-  const issues = validateCreateItemPayload(payload || {});
-  if (issues.length) throw new AppError("Payload non valido", 400, issues);
-  await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId, permissionCode: "item.create" });
-  const { venue } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
-  if (payload.ownerType !== "organization" || !sameId(payload.ownerId, venue.ownerOrganizationId)) {
-    throw new AppError("L'intento fisico è disponibile solo per contenuti dell'organizzazione proprietaria della sede", 409, [{
-      field: "ownerId",
-      code: "PHYSICAL_INTENT_OWNER_MISMATCH",
-      context: { venueId, venueOwnerOrganizationId: venue.ownerOrganizationId },
-    }]);
-  }
-  if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404);
-
-  let result = null;
-  let createdItem = null;
-  try {
-    await mongoose.connection.transaction(async (session) => {
-      const currentVenue = await Venue.findOne({ _id: venueId, ownerOrganizationId: payload.ownerId, lifecycleStatus: "active" }).session(session);
-      if (!currentVenue) throw new AppError("Sede non disponibile", 404);
-      [createdItem] = await ItemV2.create([{
-        primarySubjectId: payload.primarySubjectId,
-        ownerType: payload.ownerType,
-        ownerId: payload.ownerId,
-        provenance: payload.provenance || { origin: "human" },
-        createdBy: actorUserId,
-      }], { session });
-      const ensured = await ensureVenueEntity({
-        venueId,
-        payload: { subjectId: payload.primarySubjectId, provenance: { origin: "item_authoring", sourceId: String(createdItem._id) } },
-        actorUserId,
-        session,
-        skipAuthorization: true,
-      });
-      result = { item: createdItem, venueEntity: ensured.target, createdVenueEntity: ensured.created };
-    });
-    return result;
-  } catch (error) {
-    if (createdItem?._id) await ItemV2.deleteOne({ _id: createdItem._id }).catch(() => {});
-    throw error;
-  }
 }
 
 async function listItems({ ownerType, ownerId, primarySubjectId, includeTrashed = false } = {}) {
@@ -537,7 +490,6 @@ module.exports = {
   findItemOrFail,
   assertCanManageItem,
   createItem,
-  createItemWithPhysicalIntent,
   listItems,
   getItem,
   createEdition,
