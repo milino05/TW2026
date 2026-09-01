@@ -1,7 +1,7 @@
 const editorialContextService = require("../services/editorialContext.service");
 const editorialContextEntryService = require("../services/editorialContextEntry.service");
 const editorialContextReviewService = require("../services/editorialContextReview.service");
-const { createGraphRevision } = require("../services/semanticGraphV2.service");
+const editorialGraphCommandService = require("../services/editorialGraphCommand.service");
 const { getEditorialContextGraph, projectGraph } = require("../services/editorialContextGraph.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
 
@@ -37,14 +37,20 @@ async function removeEntry(req, res, next) {
   try { res.status(200).json(await editorialContextEntryService.removeEditorialContextEntry({ editorialContextId: req.params.editorialContextId, entryId: req.params.entryId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-async function createGraph(req, res, next) {
-  try {
-    const graph = await createGraphRevision({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id });
-    res.status(201).json(projectGraph(graph));
-  } catch (error) { next(error); }
-}
 async function getGraph(req, res, next) {
   try { res.status(200).json(await getEditorialContextGraph({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+async function addGraphEdge(req, res, next) {
+  try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); }
+  catch (error) { next(error); }
+}
+async function removeGraphEdge(req, res, next) {
+  try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, actorUserId: req.user._id }))); }
+  catch (error) { next(error); }
+}
+async function setGraphSubjectClasses(req, res, next) {
+  try { res.status(200).json(projectGraph(await editorialGraphCommandService.setEditorialGraphSubjectClasses({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, subjectClassDefinitionIds: req.body?.subjectClassDefinitionIds || [], actorUserId: req.user._id }))); }
   catch (error) { next(error); }
 }
 async function checkReadiness(req, res, next) {
@@ -87,7 +93,7 @@ async function getCurrentRelease(req, res, next) {
 module.exports = {
   create, list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
-  createGraph, getGraph,
+  getGraph, addGraphEdge, removeGraphEdge, setGraphSubjectClasses,
   checkReadiness, requestReview, withdrawReview, requestChanges, approveReview, listRevisions,
   createRelease, listReleases, getCurrentRelease,
 };
