@@ -14,6 +14,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
@@ -61,6 +62,7 @@ const IDS = Object.freeze({
   namespaceRevision: demoId("namespace_revision"),
   contentSpace: demoId("content_space"),
   editorialContext: demoId("editorial_context"),
+  semanticGraph: demoId("semantic_graph"),
   graphRevision: demoId("graph_revision"),
   editorialRelease: demoId("editorial_release"),
   physicalVocabulary: demoId("physical_vocabulary"),
@@ -190,6 +192,7 @@ async function cleanupDemo() {
   await GraphSubjectBinding.deleteMany({ graphRevisionId: IDS.graphRevision });
   await SemanticGraphRevision.deleteMany({ _id: IDS.graphRevision });
   await EditorialContext.deleteMany({ _id: IDS.editorialContext });
+  await SemanticGraph.deleteMany({ _id: IDS.semanticGraph });
   await ContentSpaceMembership.deleteMany({ itemId: { $in: itemIds } });
   await ContentSpace.deleteMany({ _id: IDS.contentSpace });
   await ItemRevisionV2.deleteMany({ _id: { $in: revisionIds } });
@@ -426,10 +429,20 @@ async function seedExamDataset() {
   await ContentSpaceMembership.create(
     itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
   );
+  const semanticGraph = await SemanticGraph.create({
+    _id: IDS.semanticGraph,
+    namespaceId: namespace._id,
+    displayName: "Pinacoteca Bologna — Relazioni editoriali",
+    description: "Grafo semantico riutilizzabile del dataset dimostrativo della Pinacoteca.",
+    ownerType: contentSpace.ownerType,
+    ownerId: contentSpace.ownerId,
+    createdBy: manager._id,
+  });
   const editorialContext = await EditorialContext.create({
     _id: IDS.editorialContext,
     contentSpaceId: contentSpace._id,
     namespaceId: namespace._id,
+    semanticGraphId: semanticGraph._id,
     displayName: "Pinacoteca Bologna — Percorso ufficiale demo",
     shortDescription: "Contesto editoriale dimostrativo per il Navigator TW2026.",
     description: "Contesto che raccoglie le opere selezionate e un semplice grafo semantico Rinascimento/Seicento.",
@@ -437,11 +450,14 @@ async function seedExamDataset() {
   });
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
-    editorialContextId: editorialContext._id,
+    semanticGraphId: semanticGraph._id,
     version: 1,
     authoredAgainstNamespaceRevisionId: namespaceRevision._id,
     createdBy: manager._id,
   });
+  semanticGraph.workingRevisionId = graphRevision._id;
+  semanticGraph.workingVersion = 1;
+  await semanticGraph.save();
   await GraphSubjectBinding.create([
     ...WORKS.map((work) => ({ graphRevisionId: graphRevision._id, subjectId: workSubjectIds.get(work.key), subjectClassDefinitionIds: [DEF.subjectWork] })),
     ...PERIODS.map((period) => ({ graphRevisionId: graphRevision._id, subjectId: periodSubjectIds.get(period.key), subjectClassDefinitionIds: [DEF.subjectPeriod] })),
@@ -489,7 +505,6 @@ async function seedExamDataset() {
     itemBindings,
   });
   assertNoIssues("EditorialRelease demo non coerente", editorialIssues);
-  editorialContext.workingGraphRevisionId = graphRevision._id;
   editorialContext.publishedReleaseId = editorialRelease._id;
   await editorialContext.save();
 
@@ -783,6 +798,13 @@ async function verifyExamDataset() {
     if (issues.some((entry) => entry.severity !== "warning")) add("VENUE_RELEASE_INVALID", "VenueRelease demo non coerente", { issues });
   }
 
+  const semanticGraph = await SemanticGraph.findById(IDS.semanticGraph).lean();
+  if (!semanticGraph || String(semanticGraph.workingRevisionId || "") !== String(IDS.graphRevision)) {
+    add("SEMANTIC_GRAPH_INVALID", "Il grafo semantico demo deve conservare la propria revisione di lavoro", {
+      semanticGraphId: semanticGraph?._id || null,
+      workingRevisionId: semanticGraph?.workingRevisionId || null,
+    });
+  }
   const release = await EditorialRelease.findById(IDS.editorialRelease).lean();
   if (!release || (release.itemBindings || []).length < 10) {
     add("EDITORIAL_RELEASE_TOO_SMALL", "La release editoriale demo deve contenere almeno 10 contenuti", { count: release?.itemBindings?.length || 0 });
