@@ -3,6 +3,8 @@ const ContentSpace = require("../models/contentSpace.model");
 const EditorialContext = require("../models/editorialContext.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
@@ -14,6 +16,105 @@ const { projectEditorialContext } = require("./editorialContextProjection.servic
 
 function clean(value) { return String(value || "").trim(); }
 function sameId(left, right) { return String(left || "") === String(right || ""); }
+function id(value) { return String(value?._id || value || ""); }
+function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+async function listReusableSemanticGraphs({
+  actorUserId,
+  ownerType,
+  ownerId,
+  namespaceId,
+  query = "",
+  page = 1,
+  limit = 30,
+}) {
+  if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400, [{ field: "ownerType", code: "INVALID_ENUM" }]);
+  if (!mongoose.isValidObjectId(ownerId)) throw new AppError("ownerId non valido", 400, [{ field: "ownerId", code: "INVALID_OBJECT_ID" }]);
+  if (!mongoose.isValidObjectId(namespaceId)) throw new AppError("namespaceId non valido", 400, [{ field: "namespaceId", code: "INVALID_OBJECT_ID" }]);
+
+  await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.create" });
+  const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Regole editoriali non disponibili", 404);
+  await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType: ownerType,
+    principalId: ownerId,
+  });
+
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
+  const normalizedQuery = clean(query);
+  const match = {
+    ownerType,
+    ownerId,
+    namespaceId: namespace._id,
+    lifecycleStatus: "active",
+    ...(normalizedQuery ? {
+      $or: [
+        { displayName: new RegExp(escapeRegex(normalizedQuery), "i") },
+        { description: new RegExp(escapeRegex(normalizedQuery), "i") },
+      ],
+    } : {}),
+  };
+
+  const [total, graphs] = await Promise.all([
+    SemanticGraph.countDocuments(match),
+    SemanticGraph.find(match)
+      .select("displayName description namespaceId workingRevisionId workingVersion updatedAt")
+      .sort({ updatedAt: -1, displayName: 1 })
+      .skip((normalizedPage - 1) * normalizedLimit)
+      .limit(normalizedLimit)
+      .lean(),
+  ]);
+  if (!graphs.length) {
+    return {
+      results: [],
+      pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
+    };
+  }
+
+  const graphIds = graphs.map((graph) => graph._id);
+  const workingRevisionIds = graphs.map((graph) => graph.workingRevisionId).filter(Boolean);
+  const [contextCounts, subjectCounts, edgeCounts] = await Promise.all([
+    EditorialContext.aggregate([
+      { $match: { semanticGraphId: { $in: graphIds }, lifecycleStatus: "active" } },
+      { $group: { _id: "$semanticGraphId", count: { $sum: 1 } } },
+    ]),
+    workingRevisionIds.length ? GraphSubjectBinding.aggregate([
+      { $match: { graphRevisionId: { $in: workingRevisionIds } } },
+      { $group: { _id: "$graphRevisionId", count: { $sum: 1 } } },
+    ]) : [],
+    workingRevisionIds.length ? SemanticEdgeV2.aggregate([
+      { $match: { graphRevisionId: { $in: workingRevisionIds } } },
+      { $group: { _id: "$graphRevisionId", count: { $sum: 1 } } },
+    ]) : [],
+  ]);
+  const contextCountByGraph = new Map(contextCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
+  const subjectCountByRevision = new Map(subjectCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
+  const edgeCountByRevision = new Map(edgeCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
+
+  return {
+    results: graphs.map((graph) => ({
+      id: graph._id,
+      name: graph.displayName,
+      description: graph.description || "",
+      namespaceId: graph.namespaceId,
+      workingRevisionId: graph.workingRevisionId || null,
+      workingVersion: Number(graph.workingVersion || 0),
+      collectionUsageCount: contextCountByGraph.get(id(graph._id)) || 0,
+      subjectCount: subjectCountByRevision.get(id(graph.workingRevisionId)) || 0,
+      relationCount: edgeCountByRevision.get(id(graph.workingRevisionId)) || 0,
+      updatedAt: graph.updatedAt || null,
+    })),
+    pagination: {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      total,
+      totalPages: Math.ceil(total / normalizedLimit),
+    },
+  };
+}
 
 async function createEditorialStudioCollection({ payload, actorUserId }) {
   const ownerType = payload?.ownerType;
@@ -147,11 +248,9 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
   } catch (error) {
     if (editorialContext?._id) await EditorialContext.deleteOne({ _id: editorialContext._id }).catch(() => {});
     if (createdGraph && semanticGraph?._id) {
-      const revisionIds = await SemanticGraphRevision.find({ semanticGraphId: semanticGraph._id }).distinct("_id").catch(() => []);
       await Promise.allSettled([
         SemanticGraphRevision.deleteMany({ semanticGraphId: semanticGraph._id }),
         SemanticGraph.deleteOne({ _id: semanticGraph._id }),
-        ...(revisionIds.length ? [] : []),
       ]);
     }
     if (createdSpace && contentSpace?._id) await ContentSpace.deleteOne({ _id: contentSpace._id }).catch(() => {});
@@ -159,4 +258,4 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
   }
 }
 
-module.exports = { createEditorialStudioCollection };
+module.exports = { createEditorialStudioCollection, listReusableSemanticGraphs };
