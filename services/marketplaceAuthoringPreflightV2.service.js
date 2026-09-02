@@ -12,6 +12,7 @@ function creationCapabilities(principal) {
       contentCreate: true,
       editorialCollectionCreate: true,
       editorialSpaceManage: true,
+      semanticGraphEdit: true,
       visitCreate: true,
     };
   }
@@ -20,6 +21,7 @@ function creationCapabilities(principal) {
     contentCreate: permissions.has("item.create"),
     editorialCollectionCreate: permissions.has("editorial_context.create"),
     editorialSpaceManage: permissions.has("editorial_space.manage"),
+    semanticGraphEdit: permissions.has("semantic_graph.edit"),
     visitCreate: permissions.has("visit.create"),
   };
 }
@@ -158,6 +160,10 @@ async function getMarketplaceAuthoringPreflight({
       usableNamespaces: usable,
       canCreateContentSpace: capabilities.editorialSpaceManage,
       blockers: collectionBlockers,
+    },
+    relations: {
+      allowed: capabilities.semanticGraphEdit,
+      blockers: capabilities.semanticGraphEdit ? [] : [{ code: "SEMANTIC_GRAPH_EDIT_PERMISSION_REQUIRED", message: "Il tuo ruolo non consente di modificare i collegamenti semantici in questa organizzazione." }],
     },
     visit: {
       allowed: capabilities.visitCreate,
