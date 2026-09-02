@@ -158,3 +158,62 @@ test("multiple collections can reuse the same SemanticGraph while keeping indepe
     assert.equal(await SemanticGraphRevision.countDocuments({ semanticGraphId: graph._id }), 1);
   });
 });
+
+test("collection authoring lists only reusable graphs compatible with principal and Namespace", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Namespace = require("../models/namespace.model");
+    const NamespaceRevision = require("../models/namespaceRevision.model");
+    const EditorialContext = require("../models/editorialContext.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
+    const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
+
+    const owner = await User.create({ username: "studio-graph-choice-owner", passwordHash: "hash" });
+    const otherOwner = await User.create({ username: "studio-graph-choice-other", passwordHash: "hash" });
+    const namespace = await Namespace.create({ name: "Regole grafi", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
+    const revision = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: owner._id, status: "published" });
+    namespace.publishedRevisionId = revision._id;
+    await namespace.save();
+
+    const first = await createEditorialStudioCollection({
+      actorUserId: owner._id,
+      payload: { ownerType: "user", ownerId: owner._id, namespaceId: namespace._id, displayName: "Rinascimento condiviso", newContentSpaceName: "Spazio grafi" },
+    });
+    const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
+    await createEditorialStudioCollection({
+      actorUserId: owner._id,
+      payload: {
+        ownerType: "user",
+        ownerId: owner._id,
+        namespaceId: namespace._id,
+        semanticGraphId: firstContext.semanticGraphId,
+        contentSpaceId: first.contentSpace.id,
+        displayName: "Seconda raccolta",
+      },
+    });
+    await SemanticGraph.create({
+      namespaceId: namespace._id,
+      displayName: "Grafo di un altro utente",
+      ownerType: "user",
+      ownerId: otherOwner._id,
+      createdBy: otherOwner._id,
+    });
+
+    const choices = await listReusableSemanticGraphs({
+      actorUserId: owner._id,
+      ownerType: "user",
+      ownerId: owner._id,
+      namespaceId: namespace._id,
+      query: "Rinascimento",
+      page: 1,
+      limit: 10,
+    });
+
+    assert.equal(choices.pagination.total, 1);
+    assert.equal(choices.results.length, 1);
+    assert.equal(String(choices.results[0].id), String(firstContext.semanticGraphId));
+    assert.equal(choices.results[0].collectionUsageCount, 2);
+    assert.equal(choices.results[0].subjectCount, 0);
+    assert.equal(choices.results[0].relationCount, 0);
+  });
+});
