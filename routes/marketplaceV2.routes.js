@@ -40,6 +40,8 @@ router.get("/v2/marketplace/semantic-graphs", authoringController.reusableSemant
 router.post("/v2/marketplace/editorial-collections", authoringController.createEditorialCollection);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/studio", editorialContextId, authoringController.editorialStudio);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/candidates", editorialContextId, authoringController.editorialStudioCandidates);
+router.get("/v2/marketplace/editorial-contexts/:editorialContextId/external-candidates", editorialContextId, authoringController.editorialExternalCandidates);
+router.post("/v2/marketplace/editorial-contexts/:editorialContextId/import-entry", editorialContextId, authoringController.importEditorialExternalCandidate);
 router.get("/v2/marketplace/visit-authoring/new", authoringController.newVisitAuthoring);
 router.get("/v2/marketplace/visit-authoring/releases/:editorialReleaseId/content", editorialReleaseId, authoringController.visitAuthoringContent);
 router.get("/v2/marketplace/visit-authoring/:visitId/content-candidates", visitId, authoringController.visitAuthoringCandidates);
