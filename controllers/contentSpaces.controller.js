@@ -21,7 +21,15 @@ async function remove(req, res, next) {
   catch (error) { next(error); }
 }
 async function listItems(req, res, next) {
-  try { res.status(200).json(await contentSpaceService.listItemMemberships({ contentSpaceId: req.params.contentSpaceId, actorUserId: req.user._id, page: req.query?.page, limit: req.query?.limit })); }
+  try {
+    res.status(200).json(await contentSpaceService.listItemMemberships({
+      contentSpaceId: req.params.contentSpaceId,
+      actorUserId: req.user._id,
+      page: req.query?.page,
+      limit: req.query?.limit,
+      q: req.query?.q || "",
+    }));
+  }
   catch (error) { next(error); }
 }
 async function addItem(req, res, next) {
