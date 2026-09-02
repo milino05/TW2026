@@ -22,7 +22,8 @@ const paths = {
   publicVenue: "clients/marketplace/src/ui/public-venue-view.js",
   policy: "clients/marketplace/src/application/management-context-policy.js",
   managementRepository: "clients/marketplace/src/infrastructure/http/management-repository.js",
-  venueAuthoringTargets: "services/venueAuthoringTargetsV2.service.js",
+  managementService: "services/marketplaceManagementV2.service.js",
+  marketplaceRoutes: "routes/marketplaceV2.routes.js",
   discovery: "services/marketplaceDiscoveryV2.service.js",
   venueTargetModel: "models/venueTarget.model.js",
 };
@@ -81,18 +82,17 @@ test("Item Authoring usa il Subject come identità editoriale e mostra la presen
   assert.match(source.subjectPresence, /Mostra sulla mappa/);
 });
 
-test("l'inventario authoring legge tutti i VenueTarget attivi sulla configurazione effettiva", () => {
-  assert.match(source.venueAuthoringTargets, /permissionCode: "venue\.view"/);
-  assert.match(source.venueAuthoringTargets, /VenueTarget\.find\(\{ venueId: venue\._id, lifecycleStatus: "active" \}\)/);
-  assert.match(source.venueAuthoringTargets, /view: "effective"/);
-  assert.match(source.venueAuthoringTargets, /status: "unplaced"/);
-  assert.match(source.venueAuthoringTargets, /inventoryRank/);
+test("Venue management proietta direttamente l'inventario senza il vecchio authoring-targets", () => {
+  assert.match(source.managementService, /VenueTarget\.find\(\{ venueId: venue\._id, lifecycleStatus: "active" \}\)/);
+  assert.match(source.managementService, /state: binding\?\.availability === "unavailable" \? "unavailable" : \(exhibitSlot \? "exposed" : "unplaced"\)/);
+  assert.doesNotMatch(source.managementRepository, /authoring-targets/);
+  assert.doesNotMatch(source.marketplaceRoutes, /authoring-targets/);
 });
 
-test("creazione contenuti e gestione inventario sono capability indipendenti", () => {
-  assert.match(source.venueAuthoringTargets, /canCreateContent: authority\.effectivePermissions\.includes\("item\.create"\)/);
-  assert.match(source.venueAuthoringTargets, /canEditInventory: authority\.effectivePermissions\.includes\("venue\.inventory\.manage"\)/);
-  assert.match(source.managementRepository, /authoringPermissions: authoring\.permissions \|\| \{\}/);
+test("creazione contenuti e gestione inventario sono capability indipendenti nella projection Venue", () => {
+  assert.match(source.managementService, /canCreateContent: permissions\.has\("item\.create"\)/);
+  assert.match(source.managementService, /canEditInventory: permissions\.has\("venue\.inventory\.manage"\)/);
+  assert.doesNotMatch(source.managementRepository, /authoringPermissions: authoring\.permissions/);
   assert.match(source.venueEditorTargets, /canCreateContent = false/);
   assert.match(source.venueEditorTargets, /const createContent = canCreateContent/);
   assert.match(source.venueEditorTargets, /const subjectId = id\(entry\.subject\?\.id\)/);
@@ -147,6 +147,9 @@ test("i form di authoring e management diventano dirty solo dopo modifiche utent
     "artaround-visit-authoring-view",
     "artaround-item-authoring-view",
     "artaround-commerce-management-view",
+    "artaround-editorial-spaces-view",
+    "artaround-editorial-collection-create-view",
+    "artaround-editorial-studio-view",
   ]) assert.match(source.formGuard, new RegExp(host));
   assert.doesNotMatch(source.formGuard, /artaround-context-release-composer/);
   assert.match(source.formGuard, /document\.addEventListener\("input", markFromEvent, true\)/);
