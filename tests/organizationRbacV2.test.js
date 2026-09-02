@@ -127,10 +127,12 @@ test("bootstrap, multi-role, Owner, delegation ceiling e audit rispettano le inv
       contentCreate: false,
       editorialCollectionCreate: false,
       editorialSpaceManage: false,
+      semanticGraphEdit: false,
       visitCreate: false,
     });
     assert.equal(preflight.content.allowed, false);
     assert.equal(preflight.collection.allowed, false);
+    assert.equal(preflight.relations.allowed, false);
     assert.equal(preflight.visit.allowed, false);
     assert.equal(Object.prototype.hasOwnProperty.call(preflight.principal, "effectivePermissions"), false);
     const dashboard = await require("../services/marketplaceWorkspaceV2.service").getDistributionDashboard({
