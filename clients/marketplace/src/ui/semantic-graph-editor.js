@@ -17,7 +17,11 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   focusSubjectId = null;
   selected = null;
   pickerMode = null;
+  inventoryData = null;
   inventoryQuery = "";
+  inventoryPage = 1;
+  inventoryPageSize = 12;
+  inventoryBusy = false;
   relationDraft = null;
   visibleNeighborLimit = 18;
   busy = false;
@@ -33,6 +37,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.addEventListener("subject-selected", this.onSubjectSelected);
     void this.load();
   }
+
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("dblclick", this.onDoubleClick);
@@ -58,9 +63,19 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.focusSubjectId = null;
     this.selected = null;
     this.pickerMode = null;
+    this.inventoryData = null;
     this.inventoryQuery = "";
+    this.inventoryPage = 1;
     this.relationDraft = null;
     this.visibleNeighborLimit = 18;
+  }
+
+  async fetchNeighborhood() {
+    this.data = await editorialRepository.graphNeighborhood(this.editorialContextId, {
+      view: "working",
+      focusSubjectId: this.focusSubjectId,
+      limit: this.visibleNeighborLimit,
+    });
   }
 
   async load() {
@@ -69,8 +84,12 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      this.data = await editorialRepository.graph(this.editorialContextId, { view: "working" });
-      if (this.focusSubjectId && !this.subjectEntry(this.focusSubjectId)) this.focusSubjectId = null;
+      await this.fetchNeighborhood();
+      if (this.focusSubjectId && !this.subjectEntry(this.focusSubjectId)) {
+        this.focusSubjectId = null;
+        this.selected = null;
+        await this.fetchNeighborhood();
+      }
       if (this.selected?.kind === "subject" && !this.subjectEntry(this.selected.id)) this.selected = null;
       if (this.selected?.kind === "edge" && !this.edgeById(this.selected.id)) this.selected = null;
     } catch (error) {
@@ -81,44 +100,51 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     }
   }
 
+  async loadInventory() {
+    if (!this.editorialContextId || !["focus", "target"].includes(this.pickerMode)) return;
+    this.inventoryBusy = true;
+    this.error = null;
+    this.render();
+    try {
+      this.inventoryData = await editorialRepository.graphSubjectCandidates(this.editorialContextId, {
+        scope: "graph",
+        q: this.inventoryQuery,
+        page: this.inventoryPage,
+        limit: this.inventoryPageSize,
+      });
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Inventario semantico non disponibile";
+    } finally {
+      this.inventoryBusy = false;
+      this.render();
+    }
+  }
+
   graphSubjects() { return this.data?.subjects || []; }
   subjectEntry(subjectId) { return this.graphSubjects().find((entry) => id(entry.subject) === id(subjectId)) || null; }
   subject(subjectId) { return this.subjectEntry(subjectId)?.subject || null; }
   edgeById(edgeId) { return (this.data?.edges || []).find((edge) => id(edge.id) === id(edgeId)) || null; }
   relationById(definitionId) { return (this.relationTypes || []).find((entry) => String(entry.definitionId) === String(definitionId)) || null; }
   classById(definitionId) { return (this.subjectClasses || []).find((entry) => String(entry.definitionId) === String(definitionId)) || null; }
-  relationCount(subjectId) { return (this.data?.edges || []).filter((edge) => id(edge.sourceSubjectId) === id(subjectId) || id(edge.targetSubjectId) === id(subjectId)).length; }
-
-  filteredGraphSubjects({ excludeFocus = false } = {}) {
-    const query = this.inventoryQuery.trim().toLocaleLowerCase("it");
-    return this.graphSubjects()
-      .filter((entry) => !excludeFocus || id(entry.subject) !== id(this.focusSubjectId))
-      .filter((entry) => !query || `${entry.subject?.preferredLabel || ""} ${entry.subject?.description || ""}`.toLocaleLowerCase("it").includes(query))
-      .sort((a, b) => String(a.subject?.preferredLabel || "").localeCompare(String(b.subject?.preferredLabel || ""), "it"));
+  relationCount(subjectId) {
+    const entry = this.subjectEntry(subjectId);
+    if (Number.isFinite(Number(entry?.relationCount))) return Number(entry.relationCount);
+    return (this.data?.edges || []).filter((edge) => id(edge.sourceSubjectId) === id(subjectId) || id(edge.targetSubjectId) === id(subjectId)).length;
   }
 
   focusNeighborhood() {
     if (!this.focusSubjectId) return { edges: [], neighbors: [], totalNeighbors: 0, hiddenNeighbors: 0 };
-    const edges = (this.data?.edges || []).filter((edge) => id(edge.sourceSubjectId) === id(this.focusSubjectId) || id(edge.targetSubjectId) === id(this.focusSubjectId));
-    const neighborMap = new Map();
-    for (const edge of edges) {
-      const otherId = id(edge.sourceSubjectId) === id(this.focusSubjectId) ? id(edge.targetSubjectId) : id(edge.sourceSubjectId);
-      const entry = this.subjectEntry(otherId);
-      if (!entry) continue;
-      const direction = id(edge.sourceSubjectId) === id(this.focusSubjectId) ? "outgoing" : "incoming";
-      const current = neighborMap.get(otherId) || { ...entry, direction, directions: new Set() };
-      current.directions.add(direction);
-      if (current.directions.size > 1) current.direction = "mixed";
-      neighborMap.set(otherId, current);
-    }
-    const all = [...neighborMap.values()].sort((a, b) => String(a.subject?.preferredLabel || "").localeCompare(String(b.subject?.preferredLabel || ""), "it"));
-    const visible = all.slice(0, this.visibleNeighborLimit);
-    const visibleIds = new Set(visible.map((entry) => id(entry.subject)));
+    const edges = this.data?.edges || [];
+    const neighbors = this.graphSubjects().filter((entry) => id(entry.subject) !== id(this.focusSubjectId)).map((entry) => {
+      const relevant = edges.filter((edge) => id(edge.sourceSubjectId) === id(entry.subject) || id(edge.targetSubjectId) === id(entry.subject));
+      const directions = new Set(relevant.map((edge) => id(edge.sourceSubjectId) === id(this.focusSubjectId) ? "outgoing" : "incoming"));
+      return { ...entry, direction: directions.size > 1 ? "mixed" : [...directions][0] || "mixed" };
+    });
     return {
-      neighbors: visible,
-      edges: edges.filter((edge) => visibleIds.has(id(edge.sourceSubjectId) === id(this.focusSubjectId) ? id(edge.targetSubjectId) : id(edge.sourceSubjectId))),
-      totalNeighbors: all.length,
-      hiddenNeighbors: Math.max(0, all.length - visible.length),
+      neighbors,
+      edges,
+      totalNeighbors: Number(this.data?.neighborhood?.totalNeighbors || neighbors.length),
+      hiddenNeighbors: Number(this.data?.neighborhood?.hiddenNeighbors || 0),
     };
   }
 
@@ -144,41 +170,50 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     return positions;
   }
 
-  setFocus(subjectId) {
-    if (!this.subjectEntry(subjectId)) return;
-    this.focusSubjectId = id(subjectId);
-    this.selected = { kind: "subject", id: id(subjectId) };
+  async setFocus(subjectId) {
+    const nextId = id(subjectId);
+    if (!nextId) return;
+    this.focusSubjectId = nextId;
+    this.selected = null;
     this.pickerMode = null;
-    this.relationDraft = null;
+    this.inventoryData = null;
     this.inventoryQuery = "";
+    this.inventoryPage = 1;
+    this.relationDraft = null;
     this.visibleNeighborLimit = 18;
+    await this.load();
+    if (this.subjectEntry(nextId)) {
+      this.selected = { kind: "subject", id: nextId };
+      this.render();
+    }
+  }
+
+  openInventory(mode) {
+    this.pickerMode = mode;
+    this.selected = null;
+    this.relationDraft = null;
+    this.inventoryData = null;
+    this.inventoryQuery = "";
+    this.inventoryPage = 1;
     this.render();
+    void this.loadInventory();
   }
 
   closeInspector() {
     this.selected = null;
     this.pickerMode = null;
-    this.relationDraft = null;
+    this.inventoryData = null;
     this.inventoryQuery = "";
+    this.inventoryPage = 1;
+    this.relationDraft = null;
     this.render();
   }
 
   onInput = (event) => {
     const target = (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) ? event.target : null;
-    if (!target) return;
-    if (target.matches("[data-semantic-inventory-query]")) {
-      this.inventoryQuery = target.value;
-      this.render();
-      requestAnimationFrame(() => {
-        const input = this.querySelector("[data-semantic-inventory-query]");
-        if (input) { input.focus(); input.setSelectionRange(this.inventoryQuery.length, this.inventoryQuery.length); }
-      });
-      return;
-    }
-    if (this.relationDraft && target.form?.matches("[data-relation-composer]")) {
-      if (target.name === "note") this.relationDraft.note = target.value;
-      if (target.name === "weight") this.relationDraft.weight = target.value;
-    }
+    if (!target || !this.relationDraft || !target.form?.matches("[data-relation-composer]")) return;
+    if (target.name === "note") this.relationDraft.note = target.value;
+    if (target.name === "weight") this.relationDraft.weight = target.value;
   };
 
   onChange = (event) => {
@@ -215,22 +250,29 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const target = event.target instanceof Element ? event.target.closest("[data-graph-subject]") : null;
     if (!target) return;
     event.preventDefault();
-    this.setFocus(target.dataset.graphSubject);
+    void this.setFocus(target.dataset.graphSubject);
   };
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("[data-close-graph-inspector]")) { this.closeInspector(); return; }
-    if (target.closest("[data-choose-focus]")) { this.pickerMode = "focus"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
-    if (target.closest("[data-add-graph-subject]")) { this.pickerMode = "add-focus"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
-    if (target.closest("[data-start-relation]")) { this.pickerMode = "target"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
-    if (target.closest("[data-add-target-subject]")) { this.pickerMode = "add-target"; this.inventoryQuery = ""; this.render(); return; }
+    if (target.closest("[data-choose-focus]")) { this.openInventory("focus"); return; }
+    if (target.closest("[data-add-graph-subject]")) { this.pickerMode = "add-focus"; this.selected = null; this.relationDraft = null; this.render(); return; }
+    if (target.closest("[data-start-relation]")) { this.openInventory("target"); return; }
+    if (target.closest("[data-add-target-subject]")) { this.pickerMode = "add-target"; this.inventoryData = null; this.render(); return; }
     const inventorySubject = target.closest("[data-use-inventory-subject]");
     if (inventorySubject) {
-      const subjectId = inventorySubject.dataset.useInventorySubject;
-      if (this.pickerMode === "target") this.startRelationTo(this.subject(subjectId));
-      else this.setFocus(subjectId);
+      const row = (this.inventoryData?.results || []).find((entry) => id(entry.subject) === id(inventorySubject.dataset.useInventorySubject));
+      if (!row?.subject) return;
+      if (this.pickerMode === "target") this.startRelationTo(row.subject);
+      else await this.setFocus(row.subject._id);
+      return;
+    }
+    const inventoryPage = target.closest("[data-semantic-inventory-page]");
+    if (inventoryPage) {
+      this.inventoryPage = Math.max(1, Number(inventoryPage.dataset.semanticInventoryPage) || 1);
+      await this.loadInventory();
       return;
     }
     const graphNode = target.closest("[data-graph-subject]");
@@ -239,8 +281,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (graphEdge) { this.openEdgeInspector(graphEdge.dataset.graphEdge); return; }
     if (target.closest("[data-semantic-graph-canvas]")) { this.selected = null; this.render(); return; }
     const recenter = target.closest("[data-recenter-subject]");
-    if (recenter) { this.setFocus(recenter.dataset.recenterSubject); return; }
-    if (target.closest("[data-show-more-neighbors]")) { this.visibleNeighborLimit += 18; this.render(); return; }
+    if (recenter) { await this.setFocus(recenter.dataset.recenterSubject); return; }
+    if (target.closest("[data-show-more-neighbors]")) { this.visibleNeighborLimit = Math.min(100, this.visibleNeighborLimit + 18); await this.load(); return; }
     const removeSubject = target.closest("[data-remove-graph-subject]");
     if (removeSubject && this.editable && !this.locked) {
       const subject = this.subject(removeSubject.dataset.removeGraphSubject);
@@ -250,7 +292,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
         confirmLabel: "Rimuovi dal grafo",
         tone: "danger",
       });
-      if (confirmed) await this.mutate(() => editorialRepository.removeGraphSubject(this.editorialContextId, removeSubject.dataset.removeGraphSubject), { clearSelection: true });
+      if (confirmed) await this.mutate(() => editorialRepository.removeGraphSubject(this.editorialContextId, removeSubject.dataset.removeGraphSubject), { clearSelection: true, resetFocus: id(removeSubject.dataset.removeGraphSubject) === id(this.focusSubjectId) });
       return;
     }
     const removeEdge = target.closest("[data-remove-edge]");
@@ -277,11 +319,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const subjectId = id(subject);
     if (!subjectId) return;
     await this.mutate(() => editorialRepository.addGraphSubject(this.editorialContextId, subjectId), {
-      after: () => {
-        this.focusSubjectId = subjectId;
-        this.selected = { kind: "subject", id: subjectId };
-        this.pickerMode = null;
-      },
+      beforeReload: () => { this.focusSubjectId = subjectId; },
+      after: () => { this.selected = { kind: "subject", id: subjectId }; this.pickerMode = null; },
     });
   }
 
@@ -289,6 +328,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const targetSubjectId = id(subject);
     if (!this.focusSubjectId || !targetSubjectId || id(this.focusSubjectId) === targetSubjectId) return;
     this.pickerMode = null;
+    this.inventoryData = null;
     this.selected = null;
     this.relationDraft = {
       mode: "create",
@@ -321,12 +361,19 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   async onSubmit(event) {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form || !this.editable || this.locked) return;
+    if (!form) return;
+    if (form.matches("[data-semantic-inventory-search]")) {
+      event.preventDefault();
+      this.inventoryQuery = String(new FormData(form).get("q") || "").trim();
+      this.inventoryPage = 1;
+      await this.loadInventory();
+      return;
+    }
+    if (!this.editable || this.locked) return;
     if (form.matches("[data-classes-form]")) {
       event.preventDefault();
       const data = new FormData(form);
-      const subjectId = form.dataset.subjectId;
-      await this.mutate(() => editorialRepository.setSubjectClasses(this.editorialContextId, subjectId, data.getAll("subjectClassDefinitionIds").map(String)));
+      await this.mutate(() => editorialRepository.setSubjectClasses(this.editorialContextId, form.dataset.subjectId, data.getAll("subjectClassDefinitionIds").map(String)));
       return;
     }
     if (!form.matches("[data-relation-composer]")) return;
@@ -367,16 +414,19 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     return result;
   }
 
-  async mutate(operation, { after = null, clearSelection = false } = {}) {
+  async mutate(operation, { beforeReload = null, after = null, clearSelection = false, resetFocus = false } = {}) {
     this.busy = true;
     this.error = null;
     this.render();
     try {
       await operation();
-      this.data = await editorialRepository.graph(this.editorialContextId, { view: "working" });
+      if (resetFocus) this.focusSubjectId = null;
+      beforeReload?.();
+      await this.fetchNeighborhood();
       if (clearSelection) {
         this.selected = null;
         this.pickerMode = null;
+        this.inventoryData = null;
         this.relationDraft = null;
       }
       after?.();
@@ -391,7 +441,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   renderCanvas() {
     if (!this.focusSubjectId) {
-      return `<div class="semantic-graph-empty" data-semantic-graph-canvas><div><span class="eyebrow">Grafo semantico</span><h3>Nessun soggetto di contesto</h3><p>Scegli un soggetto del grafo per visualizzare soltanto i suoi collegamenti diretti.</p><div class="button-row"><button type="button" data-choose-focus>${icon("search", { size: 16 })} Scegli soggetto</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 16 })} Aggiungi soggetto</button>` : ""}</div></div></div>`;
+      const totalSubjects = Number(this.data?.neighborhood?.totalSubjects || 0);
+      return `<div class="semantic-graph-empty" data-semantic-graph-canvas><div><span class="eyebrow">Grafo semantico</span><h3>Nessun soggetto di contesto</h3><p>${totalSubjects ? `Il grafo contiene ${totalSubjects} soggetti. Scegline uno per visualizzare soltanto i suoi collegamenti diretti.` : "Aggiungi o scegli un soggetto per iniziare a costruire le relazioni."}</p><div class="button-row"><button type="button" data-choose-focus>${icon("search", { size: 16 })} Scegli soggetto</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 16 })} Aggiungi soggetto</button>` : ""}</div></div></div>`;
     }
     const focus = this.subject(this.focusSubjectId);
     if (!focus) return `<div class="empty-state"><p>Il soggetto di contesto non è più disponibile.</p></div>`;
@@ -418,7 +469,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     }).join("");
     const focusSelected = this.selected?.kind === "subject" && id(this.selected.id) === id(this.focusSubjectId);
     const focusMarkup = `<g class="semantic-node semantic-node--focus${focusSelected ? " selected" : ""}" data-graph-subject="${escapeHtml(id(this.focusSubjectId))}" tabindex="0" role="button" aria-label="${escapeHtml(focus.preferredLabel || "Soggetto di contesto")}"><circle cx="${focusPosition.x}" cy="${focusPosition.y}" r="62"></circle><text x="${focusPosition.x}" y="${focusPosition.y + 4}" text-anchor="middle">${escapeHtml(String(focus.preferredLabel || "Soggetto").slice(0, 28))}</text></g>`;
-    return `<div class="semantic-graph-canvas" data-semantic-graph-canvas><svg viewBox="0 0 900 520" role="img" aria-label="Relazioni dirette di ${escapeHtml(focus.preferredLabel || "soggetto")}"><defs><marker id="semantic-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker></defs>${edgeMarkup}${nodeMarkup}${focusMarkup}</svg>${neighborhood.hiddenNeighbors ? `<div class="semantic-graph-more"><span>${neighborhood.neighbors.length} di ${neighborhood.totalNeighbors} soggetti collegati mostrati</span><button type="button" class="button-secondary small" data-show-more-neighbors>Mostra altri</button></div>` : ""}</div>`;
+    return `<div class="semantic-graph-canvas" data-semantic-graph-canvas><svg viewBox="0 0 900 520" role="img" aria-label="Relazioni dirette di ${escapeHtml(focus.preferredLabel || "soggetto")}"><defs><marker id="semantic-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker></defs>${edgeMarkup}${nodeMarkup}${focusMarkup}</svg>${neighborhood.hiddenNeighbors ? `<div class="semantic-graph-more"><span>${neighborhood.neighbors.length} di ${neighborhood.totalNeighbors} soggetti collegati mostrati</span><button type="button" class="button-secondary small" data-show-more-neighbors ${this.visibleNeighborLimit >= 100 ? "disabled" : ""}>Mostra altri</button></div>` : ""}</div>`;
   }
 
   renderToolbar() {
@@ -438,10 +489,18 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     return `<span class="status" data-tone="warning">Nessun contenuto disponibile</span>`;
   }
 
+  renderInventoryPagination() {
+    const pagination = this.inventoryData?.pagination || {};
+    const page = Number(pagination.page || this.inventoryPage || 1);
+    const totalPages = Number(pagination.totalPages || 0);
+    if (totalPages <= 1) return "";
+    return `<nav class="pagination" aria-label="Pagine dell'inventario semantico"><button type="button" data-semantic-inventory-page="${page - 1}" ${page <= 1 || this.inventoryBusy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page} di ${totalPages}</span><button type="button" data-semantic-inventory-page="${page + 1}" ${page >= totalPages || this.inventoryBusy ? "disabled" : ""}>Successiva →</button></nav>`;
+  }
+
   renderInventoryPicker() {
     const targetMode = this.pickerMode === "target";
-    const subjects = this.filteredGraphSubjects({ excludeFocus: targetMode });
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Inventario semantico"><div class="section-heading"><div><span class="eyebrow">Inventario semantico</span><h2>${targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><label>Cerca nel grafo<input data-semantic-inventory-query value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${this.relationCount(entry.subject?._id)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryQuery ? "Nessun soggetto corrispondente nel grafo." : "Il grafo non contiene ancora soggetti."}</p></div>`}</div>${this.editable && !this.locked ? `<div class="semantic-inventory-footer"><p>${targetMode ? "Il soggetto non è ancora nel grafo? Cercalo nei contenuti della raccolta, nello spazio editoriale o nell'identità semantica globale." : "Aggiungi un nuovo soggetto al grafo semantico."}</p><button type="button" class="button-secondary" ${targetMode ? "data-add-target-subject" : "data-add-graph-subject"}>${icon("plus", { size: 15 })} Aggiungi soggetto</button></div>` : ""}</aside></div>`;
+    const subjects = (this.inventoryData?.results || []).filter((entry) => !targetMode || id(entry.subject) !== id(this.focusSubjectId));
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Inventario semantico"><div class="section-heading"><div><span class="eyebrow">Inventario semantico</span><h2>${targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><form data-semantic-inventory-search role="search"><label>Cerca nel grafo<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryBusy ? "Ricerca in corso…" : this.inventoryQuery ? "Nessun soggetto corrispondente nel grafo." : "Il grafo non contiene ancora soggetti."}</p></div>`}</div>${this.renderInventoryPagination()}${this.editable && !this.locked ? `<div class="semantic-inventory-footer"><p>${targetMode ? "Il soggetto non è ancora nel grafo? Cercalo nei contenuti della raccolta, nello spazio editoriale o nell'identità semantica globale." : "Aggiungi un nuovo soggetto al grafo semantico."}</p><button type="button" class="button-secondary" ${targetMode ? "data-add-target-subject" : "data-add-graph-subject"}>${icon("plus", { size: 15 })} Aggiungi soggetto</button></div>` : ""}</aside></div>`;
   }
 
   renderAddSubjectPicker() {
