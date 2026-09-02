@@ -253,10 +253,11 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     return `<section class="workspace-sidecar__graph"><header class="workspace-sidecar__context"><div><span class="eyebrow">Relazioni · ${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h2>${escapeHtml(this.subject?.preferredLabel || "Collegamenti")}</h2><p>Grafo: <strong>${escapeHtml(graph.name || "Grafo semantico")}</strong>${shared > 1 ? ` · condiviso da ${shared} raccolte` : ""}</p></div>${this.contextualCollectionId() ? "" : `<button type="button" class="button-secondary small" data-change-sidecar-context>Scegli un altro contesto</button>`}</header><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
-  async configureGraph() {
+  configureGraph() {
     if (!this.studio || !this.editorialContextId || !this.subjectInGraph || !id(this.subject)) return;
     const graph = this.querySelector("artaround-semantic-graph-editor");
     if (!graph) return;
+    graph.focusSubjectId = id(this.subject);
     graph.configure({
       editorialContextId: this.editorialContextId,
       relationTypes: this.studio.namespace?.revision?.relationTypes || [],
@@ -264,8 +265,6 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
       editable: this.studio.permissions?.canEditGraph === true,
       locked: false,
     });
-    await graph.load();
-    graph.setFocus(id(this.subject));
   }
 
   render() {
@@ -279,7 +278,7 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
           ? `<div class="empty-state"><h2>Collegamenti non disponibili</h2><p>${escapeHtml(this.error)}</p>${!this.currentItemId() ? "" : `<button type="button" class="button-secondary" data-open-relation-hub>Apri Collega soggetti</button>`}</div>`
           : `<div class="empty-state"><p>${this.busy ? "Preparazione del grafo…" : "Preparazione…"}</p></div>`;
     this.innerHTML = `${this.renderLauncher()}<div class="workspace-sidecar-layer"><aside class="workspace-sidecar" aria-label="Collegamenti semantici del contenuto"><header class="workspace-sidecar__header"><div><span class="eyebrow">Contenuto · Semantica</span><strong>Aggiungi collegamenti</strong></div><button type="button" class="button-secondary small" data-close-item-semantic-sidecar aria-label="Chiudi collegamenti">×</button></header>${this.error && this.subject ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<div class="workspace-sidecar__body">${body}</div></aside></div>`;
-    if (this.studio && this.subjectInGraph) queueMicrotask(() => void this.configureGraph());
+    if (this.studio && this.subjectInGraph) queueMicrotask(() => this.configureGraph());
   }
 }
 
