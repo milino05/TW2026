@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -35,8 +36,6 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const EditorialRelease = require("../models/editorialRelease.model");
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
@@ -94,8 +93,14 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     await namespace.save();
 
     const contentSpace = await ContentSpace.create({ name: "Runtime content", ownerType: "user", ownerId: user._id, createdBy: user._id });
-    const context = await EditorialContext.create({ contentSpaceId: contentSpace._id, namespaceId: namespace._id, displayName: "Runtime context", shortDescription: "Runtime", createdBy: user._id });
-    const graphRevision = await SemanticGraphRevision.create({ editorialContextId: context._id, version: 1, authoredAgainstNamespaceRevisionId: namespaceRevision._id, createdBy: user._id });
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
+      namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
+      displayName: "Runtime context",
+      shortDescription: "Runtime",
+      createdBy: user._id,
+    });
 
     const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
@@ -357,7 +362,6 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     assert.equal(id(exposure.representationId), id(longSimpleId));
     const targetProfile = await VenueTargetObservationProfile.findOne({ venueTargetId: target._id }).lean();
     assert.equal(targetProfile.typicalObservationSeconds, 60);
-
     const freshGeneratedPreparation = await createExecutionPreparation({ userId: user._id, payload: { generatedVisitPlanId: generatedPlan._id } });
     const generatedStarted = await startExecutionPreparation({
       preparationId: freshGeneratedPreparation.id,
