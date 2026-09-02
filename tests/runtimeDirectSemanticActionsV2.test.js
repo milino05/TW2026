@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -74,8 +75,6 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
     const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const ItemV2 = require("../models/itemV2.model");
@@ -147,20 +146,15 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       ownerId: owner._id,
       createdBy: owner._id,
     });
-    const context = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Collegamenti Item 1",
       createdBy: owner._id,
     });
     await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: main.item._id, addedBy: owner._id });
 
-    const graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-      createdBy: owner._id,
-    });
     await GraphSubjectBinding.insertMany([
       { graphRevisionId: graphRevision._id, subjectId: artworkSubject._id, subjectClassDefinitionIds: [] },
       { graphRevisionId: graphRevision._id, subjectId: artistSubject._id, subjectClassDefinitionIds: [] },
@@ -172,8 +166,6 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       relationTypeDefinitionId: "relation-created-by",
       weight: 10,
     });
-    context.workingGraphRevisionId = graphRevision._id;
-    await context.save();
 
     const visit = await VisitV2.create({ ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const directSourceId = new mongoose.Types.ObjectId();
