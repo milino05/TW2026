@@ -1,4 +1,3 @@
-const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
 const { getSubjectVenuePresence } = require("../services/subjectVenuePresenceV2.service");
 const {
   listEditorialSpaceSummaries,
@@ -13,12 +12,6 @@ const {
 const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
 const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
-
-async function venueAuthoringTargets(req, res, next) {
-  try {
-    res.status(200).json(await listVenueAuthoringTargets({ venueId: req.params.venueId, actorUserId: req.user._id }));
-  } catch (error) { next(error); }
-}
 
 async function subjectVenuePresence(req, res, next) {
   try {
@@ -162,7 +155,6 @@ async function visitAuthoringCandidates(req, res, next) {
 }
 
 module.exports = {
-  venueAuthoringTargets,
   subjectVenuePresence,
   editorialSpaces,
   editorialSpace,
