@@ -10,10 +10,10 @@
 .context-workspace-tabs button[aria-current="page"],.context-workspace-tabs button[aria-selected="true"],.venue-editor-tabs button[aria-selected="true"]{box-shadow:inset 0 -.18rem 0 var(--sage-500)}
 .context-workspace-content,.venue-editor-content{display:block;min-width:0;overflow:visible}
 
-/* Inspector non modale: sovrappone gli strumenti al workspace senza ridurre mappa/grafo né bloccarne l'interazione. */
+/* Inspector non modale: sovrappone gli strumenti al workspace senza ridurre mappa/grafo/inventario né bloccarne il contesto. */
 .context-workspace-inspector-layer{position:fixed;z-index:125;inset:0;pointer-events:none}
-.context-workspace-inspector{position:absolute;top:calc(var(--header-height) + 4.8rem);right:clamp(.75rem,2vw,1.5rem);bottom:clamp(.75rem,2vw,1.5rem);width:min(31rem,calc(100vw - 2rem));overflow:auto;overscroll-behavior:contain;padding:1rem;border:1px solid var(--line-strong);border-radius:var(--radius-xl);background:color-mix(in srgb,var(--surface) 97%,transparent);box-shadow:0 1.2rem 3rem rgba(0,0,0,.22);backdrop-filter:blur(14px);pointer-events:auto}
-.context-workspace-inspector>:first-child{margin-top:0}.context-workspace-inspector>:last-child{margin-bottom:0}
+.context-workspace-inspector,.venue-inventory-inspector{position:absolute;top:calc(var(--header-height) + 4.8rem);right:clamp(.75rem,2vw,1.5rem);bottom:clamp(.75rem,2vw,1.5rem);width:min(31rem,calc(100vw - 2rem));overflow:auto;overscroll-behavior:contain;padding:1rem;border:1px solid var(--line-strong);border-radius:var(--radius-xl);background:color-mix(in srgb,var(--surface) 97%,transparent);box-shadow:0 1.2rem 3rem rgba(0,0,0,.22);backdrop-filter:blur(14px);pointer-events:auto}
+.context-workspace-inspector>:first-child,.venue-inventory-inspector>:first-child{margin-top:0}.context-workspace-inspector>:last-child,.venue-inventory-inspector>:last-child{margin-bottom:0}
 
 /* Sidecar: workspace ampio e non modale, riusabile per strumenti contestuali senza smontare l'editor sottostante. */
 .workspace-sidecar-launcher{position:fixed;z-index:108;right:clamp(1rem,2vw,1.5rem);bottom:clamp(1rem,2vw,1.5rem);display:inline-flex;align-items:center;gap:.45rem;box-shadow:var(--shadow-md)}
@@ -32,13 +32,13 @@
   .context-workspace-bar,.venue-context-bar{align-items:stretch;flex-direction:column}
   .context-workspace-status,.venue-editor-status{justify-content:flex-start;max-width:none}
   .context-workspace-tabs,.venue-editor-tabs{top:calc(var(--header-height) + .2rem)}
-  .context-workspace-inspector{top:calc(var(--header-height) + 4rem);right:.65rem;bottom:.65rem;width:min(27rem,calc(100vw - 1.3rem));padding:.85rem}
+  .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 4rem);right:.65rem;bottom:.65rem;width:min(27rem,calc(100vw - 1.3rem));padding:.85rem}
   .workspace-sidecar{top:calc(var(--header-height) + .4rem);right:.45rem;bottom:.45rem;width:calc(100vw - .9rem);border-radius:var(--radius-lg)}
   .workspace-sidecar__context{align-items:stretch;flex-direction:column}.workspace-sidecar__context>button{align-self:flex-start}
 }
 @media(max-width:36rem){
   .context-workspace-tabs button,.venue-editor-tabs button{padding-inline:.7rem}
-  .context-workspace-inspector{top:calc(var(--header-height) + 3.5rem);left:.45rem;right:.45rem;bottom:.45rem;width:auto;border-radius:var(--radius-lg)}
+  .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 3.5rem);left:.45rem;right:.45rem;bottom:.45rem;width:auto;border-radius:var(--radius-lg)}
   .workspace-sidecar-layer{z-index:122}.workspace-sidecar{inset:0;width:auto;border:0;border-radius:0}.workspace-sidecar__body{padding:.75rem}.workspace-sidecar__graph{grid-template-rows:auto minmax(30rem,1fr)}
   .workspace-sidecar-launcher{right:.7rem;bottom:.7rem}
 }
