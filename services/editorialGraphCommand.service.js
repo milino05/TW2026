@@ -45,6 +45,29 @@ function ensureBinding(snapshot, subjectId) {
   snapshot.subjectBindings.push(binding);
   return binding;
 }
+function normalizeClassAssignments(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new AppError("subjectClassAssignments deve essere un array", 400, [{ field: "subjectClassAssignments", code: "INVALID_TYPE" }]);
+  const seen = new Set();
+  return value.map((entry, index) => {
+    const subjectId = entry?.subjectId;
+    assertObjectId(subjectId, `subjectClassAssignments[${index}].subjectId`);
+    const key = id(subjectId);
+    if (seen.has(key)) throw new AppError("Classificazione duplicata per Subject", 400, [{ field: `subjectClassAssignments[${index}].subjectId`, code: "DUPLICATE" }]);
+    if (!Array.isArray(entry?.subjectClassDefinitionIds)) throw new AppError("subjectClassDefinitionIds deve essere un array", 400, [{ field: `subjectClassAssignments[${index}].subjectClassDefinitionIds`, code: "INVALID_TYPE" }]);
+    seen.add(key);
+    return {
+      subjectId,
+      subjectClassDefinitionIds: [...new Set(entry.subjectClassDefinitionIds.map((definitionId) => String(definitionId || "").trim()).filter(Boolean))],
+    };
+  });
+}
+function applyClassAssignments(snapshot, assignments) {
+  for (const assignment of assignments) {
+    const binding = ensureBinding(snapshot, assignment.subjectId);
+    binding.subjectClassDefinitionIds = assignment.subjectClassDefinitionIds;
+  }
+}
 
 async function loadAuthoringContext({ editorialContextId, actorUserId }) {
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
@@ -170,6 +193,7 @@ async function addEditorialGraphEdge({ editorialContextId, payload, actorUserId 
   }
   ensureBinding(state.snapshot, sourceSubjectId);
   ensureBinding(state.snapshot, targetSubjectId);
+  applyClassAssignments(state.snapshot, normalizeClassAssignments(payload?.subjectClassAssignments));
   state.snapshot.edges.push({
     sourceSubjectId,
     targetSubjectId,
@@ -177,6 +201,37 @@ async function addEditorialGraphEdge({ editorialContextId, payload, actorUserId 
     weight: normalizeWeight(payload?.weight),
     metadata: payload?.metadata ?? null,
     provenance: { origin: "human" },
+  });
+  return commitSnapshot({ ...state, actorUserId });
+}
+
+async function updateEditorialGraphEdge({ editorialContextId, edgeId, payload, actorUserId }) {
+  assertObjectId(edgeId, "edgeId");
+  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const edge = state.graph?.authoritativeEdges.find((entry) => sameId(entry._id, edgeId));
+  if (!edge) throw new AppError("Relazione non trovata", 404);
+  const relationTypeDefinitionId = payload?.relationTypeDefinitionId === undefined
+    ? String(edge.relationTypeDefinitionId)
+    : String(payload.relationTypeDefinitionId || "").trim();
+  if (!relationTypeDefinitionId) throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
+  state.snapshot.edges = state.snapshot.edges.filter((entry) => !(
+    sameId(entry.sourceSubjectId, edge.sourceSubjectId)
+    && sameId(entry.targetSubjectId, edge.targetSubjectId)
+    && String(entry.relationTypeDefinitionId) === String(edge.relationTypeDefinitionId)
+  ));
+  if (state.snapshot.edges.some((entry) => sameId(entry.sourceSubjectId, edge.sourceSubjectId) && sameId(entry.targetSubjectId, edge.targetSubjectId) && String(entry.relationTypeDefinitionId) === relationTypeDefinitionId)) {
+    throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
+  }
+  ensureBinding(state.snapshot, edge.sourceSubjectId);
+  ensureBinding(state.snapshot, edge.targetSubjectId);
+  applyClassAssignments(state.snapshot, normalizeClassAssignments(payload?.subjectClassAssignments));
+  state.snapshot.edges.push({
+    sourceSubjectId: edge.sourceSubjectId,
+    targetSubjectId: edge.targetSubjectId,
+    relationTypeDefinitionId,
+    weight: payload?.weight === undefined ? normalizeWeight(edge.weight) : normalizeWeight(payload.weight),
+    metadata: payload?.metadata === undefined ? (edge.metadata ?? null) : (payload.metadata ?? null),
+    provenance: edge.provenance ?? { origin: "human" },
   });
   return commitSnapshot({ ...state, actorUserId });
 }
@@ -205,6 +260,7 @@ module.exports = {
   addEditorialGraphSubject,
   removeEditorialGraphSubject,
   addEditorialGraphEdge,
+  updateEditorialGraphEdge,
   removeEditorialGraphEdge,
   setEditorialGraphSubjectClasses,
 };
