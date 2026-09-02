@@ -25,6 +25,8 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
   subject = null;
   editorialContextId = null;
   studio = null;
+  graphProjection = null;
+  subjectInGraph = false;
   choices = null;
   query = "";
   page = 1;
@@ -67,6 +69,8 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.subject = null;
     this.editorialContextId = null;
     this.studio = null;
+    this.graphProjection = null;
+    this.subjectInGraph = false;
     this.choices = null;
     this.query = "";
     this.page = 1;
@@ -76,6 +80,8 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.open = false;
     this.error = null;
     this.studio = null;
+    this.graphProjection = null;
+    this.subjectInGraph = false;
     this.editorialContextId = null;
     this.render();
   }
@@ -87,6 +93,8 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.itemId = this.currentItemId();
     this.subject = null;
     this.studio = null;
+    this.graphProjection = null;
+    this.subjectInGraph = false;
     this.choices = null;
     this.query = "";
     this.page = 1;
@@ -120,6 +128,8 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.busy = true;
     this.error = null;
     this.studio = null;
+    this.graphProjection = null;
+    this.subjectInGraph = false;
     this.editorialContextId = null;
     this.render();
     try {
@@ -146,17 +156,41 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      let studio = await editorialRepository.studio(editorialContextId);
+      const [studio, graphProjection] = await Promise.all([
+        editorialRepository.studio(editorialContextId),
+        editorialRepository.graph(editorialContextId, { view: "working" }),
+      ]);
       if (!studio?.permissions?.canEditGraph) throw new Error("Il tuo ruolo non consente di modificare i collegamenti di questa raccolta.");
-      await editorialRepository.addGraphSubject(editorialContextId, id(this.subject));
-      studio = await editorialRepository.studio(editorialContextId);
       this.editorialContextId = editorialContextId;
       this.studio = studio;
+      this.graphProjection = graphProjection;
+      this.subjectInGraph = (graphProjection?.subjects || []).some((entry) => id(entry?.subject) === id(this.subject));
       this.choices = null;
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile aprire il grafo semantico";
       this.studio = null;
+      this.graphProjection = null;
+      this.subjectInGraph = false;
       this.editorialContextId = null;
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async addSubjectToGraph() {
+    if (!this.editorialContextId || !id(this.subject) || this.subjectInGraph) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await editorialRepository.addGraphSubject(this.editorialContextId, id(this.subject));
+      const graphProjection = await editorialRepository.graph(this.editorialContextId, { view: "working" });
+      this.graphProjection = graphProjection;
+      this.subjectInGraph = (graphProjection?.subjects || []).some((entry) => id(entry?.subject) === id(this.subject));
+      if (!this.subjectInGraph) throw new Error("Il Subject non risulta ancora presente nel grafo");
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere il Subject al grafo";
     } finally {
       this.busy = false;
       this.render();
@@ -177,6 +211,7 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     if (!target) return;
     if (target.closest("[data-open-item-semantic-sidecar]")) { void this.openSidecar(); return; }
     if (target.closest("[data-close-item-semantic-sidecar]")) { this.close(); return; }
+    if (target.closest("[data-add-sidecar-subject]")) { void this.addSubjectToGraph(); return; }
     if (target.closest("[data-change-sidecar-context]")) { this.query = ""; this.page = 1; this.choices = null; void this.loadChoices(); return; }
     if (target.closest("[data-open-editorial-spaces]")) { this.close(); navigate("/workspace/editorial-spaces"); return; }
     if (target.closest("[data-open-relation-hub]")) { this.close(); navigate("/create?mode=relations"); return; }
@@ -203,7 +238,13 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
   renderChooser() {
     const results = this.choices?.results || [];
     const pagination = this.choices?.pagination || { page: this.page, total: 0, totalPages: 0 };
-    return `<section class="workspace-sidecar__chooser"><div><span class="eyebrow">Grafo semantico</span><h2>Scegli dove lavorare</h2><p>Il Subject <strong>${escapeHtml(this.subject?.preferredLabel || "del contenuto")}</strong> verrà aggiunto al grafo scelto, senza modificare contenuti, Spazio editoriale o presenza fisica.</p></div><form class="inline-form" data-sidecar-collection-search role="search"><label>Cerca raccolta<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${results.length ? `<div class="workspace-sidecar-choice-list">${results.map((choice) => this.renderChoice(choice)).join("")}</div>` : this.busy ? `<div class="empty-state compact"><p>Ricerca delle raccolte…</p></div>` : `<div class="empty-state compact"><h3>Nessuna raccolta modificabile</h3><p>${this.query ? "Nessuna raccolta corrisponde alla ricerca." : "Per aggiungere collegamenti serve una raccolta il cui grafo sia modificabile nella tua area di lavoro."}</p><div class="button-row"><button type="button" class="button-secondary" data-open-editorial-spaces>Apri gli spazi editoriali</button><button type="button" class="button-secondary" data-open-relation-hub>Collega soggetti</button></div></div>`}${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine delle raccolte"><button type="button" data-sidecar-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-sidecar-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}</section>`;
+    return `<section class="workspace-sidecar__chooser"><div><span class="eyebrow">Grafo semantico</span><h2>Scegli dove lavorare</h2><p>Scegli la raccolta che fornisce il contesto semantico per <strong>${escapeHtml(this.subject?.preferredLabel || "il Subject del contenuto")}</strong>. La sola apertura non modifica il grafo.</p></div><form class="inline-form" data-sidecar-collection-search role="search"><label>Cerca raccolta<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${results.length ? `<div class="workspace-sidecar-choice-list">${results.map((choice) => this.renderChoice(choice)).join("")}</div>` : this.busy ? `<div class="empty-state compact"><p>Ricerca delle raccolte…</p></div>` : `<div class="empty-state compact"><h3>Nessuna raccolta modificabile</h3><p>${this.query ? "Nessuna raccolta corrisponde alla ricerca." : "Per aggiungere collegamenti serve una raccolta il cui grafo sia modificabile nella tua area di lavoro."}</p><div class="button-row"><button type="button" class="button-secondary" data-open-editorial-spaces>Apri gli spazi editoriali</button><button type="button" class="button-secondary" data-open-relation-hub>Collega soggetti</button></div></div>`}${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine delle raccolte"><button type="button" data-sidecar-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-sidecar-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}</section>`;
+  }
+
+  renderMembershipPrompt() {
+    const graph = this.studio?.semanticGraph || {};
+    const shared = Number(graph.sharedByCollections || 1);
+    return `<section class="workspace-sidecar__chooser"><div><span class="eyebrow">Relazioni · ${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h2>${escapeHtml(this.subject?.preferredLabel || "Subject")}</h2><p>Questo Subject non appartiene ancora al grafo <strong>${escapeHtml(graph.name || "semantico")}</strong>. Aggiungerlo crea solo la membership semantica: non aggiunge contenuti alla raccolta e non modifica la presenza fisica.</p>${shared > 1 ? `<artaround-callout tone="info">Il grafo è condiviso da ${shared} raccolte: il nuovo Subject sarà disponibile semanticamente in tutte quelle che usano la sua bozza corrente.</artaround-callout>` : ""}</div><div class="button-row"><button type="button" data-add-sidecar-subject ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} Aggiungi al grafo e usa come contesto</button>${this.contextualCollectionId() ? "" : `<button type="button" class="button-secondary" data-change-sidecar-context>Scegli un'altra raccolta</button>`}</div></section>`;
   }
 
   renderGraph() {
@@ -212,11 +253,10 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     return `<section class="workspace-sidecar__graph"><header class="workspace-sidecar__context"><div><span class="eyebrow">Relazioni · ${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h2>${escapeHtml(this.subject?.preferredLabel || "Collegamenti")}</h2><p>Grafo: <strong>${escapeHtml(graph.name || "Grafo semantico")}</strong>${shared > 1 ? ` · condiviso da ${shared} raccolte` : ""}</p></div>${this.contextualCollectionId() ? "" : `<button type="button" class="button-secondary small" data-change-sidecar-context>Scegli un altro contesto</button>`}</header><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
-  configureGraph() {
-    if (!this.studio || !this.editorialContextId || !id(this.subject)) return;
+  async configureGraph() {
+    if (!this.studio || !this.editorialContextId || !this.subjectInGraph || !id(this.subject)) return;
     const graph = this.querySelector("artaround-semantic-graph-editor");
     if (!graph) return;
-    graph.focusSubjectId = id(this.subject);
     graph.configure({
       editorialContextId: this.editorialContextId,
       relationTypes: this.studio.namespace?.revision?.relationTypes || [],
@@ -224,14 +264,22 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
       editable: this.studio.permissions?.canEditGraph === true,
       locked: false,
     });
+    await graph.load();
+    graph.setFocus(id(this.subject));
   }
 
   render() {
     if (!this.isItemRoute()) { this.innerHTML = ""; return; }
     if (!this.open) { this.innerHTML = this.renderLauncher(); return; }
-    const body = this.studio ? this.renderGraph() : this.subject && this.choices ? this.renderChooser() : this.error ? `<div class="empty-state"><h2>Collegamenti non disponibili</h2><p>${escapeHtml(this.error)}</p>${!this.currentItemId() ? "" : `<button type="button" class="button-secondary" data-open-relation-hub>Apri Collega soggetti</button>`}</div>` : `<div class="empty-state"><p>${this.busy ? "Preparazione del grafo…" : "Preparazione…"}</p></div>`;
+    const body = this.studio
+      ? (this.subjectInGraph ? this.renderGraph() : this.renderMembershipPrompt())
+      : this.subject && this.choices
+        ? this.renderChooser()
+        : this.error
+          ? `<div class="empty-state"><h2>Collegamenti non disponibili</h2><p>${escapeHtml(this.error)}</p>${!this.currentItemId() ? "" : `<button type="button" class="button-secondary" data-open-relation-hub>Apri Collega soggetti</button>`}</div>`
+          : `<div class="empty-state"><p>${this.busy ? "Preparazione del grafo…" : "Preparazione…"}</p></div>`;
     this.innerHTML = `${this.renderLauncher()}<div class="workspace-sidecar-layer"><aside class="workspace-sidecar" aria-label="Collegamenti semantici del contenuto"><header class="workspace-sidecar__header"><div><span class="eyebrow">Contenuto · Semantica</span><strong>Aggiungi collegamenti</strong></div><button type="button" class="button-secondary small" data-close-item-semantic-sidecar aria-label="Chiudi collegamenti">×</button></header>${this.error && this.subject ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<div class="workspace-sidecar__body">${body}</div></aside></div>`;
-    if (this.studio) queueMicrotask(() => this.configureGraph());
+    if (this.studio && this.subjectInGraph) queueMicrotask(() => void this.configureGraph());
   }
 }
 
