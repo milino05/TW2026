@@ -86,6 +86,10 @@ export const editorialRepository = {
     const query = queryString({ view });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph?${query}`);
   },
+  graphNeighborhood(editorialContextId, { view = "working", focusSubjectId = null, limit = 18 } = {}) {
+    const query = queryString({ view, focusSubjectId, limit });
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/neighborhood?${query}`);
+  },
   graphSubjectCandidates(editorialContextId, { scope = "collection", q = "", page = 1, limit = 12 } = {}) {
     const query = queryString({ scope, q, page, limit });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subject-candidates?${query}`);
