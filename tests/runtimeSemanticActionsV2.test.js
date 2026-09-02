@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -83,8 +84,6 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const EditorialRelease = require("../models/editorialRelease.model");
@@ -142,16 +141,11 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       ownerId: owner._id,
       createdBy: owner._id,
     });
-    const context = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Contesto semantico demo",
-      createdBy: owner._id,
-    });
-    const graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       createdBy: owner._id,
     });
     await GraphSubjectBinding.insertMany([
