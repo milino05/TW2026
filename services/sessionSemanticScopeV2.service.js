@@ -2,6 +2,7 @@ const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const ItemEdition = require("../models/itemEdition.model");
@@ -120,27 +121,30 @@ async function directSemanticContext({ source, contentEntries }) {
     applicablePairs.has(`${id(context.contentSpaceId)}:${id(context.namespaceId)}`));
   if (!applicableContexts.length) return { pins: [], contexts: [] };
 
-  const publishedReleaseIds = uniqueIds(applicableContexts.map((context) => context.publishedReleaseId));
-  const publishedReleases = publishedReleaseIds.length
-    ? await EditorialRelease.find({ _id: { $in: publishedReleaseIds } }).lean()
-    : [];
+  const [publishedReleases, semanticGraphs] = await Promise.all([
+    EditorialRelease.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.publishedReleaseId)) } }).lean(),
+    SemanticGraph.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.semanticGraphId)) }, lifecycleStatus: "active" }).lean(),
+  ]);
   const releaseById = new Map(publishedReleases.map((release) => [id(release._id), release]));
+  const graphById = new Map(semanticGraphs.map((graph) => [id(graph._id), graph]));
 
-  const selectedGraphIds = uniqueIds(applicableContexts.map((context) => {
-    if (context.workingGraphRevisionId) return context.workingGraphRevisionId;
-    return releaseById.get(id(context.publishedReleaseId))?.graphRevisionId || null;
+  const selectedGraphRevisionIds = uniqueIds(applicableContexts.map((context) => {
+    const semanticGraph = graphById.get(id(context.semanticGraphId));
+    return semanticGraph?.workingRevisionId || releaseById.get(id(context.publishedReleaseId))?.graphRevisionId || null;
   }));
-  if (!selectedGraphIds.length) return { pins: [], contexts: [] };
+  if (!selectedGraphRevisionIds.length) return { pins: [], contexts: [] };
 
-  const graphRevisions = await SemanticGraphRevision.find({ _id: { $in: selectedGraphIds } }).lean();
-  const graphById = new Map(graphRevisions.map((graph) => [id(graph._id), graph]));
+  const graphRevisions = await SemanticGraphRevision.find({ _id: { $in: selectedGraphRevisionIds } }).lean();
+  const graphRevisionById = new Map(graphRevisions.map((revision) => [id(revision._id), revision]));
   const pins = [];
   const resolvedContexts = [];
   for (const context of applicableContexts) {
+    const semanticGraph = graphById.get(id(context.semanticGraphId));
     const release = releaseById.get(id(context.publishedReleaseId));
-    const graphRevisionId = context.workingGraphRevisionId || release?.graphRevisionId || null;
-    const graphRevision = graphById.get(id(graphRevisionId));
+    const graphRevisionId = semanticGraph?.workingRevisionId || release?.graphRevisionId || null;
+    const graphRevision = graphRevisionById.get(id(graphRevisionId));
     if (!graphRevision) continue;
+    if (semanticGraph && id(graphRevision.semanticGraphId) !== id(semanticGraph._id)) continue;
     pins.push({
       sourceType: "direct_item",
       sourceEditorialReleaseId: null,
@@ -150,6 +154,7 @@ async function directSemanticContext({ source, contentEntries }) {
     });
     resolvedContexts.push({
       context,
+      semanticGraph,
       graphRevision,
       namespaceId: context.namespaceId,
     });
