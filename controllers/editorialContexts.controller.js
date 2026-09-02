@@ -22,7 +22,7 @@ async function update(req, res, next) {
   catch (error) { next(error); }
 }
 async function listEntries(req, res, next) {
-  try { res.status(200).json(await editorialContextEntryService.listEditorialContextEntries({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id, page: req.query?.page, limit: req.query?.limit })); }
+  try { res.status(200).json(await editorialContextEntryService.listEditorialContextEntries({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id, q: req.query?.q || "", page: req.query?.page, limit: req.query?.limit })); }
   catch (error) { next(error); }
 }
 async function addEntry(req, res, next) {
