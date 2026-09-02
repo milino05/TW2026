@@ -3,8 +3,8 @@ import { operatingPrincipal, readOperatingContext } from "../application/operati
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
-import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { icon } from "./icons.js";
+import { renderLibrarySectionNav } from "./library-section-nav.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
 
 const OWNED_TYPES = [["", "Tutte le risorse"], ["item_edition", "Contenuti"], ["visit", "Visite"], ["editorial_context", "Raccolte editoriali"], ["namespace", "Regole editoriali"], ["physical_vocabulary", "Vocabolari fisici"]];
@@ -46,7 +46,6 @@ function authoringHref(ref) { const type = String(ref?.resourceType || ""); cons
 export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   context = readOperatingContext();
   workspaceContext = null;
-  editorialSpaces = null;
   resources = null;
   busy = false;
   error = null;
@@ -56,7 +55,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     load: async ({ query, filters, page }) => {
       const principal = this.principal();
       if (!principal) throw new Error("Area di lavoro non selezionata");
-      const [workspaceContext, resources, editorialSpaces] = await Promise.all([
+      const [workspaceContext, resources] = await Promise.all([
         marketplaceRepository.workspaceContext(principal),
         marketplaceRepository.workspaceResources(principal, {
           ownership: filters.ownership === "licensed" ? "licensed" : "owned",
@@ -64,10 +63,8 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
           resourceTypes: filters.resourceType ? [String(filters.resourceType)] : null,
           page,
         }),
-        editorialRepository.spaceSummaries({ ownerType: this.context.type, ownerId: this.context.id }).catch(() => null),
       ]);
       this.workspaceContext = workspaceContext;
-      this.editorialSpaces = editorialSpaces;
       this.state.page = Math.max(1, Number(resources?.page) || page);
       return { ...resources, items: Array.isArray(resources?.results) ? resources.results : [] };
     },
@@ -93,9 +90,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   createHref() { return "/create"; }
   ownedLabel() { return this.context?.type === "organization" ? "Dell'organizzazione" : "Personali"; }
 
-  async load() {
-    await this.browser.refresh();
-  }
+  async load() { await this.browser.refresh(); }
 
   navigateWith(patch) {
     const next = {
@@ -135,11 +130,6 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     }
   };
 
-  renderEditorialSpaces() {
-    if (!Array.isArray(this.editorialSpaces)) return "";
-    return `<section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Organizzazione editoriale</span><h2>Spazi editoriali</h2><p>Gestisci i corpus di contenuti e le Raccolte che li selezionano.</p></div><span class="count">${this.editorialSpaces.length}</span></div><div class="asset-grid"><article class="asset owned"><header><span class="asset-icon">${icon("workspace", { size: 20 })}</span><div><p class="badge">Struttura editoriale</p><h3>Spazi editoriali</h3></div></header><div class="asset-copy"><p>I contenuti di uno Spazio possono essere riutilizzati da più Raccolte senza duplicarli.</p><div class="stats"><span><strong>${this.editorialSpaces.length}</strong> ${this.editorialSpaces.length === 1 ? "spazio disponibile" : "spazi disponibili"}</span></div></div><footer class="operations"><a class="button-link" data-route href="/workspace/editorial-spaces">Apri spazi editoriali ${icon("chevron", { size: 14 })}</a></footer></article></div></section>`;
-  }
-
   renderFilters() {
     const types = this.state.ownership === "owned" ? OWNED_TYPES : LICENSED_TYPES;
     const options = types.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === this.state.resourceType ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
@@ -163,7 +153,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     const pageSize = Number(this.resources?.pageSize || 12);
     const emptyAction = this.state.ownership === "owned" ? `<a class="button-link" data-route href="${this.createHref()}">Crea una risorsa</a>` : `<a class="button-link" data-route href="/catalog">Esplora il catalogo</a>`;
     const removedMessage = this.state.removed ? `<p class="status success" role="status">${this.state.removed === "namespace" ? "Regole editoriali eliminate dall’account." : this.state.removed === "physical_vocabulary" ? "Vocabolario fisico eliminato dall’account." : "Contenuto eliminato dall’account."} Le snapshot già acquisite e i diritti già concessi restano validi.</p>` : "";
-    this.innerHTML = `<main class="page workspace-page"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>Trova e gestisci le risorse</h1><p>Ricerca contenuti, visite e raccolte disponibili in questa area di lavoro.</p></div><a class="button-link" data-route href="${this.createHref()}">${icon("plus")} Crea</a></header>${removedMessage}${this.renderEditorialSpaces()}${this.renderFilters()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Risultati</span><h2>${this.state.ownership === "owned" ? escapeHtml(this.ownedLabel()) : "Acquisite"}</h2></div><span class="count">${total}</span></div>${this.busy ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : results.length ? `<div class="asset-grid">${results.map((asset) => this.renderAsset(asset)).join("")}</div>` : `<div class="empty-state"><h3>Nessuna risorsa trovata</h3><p>${this.state.q || this.state.resourceType ? "Prova a modificare la ricerca o il tipo di risorsa." : this.state.ownership === "owned" ? "Crea la prima risorsa per iniziare." : "Le risorse acquisite dal catalogo compariranno qui."}</p>${emptyAction}</div>`}<nav class="pagination" aria-label="Pagine delle risorse"><button type="button" data-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section></main>`;
+    this.innerHTML = `<main class="page workspace-page"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>Trova e gestisci le risorse</h1><p>Ricerca contenuti, visite e raccolte disponibili in questa area di lavoro.</p></div><a class="button-link" data-route href="${this.createHref()}">${icon("plus")} Crea</a></header>${renderLibrarySectionNav("resources")}${removedMessage}${this.renderFilters()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Risultati</span><h2>${this.state.ownership === "owned" ? escapeHtml(this.ownedLabel()) : "Acquisite"}</h2></div><span class="count">${total}</span></div>${this.busy ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : results.length ? `<div class="asset-grid">${results.map((asset) => this.renderAsset(asset)).join("")}</div>` : `<div class="empty-state"><h3>Nessuna risorsa trovata</h3><p>${this.state.q || this.state.resourceType ? "Prova a modificare la ricerca o il tipo di risorsa." : this.state.ownership === "owned" ? "Crea la prima risorsa per iniziare." : "Le risorse acquisite dal catalogo compariranno qui."}</p>${emptyAction}</div>`}<nav class="pagination" aria-label="Pagine delle risorse"><button type="button" data-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section></main>`;
   }
 }
 customElements.define("artaround-workspace-browser-view", ArtAroundWorkspaceBrowserView);
