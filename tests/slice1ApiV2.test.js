@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -28,8 +29,6 @@ async function createEditorialFixture({ seller }) {
   const Namespace = require("../models/namespace.model");
   const NamespaceRevision = require("../models/namespaceRevision.model");
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
-  const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
   const EditorialRelease = require("../models/editorialRelease.model");
   const ItemV2 = require("../models/itemV2.model");
   const ItemEdition = require("../models/itemEdition.model");
@@ -61,16 +60,11 @@ async function createEditorialFixture({ seller }) {
     ownerId: seller._id,
     createdBy: seller._id,
   });
-  const context = await EditorialContext.create({
-    contentSpaceId: contentSpace._id,
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace,
     namespaceId: namespace._id,
+    namespaceRevisionId: namespaceRevision._id,
     displayName: "Slice 1 context",
-    createdBy: seller._id,
-  });
-  const graphRevision = await SemanticGraphRevision.create({
-    editorialContextId: context._id,
-    version: 1,
-    authoredAgainstNamespaceRevisionId: namespaceRevision._id,
     createdBy: seller._id,
   });
 
