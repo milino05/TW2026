@@ -65,6 +65,12 @@ export const editorialRepository = {
     const query = queryString({ view });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph?${query}`);
   },
+  addGraphSubject(editorialContextId, subjectId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subjects/${encodeURIComponent(subjectId)}`, { method: "POST" });
+  },
+  removeGraphSubject(editorialContextId, subjectId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subjects/${encodeURIComponent(subjectId)}`, { method: "DELETE" });
+  },
   addGraphEdge(editorialContextId, payload) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/edges`, { method: "POST", ...jsonBody(payload) });
   },
