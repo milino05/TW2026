@@ -6,6 +6,10 @@ const {
   getEditorialStudioProjection,
   listEditorialStudioCandidates,
 } = require("../services/editorialStudioV2.service");
+const {
+  searchExternalEditorialCandidates,
+  importExternalEditorialCandidate,
+} = require("../services/editorialContextExternalContent.service");
 const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
 const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
@@ -86,6 +90,28 @@ async function editorialStudioCandidates(req, res, next) {
   } catch (error) { next(error); }
 }
 
+async function editorialExternalCandidates(req, res, next) {
+  try {
+    res.status(200).json(await searchExternalEditorialCandidates({
+      editorialContextId: req.params.editorialContextId,
+      actorUserId: req.user._id,
+      query: req.query?.q || "",
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function importEditorialExternalCandidate(req, res, next) {
+  try {
+    res.status(201).json(await importExternalEditorialCandidate({
+      editorialContextId: req.params.editorialContextId,
+      itemEditionId: req.body?.itemEditionId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
 async function createEditorialCollection(req, res, next) {
   try { res.status(201).json(await createEditorialStudioCollection({ payload: req.body || {}, actorUserId: req.user._id })); }
   catch (error) { next(error); }
@@ -144,6 +170,8 @@ module.exports = {
   reusableSemanticGraphs,
   editorialStudio,
   editorialStudioCandidates,
+  editorialExternalCandidates,
+  importEditorialExternalCandidate,
   createEditorialCollection,
   newVisitAuthoring,
   visitAuthoring,
