@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialContextEntry = require("../models/editorialContextEntry.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
@@ -65,8 +66,11 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
     if (!revision) issues.push(issue("namespaceRevisionId", "NAMESPACE_REVISION_NOT_RELEASE_READY", "La versione delle regole editoriali non è pronta per una raccolta pubblicabile"));
   }
 
-  const graphRevisionId = context.workingGraphRevisionId || null;
-  if (!graphRevisionId) issues.push(issue("graphRevisionId", "WORKING_GRAPH_REVISION_REQUIRED", "Definisci il grafo semantico della raccolta prima della revisione"));
+  const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();
+  if (!semanticGraph) issues.push(issue("semanticGraphId", "SEMANTIC_GRAPH_NOT_AVAILABLE", "Il grafo semantico della raccolta non è disponibile"));
+  else if (id(semanticGraph.namespaceId) !== id(context.namespaceId)) issues.push(issue("semanticGraphId", "SEMANTIC_GRAPH_NAMESPACE_MISMATCH", "Il grafo semantico usa regole editoriali diverse"));
+  const graphRevisionId = semanticGraph?.workingRevisionId || null;
+  if (!graphRevisionId) issues.push(issue("graphRevisionId", "WORKING_GRAPH_REVISION_REQUIRED", "Definisci una revisione del grafo semantico prima della revisione"));
 
   const entries = await EditorialContextEntry.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean();
   if (!entries.length) issues.push(issue("itemBindings", "EDITORIAL_CONTEXT_EMPTY", "Aggiungi almeno un contenuto alla raccolta prima della revisione"));
@@ -111,6 +115,7 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
     issues,
     snapshot: {
       namespaceRevisionId,
+      semanticGraphId: semanticGraph?._id || null,
       graphRevisionId,
       itemBindings,
     },
@@ -125,7 +130,8 @@ async function checkEditorialContextReadiness({ editorialContextId, actorUserId,
       id: context._id,
       name: context.displayName,
       workingVersion: Number(context.workingVersion || 0),
-      workingGraphRevisionId: context.workingGraphRevisionId || null,
+      semanticGraphId: context.semanticGraphId,
+      workingGraphRevisionId: result.snapshot?.graphRevisionId || null,
       activeReviewRevisionId: context.activeReviewRevisionId || null,
     },
     ready: result.issues.length === 0,
@@ -145,14 +151,11 @@ async function requestEditorialContextReview({ editorialContextId, actorUserId }
   const readiness = await buildWorkingSnapshot({ context, contentSpace, actorUserId });
   if (readiness.issues.length) throw new AppError("La raccolta non è pronta per la revisione", 409, readiness.issues);
   const expectedWorkingVersion = Number(context.workingVersion || 0);
-  const expectedGraphRevisionId = context.workingGraphRevisionId;
   let created = null;
   try {
     await mongoose.connection.transaction(async (session) => {
       const current = await EditorialContext.findOne({ _id: context._id, lifecycleStatus: "active" }).session(session);
-      if (!current || current.activeReviewRevisionId || Number(current.workingVersion || 0) !== expectedWorkingVersion || id(current.workingGraphRevisionId) !== id(expectedGraphRevisionId)) {
-        throw reviewConflict();
-      }
+      if (!current || current.activeReviewRevisionId || Number(current.workingVersion || 0) !== expectedWorkingVersion) throw reviewConflict();
       const lineage = await nextRevisionVersion(current._id, session);
       const now = new Date();
       [created] = await EditorialContextRevision.create([{
@@ -181,7 +184,6 @@ async function requestEditorialContextReview({ editorialContextId, actorUserId }
         lifecycleStatus: "active",
         activeReviewRevisionId: null,
         workingVersion: expectedWorkingVersion,
-        workingGraphRevisionId: expectedGraphRevisionId,
       }, { $set: { activeReviewRevisionId: created._id } }, { session });
       if (pointer.modifiedCount !== 1) throw reviewConflict();
     });
