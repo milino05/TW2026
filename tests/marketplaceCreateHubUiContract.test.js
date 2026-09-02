@@ -66,7 +66,8 @@ test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente R
   assert.match(create, /ownerType: this\.context\.type/);
   assert.match(create, /ownerId: this\.context\.id/);
   assert.match(create, /Scegli la raccolta/);
-  assert.match(create, /semanticGraph\.sharedByCollections/);
+  assert.match(create, /const graph = choice\.semanticGraph/);
+  assert.match(create, /graph\.sharedByCollections/);
   assert.match(create, /section=relations/);
   assert.match(editorialRepository, /\/v2\/marketplace\/editorial-relations/);
 });
