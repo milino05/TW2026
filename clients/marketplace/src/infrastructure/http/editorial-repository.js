@@ -17,6 +17,9 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId });
     return apiClient.request(`/content-spaces${query ? `?${query}` : ""}`);
   },
+  createSpace(payload) {
+    return apiClient.request("/content-spaces", { method: "POST", ...jsonBody(payload) });
+  },
   spaceSummaries({ ownerType = null, ownerId = null } = {}) {
     const query = queryString({ ownerType, ownerId });
     return apiClient.request(`/v2/marketplace/editorial-spaces${query ? `?${query}` : ""}`);
@@ -27,8 +30,8 @@ export const editorialRepository = {
   spaceProjection(contentSpaceId) {
     return apiClient.request(`/v2/marketplace/editorial-spaces/${encodeURIComponent(contentSpaceId)}`);
   },
-  listSpaceItems(contentSpaceId, { page = 1, limit = 30 } = {}) {
-    const query = queryString({ page, limit });
+  listSpaceItems(contentSpaceId, { q = "", page = 1, limit = 30 } = {}) {
+    const query = queryString({ q, page, limit });
     return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}/items?${query}`);
   },
   listCollections({ contentSpaceId = null, namespaceId = null } = {}) {
