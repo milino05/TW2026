@@ -306,6 +306,10 @@ async function getVenueManagementProjection({ venueId, actorUserId }) {
       organizationId: venue.ownerOrganizationId,
       source,
     },
+    authoringPermissions: {
+      canCreateContent: permissions.has("item.create"),
+      canEditInventory: permissions.has("venue.inventory.manage"),
+    },
     release: release ? {
       id: release._id,
       version: release.version,
