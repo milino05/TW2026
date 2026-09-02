@@ -8,6 +8,7 @@ const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
@@ -109,7 +110,13 @@ async function physicalVocabularyRemovalTarget({ resourceId, principal }) {
 }
 
 async function currentContextGraphRevisionId(context) {
-  if (context?.workingGraphRevisionId) return context.workingGraphRevisionId;
+  if (context?.semanticGraphId) {
+    const semanticGraph = await SemanticGraph.findOne({
+      _id: context.semanticGraphId,
+      lifecycleStatus: "active",
+    }).select("workingRevisionId").lean();
+    if (semanticGraph?.workingRevisionId) return semanticGraph.workingRevisionId;
+  }
   if (!context?.publishedReleaseId) return null;
   return (await EditorialRelease.findOne({
     _id: context.publishedReleaseId,
