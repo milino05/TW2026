@@ -30,7 +30,6 @@ router.get("/v2/marketplace/discovery/venues", discoveryController.venues);
 router.get("/v2/marketplace/discovery/venues/:venueId", venueId, discoveryController.venue);
 router.get("/v2/marketplace/authoring/preflight", preflightController.authoringPreflight);
 router.get("/v2/marketplace/subjects/:subjectId/venue-presence", subjectId, authoringController.subjectVenuePresence);
-router.get("/v2/marketplace/venues/:venueId/authoring-targets", venueId, authoringController.venueAuthoringTargets);
 router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuthoringProjection);
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
 router.get("/v2/marketplace/editorial-spaces", authoringController.editorialSpaces);
