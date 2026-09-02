@@ -4,12 +4,14 @@ import { editorialRepository } from "../infrastructure/http/editorial-repository
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
+import "./revision-workflow-controls.js";
 import "./editorial-collection-content-manager.js";
 import "./semantic-graph-editor.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function formatDate(value) { if (!value) return "—"; try { return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); } catch { return String(value); } }
 function statusLabel(value) { return ({ in_review: "In revisione", approved: "Approvata", changes_requested: "Modifiche richieste", published: "Pubblicata", withdrawn: "Ritirata" })[value] || value || "Bozza di lavoro"; }
+function statusTone(value) { return ({ in_review: "info", approved: "success", changes_requested: "warning", published: "success", withdrawn: "neutral" })[value] || "neutral"; }
 
 export class ArtAroundEditorialStudioView extends HTMLElement {
   context = readOperatingContext();
@@ -28,6 +30,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.section = ["overview", "content", "relations", "publication", "settings"].includes(params.get("section")) ? params.get("section") : "overview";
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("artaround:revision-workflow-operation", this.onWorkflowOperation);
     this.addEventListener("editorial-content-changed", this.onChildChanged);
     this.addEventListener("editorial-graph-changed", this.onChildChanged);
     this.load();
@@ -35,6 +38,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("artaround:revision-workflow-operation", this.onWorkflowOperation);
     this.removeEventListener("editorial-content-changed", this.onChildChanged);
     this.removeEventListener("editorial-graph-changed", this.onChildChanged);
   }
@@ -68,6 +72,13 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.render();
   }
 
+  onWorkflowOperation = (event) => {
+    const code = event.detail?.operation?.code;
+    if (!code) return;
+    event.stopPropagation();
+    void this.executeStudioAction(code);
+  };
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     const tab = target?.closest("button[data-studio-section]");
@@ -83,8 +94,10 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       return;
     }
     const action = target?.closest("button[data-studio-action]");
-    if (!action) return;
-    const code = action.dataset.studioAction;
+    if (action) await this.executeStudioAction(action.dataset.studioAction);
+  };
+
+  async executeStudioAction(code) {
     if (code === "collection.review.request") await this.run(() => editorialRepository.requestReview(this.editorialContextId));
     else if (code === "collection.review.withdraw") {
       const confirmed = await openActionDialog({
@@ -114,7 +127,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       if (confirmed) await this.run(() => editorialRepository.publish(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.check") await this.run(() => editorialRepository.check(this.editorialContextId));
     else if (code === "collection.remove") await this.removeCollection();
-  };
+  }
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
@@ -174,7 +187,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const readiness = this.data.readiness || { ready: false, issues: [] };
     const review = this.data.review;
     const published = this.data.published;
-    return `<section class="studio-section"><div class="studio-metric-grid"><article class="panel studio-metric"><strong>${stats.entryCount || 0}</strong><span>Contenuti</span></article><article class="panel studio-metric"><strong>${stats.subjectCount || 0}</strong><span>Soggetti nel grafo</span></article><article class="panel studio-metric"><strong>${stats.edgeCount || 0}</strong><span>Relazioni</span></article><article class="panel studio-metric"><strong>${stats.changesSincePublished ?? "—"}</strong><span>Modifiche dopo l'ultima pubblicazione</span></article></div><div class="studio-overview-grid"><article class="panel"><span class="eyebrow">Stato editoriale</span><h2>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h2>${review ? `<p>Versione in revisione v${escapeHtml(review.version)} · richiesta ${escapeHtml(formatDate(review.requestedAt))}</p>${review.message ? `<p class="inline-notice">${escapeHtml(review.message)}</p>` : ""}` : `<p>La raccolta è modificabile. Quando contenuti e configurazione sono pronti puoi inviarne una versione in revisione.</p>`}${published ? `<p class="note">Ultima versione pubblicata: v${escapeHtml(published.version)} · ${escapeHtml(formatDate(published.releasedAt))}</p>` : `<p class="note">Nessuna versione ancora pubblicata.</p>`}</article><article class="panel"><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Pronta per la revisione" : `${readiness.issues?.length || 0} problemi da risolvere`}</h2>${readiness.ready ? `<p>Contenuti, revisione del grafo e regole editoriali sono coerenti per creare una versione in revisione.</p>` : `<ul class="studio-issue-list">${(readiness.issues || []).slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul>`}<div class="button-row"><button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 16 })} Ricontrolla</button>${this.hasOperation("collection.review.request") ? `<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>` : ""}</div></article></div></section>`;
+    return `<section class="studio-section"><dl class="stats studio-overview-stats"><div><dt>Contenuti</dt><dd>${stats.entryCount || 0}</dd></div><div><dt>Soggetti nel grafo</dt><dd>${stats.subjectCount || 0}</dd></div><div><dt>Relazioni</dt><dd>${stats.edgeCount || 0}</dd></div><div><dt>Modifiche dopo l'ultima pubblicazione</dt><dd>${stats.changesSincePublished ?? "—"}</dd></div></dl><div class="studio-overview-grid"><article class="panel"><span class="eyebrow">Stato editoriale</span><h2>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h2>${review ? `<p>Versione in revisione v${escapeHtml(review.version)} · richiesta ${escapeHtml(formatDate(review.requestedAt))}</p>${review.message ? `<artaround-callout tone="warning">${escapeHtml(review.message)}</artaround-callout>` : ""}` : `<p>La raccolta è modificabile. Quando contenuti e configurazione sono pronti puoi inviarne una versione in revisione.</p>`}${published ? `<p class="note">Ultima versione pubblicata: v${escapeHtml(published.version)} · ${escapeHtml(formatDate(published.releasedAt))}</p>` : `<p class="note">Nessuna versione ancora pubblicata.</p>`}</article><article class="panel"><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Pronta per la revisione" : `${readiness.issues?.length || 0} problemi da risolvere`}</h2>${readiness.ready ? `<artaround-callout tone="success">Contenuti, revisione del grafo e regole editoriali sono coerenti per creare una versione in revisione.</artaround-callout>` : `<artaround-issue-panel tone="warning"><ul class="studio-issue-list">${(readiness.issues || []).slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul></artaround-issue-panel>`}<div class="button-row"><button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 16 })} Ricontrolla</button>${this.hasOperation("collection.review.request") ? `<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>` : ""}</div></article></div></section>`;
   }
 
   renderContent() {
@@ -187,16 +200,6 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Semantica</span><h2>Relazioni fra soggetti</h2><p>Lavora sul grafo semantico collegato alla raccolta. I nodi e le relazioni sono indipendenti dall'esistenza di contenuti di presentazione.</p></div></header><div class="studio-graph-context"><div><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><p>${sharedCount > 1 ? `Questo grafo è condiviso da ${sharedCount} raccolte. Le modifiche aggiornano la sua bozza comune; le versioni delle raccolte già in revisione o pubblicate restano pinzate alla revisione precedente.` : "Questo grafo può essere riusato da altre raccolte. Le versioni in revisione e pubblicate congelano sempre una revisione precisa."}</p></div><span class="status">${sharedCount} ${sharedCount === 1 ? "raccolta" : "raccolte"}</span></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
-  renderPublicationActions() {
-    const buttons = [];
-    if (this.hasOperation("collection.review.request")) buttons.push(`<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>`);
-    if (this.hasOperation("collection.review.withdraw")) buttons.push(`<button type="button" class="button-secondary" data-studio-action="collection.review.withdraw">Ritira revisione</button>`);
-    if (this.hasOperation("collection.review.approve")) buttons.push(`<button type="button" data-studio-action="collection.review.approve">Approva</button>`);
-    if (this.hasOperation("collection.review.request_changes")) buttons.push(`<button type="button" class="button-secondary" data-studio-action="collection.review.request_changes">Richiedi modifiche</button>`);
-    if (this.hasOperation("collection.publish")) buttons.push(`<button type="button" data-studio-action="collection.publish">Pubblica nuova versione</button>`);
-    return buttons.join("");
-  }
-
   renderRequestChangesForm() {
     if (!this.requestingChanges || !this.hasOperation("collection.review.request_changes")) return "";
     return `<form class="panel studio-request-changes-form" data-request-changes-form><span class="eyebrow">Richiedi modifiche</span><h3>Che cosa deve essere rivisto?</h3><p>Il messaggio verrà associato alla versione in revisione e guiderà il curatore nelle correzioni.</p><label>Messaggio<textarea name="message" rows="4" required data-request-changes-message></textarea></label><div class="button-row"><button type="submit">Invia richiesta</button><button type="button" class="button-secondary" data-request-changes-cancel>Annulla</button></div></form>`;
@@ -204,8 +207,10 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
 
   renderPublication() {
     const review = this.data.review;
-    const readiness = this.data.readiness || {};
-    return `<section class="studio-section studio-publication-flow"><article class="studio-flow-step ${readiness.ready ? "complete" : "blocked"}"><span class="studio-step-number">1</span><div><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Raccolta coerente" : "Controllo da completare"}</h2><p>${readiness.ready ? "Contenuti, revisione del grafo e regole editoriali possono essere congelati in una versione da revisionare." : "Risolvi i problemi mostrati in Panoramica prima di inviare la raccolta in revisione."}</p></div></article><article class="studio-flow-step ${review ? "active" : ""}"><span class="studio-step-number">2</span><div><span class="eyebrow">Versione in revisione</span><h2>${review ? statusLabel(review.status) : "Non ancora richiesta"}</h2>${review ? `<p>Versione v${escapeHtml(review.version)}, ${escapeHtml(review.itemCount)} contenuti. La composizione della raccolta è bloccata, mentre il grafo semantico condiviso può continuare a evolvere separatamente.</p>` : `<p>La revisione congela esattamente contenuti, revisione del grafo e regole editoriali che verranno pubblicati.</p>`}<div class="button-row">${this.renderPublicationActions()}</div>${this.renderRequestChangesForm()}</div></article><article class="studio-flow-step ${this.data.published ? "complete" : ""}"><span class="studio-step-number">3</span><div><span class="eyebrow">Pubblicazione</span><h2>${this.data.published ? `Versione pubblicata v${escapeHtml(this.data.published.version)}` : "Nessuna versione pubblicata"}</h2><p>${this.data.published ? `Pubblicata ${escapeHtml(formatDate(this.data.published.releasedAt))}.` : "Dopo l'approvazione, un publisher può creare la versione immutabile della raccolta."}</p></div></article><article class="panel studio-history-panel"><h2>Storico</h2><div class="studio-history-grid"><div><h3>Versioni in revisione</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div><div><h3>Versioni pubblicate</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div></div></article></section>`;
+    const readiness = this.data.readiness || { ready: false, issues: [] };
+    const published = this.data.published;
+    const reviewState = review?.status || "draft";
+    return `<section class="studio-section studio-publication-flow"><header class="section-heading"><div><span class="eyebrow">Versioni</span><h2>Revisione e pubblicazione</h2><p>La Raccolta congela insieme composizione, Regole editoriali e una revisione precisa del grafo. Il grafo condiviso può continuare a evolvere senza modificare le versioni già congelate.</p></div></header><div class="studio-publication-grid"><article class="panel"><div class="section-heading"><div><span class="eyebrow">Stato corrente</span><h3>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h3></div><artaround-status-indicator tone="${statusTone(reviewState)}">${escapeHtml(review ? statusLabel(review.status) : "Bozza di lavoro")}</artaround-status-indicator></div>${review ? `<p>Versione in revisione <strong>v${escapeHtml(review.version)}</strong> · ${escapeHtml(review.itemCount)} contenuti.</p><p class="note">La revisione usa il grafo congelato ${escapeHtml(review.graphRevisionId || "")}. Le modifiche successive al grafo condiviso non cambiano questa versione.</p>` : `<p>Nessuna versione è attualmente in revisione. ${readiness.ready ? "La bozza è pronta per essere congelata." : "Completa il controllo di consistenza prima della revisione."}</p>`}<artaround-revision-workflow-controls actions-only></artaround-revision-workflow-controls>${this.renderRequestChangesForm()}</article><article class="panel"><span class="eyebrow">Ultima pubblicazione</span><h3>${published ? `Versione v${escapeHtml(published.version)}` : "Nessuna versione pubblicata"}</h3>${published ? `<p>Pubblicata ${escapeHtml(formatDate(published.releasedAt))}.</p><p class="note">Grafo congelato: ${escapeHtml(published.graphRevisionId || "—")}</p>` : `<p>Quando una versione approvata viene pubblicata, resta immutabile e riproducibile anche se contenuti e grafo continuano a evolvere.</p>`}<button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 15 })} Ricontrolla consistenza</button></article></div><article class="panel studio-history-panel"><h2>Storico</h2><div class="studio-history-grid"><div><h3>Versioni in revisione</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div><div><h3>Versioni pubblicate</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div></div></article></section>`;
   }
 
   renderSettings() {
@@ -230,6 +235,12 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       editable: this.data.permissions.canEditGraph,
       locked: false,
     });
+    const workflow = this.querySelector("artaround-revision-workflow-controls");
+    if (workflow) {
+      workflow.availableOperations = this.data.availableOperations || [];
+      if (this.busy) workflow.setAttribute("busy", "");
+      else workflow.removeAttribute("busy");
+    }
   }
 
   render() {
