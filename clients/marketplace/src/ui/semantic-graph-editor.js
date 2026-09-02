@@ -1,9 +1,11 @@
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
+import "./semantic-entity-picker.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function id(value) { return String(value?._id || value?.id || value || ""); }
+function classIds(entry) { return (entry?.subjectClassDefinitionIds || []).map(String); }
 
 export class ArtAroundSemanticGraphEditor extends HTMLElement {
   editorialContextId = null;
@@ -12,181 +14,510 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   editable = false;
   locked = false;
   data = null;
-  selectedSubjectId = null;
+  focusSubjectId = null;
+  selected = null;
+  pickerMode = null;
+  inventoryQuery = "";
+  relationDraft = null;
+  visibleNeighborLimit = 18;
   busy = false;
   error = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
+    this.addEventListener("dblclick", this.onDoubleClick);
     this.addEventListener("submit", this.onSubmit);
-    this.load();
+    this.addEventListener("input", this.onInput);
+    this.addEventListener("change", this.onChange);
+    this.addEventListener("keydown", this.onKeyDown);
+    this.addEventListener("subject-selected", this.onSubjectSelected);
+    void this.load();
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("dblclick", this.onDoubleClick);
     this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("input", this.onInput);
+    this.removeEventListener("change", this.onChange);
+    this.removeEventListener("keydown", this.onKeyDown);
+    this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
 
   configure({ editorialContextId, relationTypes = [], subjectClasses = [], editable = false, locked = false } = {}) {
+    const changed = this.editorialContextId && editorialContextId && this.editorialContextId !== editorialContextId;
     this.editorialContextId = editorialContextId || null;
     this.relationTypes = relationTypes || [];
     this.subjectClasses = subjectClasses || [];
     this.editable = editable === true;
     this.locked = locked === true;
-    if (this.isConnected) this.load();
+    if (changed) this.resetWorkspace();
+    if (this.isConnected) void this.load();
+  }
+
+  resetWorkspace() {
+    this.focusSubjectId = null;
+    this.selected = null;
+    this.pickerMode = null;
+    this.inventoryQuery = "";
+    this.relationDraft = null;
+    this.visibleNeighborLimit = 18;
   }
 
   async load() {
     if (!this.editorialContextId) { this.render(); return; }
-    this.busy = true; this.error = null; this.render();
-    try { this.data = await editorialRepository.graph(this.editorialContextId, { view: "working" }); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile caricare il grafo semantico"; }
-    finally { this.busy = false; this.render(); }
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      this.data = await editorialRepository.graph(this.editorialContextId, { view: "working" });
+      if (this.focusSubjectId && !this.subjectEntry(this.focusSubjectId)) this.focusSubjectId = null;
+      if (this.selected?.kind === "subject" && !this.subjectEntry(this.selected.id)) this.selected = null;
+      if (this.selected?.kind === "edge" && !this.edgeById(this.selected.id)) this.selected = null;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile caricare il grafo semantico";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   }
 
-  graphSubjects() {
-    const byId = new Map();
-    for (const subject of this.data?.availableSubjects || []) {
-      byId.set(id(subject), { subject, subjectClassDefinitionIds: [] });
-    }
-    for (const entry of this.data?.subjects || []) {
-      const key = id(entry.subject);
-      byId.set(key, { subject: entry.subject, subjectClassDefinitionIds: entry.subjectClassDefinitionIds || [] });
-    }
-    return [...byId.values()].sort((a, b) => String(a.subject?.preferredLabel || "").localeCompare(String(b.subject?.preferredLabel || ""), "it"));
+  graphSubjects() { return this.data?.subjects || []; }
+  subjectEntry(subjectId) { return this.graphSubjects().find((entry) => id(entry.subject) === id(subjectId)) || null; }
+  subject(subjectId) { return this.subjectEntry(subjectId)?.subject || null; }
+  edgeById(edgeId) { return (this.data?.edges || []).find((edge) => id(edge.id) === id(edgeId)) || null; }
+  relationById(definitionId) { return (this.relationTypes || []).find((entry) => String(entry.definitionId) === String(definitionId)) || null; }
+  classById(definitionId) { return (this.subjectClasses || []).find((entry) => String(entry.definitionId) === String(definitionId)) || null; }
+
+  relationCount(subjectId) {
+    return (this.data?.edges || []).filter((edge) => id(edge.sourceSubjectId) === id(subjectId) || id(edge.targetSubjectId) === id(subjectId)).length;
   }
 
-  relationById(definitionId) {
-    return (this.relationTypes || []).find((entry) => String(entry.definitionId) === String(definitionId)) || null;
+  filteredGraphSubjects({ excludeFocus = false } = {}) {
+    const query = this.inventoryQuery.trim().toLocaleLowerCase("it");
+    return this.graphSubjects()
+      .filter((entry) => !excludeFocus || id(entry.subject) !== id(this.focusSubjectId))
+      .filter((entry) => !query || `${entry.subject?.preferredLabel || ""} ${entry.subject?.description || ""}`.toLocaleLowerCase("it").includes(query))
+      .sort((a, b) => String(a.subject?.preferredLabel || "").localeCompare(String(b.subject?.preferredLabel || ""), "it"));
   }
+
+  suggestedSubjects() {
+    const existing = new Set(this.graphSubjects().map((entry) => id(entry.subject)));
+    const query = this.inventoryQuery.trim().toLocaleLowerCase("it");
+    return (this.data?.suggestedSubjects || [])
+      .filter((subject) => !existing.has(id(subject)))
+      .filter((subject) => !query || `${subject.preferredLabel || ""} ${subject.description || ""}`.toLocaleLowerCase("it").includes(query))
+      .slice(0, 24);
+  }
+
+  focusNeighborhood() {
+    if (!this.focusSubjectId) return { edges: [], neighbors: [], totalNeighbors: 0, hiddenNeighbors: 0 };
+    const edges = (this.data?.edges || []).filter((edge) => id(edge.sourceSubjectId) === id(this.focusSubjectId) || id(edge.targetSubjectId) === id(this.focusSubjectId));
+    const neighborMap = new Map();
+    for (const edge of edges) {
+      const otherId = id(edge.sourceSubjectId) === id(this.focusSubjectId) ? id(edge.targetSubjectId) : id(edge.sourceSubjectId);
+      const entry = this.subjectEntry(otherId);
+      if (!entry) continue;
+      const direction = id(edge.sourceSubjectId) === id(this.focusSubjectId) ? "outgoing" : "incoming";
+      const current = neighborMap.get(otherId) || { ...entry, direction, directions: new Set() };
+      current.directions.add(direction);
+      if (current.directions.size > 1) current.direction = "mixed";
+      neighborMap.set(otherId, current);
+    }
+    const all = [...neighborMap.values()].sort((a, b) => String(a.subject?.preferredLabel || "").localeCompare(String(b.subject?.preferredLabel || ""), "it"));
+    const visible = all.slice(0, this.visibleNeighborLimit);
+    const visibleIds = new Set(visible.map((entry) => id(entry.subject)));
+    return {
+      neighbors: visible,
+      edges: edges.filter((edge) => visibleIds.has(id(edge.sourceSubjectId) === id(this.focusSubjectId) ? id(edge.targetSubjectId) : id(edge.sourceSubjectId))),
+      totalNeighbors: all.length,
+      hiddenNeighbors: Math.max(0, all.length - visible.length),
+    };
+  }
+
+  layoutNeighborhood(neighborhood) {
+    const width = 900, height = 520;
+    const positions = new Map([[id(this.focusSubjectId), { x: 450, y: 260 }]]);
+    const groups = {
+      incoming: neighborhood.neighbors.filter((entry) => entry.direction === "incoming"),
+      outgoing: neighborhood.neighbors.filter((entry) => entry.direction === "outgoing"),
+      mixed: neighborhood.neighbors.filter((entry) => entry.direction === "mixed"),
+    };
+    const placeVertical = (entries, x) => entries.forEach((entry, index) => {
+      const step = height / (entries.length + 1);
+      positions.set(id(entry.subject), { x, y: step * (index + 1) });
+    });
+    placeVertical(groups.incoming, 175);
+    placeVertical(groups.outgoing, 725);
+    groups.mixed.forEach((entry, index) => {
+      const upper = index % 2 === 0;
+      const row = Math.floor(index / 2);
+      positions.set(id(entry.subject), { x: 450 + (row % 2 ? 120 : -120), y: upper ? 95 : 425 });
+    });
+    return positions;
+  }
+
+  setFocus(subjectId) {
+    if (!this.subjectEntry(subjectId)) return;
+    this.focusSubjectId = id(subjectId);
+    this.selected = { kind: "subject", id: id(subjectId) };
+    this.pickerMode = null;
+    this.relationDraft = null;
+    this.inventoryQuery = "";
+    this.visibleNeighborLimit = 18;
+    this.render();
+  }
+
+  closeInspector() {
+    this.selected = null;
+    this.pickerMode = null;
+    this.relationDraft = null;
+    this.inventoryQuery = "";
+    this.render();
+  }
+
+  onInput = (event) => {
+    const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
+    if (!target) return;
+    if (target.matches("[data-semantic-inventory-query]")) {
+      this.inventoryQuery = target.value;
+      this.render();
+      requestAnimationFrame(() => {
+        const input = this.querySelector("[data-semantic-inventory-query]");
+        if (input) { input.focus(); input.setSelectionRange(this.inventoryQuery.length, this.inventoryQuery.length); }
+      });
+      return;
+    }
+    if (this.relationDraft && target.form?.matches("[data-relation-composer]")) {
+      if (target.name === "note") this.relationDraft.note = target.value;
+      if (target.name === "weight") this.relationDraft.weight = target.value;
+    }
+  };
+
+  onChange = (event) => {
+    const target = event.target instanceof HTMLSelectElement ? event.target : null;
+    if (!target || !this.relationDraft || !target.form?.matches("[data-relation-composer]")) return;
+    if (target.name === "relationTypeDefinitionId") {
+      this.relationDraft.relationTypeDefinitionId = target.value;
+      this.render();
+    }
+  };
+
+  onKeyDown = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const node = target?.closest("[data-graph-subject]");
+    if (node && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      this.selected = { kind: "subject", id: node.dataset.graphSubject };
+      this.render();
+      return;
+    }
+    const edge = target?.closest("[data-graph-edge]");
+    if (edge && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      this.openEdgeInspector(edge.dataset.graphEdge);
+      return;
+    }
+    if (event.key === "Escape" && (this.selected || this.pickerMode || this.relationDraft)) {
+      event.preventDefault();
+      this.closeInspector();
+    }
+  };
+
+  onDoubleClick = (event) => {
+    const target = event.target instanceof Element ? event.target.closest("[data-graph-subject]") : null;
+    if (!target) return;
+    event.preventDefault();
+    this.setFocus(target.dataset.graphSubject);
+  };
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    const node = target?.closest("[data-graph-subject]");
-    if (node) { this.selectedSubjectId = node.dataset.graphSubject; this.render(); return; }
-    const remove = target?.closest("button[data-remove-edge]");
-    if (remove && this.editable && !this.locked) {
+    if (!target) return;
+    if (target.closest("[data-close-graph-inspector]")) { this.closeInspector(); return; }
+    if (target.closest("[data-choose-focus]")) { this.pickerMode = "focus"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
+    if (target.closest("[data-add-graph-subject]")) { this.pickerMode = "add-focus"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
+    if (target.closest("[data-start-relation]")) { this.pickerMode = "target"; this.selected = null; this.relationDraft = null; this.inventoryQuery = ""; this.render(); return; }
+    if (target.closest("[data-add-target-subject]")) { this.pickerMode = "add-target"; this.inventoryQuery = ""; this.render(); return; }
+    const useInventory = target.closest("[data-use-inventory-subject]");
+    if (useInventory) {
+      const subjectId = useInventory.dataset.useInventorySubject;
+      if (this.pickerMode === "target") this.startRelationTo(this.subject(subjectId));
+      else this.setFocus(subjectId);
+      return;
+    }
+    const useSuggested = target.closest("[data-use-suggested-subject]");
+    if (useSuggested) {
+      const subject = (this.data?.suggestedSubjects || []).find((entry) => id(entry) === id(useSuggested.dataset.useSuggestedSubject));
+      if (!subject) return;
+      if (this.pickerMode === "add-target") this.startRelationTo(subject);
+      else await this.addSubjectAndFocus(subject);
+      return;
+    }
+    const graphNode = target.closest("[data-graph-subject]");
+    if (graphNode) { this.selected = { kind: "subject", id: graphNode.dataset.graphSubject }; this.pickerMode = null; this.relationDraft = null; this.render(); return; }
+    const graphEdge = target.closest("[data-graph-edge]");
+    if (graphEdge) { this.openEdgeInspector(graphEdge.dataset.graphEdge); return; }
+    if (target.closest("[data-semantic-graph-canvas]")) { this.selected = null; this.render(); return; }
+    const recenter = target.closest("[data-recenter-subject]");
+    if (recenter) { this.setFocus(recenter.dataset.recenterSubject); return; }
+    if (target.closest("[data-show-more-neighbors]")) { this.visibleNeighborLimit += 18; this.render(); return; }
+    const removeSubject = target.closest("[data-remove-graph-subject]");
+    if (removeSubject && this.editable && !this.locked) {
+      const subject = this.subject(removeSubject.dataset.removeGraphSubject);
+      const confirmed = await openActionDialog({
+        title: `Rimuovere “${subject?.preferredLabel || "questo soggetto"}” dal grafo?`,
+        message: "Il Subject globale e gli eventuali contenuti resteranno invariati. Il soggetto può essere rimosso solo se non è usato da relazioni.",
+        confirmLabel: "Rimuovi dal grafo",
+        tone: "danger",
+      });
+      if (confirmed) await this.mutate(() => editorialRepository.removeGraphSubject(this.editorialContextId, removeSubject.dataset.removeGraphSubject), { clearSelection: true });
+      return;
+    }
+    const removeEdge = target.closest("[data-remove-edge]");
+    if (removeEdge && this.editable && !this.locked) {
       const confirmed = await openActionDialog({
         title: "Rimuovere questa relazione?",
-        message: "La relazione verrà rimossa soltanto dal grafo di lavoro della raccolta.",
+        message: "La modifica produrrà una nuova revisione del grafo condiviso. Le raccolte già in revisione o pubblicate resteranno pinzate alla revisione precedente.",
         confirmLabel: "Rimuovi relazione",
         tone: "danger",
       });
-      if (!confirmed) return;
-      await this.mutate(() => editorialRepository.removeGraphEdge(this.editorialContextId, remove.dataset.removeEdge));
+      if (confirmed) await this.mutate(() => editorialRepository.removeGraphEdge(this.editorialContextId, removeEdge.dataset.removeEdge), { clearSelection: true });
     }
   };
 
-  onSubmit = async (event) => {
-    const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form || !this.editable || this.locked) return;
-    if (form.matches("[data-edge-form]")) {
-      event.preventDefault();
-      const data = new FormData(form);
-      const note = String(data.get("note") || "").trim();
-      await this.mutate(() => editorialRepository.addGraphEdge(this.editorialContextId, {
-        sourceSubjectId: String(data.get("sourceSubjectId") || ""),
-        targetSubjectId: String(data.get("targetSubjectId") || ""),
-        relationTypeDefinitionId: String(data.get("relationTypeDefinitionId") || ""),
-        weight: Number(data.get("weight") || 1),
-        metadata: note ? { note } : null,
-      }));
-      return;
-    }
-    if (form.matches("[data-classes-form]")) {
-      event.preventDefault();
-      const data = new FormData(form);
-      const ids = data.getAll("subjectClassDefinitionIds").map(String);
-      await this.mutate(() => editorialRepository.setSubjectClasses(this.editorialContextId, this.selectedSubjectId, ids));
-    }
+  onSubjectSelected = async (event) => {
+    if (!event.detail?.subject || !["add-focus", "add-target"].includes(this.pickerMode)) return;
+    event.stopPropagation();
+    const subject = event.detail.subject;
+    if (this.pickerMode === "add-target") this.startRelationTo(subject);
+    else await this.addSubjectAndFocus(subject);
   };
 
-  async mutate(operation) {
-    this.busy = true; this.error = null; this.render();
-    try {
-      await operation();
-      await this.load();
-      this.dispatchEvent(new CustomEvent("editorial-graph-changed", { bubbles: true }));
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Modifica del grafo non completata";
-      this.busy = false; this.render();
-    }
-  }
-
-  layoutNodes(subjects) {
-    const width = 760, height = 430, cx = width / 2, cy = height / 2, radius = Math.min(270, 120 + subjects.length * 12);
-    return subjects.map((entry, index) => {
-      const angle = subjects.length === 1 ? -Math.PI / 2 : (Math.PI * 2 * index / subjects.length) - Math.PI / 2;
-      return { ...entry, x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * Math.min(radius, 155) };
+  async addSubjectAndFocus(subject) {
+    const subjectId = id(subject);
+    if (!subjectId) return;
+    await this.mutate(() => editorialRepository.addGraphSubject(this.editorialContextId, subjectId), {
+      after: () => {
+        this.focusSubjectId = subjectId;
+        this.selected = { kind: "subject", id: subjectId };
+        this.pickerMode = null;
+      },
     });
   }
 
-  renderGraph(subjects) {
-    if (!subjects.length) return `<div class="empty-state"><h3>Nessun Subject nella raccolta</h3><p>Aggiungi prima almeno un contenuto nella sezione Contenuti.</p></div>`;
-    const nodes = this.layoutNodes(subjects);
-    const positionById = new Map(nodes.map((node) => [id(node.subject), node]));
-    const edges = (this.data?.edges || []).map((edge) => {
-      const from = positionById.get(id(edge.sourceSubjectId));
-      const to = positionById.get(id(edge.targetSubjectId));
+  startRelationTo(subject) {
+    const targetSubjectId = id(subject);
+    if (!this.focusSubjectId || !targetSubjectId || id(this.focusSubjectId) === targetSubjectId) return;
+    this.pickerMode = null;
+    this.selected = null;
+    this.relationDraft = {
+      mode: "create",
+      sourceSubjectId: id(this.focusSubjectId),
+      targetSubjectId,
+      targetSubject: subject,
+      relationTypeDefinitionId: String(this.relationTypes?.[0]?.definitionId || ""),
+      note: "",
+      weight: "1",
+    };
+    this.render();
+  }
+
+  openEdgeInspector(edgeId) {
+    const edge = this.edgeById(edgeId);
+    if (!edge) return;
+    this.selected = { kind: "edge", id: id(edge.id) };
+    this.pickerMode = null;
+    this.relationDraft = {
+      mode: "edit",
+      edgeId: id(edge.id),
+      sourceSubjectId: id(edge.sourceSubjectId),
+      targetSubjectId: id(edge.targetSubjectId),
+      relationTypeDefinitionId: String(edge.relationTypeDefinitionId || ""),
+      note: String(edge.metadata?.note || ""),
+      weight: String(edge.weight ?? 1),
+    };
+    this.render();
+  }
+
+  async onSubmit(event) {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form || !this.editable || this.locked) return;
+    if (form.matches("[data-classes-form]")) {
+      event.preventDefault();
+      const data = new FormData(form);
+      const subjectId = form.dataset.subjectId;
+      await this.mutate(() => editorialRepository.setSubjectClasses(this.editorialContextId, subjectId, data.getAll("subjectClassDefinitionIds").map(String)));
+      return;
+    }
+    if (!form.matches("[data-relation-composer]")) return;
+    event.preventDefault();
+    const data = new FormData(form);
+    const relationTypeDefinitionId = String(data.get("relationTypeDefinitionId") || "");
+    const note = String(data.get("note") || "").trim();
+    const assignments = this.classAssignmentsForForm(data, relationTypeDefinitionId, this.relationDraft.sourceSubjectId, this.relationDraft.targetSubjectId);
+    const payload = {
+      relationTypeDefinitionId,
+      weight: Number(data.get("weight") || 1),
+      metadata: note ? { note } : null,
+      subjectClassAssignments: assignments,
+    };
+    if (this.relationDraft.mode === "create") {
+      payload.sourceSubjectId = this.relationDraft.sourceSubjectId;
+      payload.targetSubjectId = this.relationDraft.targetSubjectId;
+      await this.mutate(() => editorialRepository.addGraphEdge(this.editorialContextId, payload), { clearSelection: true });
+    } else {
+      await this.mutate(() => editorialRepository.updateGraphEdge(this.editorialContextId, this.relationDraft.edgeId, payload), { clearSelection: true });
+    }
+  }
+
+  classAssignmentsForForm(data, relationTypeDefinitionId, sourceSubjectId, targetSubjectId) {
+    const relation = this.relationById(relationTypeDefinitionId);
+    if (!relation) return [];
+    const result = [];
+    for (const [role, subjectId, allowed] of [
+      ["source", sourceSubjectId, relation.domainDefinitionIds || []],
+      ["target", targetSubjectId, relation.rangeDefinitionIds || []],
+    ]) {
+      const existing = classIds(this.subjectEntry(subjectId));
+      if (!allowed.length || allowed.some((definitionId) => existing.includes(String(definitionId)))) continue;
+      const chosen = String(data.get(`${role}RequiredClass`) || "");
+      if (!chosen) continue;
+      result.push({ subjectId, subjectClassDefinitionIds: [...new Set([...existing, chosen])] });
+    }
+    return result;
+  }
+
+  async mutate(operation, { after = null, clearSelection = false } = {}) {
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await operation();
+      this.data = await editorialRepository.graph(this.editorialContextId, { view: "working" });
+      if (clearSelection) {
+        this.selected = null;
+        this.pickerMode = null;
+        this.relationDraft = null;
+      }
+      after?.();
+      this.dispatchEvent(new CustomEvent("editorial-graph-changed", { bubbles: true }));
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Modifica del grafo non completata";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  renderCanvas() {
+    if (!this.focusSubjectId) {
+      return `<div class="semantic-graph-empty" data-semantic-graph-canvas><div><span class="eyebrow">Grafo semantico</span><h3>Nessun soggetto di contesto</h3><p>Scegli un soggetto del grafo per visualizzare soltanto i suoi collegamenti diretti.</p><div class="button-row"><button type="button" data-choose-focus>${icon("search", { size: 16 })} Scegli soggetto</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 16 })} Aggiungi soggetto</button>` : ""}</div></div></div>`;
+    }
+    const focus = this.subject(this.focusSubjectId);
+    if (!focus) return `<div class="empty-state"><p>Il soggetto di contesto non è più disponibile.</p></div>`;
+    const neighborhood = this.focusNeighborhood();
+    const positions = this.layoutNeighborhood(neighborhood);
+    const focusPosition = positions.get(id(this.focusSubjectId));
+    const edgeMarkup = neighborhood.edges.map((edge) => {
+      const from = positions.get(id(edge.sourceSubjectId));
+      const to = positions.get(id(edge.targetSubjectId));
       if (!from || !to) return "";
       const relation = this.relationById(edge.relationTypeDefinitionId);
-      const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-      return `<g><line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" class="graph-edge" marker-end="url(#arrow)"/><text x="${mx}" y="${my - 6}" text-anchor="middle" class="edge-label">${escapeHtml(relation?.label || edge.relationTypeDefinitionId)}</text></g>`;
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      const selected = this.selected?.kind === "edge" && id(this.selected.id) === id(edge.id);
+      return `<g class="semantic-edge${selected ? " selected" : ""}" data-graph-edge="${escapeHtml(id(edge.id))}" tabindex="0" role="button" aria-label="${escapeHtml(relation?.label || "Relazione")}"><line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" marker-end="url(#semantic-arrow)"></line><text x="${mx}" y="${my - 9}" text-anchor="middle">${escapeHtml(relation?.label || edge.relationTypeDefinitionId)}</text></g>`;
     }).join("");
-    const renderedNodes = nodes.map((node) => {
-      const subjectId = id(node.subject);
-      const selected = subjectId === this.selectedSubjectId;
-      const label = String(node.subject?.preferredLabel || "Subject");
+    const nodeMarkup = neighborhood.neighbors.map((entry) => {
+      const subjectId = id(entry.subject);
+      const position = positions.get(subjectId);
+      const selected = this.selected?.kind === "subject" && id(this.selected.id) === subjectId;
+      const label = String(entry.subject?.preferredLabel || "Soggetto");
       const short = label.length > 24 ? `${label.slice(0, 22)}…` : label;
-      return `<g class="graph-node ${selected ? "selected" : ""}" data-graph-subject="${escapeHtml(subjectId)}" tabindex="0" role="button"><circle cx="${node.x}" cy="${node.y}" r="44"/><text x="${node.x}" y="${node.y + 4}" text-anchor="middle">${escapeHtml(short)}</text></g>`;
+      return `<g class="semantic-node${selected ? " selected" : ""}" data-graph-subject="${escapeHtml(subjectId)}" tabindex="0" role="button" aria-label="${escapeHtml(label)}"><circle cx="${position.x}" cy="${position.y}" r="49"></circle><text x="${position.x}" y="${position.y + 4}" text-anchor="middle">${escapeHtml(short)}</text></g>`;
     }).join("");
-    return `<div class="graph-canvas"><svg viewBox="0 0 760 430" role="img" aria-label="Grafo semantico della raccolta"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>${edges}${renderedNodes}</svg></div>`;
+    const focusSelected = this.selected?.kind === "subject" && id(this.selected.id) === id(this.focusSubjectId);
+    const focusMarkup = `<g class="semantic-node semantic-node--focus${focusSelected ? " selected" : ""}" data-graph-subject="${escapeHtml(id(this.focusSubjectId))}" tabindex="0" role="button" aria-label="${escapeHtml(focus.preferredLabel || "Soggetto di contesto")}"><circle cx="${focusPosition.x}" cy="${focusPosition.y}" r="62"></circle><text x="${focusPosition.x}" y="${focusPosition.y + 4}" text-anchor="middle">${escapeHtml(String(focus.preferredLabel || "Soggetto").slice(0, 28))}</text></g>`;
+    return `<div class="semantic-graph-canvas" data-semantic-graph-canvas><svg viewBox="0 0 900 520" role="img" aria-label="Relazioni dirette di ${escapeHtml(focus.preferredLabel || "soggetto")}"><defs><marker id="semantic-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker></defs>${edgeMarkup}${nodeMarkup}${focusMarkup}</svg>${neighborhood.hiddenNeighbors ? `<div class="semantic-graph-more"><span>${neighborhood.neighbors.length} di ${neighborhood.totalNeighbors} soggetti collegati mostrati</span><button type="button" class="button-secondary small" data-show-more-neighbors>Mostra altri</button></div>` : ""}</div>`;
   }
 
-  renderSelectedSubject(subjects) {
-    const entry = subjects.find((candidate) => id(candidate.subject) === this.selectedSubjectId);
-    if (!entry) return `<div class="empty-state compact"><p>Seleziona un nodo per classificarlo secondo le regole editoriali.</p></div>`;
-    const selected = new Set(entry.subjectClassDefinitionIds || []);
-    return `<section class="subject-inspector"><span class="eyebrow">Subject selezionato</span><h3>${escapeHtml(entry.subject?.preferredLabel || "Subject")}</h3><p>${escapeHtml(entry.subject?.description || "")}</p><form data-classes-form><fieldset ${this.editable && !this.locked ? "" : "disabled"}><legend>Classi nel grafo</legend>${this.subjectClasses.length ? this.subjectClasses.map((definition) => `<label class="check-row"><input type="checkbox" name="subjectClassDefinitionIds" value="${escapeHtml(definition.definitionId)}" ${selected.has(String(definition.definitionId)) ? "checked" : ""}><span><strong>${escapeHtml(definition.label)}</strong>${definition.description ? `<small>${escapeHtml(definition.description)}</small>` : ""}</span></label>`).join("") : `<p class="muted">Il Namespace non definisce classi di Subject.</p>`}</fieldset>${this.editable && !this.locked ? `<button type="submit" class="button-secondary small">Salva classificazione</button>` : ""}</form></section>`;
+  renderToolbar() {
+    if (!this.focusSubjectId) return "";
+    const focus = this.subject(this.focusSubjectId);
+    return `<div class="semantic-graph-toolbar"><div><span class="eyebrow">Soggetto di contesto</span><strong>${escapeHtml(focus?.preferredLabel || "Soggetto")}</strong></div><div class="button-row"><button type="button" class="button-secondary" data-choose-focus>${icon("search", { size: 15 })} Cambia soggetto</button>${this.editable && !this.locked ? `<button type="button" data-start-relation>${icon("link", { size: 15 })} Aggiungi relazione</button>` : ""}</div></div>`;
   }
 
-  renderEdgeForm(subjects) {
-    if (!this.editable || this.locked || subjects.length < 2) return "";
-    const options = subjects.map((entry) => `<option value="${escapeHtml(id(entry.subject))}">${escapeHtml(entry.subject?.preferredLabel || "Subject")}</option>`).join("");
-    const relationOptions = (this.relationTypes || []).map((entry) => `<option value="${escapeHtml(entry.definitionId)}">${escapeHtml(entry.label)}</option>`).join("");
-    if (!relationOptions) return `<div class="inline-notice">${icon("warning", { size: 16 })}<span>Le regole editoriali non definiscono tipi di relazione.</span></div>`;
-    return `<form data-edge-form class="edge-form"><h3>Nuova relazione</h3><label>Da<select name="sourceSubjectId" required>${options}</select></label><label>A<select name="targetSubjectId" required>${options}</select></label><label>Tipo<select name="relationTypeDefinitionId" required>${relationOptions}</select></label><label>Peso<input name="weight" type="number" min="0" max="10" step=".5" value="1"></label><label class="wide">Nota<input name="note" maxlength="500" placeholder="Facoltativa"></label><button type="submit">${icon("link", { size: 16 })} Crea relazione</button><p class="note wide">Domain e range vengono validati dal Namespace. Se una relazione non è ammessa, classifica prima i Subject nel pannello laterale.</p></form>`;
+  renderCoverage(entry) {
+    const coverage = entry?.presentationCoverage || {};
+    const collection = Number(coverage.collectionItemCount || 0);
+    const space = Number(coverage.contentSpaceItemCount || 0);
+    const artaround = Number(coverage.artaroundItemCount || 0);
+    if (collection) return `<span class="status" data-tone="success">${collection} ${collection === 1 ? "contenuto nella raccolta" : "contenuti nella raccolta"}</span>`;
+    if (space) return `<span class="status">${space} ${space === 1 ? "contenuto nello spazio" : "contenuti nello spazio"}</span>`;
+    if (artaround) return `<span class="status">${artaround} ${artaround === 1 ? "contenuto in ArtAround" : "contenuti in ArtAround"}</span>`;
+    return `<span class="status" data-tone="warning">Nessun contenuto disponibile</span>`;
   }
 
-  renderEdgeList(subjects) {
-    const subjectById = new Map(subjects.map((entry) => [id(entry.subject), entry.subject]));
-    const edges = this.data?.edges || [];
-    if (!edges.length) return `<div class="empty-state compact"><p>Nessuna relazione definita.</p></div>`;
-    return `<div class="edge-list">${edges.map((edge) => {
-      const source = subjectById.get(id(edge.sourceSubjectId));
-      const target = subjectById.get(id(edge.targetSubjectId));
-      const relation = this.relationById(edge.relationTypeDefinitionId);
-      return `<article><span><strong>${escapeHtml(source?.preferredLabel || "Subject")}</strong> <em>${escapeHtml(relation?.label || edge.relationTypeDefinitionId)}</em> <strong>${escapeHtml(target?.preferredLabel || "Subject")}</strong></span>${this.editable && !this.locked ? `<button type="button" class="icon-button" data-remove-edge="${escapeHtml(edge.id)}" aria-label="Rimuovi relazione">${icon("trash", { size: 15 })}</button>` : ""}</article>`;
-    }).join("")}</div>`;
+  renderInventoryPicker() {
+    const targetMode = this.pickerMode === "target";
+    const subjects = this.filteredGraphSubjects({ excludeFocus: targetMode });
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Inventario semantico"><div class="section-heading"><div><span class="eyebrow">Inventario semantico</span><h2>${targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><label>Cerca nel grafo<input data-semantic-inventory-query value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${this.relationCount(entry.subject?._id)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryQuery ? "Nessun soggetto corrispondente nel grafo." : "Il grafo non contiene ancora soggetti."}</p></div>`}</div>${this.editable && !this.locked ? `<div class="semantic-inventory-footer"><p>${targetMode ? "Il soggetto non è ancora nel grafo? Puoi cercarlo nei contenuti o nell'identità semantica globale senza creare automaticamente un contenuto." : "Aggiungi un nuovo soggetto al grafo semantico."}</p><button type="button" class="button-secondary" ${targetMode ? "data-add-target-subject" : "data-add-graph-subject"}>${icon("plus", { size: 15 })} Aggiungi soggetto</button></div>` : ""}</aside></div>`;
+  }
+
+  renderAddSubjectPicker() {
+    const targetMode = this.pickerMode === "add-target";
+    const suggestions = this.suggestedSubjects();
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Aggiungi soggetto"><div class="section-heading"><div><span class="eyebrow">Aggiungi soggetto</span><h2>${targetMode ? "Nuova destinazione" : "Nuovo soggetto nel grafo"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${suggestions.length ? `<section><h3>Dai contenuti della raccolta</h3><div class="semantic-inventory-list">${suggestions.map((subject) => `<button type="button" class="semantic-inventory-card" data-use-suggested-subject="${escapeHtml(id(subject))}"><span><strong>${escapeHtml(subject.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(subject.description || "")}</small></span><span class="status">Disponibile nella raccolta</span></button>`).join("")}</div></section>` : ""}<section><h3>Cerca in ArtAround</h3><p class="note">Se ArtAround non trova il soggetto, la ricerca prosegue su Wikidata e infine permette la creazione manuale.</p><artaround-semantic-entity-picker></artaround-semantic-entity-picker></section></aside></div>`;
+  }
+
+  renderSubjectInspector() {
+    const entry = this.subjectEntry(this.selected?.id);
+    if (!entry) return "";
+    const subject = entry.subject || {};
+    const selectedClasses = new Set(classIds(entry));
+    const relationCount = this.relationCount(subject._id);
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-subject-inspector" aria-label="Dettagli soggetto"><div class="section-heading"><div><span class="eyebrow">Soggetto</span><h2>${escapeHtml(subject.preferredLabel || "Soggetto")}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<div class="button-row">${this.renderCoverage(entry)}<span class="status">${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"}</span></div>${this.subjectClasses.length ? `<form data-classes-form data-subject-id="${escapeHtml(id(subject))}"><fieldset ${this.editable && !this.locked ? "" : "disabled"}><legend>Tipo nel grafo</legend>${this.subjectClasses.map((definition) => `<label class="check"><input type="checkbox" name="subjectClassDefinitionIds" value="${escapeHtml(definition.definitionId)}" ${selectedClasses.has(String(definition.definitionId)) ? "checked" : ""}><span><strong>${escapeHtml(definition.label)}</strong>${definition.description ? `<small>${escapeHtml(definition.description)}</small>` : ""}</span></label>`).join("")}</fieldset>${this.editable && !this.locked ? `<button type="submit" class="button-secondary">Salva tipi</button>` : ""}</form>` : `<p class="note">Le regole editoriali non definiscono tipi di soggetto.</p>`}<div class="operations">${id(subject) !== id(this.focusSubjectId) ? `<button type="button" data-recenter-subject="${escapeHtml(id(subject))}">Mostra i suoi collegamenti</button>` : ""}${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-graph-subject="${escapeHtml(id(subject))}">${icon("trash", { size: 15 })} Rimuovi dal grafo</button>` : ""}</div></aside></div>`;
+  }
+
+  renderClassRequirement(subjectId, allowedDefinitionIds, role) {
+    if (!allowedDefinitionIds?.length) return "";
+    const entry = this.subjectEntry(subjectId);
+    const existing = classIds(entry);
+    const compatible = allowedDefinitionIds.find((definitionId) => existing.includes(String(definitionId)));
+    if (compatible) return `<p class="relation-requirement-ok">${role === "source" ? "Partenza" : "Destinazione"}: ${escapeHtml(this.classById(compatible)?.label || compatible)} ✓</p>`;
+    const name = `${role}RequiredClass`;
+    if (allowedDefinitionIds.length === 1) {
+      const definitionId = String(allowedDefinitionIds[0]);
+      return `<label class="relation-class-confirm"><input type="checkbox" name="${name}" value="${escapeHtml(definitionId)}" checked required><span>Assegna a <strong>${escapeHtml(this.subject(subjectId)?.preferredLabel || this.relationDraft?.targetSubject?.preferredLabel || "soggetto")}</strong> il tipo <strong>${escapeHtml(this.classById(definitionId)?.label || definitionId)}</strong> per questa relazione.</span></label>`;
+    }
+    return `<label>Tipo richiesto per ${role === "source" ? "la partenza" : "la destinazione"}<select name="${name}" required><option value="">Scegli…</option>${allowedDefinitionIds.map((definitionId) => `<option value="${escapeHtml(definitionId)}">${escapeHtml(this.classById(definitionId)?.label || definitionId)}</option>`).join("")}</select></label>`;
+  }
+
+  renderRelationComposer() {
+    if (!this.relationDraft) return "";
+    const draft = this.relationDraft;
+    const source = this.subject(draft.sourceSubjectId);
+    const target = this.subject(draft.targetSubjectId) || draft.targetSubject || {};
+    const relation = this.relationById(draft.relationTypeDefinitionId);
+    const relationOptions = (this.relationTypes || []).map((definition) => `<option value="${escapeHtml(definition.definitionId)}" ${String(definition.definitionId) === String(draft.relationTypeDefinitionId) ? "selected" : ""}>${escapeHtml(definition.label)}</option>`).join("");
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-relation-inspector" aria-label="${draft.mode === "create" ? "Nuova relazione" : "Modifica relazione"}"><div class="section-heading"><div><span class="eyebrow">${draft.mode === "create" ? "Nuova relazione" : "Relazione"}</span><h2>${escapeHtml(source?.preferredLabel || "Soggetto")} → ${escapeHtml(target?.preferredLabel || "Soggetto")}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><form data-relation-composer><label>Tipo di relazione<select name="relationTypeDefinitionId" required>${relationOptions}</select></label>${relation ? `<section class="relation-requirements"><span class="eyebrow">Tipi richiesti dalle regole</span>${this.renderClassRequirement(draft.sourceSubjectId, relation.domainDefinitionIds || [], "source")}${this.renderClassRequirement(draft.targetSubjectId, relation.rangeDefinitionIds || [], "target")}</section>` : ""}<label>Nota<input name="note" maxlength="500" value="${escapeHtml(draft.note || "")}" placeholder="Facoltativa"></label><details><summary>Opzioni avanzate</summary><label>Peso della relazione<input name="weight" type="number" min="0" max="10" step=".5" value="${escapeHtml(draft.weight ?? 1)}"></label></details><div class="button-row"><button type="submit">${icon("check", { size: 15 })} ${draft.mode === "create" ? "Crea relazione" : "Salva relazione"}</button>${draft.mode === "edit" ? `<button type="button" class="button-secondary danger" data-remove-edge="${escapeHtml(draft.edgeId)}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</div></form></aside></div>`;
+  }
+
+  renderInspector() {
+    if (this.relationDraft) return this.renderRelationComposer();
+    if (["focus", "target"].includes(this.pickerMode)) return this.renderInventoryPicker();
+    if (["add-focus", "add-target"].includes(this.pickerMode)) return this.renderAddSubjectPicker();
+    if (this.selected?.kind === "subject") return this.renderSubjectInspector();
+    if (this.selected?.kind === "edge") {
+      this.openEdgeInspector(this.selected.id);
+      return this.renderRelationComposer();
+    }
+    return "";
   }
 
   render() {
-    const subjects = this.graphSubjects();
-    if (!this.selectedSubjectId && subjects.length) this.selectedSubjectId = id(subjects[0].subject);
-    this.innerHTML = `<style>
-      artaround-semantic-graph-editor{display:grid;gap:1rem}
-      artaround-semantic-graph-editor .graph-workspace{display:grid;grid-template-columns:minmax(0,1fr) 18rem;gap:1rem;align-items:start}
-      artaround-semantic-graph-editor .graph-canvas{min-height:28rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-subtle);overflow:auto}
-      artaround-semantic-graph-editor svg{display:block;width:100%;min-width:38rem;min-height:28rem}
-      artaround-semantic-graph-editor .graph-edge{stroke:var(--muted);stroke-width:1.5;opacity:.7}artaround-semantic-graph-editor marker path{fill:var(--muted)}
-      artaround-semantic-graph-editor .edge-label{font-size:11px;fill:currentColor;paint-order:stroke;stroke:var(--surface-subtle);stroke-width:4px}
-      artaround-semantic-graph-editor .graph-node{cursor:pointer}artaround-semantic-graph-editor .graph-node circle{fill:var(--surface);stroke:var(--border);stroke-width:2}artaround-semantic-graph-editor .graph-node.selected circle{stroke:currentColor;stroke-width:3}artaround-semantic-graph-editor .graph-node text{font-size:11px;fill:currentColor;pointer-events:none}
-      artaround-semantic-graph-editor .subject-inspector{display:grid;gap:.65rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
-      artaround-semantic-graph-editor .subject-inspector h3,artaround-semantic-graph-editor .subject-inspector p{margin:0}
-      artaround-semantic-graph-editor .check-row{display:flex;gap:.55rem;align-items:flex-start;margin:.5rem 0}artaround-semantic-graph-editor .check-row span{display:grid}artaround-semantic-graph-editor .check-row small{color:var(--muted)}
-      artaround-semantic-graph-editor .edge-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius)}artaround-semantic-graph-editor .edge-form h3,artaround-semantic-graph-editor .edge-form .wide{grid-column:1/-1}
-      artaround-semantic-graph-editor .edge-list{display:grid;gap:.4rem}artaround-semantic-graph-editor .edge-list article{display:flex;justify-content:space-between;gap:.7rem;align-items:center;padding:.65rem .8rem;border-bottom:1px solid var(--border)}
-      @media(max-width:58rem){artaround-semantic-graph-editor .graph-workspace{grid-template-columns:1fr}artaround-semantic-graph-editor .edge-form{grid-template-columns:1fr 1fr}}
-    </style><section aria-busy="${this.busy}">${this.locked ? `<div class="inline-notice">${icon("lock", { size: 16 })}<span>Il grafo è bloccato mentre la raccolta è in revisione.</span></div>` : ""}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<div class="graph-workspace">${this.renderGraph(subjects)}${this.renderSelectedSubject(subjects)}</div>${this.renderEdgeForm(subjects)}<section><h3>Relazioni definite</h3>${this.renderEdgeList(subjects)}</section></section>`;
+    if (!this.editorialContextId) { this.innerHTML = `<div class="empty-state"><p>Preparazione del grafo…</p></div>`; return; }
+    this.innerHTML = `<section class="semantic-graph-workspace" aria-busy="${this.busy}">${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderToolbar()}${this.renderCanvas()}</section>${this.renderInspector()}`;
   }
 }
 
