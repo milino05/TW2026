@@ -72,6 +72,10 @@ export const editorialRepository = {
     const query = queryString({ view });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph?${query}`);
   },
+  graphSubjectCandidates(editorialContextId, { scope = "collection", q = "", page = 1, limit = 12 } = {}) {
+    const query = queryString({ scope, q, page, limit });
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subject-candidates?${query}`);
+  },
   addGraphSubject(editorialContextId, subjectId) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subjects/${encodeURIComponent(subjectId)}`, { method: "POST" });
   },
