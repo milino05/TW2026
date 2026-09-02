@@ -16,7 +16,7 @@ async function withFreshDatabase(callback) {
   }
 }
 
-test("collection removal impact follows the shared SemanticGraph working revision without owning its lifecycle", { skip: !mongoUri }, async () => {
+test("collection removal reports but preserves the shared SemanticGraph working state", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -105,14 +105,16 @@ test("collection removal impact follows the shared SemanticGraph working revisio
       resourceType: "editorial_context",
       resourceId: first.context._id,
     });
-    assert.equal(impact.affectedConnectionCount, 3, "impact must read the current shared graph revision, not a removed Context pointer or old release");
+    assert.equal(impact.semanticGraphRelationCount, 3, "impact must inspect the current shared graph revision");
+    assert.equal(impact.semanticGraphCollectionCount, 2, "impact must report all active collections currently sharing the graph");
 
     const removed = await removeOwnedWorkspaceResource({
       actorUserId: owner._id,
       resourceType: "editorial_context",
       resourceId: first.context._id,
     });
-    assert.equal(removed.affectedConnectionCount, 3);
+    assert.equal(removed.semanticGraphRelationCount, 3);
+    assert.equal(removed.semanticGraphCollectionCount, 2, "removal result captures the pre-removal sharing state");
     assert.equal((await EditorialContext.findById(first.context._id).lean()).lifecycleStatus, "trashed");
     assert.equal((await EditorialContext.findById(secondContext._id).lean()).lifecycleStatus, "active");
 
@@ -125,6 +127,7 @@ test("collection removal impact follows the shared SemanticGraph working revisio
       resourceType: "editorial_context",
       resourceId: secondContext._id,
     });
-    assert.equal(survivingImpact.affectedConnectionCount, 3);
+    assert.equal(survivingImpact.semanticGraphRelationCount, 3);
+    assert.equal(survivingImpact.semanticGraphCollectionCount, 1, "the surviving collection remains attached to the unchanged graph");
   });
 });
