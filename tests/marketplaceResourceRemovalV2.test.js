@@ -200,7 +200,7 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
   });
 });
 
-test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo, release e diritti acquisiti", { skip: !mongoUri }, async () => {
+test("rimuovere una raccolta preserva grafo, relazioni, release e diritti acquisiti", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -274,12 +274,14 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
     const detail = await getCreatorWorkspaceResourceDetail({
       actorUserId: owner._id, ownership: "owned", resourceType: "editorial_context", resourceId: context._id,
     });
-    assert.equal(detail.asset.removalImpact.affectedConnectionCount, 2);
+    assert.equal(detail.asset.removalImpact.semanticGraphRelationCount, 2);
+    assert.equal(detail.asset.removalImpact.semanticGraphCollectionCount, 1);
 
     const result = await removeOwnedWorkspaceResource({
       actorUserId: owner._id, resourceType: "editorial_context", resourceId: context._id,
     });
-    assert.equal(result.affectedConnectionCount, 2);
+    assert.equal(result.semanticGraphRelationCount, 2);
+    assert.equal(result.semanticGraphCollectionCount, 1);
     assert.equal(result.withdrawnListingCount, 2);
     assert.equal(result.inactiveOfferCount, 2);
     assert.equal((await EditorialContext.findById(context._id).lean()).lifecycleStatus, "trashed");
