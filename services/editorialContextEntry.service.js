@@ -8,6 +8,7 @@ const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function assertObjectId(value, field) {
@@ -57,6 +58,15 @@ async function assertCanEditContext(context, actorUserId) {
   return contentSpace;
 }
 
+async function assertEditionUsage({ contentSpace, itemEditionId, actorUserId }) {
+  return assertCanUseItemEditionForEditorialRelease({
+    itemEditionId,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
+}
+
 async function resolveEligibleEdition(context, itemEditionId, { session = null } = {}) {
   assertObjectId(itemEditionId, "itemEditionId");
   let editionQuery = ItemEdition.findById(itemEditionId);
@@ -95,8 +105,9 @@ async function bumpWorkingVersion({ context, session }) {
 
 async function addEditorialContextEntry({ editorialContextId, itemEditionId, curationSignals = [], actorUserId }) {
   const initial = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(initial, actorUserId);
+  const contentSpace = await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
+  await assertEditionUsage({ contentSpace, itemEditionId, actorUserId });
   const normalizedSignals = normalizeCurationSignals(curationSignals) || [];
   let created = null;
   try {
@@ -123,10 +134,13 @@ async function addEditorialContextEntry({ editorialContextId, itemEditionId, cur
 async function updateEditorialContextEntry({ editorialContextId, entryId, curationSignals, actorUserId }) {
   assertObjectId(entryId, "entryId");
   const initial = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(initial, actorUserId);
+  const contentSpace = await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals);
   if (normalizedSignals === null) throw new AppError("Nessuna modifica specificata", 400);
+  const existingEntry = await EditorialContextEntry.findOne({ _id: entryId, editorialContextId: initial._id }).select("itemEditionId").lean();
+  if (!existingEntry) throw new AppError("Contenuto della raccolta non trovato", 404);
+  await assertEditionUsage({ contentSpace, itemEditionId: existingEntry.itemEditionId, actorUserId });
   let updated = null;
   await mongoose.connection.transaction(async (session) => {
     const context = await findContextOrFail(editorialContextId, { session });
