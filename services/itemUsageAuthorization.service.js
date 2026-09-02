@@ -1,7 +1,9 @@
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const AppError = require("../utils/AppError");
-const { assertCapabilitySource } = require("./capabilityAuthorization.service");
+const { assertCapabilitySource, resolveCapabilitySource } = require("./capabilityAuthorization.service");
+
+function sameId(left, right) { return String(left || "") === String(right || ""); }
 
 async function loadItemEditionAuthority({ itemEditionId }) {
   const edition = await ItemEdition.findById(itemEditionId);
@@ -37,6 +39,31 @@ async function assertCanUseItemEditionForEditorialRelease({ itemEditionId, actor
   });
 }
 
+async function assertCanReferenceItemInEditorialSpace({ itemId, actorUserId, principalType, principalId }) {
+  const item = await ItemV2.findOne({ _id: itemId, lifecycleStatus: "active" });
+  if (!item) throw new AppError("Item non trovato", 404);
+  if (item.ownerType === principalType && sameId(item.ownerId, principalId)) {
+    return { item, access: { allowed: true, basis: item.ownerType === "user" ? "ownership" : "principal_authority", principal: { type: principalType, id: principalId } }, itemEditionId: null };
+  }
+
+  const editions = await ItemEdition.find({ itemId: item._id }).select("_id").sort({ updatedAt: -1, _id: -1 }).lean();
+  for (const edition of editions) {
+    const access = await resolveCapabilitySource({
+      actorUserId,
+      capability: "content.use_in_editorial_release",
+      resourceType: "item_edition",
+      resourceId: edition._id,
+      principalType,
+      principalId,
+    });
+    if (access.allowed) return { item, access, itemEditionId: edition._id };
+  }
+  throw new AppError("Questo contenuto non è utilizzabile dall'area di lavoro selezionata", 403, [{
+    code: "CONTENT_USE_IN_EDITORIAL_RELEASE_REQUIRED",
+    itemId: item._id,
+  }]);
+}
+
 async function assertCanForkItemEdition({ itemEditionId, actorUserId, principalType = null, principalId = null }) {
   return assertCanUseItemEdition({
     itemEditionId,
@@ -51,5 +78,6 @@ module.exports = {
   loadItemEditionAuthority,
   assertCanUseItemEdition,
   assertCanUseItemEditionForEditorialRelease,
+  assertCanReferenceItemInEditorialSpace,
   assertCanForkItemEdition,
 };
