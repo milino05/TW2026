@@ -11,20 +11,17 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
   preflight = null;
   spaces = [];
   requestedContentSpaceId = null;
-  mode = "existing";
-  selectedContentSpaceId = "";
+  selectedSpace = null;
   busy = false;
   error = null;
 
   connectedCallback() {
     this.requestedContentSpaceId = new URLSearchParams(window.location.search).get("contentSpaceId") || null;
-    this.addEventListener("change", this.onChange);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("click", this.onClick);
-    this.load();
+    void this.load();
   }
   disconnectedCallback() {
-    this.removeEventListener("change", this.onChange);
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("click", this.onClick);
   }
@@ -40,86 +37,72 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
       ]);
       this.preflight = preflight;
       this.spaces = spaces || [];
-      const requested = this.spaces.find((space) => String(space._id || space.id) === String(this.requestedContentSpaceId));
-      if (requested) {
-        this.mode = "existing";
-        this.selectedContentSpaceId = String(requested._id || requested.id);
-      } else if (this.spaces.length === 1) {
-        this.mode = "existing";
-        this.selectedContentSpaceId = String(this.spaces[0]._id || this.spaces[0].id);
-      } else if (!this.spaces.length && this.preflight?.collection?.canCreateContentSpace) {
-        this.mode = "new";
-      } else if (this.spaces.length) {
-        this.mode = "existing";
-        this.selectedContentSpaceId = String(this.spaces[0]._id || this.spaces[0].id);
-      }
-    } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile preparare la nuova raccolta"; }
-    finally { this.busy = false; this.render(); }
+      this.selectedSpace = this.requestedContentSpaceId
+        ? this.spaces.find((space) => String(space._id || space.id) === String(this.requestedContentSpaceId)) || null
+        : null;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile preparare la nuova raccolta";
+    } finally {
+      this.busy = false; this.render();
+    }
   }
 
-  onChange = (event) => {
-    const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement ? event.target : null;
-    if (!target) return;
-    if (target.name === "spaceMode") { this.mode = target.value === "new" ? "new" : "existing"; this.render(); }
-    if (target.name === "contentSpaceId") this.selectedContentSpaceId = target.value;
-  };
+  backHref() {
+    const id = this.selectedSpace?._id || this.selectedSpace?.id || this.requestedContentSpaceId;
+    return id ? `/workspace/editorial-space?contentSpaceId=${encodeURIComponent(id)}` : "/workspace/editorial-spaces";
+  }
 
   onClick = (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("[data-back-create]")) navigate("/create");
+    if (target?.closest("[data-back-space]")) navigate(this.backHref());
   };
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form?.matches("[data-create-collection]")) return;
     event.preventDefault();
-    if (!this.preflight?.collection?.allowed) return;
+    if (!this.preflight?.collection?.allowed || !this.selectedSpace) return;
     const data = new FormData(form);
     const payload = {
       ownerType: this.context.type,
       ownerId: this.context.id,
+      contentSpaceId: String(this.selectedSpace._id || this.selectedSpace.id),
       namespaceId: String(data.get("namespaceId") || ""),
       displayName: String(data.get("displayName") || "").trim(),
       shortDescription: String(data.get("shortDescription") || "").trim() || null,
       description: String(data.get("description") || "").trim() || null,
     };
-    if (this.mode === "new") {
-      payload.newContentSpaceName = String(data.get("newContentSpaceName") || "").trim();
-      payload.newContentSpaceDescription = String(data.get("newContentSpaceDescription") || "").trim() || null;
-    } else payload.contentSpaceId = String(data.get("contentSpaceId") || "");
-
     this.busy = true; this.error = null; this.render();
     try {
       const created = await editorialRepository.createCollection(payload);
       const editorialContextId = created?.editorialContext?.id || created?.editorialContext?._id;
       if (!editorialContextId) throw new Error("La raccolta è stata creata ma non è stato restituito il suo identificatore");
       navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(editorialContextId)}`);
-    } catch (error) { this.error = error instanceof Error ? error.message : "Creazione della raccolta non completata"; this.busy = false; this.render(); }
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Creazione della raccolta non completata";
+      this.busy = false; this.render();
+    }
   };
 
   blocker() {
+    if (!this.requestedContentSpaceId) {
+      return `<div class="empty-state"><span>${icon("workspace", { size: 28 })}</span><h1>Scegli prima uno spazio editoriale</h1><p>Le raccolte organizzano una selezione dei contenuti di uno spazio. Apri lo spazio in cui vuoi lavorare e crea la raccolta da lì.</p><a class="button-link" data-route href="/workspace/editorial-spaces">Apri gli spazi editoriali</a></div>`;
+    }
+    if (!this.selectedSpace) {
+      return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>Spazio non disponibile</h1><p>Lo spazio richiesto non appartiene all'area di lavoro corrente o non è più disponibile.</p><a class="button-link" data-route href="/workspace/editorial-spaces">Torna agli spazi editoriali</a></div>`;
+    }
     const blocker = this.preflight?.collection?.blockers?.[0];
-    return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>La raccolta non può ancora essere creata</h1><p>${escapeHtml(blocker?.message || "Mancano i prerequisiti editoriali.")}</p><a class="button-link secondary" data-route href="/create">Torna a Crea</a></div>`;
-  }
-
-  renderSpaceChoice() {
-    const canCreate = this.preflight?.collection?.canCreateContentSpace === true;
-    const options = this.spaces.map((space) => `<option value="${escapeHtml(space._id || space.id)}" ${String(space._id || space.id) === this.selectedContentSpaceId ? "selected" : ""}>${escapeHtml(space.name)}</option>`).join("");
-    if (!this.spaces.length && !canCreate) return `<div class="inline-notice">${icon("warning", { size: 16 })}<span>Non esiste uno spazio editoriale utilizzabile e il tuo ruolo non consente di crearne uno.</span></div>`;
-    return `<fieldset><legend>Spazio editoriale</legend><p class="note">Lo spazio conserva gli Item indipendentemente dal Namespace. La raccolta aggiunge regole editoriali, composizione e grafo semantico.</p>${this.spaces.length ? `<label class="choice-row"><input type="radio" name="spaceMode" value="existing" ${this.mode === "existing" ? "checked" : ""}><span><strong>Usa uno spazio esistente</strong><small>Riusa gli Item già presenti.</small></span></label>${this.mode === "existing" ? `<label>Spazio<select name="contentSpaceId" required>${options}</select></label>` : ""}` : ""}${canCreate ? `<label class="choice-row"><input type="radio" name="spaceMode" value="new" ${this.mode === "new" ? "checked" : ""}><span><strong>Crea un nuovo spazio</strong><small>ArtAround creerà spazio e raccolta come un'unica operazione.</small></span></label>${this.mode === "new" ? `<label>Nome del nuovo spazio<input name="newContentSpaceName" required placeholder="Il mio spazio editoriale"></label><label>Descrizione dello spazio<textarea name="newContentSpaceDescription" rows="3" placeholder="Facoltativa"></textarea></label>` : ""}` : ""}</fieldset>`;
+    return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>La raccolta non può ancora essere creata</h1><p>${escapeHtml(blocker?.message || "Mancano i prerequisiti editoriali.")}</p><button type="button" class="button-secondary" data-back-space>Torna allo spazio</button></div>`;
   }
 
   render() {
     if (this.busy && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Preparazione della raccolta…</p></div></main>`; return; }
     if (this.error && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Nuova raccolta</h1><p role="alert">${escapeHtml(this.error)}</p></div></main>`; return; }
-    if (!this.preflight) return;
-    if (!this.preflight.collection?.allowed) { this.innerHTML = `<main class="page collection-create-page">${this.blocker()}</main>`; return; }
+    if (!this.preflight || !this.selectedSpace || !this.preflight.collection?.allowed) { this.innerHTML = `<main class="page workspace-page">${this.blocker()}</main>`; return; }
+    const spaceId = this.selectedSpace._id || this.selectedSpace.id;
     const namespaces = this.preflight.collection.usableNamespaces || [];
     const namespaceOptions = namespaces.map((namespace) => `<option value="${escapeHtml(namespace.id)}">${escapeHtml(namespace.name)}${namespace.source === "licensed" ? " · acquisito" : ""}</option>`).join("");
-    const noSpaceAuthority = !this.spaces.length && !this.preflight.collection.canCreateContentSpace;
-    this.innerHTML = `<style>
-      artaround-editorial-collection-create-view .collection-create-page{max-width:52rem;margin:auto;padding:2rem 1rem 5rem;display:grid;gap:1rem}artaround-editorial-collection-create-view .create-form{display:grid;gap:1rem}artaround-editorial-collection-create-view fieldset{display:grid;gap:.75rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius)}artaround-editorial-collection-create-view .choice-row{display:flex;gap:.65rem;align-items:flex-start;padding:.7rem;border:1px solid var(--border);border-radius:var(--radius)}artaround-editorial-collection-create-view .choice-row span{display:grid;gap:.15rem}artaround-editorial-collection-create-view .choice-row small{color:var(--muted)}artaround-editorial-collection-create-view .create-actions{display:flex;justify-content:flex-end;gap:.6rem}
-    </style><main class="page collection-create-page" aria-busy="${this.busy}"><header><button type="button" class="text-button" data-back-create>${icon("arrowLeft", { size: 15 })} Crea</button><span class="eyebrow">Nuova raccolta editoriale</span><h1>Definisci il contesto, poi cura i contenuti</h1><p>Qui scegli soltanto spazio, regole e identità della raccolta. Contenuti e relazioni si gestiscono poi nello Studio.</p></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<form class="panel create-form" data-create-collection><label>Nome della raccolta<input name="displayName" required maxlength="160" placeholder="Rinascimento italiano"></label><label>Descrizione breve<input name="shortDescription" maxlength="240" placeholder="Facoltativa"></label><label>Descrizione<textarea name="description" rows="4" placeholder="Obiettivo, pubblico o criterio curatoriale"></textarea></label><fieldset><legend>Regole editoriali</legend><label>Namespace<select name="namespaceId" required>${namespaceOptions}</select></label><p class="note">Il Namespace non potrà essere sostituito in seguito: per regole diverse si crea una nuova raccolta.</p></fieldset>${this.renderSpaceChoice()}<div class="create-actions"><button type="button" class="button-secondary" data-back-create>Annulla</button><button type="submit" ${this.busy || noSpaceAuthority ? "disabled" : ""}>Crea raccolta ${icon("chevron", { size: 15 })}</button></div></form></main>`;
+    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(spaceId)}">${escapeHtml(this.selectedSpace.name)}</a><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav><header class="page-header"><div><span class="eyebrow">Nuova raccolta editoriale</span><h1>Crea una raccolta in ${escapeHtml(this.selectedSpace.name)}</h1><p>La raccolta seleziona contenuti dello spazio, applica regole editoriali e collega un grafo semantico. I contenuti verranno scelti nello Studio dopo la creazione.</p></div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<form class="panel form-grid" data-create-collection><label>Nome della raccolta<input name="displayName" required maxlength="160" placeholder="Rinascimento italiano"></label><label>Descrizione breve<input name="shortDescription" maxlength="240" placeholder="Facoltativa"></label><label class="full">Descrizione<textarea name="description" rows="4" placeholder="Obiettivo, pubblico o criterio curatoriale"></textarea></label><label class="full">Regole editoriali<select name="namespaceId" required>${namespaceOptions}</select><span class="note">Le regole definiscono classificazioni, relazioni e modalità di presentazione disponibili nella raccolta.</span></label><div class="operations full"><button type="button" class="button-secondary" data-back-space>Annulla</button><button type="submit" ${this.busy ? "disabled" : ""}>Crea raccolta ${icon("chevron", { size: 15 })}</button></div></form></main>`;
   }
 }
 customElements.define("artaround-editorial-collection-create-view", ArtAroundEditorialCollectionCreateView);
