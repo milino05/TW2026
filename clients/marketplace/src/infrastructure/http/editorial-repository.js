@@ -38,6 +38,10 @@ export const editorialRepository = {
     const query = queryString({ contentSpaceId, namespaceId });
     return apiClient.request(`/editorial-contexts${query ? `?${query}` : ""}`);
   },
+  relationChoices({ ownerType = null, ownerId = null, q = "", page = 1, limit = 12 } = {}) {
+    const query = queryString({ ownerType, ownerId, q, page, limit });
+    return apiClient.request(`/v2/marketplace/editorial-relations?${query}`);
+  },
   createCollection(payload) {
     return apiClient.request("/v2/marketplace/editorial-collections", { method: "POST", ...jsonBody(payload) });
   },
