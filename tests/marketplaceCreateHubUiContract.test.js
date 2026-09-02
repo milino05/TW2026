@@ -13,6 +13,7 @@ const files = {
   collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
   studio: "clients/marketplace/src/ui/editorial-studio-view.js",
   workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
+  editorialRepository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
 };
 function read(key) { return fs.readFileSync(path.join(root, files[key]), "utf8"); }
 const shell = read("shell");
@@ -22,6 +23,7 @@ const visit = read("visit");
 const collection = read("collection");
 const studio = read("studio");
 const workspace = read("workspace");
+const editorialRepository = read("editorialRepository");
 
 test("create boundary passa il syntax gate", () => {
   for (const file of Object.values(files)) {
@@ -37,25 +39,36 @@ test("shell espone Crea dentro la IA contestuale", () => {
   assert.doesNotMatch(shell, /venue-target-chooser|\/workspace\/venue-targets|context-release-composer|\/workspace\/context-compose/);
 });
 
-test("Create Hub deriva il principal dal contesto operativo e non lo serializza nei link", () => {
+test("Create Hub deriva il principal dal contesto operativo e non lo serializza nei link principali", () => {
   assert.match(create, /readOperatingContext/);
   assert.match(create, /operatingPrincipal/);
   assert.match(create, /this\.principal\(\)/);
   assert.match(create, /marketplaceRepository\.workspaceContext\(principal\)/);
   assert.match(create, /marketplaceRepository\.authoringPreflight\(principal\)/);
-  assert.doesNotMatch(create, /principalType|principalId|data-principal-form/);
+  assert.doesNotMatch(create, /data-principal-form/);
 });
 
-test("Create Hub presenta Contenuto, Raccolta e Visita come obiettivi distinti", () => {
+test("Create Hub presenta Contenuto, Visita e Collega soggetti senza creare Raccolte dal menu Crea", () => {
   assert.match(create, /capabilities\?\.contentCreate/);
-  assert.match(create, /capabilities\?\.editorialCollectionCreate/);
   assert.match(create, /capabilities\?\.visitCreate/);
+  assert.match(create, /capabilities\?\.semanticGraphEdit/);
   assert.match(create, /Crea un contenuto/);
-  assert.match(create, /Organizza contenuti e semantica/);
   assert.match(create, /Progetta una visita/);
+  assert.match(create, /Collega soggetti/);
   assert.match(create, /\/workspace\/item-authoring/);
-  assert.match(create, /\/workspace\/editorial-collection-new/);
   assert.match(create, /\/workspace\/visit-authoring/);
+  assert.match(create, /\/create\?mode=relations/);
+  assert.doesNotMatch(create, /\/workspace\/editorial-collection-new/);
+});
+
+test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente Relazioni", () => {
+  assert.match(create, /editorialRepository\.relationChoices/);
+  assert.match(create, /ownerType: this\.context\.type/);
+  assert.match(create, /ownerId: this\.context\.id/);
+  assert.match(create, /Scegli la raccolta/);
+  assert.match(create, /semanticGraph\.sharedByCollections/);
+  assert.match(create, /section=relations/);
+  assert.match(editorialRepository, /\/v2\/marketplace\/editorial-relations/);
 });
 
 test("la creazione del contenuto parte dal Subject senza scegliere prima Venue o inventario", () => {
@@ -66,10 +79,10 @@ test("la creazione del contenuto parte dal Subject senza scegliere prima Venue o
   assert.match(item, /artaround-subject-presence/);
 });
 
-test("la semantica curatoriale appartiene alla Raccolta e allo Studio, non all'Item", () => {
-  assert.match(create, /Definisci un contesto curatoriale con un proprio Namespace, una composizione di contenuti e un grafo semantico fra Subject/);
+test("la semantica curatoriale usa lo Studio ma resta separata dai contenuti dell'Item", () => {
   assert.match(collection, /EditorialContext|editorialContext|Raccolta/);
-  assert.match(studio, /semantic|Semantica|grafo/i);
+  assert.match(studio, /semantic|Semantica|grafo|Relazioni/i);
+  assert.match(create, /Il grafo semantico può essere condiviso con altre raccolte/);
   assert.doesNotMatch(item, /createItemConnection|removeItemConnection|data-add-connection|data-connection-search/);
 });
 
