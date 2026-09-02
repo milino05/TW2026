@@ -14,6 +14,14 @@ const paths = {
 };
 const source = Object.fromEntries(Object.entries(paths).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
 
+function methodBody(text, methodName, nextMethodName) {
+  const start = text.indexOf(`  async ${methodName}(`);
+  assert.notEqual(start, -1, `Metodo ${methodName} mancante`);
+  const end = text.indexOf(`\n  ${nextMethodName}`, start);
+  assert.notEqual(end, -1, `Boundary successivo ${nextMethodName} mancante`);
+  return text.slice(start, end);
+}
+
 test("Item semantic sidecar files pass the syntax gate", () => {
   for (const key of ["sidecar", "main", "graph", "repository"]) {
     const relative = paths[key];
@@ -27,14 +35,24 @@ test("Item editor mounts one contextual sidecar and reuses the canonical graph w
   assert.match(source.sidecar, /Aggiungi collegamenti/);
   assert.match(source.sidecar, /artaround-semantic-graph-editor/);
   assert.match(source.sidecar, /graph\.configure\(/);
-  assert.match(source.sidecar, /graph\.focusSubjectId = id\(this\.subject\)/);
+  assert.match(source.sidecar, /graph\.setFocus\(id\(this\.subject\)\)/);
   assert.match(source.workspaceCss, /workspace-sidecar-layer/);
   assert.match(source.workspaceCss, /workspace-sidecar-launcher/);
 });
 
-test("opening Item connections edits graph membership only and never creates presentation or physical resources", () => {
-  assert.match(source.sidecar, /editorialRepository\.addGraphSubject/);
-  assert.match(source.sidecar, /editorialRepository\.studio/);
+test("opening a collection never mutates graph membership", () => {
+  const openGraph = methodBody(source.sidecar, "openGraph", "async addSubjectToGraph");
+  assert.match(openGraph, /editorialRepository\.studio/);
+  assert.match(openGraph, /editorialRepository\.graph/);
+  assert.doesNotMatch(openGraph, /addGraphSubject/);
+  assert.match(openGraph, /subjectInGraph/);
+});
+
+test("adding the Item Subject to the graph is an explicit semantic-only action", () => {
+  const addSubject = methodBody(source.sidecar, "addSubjectToGraph", "onSubmit");
+  assert.match(addSubject, /editorialRepository\.addGraphSubject/);
+  assert.match(source.sidecar, /data-add-sidecar-subject/);
+  assert.match(source.sidecar, /Aggiungi al grafo e usa come contesto/);
   assert.doesNotMatch(source.sidecar, /createItemConnection|createEdition|setContentSpaceMembership|VenueTarget|physicalIntent/);
   assert.match(source.repository, /addGraphSubject/);
 });
@@ -45,6 +63,12 @@ test("collection context is reused when present, otherwise the sidecar asks for 
   assert.match(source.sidecar, /permissions\?\.canEditGraph/);
   assert.match(source.sidecar, /Scegli dove lavorare/);
   assert.match(source.sidecar, /grafo condiviso da/);
+});
+
+test("semantic sidecar explains graph reuse without conflating presentation or physical presence", () => {
+  assert.match(source.sidecar, /non aggiunge contenuti alla raccolta/);
+  assert.match(source.sidecar, /non modifica la presenza fisica/);
+  assert.match(source.sidecar, /Il grafo è condiviso da/);
 });
 
 test("semantic sidecar does not resurrect the deleted Item-level connection authoring boundary", () => {
