@@ -7,7 +7,7 @@ const {
   listEditorialStudioCandidates,
 } = require("../services/editorialStudioV2.service");
 const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
-const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
+const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
 async function venueAuthoringTargets(req, res, next) {
@@ -48,6 +48,20 @@ async function editorialRelationChoices(req, res, next) {
       actorUserId: req.user._id,
       ownerType: req.query?.ownerType || null,
       ownerId: req.query?.ownerId || null,
+      query: req.query?.q || "",
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function reusableSemanticGraphs(req, res, next) {
+  try {
+    res.status(200).json(await listReusableSemanticGraphs({
+      actorUserId: req.user._id,
+      ownerType: req.query?.ownerType || "user",
+      ownerId: req.query?.ownerId || req.user._id,
+      namespaceId: req.query?.namespaceId,
       query: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
@@ -127,6 +141,7 @@ module.exports = {
   editorialSpaces,
   editorialSpace,
   editorialRelationChoices,
+  reusableSemanticGraphs,
   editorialStudio,
   editorialStudioCandidates,
   createEditorialCollection,
