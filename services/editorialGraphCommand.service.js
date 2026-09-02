@@ -250,7 +250,14 @@ async function setEditorialGraphSubjectClasses({ editorialContextId, subjectId, 
   if (!Array.isArray(subjectClassDefinitionIds)) throw new AppError("subjectClassDefinitionIds deve essere un array", 400);
   const definitions = [...new Set(subjectClassDefinitionIds.map((value) => String(value || "").trim()).filter(Boolean))];
   const state = await loadAuthoringContext({ editorialContextId, actorUserId });
-  const binding = ensureBinding(state.snapshot, subjectId);
+  const binding = state.snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, subjectId));
+  if (!binding) {
+    throw new AppError("Aggiungi prima il Subject al grafo semantico", 409, [{
+      field: "subjectId",
+      code: "SEMANTIC_GRAPH_SUBJECT_NOT_BOUND",
+      context: { subjectId },
+    }]);
+  }
   binding.subjectClassDefinitionIds = definitions;
   return commitSnapshot({ ...state, actorUserId });
 }
