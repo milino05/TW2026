@@ -16,6 +16,9 @@ export class ArtAroundSemanticSubjectSourceBrowser extends HTMLElement {
   error = null;
 
   connectedCallback() {
+    if (!this.editorialContextId) this.editorialContextId = String(this.getAttribute("editorial-context-id") || "").trim() || null;
+    const initialSource = String(this.getAttribute("source") || "").trim();
+    if (["collection", "space", "global"].includes(initialSource)) this.source = initialSource;
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     void this.load();
