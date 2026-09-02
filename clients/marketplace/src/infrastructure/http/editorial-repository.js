@@ -42,6 +42,10 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId, q, page, limit });
     return apiClient.request(`/v2/marketplace/editorial-relations?${query}`);
   },
+  reusableSemanticGraphs({ ownerType = null, ownerId = null, namespaceId = null, q = "", page = 1, limit = 30 } = {}) {
+    const query = queryString({ ownerType, ownerId, namespaceId, q, page, limit });
+    return apiClient.request(`/v2/marketplace/semantic-graphs?${query}`);
+  },
   createCollection(payload) {
     return apiClient.request("/v2/marketplace/editorial-collections", { method: "POST", ...jsonBody(payload) });
   },
