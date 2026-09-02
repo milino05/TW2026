@@ -11,10 +11,12 @@ const main = read("clients/marketplace/src/main.js");
 const adapter = read("clients/marketplace/src/ui/revision-workflow-adapter.js");
 const controls = read("clients/marketplace/src/ui/revision-workflow-controls.js");
 const workflow = read("clients/marketplace/src/application/revision-workflow.js");
+const operationPresentation = read("clients/marketplace/src/application/operation-presentation.js");
 const namespaceEditor = read("clients/marketplace/src/ui/namespace-editor-view.js");
 const physicalEditor = read("clients/marketplace/src/ui/physical-vocabulary-editor-view.js");
+const editorialStudio = read("clients/marketplace/src/ui/editorial-studio-view.js");
 
-test("la projection workflow condivisa viene caricata prima dell'app shell", () => {
+ test("la projection workflow condivisa viene caricata prima dell'app shell", () => {
   assert.match(main, /revision-workflow-adapter\.js/);
   assert.ok(main.indexOf("revision-workflow-controls.js") < main.indexOf("revision-workflow-adapter.js"));
   assert.ok(main.indexOf("revision-workflow-adapter.js") < main.indexOf("app-shell.js"));
@@ -22,9 +24,11 @@ test("la projection workflow condivisa viene caricata prima dell'app shell", () 
 
 test("i moduli workflow condivisi superano il syntax check", () => {
   for (const relative of [
+    "clients/marketplace/src/application/operation-presentation.js",
     "clients/marketplace/src/application/revision-workflow.js",
     "clients/marketplace/src/ui/revision-workflow-controls.js",
     "clients/marketplace/src/ui/revision-workflow-adapter.js",
+    "clients/marketplace/src/ui/editorial-studio-view.js",
   ]) execFileSync(process.execPath, ["--check", path.join(root, relative)], { stdio: "pipe" });
 });
 
@@ -36,6 +40,22 @@ test("il controllo condiviso non inventa capability e renderizza solo availableO
   assert.match(controls, /revisionWorkflowOperations\(this\._availableOperations/);
   assert.match(controls, /actions-only/);
   assert.match(controls, /presentationOverrides/);
+});
+
+test("le operazioni di review della Raccolta usano la semantica workflow condivisa senza adapter DOM", () => {
+  for (const code of [
+    "collection.review.request",
+    "collection.review.withdraw",
+    "collection.review.request_changes",
+    "collection.review.approve",
+    "collection.publish",
+  ]) assert.match(operationPresentation, new RegExp(code.replaceAll(".", "\\.")));
+  assert.match(workflow, /workflowOperationKey/);
+  assert.match(editorialStudio, /artaround-revision-workflow-controls/);
+  assert.match(editorialStudio, /artaround:revision-workflow-operation/);
+  assert.match(editorialStudio, /workflow\.availableOperations = this\.data\.availableOperations/);
+  assert.doesNotMatch(editorialStudio, /renderPublicationActions/);
+  assert.doesNotMatch(editorialStudio, /studio-flow-step|studio-step-number/);
 });
 
 test("Namespace proietta soltanto le azioni workflow realmente presenti", () => {
