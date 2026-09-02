@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -33,8 +34,6 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
@@ -66,11 +65,15 @@ test("generator v2 resolves Venue primary Context, pins releases and creates Ven
     await namespace.save();
 
     const contentSpace = await ContentSpace.create({ name: "Generator Space", ownerType: "user", ownerId: user._id, createdBy: user._id });
-    const context = await EditorialContext.create({ contentSpaceId: contentSpace._id, namespaceId: namespace._id, displayName: "Generator Context", shortDescription: "Test", createdBy: user._id });
-    const graphRevision = await SemanticGraphRevision.create({ editorialContextId: context._id, version: 1, authoredAgainstNamespaceRevisionId: namespaceRevision._id, createdBy: user._id });
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
+      namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
+      displayName: "Generator Context",
+      shortDescription: "Test",
+      createdBy: user._id,
+    });
     await GraphSubjectBinding.create({ graphRevisionId: graphRevision._id, subjectId: subject._id, subjectClassDefinitionIds: [] });
-    context.workingGraphRevisionId = graphRevision._id;
-    await context.save();
 
     const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
