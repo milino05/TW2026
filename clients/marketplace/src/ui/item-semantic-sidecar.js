@@ -151,6 +151,19 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     }
   }
 
+  async focusedGraphProjection(editorialContextId) {
+    try {
+      return await editorialRepository.graphNeighborhood(editorialContextId, {
+        view: "working",
+        focusSubjectId: id(this.subject),
+        limit: 1,
+      });
+    } catch (error) {
+      if (error?.status === 404 && error?.code === "GRAPH_SUBJECT_NOT_FOUND") return null;
+      throw error;
+    }
+  }
+
   async openGraph(editorialContextId) {
     this.busy = true;
     this.error = null;
@@ -158,13 +171,13 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     try {
       const [studio, graphProjection] = await Promise.all([
         editorialRepository.studio(editorialContextId),
-        editorialRepository.graph(editorialContextId, { view: "working" }),
+        this.focusedGraphProjection(editorialContextId),
       ]);
       if (!studio?.permissions?.canEditGraph) throw new Error("Il tuo ruolo non consente di modificare i collegamenti di questa raccolta.");
       this.editorialContextId = editorialContextId;
       this.studio = studio;
       this.graphProjection = graphProjection;
-      this.subjectInGraph = (graphProjection?.subjects || []).some((entry) => id(entry?.subject) === id(this.subject));
+      this.subjectInGraph = Boolean(graphProjection);
       this.choices = null;
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile aprire il grafo semantico";
@@ -185,9 +198,9 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     this.render();
     try {
       await editorialRepository.addGraphSubject(this.editorialContextId, id(this.subject));
-      const graphProjection = await editorialRepository.graph(this.editorialContextId, { view: "working" });
+      const graphProjection = await this.focusedGraphProjection(this.editorialContextId);
       this.graphProjection = graphProjection;
-      this.subjectInGraph = (graphProjection?.subjects || []).some((entry) => id(entry?.subject) === id(this.subject));
+      this.subjectInGraph = Boolean(graphProjection);
       if (!this.subjectInGraph) throw new Error("Il Subject non risulta ancora presente nel grafo");
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere il Subject al grafo";
