@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -20,22 +21,23 @@ async function withFreshDatabase(callback) {
 async function createContext({ userId, name, ownerId = userId }) {
   const Namespace = require("../models/namespace.model");
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
   const EditorialRelease = require("../models/editorialRelease.model");
 
   const namespace = await Namespace.create({ name: `${name} namespace`, ownerType: "user", ownerId, createdBy: userId });
   const space = await ContentSpace.create({ name: `${name} space`, ownerType: "user", ownerId, createdBy: userId });
-  const context = await EditorialContext.create({
-    contentSpaceId: space._id,
+  const namespaceRevisionId = oid();
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace: space,
     namespaceId: namespace._id,
+    namespaceRevisionId,
     displayName: `${name} context`,
     createdBy: userId,
   });
   const release = await EditorialRelease.create({
     editorialContextId: context._id,
     version: 1,
-    namespaceRevisionId: oid(),
-    graphRevisionId: oid(),
+    namespaceRevisionId,
+    graphRevisionId: graphRevision._id,
     itemBindings: [],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: userId },
     releasedAt: new Date(),
