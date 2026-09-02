@@ -40,10 +40,14 @@ test("Item editor mounts one contextual sidecar and reuses the canonical graph w
   assert.match(source.workspaceCss, /workspace-sidecar-launcher/);
 });
 
-test("opening a collection never mutates graph membership", () => {
+test("opening a collection never mutates graph membership and does not materialize the full graph", () => {
   const openGraph = methodBody(source.sidecar, "openGraph", "async addSubjectToGraph");
   assert.match(openGraph, /editorialRepository\.studio/);
-  assert.match(openGraph, /editorialRepository\.graph/);
+  assert.match(source.sidecar, /focusedGraphProjection/);
+  assert.match(source.sidecar, /editorialRepository\.graphNeighborhood/);
+  assert.match(source.sidecar, /focusSubjectId: id\(this\.subject\)/);
+  assert.match(source.sidecar, /error\?\.code === "GRAPH_SUBJECT_NOT_FOUND"/);
+  assert.doesNotMatch(source.sidecar, /editorialRepository\.graph\(/);
   assert.doesNotMatch(openGraph, /addGraphSubject/);
   assert.match(openGraph, /subjectInGraph/);
 });
@@ -51,6 +55,7 @@ test("opening a collection never mutates graph membership", () => {
 test("adding the Item Subject to the graph is an explicit semantic-only action", () => {
   const addSubject = methodBody(source.sidecar, "addSubjectToGraph", "onSubmit");
   assert.match(addSubject, /editorialRepository\.addGraphSubject/);
+  assert.match(addSubject, /focusedGraphProjection/);
   assert.match(source.sidecar, /data-add-sidecar-subject/);
   assert.match(source.sidecar, /Aggiungi al grafo e usa come contesto/);
   assert.doesNotMatch(source.sidecar, /createItemConnection|createEdition|setContentSpaceMembership|VenueTarget|physicalIntent/);
