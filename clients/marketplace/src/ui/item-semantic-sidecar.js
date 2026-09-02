@@ -177,6 +177,7 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
     if (!target) return;
     if (target.closest("[data-open-item-semantic-sidecar]")) { void this.openSidecar(); return; }
     if (target.closest("[data-close-item-semantic-sidecar]")) { this.close(); return; }
+    if (target.closest("[data-change-sidecar-context]")) { this.query = ""; this.page = 1; this.choices = null; void this.loadChoices(); return; }
     if (target.closest("[data-open-editorial-spaces]")) { this.close(); navigate("/workspace/editorial-spaces"); return; }
     if (target.closest("[data-open-relation-hub]")) { this.close(); navigate("/create?mode=relations"); return; }
     const collection = target.closest("[data-sidecar-editorial-context]");
@@ -208,7 +209,7 @@ export class ArtAroundItemSemanticSidecar extends HTMLElement {
   renderGraph() {
     const graph = this.studio?.semanticGraph || {};
     const shared = Number(graph.sharedByCollections || 1);
-    return `<section class="workspace-sidecar__graph"><header class="workspace-sidecar__context"><div><span class="eyebrow">Relazioni · ${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h2>${escapeHtml(this.subject?.preferredLabel || "Collegamenti")}</h2><p>Grafo: <strong>${escapeHtml(graph.name || "Grafo semantico")}</strong>${shared > 1 ? ` · condiviso da ${shared} raccolte` : ""}</p></div>${this.contextualCollectionId() ? "" : `<button type="button" class="button-secondary small" data-close-item-semantic-sidecar>Scegli un altro contesto</button>`}</header><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
+    return `<section class="workspace-sidecar__graph"><header class="workspace-sidecar__context"><div><span class="eyebrow">Relazioni · ${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h2>${escapeHtml(this.subject?.preferredLabel || "Collegamenti")}</h2><p>Grafo: <strong>${escapeHtml(graph.name || "Grafo semantico")}</strong>${shared > 1 ? ` · condiviso da ${shared} raccolte` : ""}</p></div>${this.contextualCollectionId() ? "" : `<button type="button" class="button-secondary small" data-change-sidecar-context>Scegli un altro contesto</button>`}</header><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
   configureGraph() {
