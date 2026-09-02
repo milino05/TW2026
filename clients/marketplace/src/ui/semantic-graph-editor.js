@@ -24,6 +24,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   inventoryBusy = false;
   relationDraft = null;
   visibleNeighborLimit = 18;
+  subjectClickTimer = null;
   busy = false;
   error = null;
 
@@ -39,6 +40,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.clearSubjectClickTimer();
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("dblclick", this.onDoubleClick);
     this.removeEventListener("submit", this.onSubmit);
@@ -59,7 +61,14 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (this.isConnected) void this.load();
   }
 
+  clearSubjectClickTimer() {
+    if (this.subjectClickTimer === null) return;
+    window.clearTimeout(this.subjectClickTimer);
+    this.subjectClickTimer = null;
+  }
+
   resetWorkspace() {
+    this.clearSubjectClickTimer();
     this.focusSubjectId = null;
     this.selected = null;
     this.pickerMode = null;
@@ -250,6 +259,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const target = event.target instanceof Element ? event.target.closest("[data-graph-subject]") : null;
     if (!target) return;
     event.preventDefault();
+    this.clearSubjectClickTimer();
     void this.setFocus(target.dataset.graphSubject);
   };
 
@@ -281,7 +291,18 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       return;
     }
     const graphNode = target.closest("[data-graph-subject]");
-    if (graphNode) { this.selected = { kind: "subject", id: graphNode.dataset.graphSubject }; this.pickerMode = null; this.relationDraft = null; this.render(); return; }
+    if (graphNode) {
+      const subjectId = graphNode.dataset.graphSubject;
+      this.clearSubjectClickTimer();
+      this.subjectClickTimer = window.setTimeout(() => {
+        this.subjectClickTimer = null;
+        this.selected = { kind: "subject", id: subjectId };
+        this.pickerMode = null;
+        this.relationDraft = null;
+        this.render();
+      }, 220);
+      return;
+    }
     const graphEdge = target.closest("[data-graph-edge]");
     if (graphEdge) { this.openEdgeInspector(graphEdge.dataset.graphEdge); return; }
     const recenter = target.closest("[data-recenter-subject]");
