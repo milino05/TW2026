@@ -35,6 +35,7 @@ router.get("/v2/marketplace/item-authoring/:itemId", itemId, controller.itemAuth
 router.get("/v2/marketplace/namespace-authoring/:namespaceId", namespaceId, controller.namespaceAuthoringControls);
 router.get("/v2/marketplace/editorial-spaces", authoringController.editorialSpaces);
 router.get("/v2/marketplace/editorial-spaces/:contentSpaceId", contentSpaceId, authoringController.editorialSpace);
+router.get("/v2/marketplace/editorial-relations", authoringController.editorialRelationChoices);
 router.post("/v2/marketplace/editorial-collections", authoringController.createEditorialCollection);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/studio", editorialContextId, authoringController.editorialStudio);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/candidates", editorialContextId, authoringController.editorialStudioCandidates);
