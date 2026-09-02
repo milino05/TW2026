@@ -22,19 +22,44 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
   graphBusy = false;
   busy = false;
   error = null;
+  dirty = false;
+  draft = { displayName: "", shortDescription: "", description: "" };
 
   connectedCallback() {
     this.requestedContentSpaceId = new URLSearchParams(window.location.search).get("contentSpaceId") || null;
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("click", this.onClick);
+    this.addEventListener("input", this.onInput);
     this.addEventListener("change", this.onChange);
     void this.load();
   }
   disconnectedCallback() {
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("input", this.onInput);
     this.removeEventListener("change", this.onChange);
   }
+
+  hasUnsavedChanges() { return this.dirty; }
+  discardUnsavedChanges() { this.dirty = false; }
+
+  captureDraft(form = this.querySelector("[data-create-collection]")) {
+    if (!(form instanceof HTMLFormElement)) return;
+    const data = new FormData(form);
+    this.draft = {
+      displayName: String(data.get("displayName") || ""),
+      shortDescription: String(data.get("shortDescription") || ""),
+      description: String(data.get("description") || ""),
+    };
+  }
+
+  onInput = (event) => {
+    const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
+    if (!target?.form?.matches("[data-create-collection]")) return;
+    if (!["displayName", "shortDescription", "description"].includes(target.name)) return;
+    this.draft[target.name] = target.value;
+    this.dirty = true;
+  };
 
   async load() {
     const principal = operatingPrincipal(this.context);
@@ -100,6 +125,8 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement ? event.target : null;
     if (!target) return;
     if (target.matches("select[name='namespaceId']")) {
+      this.captureDraft(target.form);
+      this.dirty = true;
       this.selectedNamespaceId = target.value;
       this.graphMode = "new";
       this.selectedGraphId = "";
@@ -110,18 +137,24 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
       return;
     }
     if (target.matches("input[name='graphMode']")) {
+      this.captureDraft(target.form);
+      this.dirty = true;
       this.graphMode = target.value === "reuse" ? "reuse" : "new";
       if (this.graphMode === "reuse" && !this.selectedGraphId) this.selectedGraphId = id(this.graphChoices?.results?.[0]?.id);
       this.render();
       return;
     }
-    if (target.matches("input[name='semanticGraphId']")) this.selectedGraphId = target.value;
+    if (target.matches("input[name='semanticGraphId']")) {
+      this.selectedGraphId = target.value;
+      this.dirty = true;
+    }
   };
 
   onClick = (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("[data-back-space]")) { navigate(this.backHref()); return; }
     if (target?.closest("[data-search-graphs]")) {
+      this.captureDraft();
       this.graphQuery = String(this.querySelector("[data-graph-query]")?.value || "").trim();
       this.graphPage = 1;
       this.selectedGraphId = "";
@@ -130,6 +163,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     }
     const page = target?.closest("[data-graph-page]");
     if (page) {
+      this.captureDraft();
       this.graphPage = Math.max(1, Number(page.dataset.graphPage) || 1);
       this.selectedGraphId = "";
       void this.loadGraphChoices();
@@ -141,6 +175,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     if (!form?.matches("[data-create-collection]")) return;
     event.preventDefault();
     if (!this.preflight?.collection?.allowed || !this.selectedSpace) return;
+    this.captureDraft(form);
     const data = new FormData(form);
     const semanticGraphId = this.graphMode === "reuse" ? String(data.get("semanticGraphId") || this.selectedGraphId || "") : "";
     if (this.graphMode === "reuse" && !semanticGraphId) {
@@ -154,15 +189,16 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
       contentSpaceId: id(this.selectedSpace),
       namespaceId: String(data.get("namespaceId") || ""),
       ...(semanticGraphId ? { semanticGraphId } : {}),
-      displayName: String(data.get("displayName") || "").trim(),
-      shortDescription: String(data.get("shortDescription") || "").trim() || null,
-      description: String(data.get("description") || "").trim() || null,
+      displayName: this.draft.displayName.trim(),
+      shortDescription: this.draft.shortDescription.trim() || null,
+      description: this.draft.description.trim() || null,
     };
     this.busy = true; this.error = null; this.render();
     try {
       const created = await editorialRepository.createCollection(payload);
       const editorialContextId = id(created?.editorialContext);
       if (!editorialContextId) throw new Error("La raccolta è stata creata ma non è stato restituito il suo identificatore");
+      this.dirty = false;
       navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(editorialContextId)}`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Creazione della raccolta non completata";
@@ -209,7 +245,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     const spaceId = id(this.selectedSpace);
     const namespaces = this.preflight.collection.usableNamespaces || [];
     const namespaceOptions = namespaces.map((namespace) => `<option value="${escapeHtml(id(namespace.id))}" ${id(namespace.id) === id(this.selectedNamespaceId) ? "selected" : ""}>${escapeHtml(namespace.name)}${namespace.source === "licensed" ? " · acquisito" : ""}</option>`).join("");
-    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.graphBusy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(spaceId)}">${escapeHtml(this.selectedSpace.name)}</a><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav><header class="page-header"><div><span class="eyebrow">Nuova raccolta editoriale</span><h1>Crea una raccolta in ${escapeHtml(this.selectedSpace.name)}</h1><p>La raccolta seleziona contenuti dello spazio, applica Regole editoriali e utilizza una struttura semantica revisionata. I contenuti verranno scelti nello Studio dopo la creazione.</p></div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<form class="panel form-grid" data-create-collection><label>Nome della raccolta<input name="displayName" required maxlength="160" placeholder="Rinascimento italiano"></label><label>Descrizione breve<input name="shortDescription" maxlength="240" placeholder="Facoltativa"></label><label class="full">Descrizione<textarea name="description" rows="4" placeholder="Obiettivo, pubblico o criterio curatoriale"></textarea></label><label class="full">Regole editoriali<select name="namespaceId" required>${namespaceOptions}</select><span class="note">Le regole definiscono classificazioni, relazioni e modalità di presentazione disponibili nella raccolta.</span></label>${this.renderSemanticChoice()}<div class="operations full"><button type="button" class="button-secondary" data-back-space>Annulla</button><button type="submit" ${this.busy || this.graphBusy ? "disabled" : ""}>Crea raccolta ${icon("chevron", { size: 15 })}</button></div></form></main>`;
+    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.graphBusy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(spaceId)}">${escapeHtml(this.selectedSpace.name)}</a><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav><header class="page-header"><div><span class="eyebrow">Nuova raccolta editoriale</span><h1>Crea una raccolta in ${escapeHtml(this.selectedSpace.name)}</h1><p>La raccolta seleziona contenuti dello spazio, applica Regole editoriali e utilizza una struttura semantica revisionata. I contenuti verranno scelti nello Studio dopo la creazione.</p></div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<form class="panel form-grid" data-create-collection><label>Nome della raccolta<input name="displayName" required maxlength="160" placeholder="Rinascimento italiano" value="${escapeHtml(this.draft.displayName)}"></label><label>Descrizione breve<input name="shortDescription" maxlength="240" placeholder="Facoltativa" value="${escapeHtml(this.draft.shortDescription)}"></label><label class="full">Descrizione<textarea name="description" rows="4" placeholder="Obiettivo, pubblico o criterio curatoriale">${escapeHtml(this.draft.description)}</textarea></label><label class="full">Regole editoriali<select name="namespaceId" required>${namespaceOptions}</select><span class="note">Le regole definiscono classificazioni, relazioni e modalità di presentazione disponibili nella raccolta.</span></label>${this.renderSemanticChoice()}<div class="operations full"><button type="button" class="button-secondary" data-back-space>Annulla</button><button type="submit" ${this.busy || this.graphBusy ? "disabled" : ""}>Crea raccolta ${icon("chevron", { size: 15 })}</button></div></form></main>`;
   }
 }
 customElements.define("artaround-editorial-collection-create-view", ArtAroundEditorialCollectionCreateView);
