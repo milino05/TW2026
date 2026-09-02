@@ -29,6 +29,7 @@ router.route("/editorial-contexts/:editorialContextId/entries/:entryId")
   .delete(controller.removeEntry);
 
 router.get("/editorial-contexts/:editorialContextId/semantic-graph", editorialContextId, controller.getGraph);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph/neighborhood", editorialContextId, controller.getGraphNeighborhood);
 router.get("/editorial-contexts/:editorialContextId/semantic-graph/subject-candidates", editorialContextId, controller.searchGraphSubjectCandidates);
 router.route("/editorial-contexts/:editorialContextId/semantic-graph/subjects/:subjectId")
   .all(editorialContextId, subjectId)
