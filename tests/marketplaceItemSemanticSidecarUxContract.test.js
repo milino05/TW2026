@@ -35,7 +35,7 @@ test("Item editor mounts one contextual sidecar and reuses the canonical graph w
   assert.match(source.sidecar, /Aggiungi collegamenti/);
   assert.match(source.sidecar, /artaround-semantic-graph-editor/);
   assert.match(source.sidecar, /graph\.configure\(/);
-  assert.match(source.sidecar, /graph\.setFocus\(id\(this\.subject\)\)/);
+  assert.match(source.sidecar, /graph\.focusSubjectId = id\(this\.subject\)/);
   assert.match(source.workspaceCss, /workspace-sidecar-layer/);
   assert.match(source.workspaceCss, /workspace-sidecar-launcher/);
 });
