@@ -81,6 +81,9 @@ export const editorialRepository = {
   addGraphEdge(editorialContextId, payload) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/edges`, { method: "POST", ...jsonBody(payload) });
   },
+  updateGraphEdge(editorialContextId, edgeId, payload) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/edges/${encodeURIComponent(edgeId)}`, { method: "PATCH", ...jsonBody(payload) });
+  },
   removeGraphEdge(editorialContextId, edgeId) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/edges/${encodeURIComponent(edgeId)}`, { method: "DELETE" });
   },
