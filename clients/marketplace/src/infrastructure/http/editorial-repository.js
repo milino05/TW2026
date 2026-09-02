@@ -59,6 +59,16 @@ export const editorialRepository = {
     const query = queryString({ q, page, limit });
     return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/candidates?${query}`);
   },
+  externalCandidates(editorialContextId, { q = "", page = 1, limit = 12 } = {}) {
+    const query = queryString({ q, page, limit });
+    return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/external-candidates?${query}`);
+  },
+  importExternalCandidate(editorialContextId, itemEditionId) {
+    return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/import-entry`, {
+      method: "POST",
+      ...jsonBody({ itemEditionId }),
+    });
+  },
   entries(editorialContextId, { q = "", page = 1, limit = 50 } = {}) {
     const query = queryString({ q, page, limit });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/entries?${query}`);
