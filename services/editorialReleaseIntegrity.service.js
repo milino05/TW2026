@@ -17,8 +17,8 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
 
   const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: context.namespaceId }).lean();
   if (!namespaceRevision) return [{ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_MISMATCH", message: "NamespaceRevision non appartiene al Namespace del Context" }];
-  if (namespaceRevision.status !== "published" || namespaceRevision.integrity?.status !== "valid") {
-    issues.push({ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_NOT_RELEASE_READY", message: "La NamespaceRevision deve essere pubblicata e valida" });
+  if (!["published", "superseded"].includes(namespaceRevision.status) || namespaceRevision.integrity?.status !== "valid") {
+    issues.push({ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_NOT_RELEASE_READY", message: "La NamespaceRevision deve essere una versione pubblicata immutabile e valida" });
   }
 
   const graphRevision = await SemanticGraphRevision.findOne({ _id: graphRevisionId, semanticGraphId: context.semanticGraphId }).lean();
