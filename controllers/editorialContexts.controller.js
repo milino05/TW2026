@@ -53,6 +53,10 @@ async function addGraphEdge(req, res, next) {
   try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); }
   catch (error) { next(error); }
 }
+async function updateGraphEdge(req, res, next) {
+  try { res.status(200).json(projectGraph(await editorialGraphCommandService.updateEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, payload: req.body || {}, actorUserId: req.user._id }))); }
+  catch (error) { next(error); }
+}
 async function removeGraphEdge(req, res, next) {
   try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, actorUserId: req.user._id }))); }
   catch (error) { next(error); }
@@ -101,7 +105,7 @@ async function getCurrentRelease(req, res, next) {
 module.exports = {
   create, list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
-  getGraph, addGraphSubject, removeGraphSubject, addGraphEdge, removeGraphEdge, setGraphSubjectClasses,
+  getGraph, addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
   checkReadiness, requestReview, withdrawReview, requestChanges, approveReview, listRevisions,
   createRelease, listReleases, getCurrentRelease,
 };
