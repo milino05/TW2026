@@ -14,17 +14,32 @@ export class ArtAroundEditorialSpacesView extends HTMLElement {
   busy = false;
   creating = false;
   createOpen = false;
+  createDirty = false;
+  createDraft = { name: "", description: "" };
   error = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("input", this.onInput);
     void this.load();
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("input", this.onInput);
   }
+
+  hasUnsavedChanges() { return this.createDirty; }
+  discardUnsavedChanges() { this.createDirty = false; }
+
+  onInput = (event) => {
+    const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
+    if (!target?.form?.matches("[data-create-space]")) return;
+    if (!Object.prototype.hasOwnProperty.call(this.createDraft, target.name)) return;
+    this.createDraft[target.name] = target.value;
+    this.createDirty = true;
+  };
 
   async load() {
     const principal = operatingPrincipal(this.context);
@@ -49,7 +64,13 @@ export class ArtAroundEditorialSpacesView extends HTMLElement {
     const open = target?.closest("[data-space-id]");
     if (open) { navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(open.dataset.spaceId)}`); return; }
     if (target?.closest("[data-new-space]")) { this.createOpen = true; this.error = null; this.render(); return; }
-    if (target?.closest("[data-cancel-space]")) { this.createOpen = false; this.error = null; this.render(); }
+    if (target?.closest("[data-cancel-space]")) {
+      this.createOpen = false;
+      this.createDirty = false;
+      this.createDraft = { name: "", description: "" };
+      this.error = null;
+      this.render();
+    }
   };
 
   onSubmit = async (event) => {
@@ -58,18 +79,23 @@ export class ArtAroundEditorialSpacesView extends HTMLElement {
     event.preventDefault();
     if (!this.preflight?.capabilities?.editorialSpaceManage || !this.context) return;
     const data = new FormData(form);
-    const name = String(data.get("name") || "").trim();
+    this.createDraft = {
+      name: String(data.get("name") || ""),
+      description: String(data.get("description") || ""),
+    };
+    const name = this.createDraft.name.trim();
     if (!name) return;
     this.creating = true; this.error = null; this.render();
     try {
       const created = await editorialRepository.createSpace({
         name,
-        description: String(data.get("description") || "").trim() || null,
+        description: this.createDraft.description.trim() || null,
         ownerType: this.context.type,
         ownerId: this.context.id,
       });
       const id = created?._id || created?.id;
       if (!id) throw new Error("Lo spazio è stato creato ma non è stato restituito il suo identificatore");
+      this.createDirty = false;
       navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(id)}`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Creazione dello spazio non completata";
@@ -84,7 +110,7 @@ export class ArtAroundEditorialSpacesView extends HTMLElement {
 
   renderCreateForm() {
     if (!this.createOpen) return "";
-    return `<section class="panel" aria-labelledby="new-space-title"><div class="section-heading"><div><span class="eyebrow">Nuovo spazio</span><h2 id="new-space-title">Crea un contenitore editoriale</h2><p>Lo spazio raccoglie i contenuti condivisi. Le raccolte verranno create successivamente al suo interno.</p></div></div><form class="form-grid" data-create-space><label>Nome dello spazio<input name="name" required maxlength="160" placeholder="Collezione permanente"></label><label class="full">Descrizione<textarea name="description" rows="3" placeholder="Ambito, corpus o finalità dello spazio"></textarea></label><div class="operations full"><button type="button" class="button-secondary" data-cancel-space>Annulla</button><button type="submit" ${this.creating ? "disabled" : ""}>${this.creating ? "Creazione…" : `Crea spazio ${icon("chevron", { size: 14 })}`}</button></div></form></section>`;
+    return `<section class="panel" aria-labelledby="new-space-title"><div class="section-heading"><div><span class="eyebrow">Nuovo spazio</span><h2 id="new-space-title">Crea un contenitore editoriale</h2><p>Lo spazio raccoglie i contenuti condivisi. Le raccolte verranno create successivamente al suo interno.</p></div></div><form class="form-grid" data-create-space><label>Nome dello spazio<input name="name" required maxlength="160" placeholder="Collezione permanente" value="${escapeHtml(this.createDraft.name)}"></label><label class="full">Descrizione<textarea name="description" rows="3" placeholder="Ambito, corpus o finalità dello spazio">${escapeHtml(this.createDraft.description)}</textarea></label><div class="operations full"><button type="button" class="button-secondary" data-cancel-space>Annulla</button><button type="submit" ${this.creating ? "disabled" : ""}>${this.creating ? "Creazione…" : `Crea spazio ${icon("chevron", { size: 14 })}`}</button></div></form></section>`;
   }
 
   render() {
