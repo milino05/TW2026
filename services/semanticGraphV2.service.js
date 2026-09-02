@@ -1,3 +1,4 @@
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
@@ -32,6 +33,15 @@ async function findContextOrFail(editorialContextId) {
   return context;
 }
 
+async function findSemanticGraphOrFail(context) {
+  const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" });
+  if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 409);
+  if (id(semanticGraph.namespaceId) !== id(context.namespaceId)) {
+    throw new AppError("Il grafo semantico usa un Namespace diverso dal Context", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
+  }
+  return semanticGraph;
+}
+
 async function resolveNamespaceRevision(context, requestedRevisionId = null) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
@@ -42,11 +52,26 @@ async function resolveNamespaceRevision(context, requestedRevisionId = null) {
   return { namespace, namespaceRevision: revision };
 }
 
+function ensureEdgeBindings(snapshot) {
+  const bySubject = new Map((snapshot.subjectBindings || []).map((binding) => [id(binding.subjectId), binding]));
+  for (const edge of snapshot.edges || []) {
+    for (const subjectId of [edge.sourceSubjectId, edge.targetSubjectId]) {
+      const key = id(subjectId);
+      if (!key || bySubject.has(key)) continue;
+      const binding = { subjectId, subjectClassDefinitionIds: [] };
+      snapshot.subjectBindings.push(binding);
+      bySubject.set(key, binding);
+    }
+  }
+  return snapshot;
+}
+
 function validateGraphSnapshotAgainstNamespace({ subjectBindings = [], edges = [] }, namespaceRevision) {
   const issues = [];
   const classIds = new Set((namespaceRevision.subjectClasses || []).map((entry) => String(entry.definitionId)));
   const relationById = new Map((namespaceRevision.relationTypes || []).map((entry) => [String(entry.definitionId), entry]));
   const classesBySubject = new Map(subjectBindings.map((binding) => [String(binding.subjectId), new Set(binding.subjectClassDefinitionIds || [])]));
+  const boundSubjectIds = new Set(subjectBindings.map((binding) => String(binding.subjectId)));
 
   subjectBindings.forEach((binding, index) => {
     (binding.subjectClassDefinitionIds || []).forEach((definitionId, classIndex) => {
@@ -55,6 +80,8 @@ function validateGraphSnapshotAgainstNamespace({ subjectBindings = [], edges = [
   });
 
   edges.forEach((edge, index) => {
+    if (!boundSubjectIds.has(String(edge.sourceSubjectId))) issues.push({ field: `edges[${index}].sourceSubjectId`, code: "GRAPH_SUBJECT_BINDING_REQUIRED", message: "Il Subject sorgente deve appartenere al grafo" });
+    if (!boundSubjectIds.has(String(edge.targetSubjectId))) issues.push({ field: `edges[${index}].targetSubjectId`, code: "GRAPH_SUBJECT_BINDING_REQUIRED", message: "Il Subject destinazione deve appartenere al grafo" });
     const relation = relationById.get(String(edge.relationTypeDefinitionId));
     if (!relation) {
       issues.push({ field: `edges[${index}].relationTypeDefinitionId`, code: "UNKNOWN_RELATION_TYPE", message: `RelationType non disponibile: ${edge.relationTypeDefinitionId}` });
@@ -74,19 +101,16 @@ function validateGraphSnapshotAgainstNamespace({ subjectBindings = [], edges = [
   return issues;
 }
 
-async function validateSubjectsExist({ subjectBindings = [], edges = [] }) {
-  const ids = new Set();
-  for (const binding of subjectBindings) ids.add(String(binding.subjectId));
-  for (const edge of edges) { ids.add(String(edge.sourceSubjectId)); ids.add(String(edge.targetSubjectId)); }
-  const values = [...ids].filter(Boolean);
+async function validateSubjectsExist({ subjectBindings = [] }) {
+  const values = [...new Set(subjectBindings.map((binding) => String(binding.subjectId)).filter(Boolean))];
   if (!values.length) return [];
   const found = await Subject.find({ _id: { $in: values } }).select("_id").lean();
   const foundIds = new Set(found.map((entry) => String(entry._id)));
   return values.filter((subjectId) => !foundIds.has(subjectId)).map((subjectId) => ({ field: "subjectId", code: "SUBJECT_NOT_FOUND", message: `Subject non trovato: ${subjectId}` }));
 }
 
-async function nextVersion(editorialContextId) {
-  const latest = await SemanticGraphRevision.findOne({ editorialContextId }).sort({ version: -1 }).select("version").lean();
+async function nextVersion(semanticGraphId) {
+  const latest = await SemanticGraphRevision.findOne({ semanticGraphId }).sort({ version: -1 }).select("version").lean();
   return (latest?.version || 0) + 1;
 }
 
@@ -94,10 +118,14 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   const rawPayload = payload || {};
   const shapeIssues = validateGraphRevisionPayload(rawPayload);
   if (shapeIssues.length) throw new AppError("Payload GraphRevision non valido", 400, shapeIssues);
-  const normalized = normalizeGraphRevisionPayload(rawPayload);
+  const normalized = ensureEdgeBindings(normalizeGraphRevisionPayload(rawPayload));
   const context = await findContextOrFail(editorialContextId);
+  const semanticGraph = await findSemanticGraphOrFail(context);
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
-  await assertCanManageContentSpace(contentSpace, actorUserId);
+  await assertCanManageContentSpace(contentSpace, actorUserId, "semantic_graph.edit");
+  if (semanticGraph.ownerType !== contentSpace.ownerType || id(semanticGraph.ownerId) !== id(contentSpace.ownerId)) {
+    throw new AppError("Il grafo semantico appartiene a un'altra area di lavoro", 409, [{ code: "SEMANTIC_GRAPH_OWNER_MISMATCH" }]);
+  }
   const { namespace, namespaceRevision } = await resolveNamespaceRevision(context, normalized.authoredAgainstNamespaceRevisionId);
   await assertCanUseNamespaceForAuthoring({
     namespace,
@@ -107,8 +135,8 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   });
 
   if (normalized.basedOnRevisionId) {
-    const base = await SemanticGraphRevision.findOne({ _id: normalized.basedOnRevisionId, editorialContextId: context._id });
-    if (!base) throw new AppError("GraphRevision base non appartiene al Context", 409);
+    const base = await SemanticGraphRevision.findOne({ _id: normalized.basedOnRevisionId, semanticGraphId: semanticGraph._id });
+    if (!base) throw new AppError("GraphRevision base non appartiene al grafo semantico", 409);
   }
 
   const semanticIssues = [
@@ -117,11 +145,8 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   ];
   if (semanticIssues.length) throw new AppError("GraphRevision non coerente", 409, semanticIssues);
 
-  const expectedWorkingGraphRevisionId = context.workingGraphRevisionId || null;
-  const expectedPublishedReleaseId = context.publishedReleaseId || null;
-  // The snapshot may have been prepared before this function loaded the Context.
-  // Reject a stale explicit base before the pointer CAS, otherwise a later writer
-  // could legitimately match the fresh pointer while replacing newer graph data.
+  const expectedWorkingGraphRevisionId = semanticGraph.workingRevisionId || null;
+  const expectedWorkingVersion = Number(semanticGraph.workingVersion || 0);
   if (normalized.basedOnRevisionId && expectedWorkingGraphRevisionId
     && id(normalized.basedOnRevisionId) !== id(expectedWorkingGraphRevisionId)) {
     throw graphRevisionConflict();
@@ -129,8 +154,8 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
   let graphRevision = null;
   try {
     graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: await nextVersion(context._id),
+      semanticGraphId: semanticGraph._id,
+      version: await nextVersion(semanticGraph._id),
       basedOnRevisionId: normalized.basedOnRevisionId || expectedWorkingGraphRevisionId,
       authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       createdBy: actorUserId,
@@ -153,15 +178,13 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
         provenance: edge.provenance,
       })), { ordered: true });
     }
-    const pointer = await EditorialContext.updateOne({
-      _id: context._id,
+    const pointer = await SemanticGraph.updateOne({
+      _id: semanticGraph._id,
       lifecycleStatus: "active",
-      workingGraphRevisionId: expectedWorkingGraphRevisionId,
-      publishedReleaseId: expectedPublishedReleaseId,
-    }, { $set: { workingGraphRevisionId: graphRevision._id } });
-    if (pointer.modifiedCount !== 1) {
-      throw graphRevisionConflict();
-    }
+      workingRevisionId: expectedWorkingGraphRevisionId,
+      workingVersion: expectedWorkingVersion,
+    }, { $set: { workingRevisionId: graphRevision._id }, $inc: { workingVersion: 1 } });
+    if (pointer.modifiedCount !== 1) throw graphRevisionConflict();
   } catch (error) {
     if (graphRevision?._id) {
       await Promise.allSettled([
@@ -170,9 +193,7 @@ async function createGraphRevision({ editorialContextId, payload, actorUserId })
         SemanticGraphRevision.deleteOne({ _id: graphRevision._id }),
       ]);
     }
-    if ([11000, 112, 251].includes(Number(error?.code))) {
-      throw graphRevisionConflict();
-    }
+    if ([11000, 112, 251].includes(Number(error?.code))) throw graphRevisionConflict();
     throw error;
   }
   return loadSemanticGraphRevision(graphRevision._id, { bypassCache: true });
