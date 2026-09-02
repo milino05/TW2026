@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
+const SemanticGraph = require("../models/semanticGraph.model");
+const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const Namespace = require("../models/namespace.model");
+const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
@@ -58,16 +61,43 @@ async function createEditorialContext({ payload, actorUserId }) {
     principalType: contentSpace.ownerType,
     principalId: contentSpace.ownerId,
   });
-  let editorialContext;
+  const namespaceRevisionId = namespaceAccess.resolvedSnapshotRef?.resourceType === "namespace_revision"
+    ? namespaceAccess.resolvedSnapshotRef.resourceId
+    : namespace.workingRevisionId || namespace.publishedRevisionId;
+  if (!namespaceRevisionId) throw new AppError("Il Namespace non ha una revisione utilizzabile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
+  const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: namespace._id }).select("_id").lean();
+  if (!namespaceRevision) throw new AppError("NamespaceRevision non disponibile", 409);
+
+  let editorialContext = null;
   let adoption = null;
   try {
-    editorialContext = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
-      namespaceId: namespace._id,
-      displayName: normalized.displayName,
-      shortDescription: normalized.shortDescription ?? null,
-      description: normalized.description ?? null,
-      createdBy: actorUserId,
+    await mongoose.connection.transaction(async (session) => {
+      const [semanticGraph] = await SemanticGraph.create([{
+        namespaceId: namespace._id,
+        displayName: `${normalized.displayName} · Relazioni`,
+        ownerType: contentSpace.ownerType,
+        ownerId: contentSpace.ownerId,
+        createdBy: actorUserId,
+      }], { session });
+      const [initialRevision] = await SemanticGraphRevision.create([{
+        semanticGraphId: semanticGraph._id,
+        version: 1,
+        basedOnRevisionId: null,
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        createdBy: actorUserId,
+      }], { session });
+      semanticGraph.workingRevisionId = initialRevision._id;
+      semanticGraph.workingVersion = 1;
+      await semanticGraph.save({ session });
+      [editorialContext] = await EditorialContext.create([{
+        contentSpaceId: contentSpace._id,
+        namespaceId: namespace._id,
+        semanticGraphId: semanticGraph._id,
+        displayName: normalized.displayName,
+        shortDescription: normalized.shortDescription ?? null,
+        description: normalized.description ?? null,
+        createdBy: actorUserId,
+      }], { session });
     });
     adoption = await recordAdoptionFromAccess({
       access: namespaceAccess,
@@ -79,7 +109,6 @@ async function createEditorialContext({ payload, actorUserId }) {
     });
   } catch (error) {
     if (adoption) await adoption.deleteOne().catch(() => {});
-    if (editorialContext?._id) await editorialContext.deleteOne().catch(() => {});
     throw error;
   }
   return projectEditorialContext({ editorialContext, contentSpace, namespace });
