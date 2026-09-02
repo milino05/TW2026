@@ -5,6 +5,7 @@ const EditorialContext = require("../models/editorialContext.model");
 const EditorialContextEntry = require("../models/editorialContextEntry.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
+const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
@@ -157,22 +158,98 @@ async function moveItemMembership({ fromContentSpaceId, toContentSpaceId, itemId
   return targetMembership;
 }
 
-async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limit = 50 }) {
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limit = 50, q = "" }) {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.view");
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
-  const query = { contentSpaceId };
-  const [total, memberships] = await Promise.all([
-    ContentSpaceMembership.countDocuments(query),
-    ContentSpaceMembership.find(query).sort({ createdAt: 1, _id: 1 }).skip((normalizedPage - 1) * normalizedLimit).limit(normalizedLimit).lean(),
-  ]);
-  const itemIds = memberships.map((entry) => entry.itemId);
-  const items = await ItemV2.find({ _id: { $in: itemIds } }).lean();
-  const itemById = new Map(items.map((item) => [String(item._id), item]));
+  const normalizedQuery = String(q || "").trim().slice(0, 160);
+  const match = { contentSpaceId: contentSpace._id };
+  const pipeline = [
+    { $match: match },
+    { $lookup: { from: ItemV2.collection.name, localField: "itemId", foreignField: "_id", as: "item" } },
+    { $unwind: "$item" },
+    { $match: { "item.lifecycleStatus": "active" } },
+    { $lookup: { from: Subject.collection.name, localField: "item.primarySubjectId", foreignField: "_id", as: "subject" } },
+    { $unwind: { path: "$subject", preserveNullAndEmptyArrays: true } },
+  ];
+  if (normalizedQuery) {
+    const pattern = new RegExp(escapeRegex(normalizedQuery), "i");
+    const searchClauses = [
+      { "subject.preferredLabel": pattern },
+      { "subject.description": pattern },
+    ];
+    if (mongoose.isValidObjectId(normalizedQuery)) searchClauses.push({ "item._id": new mongoose.Types.ObjectId(normalizedQuery) });
+    pipeline.push({ $match: { $or: searchClauses } });
+  }
+  pipeline.push(
+    { $sort: { createdAt: 1, _id: 1 } },
+    {
+      $facet: {
+        metadata: [{ $count: "total" }],
+        results: [
+          { $skip: (normalizedPage - 1) * normalizedLimit },
+          { $limit: normalizedLimit },
+          {
+            $project: {
+              _id: 0,
+              itemId: "$item._id",
+              lifecycleStatus: "$item.lifecycleStatus",
+              addedAt: "$createdAt",
+              updatedAt: "$item.updatedAt",
+              subject: {
+                id: "$subject._id",
+                label: { $ifNull: ["$subject.preferredLabel", "Soggetto non disponibile"] },
+                description: { $ifNull: ["$subject.description", ""] },
+              },
+            },
+          },
+        ],
+      },
+    },
+  );
+  const [projection = { metadata: [], results: [] }] = await ContentSpaceMembership.aggregate(pipeline);
+  const results = projection.results || [];
+  const itemIds = results.map((entry) => entry.itemId);
+  const editions = itemIds.length
+    ? await ItemEdition.find({ itemId: { $in: itemIds } }).select("_id itemId").lean()
+    : [];
+  const editionCountByItem = new Map();
+  const itemIdByEdition = new Map();
+  for (const edition of editions) {
+    const itemKey = String(edition.itemId);
+    editionCountByItem.set(itemKey, (editionCountByItem.get(itemKey) || 0) + 1);
+    itemIdByEdition.set(String(edition._id), itemKey);
+  }
+  const activeContexts = itemIds.length
+    ? await EditorialContext.find({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }).select("_id").lean()
+    : [];
+  const entries = editions.length && activeContexts.length
+    ? await EditorialContextEntry.find({
+      editorialContextId: { $in: activeContexts.map((context) => context._id) },
+      itemEditionId: { $in: editions.map((edition) => edition._id) },
+    }).select("editorialContextId itemEditionId").lean()
+    : [];
+  const collectionIdsByItem = new Map();
+  for (const entry of entries) {
+    const itemKey = itemIdByEdition.get(String(entry.itemEditionId));
+    if (!itemKey) continue;
+    if (!collectionIdsByItem.has(itemKey)) collectionIdsByItem.set(itemKey, new Set());
+    collectionIdsByItem.get(itemKey).add(String(entry.editorialContextId));
+  }
+  const total = projection.metadata?.[0]?.total || 0;
   return {
-    results: memberships.map((membership) => ({ membership, item: itemById.get(String(membership.itemId)) || null })),
+    results: results.map((entry) => ({
+      ...entry,
+      editionCount: editionCountByItem.get(String(entry.itemId)) || 0,
+      collectionUsageCount: collectionIdsByItem.get(String(entry.itemId))?.size || 0,
+    })),
     pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
+    query: normalizedQuery,
   };
 }
 
