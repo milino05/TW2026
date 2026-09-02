@@ -4,6 +4,7 @@ const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const ItemEdition = require("../models/itemEdition.model");
 const Namespace = require("../models/namespace.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
@@ -63,17 +64,18 @@ async function importEditorialContextSnapshot({
     }
   }
 
-  const sourceGraph = await SemanticGraphRevision.findById(sourceRelease.graphRevisionId).lean();
-  if (!sourceGraph) throw new AppError("GraphRevision sorgente non disponibile", 409);
+  const sourceGraphRevision = await SemanticGraphRevision.findById(sourceRelease.graphRevisionId).lean();
+  if (!sourceGraphRevision) throw new AppError("GraphRevision sorgente non disponibile", 409);
   const [sourceBindings, sourceEdges, editions] = await Promise.all([
-    GraphSubjectBinding.find({ graphRevisionId: sourceGraph._id }).lean(),
-    SemanticEdgeV2.find({ graphRevisionId: sourceGraph._id }).lean(),
+    GraphSubjectBinding.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
+    SemanticEdgeV2.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
     ItemEdition.find({ _id: { $in: (sourceRelease.itemBindings || []).map((entry) => entry.itemEditionId) } }).select("_id itemId").lean(),
   ]);
   const itemIds = [...new Set(editions.map((edition) => String(edition.itemId)))];
 
   let contentSpace = null;
   let context = null;
+  let semanticGraph = null;
   let graphRevision = null;
   const adoptionIds = [];
   try {
@@ -84,19 +86,30 @@ async function importEditorialContextSnapshot({
       ownerId,
       createdBy: actorUserId,
     });
-    context = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
+    semanticGraph = await SemanticGraph.create({
       namespaceId: namespace._id,
-      displayName: String(displayName || `${sourceContext.displayName} — import`).trim(),
-      shortDescription: sourceContext.shortDescription || null,
-      description: sourceContext.description || null,
+      displayName: `${String(displayName || `${sourceContext.displayName} — import`).trim()} · Relazioni`,
+      ownerType,
+      ownerId,
       createdBy: actorUserId,
     });
     graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
+      semanticGraphId: semanticGraph._id,
       version: 1,
       basedOnRevisionId: null,
       authoredAgainstNamespaceRevisionId: sourceRelease.namespaceRevisionId,
+      createdBy: actorUserId,
+    });
+    semanticGraph.workingRevisionId = graphRevision._id;
+    semanticGraph.workingVersion = 1;
+    await semanticGraph.save();
+    context = await EditorialContext.create({
+      contentSpaceId: contentSpace._id,
+      namespaceId: namespace._id,
+      semanticGraphId: semanticGraph._id,
+      displayName: String(displayName || `${sourceContext.displayName} — import`).trim(),
+      shortDescription: sourceContext.shortDescription || null,
+      description: sourceContext.description || null,
       createdBy: actorUserId,
     });
     if (sourceBindings.length) {
@@ -116,7 +129,7 @@ async function importEditorialContextSnapshot({
         metadata: edge.metadata ?? null,
         provenance: {
           origin: "imported",
-          sourceGraphRevisionId: sourceGraph._id,
+          sourceGraphRevisionId: sourceGraphRevision._id,
           metadata: { sourceEditorialReleaseId: sourceRelease._id },
         },
       })));
@@ -128,8 +141,6 @@ async function importEditorialContextSnapshot({
         addedBy: actorUserId,
       })));
     }
-    context.workingGraphRevisionId = graphRevision._id;
-    await context.save();
 
     const contextAdoption = await recordAdoptionFromAccess({
       access: contextAccess,
@@ -153,6 +164,7 @@ async function importEditorialContextSnapshot({
     return {
       contentSpace: { id: contentSpace._id, name: contentSpace.name },
       editorialContext: { id: context._id, displayName: context.displayName, namespaceId: context.namespaceId },
+      semanticGraphId: semanticGraph._id,
       workingGraphRevisionId: graphRevision._id,
       importedFrom: { editorialContextId: sourceContext._id, editorialReleaseId: sourceRelease._id },
       itemMembershipCount: itemIds.length,
@@ -164,6 +176,7 @@ async function importEditorialContextSnapshot({
       await SemanticEdgeV2.deleteMany({ graphRevisionId: graphRevision._id }).catch(() => {});
       await SemanticGraphRevision.deleteOne({ _id: graphRevision._id }).catch(() => {});
     }
+    if (semanticGraph?._id) await SemanticGraph.deleteOne({ _id: semanticGraph._id }).catch(() => {});
     if (contentSpace?._id) await ContentSpaceMembership.deleteMany({ contentSpaceId: contentSpace._id }).catch(() => {});
     if (context?._id) await EditorialContext.deleteOne({ _id: context._id }).catch(() => {});
     if (contentSpace?._id) await ContentSpace.deleteOne({ _id: contentSpace._id }).catch(() => {});
