@@ -9,6 +9,8 @@ const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const SemanticGraph = require("../models/semanticGraph.model");
+const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
@@ -38,7 +40,7 @@ async function loadContextAndSpace({ editorialContextId, actorUserId, permission
   return { context, contentSpace };
 }
 
-async function resolveNamespaceProjection({ context, contentSpace, actorUserId }) {
+async function resolveNamespaceProjection({ context, contentSpace, actorUserId, semanticGraph = null }) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" }).lean();
   if (!namespace) throw new AppError("Regole editoriali non disponibili", 409);
   const access = await assertCanUseNamespaceForEditorialContext({
@@ -48,9 +50,9 @@ async function resolveNamespaceProjection({ context, contentSpace, actorUserId }
     principalId: contentSpace.ownerId,
   });
   let revisionId = null;
-  if (context.workingGraphRevisionId) {
-    const graph = await require("../models/semanticGraphRevision.model").findById(context.workingGraphRevisionId).select("authoredAgainstNamespaceRevisionId").lean();
-    revisionId = graph?.authoredAgainstNamespaceRevisionId || null;
+  if (semanticGraph?.workingRevisionId) {
+    const graphRevision = await SemanticGraphRevision.findById(semanticGraph.workingRevisionId).select("authoredAgainstNamespaceRevisionId").lean();
+    revisionId = graphRevision?.authoredAgainstNamespaceRevisionId || null;
   }
   if (!revisionId) {
     revisionId = access.resolvedSnapshotRef?.resourceType === "namespace_revision"
@@ -152,6 +154,7 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
       id: context._id,
       name: context.displayName,
       shortDescription: context.shortDescription || null,
+      semanticGraphId: context.semanticGraphId,
       namespace: { id: context.namespaceId, name: namespaceById.get(id(context.namespaceId))?.name || "Regole editoriali" },
       itemCount: entryCountByContext.get(id(context._id)) || 0,
       published: Boolean(context.publishedReleaseId),
@@ -164,23 +167,33 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
 async function getEditorialStudioProjection({ editorialContextId, actorUserId }) {
   const { context, contentSpace } = await loadContextAndSpace({ editorialContextId, actorUserId });
   const authority = await resolveAuthority({ contentSpace, actorUserId });
+  const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();
+  if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 409);
   const [namespace, readiness, entryCount, activeRevision, publishedRelease] = await Promise.all([
-    resolveNamespaceProjection({ context, contentSpace, actorUserId }),
+    resolveNamespaceProjection({ context, contentSpace, actorUserId, semanticGraph }),
     checkEditorialContextReadiness({ editorialContextId: context._id, actorUserId }),
     EditorialContextEntry.countDocuments({ editorialContextId: context._id }),
     context.activeReviewRevisionId ? EditorialContextRevision.findById(context.activeReviewRevisionId).lean() : null,
     context.publishedReleaseId ? EditorialRelease.findById(context.publishedReleaseId).lean() : null,
   ]);
 
-  const [subjectBindings, edges, publishedSourceRevision] = await Promise.all([
-    context.workingGraphRevisionId ? GraphSubjectBinding.find({ graphRevisionId: context.workingGraphRevisionId }).select("subjectId").lean() : [],
-    context.workingGraphRevisionId ? SemanticEdgeV2.find({ graphRevisionId: context.workingGraphRevisionId }).select("sourceSubjectId targetSubjectId").lean() : [],
+  const workingGraphRevisionId = semanticGraph.workingRevisionId || null;
+  const [subjectBindings, edges, publishedSourceRevision, publishedGraphRevision] = await Promise.all([
+    workingGraphRevisionId ? GraphSubjectBinding.find({ graphRevisionId: workingGraphRevisionId }).select("subjectId").lean() : [],
+    workingGraphRevisionId ? SemanticEdgeV2.find({ graphRevisionId: workingGraphRevisionId }).select("sourceSubjectId targetSubjectId").lean() : [],
     publishedRelease?.sourceContextRevisionId ? EditorialContextRevision.findById(publishedRelease.sourceContextRevisionId).select("sourceWorkingVersion version").lean() : null,
+    publishedRelease?.graphRevisionId ? SemanticGraphRevision.findById(publishedRelease.graphRevisionId).select("version semanticGraphId").lean() : null,
   ]);
   const subjectIds = new Set(subjectBindings.map((entry) => id(entry.subjectId)));
   for (const edge of edges) { subjectIds.add(id(edge.sourceSubjectId)); subjectIds.add(id(edge.targetSubjectId)); }
   const workingVersion = Number(context.workingVersion || 0);
   const publishedWorkingVersion = publishedSourceRevision ? Number(publishedSourceRevision.sourceWorkingVersion || 0) : null;
+  const graphWorkingVersion = Number(semanticGraph.workingVersion || 0);
+  const publishedGraphVersion = publishedGraphRevision && id(publishedGraphRevision.semanticGraphId) === id(semanticGraph._id)
+    ? Number(publishedGraphRevision.version || 0)
+    : null;
+  const collectionChanges = publishedWorkingVersion === null ? null : Math.max(0, workingVersion - publishedWorkingVersion);
+  const graphChanges = publishedGraphVersion === null ? null : Math.max(0, graphWorkingVersion - publishedGraphVersion);
 
   const permissions = {
     canEdit: hasPermission(contentSpace, authority, "editorial_context.edit"),
@@ -191,7 +204,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
   };
   const availableOperations = [];
   if (permissions.canEdit && !activeRevision) availableOperations.push({ code: "collection.edit", label: "Modifica raccolta" });
-  if (permissions.canEditGraph && !activeRevision) availableOperations.push({ code: "collection.graph.edit", label: "Modifica relazioni" });
+  if (permissions.canEditGraph) availableOperations.push({ code: "collection.graph.edit", label: "Modifica relazioni" });
   if (permissions.canEdit && readiness.ready && !activeRevision) availableOperations.push({ code: "collection.review.request", label: "Invia in revisione" });
   if (permissions.canEdit && activeRevision?.status === "in_review") availableOperations.push({ code: "collection.review.withdraw", label: "Ritira dalla revisione" });
   if (permissions.canReview && activeRevision?.status === "in_review") {
@@ -209,6 +222,13 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       workingVersion,
       locked: Boolean(activeRevision),
     },
+    semanticGraph: {
+      id: semanticGraph._id,
+      name: semanticGraph.displayName,
+      workingRevisionId: semanticGraph.workingRevisionId || null,
+      workingVersion: graphWorkingVersion,
+      sharedByCollections: await EditorialContext.countDocuments({ semanticGraphId: semanticGraph._id, lifecycleStatus: "active" }),
+    },
     contentSpace: {
       id: contentSpace._id,
       name: contentSpace.name,
@@ -221,7 +241,11 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       entryCount,
       subjectCount: subjectIds.size,
       edgeCount: edges.length,
-      changesSincePublished: publishedWorkingVersion === null ? null : Math.max(0, workingVersion - publishedWorkingVersion),
+      collectionChangesSincePublished: collectionChanges,
+      graphChangesSincePublished: graphChanges,
+      changesSincePublished: collectionChanges === null && graphChanges === null
+        ? null
+        : Math.max(0, Number(collectionChanges || 0) + Number(graphChanges || 0)),
     },
     readiness: { ready: readiness.ready, issues: readiness.issues },
     review: activeRevision ? {
@@ -232,12 +256,14 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       requestedAt: activeRevision.review?.requestedAt || null,
       reviewedAt: activeRevision.review?.reviewedAt || null,
       message: activeRevision.review?.message || null,
+      graphRevisionId: activeRevision.graphRevisionId,
       itemCount: (activeRevision.itemBindings || []).length,
     } : null,
     published: publishedRelease ? {
       id: publishedRelease._id,
       version: publishedRelease.version,
       releasedAt: publishedRelease.releasedAt,
+      graphRevisionId: publishedRelease.graphRevisionId,
       sourceContextRevisionId: publishedRelease.sourceContextRevisionId || null,
     } : null,
     permissions,
