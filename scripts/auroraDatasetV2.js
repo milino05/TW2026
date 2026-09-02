@@ -13,6 +13,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
@@ -63,6 +64,7 @@ const IDS = Object.freeze({
   namespaceRevision: auroraId("namespace_revision"),
   contentSpace: auroraId("content_space"),
   editorialContext: auroraId("editorial_context"),
+  semanticGraph: auroraId("semantic_graph"),
   graphRevision: auroraId("graph_revision"),
   editorialRelease: auroraId("editorial_release"),
   physicalVocabulary: auroraId("physical_vocabulary"),
@@ -214,6 +216,7 @@ async function cleanupAuroraDataset() {
   await GraphSubjectBinding.deleteMany({ graphRevisionId: IDS.graphRevision });
   await SemanticGraphRevision.deleteMany({ _id: IDS.graphRevision });
   await EditorialContext.deleteMany({ _id: IDS.editorialContext });
+  await SemanticGraph.deleteMany({ _id: IDS.semanticGraph });
   await ContentSpaceMembership.deleteMany({ itemId: { $in: ids.itemIds } });
   await ContentSpace.deleteMany({ _id: IDS.contentSpace });
   await ItemRevisionV2.deleteMany({ _id: { $in: ids.revisionIds } });
@@ -464,10 +467,20 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
   await ContentSpaceMembership.create(
     itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
   );
+  const semanticGraph = await SemanticGraph.create({
+    _id: IDS.semanticGraph,
+    namespaceId: namespace._id,
+    displayName: "Museo Aurora — Relazioni editoriali",
+    description: "Grafo semantico riutilizzabile del dataset del Museo Civico Aurora.",
+    ownerType: contentSpace.ownerType,
+    ownerId: contentSpace.ownerId,
+    createdBy: manager._id,
+  });
   const editorialContext = await EditorialContext.create({
     _id: IDS.editorialContext,
     contentSpaceId: contentSpace._id,
     namespaceId: namespace._id,
+    semanticGraphId: semanticGraph._id,
     displayName: "Museo Aurora — Percorsi tra arte e città",
     shortDescription: "Contesto editoriale dimostrativo dedicato alla città di Aurora.",
     description: "Raccoglie dieci opere originali e tre temi: luce, spazi e comunità.",
@@ -475,11 +488,14 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
   });
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
-    editorialContextId: editorialContext._id,
+    semanticGraphId: semanticGraph._id,
     version: 1,
     authoredAgainstNamespaceRevisionId: namespaceRevision._id,
     createdBy: manager._id,
   });
+  semanticGraph.workingRevisionId = graphRevision._id;
+  semanticGraph.workingVersion = 1;
+  await semanticGraph.save();
   await GraphSubjectBinding.create([
     ...WORKS.map((work) => ({
       graphRevisionId: graphRevision._id,
@@ -535,7 +551,6 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     itemBindings,
   });
   assertNoIssues("EditorialRelease Aurora non coerente", editorialIssues);
-  editorialContext.workingGraphRevisionId = graphRevision._id;
   editorialContext.publishedReleaseId = editorialRelease._id;
   await editorialContext.save();
 
@@ -825,10 +840,17 @@ async function verifyAuroraDataset() {
   const layout = await LayoutRevision.findById(IDS.layoutRevision).lean();
   const venueRelease = await VenueRelease.findById(IDS.venueRelease).lean();
   const editorialRelease = await EditorialRelease.findById(IDS.editorialRelease).lean();
+  const semanticGraph = await SemanticGraph.findById(IDS.semanticGraph).lean();
 
   if (!venue) add("AURORA_VENUE_MISSING", "Museo Civico Aurora non trovato");
   if (!layout || layout.status !== "published") add("AURORA_LAYOUT_MISSING", "Layout Aurora pubblicato non disponibile");
   if (!venueRelease || venueRelease.status !== "published") add("AURORA_VENUE_RELEASE_MISSING", "VenueRelease Aurora pubblicata non disponibile");
+  if (!semanticGraph || String(semanticGraph.workingRevisionId || "") !== String(IDS.graphRevision)) {
+    add("AURORA_SEMANTIC_GRAPH_INVALID", "Il grafo semantico Aurora deve conservare la propria revisione di lavoro", {
+      semanticGraphId: semanticGraph?._id || null,
+      workingRevisionId: semanticGraph?.workingRevisionId || null,
+    });
+  }
   if (!editorialRelease || editorialRelease.itemBindings?.length !== WORKS.length) {
     add("AURORA_EDITORIAL_RELEASE_INVALID", "La release Aurora deve contenere dieci item", {
       count: editorialRelease?.itemBindings?.length || 0,
