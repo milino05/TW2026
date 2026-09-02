@@ -275,14 +275,18 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       await this.loadInventory();
       return;
     }
+    if (target.closest("[data-show-more-neighbors]")) {
+      this.visibleNeighborLimit = Math.min(100, this.visibleNeighborLimit + 18);
+      await this.load();
+      return;
+    }
     const graphNode = target.closest("[data-graph-subject]");
     if (graphNode) { this.selected = { kind: "subject", id: graphNode.dataset.graphSubject }; this.pickerMode = null; this.relationDraft = null; this.render(); return; }
     const graphEdge = target.closest("[data-graph-edge]");
     if (graphEdge) { this.openEdgeInspector(graphEdge.dataset.graphEdge); return; }
-    if (target.closest("[data-semantic-graph-canvas]")) { this.selected = null; this.render(); return; }
     const recenter = target.closest("[data-recenter-subject]");
     if (recenter) { await this.setFocus(recenter.dataset.recenterSubject); return; }
-    if (target.closest("[data-show-more-neighbors]")) { this.visibleNeighborLimit = Math.min(100, this.visibleNeighborLimit + 18); await this.load(); return; }
+    if (target.closest("[data-semantic-graph-canvas]")) { this.selected = null; this.render(); return; }
     const removeSubject = target.closest("[data-remove-graph-subject]");
     if (removeSubject && this.editable && !this.locked) {
       const subject = this.subject(removeSubject.dataset.removeGraphSubject);
