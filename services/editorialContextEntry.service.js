@@ -30,6 +30,9 @@ function normalizeCurationSignals(value) {
     return { definitionId, weight };
   });
 }
+function escapedRegex(value) {
+  return new RegExp(String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+}
 
 async function findContextOrFail(editorialContextId, { session = null } = {}) {
   const query = EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
@@ -155,13 +158,40 @@ async function removeEditorialContextEntry({ editorialContextId, entryId, actorU
   return { removed: true };
 }
 
-async function listEditorialContextEntries({ editorialContextId, actorUserId, page = 1, limit = 50 }) {
+async function editionIdsMatchingQuery(context, q) {
+  const normalized = String(q || "").trim();
+  if (!normalized) return null;
+  const pattern = escapedRegex(normalized);
+  const [subjects, matchingRevisions] = await Promise.all([
+    Subject.find({ $or: [{ preferredLabel: pattern }, { description: pattern }] }).select("_id").limit(500).lean(),
+    ItemRevisionV2.find({ label: pattern }).select("itemEditionId").limit(500).lean(),
+  ]);
+  const subjectIds = subjects.map((entry) => entry._id);
+  const subjectItems = subjectIds.length
+    ? await ItemV2.find({ primarySubjectId: { $in: subjectIds }, lifecycleStatus: "active" }).select("_id").limit(1000).lean()
+    : [];
+  const itemIds = subjectItems.map((entry) => entry._id);
+  const revisionEditionIds = matchingRevisions.map((entry) => entry.itemEditionId);
+  const clauses = [];
+  if (itemIds.length) clauses.push({ itemId: { $in: itemIds } });
+  if (revisionEditionIds.length) clauses.push({ _id: { $in: revisionEditionIds } });
+  if (!clauses.length) return [];
+  const editions = await ItemEdition.find({
+    namespaceId: context.namespaceId,
+    $or: clauses,
+  }).select("_id").limit(1500).lean();
+  return editions.map((entry) => entry._id);
+}
+
+async function listEditorialContextEntries({ editorialContextId, actorUserId, q = "", page = 1, limit = 50 }) {
   const context = await findContextOrFail(editorialContextId);
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
+  const matchingEditionIds = await editionIdsMatchingQuery(context, q);
   const query = { editorialContextId: context._id };
+  if (matchingEditionIds) query.itemEditionId = { $in: matchingEditionIds };
   const [total, entries] = await Promise.all([
     EditorialContextEntry.countDocuments(query),
     EditorialContextEntry.find(query)
