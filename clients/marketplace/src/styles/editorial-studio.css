@@ -1,0 +1,16 @@
+/* Editorial Studio: contenuti specifici della Raccolta sopra la shell Context Workspace condivisa. */
+.studio-section{display:grid;gap:1rem}
+.studio-metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem}
+.studio-metric{display:grid;gap:.2rem}.studio-metric strong{font-size:1.8rem}.studio-metric span{color:var(--sage-600)}
+.studio-overview-grid,.studio-settings-grid,.studio-history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.studio-issue-list{padding-left:1.25rem}
+.studio-publication-flow{max-width:60rem}
+.studio-flow-step{display:grid;grid-template-columns:2.4rem minmax(0,1fr);gap:.9rem;padding:1rem;border-left:3px solid var(--line);background:var(--surface)}
+.studio-flow-step.complete{border-left-color:var(--sage-500)}.studio-flow-step.active{border-left-color:var(--ink-900)}.studio-flow-step.blocked{opacity:.75}
+.studio-step-number{width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);font-weight:700}
+.studio-request-changes-form{margin-top:1rem;display:grid;gap:.75rem}.studio-request-changes-form h3,.studio-request-changes-form p{margin:0}.studio-request-changes-form textarea{width:100%;box-sizing:border-box}
+.studio-history-panel ol{padding-left:1.25rem}.studio-history-panel li{margin:.45rem 0}.studio-danger-zone{align-self:start}
+.studio-graph-context{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:.85rem 1rem;border-radius:var(--radius-lg);background:var(--sage-50)}
+.studio-graph-context p{margin:.2rem 0 0;color:var(--sage-600)}
+@media(max-width:54rem){.studio-metric-grid{grid-template-columns:1fr 1fr}.studio-overview-grid,.studio-settings-grid,.studio-history-grid{grid-template-columns:1fr}.studio-graph-context{flex-direction:column}}
+@media(max-width:34rem){.studio-metric-grid{grid-template-columns:1fr}}
