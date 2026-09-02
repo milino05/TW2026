@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -22,8 +23,6 @@ async function createEditorialFixture() {
   const Namespace = require("../models/namespace.model");
   const NamespaceRevision = require("../models/namespaceRevision.model");
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
-  const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
   const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
   const ItemV2 = require("../models/itemV2.model");
   const ItemEdition = require("../models/itemEdition.model");
@@ -50,16 +49,11 @@ async function createEditorialFixture() {
   await namespace.save();
 
   const contentSpace = await ContentSpace.create({ name: "Generator source space", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
-  const context = await EditorialContext.create({
-    contentSpaceId: contentSpace._id,
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace,
     namespaceId: namespace._id,
+    namespaceRevisionId: namespaceRevision._id,
     displayName: "Generator source context",
-    createdBy: owner._id,
-  });
-  const graphRevision = await SemanticGraphRevision.create({
-    editorialContextId: context._id,
-    version: 1,
-    authoredAgainstNamespaceRevisionId: namespaceRevision._id,
     createdBy: owner._id,
   });
   await GraphSubjectBinding.create({ graphRevisionId: graphRevision._id, subjectId: subject._id, subjectClassDefinitionIds: [] });
@@ -118,7 +112,6 @@ async function createEditorialFixture() {
     releasedAt: new Date(),
     releasedBy: owner._id,
   });
-  context.workingGraphRevisionId = graphRevision._id;
   context.publishedReleaseId = release2._id;
   await context.save();
 
