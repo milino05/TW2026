@@ -21,9 +21,9 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     issues.push({ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_NOT_RELEASE_READY", message: "La NamespaceRevision deve essere pubblicata e valida" });
   }
 
-  const graphRevision = await SemanticGraphRevision.findOne({ _id: graphRevisionId, editorialContextId: context._id }).lean();
+  const graphRevision = await SemanticGraphRevision.findOne({ _id: graphRevisionId, semanticGraphId: context.semanticGraphId }).lean();
   if (!graphRevision) {
-    issues.push({ field: "graphRevisionId", code: "GRAPH_REVISION_MISMATCH", message: "GraphRevision non appartiene all'EditorialContext" });
+    issues.push({ field: "graphRevisionId", code: "GRAPH_REVISION_MISMATCH", message: "GraphRevision non appartiene al grafo semantico usato dalla raccolta" });
   } else {
     const authoredNamespaceRevision = await NamespaceRevision.findOne({ _id: graphRevision.authoredAgainstNamespaceRevisionId, namespaceId: context.namespaceId }).select("_id").lean();
     if (!authoredNamespaceRevision) issues.push({ field: "graphRevisionId", code: "GRAPH_NAMESPACE_LINEAGE_MISMATCH", message: "GraphRevision authored contro un Namespace incompatibile" });
