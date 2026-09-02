@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { assignStarterRole } = require("./helpers/organizationRbac");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -92,7 +93,6 @@ async function createContentFixture({ manager, organization }) {
 
 async function createEditorialSource({ ownerType, ownerId, createdBy, edition, itemRevision }) {
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
   const EditorialRelease = require("../models/editorialRelease.model");
   const space = await ContentSpace.create({
     name: `${ownerType}-workflow-space`,
@@ -100,17 +100,20 @@ async function createEditorialSource({ ownerType, ownerId, createdBy, edition, i
     ownerId,
     createdBy,
   });
-  const context = await EditorialContext.create({
-    contentSpaceId: space._id,
-    namespaceId: oid(),
+  const namespaceId = oid();
+  const namespaceRevisionId = oid();
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace: space,
+    namespaceId,
+    namespaceRevisionId,
     displayName: `${ownerType} workflow context`,
     createdBy,
   });
   const release = await EditorialRelease.create({
     editorialContextId: context._id,
     version: 1,
-    namespaceRevisionId: oid(),
-    graphRevisionId: oid(),
+    namespaceRevisionId,
+    graphRevisionId: graphRevision._id,
     itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: createdBy },
     releasedAt: new Date(),
