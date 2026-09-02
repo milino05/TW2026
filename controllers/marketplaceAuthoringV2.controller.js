@@ -6,6 +6,7 @@ const {
   getEditorialStudioProjection,
   listEditorialStudioCandidates,
 } = require("../services/editorialStudioV2.service");
+const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
 const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
@@ -39,6 +40,19 @@ async function editorialSpaces(req, res, next) {
 async function editorialSpace(req, res, next) {
   try { res.status(200).json(await getEditorialSpaceProjection({ contentSpaceId: req.params.contentSpaceId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
+}
+
+async function editorialRelationChoices(req, res, next) {
+  try {
+    res.status(200).json(await listEditorialRelationChoices({
+      actorUserId: req.user._id,
+      ownerType: req.query?.ownerType || null,
+      ownerId: req.query?.ownerId || null,
+      query: req.query?.q || "",
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
 }
 
 async function editorialStudio(req, res, next) {
@@ -112,6 +126,7 @@ module.exports = {
   subjectVenuePresence,
   editorialSpaces,
   editorialSpace,
+  editorialRelationChoices,
   editorialStudio,
   editorialStudioCandidates,
   createEditorialCollection,
