@@ -2,6 +2,7 @@ const EditorialRelease = require("../models/editorialRelease.model");
 const EditorialContextEntry = require("../models/editorialContextEntry.model");
 const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
+const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
@@ -11,6 +12,7 @@ const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
 const AppError = require("../utils/AppError");
 
 function id(value) { return String(value?._id || value || ""); }
+function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 function projectGraph(graph, { semanticGraph = null, coverageBySubject = new Map() } = {}) {
   return {
@@ -86,6 +88,63 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   return result;
 }
 
+async function candidateSubjectIds({ context, scope }) {
+  if (scope === "collection") {
+    const entries = await EditorialContextEntry.find({ editorialContextId: context._id }).select("itemEditionId").lean();
+    if (!entries.length) return [];
+    const editions = await ItemEdition.find({ _id: { $in: entries.map((entry) => entry.itemEditionId) } }).select("itemId").lean();
+    if (!editions.length) return [];
+    const items = await ItemV2.find({ _id: { $in: editions.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
+    return [...new Set(items.map((entry) => id(entry.primarySubjectId)).filter(Boolean))];
+  }
+  const memberships = await ContentSpaceMembership.find({ contentSpaceId: context.contentSpaceId }).select("itemId").lean();
+  if (!memberships.length) return [];
+  const items = await ItemV2.find({ _id: { $in: memberships.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
+  return [...new Set(items.map((entry) => id(entry.primarySubjectId)).filter(Boolean))];
+}
+
+async function searchEditorialGraphSubjectCandidates({ editorialContextId, actorUserId, scope = "collection", q = "", page = 1, limit = 12 }) {
+  if (!["collection", "space"].includes(scope)) throw new AppError("scope deve essere collection o space", 400);
+  const context = await findEditorialContextOrFail({ editorialContextId });
+  const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
+  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const normalizedQuery = String(q || "").trim().slice(0, 160);
+  const subjectIds = await candidateSubjectIds({ context, scope });
+  if (!subjectIds.length) return { results: [], pagination: { page: normalizedPage, limit: normalizedLimit, total: 0, totalPages: 0 }, query: normalizedQuery, scope };
+  const query = { _id: { $in: subjectIds } };
+  if (normalizedQuery) {
+    const pattern = new RegExp(escapeRegex(normalizedQuery), "i");
+    query.$or = [{ preferredLabel: pattern }, { description: pattern }];
+  }
+  const [total, subjects] = await Promise.all([
+    Subject.countDocuments(query),
+    Subject.find(query)
+      .select("preferredLabel description externalIdentities")
+      .sort({ preferredLabel: 1, _id: 1 })
+      .skip((normalizedPage - 1) * normalizedLimit)
+      .limit(normalizedLimit)
+      .lean(),
+  ]);
+  const coverageBySubject = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: subjects.map((entry) => entry._id) });
+  const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).select("workingRevisionId").lean();
+  const graphBindings = semanticGraph?.workingRevisionId && subjects.length
+    ? await GraphSubjectBinding.find({ graphRevisionId: semanticGraph.workingRevisionId, subjectId: { $in: subjects.map((entry) => entry._id) } }).select("subjectId").lean()
+    : [];
+  const graphSubjectIds = new Set(graphBindings.map((entry) => id(entry.subjectId)));
+  return {
+    results: subjects.map((subject) => ({
+      subject,
+      inGraph: graphSubjectIds.has(id(subject._id)),
+      presentationCoverage: coverageBySubject.get(id(subject._id)) || { collectionItemCount: 0, contentSpaceItemCount: 0, artaroundItemCount: 0 },
+    })),
+    pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
+    query: normalizedQuery,
+    scope,
+  };
+}
+
 async function getEditorialContextGraph({ editorialContextId, view = "working", actorUserId }) {
   if (!["working", "published"].includes(view)) throw new AppError("view deve essere working o published", 400);
   const context = await findEditorialContextOrFail({ editorialContextId });
@@ -111,4 +170,4 @@ async function getEditorialContextGraph({ editorialContextId, view = "working", 
   return { ...projectGraph(graph, { semanticGraph, coverageBySubject }), suggestedSubjects: [], availableSubjects: [] };
 }
 
-module.exports = { projectGraph, getEditorialContextGraph, projectCollectionSubjects, projectPresentationCoverage };
+module.exports = { projectGraph, getEditorialContextGraph, projectCollectionSubjects, projectPresentationCoverage, searchEditorialGraphSubjectCandidates };
