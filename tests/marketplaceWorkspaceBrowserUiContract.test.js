@@ -5,6 +5,8 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const browserSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-browser-view.js"), "utf8");
+const spacesSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/editorial-spaces-view.js"), "utf8");
+const libraryNavSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/library-section-nav.js"), "utf8");
 const catalogSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/catalog-view.js"), "utf8");
 const detailSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-view.js"), "utf8");
 const shellSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/app-shell.js"), "utf8");
@@ -24,8 +26,13 @@ test("workspace browser usa projection context/resources e non il dump legacy", 
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
 });
 
-test("la libreria non mostra la striscia finale degli spazi editoriali", () => {
-  assert.doesNotMatch(browserSource, /renderSpaces|Spazi editoriali|space-grid/);
+test("Libreria espone Risorse e Spazi editoriali come sezioni sorelle, senza una card finale duplicata", () => {
+  assert.match(browserSource, /renderLibrarySectionNav\("resources"\)/);
+  assert.match(spacesSource, /renderLibrarySectionNav\("spaces"\)/);
+  assert.match(libraryNavSource, />Risorse<.*>Spazi editoriali</s);
+  assert.match(libraryNavSource, /href="\/workspace"/);
+  assert.match(libraryNavSource, /href="\/workspace\/editorial-spaces"/);
+  assert.doesNotMatch(browserSource, /renderEditorialSpaces|editorialRepository\.spaceSummaries|space-grid/);
 });
 
 test("workspace detail usa una projection puntuale e non carica workspace o distribution", () => {
