@@ -40,7 +40,7 @@ test("opening Item connections edits graph membership only and never creates pre
 });
 
 test("collection context is reused when present, otherwise the sidecar asks for an editable collection", () => {
-  assert.match(source.sidecar, /params\(\)\.get\("editorialContextId"\)/);
+  assert.match(source.sidecar, /itemParams\(\)\.get\("editorialContextId"\)/);
   assert.match(source.sidecar, /editorialRepository\.relationChoices/);
   assert.match(source.sidecar, /permissions\?\.canEditGraph/);
   assert.match(source.sidecar, /Scegli dove lavorare/);
