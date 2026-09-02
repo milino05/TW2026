@@ -55,8 +55,8 @@ export const editorialRepository = {
     const query = queryString({ q, page, limit });
     return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/candidates?${query}`);
   },
-  entries(editorialContextId, { page = 1, limit = 50 } = {}) {
-    const query = queryString({ page, limit });
+  entries(editorialContextId, { q = "", page = 1, limit = 50 } = {}) {
+    const query = queryString({ q, page, limit });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/entries?${query}`);
   },
   addEntry(editorialContextId, payload) {
