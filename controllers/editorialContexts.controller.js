@@ -2,7 +2,7 @@ const editorialContextService = require("../services/editorialContext.service");
 const editorialContextEntryService = require("../services/editorialContextEntry.service");
 const editorialContextReviewService = require("../services/editorialContextReview.service");
 const editorialGraphCommandService = require("../services/editorialGraphCommand.service");
-const { getEditorialContextGraph, projectGraph } = require("../services/editorialContextGraph.service");
+const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
 
 async function create(req, res, next) {
@@ -40,6 +40,18 @@ async function removeEntry(req, res, next) {
 async function getGraph(req, res, next) {
   try { res.status(200).json(await getEditorialContextGraph({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", actorUserId: req.user._id })); }
   catch (error) { next(error); }
+}
+async function searchGraphSubjectCandidates(req, res, next) {
+  try {
+    res.status(200).json(await searchEditorialGraphSubjectCandidates({
+      editorialContextId: req.params.editorialContextId,
+      actorUserId: req.user._id,
+      scope: req.query?.scope || "collection",
+      q: req.query?.q || "",
+      page: req.query?.page,
+      limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
 }
 async function addGraphSubject(req, res, next) {
   try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphSubject({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, actorUserId: req.user._id }))); }
@@ -105,7 +117,7 @@ async function getCurrentRelease(req, res, next) {
 module.exports = {
   create, list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
-  getGraph, addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
+  getGraph, searchGraphSubjectCandidates, addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
   checkReadiness, requestReview, withdrawReview, requestChanges, approveReview, listRevisions,
   createRelease, listReleases, getCurrentRelease,
 };
