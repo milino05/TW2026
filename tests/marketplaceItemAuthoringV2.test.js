@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -258,7 +259,6 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     const ItemV2 = require("../models/itemV2.model");
     const ContentSpace = require("../models/contentSpace.model");
     const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
-    const EditorialContext = require("../models/editorialContext.model");
     const { listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
 
     const owner = await User.create({ username: "studio-owner", passwordHash: "hash" });
@@ -270,9 +270,10 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     ]);
     const { namespace, revision: namespaceRevision } = await createPublishedNamespace({ userId: owner._id });
     const space = await ContentSpace.create({ name: "Context corpus", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
-    const context = await EditorialContext.create({
-      contentSpaceId: space._id,
+    const { context } = await createEditorialContextWithGraph({
+      contentSpace: space,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Contesto demo",
       createdBy: owner._id,
     });
