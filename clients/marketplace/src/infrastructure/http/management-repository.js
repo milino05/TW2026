@@ -25,8 +25,7 @@ export const managementRepository = {
   async venue(venueId) {
     const projection = await apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
     assertOrganizationOperatingContext(projection?.venue?.organizationId, { resourceLabel: "Questa sede" });
-    const authoring = await apiClient.request(`/v2/marketplace/venues/${encoded(venueId)}/authoring-targets`);
-    return { ...projection, authoringPermissions: authoring.permissions || {} };
+    return projection;
   },
   venueInventoryProposals(venueId, { status = "pending" } = {}) {
     const params = new URLSearchParams({ status: String(status || "pending") });
