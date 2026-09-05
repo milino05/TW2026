@@ -10,6 +10,7 @@ const EditorialReleaseSchema = new Schema({
   basedOnReleaseId: { type: Schema.Types.ObjectId, ref: "EditorialRelease", default: null, immutable: true },
   namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true, index: true, immutable: true },
   graphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", required: true, index: true, immutable: true },
+  subjectIds: { type: [{ type: Schema.Types.ObjectId, ref: "Subject" }], default: [], immutable: true },
   itemBindings: { type: [EditorialItemBindingSchema], default: [], immutable: true },
   integrity: {
     status: { type: String, enum: ["valid"], default: "valid", immutable: true },
@@ -23,6 +24,7 @@ const EditorialReleaseSchema = new Schema({
 
 EditorialReleaseSchema.index({ editorialContextId: 1, version: 1 }, { unique: true });
 EditorialReleaseSchema.index({ editorialContextId: 1, releasedAt: -1 });
+EditorialReleaseSchema.index({ subjectIds: 1 });
 EditorialReleaseSchema.index({ "itemBindings.itemEditionId": 1, "itemBindings.itemRevisionId": 1 });
 
 module.exports = mongoose.model("EditorialRelease", EditorialReleaseSchema);
