@@ -6,6 +6,7 @@ const OrganizationAuthorizationEvent = require("../models/organizationAuthorizat
 const User = require("../models/user");
 const AppError = require("../utils/AppError");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
+const { ensurePrincipalContentSpace } = require("./contentSpaceBootstrap.service");
 const {
   assertOrganizationPermission,
   assertOrganizationMembership,
@@ -132,13 +133,20 @@ async function createOrganization({ payload, actorUserId }) {
       createdBy: creator._id,
       updatedBy: creator._id,
     }], { session });
+    const { contentSpace } = await ensurePrincipalContentSpace({
+      ownerType: "organization",
+      ownerId: organization._id,
+      principalLabel: organization.name,
+      actorUserId: creator._id,
+      session,
+    });
     await recordEvent({
       organizationId: organization._id,
       actorUserId: creator._id,
       eventType: "organization.created",
       targetType: "organization",
       targetId: organization._id,
-      details: { starterRoleIds: starterRoles.map((role) => role._id) },
+      details: { starterRoleIds: starterRoles.map((role) => role._id), initialContentSpaceId: contentSpace._id },
       session,
     });
     return organization;
