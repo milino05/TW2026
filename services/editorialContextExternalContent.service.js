@@ -1,7 +1,9 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
@@ -77,7 +79,7 @@ async function searchExternalEditorialCandidates({ editorialContextId, actorUser
       { "subject.description": pattern },
     ] } },
     { $lookup: {
-      from: ContentSpaceMembership.collection.name,
+      from: ContentSpaceItemMembership.collection.name,
       let: { candidateItemId: "$item._id" },
       pipeline: [
         { $match: { $expr: { $and: [
@@ -103,10 +105,7 @@ async function searchExternalEditorialCandidates({ editorialContextId, actorUser
     } },
     { $lookup: {
       from: Entitlement.collection.name,
-      let: {
-        candidateEditionId: "$_id",
-        snapshotIds: "$publishedSnapshots._id",
-      },
+      let: { candidateEditionId: "$_id", snapshotIds: "$publishedSnapshots._id" },
       pipeline: [
         { $match: { beneficiaryType: contentSpace.ownerType, beneficiaryId: contentSpace.ownerId, capability: "content.use_in_editorial_release" } },
         { $match: { $expr: { $and: [
@@ -209,21 +208,31 @@ async function importExternalEditorialCandidate({ editorialContextId, itemEditio
       }).session(session);
       if (!lockedContext) throw workingConflict();
 
-      const membership = await ContentSpaceMembership.findOne({ contentSpaceId: contentSpace._id, itemId: item._id }).session(session);
+      await ContentSpaceSubjectMembership.findOneAndUpdate(
+        { contentSpaceId: contentSpace._id, subjectId: item.primarySubjectId },
+        { $setOnInsert: { contentSpaceId: contentSpace._id, subjectId: item.primarySubjectId, addedBy: actorUserId } },
+        { upsert: true, new: true, session },
+      );
+      const membership = await ContentSpaceItemMembership.findOne({ contentSpaceId: contentSpace._id, itemId: item._id }).session(session);
       if (!membership) {
-        await ContentSpaceMembership.create([{
+        await ContentSpaceItemMembership.create([{
           contentSpaceId: contentSpace._id,
           itemId: item._id,
           addedBy: actorUserId,
         }], { session });
         membershipCreated = true;
       }
+      await CollectionSubjectMembership.findOneAndUpdate(
+        { editorialContextId: lockedContext._id, subjectId: item.primarySubjectId },
+        { $setOnInsert: { editorialContextId: lockedContext._id, subjectId: item.primarySubjectId, addedBy: actorUserId } },
+        { upsert: true, new: true, session },
+      );
 
-      const existing = await EditorialContextEntry.findOne({ editorialContextId: lockedContext._id, itemEditionId: edition._id }).session(session);
-      if (existing) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "EDITORIAL_CONTEXT_ENTRY_EXISTS" }]);
-      [entry] = await EditorialContextEntry.create([{
+      const existing = await CollectionItemMembership.findOne({ editorialContextId: lockedContext._id, itemId: item._id }).session(session);
+      if (existing) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "COLLECTION_ITEM_MEMBERSHIP_EXISTS" }]);
+      [entry] = await CollectionItemMembership.create([{
         editorialContextId: lockedContext._id,
-        itemEditionId: edition._id,
+        itemId: item._id,
         curationSignals: [],
         addedBy: actorUserId,
         updatedBy: actorUserId,
