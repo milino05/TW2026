@@ -26,7 +26,7 @@ async function listEntries(req, res, next) {
   catch (error) { next(error); }
 }
 async function addEntry(req, res, next) {
-  try { res.status(201).json(await editorialContextEntryService.addEditorialContextEntry({ editorialContextId: req.params.editorialContextId, itemEditionId: req.body?.itemEditionId, curationSignals: req.body?.curationSignals || [], actorUserId: req.user._id })); }
+  try { res.status(201).json(await editorialContextEntryService.addEditorialContextEntry({ editorialContextId: req.params.editorialContextId, itemId: req.body?.itemId, curationSignals: req.body?.curationSignals || [], actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
 async function updateEntry(req, res, next) {
