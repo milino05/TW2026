@@ -90,7 +90,7 @@ test("two independent Items can share a non-physical Subject and ItemAuthoringPr
     const Subject = require("../models/subject.model");
     const ItemV2 = require("../models/itemV2.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+    const { addItemMembership } = require("../services/contentSpace.service");
     const { getItemAuthoringProjection } = require("../services/itemAuthoringV2.service");
 
     const user = await User.create({ username: "nonphysical-author", passwordHash: "hash" });
@@ -108,7 +108,7 @@ test("two independent Items can share a non-physical Subject and ItemAuthoringPr
       label: "L'Impressionismo in breve",
     });
     const space = await ContentSpace.create({ name: "Spazio personale", ownerType: "user", ownerId: user._id, createdBy: user._id });
-    await ContentSpaceMembership.create({ contentSpaceId: space._id, itemId: itemA._id, addedBy: user._id });
+    await addItemMembership({ contentSpaceId: space._id, itemId: itemA._id, actorUserId: user._id });
 
     const projection = await getItemAuthoringProjection({ itemId: itemA._id, editionId: edition._id, actorUserId: user._id });
     assert.equal(projection.subject.preferredLabel, "Impressionismo");
@@ -258,7 +258,8 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     const Subject = require("../models/subject.model");
     const ItemV2 = require("../models/itemV2.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const { addItemMembership } = require("../services/contentSpace.service");
     const { listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
 
     const owner = await User.create({ username: "studio-owner", passwordHash: "hash" });
@@ -284,10 +285,8 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     const ownedEdition = await createEdition({ item: ownedItem, namespace, namespaceRevision, userId: owner._id, label: "Owned content" });
     await createEdition({ item: externalItem, namespace, namespaceRevision, userId: external._id, label: "External content" });
     await createEdition({ item: nonMemberItem, namespace, namespaceRevision, userId: owner._id, label: "Non-member content" });
-    await ContentSpaceMembership.create([
-      { contentSpaceId: space._id, itemId: ownedItem._id, addedBy: owner._id },
-      { contentSpaceId: space._id, itemId: externalItem._id, addedBy: owner._id },
-    ]);
+    await addItemMembership({ contentSpaceId: space._id, itemId: ownedItem._id, actorUserId: owner._id });
+    await ContentSpaceItemMembership.create({ contentSpaceId: space._id, itemId: externalItem._id, addedBy: owner._id });
 
     const projection = await listEditorialStudioCandidates({ editorialContextId: context._id, actorUserId: owner._id, page: 1, limit: 20 });
     assert.equal(projection.results.length, 1);
