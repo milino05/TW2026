@@ -49,7 +49,7 @@ async function listReusableSemanticGraphs({
   assertObjectId(ownerId, "ownerId");
   assertObjectId(namespaceId, "namespaceId");
 
-  await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.create" });
+  await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.view" });
   const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Regole editoriali non disponibili", 404);
   await assertCanUseNamespaceForEditorialContext({
@@ -126,9 +126,7 @@ async function listReusableSemanticGraphs({
   const contextByGraph = new Map(contextRows.map((entry) => [id(entry._id), {
     collectionUsageCount: entry.collectionIds.length,
     contentSpaceUsageCount: entry.contentSpaceIds.length,
-    currentSpaceCollectionUsageCount: contentSpace
-      ? entry.collectionIds.length && 0
-      : 0,
+    currentSpaceCollectionUsageCount: 0,
     contentSpaceIds: new Set(entry.contentSpaceIds.map(id)),
   }]));
   if (contentSpace) {
