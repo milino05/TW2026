@@ -115,15 +115,18 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      const [workspaceContext, spaces] = await Promise.all([
-        marketplaceRepository.workspaceContext(principal),
-        editorialRepository.spaceSummaries({ ownerType: this.context.type, ownerId: this.context.id }),
-      ]);
-      this.workspaceContext = workspaceContext;
-      this.spaces = spaces || [];
-      this.currentSpace = resolveEditorialSpacePreference(principal, this.spaces);
-      if (this.section === "resources") await this.loadResources();
-      else await this.loadEditorialSection();
+      this.workspaceContext = await marketplaceRepository.workspaceContext(principal);
+      if (this.section === "resources") {
+        this.spaces = [];
+        this.currentSpace = null;
+        this.spaceData = null;
+        this.contentData = null;
+        await this.loadResources();
+      } else {
+        this.spaces = await editorialRepository.spaceSummaries({ ownerType: this.context.type, ownerId: this.context.id });
+        this.currentSpace = resolveEditorialSpacePreference(principal, this.spaces);
+        await this.loadEditorialSection();
+      }
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile caricare la Libreria";
     } finally {
