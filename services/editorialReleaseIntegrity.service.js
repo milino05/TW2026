@@ -6,11 +6,15 @@ const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const Subject = require("../models/subject.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const { validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
 const { validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
 
-async function validateEditorialReleaseCoherence({ editorialContextId, namespaceRevisionId, graphRevisionId, itemBindings = [] }) {
+function id(value) { return String(value?._id || value || ""); }
+
+async function validateEditorialReleaseCoherence({ editorialContextId, namespaceRevisionId, graphRevisionId, subjectIds = [], itemBindings = [] }) {
   const issues = [];
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" }).lean();
   if (!context) return [{ field: "editorialContextId", code: "EDITORIAL_CONTEXT_NOT_FOUND", message: "EditorialContext non trovato" }];
@@ -34,41 +38,64 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     issues.push(...validateGraphSnapshotAgainstNamespace({ subjectBindings, edges }, namespaceRevision));
   }
 
+  const normalizedSubjectIds = [...new Set((subjectIds || []).map(id).filter(Boolean))];
+  const [subjects, spaceSubjectMemberships] = normalizedSubjectIds.length
+    ? await Promise.all([
+      Subject.find({ _id: { $in: normalizedSubjectIds } }).select("_id").lean(),
+      ContentSpaceSubjectMembership.find({ contentSpaceId: context.contentSpaceId, subjectId: { $in: normalizedSubjectIds } }).select("subjectId").lean(),
+    ])
+    : [[], []];
+  const existingSubjectIds = new Set(subjects.map((subject) => id(subject._id)));
+  const spaceSubjectIds = new Set(spaceSubjectMemberships.map((membership) => id(membership.subjectId)));
+  normalizedSubjectIds.forEach((subjectId, index) => {
+    if (!existingSubjectIds.has(subjectId)) issues.push({ field: `subjectIds[${index}]`, code: "SUBJECT_NOT_FOUND", message: "Subject del perimetro editoriale non trovato" });
+    if (!spaceSubjectIds.has(subjectId)) issues.push({ field: `subjectIds[${index}]`, code: "SUBJECT_NOT_IN_CONTENT_SPACE", message: "Subject non presente nel perimetro dello spazio editoriale" });
+  });
+  const subjectScope = new Set(normalizedSubjectIds);
+
   const selectionSignalIds = new Set((namespaceRevision.selectionSignals || []).map((entry) => String(entry.definitionId)));
   const editionIds = itemBindings.map((binding) => binding.itemEditionId);
   const editions = await ItemEdition.find({ _id: { $in: editionIds } }).lean();
-  const editionById = new Map(editions.map((edition) => [String(edition._id), edition]));
-  const itemIds = [...new Set(editions.map((edition) => String(edition.itemId)))];
+  const editionById = new Map(editions.map((edition) => [id(edition._id), edition]));
+  const boundItemIds = [...new Set(itemBindings.map((binding) => id(binding.itemId)).filter(Boolean))];
   const [items, memberships, revisions] = await Promise.all([
-    ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).select("_id").lean(),
-    ContentSpaceMembership.find({ contentSpaceId: context.contentSpaceId, itemId: { $in: itemIds } }).select("itemId").lean(),
+    ItemV2.find({ _id: { $in: boundItemIds }, lifecycleStatus: "active" }).select("_id primarySubjectId").lean(),
+    ContentSpaceItemMembership.find({ contentSpaceId: context.contentSpaceId, itemId: { $in: boundItemIds } }).select("itemId").lean(),
     ItemRevisionV2.find({ _id: { $in: itemBindings.map((binding) => binding.itemRevisionId) } }).lean(),
   ]);
-  const authoredRevisionIds = [...new Set(revisions.map((revision) => String(revision.authoredAgainstNamespaceRevisionId || "")).filter(Boolean))];
+  const authoredRevisionIds = [...new Set(revisions.map((revision) => id(revision.authoredAgainstNamespaceRevisionId)).filter(Boolean))];
   const compatibleAuthoredRevisions = await NamespaceRevision.find({ _id: { $in: authoredRevisionIds }, namespaceId: context.namespaceId }).select("_id").lean();
-  const compatibleAuthoredRevisionIds = new Set(compatibleAuthoredRevisions.map((revision) => String(revision._id)));
-  const activeItemIds = new Set(items.map((item) => String(item._id)));
-  const memberItemIds = new Set(memberships.map((membership) => String(membership.itemId)));
-  const revisionById = new Map(revisions.map((revision) => [String(revision._id), revision]));
+  const compatibleAuthoredRevisionIds = new Set(compatibleAuthoredRevisions.map((revision) => id(revision._id)));
+  const itemById = new Map(items.map((item) => [id(item._id), item]));
+  const memberItemIds = new Set(memberships.map((membership) => id(membership.itemId)));
+  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
 
   itemBindings.forEach((binding, index) => {
     const base = `itemBindings[${index}]`;
-    const edition = editionById.get(String(binding.itemEditionId));
+    const bindingItemId = id(binding.itemId);
+    if (!bindingItemId) {
+      issues.push({ field: `${base}.itemId`, code: "ITEM_ID_REQUIRED", message: "Il binding deve identificare esplicitamente l'Item" });
+      return;
+    }
+    const edition = editionById.get(id(binding.itemEditionId));
     if (!edition) {
       issues.push({ field: `${base}.itemEditionId`, code: "ITEM_EDITION_NOT_FOUND", message: "ItemEdition non trovata" });
       return;
     }
-    if (String(edition.namespaceId) !== String(context.namespaceId)) issues.push({ field: `${base}.itemEditionId`, code: "ITEM_EDITION_NAMESPACE_MISMATCH", message: "ItemEdition appartiene a un Namespace diverso dal Context" });
-    if (!activeItemIds.has(String(edition.itemId))) issues.push({ field: `${base}.itemEditionId`, code: "ITEM_NOT_ACTIVE", message: "Item non disponibile" });
-    if (!memberItemIds.has(String(edition.itemId))) issues.push({ field: `${base}.itemEditionId`, code: "ITEM_NOT_IN_CONTENT_SPACE", message: "Item non presente nel ContentSpace del Context" });
+    if (id(edition.itemId) !== bindingItemId) issues.push({ field: `${base}.itemId`, code: "ITEM_EDITION_ITEM_MISMATCH", message: "ItemEdition non appartiene all'Item indicato dal binding" });
+    if (id(edition.namespaceId) !== id(context.namespaceId)) issues.push({ field: `${base}.itemEditionId`, code: "ITEM_EDITION_NAMESPACE_MISMATCH", message: "ItemEdition appartiene a un Namespace diverso dal Context" });
+    const item = itemById.get(bindingItemId);
+    if (!item) issues.push({ field: `${base}.itemId`, code: "ITEM_NOT_ACTIVE", message: "Item non disponibile" });
+    else if (!subjectScope.has(id(item.primarySubjectId))) issues.push({ field: `${base}.itemId`, code: "COLLECTION_ITEM_SUBJECT_OUT_OF_SCOPE", message: "Il Subject principale dell'Item non appartiene al perimetro editoriale congelato" });
+    if (!memberItemIds.has(bindingItemId)) issues.push({ field: `${base}.itemId`, code: "ITEM_NOT_IN_CONTENT_SPACE", message: "Item non presente nel ContentSpace del Context" });
 
-    const revision = revisionById.get(String(binding.itemRevisionId));
-    if (!revision || String(revision.itemEditionId) !== String(edition._id)) {
+    const revision = revisionById.get(id(binding.itemRevisionId));
+    if (!revision || id(revision.itemEditionId) !== id(edition._id)) {
       issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_REVISION_MISMATCH", message: "ItemRevision non appartiene alla ItemEdition indicata" });
       return;
     }
     if (!["published", "superseded"].includes(revision.status)) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_REVISION_NOT_RELEASE_READY", message: "ItemRevision deve essere immutabile/pubblicata prima della Release" });
-    if (!compatibleAuthoredRevisionIds.has(String(revision.authoredAgainstNamespaceRevisionId || ""))) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_NAMESPACE_LINEAGE_MISMATCH", message: "ItemRevision authored contro un Namespace incompatibile" });
+    if (!compatibleAuthoredRevisionIds.has(id(revision.authoredAgainstNamespaceRevisionId))) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_NAMESPACE_LINEAGE_MISMATCH", message: "ItemRevision authored contro un Namespace incompatibile" });
     issues.push(...validatePresentationAgainstNamespace(revision, namespaceRevision).map((issue) => ({ ...issue, field: `${base}.${issue.field || "itemRevisionId"}` })));
 
     (binding.curationSignals || []).forEach((signal, signalIndex) => {
