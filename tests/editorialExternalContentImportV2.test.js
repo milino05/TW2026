@@ -54,9 +54,11 @@ test("outside-space import adds membership and only the selected collection entr
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
-    const EditorialContextEntry = require("../models/editorialContextEntry.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
+    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
     const {
       searchExternalEditorialCandidates,
       importExternalEditorialCandidate,
@@ -135,9 +137,11 @@ test("outside-space import adds membership and only the selected collection entr
       actorUserId: owner._id,
     });
     assert.equal(imported.membershipCreated, true);
-    assert.equal(await ContentSpaceMembership.countDocuments({ contentSpaceId: space._id, itemId: owned.item._id }), 1);
-    assert.equal(await EditorialContextEntry.countDocuments({ editorialContextId: first.context._id, itemEditionId: owned.edition._id }), 1);
-    assert.equal(await EditorialContextEntry.countDocuments({ editorialContextId: secondContext._id, itemEditionId: owned.edition._id }), 0, "l'altra raccolta dello spazio non deve essere modificata");
+    assert.equal(await ContentSpaceItemMembership.countDocuments({ contentSpaceId: space._id, itemId: owned.item._id }), 1);
+    assert.equal(await ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: space._id, subjectId: owned.subject._id }), 1);
+    assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: first.context._id, itemId: owned.item._id }), 1);
+    assert.equal(await CollectionSubjectMembership.countDocuments({ editorialContextId: first.context._id, subjectId: owned.subject._id }), 1);
+    assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: secondContext._id, itemId: owned.item._id }), 0, "l'altra raccolta dello spazio non deve essere modificata");
 
     const noLongerExternal = await searchExternalEditorialCandidates({
       editorialContextId: first.context._id,
@@ -161,11 +165,11 @@ test("outside-space import adds membership and only the selected collection entr
       (error) => error?.status === 403,
     );
 
-    await ContentSpaceMembership.create({ contentSpaceId: space._id, itemId: unauthorized.item._id, addedBy: owner._id });
+    await ContentSpaceItemMembership.create({ contentSpaceId: space._id, itemId: unauthorized.item._id, addedBy: owner._id });
     await assert.rejects(
       () => addEditorialContextEntry({
         editorialContextId: first.context._id,
-        itemEditionId: unauthorized.edition._id,
+        itemId: unauthorized.item._id,
         actorUserId: owner._id,
       }),
       (error) => error?.status === 403,
