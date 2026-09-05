@@ -4,6 +4,9 @@ const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const EditorialContext = require("../models/editorialContext.model");
+const SemanticGraph = require("../models/semanticGraph.model");
+const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
@@ -23,11 +26,12 @@ const {
   projectLicensedCandidate,
 } = require("./marketplaceWorkspaceResourceProjectionV2.service");
 
-const OWNED_RESOURCE_TYPES = ["item_edition", "editorial_context", "namespace", "physical_vocabulary", "visit"];
+const OWNED_RESOURCE_TYPES = ["item_edition", "editorial_context", "namespace", "semantic_graph", "physical_vocabulary", "visit"];
 const VIEW_PERMISSION_BY_TYPE = Object.freeze({
   item_edition: "item.view",
   editorial_context: "editorial_context.view",
   namespace: "namespace.view",
+  semantic_graph: "editorial_context.view",
   physical_vocabulary: "physical_vocabulary.view",
   visit: "visit.view",
 });
@@ -116,6 +120,35 @@ async function contextCandidates({ principal, q, windowSize, resourceId = null }
   return facetCandidates(EditorialContext, pipeline, { windowSize });
 }
 
+async function semanticGraphCandidates({ principal, q, windowSize, resourceId = null }) {
+  const regex = q ? new RegExp(escapeRegex(q), "i") : null;
+  const match = { ownerType: principal.type, ownerId: principal.id, lifecycleStatus: "active" };
+  if (resourceId) match._id = objectId(resourceId);
+  const pipeline = [{ $match: match }];
+  if (regex) pipeline.push({ $match: { $or: [{ displayName: regex }, { description: regex }] } });
+  pipeline.push(
+    { $lookup: { from: GraphSubjectBinding.collection.name, localField: "workingRevisionId", foreignField: "graphRevisionId", as: "subjectBindings" } },
+    { $lookup: { from: SemanticEdgeV2.collection.name, localField: "workingRevisionId", foreignField: "graphRevisionId", as: "semanticEdges" } },
+    { $lookup: {
+      from: EditorialContext.collection.name,
+      let: { graphId: "$_id" },
+      pipeline: [
+        { $match: { $expr: { $and: [{ $eq: ["$semanticGraphId", "$$graphId"] }, { $eq: ["$lifecycleStatus", "active"] }] } } },
+        { $project: { _id: 1, contentSpaceId: 1 } },
+      ],
+      as: "contexts",
+    } },
+    { $addFields: {
+      subjectCount: { $size: "$subjectBindings" },
+      relationCount: { $size: "$semanticEdges" },
+      collectionUsageCount: { $size: "$contexts" },
+      contentSpaceUsageCount: { $size: { $setUnion: ["$contexts.contentSpaceId", []] } },
+    } },
+    { $project: { _id: 1, displayName: 1, description: 1, namespaceId: 1, workingRevisionId: 1, workingVersion: 1, subjectCount: 1, relationCount: 1, collectionUsageCount: 1, contentSpaceUsageCount: 1, updatedAt: 1, resourceType: { $literal: "semantic_graph" } } },
+  );
+  return facetCandidates(SemanticGraph, pipeline, { windowSize });
+}
+
 async function enrichResourceActors(resources) {
   const actorIds = [...new Set(resources.flatMap((resource) => [
     id(resource._updatedByUserId),
@@ -194,6 +227,7 @@ const CANDIDATE_FACTORIES = {
   item_edition: itemCandidates,
   editorial_context: contextCandidates,
   namespace: namespaceCandidates,
+  semantic_graph: semanticGraphCandidates,
   physical_vocabulary: physicalVocabularyCandidates,
   visit: visitCandidates,
 };
