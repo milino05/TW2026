@@ -1,4 +1,5 @@
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { resolveEditorialSpacePreference } from "../application/editorial-space-preference.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
@@ -347,6 +348,17 @@ export class ItemAuthoringView extends HTMLElement {
     this.workspace = workspace;
     this.preflight = preflight;
     this.principal = { type: workspace.principal.type, id: workspace.principal.id };
+    if (!this.itemId) {
+      const spaces = workspace.contentSpaces || [];
+      if (this.contextContentSpaceId) {
+        const requested = spaces.find((space) => id(space) === id(this.contextContentSpaceId));
+        if (!requested) throw new Error("Lo spazio editoriale scelto non è disponibile in questa area di lavoro.");
+      } else {
+        const preferred = resolveEditorialSpacePreference(selected, spaces);
+        if (!preferred) throw new Error("Crea o seleziona prima uno spazio editoriale dalla Libreria.");
+        this.contextContentSpaceId = id(preferred);
+      }
+    }
     if (!this.draft.author) this.draft.author = this.defaultAuthor();
   }
   hydrateDraftFromProjection() {
@@ -506,15 +518,14 @@ export class ItemAuthoringView extends HTMLElement {
       if (form.matches("[data-create-item]")) {
         if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
         if (!this.selectedSubject) throw new Error("Scegli prima di cosa deve parlare il contenuto");
+        if (!this.contextContentSpaceId) throw new Error("Seleziona prima uno spazio editoriale dalla Libreria.");
         const created = await authoringRepository.createItem({
           primarySubjectId: id(this.selectedSubject),
           ownerType: this.principal.type,
           ownerId: this.principal.id,
+          contentSpaceId: this.contextContentSpaceId,
         });
         this.itemId = id(created.item || created);
-        if (this.contextContentSpaceId) {
-          await authoringRepository.setContentSpaceMembership({ contentSpaceId: this.contextContentSpaceId, itemId: this.itemId, member: true });
-        }
         const url = new URL(window.location.href);
         url.searchParams.set("itemId", this.itemId);
         replaceCurrentHistoryUrl(url);
@@ -522,7 +533,7 @@ export class ItemAuthoringView extends HTMLElement {
         await this.prepareNewEdition();
         this.notice = this.inCollectionContext()
           ? "Item creato nello spazio della raccolta. Ora completa la sua versione editoriale."
-          : "Subject confermato. Ora completa le informazioni generali.";
+          : "Item creato nello spazio editoriale corrente. Ora completa le informazioni generali.";
       } else if (form.matches("[data-content-details]")) {
         for (const field of form.querySelectorAll("input, textarea, select")) this.updateDraftField(field);
         this.normalizeAndValidateGeneralDetails();
@@ -791,7 +802,7 @@ export class ItemAuthoringView extends HTMLElement {
     const picker = this.selectedSubject
       ? `<form data-create-item>${this.renderSubjectSummary()}${this.renderSubjectPresence()}<div class="step-actions"><button type="submit">${icon("check", { size: 15 })} Crea Item e continua ${icon("chevron", { size: 15 })}</button></div></form>`
       : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>ArtAround riusa la stessa identità Subject in tutti i musei e in tutte le raccolte.</p></div></header>${this.inCollectionContext() ? `<aside class="context-note"><strong>Creazione dalla raccolta</strong><p>Il nuovo Item verrà aggiunto allo spazio editoriale e la versione per il Namespace corrente verrà inserita nella raccolta dopo il salvataggio.</p></aside>` : ""}${picker}</section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>ArtAround riusa la stessa identità Subject in tutti i musei e in tutte le raccolte.</p></div></header>${this.inCollectionContext() ? `<aside class="context-note"><strong>Creazione dalla raccolta</strong><p>Il nuovo Item verrà aggiunto allo spazio editoriale e la versione per il Namespace corrente verrà inserita nella raccolta dopo il salvataggio.</p></aside>` : `<aside class="context-note"><strong>Spazio editoriale</strong><p>Il nuovo Item verrà inserito nello spazio editoriale corrente della Libreria.</p></aside>`}${picker}</section>`;
   }
   renderStepTwo() {
     if (this.activeStep !== 2 || !this.itemId) return "";
