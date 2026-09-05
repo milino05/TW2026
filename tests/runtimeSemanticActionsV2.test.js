@@ -92,6 +92,7 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
     const VisitSessionV2 = require("../models/visitSessionV2.model");
     const {
       createExecutionPreparation,
@@ -199,7 +200,9 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       version: 1,
       namespaceRevisionId: namespaceRevision._id,
       graphRevisionId: graphRevision._id,
+      subjectIds: [artworkSubject._id, artistSubject._id],
       itemBindings: [main, curiosity, artist].map((value) => ({
+        itemId: value.item._id,
         itemEditionId: value.edition._id,
         itemRevisionId: value.revision._id,
         curationSignals: [],
@@ -242,6 +245,8 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       userId: owner._id,
       expectedVersion: preparation.version,
     });
+    const plan = await SessionPlanRevisionV2.findById(started.current.planRevisionId).lean();
+    assert.deepEqual(new Set(plan.semanticGraphPins[0].subjectIds.map(id)), new Set([id(artworkSubject._id), id(artistSubject._id)]));
     assert.equal(started.current.current.label, "Opera principale");
     assert.equal(started.current.current.presentation.kind, "visit_content");
     assert.equal(started.current.session.currentEntryIndex, 0);
