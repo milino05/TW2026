@@ -7,6 +7,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const { validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
@@ -14,7 +15,15 @@ const { validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.ser
 
 function id(value) { return String(value?._id || value || ""); }
 
-async function validateEditorialReleaseCoherence({ editorialContextId, namespaceRevisionId, graphRevisionId, subjectIds = [], itemBindings = [] }) {
+async function resolveSubjectScope({ editorialContextId, subjectIds }) {
+  if (subjectIds !== null && subjectIds !== undefined) {
+    return [...new Set((subjectIds || []).map(id).filter(Boolean))];
+  }
+  const memberships = await CollectionSubjectMembership.find({ editorialContextId }).select("subjectId").lean();
+  return [...new Set(memberships.map((membership) => id(membership.subjectId)).filter(Boolean))];
+}
+
+async function validateEditorialReleaseCoherence({ editorialContextId, namespaceRevisionId, graphRevisionId, subjectIds = null, itemBindings = [] }) {
   const issues = [];
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" }).lean();
   if (!context) return [{ field: "editorialContextId", code: "EDITORIAL_CONTEXT_NOT_FOUND", message: "EditorialContext non trovato" }];
@@ -38,7 +47,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     issues.push(...validateGraphSnapshotAgainstNamespace({ subjectBindings, edges }, namespaceRevision));
   }
 
-  const normalizedSubjectIds = [...new Set((subjectIds || []).map(id).filter(Boolean))];
+  const normalizedSubjectIds = await resolveSubjectScope({ editorialContextId: context._id, subjectIds });
   const [subjects, spaceSubjectMemberships] = normalizedSubjectIds.length
     ? await Promise.all([
       Subject.find({ _id: { $in: normalizedSubjectIds } }).select("_id").lean(),
