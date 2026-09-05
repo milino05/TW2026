@@ -16,12 +16,11 @@ async function withFreshDatabase(callback) {
   }
 }
 
-test("Graph Workspace legge summary, primo livello e inventario paginato senza materializzare tutto il grafo", { skip: !mongoUri }, async () => {
+test("Graph Workspace legge l'intero SemanticGraph indipendentemente dai contenuti della raccolta", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const ContentSpace = require("../models/contentSpace.model");
     const Subject = require("../models/subject.model");
-    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const { getEditorialContextGraphNeighborhood, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
@@ -51,11 +50,6 @@ test("Graph Workspace legge summary, primo livello e inventario paginato senza m
         createdBy: user._id,
       })),
     ]);
-    await CollectionSubjectMembership.insertMany(subjects.map((subject) => ({
-      editorialContextId: context._id,
-      subjectId: subject._id,
-      addedBy: user._id,
-    })));
     await GraphSubjectBinding.insertMany(subjects.map((subject) => ({
       graphRevisionId: graphRevision._id,
       subjectId: subject._id,
@@ -77,7 +71,7 @@ test("Graph Workspace legge summary, primo livello e inventario paginato senza m
     });
     assert.equal(summary.subjects.length, 0, "senza focus il workspace non deve scaricare i nodi");
     assert.equal(summary.edges.length, 0, "senza focus il workspace non deve scaricare gli edge");
-    assert.equal(summary.neighborhood.totalSubjects, 25);
+    assert.equal(summary.neighborhood.totalSubjects, 25, "i Subject del grafo restano visibili anche con raccolta senza contenuti");
     assert.equal(summary.neighborhood.totalEdges, 24);
 
     const focused = await getEditorialContextGraphNeighborhood({

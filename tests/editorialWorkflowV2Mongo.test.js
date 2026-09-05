@@ -94,6 +94,7 @@ async function createContentFixture({ manager, organization }) {
 async function createEditorialSource({ ownerType, ownerId, createdBy, item, edition, itemRevision }) {
   const ContentSpace = require("../models/contentSpace.model");
   const EditorialRelease = require("../models/editorialRelease.model");
+  const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
   const space = await ContentSpace.create({
     name: `${ownerType}-workflow-space`,
     ownerType,
@@ -109,12 +110,16 @@ async function createEditorialSource({ ownerType, ownerId, createdBy, item, edit
     displayName: `${ownerType} workflow context`,
     createdBy,
   });
+  await GraphSubjectBinding.create({
+    graphRevisionId: graphRevision._id,
+    subjectId: item.primarySubjectId,
+    subjectClassDefinitionIds: [],
+  });
   const release = await EditorialRelease.create({
     editorialContextId: context._id,
     version: 1,
     namespaceRevisionId,
     graphRevisionId: graphRevision._id,
-    subjectIds: [item.primarySubjectId],
     itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: createdBy },
     releasedAt: new Date(),

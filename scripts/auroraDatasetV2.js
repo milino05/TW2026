@@ -15,7 +15,6 @@ const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -216,7 +215,6 @@ async function cleanupAuroraDataset() {
   await Venue.deleteMany({ _id: IDS.venue });
   await EditorialRelease.deleteMany({ _id: IDS.editorialRelease });
   await CollectionItemMembership.deleteMany({ editorialContextId: IDS.editorialContext });
-  await CollectionSubjectMembership.deleteMany({ editorialContextId: IDS.editorialContext });
   await SemanticEdgeV2.deleteMany({ graphRevisionId: IDS.graphRevision });
   await GraphSubjectBinding.deleteMany({ graphRevisionId: IDS.graphRevision });
   await SemanticGraphRevision.deleteMany({ _id: IDS.graphRevision });
@@ -503,11 +501,6 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     addedBy: manager._id,
     updatedBy: manager._id,
   })));
-  await CollectionSubjectMembership.create(editorialSubjectIds.map((subjectId) => ({
-    editorialContextId: editorialContext._id,
-    subjectId,
-    addedBy: manager._id,
-  })));
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
     semanticGraphId: semanticGraph._id,
@@ -562,7 +555,6 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     version: 1,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
-    subjectIds: editorialSubjectIds,
     itemBindings,
     integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: manager._id },
     releasedAt: FIXED_NOW,
@@ -572,7 +564,6 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     editorialContextId: editorialContext._id,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
-    subjectIds: editorialSubjectIds,
     itemBindings,
   });
   assertNoIssues("EditorialRelease Aurora non coerente", editorialIssues);
@@ -881,9 +872,12 @@ async function verifyAuroraDataset() {
       count: editorialRelease?.itemBindings?.length || 0,
     });
   }
-  if (!editorialRelease || editorialRelease.subjectIds?.length !== WORKS.length + THEMES.length) {
-    add("AURORA_EDITORIAL_SUBJECT_SCOPE_INVALID", "La release Aurora deve congelare opere e temi del perimetro semantico", {
-      count: editorialRelease?.subjectIds?.length || 0,
+  const graphSubjectCount = editorialRelease?.graphRevisionId
+    ? await GraphSubjectBinding.countDocuments({ graphRevisionId: editorialRelease.graphRevisionId })
+    : 0;
+  if (graphSubjectCount !== WORKS.length + THEMES.length) {
+    add("AURORA_EDITORIAL_GRAPH_SCOPE_INVALID", "La GraphRevision Aurora deve contenere opere e temi del perimetro semantico", {
+      count: graphSubjectCount,
     });
   }
   if (venue && layout && venueRelease) {
@@ -895,7 +889,6 @@ async function verifyAuroraDataset() {
       editorialContextId: editorialRelease.editorialContextId,
       namespaceRevisionId: editorialRelease.namespaceRevisionId,
       graphRevisionId: editorialRelease.graphRevisionId,
-      subjectIds: editorialRelease.subjectIds || [],
       itemBindings: editorialRelease.itemBindings || [],
     });
     if (issues.length) add("AURORA_EDITORIAL_RELEASE_INCOHERENT", "EditorialRelease Aurora non coerente", { issues });

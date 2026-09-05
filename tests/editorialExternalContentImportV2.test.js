@@ -58,7 +58,7 @@ test("outside-space import adds membership and only the selected collection entr
     const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
     const CollectionItemMembership = require("../models/collectionItemMembership.model");
-    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
+    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const {
       searchExternalEditorialCandidates,
       importExternalEditorialCandidate,
@@ -140,8 +140,12 @@ test("outside-space import adds membership and only the selected collection entr
     assert.equal(await ContentSpaceItemMembership.countDocuments({ contentSpaceId: space._id, itemId: owned.item._id }), 1);
     assert.equal(await ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: space._id, subjectId: owned.subject._id }), 1);
     assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: first.context._id, itemId: owned.item._id }), 1);
-    assert.equal(await CollectionSubjectMembership.countDocuments({ editorialContextId: first.context._id, subjectId: owned.subject._id }), 1);
     assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: secondContext._id, itemId: owned.item._id }), 0, "l'altra raccolta dello spazio non deve essere modificata");
+    assert.equal(
+      await GraphSubjectBinding.countDocuments({ graphRevisionId: first.semanticGraph.workingRevisionId }),
+      0,
+      "aggiungere un contenuto alla raccolta non deve modificare automaticamente il grafo semantico",
+    );
 
     const noLongerExternal = await searchExternalEditorialCandidates({
       editorialContextId: first.context._id,

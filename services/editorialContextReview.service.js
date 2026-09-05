@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
@@ -75,12 +74,7 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
   const graphRevisionId = semanticGraph?.workingRevisionId || null;
   if (!graphRevisionId) issues.push(issue("graphRevisionId", "WORKING_GRAPH_REVISION_REQUIRED", "Definisci una revisione del grafo semantico prima della revisione"));
 
-  const [subjectMemberships, itemMemberships] = await Promise.all([
-    CollectionSubjectMembership.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean(),
-    CollectionItemMembership.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean(),
-  ]);
-  const subjectIds = [...new Set(subjectMemberships.map((membership) => id(membership.subjectId)).filter(Boolean))];
-  const subjectScope = new Set(subjectIds);
+  const itemMemberships = await CollectionItemMembership.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean();
   if (!itemMemberships.length) issues.push(issue("itemBindings", "EDITORIAL_CONTEXT_EMPTY", "Aggiungi almeno un contenuto alla raccolta prima della revisione"));
 
   const itemBindings = [];
@@ -88,10 +82,6 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
     const item = await ItemV2.findOne({ _id: membership.itemId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
     if (!item) {
       issues.push(issue(`itemBindings[${index}].itemId`, "ITEM_NOT_ACTIVE", "Il contenuto selezionato non è più disponibile", { itemId: membership.itemId }));
-      continue;
-    }
-    if (!subjectScope.has(id(item.primarySubjectId))) {
-      issues.push(issue(`itemBindings[${index}].itemId`, "COLLECTION_ITEM_SUBJECT_OUT_OF_SCOPE", "Il soggetto principale del contenuto non appartiene al perimetro della raccolta", { itemId: item._id, subjectId: item.primarySubjectId }));
       continue;
     }
     const edition = await ItemEdition.findOne({ itemId: item._id, namespaceId: context.namespaceId }).select("_id").lean();
@@ -140,7 +130,6 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
       namespaceRevisionId,
       semanticGraphId: semanticGraph?._id || null,
       graphRevisionId,
-      subjectIds,
       itemBindings,
     },
   };
@@ -192,7 +181,6 @@ async function requestEditorialContextReview({ editorialContextId, actorUserId }
         description: current.description || null,
         namespaceRevisionId: readiness.snapshot.namespaceRevisionId,
         graphRevisionId: readiness.snapshot.graphRevisionId,
-        subjectIds: readiness.snapshot.subjectIds,
         itemBindings: readiness.snapshot.itemBindings,
         integrity: { status: "valid", issues: [], checkedAt: now, checkedBy: actorUserId },
         status: "in_review",

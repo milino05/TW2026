@@ -2,9 +2,9 @@ const ContentSpace = require("../models/contentSpace.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
+const ItemV2 = require("../models/itemV2.model");
 const Namespace = require("../models/namespace.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
@@ -73,7 +73,7 @@ async function importEditorialContextSnapshot({
     GraphSubjectBinding.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
     SemanticEdgeV2.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
   ]);
-  const subjectIds = [...new Set((sourceRelease.subjectIds || []).map(id).filter(Boolean))];
+  const graphSubjectIds = [...new Set(sourceBindings.map((binding) => id(binding.subjectId)).filter(Boolean))];
   const itemBindings = (sourceRelease.itemBindings || []).map((binding) => ({
     itemId: binding.itemId,
     curationSignals: (binding.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
@@ -81,9 +81,10 @@ async function importEditorialContextSnapshot({
   if (itemBindings.some((binding) => !binding.itemId)) {
     throw new AppError("La release sorgente non espone un corpus Item importabile", 409, [{ code: "EDITORIAL_RELEASE_ITEM_SCOPE_REQUIRED" }]);
   }
-  if (itemBindings.length && !subjectIds.length) {
-    throw new AppError("La release sorgente non espone un perimetro semantico importabile", 409, [{ code: "EDITORIAL_RELEASE_SUBJECT_SCOPE_REQUIRED" }]);
-  }
+  const importedItems = itemBindings.length
+    ? await ItemV2.find({ _id: { $in: itemBindings.map((binding) => binding.itemId) } }).select("_id primarySubjectId").lean()
+    : [];
+  const contentSubjectIds = [...new Set(importedItems.map((item) => id(item.primarySubjectId)).filter(Boolean))];
 
   let contentSpace = null;
   let context = null;
@@ -146,14 +147,9 @@ async function importEditorialContextSnapshot({
         },
       })));
     }
-    if (subjectIds.length) {
-      await ContentSpaceSubjectMembership.insertMany(subjectIds.map((subjectId) => ({
+    if (contentSubjectIds.length) {
+      await ContentSpaceSubjectMembership.insertMany(contentSubjectIds.map((subjectId) => ({
         contentSpaceId: contentSpace._id,
-        subjectId,
-        addedBy: actorUserId,
-      })));
-      await CollectionSubjectMembership.insertMany(subjectIds.map((subjectId) => ({
-        editorialContextId: context._id,
         subjectId,
         addedBy: actorUserId,
       })));
@@ -198,7 +194,8 @@ async function importEditorialContextSnapshot({
       semanticGraphId: semanticGraph._id,
       workingGraphRevisionId: graphRevision._id,
       importedFrom: { editorialContextId: sourceContext._id, editorialReleaseId: sourceRelease._id },
-      subjectMembershipCount: subjectIds.length,
+      graphSubjectCount: graphSubjectIds.length,
+      contentSubjectCount: contentSubjectIds.length,
       itemMembershipCount: itemBindings.length,
     };
   } catch (error) {
@@ -218,7 +215,6 @@ async function importEditorialContextSnapshot({
     if (context?._id) {
       await Promise.allSettled([
         CollectionItemMembership.deleteMany({ editorialContextId: context._id }),
-        CollectionSubjectMembership.deleteMany({ editorialContextId: context._id }),
         EditorialContext.deleteOne({ _id: context._id }),
       ]);
     }

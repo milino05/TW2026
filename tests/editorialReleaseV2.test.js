@@ -7,6 +7,7 @@ const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const EditorialContext = require("../models/editorialContext.model");
+const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const { validateGraphSnapshotAgainstNamespace, shortestSemanticPath } = require("../services/semanticGraphV2.service");
 const { materializeDirectEdge, materializeReverseEdge } = require("../services/relationSemanticsV2.service");
 const { validateEditorialReleasePayload } = require("../services/validation/editorialRelease.validation");
@@ -99,10 +100,12 @@ test("shortest semantic path traverses Subject nodes", () => {
   assert.deepEqual(path.subjectIds, [String(a), String(b), String(c)]);
 });
 
-test("EditorialRelease pins immutable schema graph and item revisions without visibility policy", () => {
+test("EditorialRelease pins immutable schema graph and item revisions without duplicate Subject scope", () => {
   assert.ok(EditorialRelease.schema.path("namespaceRevisionId"));
   assert.ok(EditorialRelease.schema.path("graphRevisionId"));
   assert.ok(EditorialRelease.schema.path("itemBindings"));
+  assert.equal(EditorialRelease.schema.path("subjectIds"), undefined);
+  assert.equal(EditorialContextRevision.schema.path("subjectIds"), undefined);
   assert.equal(EditorialRelease.schema.path("visibility"), undefined);
   assert.equal(EditorialRelease.schema.path("discoverability"), undefined);
   assert.ok(EditorialContext.schema.path("semanticGraphId"));

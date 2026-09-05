@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
@@ -79,15 +78,10 @@ async function resolveEligibleItem(context, itemId, { session = null } = {}) {
   return { item, edition: edition || null };
 }
 
-async function ensureSubjectScopes({ context, subjectId, actorUserId, session }) {
+async function ensureSpaceSubjectMembership({ context, subjectId, actorUserId, session }) {
   await ContentSpaceSubjectMembership.findOneAndUpdate(
     { contentSpaceId: context.contentSpaceId, subjectId },
     { $setOnInsert: { contentSpaceId: context.contentSpaceId, subjectId, addedBy: actorUserId } },
-    { upsert: true, new: true, session },
-  );
-  await CollectionSubjectMembership.findOneAndUpdate(
-    { editorialContextId: context._id, subjectId },
-    { $setOnInsert: { editorialContextId: context._id, subjectId, addedBy: actorUserId } },
     { upsert: true, new: true, session },
   );
 }
@@ -119,7 +113,7 @@ async function addEditorialContextEntry({ editorialContextId, itemId, curationSi
         principalType: contentSpace.ownerType,
         principalId: contentSpace.ownerId,
       });
-      await ensureSubjectScopes({ context, subjectId: item.primarySubjectId, actorUserId, session });
+      await ensureSpaceSubjectMembership({ context, subjectId: item.primarySubjectId, actorUserId, session });
       [created] = await CollectionItemMembership.create([{
         editorialContextId: context._id,
         itemId: item._id,

@@ -1,6 +1,5 @@
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
@@ -139,20 +138,26 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
     ? await Namespace.find({ _id: { $in: contexts.map((context) => context.namespaceId) } }).select("name").lean()
     : [];
   const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
-  const [itemCounts, subjectCounts] = contexts.length
-    ? await Promise.all([
-      CollectionItemMembership.aggregate([
-        { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
-        { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
-      ]),
-      CollectionSubjectMembership.aggregate([
-        { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
-        { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
-      ]),
+  const itemCounts = contexts.length
+    ? await CollectionItemMembership.aggregate([
+      { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
+      { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
     ])
-    : [[], []];
+    : [];
+  const graphIds = [...new Set(contexts.map((context) => id(context.semanticGraphId)).filter(Boolean))];
+  const graphs = graphIds.length
+    ? await SemanticGraph.find({ _id: { $in: graphIds }, lifecycleStatus: "active" }).select("workingRevisionId").lean()
+    : [];
+  const graphById = new Map(graphs.map((graph) => [id(graph._id), graph]));
+  const revisionIds = graphs.map((graph) => graph.workingRevisionId).filter(Boolean);
+  const graphSubjectCounts = revisionIds.length
+    ? await GraphSubjectBinding.aggregate([
+      { $match: { graphRevisionId: { $in: revisionIds } } },
+      { $group: { _id: "$graphRevisionId", count: { $sum: 1 } } },
+    ])
+    : [];
+  const graphSubjectCountByRevision = new Map(graphSubjectCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
   const itemCountByContext = new Map(itemCounts.map((entry) => [id(entry._id), entry.count]));
-  const subjectCountByContext = new Map(subjectCounts.map((entry) => [id(entry._id), entry.count]));
   const permissions = {
     canManageSpace: hasPermission(contentSpace, authority, "editorial_space.manage"),
     canCreateCollection: hasPermission(contentSpace, authority, "editorial_context.create"),
@@ -166,17 +171,20 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
       ownerId: contentSpace.ownerId,
     },
     stats: { itemCount, subjectCount, collectionCount: contexts.length },
-    collections: contexts.map((context) => ({
-      id: context._id,
-      name: context.displayName,
-      shortDescription: context.shortDescription || null,
-      semanticGraphId: context.semanticGraphId,
-      namespace: { id: context.namespaceId, name: namespaceById.get(id(context.namespaceId))?.name || "Regole editoriali" },
-      itemCount: itemCountByContext.get(id(context._id)) || 0,
-      subjectCount: subjectCountByContext.get(id(context._id)) || 0,
-      published: Boolean(context.publishedReleaseId),
-      reviewActive: Boolean(context.activeReviewRevisionId),
-    })),
+    collections: contexts.map((context) => {
+      const graph = graphById.get(id(context.semanticGraphId));
+      return {
+        id: context._id,
+        name: context.displayName,
+        shortDescription: context.shortDescription || null,
+        semanticGraphId: context.semanticGraphId,
+        namespace: { id: context.namespaceId, name: namespaceById.get(id(context.namespaceId))?.name || "Regole editoriali" },
+        itemCount: itemCountByContext.get(id(context._id)) || 0,
+        subjectCount: graph ? graphSubjectCountByRevision.get(id(graph.workingRevisionId)) || 0 : 0,
+        published: Boolean(context.publishedReleaseId),
+        reviewActive: Boolean(context.activeReviewRevisionId),
+      };
+    }),
     permissions,
   };
 }
@@ -186,29 +194,30 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
   const authority = await resolveAuthority({ contentSpace, actorUserId });
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();
   if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 409);
-  const [namespace, readiness, entryCount, collectionSubjects, activeRevision, publishedRelease] = await Promise.all([
+  const [namespace, readiness, collectionEntries, activeRevision, publishedRelease] = await Promise.all([
     resolveNamespaceProjection({ context, contentSpace, actorUserId, semanticGraph }),
     checkEditorialContextReadiness({ editorialContextId: context._id, actorUserId }),
-    CollectionItemMembership.countDocuments({ editorialContextId: context._id }),
-    CollectionSubjectMembership.find({ editorialContextId: context._id }).select("subjectId").lean(),
+    CollectionItemMembership.find({ editorialContextId: context._id }).select("itemId").lean(),
     context.activeReviewRevisionId ? EditorialContextRevision.findById(context.activeReviewRevisionId).lean() : null,
     context.publishedReleaseId ? EditorialRelease.findById(context.publishedReleaseId).lean() : null,
   ]);
 
+  const collectionItems = collectionEntries.length
+    ? await ItemV2.find({ _id: { $in: collectionEntries.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean()
+    : [];
+  const collectionSubjectIds = new Set(collectionItems.map((item) => id(item.primarySubjectId)).filter(Boolean));
   const workingGraphRevisionId = semanticGraph.workingRevisionId || null;
-  const collectionSubjectIds = new Set(collectionSubjects.map((membership) => id(membership.subjectId)));
-  const collectionSubjectObjectIds = collectionSubjects.map((membership) => membership.subjectId);
-  const [subjectBindings, edges, publishedSourceRevision, publishedGraphRevision] = await Promise.all([
-    workingGraphRevisionId && collectionSubjectObjectIds.length
-      ? GraphSubjectBinding.find({ graphRevisionId: workingGraphRevisionId, subjectId: { $in: collectionSubjectObjectIds } }).select("subjectId").lean()
-      : [],
-    workingGraphRevisionId && collectionSubjectObjectIds.length
-      ? SemanticEdgeV2.find({ graphRevisionId: workingGraphRevisionId, sourceSubjectId: { $in: collectionSubjectObjectIds }, targetSubjectId: { $in: collectionSubjectObjectIds } }).select("sourceSubjectId targetSubjectId").lean()
-      : [],
+  const [subjectBindings, edges, publishedSourceRevision, publishedGraphRevision, reviewSubjectCount, publishedSubjectCount] = await Promise.all([
+    workingGraphRevisionId ? GraphSubjectBinding.find({ graphRevisionId: workingGraphRevisionId }).select("subjectId").lean() : [],
+    workingGraphRevisionId ? SemanticEdgeV2.find({ graphRevisionId: workingGraphRevisionId }).select("sourceSubjectId targetSubjectId").lean() : [],
     publishedRelease?.sourceContextRevisionId ? EditorialContextRevision.findById(publishedRelease.sourceContextRevisionId).select("sourceWorkingVersion version").lean() : null,
     publishedRelease?.graphRevisionId ? SemanticGraphRevision.findById(publishedRelease.graphRevisionId).select("version semanticGraphId").lean() : null,
+    activeRevision?.graphRevisionId ? GraphSubjectBinding.countDocuments({ graphRevisionId: activeRevision.graphRevisionId }) : 0,
+    publishedRelease?.graphRevisionId ? GraphSubjectBinding.countDocuments({ graphRevisionId: publishedRelease.graphRevisionId }) : 0,
   ]);
   const graphSubjectIds = new Set(subjectBindings.map((entry) => id(entry.subjectId)));
+  const contentSubjectsOutsideGraph = [...collectionSubjectIds].filter((subjectId) => !graphSubjectIds.has(subjectId)).length;
+  const graphSubjectsWithoutCollectionContent = [...graphSubjectIds].filter((subjectId) => !collectionSubjectIds.has(subjectId)).length;
   const workingVersion = Number(context.workingVersion || 0);
   const publishedWorkingVersion = publishedSourceRevision ? Number(publishedSourceRevision.sourceWorkingVersion || 0) : null;
   const graphWorkingVersion = Number(semanticGraph.workingVersion || 0);
@@ -261,10 +270,12 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
     },
     namespace,
     stats: {
-      entryCount,
-      subjectCount: collectionSubjectIds.size,
+      entryCount: collectionEntries.length,
+      contentSubjectCount: collectionSubjectIds.size,
+      subjectCount: graphSubjectIds.size,
       graphSubjectCount: graphSubjectIds.size,
-      subjectsOutsideGraph: Math.max(0, collectionSubjectIds.size - graphSubjectIds.size),
+      subjectsOutsideGraph: contentSubjectsOutsideGraph,
+      graphSubjectsWithoutCollectionContent,
       edgeCount: edges.length,
       collectionChangesSincePublished: collectionChanges,
       graphChangesSincePublished: graphChanges,
@@ -282,7 +293,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       reviewedAt: activeRevision.review?.reviewedAt || null,
       message: activeRevision.review?.message || null,
       graphRevisionId: activeRevision.graphRevisionId,
-      subjectCount: (activeRevision.subjectIds || []).length,
+      subjectCount: reviewSubjectCount,
       itemCount: (activeRevision.itemBindings || []).length,
     } : null,
     published: publishedRelease ? {
@@ -290,7 +301,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       version: publishedRelease.version,
       releasedAt: publishedRelease.releasedAt,
       graphRevisionId: publishedRelease.graphRevisionId,
-      subjectCount: (publishedRelease.subjectIds || []).length,
+      subjectCount: publishedSubjectCount,
       sourceContextRevisionId: publishedRelease.sourceContextRevisionId || null,
     } : null,
     permissions,

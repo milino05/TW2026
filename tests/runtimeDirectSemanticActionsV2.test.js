@@ -67,14 +67,13 @@ async function createPublishedItem({ ItemV2, ItemEdition, ItemRevisionV2, owner,
   return { item, edition, revision };
 }
 
-test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e il contenuto target owned anche fuori dalla sequenza", { skip: !mongoUri }, async () => {
+test("una Visit con ItemRevision diretta deriva il perimetro semantico dal graph pinned e il contenuto target owned anche fuori dalla sequenza", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const ItemV2 = require("../models/itemV2.model");
@@ -147,7 +146,7 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       ownerId: owner._id,
       createdBy: owner._id,
     });
-    const { context, graphRevision } = await createEditorialContextWithGraph({
+    const { graphRevision } = await createEditorialContextWithGraph({
       contentSpace,
       namespaceId: namespace._id,
       namespaceRevisionId: namespaceRevision._id,
@@ -155,10 +154,6 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       createdBy: owner._id,
     });
     await addItemMembership({ contentSpaceId: contentSpace._id, itemId: main.item._id, actorUserId: owner._id });
-    await CollectionSubjectMembership.insertMany([
-      { editorialContextId: context._id, subjectId: artworkSubject._id, addedBy: owner._id },
-      { editorialContextId: context._id, subjectId: artistSubject._id, addedBy: owner._id },
-    ]);
 
     await GraphSubjectBinding.insertMany([
       { graphRevisionId: graphRevision._id, subjectId: artworkSubject._id, subjectClassDefinitionIds: [] },

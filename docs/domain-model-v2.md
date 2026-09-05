@@ -98,28 +98,23 @@ La modifica di un Item esterno richiede fork quando la licenza lo permette; l'ap
 
 ## 6. ContentSpace
 
-`ContentSpace` è l'inventario editoriale di un principal. Non possiede semanticamente gli Item o i Subject che contiene.
-
-Lo Space mantiene due scope espliciti e indipendenti:
+`ContentSpace` è l'inventario editoriale di un principal. La sua risorsa centrale è l'insieme degli Item disponibili per le Collection che usano quello Space.
 
 ```text
 ContentSpaceItemMembership
   contentSpaceId
   itemId
   addedBy
-
-ContentSpaceSubjectMembership
-  contentSpaceId
-  subjectId
-  addedBy
 ```
 
-Un Item può appartenere a più ContentSpace. Un Subject può appartenere a uno Space anche senza alcun Item nello stesso Space.
+L'implementazione mantiene inoltre `ContentSpaceSubjectMembership` come inventario di Subject conosciuti nello Space. Questa membership non definisce però il perimetro semantico di una Collection né limita un SemanticGraph. La coverage editoriale di un grafo rispetto a uno Space si calcola dai `primarySubjectId` degli Item effettivamente presenti nello Space.
+
+Un Item può appartenere a più ContentSpace.
 
 Invarianti:
 
-- aggiungere un Item owned allo Space materializza anche il suo `primarySubjectId` nello scope Subject dello Space;
-- la presenza di un Subject nello Space non crea Item;
+- aggiungere un Item owned allo Space rende disponibile l'Item nello Space e registra il suo `primarySubjectId` nell'inventario Subject dello Space;
+- la presenza di un Subject nello Space non crea Item e non lo inserisce in alcun SemanticGraph;
 - la presenza di un Item/Subject nello Space non concede ownership o diritti commerciali;
 - per gli Item posseduti dal principal deve esistere almeno una membership verso un ContentSpace attivo;
 - rimuovere uno Space non elimina Item o Subject;
@@ -151,27 +146,24 @@ SemanticGraph  -> semantica condivisibile
 
 Non esiste l'invariante `EditorialContext = ContentSpace x Namespace` univoco: più Collection possono usare lo stesso Space e lo stesso Namespace, e possono anche condividere lo stesso SemanticGraph.
 
-La Collection mantiene due membership esplicite:
+La composizione editoriale della Collection è esplicita soltanto per gli Item:
 
 ```text
 CollectionItemMembership
   editorialContextId
   itemId
   curationSignals[]
-
-CollectionSubjectMembership
-  editorialContextId
-  subjectId
 ```
+
+Non esiste uno scope Subject persistito separato della Collection. I Subject rilevanti per i contenuti della Collection sono una proiezione derivata dai `primarySubjectId` degli Item selezionati; i Subject semantici della Collection sono invece quelli della `SemanticGraphRevision` usata dalla Collection.
 
 Invarianti:
 
 - l'Item della Collection deve essere presente nello Space della Collection;
-- il `primarySubjectId` di ogni Item della Collection deve appartenere anche allo scope Subject della Collection;
-- ogni Subject della Collection deve essere nello scope Subject dello Space;
-- un Subject può appartenere alla Collection senza avere un Item;
 - aggiungere/rimuovere un Item dalla Collection non modifica automaticamente il SemanticGraph;
-- aggiungere/rimuovere un Subject dal SemanticGraph non modifica automaticamente la Collection;
+- aggiungere/rimuovere un Subject dal SemanticGraph non modifica automaticamente la composizione Item della Collection;
+- un Subject del grafo può non avere alcun Item nella Collection o nello Space;
+- un Item della Collection può avere un `primarySubjectId` non ancora presente nel grafo: è un gap di coverage, non un errore strutturale;
 - la Collection non possiede il SemanticGraph.
 
 ## 8. SemanticGraph
@@ -211,13 +203,29 @@ SemanticEdge
   provenance?
 ```
 
-I nodi sono Subject, non Item.
+I nodi sono Subject, non Item. `GraphSubjectBinding` è l'unica membership semantica persistita necessaria per stabilire quali Subject appartengono a una revisione del grafo.
 
-La membership di un Subject nel SemanticGraph è distinta dalla membership dello stesso Subject in Space e Collection.
+Una fork del grafo copia lo snapshot semantico in una nuova lineage, riusando gli stessi Subject e definition IDs compatibili; non copia Item, ItemEdition, ContentSpaceItemMembership o CollectionItemMembership.
 
-Una fork del grafo copia lo snapshot semantico in una nuova lineage, riusando gli stessi Subject e definition IDs compatibili; non copia Item, ItemEdition, membership di Space o membership di Collection.
+## 9. Coverage editoriale
 
-## 9. Review e EditorialRelease
+Coverage e appartenenza semantica sono concetti distinti.
+
+Per una Collection:
+
+- **Subject dei contenuti** = `primarySubjectId` degli Item presenti nella Collection;
+- **Subject dello Space con contenuto diretto** = `primarySubjectId` degli Item presenti nello Space;
+- **Subject del grafo** = `GraphSubjectBinding` della GraphRevision corrente o pinzata.
+
+Da questi insiemi si derivano gap utili alla UI:
+
+- contenuto della Collection il cui Subject non è ancora nel grafo;
+- Subject del grafo senza contenuto nella Collection;
+- Subject del grafo senza contenuto nello Space.
+
+Questi gap guidano authoring e suggerimenti, ma non sono automaticamente errori di integrità.
+
+## 10. Review e EditorialRelease
 
 La review congela lo stato editoriale corrente in `EditorialContextRevision`. La publication produce un `EditorialRelease` immutabile.
 
@@ -229,7 +237,6 @@ EditorialRelease
   sourceContextRevisionId
   namespaceRevisionId
   graphRevisionId
-  subjectIds[]
   itemBindings[]
     itemId
     itemEditionId
@@ -237,18 +244,20 @@ EditorialRelease
     curationSignals[]
 ```
 
-`subjectIds` è il perimetro semantico della Collection al momento della review/release. Non coincide necessariamente con tutti i Subject presenti nel SemanticGraph.
+La semantica non viene duplicata in `subjectIds[]`: `graphRevisionId` identifica già in modo univoco lo snapshot completo di Subject, classificazioni e relazioni.
 
 Invarianti:
 
 - la release include soltanto Item appartenenti alla Collection;
 - ogni binding congela Item, Edition e Revision;
-- il graph revision pinned può contenere più Subject del perimetro della Collection, ma il runtime usa `subjectIds` per delimitare lo scope esposto;
+- `graphRevisionId` congela l'intero snapshot semantico usato dalla Collection;
 - nuove revisioni di un SemanticGraph condiviso non modificano review o release già pinzate;
-- una release valida richiede coerenza tra NamespaceRevision, GraphRevision, Item bindings e Subject scope;
+- una release valida richiede coerenza tra NamespaceRevision, GraphRevision e Item bindings;
+- l'assenza di contenuto per un Subject del grafo non rende la release invalida;
+- l'assenza del Subject principale di un Item nel grafo è un gap di coverage, non un errore di release;
 - released/immutable non significa necessariamente public/discoverable.
 
-## 10. Commerciale, diritti e adozione
+## 11. Commerciale, diritti e adozione
 
 Restano distinti:
 
@@ -266,7 +275,7 @@ Generator inclusion
 
 L'acquisizione non trasferisce ownership editoriale. I command che collegano contenuti esterni a Space o Collection devono verificare i capability/entitlement backend-side; una membership DB non è una prova sufficiente di autorizzazione.
 
-## 11. Organization, Venue e VenueTarget
+## 12. Organization, Venue e VenueTarget
 
 `Venue` è il contesto fisico visitabile ed è gestito da una Organization.
 
@@ -283,7 +292,7 @@ Il dominio fisico resta separato da Item, ContentSpace, Collection e SemanticGra
 
 Le capability fisiche e di navigazione appartengono a VenueTarget/Layout, non agli Item.
 
-## 12. Layout e VenueRelease
+## 13. Layout e VenueRelease
 
 Il Layout posiziona `ExhibitSlot`; i binding di `VenueRelease` collegano lo stato fisico pubblicato ai VenueTarget.
 
@@ -291,14 +300,14 @@ Una Visit salva riferimenti stabili alle entità fisiche necessarie, non la logi
 
 Una nuova VenueRelease può modificare lo stato fisico senza riscrivere retroattivamente Visit/Session già pinzate.
 
-## 13. EditorialScope e PhysicalScope
+## 14. EditorialScope e PhysicalScope
 
 Editorial scope e physical scope sono assi indipendenti.
 
 ```text
 EditorialScope
   EditorialRelease[]
-  -> Subject scope + ItemRevision + SemanticGraphRevision
+  -> ItemRevision + SemanticGraphRevision
 
 PhysicalScope
   Venue/VenueRelease[]
@@ -307,7 +316,7 @@ PhysicalScope
 
 La raggiungibilità semantica non crea automaticamente una tappa fisica. La presenza fisica non crea automaticamente contenuto editoriale.
 
-## 14. Visit e VisitRevision
+## 15. Visit e VisitRevision
 
 `Visit` è una lineage revisionata posseduta da User o Organization.
 
@@ -325,28 +334,31 @@ logistics
 
 Più ContentEntry possono condividere la stessa ancora. Un contenuto può essere contestuale e non corrispondere al Subject fisico dell'ancora davanti alla quale viene presentato.
 
-## 15. Runtime e generator
+## 16. Runtime e generator
 
 Il generator risolve sorgenti editoriali autorizzate e scope fisici espliciti, quindi congela gli snapshot necessari nel piano generato.
 
-Il runtime non usa il SemanticGraph globale come catalogo illimitato: per ogni EditorialRelease usa il `graphRevisionId` pinzato insieme al relativo `subjectIds` perimetro.
+Per una `EditorialRelease`, il runtime usa il `graphRevisionId` pinzato e deriva i Subject runtime dai `GraphSubjectBinding` di quella revisione. Eventuali `subjectIds` presenti nei pin di Session sono quindi una projection runtime ottimizzata, non una seconda fonte di verità editoriale.
+
+Per contenuti diretti non provenienti da una EditorialRelease, la Session può risolvere il SemanticGraph compatibile dallo Space/Namespace applicabile e pinzare la GraphRevision scelta; anche in questo caso i Subject derivano dalla GraphRevision.
 
 Questo consente domande e approfondimenti semantici senza confondere:
 
 - cosa esiste nel grafo;
-- cosa appartiene alla Collection;
-- quali contenuti sono disponibili;
+- quali Item appartengono alla Collection;
+- quali contenuti sono disponibili nello Space;
 - cosa è fisicamente presente nella Venue.
 
-## 16. Regole di evoluzione
+## 17. Regole di evoluzione
 
 Per nuove feature:
 
 1. definire prima l'entità e l'invariante di dominio;
 2. non usare adapter per evitare di correggere strutture interne controllate da ArtAround;
-3. non reintrodurre membership aggregate generiche: Item e Subject hanno scope distinti;
+3. non reintrodurre uno scope Subject persistito della Collection: la composizione è Item-based e la semantica è GraphRevision-based;
 4. non reintrodurre entry di Collection basate soltanto su ItemEdition: la Collection seleziona Item e la release risolve/pinza la Edition/Revision compatibile;
 5. non legare il SemanticGraph a un singolo ContentSpace o a una singola Collection;
-6. non usare la presenza nel grafo come prova di appartenenza alla Collection;
+6. non usare la presenza nel grafo come prova di appartenenza della risorsa editoriale alla Collection;
 7. non usare la membership nello Space come prova di entitlement;
-8. preservare snapshot immutabili per review, release, Visit e Session.
+8. trattare i gap fra contenuti e grafo come coverage salvo violazioni reali di Namespace/revision/authorization;
+9. preservare snapshot immutabili per review, release, Visit e Session.

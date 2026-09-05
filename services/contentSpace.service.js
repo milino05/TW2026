@@ -4,7 +4,6 @@ const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");

@@ -200,7 +200,6 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       version: 1,
       namespaceRevisionId: namespaceRevision._id,
       graphRevisionId: graphRevision._id,
-      subjectIds: [artworkSubject._id, artistSubject._id],
       itemBindings: [main, curiosity, artist].map((value) => ({
         itemId: value.item._id,
         itemEditionId: value.edition._id,

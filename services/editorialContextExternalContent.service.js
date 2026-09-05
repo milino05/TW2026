@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
-const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
@@ -222,11 +221,6 @@ async function importExternalEditorialCandidate({ editorialContextId, itemEditio
         }], { session });
         membershipCreated = true;
       }
-      await CollectionSubjectMembership.findOneAndUpdate(
-        { editorialContextId: lockedContext._id, subjectId: item.primarySubjectId },
-        { $setOnInsert: { editorialContextId: lockedContext._id, subjectId: item.primarySubjectId, addedBy: actorUserId } },
-        { upsert: true, new: true, session },
-      );
 
       const existing = await CollectionItemMembership.findOne({ editorialContextId: lockedContext._id, itemId: item._id }).session(session);
       if (existing) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "COLLECTION_ITEM_MEMBERSHIP_EXISTS" }]);
