@@ -24,15 +24,24 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const ContentSpace = require("../models/contentSpace.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
     const Entitlement = require("../models/entitlement.model");
     const { Adoption } = require("../models/adoption.model");
     const { createListing, createOffer, acquireOffer } = require("../services/marketplaceV2.service");
-    const { forkItem } = require("../services/itemV2.service");
+    const { forkItem } = require("../services/itemInstantiationV2.service");
 
     const [seller, buyer] = await User.create([
       { username: "creator-seller", passwordHash: "test-hash" },
       { username: "creator-buyer", passwordHash: "test-hash" },
     ]);
+    const buyerSpace = await ContentSpace.create({
+      name: "Buyer editorial space",
+      ownerType: "user",
+      ownerId: buyer._id,
+      createdBy: buyer._id,
+    });
     const subject = await Subject.create({ preferredLabel: "Opera fork", createdBy: seller._id });
     const durationDefinitionId = "duration-standard";
     const languageDefinitionId = "language-standard";
@@ -158,6 +167,7 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
       sourceEditionId: edition._id,
       ownerType: "user",
       ownerId: buyer._id,
+      contentSpaceId: buyerSpace._id,
       actorUserId: buyer._id,
     });
 
@@ -166,6 +176,14 @@ test("pinned creator rights fork the acquired ItemRevision and record real adopt
     assert.equal(String(forked.revision.authoredAgainstNamespaceRevisionId), String(namespaceRevision._id));
     assert.equal(String(forked.item.ownerId), String(buyer._id));
     assert.equal(String(item.ownerId), String(seller._id), "fork must not mutate source ownership");
+    assert.equal(
+      await ContentSpaceItemMembership.countDocuments({ contentSpaceId: buyerSpace._id, itemId: forked.item._id }),
+      1,
+    );
+    assert.equal(
+      await ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: buyerSpace._id, subjectId: subject._id }),
+      1,
+    );
 
     const adoptions = await Adoption.find({ beneficiaryId: buyer._id }).sort({ action: 1 }).lean();
     assert.deepEqual(adoptions.map((entry) => entry.action).sort(), ["content_fork", "namespace_use"]);
