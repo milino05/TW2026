@@ -26,6 +26,7 @@ const ROUTES = new Set([
   "/workspace/editorial-space",
   "/workspace/editorial-collection-new",
   "/workspace/editorial-studio",
+  "/workspace/semantic-graph",
   "/profile",
   "/namespaces/editor",
   "/physical-vocabularies/editor",
@@ -68,15 +69,10 @@ if (!Number.isFinite(currentHistoryIndex)) {
   window.history.replaceState({ ...(window.history.state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex }, "", currentBrowserUrl());
 }
 
-/**
- * Preserve the router's same-document index when a view only normalizes its
- * query string or hash. Dropping this state breaks guarded Back/Forward replay.
- */
 export function replaceCurrentHistoryUrl(url, state = window.history.state) {
   window.history.replaceState({ ...(state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex }, "", url);
 }
 
-/** Adds a same-document entry without forcing the app shell to rerender. */
 export function pushSameDocumentHistory(url, state = {}) {
   currentHistoryIndex += 1;
   const nextState = { ...(state || {}), [HISTORY_INDEX_KEY]: currentHistoryIndex };
@@ -131,9 +127,6 @@ function onGuardedPopState(event) {
   };
   pendingHistoryNavigation = pending;
 
-  /* popstate cannot be cancelled. Restore the accepted entry immediately, keep
-   * the editor mounted, ask the shared guard, then replay the original Back /
-   * Forward navigation only after an explicit discard decision. */
   window.history.go(pending.from - pending.to);
   confirmNavigationLoss({
     kind: "history",
@@ -146,9 +139,6 @@ function onGuardedPopState(event) {
   });
 }
 
-/* Registered when the router module is evaluated, before the app shell attaches
- * its normal popstate renderer. This lets a dirty editor stop route rendering
- * synchronously while the confirmation dialog is pending. */
 window.addEventListener("popstate", onGuardedPopState, true);
 
 export function currentRoute() {
