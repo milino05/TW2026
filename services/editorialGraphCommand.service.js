@@ -11,10 +11,13 @@ const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const { loadSemanticGraphRevision, validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
+const { findSemanticGraphResourceOrFail } = require("./semanticGraphResource.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function sameId(left, right) { return id(left) === id(right); }
-function workingConflict() { return new AppError("Il grafo semantico è stato modificato da un'altra operazione", 409, [{ code: "SEMANTIC_GRAPH_WORKING_CONFLICT" }]); }
+function workingConflict() {
+  return new AppError("Il grafo semantico è stato modificato da un'altra operazione", 409, [{ code: "SEMANTIC_GRAPH_WORKING_CONFLICT" }]);
+}
 function assertObjectId(value, field) {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`${field} non valido`, 400, [{ field, code: "INVALID_OBJECT_ID" }]);
 }
@@ -69,6 +72,30 @@ function applyClassAssignments(snapshot, assignments) {
   }
 }
 
+async function loadGraphAuthoringState({ semanticGraphId, actorUserId }) {
+  const semanticGraph = await findSemanticGraphResourceOrFail({ semanticGraphId, actorUserId, write: true });
+  const namespace = await Namespace.findOne({ _id: semanticGraph.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Regole editoriali non disponibili", 409);
+  await assertCanUseNamespaceForAuthoring({
+    namespace,
+    actorUserId,
+    principalType: semanticGraph.ownerType,
+    principalId: semanticGraph.ownerId,
+  });
+  const graph = semanticGraph.workingRevisionId ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId) : null;
+  const namespaceRevisionId = graph?.revision?.authoredAgainstNamespaceRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
+  if (!namespaceRevisionId) throw new AppError("Le regole editoriali non hanno una revisione utilizzabile", 409);
+  const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: namespace._id }).lean();
+  if (!namespaceRevision) throw new AppError("Revisione delle regole editoriali non disponibile", 409);
+  return {
+    semanticGraph,
+    namespace,
+    namespaceRevision,
+    graph,
+    snapshot: cloneSnapshot(graph),
+  };
+}
+
 async function loadAuthoringContext({ editorialContextId, actorUserId }) {
   const context = await EditorialContext.findOne({ _id: editorialContextId, lifecycleStatus: "active" });
   if (!context) throw new AppError("Raccolta editoriale non trovata", 404);
@@ -82,15 +109,17 @@ async function loadAuthoringContext({ editorialContextId, actorUserId }) {
   if (!sameId(semanticGraph.namespaceId, context.namespaceId)) {
     throw new AppError("Il grafo semantico usa regole editoriali diverse dalla raccolta", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
   }
-  const namespace = await Namespace.findOne({ _id: semanticGraph.namespaceId, lifecycleStatus: "active" });
-  if (!namespace) throw new AppError("Regole editoriali non disponibili", 409);
-  await assertCanUseNamespaceForAuthoring({ namespace, actorUserId, principalType: contentSpace.ownerType, principalId: contentSpace.ownerId });
-  const graph = semanticGraph.workingRevisionId ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId) : null;
-  const namespaceRevisionId = graph?.revision?.authoredAgainstNamespaceRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
-  if (!namespaceRevisionId) throw new AppError("Le regole editoriali non hanno una revisione utilizzabile", 409);
-  const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: namespace._id }).lean();
-  if (!namespaceRevision) throw new AppError("Revisione delle regole editoriali non disponibile", 409);
-  return { context, contentSpace, semanticGraph, namespace, namespaceRevision, graph, snapshot: cloneSnapshot(graph) };
+  const state = await loadGraphAuthoringState({ semanticGraphId: semanticGraph._id, actorUserId });
+  return { context, contentSpace, ...state };
+}
+
+async function loadAuthoringTarget({ semanticGraphId = null, editorialContextId = null, actorUserId }) {
+  if (Boolean(semanticGraphId) === Boolean(editorialContextId)) {
+    throw new AppError("Indicare esattamente un grafo o una raccolta", 400, [{ code: "SEMANTIC_GRAPH_AUTHORING_TARGET_REQUIRED" }]);
+  }
+  return editorialContextId
+    ? loadAuthoringContext({ editorialContextId, actorUserId })
+    : loadGraphAuthoringState({ semanticGraphId, actorUserId });
 }
 
 async function validateSubjects(snapshot) {
@@ -161,25 +190,27 @@ function normalizeWeight(value) {
   return weight;
 }
 
-async function addEditorialGraphSubject({ editorialContextId, subjectId, actorUserId }) {
+async function addGraphSubject({ semanticGraphId = null, editorialContextId = null, subjectId, actorUserId }) {
   assertObjectId(subjectId, "subjectId");
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   if (state.snapshot.subjectBindings.some((binding) => sameId(binding.subjectId, subjectId))) return state.graph;
   ensureBinding(state.snapshot, subjectId);
   return commitSnapshot({ ...state, actorUserId });
 }
 
-async function removeEditorialGraphSubject({ editorialContextId, subjectId, actorUserId }) {
+async function removeGraphSubject({ semanticGraphId = null, editorialContextId = null, subjectId, actorUserId }) {
   assertObjectId(subjectId, "subjectId");
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   if (state.snapshot.edges.some((edge) => sameId(edge.sourceSubjectId, subjectId) || sameId(edge.targetSubjectId, subjectId))) {
     throw new AppError("Rimuovi prima le relazioni che usano questo Subject", 409, [{ code: "SEMANTIC_GRAPH_SUBJECT_IN_USE", context: { subjectId } }]);
   }
+  const before = state.snapshot.subjectBindings.length;
   state.snapshot.subjectBindings = state.snapshot.subjectBindings.filter((binding) => !sameId(binding.subjectId, subjectId));
+  if (state.snapshot.subjectBindings.length === before) return state.graph;
   return commitSnapshot({ ...state, actorUserId });
 }
 
-async function addEditorialGraphEdge({ editorialContextId, payload, actorUserId }) {
+async function addGraphEdge({ semanticGraphId = null, editorialContextId = null, payload, actorUserId }) {
   const sourceSubjectId = payload?.sourceSubjectId;
   const targetSubjectId = payload?.targetSubjectId;
   const relationTypeDefinitionId = String(payload?.relationTypeDefinitionId || "").trim();
@@ -187,7 +218,7 @@ async function addEditorialGraphEdge({ editorialContextId, payload, actorUserId 
   assertObjectId(targetSubjectId, "targetSubjectId");
   if (!relationTypeDefinitionId) throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
   if (sameId(sourceSubjectId, targetSubjectId)) throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{ code: "SELF_RELATION_NOT_ALLOWED" }]);
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   if (state.snapshot.edges.some((edge) => sameId(edge.sourceSubjectId, sourceSubjectId) && sameId(edge.targetSubjectId, targetSubjectId) && String(edge.relationTypeDefinitionId) === relationTypeDefinitionId)) {
     throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
   }
@@ -205,9 +236,9 @@ async function addEditorialGraphEdge({ editorialContextId, payload, actorUserId 
   return commitSnapshot({ ...state, actorUserId });
 }
 
-async function updateEditorialGraphEdge({ editorialContextId, edgeId, payload, actorUserId }) {
+async function updateGraphEdge({ semanticGraphId = null, editorialContextId = null, edgeId, payload, actorUserId }) {
   assertObjectId(edgeId, "edgeId");
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   const edge = state.graph?.authoritativeEdges.find((entry) => sameId(entry._id, edgeId));
   if (!edge) throw new AppError("Relazione non trovata", 404);
   const relationTypeDefinitionId = payload?.relationTypeDefinitionId === undefined
@@ -236,20 +267,24 @@ async function updateEditorialGraphEdge({ editorialContextId, edgeId, payload, a
   return commitSnapshot({ ...state, actorUserId });
 }
 
-async function removeEditorialGraphEdge({ editorialContextId, edgeId, actorUserId }) {
+async function removeGraphEdge({ semanticGraphId = null, editorialContextId = null, edgeId, actorUserId }) {
   assertObjectId(edgeId, "edgeId");
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   const edge = state.graph?.authoritativeEdges.find((entry) => sameId(entry._id, edgeId));
   if (!edge) throw new AppError("Relazione non trovata", 404);
-  state.snapshot.edges = state.snapshot.edges.filter((entry) => !(sameId(entry.sourceSubjectId, edge.sourceSubjectId) && sameId(entry.targetSubjectId, edge.targetSubjectId) && String(entry.relationTypeDefinitionId) === String(edge.relationTypeDefinitionId)));
+  state.snapshot.edges = state.snapshot.edges.filter((entry) => !(
+    sameId(entry.sourceSubjectId, edge.sourceSubjectId)
+    && sameId(entry.targetSubjectId, edge.targetSubjectId)
+    && String(entry.relationTypeDefinitionId) === String(edge.relationTypeDefinitionId)
+  ));
   return commitSnapshot({ ...state, actorUserId });
 }
 
-async function setEditorialGraphSubjectClasses({ editorialContextId, subjectId, subjectClassDefinitionIds = [], actorUserId }) {
+async function setGraphSubjectClasses({ semanticGraphId = null, editorialContextId = null, subjectId, subjectClassDefinitionIds = [], actorUserId }) {
   assertObjectId(subjectId, "subjectId");
   if (!Array.isArray(subjectClassDefinitionIds)) throw new AppError("subjectClassDefinitionIds deve essere un array", 400);
   const definitions = [...new Set(subjectClassDefinitionIds.map((value) => String(value || "").trim()).filter(Boolean))];
-  const state = await loadAuthoringContext({ editorialContextId, actorUserId });
+  const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   const binding = state.snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, subjectId));
   if (!binding) {
     throw new AppError("Aggiungi prima il Subject al grafo semantico", 409, [{
@@ -262,8 +297,34 @@ async function setEditorialGraphSubjectClasses({ editorialContextId, subjectId, 
   return commitSnapshot({ ...state, actorUserId });
 }
 
+function addEditorialGraphSubject({ editorialContextId, subjectId, actorUserId }) {
+  return addGraphSubject({ editorialContextId, subjectId, actorUserId });
+}
+function removeEditorialGraphSubject({ editorialContextId, subjectId, actorUserId }) {
+  return removeGraphSubject({ editorialContextId, subjectId, actorUserId });
+}
+function addEditorialGraphEdge({ editorialContextId, payload, actorUserId }) {
+  return addGraphEdge({ editorialContextId, payload, actorUserId });
+}
+function updateEditorialGraphEdge({ editorialContextId, edgeId, payload, actorUserId }) {
+  return updateGraphEdge({ editorialContextId, edgeId, payload, actorUserId });
+}
+function removeEditorialGraphEdge({ editorialContextId, edgeId, actorUserId }) {
+  return removeGraphEdge({ editorialContextId, edgeId, actorUserId });
+}
+function setEditorialGraphSubjectClasses({ editorialContextId, subjectId, subjectClassDefinitionIds, actorUserId }) {
+  return setGraphSubjectClasses({ editorialContextId, subjectId, subjectClassDefinitionIds, actorUserId });
+}
+
 module.exports = {
+  loadGraphAuthoringState,
   loadAuthoringContext,
+  addGraphSubject,
+  removeGraphSubject,
+  addGraphEdge,
+  updateGraphEdge,
+  removeGraphEdge,
+  setGraphSubjectClasses,
   addEditorialGraphSubject,
   removeEditorialGraphSubject,
   addEditorialGraphEdge,
