@@ -21,6 +21,7 @@ test("Graph Workspace legge summary, primo livello e inventario paginato senza m
     const User = require("../models/user");
     const ContentSpace = require("../models/contentSpace.model");
     const Subject = require("../models/subject.model");
+    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const { getEditorialContextGraphNeighborhood, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
@@ -50,6 +51,11 @@ test("Graph Workspace legge summary, primo livello e inventario paginato senza m
         createdBy: user._id,
       })),
     ]);
+    await CollectionSubjectMembership.insertMany(subjects.map((subject) => ({
+      editorialContextId: context._id,
+      subjectId: subject._id,
+      addedBy: user._id,
+    })));
     await GraphSubjectBinding.insertMany(subjects.map((subject) => ({
       graphRevisionId: graphRevision._id,
       subjectId: subject._id,
