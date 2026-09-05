@@ -1,6 +1,7 @@
 const AppError = require("../utils/AppError");
 const { resolveResourceAuthority } = require("./marketplaceResourceV2.service");
 const itemService = require("./itemV2.service");
+const itemInstantiation = require("./itemInstantiationV2.service");
 const itemAuthoring = require("./itemAuthoringV2.service");
 const namespaceService = require("./namespace.service");
 const namespaceRevisionService = require("./namespaceRevision.service");
@@ -80,14 +81,22 @@ async function executeWorkspaceOperation({ operationCode, sourceRef, targetPrinc
     const edition = sourceRef.resourceType === "item_edition" ? authority.resource : authority.edition;
     const item = authority.aggregate;
     if (!edition || !item) throw new AppError("ItemEdition sorgente non risolvibile", 409);
-    const result = await itemService.forkItem({
+    if (!payload.contentSpaceId) {
+      throw new AppError("Scegli lo spazio editoriale di destinazione", 400, [{ field: "contentSpaceId", code: "REQUIRED" }]);
+    }
+    const result = await itemInstantiation.forkItem({
       sourceItemId: item._id,
       sourceEditionId: edition._id,
       ownerType,
       ownerId,
+      contentSpaceId: payload.contentSpaceId,
       actorUserId,
     });
-    return { operationCode, resultRef: { resourceType: "item", resourceId: result.item._id } };
+    return {
+      operationCode,
+      resultRef: { resourceType: "item", resourceId: result.item._id },
+      contentSpaceRef: { resourceType: "content_space", resourceId: result.contentSpace._id },
+    };
   }
 
   if (operationCode === "namespace.fork") {
