@@ -20,6 +20,9 @@ export const editorialRepository = {
   createSpace(payload) {
     return apiClient.request("/content-spaces", { method: "POST", ...jsonBody(payload) });
   },
+  updateSpace(contentSpaceId, payload) {
+    return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}`, { method: "PATCH", ...jsonBody(payload) });
+  },
   spaceSummaries({ ownerType = null, ownerId = null } = {}) {
     const query = queryString({ ownerType, ownerId });
     return apiClient.request(`/v2/marketplace/editorial-spaces${query ? `?${query}` : ""}`);
