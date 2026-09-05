@@ -26,9 +26,11 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const ContentSpace = require("../models/contentSpace.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
     const { Adoption } = require("../models/adoption.model");
     const { createListing, createOffer, acquireOffer } = require("../services/marketplaceV2.service");
-    const { forkItem } = require("../services/itemV2.service");
+    const { forkItem } = require("../services/itemInstantiationV2.service");
 
     const [seller, buyer] = await User.create([
       { username: "principal-seller", passwordHash: "test-hash" },
@@ -39,6 +41,12 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
       createdBy: buyer._id,
     });
     await assignStarterRole({ organization, user: buyer, starterKey: "administrator" });
+    const organizationSpace = await ContentSpace.create({
+      name: "Buyer editorial space",
+      ownerType: "organization",
+      ownerId: organization._id,
+      createdBy: buyer._id,
+    });
 
     const subject = await Subject.create({ preferredLabel: "Opera principal scope", createdBy: seller._id });
     const durationDefinitionId = "duration-standard";
@@ -123,6 +131,7 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
         sourceEditionId: edition._id,
         ownerType: "organization",
         ownerId: organization._id,
+        contentSpaceId: organizationSpace._id,
         actorUserId: buyer._id,
       }),
       (error) => error?.status === 403 && error?.details?.some((detail) => detail.code === "CAPABILITY_REQUIRED"),
@@ -142,10 +151,15 @@ test("a personal Entitlement cannot create an Organization-owned fork", { skip: 
       sourceEditionId: edition._id,
       ownerType: "organization",
       ownerId: organization._id,
+      contentSpaceId: organizationSpace._id,
       actorUserId: buyer._id,
     });
     assert.equal(forked.item.ownerType, "organization");
     assert.equal(String(forked.item.ownerId), String(organization._id));
+    assert.equal(
+      await ContentSpaceItemMembership.countDocuments({ contentSpaceId: organizationSpace._id, itemId: forked.item._id }),
+      1,
+    );
 
     const adoptions = await Adoption.find({ beneficiaryType: "organization", beneficiaryId: organization._id }).lean();
     assert.deepEqual(new Set(adoptions.map((entry) => entry.action)), new Set(["content_fork", "namespace_use"]));
