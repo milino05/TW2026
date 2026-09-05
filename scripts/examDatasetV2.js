@@ -12,8 +12,11 @@ const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -188,12 +191,15 @@ async function cleanupDemo() {
   await VenueTarget.deleteMany({ _id: { $in: targetIds } });
   await Venue.deleteMany({ _id: IDS.venue });
   await EditorialRelease.deleteMany({ _id: IDS.editorialRelease });
+  await CollectionItemMembership.deleteMany({ editorialContextId: IDS.editorialContext });
+  await CollectionSubjectMembership.deleteMany({ editorialContextId: IDS.editorialContext });
   await SemanticEdgeV2.deleteMany({ graphRevisionId: IDS.graphRevision });
   await GraphSubjectBinding.deleteMany({ graphRevisionId: IDS.graphRevision });
   await SemanticGraphRevision.deleteMany({ _id: IDS.graphRevision });
   await EditorialContext.deleteMany({ _id: IDS.editorialContext });
   await SemanticGraph.deleteMany({ _id: IDS.semanticGraph });
-  await ContentSpaceMembership.deleteMany({ itemId: { $in: itemIds } });
+  await ContentSpaceItemMembership.deleteMany({ contentSpaceId: IDS.contentSpace });
+  await ContentSpaceSubjectMembership.deleteMany({ contentSpaceId: IDS.contentSpace });
   await ContentSpace.deleteMany({ _id: IDS.contentSpace });
   await ItemRevisionV2.deleteMany({ _id: { $in: revisionIds } });
   await ItemEdition.deleteMany({ _id: { $in: editionIds } });
@@ -426,8 +432,12 @@ async function seedExamDataset() {
     ownerId: organization._id,
     createdBy: manager._id,
   });
-  await ContentSpaceMembership.create(
+  const editorialSubjectIds = [...workSubjectIds.values(), ...periodSubjectIds.values()];
+  await ContentSpaceItemMembership.create(
     itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
+  );
+  await ContentSpaceSubjectMembership.create(
+    editorialSubjectIds.map((subjectId) => ({ contentSpaceId: contentSpace._id, subjectId, addedBy: manager._id })),
   );
   const semanticGraph = await SemanticGraph.create({
     _id: IDS.semanticGraph,
@@ -448,6 +458,18 @@ async function seedExamDataset() {
     description: "Contesto che raccoglie le opere selezionate e un semplice grafo semantico Rinascimento/Seicento.",
     createdBy: manager._id,
   });
+  await CollectionItemMembership.create(itemRecords.map(({ item }) => ({
+    editorialContextId: editorialContext._id,
+    itemId: item._id,
+    curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
+    addedBy: manager._id,
+    updatedBy: manager._id,
+  })));
+  await CollectionSubjectMembership.create(editorialSubjectIds.map((subjectId) => ({
+    editorialContextId: editorialContext._id,
+    subjectId,
+    addedBy: manager._id,
+  })));
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
     semanticGraphId: semanticGraph._id,
@@ -481,8 +503,9 @@ async function seedExamDataset() {
     });
   }
   await SemanticEdgeV2.create(semanticEdges);
-  const itemBindings = itemRecords.map(({ edition, revision, work }) => ({
+  const itemBindings = itemRecords.map(({ item, edition, revision, work }) => ({
     _id: demoId(`editorial-binding:${work.key}`),
+    itemId: item._id,
     itemEditionId: edition._id,
     itemRevisionId: revision._id,
     curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
@@ -493,6 +516,7 @@ async function seedExamDataset() {
     version: 1,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
+    subjectIds: editorialSubjectIds,
     itemBindings,
     integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: manager._id },
     releasedAt: FIXED_NOW,
@@ -502,6 +526,7 @@ async function seedExamDataset() {
     editorialContextId: editorialContext._id,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
+    subjectIds: editorialSubjectIds,
     itemBindings,
   });
   assertNoIssues("EditorialRelease demo non coerente", editorialIssues);
@@ -809,6 +834,9 @@ async function verifyExamDataset() {
   if (!release || (release.itemBindings || []).length < 10) {
     add("EDITORIAL_RELEASE_TOO_SMALL", "La release editoriale demo deve contenere almeno 10 contenuti", { count: release?.itemBindings?.length || 0 });
   }
+  if (!release || (release.subjectIds || []).length < 10) {
+    add("EDITORIAL_RELEASE_SUBJECT_SCOPE_TOO_SMALL", "La release editoriale demo deve congelare esplicitamente il perimetro semantico", { count: release?.subjectIds?.length || 0 });
+  }
   const revisionIds = (release?.itemBindings || []).map((entry) => entry.itemRevisionId);
   const itemRevisions = revisionIds.length
     ? await ItemRevisionV2.find({ _id: { $in: revisionIds }, status: "published" }).lean()
@@ -827,6 +855,7 @@ async function verifyExamDataset() {
       editorialContextId: release.editorialContextId,
       namespaceRevisionId: release.namespaceRevisionId,
       graphRevisionId: release.graphRevisionId,
+      subjectIds: release.subjectIds || [],
       itemBindings: release.itemBindings || [],
     });
     if (issues.length) add("EDITORIAL_RELEASE_INVALID", "EditorialRelease demo non coerente", { issues });
