@@ -42,15 +42,75 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId, q, page, limit });
     return apiClient.request(`/v2/marketplace/editorial-relations?${query}`);
   },
-  reusableSemanticGraphs({ ownerType = null, ownerId = null, namespaceId = null, q = "", page = 1, limit = 30 } = {}) {
-    const query = queryString({ ownerType, ownerId, namespaceId, q, page, limit });
+  reusableSemanticGraphs({ ownerType = null, ownerId = null, namespaceId = null, contentSpaceId = null, q = "", page = 1, limit = 30 } = {}) {
+    const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId, q, page, limit });
     return apiClient.request(`/v2/marketplace/semantic-graphs?${query}`);
+  },
+  semanticGraphs({ ownerType, ownerId, namespaceId = null, q = "", page = 1, limit = 30 } = {}) {
+    const query = queryString({ ownerType, ownerId, namespaceId, q, page, limit });
+    return apiClient.request(`/semantic-graphs?${query}`);
+  },
+  semanticGraph(semanticGraphId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}`);
+  },
+  createSemanticGraph(payload) {
+    return apiClient.request("/semantic-graphs", { method: "POST", ...jsonBody(payload) });
+  },
+  updateSemanticGraph(semanticGraphId, payload) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}`, { method: "PATCH", ...jsonBody(payload) });
+  },
+  forkSemanticGraph(semanticGraphId, payload) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/fork`, { method: "POST", ...jsonBody(payload) });
+  },
+  removeSemanticGraph(semanticGraphId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}`, { method: "DELETE" });
+  },
+  restoreSemanticGraph(semanticGraphId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/restore`, { method: "POST" });
+  },
+  semanticGraphSnapshot(semanticGraphId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/snapshot`);
+  },
+  semanticGraphNeighborhood(semanticGraphId, { focusSubjectId = null, limit = 18 } = {}) {
+    const query = queryString({ focusSubjectId, limit });
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/neighborhood?${query}`);
+  },
+  semanticGraphSubjects(semanticGraphId, { q = "", page = 1, limit = 30 } = {}) {
+    const query = queryString({ q, page, limit });
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/subjects?${query}`);
+  },
+  addStandaloneGraphSubject(semanticGraphId, subjectId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/subjects/${encodeURIComponent(subjectId)}`, { method: "POST" });
+  },
+  removeStandaloneGraphSubject(semanticGraphId, subjectId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/subjects/${encodeURIComponent(subjectId)}`, { method: "DELETE" });
+  },
+  setStandaloneGraphSubjectClasses(semanticGraphId, subjectId, subjectClassDefinitionIds) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/subjects/${encodeURIComponent(subjectId)}/classes`, {
+      method: "PUT",
+      ...jsonBody({ subjectClassDefinitionIds }),
+    });
+  },
+  addStandaloneGraphEdge(semanticGraphId, payload) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/edges`, { method: "POST", ...jsonBody(payload) });
+  },
+  updateStandaloneGraphEdge(semanticGraphId, edgeId, payload) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/edges/${encodeURIComponent(edgeId)}`, { method: "PATCH", ...jsonBody(payload) });
+  },
+  removeStandaloneGraphEdge(semanticGraphId, edgeId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/edges/${encodeURIComponent(edgeId)}`, { method: "DELETE" });
   },
   createCollection(payload) {
     return apiClient.request("/v2/marketplace/editorial-collections", { method: "POST", ...jsonBody(payload) });
   },
   updateCollection(editorialContextId, payload) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}`, { method: "PATCH", ...jsonBody(payload) });
+  },
+  changeCollectionGraph(editorialContextId, semanticGraphId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph`, {
+      method: "PATCH",
+      ...jsonBody({ semanticGraphId }),
+    });
   },
   studio(editorialContextId) {
     return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/studio`);
