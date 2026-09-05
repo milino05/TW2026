@@ -53,6 +53,9 @@ export const editorialRepository = {
   semanticGraph(semanticGraphId) {
     return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}`);
   },
+  semanticGraphAuthoring(semanticGraphId) {
+    return apiClient.request(`/semantic-graphs/${encodeURIComponent(semanticGraphId)}/authoring`);
+  },
   createSemanticGraph(payload) {
     return apiClient.request("/semantic-graphs", { method: "POST", ...jsonBody(payload) });
   },
