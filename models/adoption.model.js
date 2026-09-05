@@ -20,6 +20,7 @@ const TARGET_RESOURCE_TYPES = Object.freeze([
   "item",
   "item_edition",
   "editorial_context",
+  "semantic_graph",
   "namespace",
   "physical_vocabulary",
   "visit",

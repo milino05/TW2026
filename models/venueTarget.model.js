@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const VenueTargetProvenanceSchema = new Schema({
-  origin: { type: String, enum: ["human", "wikidata", "imported", "item_authoring"], default: "human" },
+  origin: { type: String, enum: ["human", "wikidata", "imported", "item_authoring", "inventory_proposal"], default: "human" },
   sourceId: { type: String, trim: true, default: null },
   metadata: { type: Schema.Types.Mixed, default: null },
 }, { _id: false });

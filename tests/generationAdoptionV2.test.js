@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -21,7 +22,6 @@ test("licensed context.generate records context_reference Adoption against the e
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
     const Entitlement = require("../models/entitlement.model");
     const { Adoption } = require("../models/adoption.model");
@@ -31,12 +31,19 @@ test("licensed context.generate records context_reference Adoption against the e
     const buyer = await User.create({ username: "generation-adoption-buyer", passwordHash: "hash" });
     const namespace = await Namespace.create({ name: "Adoption namespace", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const space = await ContentSpace.create({ name: "Adoption space", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
-    const context = await EditorialContext.create({ contentSpaceId: space._id, namespaceId: namespace._id, displayName: "Adoption context", createdBy: owner._id });
+    const namespaceRevisionId = oid();
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace: space,
+      namespaceId: namespace._id,
+      namespaceRevisionId,
+      displayName: "Adoption context",
+      createdBy: owner._id,
+    });
     const release = await EditorialRelease.create({
       editorialContextId: context._id,
       version: 1,
-      namespaceRevisionId: oid(),
-      graphRevisionId: oid(),
+      namespaceRevisionId,
+      graphRevisionId: graphRevision._id,
       itemBindings: [],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: owner._id },
       releasedAt: new Date(),

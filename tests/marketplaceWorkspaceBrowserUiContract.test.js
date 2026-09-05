@@ -24,8 +24,14 @@ test("workspace browser usa projection context/resources e non il dump legacy", 
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
 });
 
-test("la libreria non mostra la striscia finale degli spazi editoriali", () => {
-  assert.doesNotMatch(browserSource, /renderSpaces|Spazi editoriali|space-grid/);
+test("Libreria integra lavoro editoriale e risorse mantenendo esplicito lo spazio corrente", () => {
+  assert.match(browserSource, /renderLibraryTabs\(\)/);
+  assert.match(browserSource, /data-library-section="editorial"/);
+  assert.match(browserSource, /data-library-section="resources"/);
+  assert.match(browserSource, /Spazio editoriale corrente/);
+  assert.match(browserSource, /editorialRepository\.spaceSummaries/);
+  assert.match(browserSource, /editorialRepository\.spaceProjection/);
+  assert.doesNotMatch(browserSource, /editorial-spaces-view|library-section-nav/);
 });
 
 test("workspace detail usa una projection puntuale e non carica workspace o distribution", () => {
@@ -35,15 +41,16 @@ test("workspace detail usa una projection puntuale e non carica workspace o dist
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources\/\$\{encodeURIComponent\(resourceType\)\}\/\$\{encodeURIComponent\(resourceId\)\}/);
 });
 
-test("tab ownership e metadata del dettaglio usano attributi distinti", () => {
-  assert.match(browserSource, /button\[data-ownership\]/);
-  assert.match(browserSource, /data-resource-ownership=/);
-  assert.match(browserSource, /detail\.dataset\.resourceOwnership/);
-  assert.doesNotMatch(browserSource, /data-resource-detail[^>]*data-ownership=/);
+test("le risorse cross-space restano separate da raccolte e contenuti dello spazio", () => {
+  assert.match(browserSource, /const CROSS_SPACE_TYPES = \["visit", "namespace", "semantic_graph", "physical_vocabulary"\]/);
+  assert.match(browserSource, /resourceTypes: this\.resourceType \? \[this\.resourceType\] : CROSS_SPACE_TYPES/);
+  assert.match(browserSource, /Risorse cross-space/);
+  assert.doesNotMatch(browserSource, /CROSS_SPACE_TYPES[^;]*item_edition/);
 });
 
 test("catalogo e workspace gestiscono la propria paginazione senza handler globale", () => {
   assert.doesNotMatch(shellSource, /closest\("button\[data-(?:catalog-)?page\]"\)/);
-  assert.match(browserSource, /closest\("button\[data-page\]"\)/);
+  assert.match(browserSource, /closest\("button\[data-content-page\]"\)/);
+  assert.match(browserSource, /closest\("button\[data-resource-page\]"\)/);
   assert.match(catalogSource, /closest\("button\[data-catalog-page\]"\)/);
 });

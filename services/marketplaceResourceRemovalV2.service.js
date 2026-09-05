@@ -8,6 +8,7 @@ const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const VisitV2 = require("../models/visitV2.model");
 const VisitRevisionV2 = require("../models/visitRevisionV2.model");
@@ -108,19 +109,23 @@ async function physicalVocabularyRemovalTarget({ resourceId, principal }) {
   };
 }
 
-async function currentContextGraphRevisionId(context) {
-  if (context?.workingGraphRevisionId) return context.workingGraphRevisionId;
-  if (!context?.publishedReleaseId) return null;
-  return (await EditorialRelease.findOne({
-    _id: context.publishedReleaseId,
-    editorialContextId: context._id,
-  }).select("graphRevisionId").lean())?.graphRevisionId || null;
-}
-
-async function countActiveContextConnections(context) {
-  const graphRevisionId = await currentContextGraphRevisionId(context);
-  if (!graphRevisionId) return 0;
-  return SemanticEdgeV2.countDocuments({ graphRevisionId });
+async function semanticGraphRemovalImpact(context) {
+  if (!context?.semanticGraphId) return { semanticGraphRelationCount: 0, semanticGraphCollectionCount: 0 };
+  const semanticGraph = await SemanticGraph.findOne({
+    _id: context.semanticGraphId,
+    lifecycleStatus: "active",
+  }).select("workingRevisionId").lean();
+  if (!semanticGraph) return { semanticGraphRelationCount: 0, semanticGraphCollectionCount: 0 };
+  const [semanticGraphRelationCount, semanticGraphCollectionCount] = await Promise.all([
+    semanticGraph.workingRevisionId
+      ? SemanticEdgeV2.countDocuments({ graphRevisionId: semanticGraph.workingRevisionId })
+      : 0,
+    EditorialContext.countDocuments({ semanticGraphId: semanticGraph._id, lifecycleStatus: "active" }),
+  ]);
+  return {
+    semanticGraphRelationCount: Number(semanticGraphRelationCount || 0),
+    semanticGraphCollectionCount: Number(semanticGraphCollectionCount || 0),
+  };
 }
 
 async function editorialContextRemovalTarget({ resourceId, principal }) {
@@ -129,9 +134,9 @@ async function editorialContextRemovalTarget({ resourceId, principal }) {
   const contentSpace = await ContentSpace.findOne({ _id: context.contentSpaceId, lifecycleStatus: "active" }).lean();
   if (!contentSpace) throw new AppError("Spazio editoriale della raccolta non disponibile", 409, [{ code: "CONTENT_SPACE_NOT_FOUND" }]);
   assertOwnership(contentSpace, principal);
-  const [releaseIds, affectedConnectionCount] = await Promise.all([
+  const [releaseIds, graphImpact] = await Promise.all([
     EditorialRelease.find({ editorialContextId: context._id }).distinct("_id"),
-    countActiveContextConnections(context),
+    semanticGraphRemovalImpact(context),
   ]);
   return {
     lifecycleModel: EditorialContext,
@@ -139,7 +144,7 @@ async function editorialContextRemovalTarget({ resourceId, principal }) {
     unavailableMessage: "Raccolta editoriale non disponibile",
     aggregateType: "editorial_context",
     aggregateId: context._id,
-    affectedConnectionCount,
+    ...graphImpact,
     references: [reference("editorial_context", [context._id]), reference("editorial_release", releaseIds)].filter(Boolean),
   };
 }
@@ -160,10 +165,10 @@ async function visitRemovalTarget({ resourceId, principal }) {
 }
 
 async function getOwnedWorkspaceRemovalImpact({ resourceType, resourceId }) {
-  if (resourceType !== "editorial_context") return { affectedConnectionCount: 0 };
+  if (resourceType !== "editorial_context") return {};
   const context = await EditorialContext.findOne({ _id: resourceId, lifecycleStatus: "active" }).lean();
-  if (!context) return { affectedConnectionCount: 0 };
-  return { affectedConnectionCount: await countActiveContextConnections(context) };
+  if (!context) return {};
+  return semanticGraphRemovalImpact(context);
 }
 
 async function removalTarget(args) {
@@ -254,7 +259,8 @@ async function removeOwnedWorkspaceResource({
     aggregateType: target.aggregateType,
     aggregateId: target.aggregateId,
     lifecycleStatus: "trashed",
-    affectedConnectionCount: Number(target.affectedConnectionCount || 0),
+    semanticGraphRelationCount: Number(target.semanticGraphRelationCount || 0),
+    semanticGraphCollectionCount: Number(target.semanticGraphCollectionCount || 0),
     withdrawnListingCount: before.withdrawnListingCount + after.withdrawnListingCount,
     inactiveOfferCount: before.inactiveOfferCount + after.inactiveOfferCount,
     removedAt: now,

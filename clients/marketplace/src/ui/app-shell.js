@@ -16,8 +16,9 @@ import "./workspace-browser-view.js";
 import "./workspace-view.js";
 import "./item-authoring-view.js";
 import "./visit-authoring-view.js";
-import "./venue-target-chooser.js";
-import "./context-release-composer.js";
+import "./editorial-collection-create-view.js";
+import "./editorial-studio-view.js";
+import "./semantic-graph-view.js";
 import "./profile-view.js";
 import "./organization-view.js";
 import "./namespace-editor-view.js";
@@ -32,8 +33,10 @@ const TITLES = {
   "/organizations": "Organizzazioni", "/organizations/public": "Organizzazione", "/organizations/detail": "Gestione organizzazione",
   "/venues": "Musei e sedi", "/venues/public": "Sede", "/venues/editor": "Gestione sede",
   "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
-  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita", "/workspace/venue-targets": "Entità della sede",
-  "/workspace/context-compose": "Pubblica una nuova versione", "/profile": "Account", "/namespaces/editor": "Regole editoriali",
+  "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita",
+  "/workspace/editorial-collection-new": "Nuova raccolta", "/workspace/editorial-studio": "Raccolta editoriale",
+  "/workspace/semantic-graph": "Grafo semantico",
+  "/profile": "Account", "/namespaces/editor": "Regole editoriali",
   "/physical-vocabularies/editor": "Vocabolario fisico", "/404": "Pagina non trovata",
 };
 
@@ -41,7 +44,7 @@ function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").
 function current(route, paths) { return paths.includes(route) ? "page" : "false"; }
 function authoringIsCreation(route) {
   const params = new URLSearchParams(window.location.search);
-  if (route === "/create" || route === "/workspace/venue-targets") return true;
+  if (["/create", "/workspace/editorial-collection-new"].includes(route)) return true;
   if (route === "/workspace/item-authoring") return !params.get("itemId");
   if (route === "/workspace/visit-authoring") return !params.get("visitId");
   return false;
@@ -204,7 +207,10 @@ export class MarketplaceAppShell extends HTMLElement {
   renderNavigation(route) {
     const creation = authoringIsCreation(route);
     const organizationContext = this.context?.type === "organization";
-    const libraryActive = ["/workspace", "/workspace/resource", "/workspace/context-compose"].includes(route) || (!organizationContext && route === "/physical-vocabularies/editor") || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
+    const editorialLibraryRoutes = ["/workspace/editorial-studio", "/workspace/semantic-graph"];
+    const libraryActive = ["/workspace", "/workspace/resource", ...editorialLibraryRoutes].includes(route)
+      || (!organizationContext && route === "/physical-vocabularies/editor")
+      || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
     const exploreActive = ["/catalog", "/catalog/detail", "/organizations", "/organizations/public", "/venues", "/venues/public"].includes(route);
     const managementHref = organizationContext ? organizationManagementHref(this.context) : "/profile";
     const managementLabel = organizationContext ? "Gestisci" : "Account";
@@ -242,8 +248,9 @@ export class MarketplaceAppShell extends HTMLElement {
     if (route === "/workspace/commerce") return "<artaround-commerce-management-view></artaround-commerce-management-view>";
     if (route === "/workspace/item-authoring") return "<artaround-item-authoring-view></artaround-item-authoring-view>";
     if (route === "/workspace/visit-authoring") return "<artaround-visit-authoring-view></artaround-visit-authoring-view>";
-    if (route === "/workspace/venue-targets") return "<artaround-venue-target-chooser></artaround-venue-target-chooser>";
-    if (route === "/workspace/context-compose") return "<artaround-context-release-composer></artaround-context-release-composer>";
+    if (route === "/workspace/editorial-collection-new") return "<artaround-editorial-collection-create-view></artaround-editorial-collection-create-view>";
+    if (route === "/workspace/editorial-studio") return "<artaround-editorial-studio-view></artaround-editorial-studio-view>";
+    if (route === "/workspace/semantic-graph") return "<artaround-semantic-graph-view></artaround-semantic-graph-view>";
     if (route === "/profile") return "<artaround-profile-view></artaround-profile-view>";
     if (route === "/organizations/detail") return "<artaround-organization-view></artaround-organization-view>";
     if (route === "/namespaces/editor") return "<artaround-namespace-editor-view></artaround-namespace-editor-view>";

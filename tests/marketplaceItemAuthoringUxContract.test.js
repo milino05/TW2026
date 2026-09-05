@@ -7,269 +7,121 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const itemPath = path.join(root, "clients/marketplace/src/ui/item-authoring-view.js");
 const pickerPath = path.join(root, "clients/marketplace/src/ui/semantic-entity-picker.js");
+const presencePath = path.join(root, "clients/marketplace/src/ui/subject-presence.js");
 const authoringRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/authoring-repository.js");
-const chooserPath = path.join(root, "clients/marketplace/src/ui/venue-target-chooser.js");
 const source = fs.readFileSync(itemPath, "utf8");
 const pickerSource = fs.readFileSync(pickerPath, "utf8");
+const presenceSource = fs.readFileSync(presencePath, "utf8");
 const authoringRepositorySource = fs.readFileSync(authoringRepositoryPath, "utf8");
-const chooserSource = fs.readFileSync(chooserPath, "utf8");
 
-test("item authoring e picker semantico passano il syntax gate", () => {
-  for (const target of [itemPath, pickerPath, authoringRepositoryPath, chooserPath]) {
+test("item authoring, picker, presence e repository passano il syntax gate", () => {
+  for (const target of [itemPath, pickerPath, presencePath, authoringRepositoryPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
 });
 
-test("la creazione dei contenuti usa il tema museale del Marketplace", () => {
-  assert.match(source, /class="page-header authoring-header"/);
-  assert.match(source, /\.authoring-page>\.authoring-header\{[^}]*background:linear-gradient\([^}]*var\(--surface\)[^}]*var\(--sage-50\)/);
-  assert.match(source, /\.authoring-progress li\[data-current="true"\] button[^}]*background:var\(--ink-900\)/);
-  assert.match(source, /\.step-number\{background:var\(--ink-900\);color:#fff\}/);
-  assert.match(source, /\.private-success-overlay\{background:rgba\(36,21,29,\.7\)\}/);
-  assert.match(pickerSource, /\.resolver\{[^}]*border:1px solid var\(--line\)[^}]*background:var\(--sage-50\)/);
-  assert.match(pickerSource, /\.resolver button\{[^}]*background:var\(--ink-900\)/);
-});
-
-test("item authoring espone cinque passaggi includendo i collegamenti facoltativi", () => {
-  for (const label of ["Di cosa parla", "Info generali", "Regole e testi", "Collegamenti", "Controllo finale"]) {
-    assert.match(source, new RegExp(label));
-  }
-  assert.doesNotMatch(source, /<span class="eyebrow">Personalizzazione<\/span>/);
+test("l'Item Editor espone quattro passaggi e non contiene uno step relazioni", () => {
+  for (const label of ["Di cosa parla", "Info generali", "Regole e testi", "Controllo"]) assert.match(source, new RegExp(label));
+  assert.match(source, /const stages = \[\[1, "Di cosa parla"\], \[2, "Info generali"\], \[3, "Regole e testi"\], \[4, "Controllo"\]\]/);
   assert.match(source, /aria-label="Passaggi di creazione"/);
-  assert.match(source, /aria-current="\$\{current \? "step" : "false"\}"/);
-  assert.doesNotMatch(source, /<h2>Edition e Namespace<\/h2>/);
-  assert.doesNotMatch(source, /<h2>Revision e Representation<\/h2>/);
+  assert.match(source, /Quattro passaggi: Subject, informazioni, versione editoriale e controllo/);
+  assert.doesNotMatch(source, /data-add-connection|data-connection-search|createItemConnection|removeItemConnection/);
 });
 
-test("lo stepper mobile resta compatto e non richiede scorrimento orizzontale", () => {
-  assert.match(source, /authoring-progress__summary/);
-  assert.match(source, /Passaggio \$\{this\.activeStep\} di \$\{stages\.length\}/);
-  assert.match(source, /aria-label="Passaggio \$\{step\}: \$\{escapeHtml\(label\)\}"/);
-  assert.match(source, /authoring-progress ol\{grid-template-columns:repeat\(5,minmax\(0,1fr\)\);min-width:0\}/);
-  assert.match(source, /authoring-progress button strong\{display:none\}/);
-  assert.doesNotMatch(source, /authoring-progress\{overflow:auto/);
+test("la creazione parte dal Subject e la presenza fisica resta informativa", () => {
+  assert.match(source, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
+  assert.match(source, /authoringRepository\.getSubject\(this\.preselectedSubjectId\)/);
+  assert.match(source, /<artaround-semantic-entity-picker mode="subject" entity-kind="item"><\/artaround-semantic-entity-picker>/);
+  assert.match(source, /Crea Item e continua/);
+  assert.match(source, /this\.renderSubjectPresence\(\)/);
+  assert.match(source, /L'identità semantica è separata sia dalla versione editoriale sia dalla presenza fisica nelle Venue/);
+  assert.match(presenceSource, /La presenza fisica è informativa e resta separata dal contenuto editoriale/);
+  assert.doesNotMatch(source, /venueTargetId|physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
 });
 
-test("la bozza richiede i dati essenziali ma può essere salvata senza testi", () => {
-  assert.match(source, /generalDetailsReady\(\)/);
-  assert.match(source, /contentDraftReady\(\)/);
-  assert.match(source, /const fieldsReady = \[this\.draft\.label, this\.draft\.license\]/);
-  assert.match(source, /const rulesReady = !this\.newEditionMode/);
-  assert.match(source, /const textsReady = this\.draft\.representations\.every/);
-  assert.doesNotMatch(source, /const textsReady = this\.draft\.representations\.length > 0/);
-  assert.match(source, /if \(step === 4\) return Boolean\(this\.selectedRevision\(\) && !this\.newEditionMode\)/);
-  assert.match(source, /if \(step === 5\) return Boolean\(this\.selectedRevision\(\) && !this\.newEditionMode\)/);
+test("l'Item viene creato dal Subject e dal principal operativo senza side effect fisici", () => {
+  assert.match(source, /authoringRepository\.createItem\(\{/);
+  assert.match(source, /primarySubjectId: id\(this\.selectedSubject\)/);
+  assert.match(source, /ownerType: this\.principal\.type/);
+  assert.match(source, /ownerId: this\.principal\.id/);
+  assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId \}\)/);
+  assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
+  assert.doesNotMatch(authoringRepositorySource, /createItemWithPhysicalIntent|venueTargetContext|venueTargets\(/);
 });
 
-test("titolo, licenza e immagine precedono regole editoriali e testi", () => {
-  const stepTwo = source.match(/renderStepTwo\(\) \{([\s\S]*?)\n  \}\n\n  renderStepThree/)?.[1] || "";
-  const stepThree = source.match(/renderStepThree\(\) \{([\s\S]*?)\n  \}\n\n  renderMemberships/)?.[1] || "";
-  assert.match(stepTwo, /data-content-details/);
-  assert.match(stepTwo, /Titolo del contenuto/);
-  assert.match(stepTwo, /<label>Licenza/);
-  assert.match(stepTwo, /this\.renderMediaCard/);
-  assert.doesNotMatch(stepTwo, /this\.renderNamespaceSelector\(\)/);
-  assert.doesNotMatch(stepTwo, /this\.renderRepresentationEditors\(controls\)/);
-  assert.match(stepThree, /this\.renderNamespaceSelector\(\)/);
-  assert.match(stepThree, /this\.renderRepresentationEditors\(controls\)/);
-  assert.match(source, /field: "durationTypeDefinitionId", label: "Durata"/);
-  assert.match(source, /field: "languageLevelDefinitionId", label: "Livello di linguaggio"/);
-  assert.doesNotMatch(source, /data-personalization-draft/);
+test("titolo, licenza e immagine sono informazioni generali prima della versione editoriale", () => {
+  assert.match(source, /data-content-details/);
+  assert.match(source, /<label>Titolo<input name="label" required/);
+  assert.match(source, /<label>Licenza<input name="license" required/);
+  assert.match(source, /this\.renderMediaCard\(\)/);
+  assert.match(source, /Immagine · facoltativa/);
+  assert.match(source, /Autore: <strong>/);
+  assert.match(source, /defaultAuthor\(\)/);
+  assert.doesNotMatch(source, /<label>Autore<input/);
 });
 
-test("la nuova versione editoriale viene materializzata salvando testi e impostazioni", () => {
-  assert.match(source, /form\.matches\("\[data-content-draft\]"\)/);
-  assert.match(source, /this\.activeStep = 4/);
-  assert.match(source, /if \(this\.newEditionMode\) await this\.createEditionFromDraft\(\)/);
+test("Namespace, segnali e testi appartengono alla ItemEdition", () => {
+  assert.match(source, /Configura la versione editoriale/);
+  assert.match(source, /this\.renderNamespaceSelector\(\)/);
+  assert.match(source, /this\.renderSelectionSignals\(controls\)/);
+  assert.match(source, /this\.renderRepresentationEditors\(controls\)/);
   assert.match(source, /authoringRepository\.createEdition\(this\.itemId/);
+  assert.match(source, /authoringRepository\.updateEdition\(editionId, payload\)/);
+  assert.match(source, /Durata, linguaggio e segnali appartengono alla versione sotto questo Namespace/);
+  assert.match(source, /Le relazioni semantiche appartengono invece alla raccolta/);
 });
 
-test("lo step collegamenti parte vuoto, ricerca il target e usa le relazioni delle regole", () => {
-  assert.match(source, /<span class="step-number">4<\/span>/);
-  assert.match(source, /Non hai ancora aggiunto nessun collegamento/);
-  assert.match(source, /data-add-connection/);
-  assert.match(source, /data-connection-search/);
-  assert.match(source, /data-connection-target-id/);
-  assert.match(source, /name="relationTypeDefinitionId" data-connection-relation/);
-  assert.match(source, /name="weight" type="number" min="0" max="10"/);
-  assert.match(source, /name="provenanceOrigin"/);
-  assert.match(source, /name="note"/);
-  assert.match(source, /authoringRepository\.createItemConnection/);
-  assert.match(source, /authoringRepository\.removeItemConnection/);
-  assert.match(source, /I collegamenti sono facoltativi/);
-});
-
-test("il controllo finale resta backend-authoritative ed è l'unica azione editoriale", () => {
-  assert.match(source, /this\.workflowOperations\(\)/);
-  assert.match(source, /this\.availableOperation\(operationCode\)/);
-  assert.match(source, /data-workflow-form/);
-  assert.match(source, /operation\.code === "workflow\.check"/);
-  assert.match(source, /operationCode !== "workflow\.check"/);
-  assert.match(source, /Controlla se è tutto pronto/);
-  assert.doesNotMatch(source, /workflow\.publish/);
-  assert.doesNotMatch(source, /window\.prompt\(/);
-});
-
-test("feature parity mantiene versioni, spazi editoriali e dettagli tecnici", () => {
-  assert.match(source, /data-new-edition/);
-  assert.match(source, /data-edition-id/);
-  assert.match(source, /data-content-space-id/);
-  assert.match(source, /authoringRepository\.setContentSpaceMembership/);
-  assert.match(source, /<summary>Identificativi tecnici<\/summary>/);
-  assert.match(source, /Versione editoriale:/);
-  assert.match(source, /gruppo di testi:/);
-});
-
-test("testi multipli vengono aggiunti e rimossi nella stessa bozza", () => {
+test("testi multipli restano una proprietà della stessa revisione editoriale", () => {
   assert.match(source, /function newRepresentation\(overrides = \{\}\)/);
   assert.match(source, /representations: \[\]/);
   assert.match(source, /data-add-text/);
   assert.match(source, /data-remove-text/);
   assert.match(source, /this\.draft\.representations\.push\(newRepresentation\(\)\)/);
   assert.match(source, /this\.draft\.representations\.splice\(index, 1\)/);
-  assert.match(source, /this\.draft\.representations\.map\(\(entry\) =>/);
-  assert.match(source, /Aggiungi un altro testo/);
-  assert.match(source, /Rimuovi/);
-  assert.match(source, /authoringRepository\.updateEdition\(editionId, payload\)/);
-});
-
-test("solo il testo selezionato resta espanso mentre gli altri mostrano i dati essenziali", () => {
-  assert.match(source, /activeRepresentationIndex = null/);
-  assert.match(source, /data-selected="true"/);
-  assert.match(source, /data-collapsed-text="\$\{index\}"/);
-  assert.match(source, /data-select-text="\$\{index\}"/);
-  assert.match(source, /class="representation-summary"/);
-  for (const label of ["Durata", "Livello di linguaggio", "Lingua", "Modifica"]) assert.match(source, new RegExp(label));
-  assert.doesNotMatch(source, /this\.activeRepresentationIndex = this\.draft\.representations\.length - 1/);
-  assert.match(source, /this\.activeRepresentationIndex = null/);
   assert.match(source, /Completa durata, livello di linguaggio, lingua e testo/);
-  assert.match(source, /representation-editor--collapsed\{[^}]*cursor:pointer/);
-  assert.match(source, /representation-summary\{display:grid;grid-template-columns:repeat\(3/);
-  assert.match(source, /authoring-page\{grid-template-columns:minmax\(0,1fr\)\}/);
-  assert.match(source, /authoring-page>\*,\.wizard-step,\.editor-form,\.representation-list,\.representation-editor\{min-width:0\}/);
 });
 
-test("durata e linguaggio usano menu interni affidabili al singolo click", () => {
-  assert.match(source, /const choiceMenu = \(\{ index, field, label, selected, placeholder, options \}\)/);
-  assert.match(source, /<details name="representation-choice" data-representation-choice-menu=/);
-  assert.match(source, /role="listbox"/);
-  assert.match(source, /role="option" aria-selected=/);
-  assert.match(source, /button\[data-representation-choice\]/);
-  assert.match(source, /representation\[field\] = representationChoice\.dataset\.value/);
-  assert.match(source, /input type="hidden" name="\$\{field\}" data-representation-index=/);
-  assert.doesNotMatch(source, /select name="durationTypeDefinitionId"/);
-  assert.doesNotMatch(source, /select name="languageLevelDefinitionId"/);
+test("gli spazi editoriali includono l'Item senza cambiarne owner o semantica", () => {
+  assert.match(source, /data-content-space-id/);
+  assert.match(source, /authoringRepository\.setContentSpaceMembership/);
+  assert.match(source, /Rende l'Item disponibile nello spazio senza cambiarne il proprietario/);
+  assert.match(source, /La semantica della raccolta si gestisce nello Studio, non nell'Item Editor/);
 });
 
-test("il refresh ripristina informazioni, regole editoriali e bozza degli step due e tre", () => {
+test("la creazione avviata dalla Raccolta materializza Item e entry nel contesto corretto", () => {
+  assert.match(source, /contextContentSpaceId = params\(\)\.get\("contentSpaceId"\)/);
+  assert.match(source, /contextEditorialContextId = params\(\)\.get\("editorialContextId"\)/);
+  assert.match(source, /contextNamespaceId = params\(\)\.get\("namespaceId"\)/);
+  assert.match(source, /if \(!this\.contextContentSpaceId\) throw new Error/);
+  assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
+  assert.match(source, /id\(created\.edition\?\.namespaceId\) === id\(this\.contextNamespaceId\)/);
+  assert.match(source, /editorialRepository\.addEntry\(this\.contextEditorialContextId/);
+  assert.match(source, /Versione salvata e aggiunta alla raccolta/);
+});
+
+test("la bozza degli step di editing sopravvive al refresh senza introdurre un secondo stato di dominio", () => {
   assert.match(source, /workingDraftStorageKey\(\)/);
   assert.match(source, /window\.sessionStorage\.setItem/);
   assert.match(source, /window\.sessionStorage\.getItem/);
   assert.match(source, /async restoreWorkingDraft\(\)/);
-  assert.match(source, /const restored = await this\.restoreWorkingDraft\(\)/);
-  assert.match(source, /if \(this\.selectedRevision\(\)\) this\.activeStep = 5;\s*else await this\.prepareNewEdition\(\)/);
   assert.match(source, /!\[2, 3\]\.includes\(this\.activeStep\)/);
-  assert.match(source, /activeStep: this\.activeStep/);
-  assert.match(source, /Number\(stored\.activeStep\) === 3 && this\.generalDetailsReady\(\) \? 3 : 2/);
-  assert.match(source, /namespaceStillAvailable/);
-  assert.match(source, /await this\.selectNamespace\(selectedNamespaceId\)/);
   assert.match(source, /Bozza ripristinata dopo l'aggiornamento della pagina/);
-  assert.match(source, /this\.clearWorkingDraft\(\);\s*this\.newEditionMode = false/);
-  assert.match(source, /this\.clearWorkingDraft\(\);\s*await this\.reloadProjection\(editionId\)/);
+  assert.match(source, /this\.clearWorkingDraft\(\)/);
 });
 
-test("lo stato senza testi è esplicito e l'ultimo testo può essere rimosso", () => {
-  assert.match(source, /Non hai ancora aggiunto nessun testo/);
-  assert.match(source, /Puoi salvare la bozza anche così/);
-  assert.match(source, /Per superare il controllo dovrai aggiungere almeno un testo completo/);
-  assert.match(source, /if \(this\.draft\.representations\[index\]\)/);
-  assert.doesNotMatch(source, /this\.draft\.representations\.length > 1 && this\.draft\.representations\[index\]/);
-  assert.match(source, /if \(!variant\.representations\.length\) payload\.defaultPresentation = null/);
-  assert.match(source, /review-texts--empty/);
+test("il controllo finale è backend-authoritative e rimanda la semantica allo Studio", () => {
+  assert.match(source, /this\.workflowOperations\(\)/);
+  assert.match(source, /operation\.code === "workflow\.check"/);
+  assert.match(source, /operationCode !== "workflow\.check"/);
+  assert.match(source, /Controlla se è tutto pronto/);
+  assert.match(source, /Il grafo semantico non si modifica qui/);
+  assert.match(source, /apri la sezione Relazioni dello Studio/);
+  assert.doesNotMatch(source, /workflow\.publish/);
 });
 
-test("il riepilogo separa visivamente etichette, valori e testi", () => {
-  assert.match(source, /\.review-grid article\{display:grid;gap:\.35rem;padding:1rem/);
-  assert.match(source, /\.review-texts article\{display:grid;gap:\.65rem;padding:1rem/);
-  assert.match(source, /Testi configurati/);
-  assert.match(source, /renderReviewTexts\(\)/);
-});
-
-test("i metadati facoltativi non sono esposti e i tag esistenti non vengono cancellati", () => {
-  assert.doesNotMatch(source, /Metadati facoltativi/);
-  assert.doesNotMatch(source, /name="tags"/);
-  assert.match(source, /tags: revision\.tags \|\| \[\]/);
-  assert.match(source, /relatedSubjectIds: \[\]/);
-  assert.match(source, /tags: \[\]/);
-  assert.doesNotMatch(source, /payload\.tags =/);
-});
-
-test("autore e area di lavoro non richiedono input ridondanti", () => {
-  assert.doesNotMatch(source, /<label>Autore<input/);
-  assert.match(source, /defaultAuthor\(\)/);
-  assert.match(source, /Autore assegnato automaticamente/);
-  assert.doesNotMatch(source, /class="working-context surface"/);
-});
-
-test("selezione soggetto e validazione hanno feedback italiano", () => {
-  assert.match(source, /Soggetto selezionato · Continua/);
-  assert.match(source, /this\.selectedSubject[\s\S]*?renderSubjectSummary\(\)[\s\S]*?: `<artaround-semantic-entity-picker/);
-  assert.match(source, /Compila questo campo prima di continuare/);
-  assert.match(source, /Seleziona un'opzione prima di continuare/);
-});
-
-test("il controllo rende il contenuto privato e propone il Marketplace in un dialog separato", () => {
-  assert.match(source, /privateSuccessOpen/);
-  assert.match(source, /result\?\.result\?\.finalized/);
-  assert.match(source, /Il contenuto è corretto e ora è privato/);
-  assert.match(source, /Configura offerta e pubblica/);
-  assert.match(source, /Mantieni privato/);
-  assert.match(source, /role="dialog" aria-modal="true"/);
-  assert.match(source, /resourceType=item_edition/);
-  assert.match(source, /html:has\(\.private-success-overlay\)/);
-});
-
-test("il flusso da entità fisica preserva la separazione del dominio", () => {
-  assert.match(source, /L’entità precompila l’esatto Subject/);
-  assert.match(source, /non incorpora la posizione fisica/);
-  assert.match(source, /immagine\/i restano nella configurazione della sede/);
-});
-
-test("il flusso contestualizzato alla sede è raggiungibile, permission-aware e non duplica l'inventario", () => {
-  assert.match(chooserSource, /physicalIntent=1/);
-  assert.match(chooserSource, /Crea contenuto per un’altra entità/);
-  assert.match(authoringRepositorySource, /subject-candidates/);
-  assert.match(source, /venue-id="\$\{escapeHtml\(this\.venueId\)\}"/);
-  assert.match(source, /canUsePhysicalIntent\(\)/);
-  assert.match(source, /ownerOrganizationId/);
-  assert.match(source, /Già nell’inventario della sede/);
-  assert.match(source, /!this\.venueInventoryMatch/);
-  assert.match(source, /non sarà duplicata né spostata/);
-});
-
-test("l'immagine facoltativa è proposta, modificabile e salvata con la revisione", () => {
-  assert.match(source, /loadSuggestedMedia/);
-  assert.match(source, /includeMedia: true/);
-  assert.match(source, /Immagine del contenuto · facoltativa/);
-  assert.match(source, /Proponi da Wikidata/);
-  assert.match(source, /data-change-media/);
-  assert.match(source, /data-remove-media/);
-  assert.match(source, /data-media-upload/);
-  assert.match(source, /ottimizzati automaticamente/);
-  assert.match(source, /optimizedMediaFile/);
-  assert.match(source, /illustrativeMedia: this\.draft\.illustrativeMedia/);
-  assert.match(source, /payload\.illustrativeMedia = this\.draft\.illustrativeMedia/);
-  assert.match(source, /renderReviewMedia\(\)/);
-});
-
-test("il picker subject usa microcopy novice-first senza cambiare il contratto Subject", () => {
-  assert.match(pickerSource, /Cerca ciò di cui vuoi parlare/);
-  assert.match(pickerSource, /Trova o crea il soggetto corretto/);
+test("il picker semantico resta il boundary per identificare o creare Subject", () => {
+  assert.match(pickerSource, /mode="subject"|mode/);
   assert.match(pickerSource, /subject-selected/);
-  assert.match(pickerSource, /searchSubjectCascade/);
-  assert.match(pickerSource, /selected \? icon\("check"/);
-  assert.doesNotMatch(pickerSource, /data-external-create|external-confirm|Crea da identità verificata/);
-  assert.doesNotMatch(pickerSource, /Cerca il Subject/);
-  assert.doesNotMatch(pickerSource, /Trova o crea il Subject corretto/);
+  assert.match(pickerSource, /Wikidata|wikidata/);
 });

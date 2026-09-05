@@ -29,7 +29,7 @@ function authoringHref(asset) {
   if (type === "visit") return `/workspace/visit-authoring?visitId=${encodeURIComponent(id)}`;
   if (type === "namespace") return `/namespaces/editor?namespaceId=${encodeURIComponent(id)}`;
   if (type === "physical_vocabulary") return `/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(id)}`;
-  if (type === "editorial_context") return `/workspace/context-compose?editorialContextId=${encodeURIComponent(id)}`;
+  if (type === "editorial_context") return `/workspace/editorial-studio?editorialContextId=${encodeURIComponent(id)}`;
   return null;
 }
 

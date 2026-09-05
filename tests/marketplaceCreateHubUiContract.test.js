@@ -10,16 +10,20 @@ const files = {
   create: "clients/marketplace/src/ui/create-hub-view.js",
   item: "clients/marketplace/src/ui/item-authoring-view.js",
   visit: "clients/marketplace/src/ui/visit-authoring-view.js",
-  venueTargets: "clients/marketplace/src/ui/venue-target-chooser.js",
+  collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
+  studio: "clients/marketplace/src/ui/editorial-studio-view.js",
   workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
+  editorialRepository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
 };
 function read(key) { return fs.readFileSync(path.join(root, files[key]), "utf8"); }
 const shell = read("shell");
 const create = read("create");
 const item = read("item");
 const visit = read("visit");
-const venueTargets = read("venueTargets");
+const collection = read("collection");
+const studio = read("studio");
 const workspace = read("workspace");
+const editorialRepository = read("editorialRepository");
 
 test("create boundary passa il syntax gate", () => {
   for (const file of Object.values(files)) {
@@ -29,27 +33,59 @@ test("create boundary passa il syntax gate", () => {
 });
 
 test("shell espone Crea dentro la IA contestuale", () => {
-  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Attività", "Account"]) assert.match(shell, new RegExp(`>${label}<`));
+  for (const label of ["Home", "Esplora", "Libreria", "Crea", "Attività"]) assert.match(shell, new RegExp(`>${label}<`));
   assert.match(shell, /class="nav-create"/);
   assert.match(shell, /authoringIsCreation/);
+  assert.doesNotMatch(shell, /venue-target-chooser|\/workspace\/venue-targets|context-release-composer|\/workspace\/context-compose/);
 });
 
-test("Create Hub deriva l'owner dal contesto di sessione", () => {
+test("Create Hub deriva il principal dal contesto operativo e non lo serializza nei link principali", () => {
   assert.match(create, /readOperatingContext/);
   assert.match(create, /operatingPrincipal/);
   assert.match(create, /this\.principal\(\)/);
-  assert.match(create, /\/workspace\/item-authoring/);
-  assert.match(create, /\/workspace\/visit-authoring/);
-  assert.doesNotMatch(create, /principalType|principalId|data-principal-form/);
+  assert.match(create, /marketplaceRepository\.workspaceContext\(principal\)/);
+  assert.match(create, /marketplaceRepository\.authoringPreflight\(principal\)/);
+  assert.doesNotMatch(create, /data-principal-form/);
 });
 
-test("Create Hub mostra una sola remediation e non espone la gestione avanzata", () => {
+test("Create Hub presenta Contenuto, Visita e Collega soggetti senza creare Raccolte dal menu Crea", () => {
   assert.match(create, /capabilities\?\.contentCreate/);
   assert.match(create, /capabilities\?\.visitCreate/);
-  assert.match(create, /capabilities\?\.venueObjectContentCreate/);
-  assert.match(create, /if \(!this\.preflight\?\.content\?\.allowed\) return ""/);
-  assert.doesNotMatch(create, /blockerCard\(\{ physical:/);
-  assert.doesNotMatch(create, /Gestione avanzata/);
+  assert.match(create, /capabilities\?\.semanticGraphEdit/);
+  assert.match(create, /Crea un contenuto/);
+  assert.match(create, /Progetta una visita/);
+  assert.match(create, /Collega soggetti/);
+  assert.match(create, /\/workspace\/item-authoring/);
+  assert.match(create, /\/workspace\/visit-authoring/);
+  assert.match(create, /\/create\?mode=relations/);
+  assert.doesNotMatch(create, /\/workspace\/editorial-collection-new/);
+});
+
+test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente Relazioni", () => {
+  assert.match(create, /editorialRepository\.relationChoices/);
+  assert.match(create, /ownerType: this\.context\.type/);
+  assert.match(create, /ownerId: this\.context\.id/);
+  assert.match(create, /Scegli la raccolta/);
+  assert.match(create, /const graph = choice\.semanticGraph/);
+  assert.match(create, /graph\.sharedByCollections/);
+  assert.match(create, /section=relations/);
+  assert.match(editorialRepository, /\/v2\/marketplace\/editorial-relations/);
+});
+
+test("la creazione del contenuto parte dal Subject nello spazio editoriale corrente", () => {
+  assert.match(create, /Parti dal Subject di cui vuoi parlare/);
+  assert.match(create, /Il nuovo Item verrà inserito nello spazio editoriale corrente/);
+  assert.match(create, /item-authoring\?contentSpaceId=/);
+  assert.doesNotMatch(create, /Sede di riferimento|Nessuna sede specifica|venueTargetId|physicalIntent|organizationVenues\(/);
+  assert.match(item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
+  assert.match(item, /artaround-subject-presence/);
+});
+
+test("la semantica curatoriale usa lo Studio ma resta separata dai contenuti dell'Item", () => {
+  assert.match(collection, /EditorialContext|editorialContext|Raccolta/);
+  assert.match(studio, /semantic|Semantica|grafo|Relazioni/i);
+  assert.match(create, /Il grafo semantico può essere condiviso con altre raccolte/);
+  assert.doesNotMatch(item, /createItemConnection|removeItemConnection|data-add-connection|data-connection-search/);
 });
 
 test("Item e Visit editor non permettono di cambiare principal dall'editor", () => {
@@ -59,13 +95,7 @@ test("Item e Visit editor non permettono di cambiare principal dall'editor", () 
   assert.doesNotMatch(visit, /data-new-principal|principalType:\s*params\.get|principalId:\s*params\.get/);
 });
 
-test("flusso da oggetto fisico propaga solo il VenueTarget necessario", () => {
-  assert.match(venueTargets, /venueTargetId/);
-  assert.match(venueTargets, /\/workspace\/item-authoring\?venueTargetId=/);
-  assert.doesNotMatch(venueTargets, /principalType|principalId|principalQuery/);
-});
-
 test("Libreria apre Crea senza serializzare il contesto nel link", () => {
-  assert.match(workspace, /createHref\(\) \{ return "\/create"; \}/);
+  assert.match(workspace, /data-route href="\/create"/);
   assert.doesNotMatch(workspace, /\/create\?\$\{p\.toString\(\)\}/);
 });

@@ -38,7 +38,7 @@ async function searchVenueSubjectCandidates({ venueId, actorUserId, query, limit
       description: venue.description || "",
       ownerOrganizationId: venue.ownerOrganizationId,
     },
-    permissions: { canEditInventory: authority.effectivePermissions.includes("venue.physical.edit") },
+    permissions: { canEditInventory: authority.effectivePermissions.includes("venue.inventory.manage") },
   };
   const normalizedQuery = normalizedLabel(query);
   if (normalizedQuery.length < 2) return {

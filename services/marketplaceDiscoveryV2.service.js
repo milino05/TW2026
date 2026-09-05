@@ -3,6 +3,7 @@ const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.serv
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const VenueTarget = require("../models/venueTarget.model");
+const LayoutRevision = require("../models/layoutRevision.model");
 const MarketplaceListing = require("../models/marketplaceListing.model");
 const MarketplaceOffer = require("../models/marketplaceOffer.model");
 const AppError = require("../utils/AppError");
@@ -94,15 +95,60 @@ async function venuePublicProfile({ venueId }) {
     VenueRelease.findOne({ _id: venue.publishedReleaseId, venueId: venue._id, status: "published" }).lean(),
   ]);
   if (!organization || !release) throw new AppError("Sede pubblica non disponibile", 404);
+  const layout = release.layoutRevisionId
+    ? await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id }).lean()
+    : null;
+  if (!layout) throw new AppError("Mappa pubblica della sede non disponibile", 409);
+
   const activeBindings = (release.targetBindings || []).filter((entry) => entry.availability === "active" && entry.exhibitSlotId);
   const targetIds = activeBindings.map((entry) => entry.venueTargetId);
   const targets = targetIds.length ? await VenueTarget.find({ _id: { $in: targetIds }, venueId: venue._id, lifecycleStatus: "active" }).select("displayLabelOverride inventoryNote subjectId").lean() : [];
   const targetIdentityById = await venueTargetIdentityMap(targets);
   const bindingById = new Map(activeBindings.map((entry) => [id(entry.venueTargetId), entry]));
+  const targetBySlotId = new Map(activeBindings.map((entry) => [id(entry.exhibitSlotId), id(entry.venueTargetId)]));
+
   return {
     venue: { id: venue._id, name: venue.name, description: venue.description || "", preVisitInformation: release.preVisitInformation || [], version: release.version },
     organization: { id: organization._id, name: organization.name, description: organization.description || "" },
-    targets: targets.map((target) => ({ id: target._id, subjectId: target.subjectId, label: targetIdentityById.get(id(target._id))?.label, description: targetIdentityById.get(id(target._id))?.description || "", recognitionMedia: (bindingById.get(id(target._id))?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })) })),
+    map: {
+      layoutRevisionId: layout._id,
+      version: layout.version,
+      floors: (layout.floors || []).map((floor) => ({
+        id: floor._id,
+        label: floor.label,
+        mapAsset: floor.mapAsset ? {
+          url: floor.mapAsset.url,
+          width: floor.mapAsset.width || null,
+          height: floor.mapAsset.height || null,
+        } : null,
+      })),
+      places: (layout.places || []).map((place) => ({
+        id: place._id,
+        floorId: place.floorId,
+        label: place.label,
+        position: place.position || null,
+      })),
+      connections: (layout.connections || []).map((connection) => ({
+        id: connection._id,
+        fromPlaceId: connection.fromPlaceId,
+        toPlaceId: connection.toPlaceId,
+        geometry: connection.geometry || null,
+      })),
+      exhibitSlots: (layout.exhibitSlots || []).map((slot) => ({
+        id: slot.exhibitSlotId,
+        placeId: slot.placeId,
+        label: slot.label,
+        assignedVenueTargetId: targetBySlotId.get(id(slot.exhibitSlotId)) || null,
+      })),
+    },
+    targets: targets.map((target) => ({
+      id: target._id,
+      subjectId: target.subjectId,
+      label: targetIdentityById.get(id(target._id))?.label,
+      description: targetIdentityById.get(id(target._id))?.description || "",
+      recognitionMedia: (bindingById.get(id(target._id))?.recognitionMedia || []).map((media) => ({ url: media.url, altText: media.altText || "" })),
+      exhibitSlotId: bindingById.get(id(target._id))?.exhibitSlotId || null,
+    })),
   };
 }
 

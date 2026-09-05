@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 function oid() { return new mongoose.Types.ObjectId(); }
@@ -24,7 +25,6 @@ async function createFixture() {
   const Namespace = require("../models/namespace.model");
   const NamespaceRevision = require("../models/namespaceRevision.model");
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
   const EditorialRelease = require("../models/editorialRelease.model");
   const ItemV2 = require("../models/itemV2.model");
   const ItemEdition = require("../models/itemEdition.model");
@@ -60,7 +60,13 @@ async function createFixture() {
   await namespace.save();
 
   const contentSpace = await ContentSpace.create({ name: "Materialize space", ownerType: "user", ownerId: user._id, createdBy: user._id });
-  const context = await EditorialContext.create({ contentSpaceId: contentSpace._id, namespaceId: namespace._id, displayName: "Materialize context", createdBy: user._id });
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace,
+    namespaceId: namespace._id,
+    namespaceRevisionId: namespaceRevision._id,
+    displayName: "Materialize context",
+    createdBy: user._id,
+  });
 
   const item = await ItemV2.create({ primarySubjectId: subjects[0]._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
   const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
@@ -99,8 +105,8 @@ async function createFixture() {
     editorialContextId: context._id,
     version: 1,
     namespaceRevisionId: namespaceRevision._id,
-    graphRevisionId: oid(),
-    itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+    graphRevisionId: graphRevision._id,
+    itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
     releasedAt: new Date(),
     releasedBy: user._id,

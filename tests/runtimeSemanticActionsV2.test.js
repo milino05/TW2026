@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -83,8 +84,6 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const EditorialRelease = require("../models/editorialRelease.model");
@@ -93,6 +92,7 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
     const VisitSessionV2 = require("../models/visitSessionV2.model");
     const {
       createExecutionPreparation,
@@ -142,16 +142,11 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       ownerId: owner._id,
       createdBy: owner._id,
     });
-    const context = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Contesto semantico demo",
-      createdBy: owner._id,
-    });
-    const graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       createdBy: owner._id,
     });
     await GraphSubjectBinding.insertMany([
@@ -206,6 +201,7 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       namespaceRevisionId: namespaceRevision._id,
       graphRevisionId: graphRevision._id,
       itemBindings: [main, curiosity, artist].map((value) => ({
+        itemId: value.item._id,
         itemEditionId: value.edition._id,
         itemRevisionId: value.revision._id,
         curationSignals: [],
@@ -248,6 +244,8 @@ test("semantic Actions derivano da Item/Subject/Graph pinzati senza catalogo glo
       userId: owner._id,
       expectedVersion: preparation.version,
     });
+    const plan = await SessionPlanRevisionV2.findById(started.current.planRevisionId).lean();
+    assert.deepEqual(new Set(plan.semanticGraphPins[0].subjectIds.map(id)), new Set([id(artworkSubject._id), id(artistSubject._id)]));
     assert.equal(started.current.current.label, "Opera principale");
     assert.equal(started.current.current.presentation.kind, "visit_content");
     assert.equal(started.current.session.currentEntryIndex, 0);

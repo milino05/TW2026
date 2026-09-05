@@ -47,12 +47,16 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+    const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
+    const { addItemMembership } = require("../services/contentSpace.service");
     const { createGraphRevision } = require("../services/semanticGraphV2.service");
+    const { addEditorialContextEntry } = require("../services/editorialContextEntry.service");
+    const { requestEditorialContextReview, approveEditorialContextReview } = require("../services/editorialContextReview.service");
     const { createEditorialRelease } = require("../services/editorialRelease.service");
     const { projectEditorialContext } = require("../services/editorialContextProjection.service");
 
@@ -82,9 +86,15 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     await namespace.save();
 
     const contentSpace = await ContentSpace.create({ name: "Workspace", ownerType: "user", ownerId: user._id, createdBy: user._id });
-    const context = await EditorialContext.create({ contentSpaceId: contentSpace._id, namespaceId: namespace._id, displayName: "Approccio", createdBy: user._id });
+    const { context } = await createEditorialContextWithGraph({
+      contentSpace,
+      namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
+      displayName: "Approccio",
+      createdBy: user._id,
+    });
     const item = await ItemV2.create({ primarySubjectId: work._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
-    await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: user._id });
+    await addItemMembership({ contentSpaceId: contentSpace._id, itemId: item._id, actorUserId: user._id });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
     const revision = new ItemRevisionV2({
       itemEditionId: edition._id,
@@ -152,20 +162,28 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
       (error) => error?.status === 409 && error?.details?.some((entry) => entry.code === "GRAPH_REVISION_CONFLICT"),
       "una snapshot basata su una revisione superata non deve sostituire il grafo corrente",
     );
+
+    await addEditorialContextEntry({
+      editorialContextId: context._id,
+      itemId: item._id,
+      curationSignals: [],
+      actorUserId: user._id,
+    });
+    const reviewRevision = await requestEditorialContextReview({ editorialContextId: context._id, actorUserId: user._id });
+    await approveEditorialContextReview({ editorialContextId: context._id, revisionId: reviewRevision._id, actorUserId: user._id });
     const release = await createEditorialRelease({
       editorialContextId: context._id,
+      editorialContextRevisionId: reviewRevision._id,
       actorUserId: user._id,
-      payload: {
-        namespaceRevisionId: namespaceRevision._id,
-        graphRevisionId: revisedGraph.revision._id,
-        itemBindings: [{ itemEditionId: edition._id, itemRevisionId: revision._id, curationSignals: [] }],
-      },
     });
 
     const refreshedContext = await EditorialContext.findById(context._id);
     assert.equal(String(refreshedContext.publishedReleaseId), String(release._id));
     assert.equal(String(release.graphRevisionId), String(revisedGraph.revision._id));
+    assert.equal(String(release.itemBindings[0].itemId), String(item._id));
     assert.equal(String(release.itemBindings[0].itemRevisionId), String(revision._id));
+    assert.equal(release.subjectIds, undefined, "la semantica pubblicata è pinzata dalla GraphRevision, non duplicata nella Release");
+    assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: release.graphRevisionId }), 2);
 
     const summary = await projectEditorialContext({ editorialContext: refreshedContext, contentSpace, namespace });
     assert.deepEqual(summary.stats, { availableItemCount: 1, subjectCount: 2 });

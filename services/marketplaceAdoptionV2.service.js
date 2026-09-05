@@ -15,6 +15,7 @@ async function recordAdoptionFromAccess({
   sourceSnapshotRef = null,
   targetResourceRef = null,
   resultResourceRef = null,
+  session = null,
 }) {
   if (access?.basis !== "entitlement" || !access.entitlement) return null;
   if (!ADOPTION_ACTIONS.includes(action)) {
@@ -28,7 +29,7 @@ async function recordAdoptionFromAccess({
   if (access.resolvedSnapshotRef && !sameRef(resolvedSnapshot, access.resolvedSnapshotRef)) {
     throw new AppError("Adoption non coerente con la snapshot autorizzata", 500, [{ code: "ADOPTION_SNAPSHOT_MISMATCH" }]);
   }
-  return Adoption.create({
+  const [adoption] = await Adoption.create([{
     beneficiaryType: access.entitlement.beneficiaryType,
     beneficiaryId: access.entitlement.beneficiaryId,
     entitlementId: access.entitlement._id,
@@ -38,7 +39,8 @@ async function recordAdoptionFromAccess({
     targetResourceRef,
     resultResourceRef,
     adoptedBy: actorUserId,
-  });
+  }], session ? { session } : undefined);
+  return adoption;
 }
 
 async function deleteAdoptions(adoptionIds = []) {

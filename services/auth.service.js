@@ -1,9 +1,11 @@
 const crypto = require("crypto");
 const { promisify } = require("util");
+const mongoose = require("mongoose");
 
 const User = require("../models/user");
 const Session = require("../models/session");
 const AppError = require("../utils/AppError");
+const { ensurePrincipalContentSpace } = require("./contentSpaceBootstrap.service");
 
 const scryptAsync = promisify(crypto.scrypt);
 const PASSWORD_KEY_LENGTH = 64;
@@ -120,13 +122,32 @@ async function registerUser({ username, password }) {
     ]);
   }
 
-  const user = new User({
-    username: normalizedUsername,
-    passwordHash: await hashPassword(password),
-    status: "active",
-  });
-
-  await user.save();
+  const passwordHash = await hashPassword(password);
+  let user = null;
+  try {
+    await mongoose.connection.transaction(async (session) => {
+      user = new User({
+        username: normalizedUsername,
+        passwordHash,
+        status: "active",
+      });
+      await user.save({ session });
+      await ensurePrincipalContentSpace({
+        ownerType: "user",
+        ownerId: user._id,
+        principalLabel: user.username,
+        actorUserId: user._id,
+        session,
+      });
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      throw new AppError("Username gia utilizzato", 409, [
+        { field: "username", code: "DUPLICATE_USERNAME", message: "username gia utilizzato" },
+      ]);
+    }
+    throw error;
+  }
   return user;
 }
 

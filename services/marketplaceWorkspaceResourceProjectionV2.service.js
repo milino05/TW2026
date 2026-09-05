@@ -54,6 +54,7 @@ function ownedOperations({ published, listing, canManageCommerce = true, canEdit
 function workflowCapabilities(principal, resourceType) {
   if (principal.type === "user") return { edit: true, review: true, publish: true };
   const permissions = new Set(principal.effectivePermissions || []);
+  if (resourceType === "semantic_graph") return { edit: permissions.has("semantic_graph.edit"), review: false, publish: false };
   const prefix = resourceType === "item_edition" ? "item" : resourceType;
   return { edit: permissions.has(`${prefix}.edit`), review: permissions.has(`${prefix}.review`), publish: permissions.has(`${prefix}.publish`) };
 }
@@ -102,7 +103,10 @@ function withWorkflowOperations({ baseOperations, principal, resourceType, revis
 
 async function listingMapForCandidates(principal, candidates) {
   if (!candidates.length) return new Map();
-  const refs = candidates.map((entry) => ({ resourceType: entry.resourceType, resourceId: entry._id }));
+  const refs = candidates
+    .filter((entry) => entry.resourceType !== "semantic_graph")
+    .map((entry) => ({ resourceType: entry.resourceType, resourceId: entry._id }));
+  if (!refs.length) return new Map();
   const listings = await MarketplaceListing.find({
     sellerType: principal.type,
     sellerId: principal.id,
@@ -122,8 +126,29 @@ async function listingMapForCandidates(principal, candidates) {
 }
 
 function projectOwnedCandidate(candidate, { principal, listings }) {
-  const canManageCommerce = principal.type === "user" || (principal.effectivePermissions || []).includes("marketplace.distribution.manage");
   const capabilities = workflowCapabilities(principal, candidate.resourceType);
+  if (candidate.resourceType === "semantic_graph") {
+    return {
+      ownership: "owned",
+      resourceType: "semantic_graph",
+      resourceId: candidate._id,
+      sourceRef: { resourceType: "semantic_graph", resourceId: candidate._id },
+      authoringRef: { resourceType: "semantic_graph", resourceId: candidate._id },
+      title: candidate.displayName,
+      summary: candidate.description || "",
+      ...modificationProjection(candidate),
+      state: "working",
+      semanticGraphStats: {
+        subjectCount: Number(candidate.subjectCount || 0),
+        relationCount: Number(candidate.relationCount || 0),
+        collectionUsageCount: Number(candidate.collectionUsageCount || 0),
+        contentSpaceUsageCount: Number(candidate.contentSpaceUsageCount || 0),
+      },
+      availableOperations: capabilities.edit ? [{ code: "open_editor", label: "Apri grafo" }] : [],
+    };
+  }
+
+  const canManageCommerce = principal.type === "user" || (principal.effectivePermissions || []).includes("marketplace.distribution.manage");
   const listing = listings.get(key(candidate.resourceType, candidate._id)) || null;
   if (candidate.resourceType === "item_edition") {
     const revision = candidate.revision || null;

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -114,7 +115,6 @@ test("follow_current ricontrolla la closure prima di una nuova Acquisition", { s
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
     const { createListing, createOffer, acquireOffer } = require("../services/marketplaceV2.service");
 
@@ -125,10 +125,16 @@ test("follow_current ricontrolla la closure prima di una nuova Acquisition", { s
     ]);
     const { namespace, revision: namespaceRevision } = await publishedNamespace({ Namespace, NamespaceRevision, ownerId: seller._id, actorUserId: seller._id, name: "Follow namespace" });
     const space = await ContentSpace.create({ name: "Follow space", ownerType: "user", ownerId: seller._id, createdBy: seller._id });
-    const context = await EditorialContext.create({ contentSpaceId: space._id, namespaceId: namespace._id, displayName: "Follow context", createdBy: seller._id });
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace: space,
+      namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
+      displayName: "Follow context",
+      createdBy: seller._id,
+    });
     const release1 = await EditorialRelease.create({
       editorialContextId: context._id, version: 1, namespaceRevisionId: namespaceRevision._id,
-      graphRevisionId: new mongoose.Types.ObjectId(), itemBindings: [],
+      graphRevisionId: graphRevision._id, itemBindings: [],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id }, releasedAt: new Date(), releasedBy: seller._id,
     });
     context.publishedReleaseId = release1._id;
@@ -153,7 +159,7 @@ test("follow_current ricontrolla la closure prima di una nuova Acquisition", { s
     await externalEdition.save();
     const release2 = await EditorialRelease.create({
       editorialContextId: context._id, version: 2, basedOnReleaseId: release1._id, namespaceRevisionId: namespaceRevision._id,
-      graphRevisionId: new mongoose.Types.ObjectId(), itemBindings: [{ itemEditionId: externalEdition._id, itemRevisionId: externalRevision._id }],
+      graphRevisionId: graphRevision._id, itemBindings: [{ itemId: externalItem._id, itemEditionId: externalEdition._id, itemRevisionId: externalRevision._id }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id }, releasedAt: new Date(), releasedBy: seller._id,
     });
     context.publishedReleaseId = release2._id;

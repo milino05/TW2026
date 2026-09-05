@@ -7,12 +7,22 @@ const { getNamespaceAuthoringControls } = require("./namespaceAuthoringV2.servic
 function id(value) { return String(value?._id || value || ""); }
 
 function creationCapabilities(principal) {
-  if (principal.type === "user") return { contentCreate: true, visitCreate: true, venueObjectContentCreate: true };
+  if (principal.type === "user") {
+    return {
+      contentCreate: true,
+      editorialCollectionCreate: true,
+      editorialSpaceManage: true,
+      semanticGraphEdit: true,
+      visitCreate: true,
+    };
+  }
   const permissions = new Set(principal.effectivePermissions || []);
   return {
     contentCreate: permissions.has("item.create"),
+    editorialCollectionCreate: permissions.has("editorial_context.create"),
+    editorialSpaceManage: permissions.has("editorial_space.manage"),
+    semanticGraphEdit: permissions.has("semantic_graph.edit"),
     visitCreate: permissions.has("visit.create"),
-    venueObjectContentCreate: permissions.has("item.create") && permissions.has("venue.view"),
   };
 }
 
@@ -83,6 +93,7 @@ async function inspectNamespaces({ candidates, actorUserId, principal }) {
       const summary = {
         id: candidate.namespace._id,
         name: candidate.namespace.name,
+        description: candidate.namespace.description || "",
         source: candidate.source,
         revisionId: controls.revision.id,
         durationTypeCount: durationCount,
@@ -105,38 +116,54 @@ async function getMarketplaceAuthoringPreflight({
 }) {
   const { selected } = await resolveSelectedPrincipal({ actorUserId, principalType, principalId });
   const capabilities = creationCapabilities(selected);
-  const candidates = capabilities.contentCreate ? await namespaceCandidates(selected) : [];
+  const needsEditorialRules = capabilities.contentCreate || capabilities.editorialCollectionCreate;
+  const candidates = needsEditorialRules ? await namespaceCandidates(selected) : [];
   const { usable, needsConfiguration, unavailableLicensed } = await inspectNamespaces({ candidates, actorUserId, principal: selected });
-  const allowed = capabilities.contentCreate && usable.length > 0;
-  const blockers = [];
+
+  const contentAllowed = capabilities.contentCreate && usable.length > 0;
+  const contentBlockers = [];
   if (!capabilities.contentCreate) {
-    blockers.push({
-      code: "ITEM_CREATE_PERMISSION_REQUIRED",
-      message: "Il tuo ruolo non consente di creare contenuti in questa organizzazione.",
-    });
-  } else if (!allowed && needsConfiguration.length) {
-    blockers.push({
-      code: "NAMESPACE_CONTROLS_REQUIRED",
-      message: "Le tue regole editoriali devono definire almeno una durata e un livello di linguaggio prima di creare un contenuto.",
-    });
-  } else if (!allowed) {
-    blockers.push({
-      code: "NAMESPACE_REQUIRED",
-      message: "Prima di creare un contenuto serve almeno un insieme di regole editoriali utilizzabile.",
-    });
+    contentBlockers.push({ code: "ITEM_CREATE_PERMISSION_REQUIRED", message: "Il tuo ruolo non consente di creare contenuti in questa organizzazione." });
+  } else if (!contentAllowed && needsConfiguration.length) {
+    contentBlockers.push({ code: "NAMESPACE_CONTROLS_REQUIRED", message: "Le tue regole editoriali devono definire almeno una durata e un livello di linguaggio prima di creare un contenuto." });
+  } else if (!contentAllowed) {
+    contentBlockers.push({ code: "NAMESPACE_REQUIRED", message: "Prima di creare un contenuto serve almeno un insieme di regole editoriali utilizzabile." });
+  }
+
+  const collectionAllowed = capabilities.editorialCollectionCreate && usable.length > 0;
+  const collectionBlockers = [];
+  if (!capabilities.editorialCollectionCreate) {
+    collectionBlockers.push({ code: "EDITORIAL_CONTEXT_CREATE_PERMISSION_REQUIRED", message: "Il tuo ruolo non consente di creare raccolte editoriali in questa organizzazione." });
+  } else if (!collectionAllowed) {
+    collectionBlockers.push({ code: "NAMESPACE_REQUIRED", message: "Per creare una raccolta serve almeno un insieme di regole editoriali utilizzabile." });
   }
 
   return {
     principal: publicPrincipal(selected),
     capabilities,
+    editorialRules: {
+      usableNamespaces: usable,
+      needsConfiguration,
+      unavailableLicensed,
+    },
     content: {
-      allowed,
+      allowed: contentAllowed,
       usableNamespaceCount: usable.length,
       usableNamespaces: usable,
       needsConfigurationCount: needsConfiguration.length,
       needsConfiguration,
       unavailableLicensedCount: unavailableLicensed.length,
-      blockers,
+      blockers: contentBlockers,
+    },
+    collection: {
+      allowed: collectionAllowed,
+      usableNamespaces: usable,
+      canCreateContentSpace: capabilities.editorialSpaceManage,
+      blockers: collectionBlockers,
+    },
+    relations: {
+      allowed: capabilities.semanticGraphEdit,
+      blockers: capabilities.semanticGraphEdit ? [] : [{ code: "SEMANTIC_GRAPH_EDIT_PERMISSION_REQUIRED", message: "Il tuo ruolo non consente di modificare i collegamenti semantici in questa organizzazione." }],
     },
     visit: {
       allowed: capabilities.visitCreate,

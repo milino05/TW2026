@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { getCommercialManagement } = require("../services/marketplaceCommercialV2.service");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -199,7 +200,7 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
   });
 });
 
-test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo, release e diritti acquisiti", { skip: !mongoUri }, async () => {
+test("rimuovere una raccolta preserva grafo, relazioni, release e diritti acquisiti", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -208,7 +209,7 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
     const ContentSpace = require("../models/contentSpace.model");
     const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
     const MarketplaceOffer = require("../models/marketplaceOffer.model");
@@ -223,17 +224,12 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
     const [owner, buyer] = await users(User, "context");
     const { namespace, revision: namespaceRevision } = await publishedNamespace({ Namespace, NamespaceRevision, owner, name: "Regole collegamenti" });
     const space = await ContentSpace.create({ name: "Collegamenti personali", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
-    const context = await EditorialContext.create({
-      contentSpaceId: space._id,
+    const { context, semanticGraph, graphRevision: graph } = await createEditorialContextWithGraph({
+      contentSpace: space,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Collegamenti personali",
       shortDescription: "Raccolta da eliminare",
-      createdBy: owner._id,
-    });
-    const graph = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       createdBy: owner._id,
     });
     const [source, targetOne, targetTwo] = await Subject.create([
@@ -255,7 +251,6 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
       releasedAt: new Date(),
       releasedBy: owner._id,
     });
-    context.workingGraphRevisionId = graph._id;
     context.publishedReleaseId = release._id;
     await context.save();
 
@@ -279,17 +274,23 @@ test("rimuovere una raccolta disattiva i collegamenti correnti ma conserva grafo
     const detail = await getCreatorWorkspaceResourceDetail({
       actorUserId: owner._id, ownership: "owned", resourceType: "editorial_context", resourceId: context._id,
     });
-    assert.equal(detail.asset.removalImpact.affectedConnectionCount, 2);
+    assert.equal(detail.asset.removalImpact.semanticGraphRelationCount, 2);
+    assert.equal(detail.asset.removalImpact.semanticGraphCollectionCount, 1);
 
     const result = await removeOwnedWorkspaceResource({
       actorUserId: owner._id, resourceType: "editorial_context", resourceId: context._id,
     });
-    assert.equal(result.affectedConnectionCount, 2);
+    assert.equal(result.semanticGraphRelationCount, 2);
+    assert.equal(result.semanticGraphCollectionCount, 1);
     assert.equal(result.withdrawnListingCount, 2);
     assert.equal(result.inactiveOfferCount, 2);
     assert.equal((await EditorialContext.findById(context._id).lean()).lifecycleStatus, "trashed");
     assert.equal((await ContentSpace.findById(space._id).lean()).lifecycleStatus, "active");
     assert.equal((await Namespace.findById(namespace._id).lean()).lifecycleStatus, "active");
+    const storedGraph = await SemanticGraph.findById(semanticGraph._id).lean();
+    assert.ok(storedGraph);
+    assert.equal(storedGraph.lifecycleStatus, "active");
+    assert.equal(String(storedGraph.workingRevisionId), String(graph._id));
     assert.equal(await SemanticEdgeV2.countDocuments({ graphRevisionId: graph._id }), 2);
     assert.equal(await EditorialRelease.countDocuments({ _id: release._id }), 1);
     assert.equal((await MarketplaceListing.findById(livePublication.listing._id).lean()).status, "withdrawn");

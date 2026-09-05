@@ -1,4 +1,4 @@
-import { registerNavigationLossBlocker } from "../application/navigation-loss-guard.js";
+import { confirmNavigationLoss, registerNavigationLossBlocker } from "../application/navigation-loss-guard.js";
 import { openActionDialog } from "./feedback-primitives.js";
 
 const PROTECTED_HOST_SELECTOR = [
@@ -7,8 +7,9 @@ const PROTECTED_HOST_SELECTOR = [
   "artaround-venue-editor-view",
   "artaround-visit-authoring-view",
   "artaround-item-authoring-view",
-  "artaround-context-release-composer",
   "artaround-commerce-management-view",
+  "artaround-editorial-collection-create-view",
+  "artaround-editorial-studio-view",
 ].join(",");
 
 const dirtyForms = new Set();
@@ -33,6 +34,15 @@ function shouldProtect(form) {
   return Boolean(form.querySelector('button:not([type]), button[type="submit"], input[type="submit"]'));
 }
 
+function protectedHosts() {
+  return [...document.querySelectorAll(PROTECTED_HOST_SELECTOR)];
+}
+
+function hostHasDurableDirtyState(host) {
+  try { return Boolean(host?.hasUnsavedChanges?.()); }
+  catch { return false; }
+}
+
 function pruneDirtyState() {
   for (const form of dirtyForms) if (!form.isConnected) dirtyForms.delete(form);
   for (const editor of dirtyItemSelections) {
@@ -47,7 +57,14 @@ function formHasDedicatedDraftBlocker(form) {
 
 function hasUncoveredDirtyState() {
   pruneDirtyState();
-  return dirtyItemSelections.size > 0 || [...dirtyForms].some((form) => !formHasDedicatedDraftBlocker(form));
+  return dirtyItemSelections.size > 0
+    || [...dirtyForms].some((form) => !formHasDedicatedDraftBlocker(form))
+    || protectedHosts().some(hostHasDurableDirtyState);
+}
+
+function hostHasDirtyForm(host) {
+  pruneDirtyState();
+  return [...dirtyForms].some((form) => form.isConnected && host.contains(form) && !formHasDedicatedDraftBlocker(form));
 }
 
 function markFromEvent(event) {
@@ -68,6 +85,26 @@ document.addEventListener("reset", (event) => {
   if (event.target instanceof HTMLFormElement) dirtyForms.delete(event.target);
 }, true);
 
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const tab = target?.closest("artaround-editorial-studio-view button[data-studio-section]");
+  if (!tab) return;
+  const studio = tab.closest("artaround-editorial-studio-view");
+  const nextSection = tab.dataset.studioSection;
+  if (!studio || !nextSection || studio.section === nextSection) return;
+  if (!hostHasDirtyForm(studio) && !hostHasDurableDirtyState(studio)) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void confirmNavigationLoss({
+    kind: "section",
+    from: studio.section,
+    to: nextSection,
+  }).then((confirmed) => {
+    if (confirmed && studio.isConnected) studio.setSection?.(nextSection);
+  });
+}, true);
+
 const observerStart = () => {
   const observer = new MutationObserver(pruneDirtyState);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -84,5 +121,9 @@ registerNavigationLossBlocker({
     confirmLabel: "Esci senza salvare",
     cancelLabel: "Resta nella pagina",
   }),
-  discard: () => { dirtyForms.clear(); dirtyItemSelections.clear(); },
+  discard: () => {
+    dirtyForms.clear();
+    dirtyItemSelections.clear();
+    for (const host of protectedHosts()) host.discardUnsavedChanges?.();
+  },
 });

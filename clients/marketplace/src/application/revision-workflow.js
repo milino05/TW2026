@@ -1,24 +1,24 @@
-import { presentAvailableOperations } from "./operation-presentation.js";
+import { presentAvailableOperations, workflowOperationKey } from "./operation-presentation.js";
 
 const ORDER = [
   "check",
   "request_review",
   "withdraw_review",
   "request_changes",
+  "approve_review",
   "approve_review_and_publish",
   "publish_without_review",
   "publish",
 ];
 
 function workflowRank(code) {
-  const value = String(code || "");
-  const index = ORDER.findIndex((suffix) => value === suffix || value.endsWith(`.${suffix}`));
+  const key = workflowOperationKey(code);
+  const index = ORDER.indexOf(key);
   return index < 0 ? ORDER.length : index;
 }
 
 export function isRevisionWorkflowOperation(operation) {
-  const code = String(operation?.code || "");
-  return code.includes("workflow") || ORDER.some((suffix) => code === suffix || code.endsWith(`.${suffix}`));
+  return Boolean(workflowOperationKey(operation?.code));
 }
 
 /**

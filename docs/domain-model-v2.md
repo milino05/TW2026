@@ -1,35 +1,33 @@
 # ArtAround — Domain Model v2
 
-Questo documento e il contratto architetturale canonico per il refactoring `main -> v2`.
-
-Le specifiche ufficiali stabiliscono cosa ArtAround deve fare; questo modello stabilisce come il dominio interno lo rappresenta. Il codice legacy ancora presente durante il refactoring non modifica questo contratto. Le formulazioni precedenti incompatibili sono superseded.
+Questo documento descrive il modello di dominio corrente di ArtAround. Le specifiche ufficiali stabiliscono cosa il prodotto deve fare; il codice della branch di riferimento stabilisce cosa è implementato. In caso di conflitto prevalgono le specifiche.
 
 ## 1. Principi
 
-- ArtAround e generico rispetto a musei, gallerie ed esposizioni.
-- Il dominio editoriale, il dominio semantico e il dominio fisico sono separati e cooperano tramite identita stabili.
-- Una Visit non e un array di testi: distingue sequenza narrativa, riferimenti fisici e logistica.
+- ArtAround è generico rispetto a musei, gallerie ed esposizioni.
+- Semantica, contenuto editoriale/presentazione e presenza fisica sono assi distinti.
+- Una Visit non è un array di testi: distingue contenuti, ancore fisiche e logistica.
 - Gli Item sono contenuti editoriali; le indicazioni logistiche non sono Item.
-- Piu contenuti possono riferirsi allo stesso soggetto culturale e possono avere differenti approcci editoriali, profondita, linguaggi, lunghezze e metadati.
-- Published/released data usati come dipendenza sono revisionati e immutabili; le nuove revisioni non riscrivono retroattivamente Visit o Session gia materializzate.
-- Ownership, licenza, offerta commerciale, acquisizione/entitlement, adozione e inclusione nel generator sono concetti distinti.
-- Il modello base non implementa prematuramente 18–27/18–33, ma non deve richiedere workaround per sincronizzazione, sessioni docente/studenti, quiz, QR/geolocalizzazione, routing dinamico, LLM, linguaggio naturale e traduzione.
+- Più Item possono riferirsi allo stesso Subject e possono esprimere approcci, profondità, lingue, durate e metadati differenti.
+- Published/released data usati come dipendenza sono revisionati e immutabili.
+- Ownership, licenza, offerta, acquisizione/entitlement, adozione, appartenenza a uno Space e appartenenza a una Collection sono concetti distinti.
+- Il modello deve restare predisposto a sincronizzazione, QR/geolocalizzazione, routing dinamico, LLM, linguaggio naturale, traduzione e sessioni collaborative senza introdurre workaround nel dominio base.
 
 ## 2. Principal e ownership
 
-Le risorse editoriali possedibili possono appartenere a:
+Le risorse possedibili appartengono a:
 
 ```text
 User | Organization
 ```
 
-`Organization` e il principal collaborativo stabile. Una Organization puo gestire piu Venue, ContentSpace e altre risorse.
+`Organization` è il principal collaborativo stabile. Una Organization può gestire più Venue, ContentSpace, Collection, Namespace, SemanticGraph, Visit e altre risorse.
 
-L'ownership di una risorsa non implica automaticamente licenze su risorse esterne, entitlement commerciali o authority fisica su una Venue.
+L'ownership non concede implicitamente diritti su risorse esterne.
 
 ## 3. Subject
 
-`Subject` e l'identita ArtAround-globale e stabile di una entita o concetto culturalmente/semanticamente indirizzabile.
+`Subject` è l'identità ArtAround-globale e stabile di un'entità o concetto semanticamente indirizzabile.
 
 ```text
 Subject
@@ -39,28 +37,21 @@ Subject
   externalIdentities[]?
 ```
 
-Ogni `externalIdentity` rappresenta esclusivamente identità esatta e contiene almeno `scheme`, `id`, ruolo `canonical | historical`, provenance della conferma ArtAround e stato della verifica provider. Un identificatore storico dichiara il `canonicalId` corrente senza essere presentato come binding corrente equivalente.
-
 Invarianti:
 
-- la fisicita non e implicita;
+- la fisicità non è implicita;
 - le identità esterne sono opzionali e provider-neutral;
-- esiste al massimo una identity canonica corrente per scheme nello stesso Subject;
-- la coppia `(scheme, id)` identifica al massimo un Subject nell'intero database, inclusi gli ID storici;
-- `Subject.externalIdentities` ammette soltanto identità esatta: `close`, `broader` e `narrower` restano mapping di vocabolario nelle `semanticRefs` di Namespace e PlaceType;
-- Candidate esterna, mapping di vocabolario e binding confermato sono concetti distinti;
-- redirect e canonicalizzazione non autorizzano modifiche silenziose ai binding esistenti;
-- i label non vengono usati per merge fuzzy;
-- un Subject non viene copiato/forkato quando vengono copiati contenuti o grafi;
-- piu Item e piu VenueTarget possono riferirsi allo stesso Subject.
+- la coppia `(scheme, id)` identifica al massimo un Subject;
+- label simili non producono merge automatici;
+- un Subject non viene copiato quando vengono copiati Item, Collection o SemanticGraph;
+- più Item e più VenueTarget possono riferirsi allo stesso Subject;
+- un Subject può esistere senza Item e senza presenza fisica.
 
 ## 4. Namespace e NamespaceRevision
 
-`Namespace` e un vocabolario/contratto semantico-editoriale posseduto da User o Organization e revisionato tramite `NamespaceRevision`.
+`Namespace` è il contratto semantico-editoriale posseduto da User o Organization e revisionato tramite `NamespaceRevision`.
 
-Le definition namespace-local hanno identita interna stabile attraverso le revisioni. Una modifica di key/label non cambia l'identita; un cambiamento di significato semantico richiede una nuova definition identity.
-
-Famiglie previste includono almeno:
+Le definition namespace-local hanno identità stabile attraverso le revisioni. Le famiglie comprendono almeno:
 
 - SubjectClassDefinition;
 - RelationTypeDefinition;
@@ -69,23 +60,22 @@ Famiglie previste includono almeno:
 - PresentationAspectDefinition;
 - SelectionSignalDefinition.
 
-`RelationTypeDefinition.domain/range` referenziano SubjectClassDefinition, non ItemType.
+`RelationTypeDefinition.domain/range` referenziano SubjectClassDefinition.
 
-Una revisione di contenuto o graph puo essere riutilizzata sotto una NamespaceRevision successiva della stessa lineage dopo revalidation; non serve clonarla automaticamente a ogni revisione del Namespace.
-
-Un Namespace esterno puo essere riusato se i diritti lo permettono. Modificarlo richiede una fork in una lineage indipendente.
+Un Namespace esterno può essere riusato se i diritti lo consentono. Modificarlo richiede una fork indipendente.
 
 ## 5. Item, ItemEdition, ItemRevision
 
-`Item` e una lineage editoriale namespace-neutral:
+`Item` è una lineage editoriale namespace-neutral:
 
 ```text
 Item
   id
   primarySubjectId
-  owner
+  ownerType
+  ownerId
   provenance
-  lifecycle
+  lifecycleStatus
 ```
 
 `ItemEdition = Item x Namespace`:
@@ -94,63 +84,109 @@ Item
 ItemEdition
   itemId
   namespaceId
-  publishedRevisionId?
   workingRevisionId?
+  publishedRevisionId?
 ```
 
-Esiste al massimo una ItemEdition lineage per coppia Item+Namespace.
+Esiste al massimo una lineage ItemEdition per coppia Item+Namespace.
 
-`ItemRevision` contiene il payload editoriale/presentazionale immutabile di una Edition, con autore/licenza e provenance di NamespaceRevision. Le representation possono differire per durata, LanguageLevel, lingua/locale e altre dimensioni di presentation.
+`ItemRevision` contiene il payload editoriale/presentazionale immutabile della Edition, inclusi autore, licenza, provenance della NamespaceRevision e le representation disponibili. Le representation possono differire per durata, LanguageLevel, lingua/locale e altre dimensioni di presentazione.
 
-Una ItemRevision definisce una `defaultPresentation` concreta e valida da usare quando non esistono abbastanza dati espliciti o appresi per scegliere una representation migliore.
+La `defaultPresentation` è una scelta concreta di Variant/Representation valida come fallback.
 
-Gli stessi Item possono avere Edition differenti in Namespace differenti (per esempio Academic e Comedy) senza diventare contributi editoriali indipendenti. Se il contributo editoriale diverge realmente, si crea/forka un nuovo Item mantenendo il medesimo Subject quando appropriato.
+La modifica di un Item esterno richiede fork quando la licenza lo permette; l'appartenenza a Space o Collection non trasferisce ownership.
 
-Un autore terzo non modifica una Item lineage altrui: se vuole adattare il contenuto e la licenza lo consente, effettua fork dell'Item e conserva provenance e primarySubjectId.
+## 6. ContentSpace
 
-La terminologia interna `Item` non deve essere deformata soltanto per coincidere letteralmente con la terminologia della specifica. I dati richiesti dalla specifica — testo presentabile/TTS, lunghezza, linguaggio, autore, licenza e associazione non ambigua al soggetto — devono pero esistere ed essere esposti chiaramente dalle API/UI appropriate.
-
-## 6. ContentSpace e ContentSpaceMembership
-
-`ContentSpace` e un workspace/collection editoriale curato da User o Organization.
-
-Non e una cartella filesystem e non possiede semanticamente gli Item che contiene.
+`ContentSpace` è l'inventario editoriale di un principal. La sua risorsa centrale è l'insieme degli Item disponibili per le Collection che usano quello Space.
 
 ```text
-ContentSpaceMembership
+ContentSpaceItemMembership
   contentSpaceId
   itemId
   addedBy
-  metadata?
 ```
 
-Un Item puo appartenere contemporaneamente a piu ContentSpace.
+L'implementazione mantiene inoltre `ContentSpaceSubjectMembership` come inventario di Subject conosciuti nello Space. Questa membership non definisce però il perimetro semantico di una Collection né limita un SemanticGraph. La coverage editoriale di un grafo rispetto a uno Space si calcola dai `primarySubjectId` degli Item effettivamente presenti nello Space.
 
-Operazioni distinte:
+Un Item può appartenere a più ContentSpace.
 
-- Add/link: aggiunge una membership allo stesso Item;
-- Move: rimuove una membership e ne aggiunge un'altra, senza cambiare Item/Subject/Editions;
-- Fork: crea una nuova Item lineage.
+Invarianti:
 
-La membership non concede ownership, diritto di modifica, resale o derivative rights.
+- aggiungere un Item owned allo Space rende disponibile l'Item nello Space e registra il suo `primarySubjectId` nell'inventario Subject dello Space;
+- la presenza di un Subject nello Space non crea Item e non lo inserisce in alcun SemanticGraph;
+- la presenza di un Item/Subject nello Space non concede ownership o diritti commerciali;
+- per gli Item posseduti dal principal deve esistere almeno una membership verso un ContentSpace attivo;
+- rimuovere uno Space non elimina Item o Subject;
+- una membership verso contenuto esterno è valida soltanto se il principal dispone dei diritti necessari.
 
-User e Organization possono possedere piu ContentSpace personali/organizzativi. Non introduciamo una gerarchia di ContentSpace finche non emerge un requisito reale.
+## 7. Collection / EditorialContext
 
-## 7. EditorialContext
+`EditorialContext` è la Collection editoriale user-facing.
 
-`EditorialContext = ContentSpace x Namespace` ed e unico per la coppia.
+```text
+EditorialContext
+  contentSpaceId
+  namespaceId
+  semanticGraphId
+  displayName
+  descriptions
+  workingVersion
+  activeReviewRevisionId?
+  publishedReleaseId?
+```
 
-E un contesto editoriale comprensibile anche all'utente, non soltanto un join tecnico. Deve avere metadata user-facing curati, almeno nome e descrizione, mentre statistiche e stato operativo sono proiezioni derivate.
+La Collection riferisce tre risorse distinte:
 
-Lo stesso ContentSpace puo avere contemporaneamente piu EditorialContext (es. Academic, Kids, Comedy). Un Item nel ContentSpace non e obbligato ad avere Edition per tutti i Namespace usati dal ContentSpace.
+```text
+ContentSpace   -> inventario editoriale disponibile
+Namespace      -> regole editoriali/presentazionali
+SemanticGraph  -> semantica condivisibile
+```
 
-EditorialContext e Venue-independent: non contiene `venueId` e lo stesso Context puo essere usato con piu Venue.
+Non esiste l'invariante `EditorialContext = ContentSpace x Namespace` univoco: più Collection possono usare lo stesso Space e lo stesso Namespace, e possono anche condividere lo stesso SemanticGraph.
+
+La composizione editoriale della Collection è esplicita soltanto per gli Item:
+
+```text
+CollectionItemMembership
+  editorialContextId
+  itemId
+  curationSignals[]
+```
+
+Non esiste uno scope Subject persistito separato della Collection. I Subject rilevanti per i contenuti della Collection sono una proiezione derivata dai `primarySubjectId` degli Item selezionati; i Subject semantici della Collection sono invece quelli della `SemanticGraphRevision` usata dalla Collection.
+
+Invarianti:
+
+- l'Item della Collection deve essere presente nello Space della Collection;
+- aggiungere/rimuovere un Item dalla Collection non modifica automaticamente il SemanticGraph;
+- aggiungere/rimuovere un Subject dal SemanticGraph non modifica automaticamente la composizione Item della Collection;
+- un Subject del grafo può non avere alcun Item nella Collection o nello Space;
+- un Item della Collection può avere un `primarySubjectId` non ancora presente nel grafo: è un gap di coverage, non un errore strutturale;
+- la Collection non possiede il SemanticGraph.
 
 ## 8. SemanticGraph
 
-Il graph semantico appartiene a un EditorialContext ed e revisionato tramite GraphRevision immutabili.
+`SemanticGraph` è una lineage autonoma, revisionata e riutilizzabile.
 
-I nodi sono Subject, non Item.
+```text
+SemanticGraph
+  ownerType
+  ownerId
+  namespaceId
+  displayName
+  description?
+  workingRevisionId?
+  workingVersion
+  lifecycleStatus
+```
+
+Compatibilità di riuso: stesso principal e stesso Namespace.
+
+Un SemanticGraph può essere condiviso da più Collection, anche appartenenti a ContentSpace diversi. Lo Space influenza ranking e coverage nella UI, non l'eligibility del grafo.
+
+Le revisioni contengono nodi e relazioni:
 
 ```text
 GraphSubjectBinding
@@ -164,270 +200,165 @@ SemanticEdge
   targetSubjectId
   relationTypeDefinitionId
   weight
-  metadata/provenance?
+  provenance?
 ```
 
-Non esiste un assertion graph globale autorevole. Le asserzioni sono locali/provenanced nel relativo EditorialContext.
+I nodi sono Subject, non Item. `GraphSubjectBinding` è l'unica membership semantica persistita necessaria per stabilire quali Subject appartengono a una revisione del grafo.
 
-La classificazione di uno stesso Subject puo differire fra Context differenti.
+Una fork del grafo copia lo snapshot semantico in una nuova lineage, riusando gli stessi Subject e definition IDs compatibili; non copia Item, ItemEdition, ContentSpaceItemMembership o CollectionItemMembership.
 
-La copia di un graph nello stesso Namespace puo riusare Subject IDs e definition IDs, mantenendo provenance. Fra Namespace diversi serve mapping esplicito delle definition; non si inferisce equivalenza dai label.
+## 9. Coverage editoriale
 
-## 9. EditorialRelease
+Coverage e appartenenza semantica sono concetti distinti.
 
-`EditorialRelease` e lo snapshot coerente e immutabile pubblicato/rilasciato di un EditorialContext:
+Per una Collection:
+
+- **Subject dei contenuti** = `primarySubjectId` degli Item presenti nella Collection;
+- **Subject dello Space con contenuto diretto** = `primarySubjectId` degli Item presenti nello Space;
+- **Subject del grafo** = `GraphSubjectBinding` della GraphRevision corrente o pinzata.
+
+Da questi insiemi si derivano gap utili alla UI:
+
+- contenuto della Collection il cui Subject non è ancora nel grafo;
+- Subject del grafo senza contenuto nella Collection;
+- Subject del grafo senza contenuto nello Space.
+
+Questi gap guidano authoring e suggerimenti, ma non sono automaticamente errori di integrità.
+
+## 10. Review e EditorialRelease
+
+La review congela lo stato editoriale corrente in `EditorialContextRevision`. La publication produce un `EditorialRelease` immutabile.
+
+Lo snapshot include:
 
 ```text
 EditorialRelease
   editorialContextId
+  sourceContextRevisionId
   namespaceRevisionId
   graphRevisionId
   itemBindings[]
+    itemId
     itemEditionId
     itemRevisionId
+    curationSignals[]
 ```
 
-Una release puo includere soltanto un sottoinsieme degli Item del ContentSpace.
+La semantica non viene duplicata in `subjectIds[]`: `graphRevisionId` identifica già in modo univoco lo snapshot completo di Subject, classificazioni e relazioni.
 
-La release viene validata come un insieme coerente: appartenenza delle Edition al Namespace, revisioni corrette, definition identity risolvibili, graph compatibile e default presentation valida.
+Invarianti:
 
-Released/immutable non significa necessariamente public/discoverable. Questa distinzione e necessaria per contenuti privati 18–27.
+- la release include soltanto Item appartenenti alla Collection;
+- ogni binding congela Item, Edition e Revision;
+- `graphRevisionId` congela l'intero snapshot semantico usato dalla Collection;
+- nuove revisioni di un SemanticGraph condiviso non modificano review o release già pinzate;
+- una release valida richiede coerenza tra NamespaceRevision, GraphRevision e Item bindings;
+- l'assenza di contenuto per un Subject del grafo non rende la release invalida;
+- l'assenza del Subject principale di un Item nel grafo è un gap di coverage, non un errore di release;
+- released/immutable non significa necessariamente public/discoverable.
 
-## 10. Commerciale e adozione
+## 11. Commerciale, diritti e adozione
 
-La granularita primaria del contenuto commercializzabile e `ItemEdition`. `ItemRevision` conserva snapshot di autore/licenza della versione consumata.
-
-Sono separati:
+Restano distinti:
 
 ```text
 ownership
 license
-Offer/price
-Acquisition/Purchase
+Offer
+Acquisition
 Entitlement
 Adoption
+ContentSpace membership
+Collection membership
 Generator inclusion
 ```
 
-Una singola adozione di contenuto normalmente punta a ItemEdition; bundle/adoption possono puntare a EditorialContext/EditorialRelease. L'adozione e endorsement/curation e non trasferisce ownership ne include automaticamente un contenuto nel generator.
+L'acquisizione non trasferisce ownership editoriale. I command che collegano contenuti esterni a Space o Collection devono verificare i capability/entitlement backend-side; una membership DB non è una prova sufficiente di autorizzazione.
 
-I diritti di utilizzo di un Namespace sono separati dai diritti sui contenuti.
+## 12. Organization, Venue e VenueTarget
 
-## 11. Organization, Venue, VenueTarget
+`Venue` è il contesto fisico visitabile ed è gestito da una Organization.
 
-`Venue` e il contesto fisico visitabile ed e gestito da una Organization.
-
-`VenueTarget` e una occorrenza fisicamente visitabile locale associata a un Subject.
+`VenueTarget` rappresenta una presenza/esposizione fisica locale di un Subject:
 
 ```text
 VenueTarget
   venueId
   subjectId
-  physical capabilities / recognition data
+  recognition / physical metadata
 ```
 
-Non esiste unicita `(venueId, subjectId)`: la stessa entita/concezione puo avere piu occorrenze fisiche nella stessa Venue quando il dominio lo richiede.
+Il dominio fisico resta separato da Item, ContentSpace, Collection e SemanticGraph.
 
-Le capability fisiche e di navigazione appartengono a VenueTarget/Layout, non a ItemType.
+Le capability fisiche e di navigazione appartengono a VenueTarget/Layout, non agli Item.
 
-Published Venue infrastructure e referenziabile read-only anche da autori di Visit che non possiedono la Venue. L'ownership della Venue governa le modifiche fisiche, non il diritto di costruire una Visit che la usa.
+## 13. Layout e VenueRelease
 
-`Venue.primaryEditorialContextId?` e un default/endorsement autorevole della Venue, non ownership/esclusivita e non un vincolo sulle Visit esterne.
+Il Layout posiziona `ExhibitSlot`; i binding di `VenueRelease` collegano lo stato fisico pubblicato ai VenueTarget.
 
-## 12. Layout e VenueRelease
+Una Visit salva riferimenti stabili alle entità fisiche necessarie, non la logistica come Item.
 
-Il Layout posiziona VenueTarget, non Item.
+Una nuova VenueRelease può modificare lo stato fisico senza riscrivere retroattivamente Visit/Session già pinzate.
 
-`VenueRelease` rappresenta lo stato fisico pubblicato coerente della Venue e punta a revisioni/layout immutabili pertinenti.
-
-Una Visit salva stable VenueTarget refs, non coordinate, Place, path o una LayoutRevision permanente.
-
-All'avvio di una nuova Session vengono risolte le current published VenueRelease e poi pinned per la durata della Session.
-
-Una nuova VenueRelease puo spostare un VenueTarget senza modificare la Visit. La rimozione/indisponibilita di un target causa audit/revalidation delle Visit dipendenti; non riscrittura silenziosa.
-
-In futuro `VenueRuntimeState` puo modellare chiusure/ostacoli temporanei senza modificare il modello base.
-
-## 13. EditorialScope e PhysicalScope
+## 14. EditorialScope e PhysicalScope
 
 Editorial scope e physical scope sono assi indipendenti.
 
 ```text
 EditorialScope
   EditorialRelease[]
-  -> ItemEdition, ItemRevision, SemanticGraph
+  -> ItemRevision + SemanticGraphRevision
 
 PhysicalScope
   Venue/VenueRelease[]
-  -> VenueTarget, layout, routing
+  -> VenueTarget + Layout + routing
 ```
 
-Un graph non viene filtrato semanticamente in base alla Venue. Un Subject raggiungibile nel graph puo produrre contenuto contestuale anche se non ha un target nella Venue corrente.
+La raggiungibilità semantica non crea automaticamente una tappa fisica. La presenza fisica non crea automaticamente contenuto editoriale.
 
-Le candidate fisiche provengono esclusivamente dai VenueTarget utilizzabili delle Venue esplicitamente nel PhysicalScope. La raggiungibilita semantica non crea una tappa fisica.
+## 15. Visit e VisitRevision
 
-Non esiste un `PhysicalAvailabilityResolver` obbligatorio nel Domain Model: questa e una query/capability implementativa e potra essere estratta in futuro soltanto se la logica runtime lo giustifica.
+`Visit` è una lineage revisionata posseduta da User o Organization.
 
-Multi-Venue e sempre esplicito. Un collegamento semantico verso un Subject presente altrove non aggiunge automaticamente una Venue o un trasferimento all'itinerario.
-
-## 14. Visit e VisitRevision
-
-`Visit` e una lineage revisionata e posseduta da User o Organization.
-
-La visibility/discoverability pubblica della Visit e un concern separato e non viene ridefinita in questo documento.
-
-`VisitRevision` distingue:
+`VisitRevision` distingue almeno:
 
 ```text
-VisitRevision
-  editorialSources[]
-    editorialReleaseId
-
-  contentEntries[]        # ordine narrativo canonico
-    itemId
-    itemEditionId
-    itemRevisionId
-    editorialSourceId
-    role
-    deliveryAnchorId?
-
-  visitAnchors[]          # ordine fisico
-    id
-    venueTargetId
-
-  presentationBaseline?
-  logistics
-    preVisitNotes[]
-    routeHints[]
-      fromAnchorId
-      toAnchorId
-      ...
+editorialSources[]
+contentEntries[]
+visitAnchors[]
+presentationBaseline?
+logistics
 ```
 
-Questa e la decisione `51R`: Content itinerary + physical anchors.
+`contentEntries` congelano i riferimenti editoriali necessari; `visitAnchors` rappresentano le occorrenze fisiche nell'itinerario; la logistica collega le ancore e resta separata dai contenuti.
 
-`VisitAnchor` e una occorrenza fisica nell'itinerario, non un Item e non un contenitore canonico dei contenuti. Piu ContentEntry possono condividere lo stesso Anchor; una ContentEntry puo non avere Anchor; lo stesso VenueTarget puo comparire in due Anchor distinti in momenti diversi.
+Più ContentEntry possono condividere la stessa ancora. Un contenuto può essere contestuale e non corrispondere al Subject fisico dell'ancora davanti alla quale viene presentato.
 
-Il Subject della ContentEntry puo essere diverso dal Subject del VenueTarget dell'Anchor: un contenuto su un artista/stile puo essere fruito davanti a un'opera senza diventare una nuova tappa.
+## 16. Runtime e generator
 
-La logistica collega Anchor, non testi. Le indicazioni logistiche restano separate dagli Item.
+Il generator risolve sorgenti editoriali autorizzate e scope fisici espliciti, quindi congela gli snapshot necessari nel piano generato.
 
-## 15. Visit copy e fork
+Per una `EditorialRelease`, il runtime usa il `graphRevisionId` pinzato e deriva i Subject runtime dai `GraphSubjectBinding` di quella revisione. Eventuali `subjectIds` presenti nei pin di Session sono quindi una projection runtime ottimizzata, non una seconda fonte di verità editoriale.
 
-Una copia e detached:
+Per contenuti diretti non provenienti da una EditorialRelease, la Session può risolvere il SemanticGraph compatibile dallo Space/Namespace applicabile e pinzare la GraphRevision scelta; anche in questo caso i Subject derivano dalla GraphRevision.
 
-- crea una nuova Visit identity e una nuova VisitRevision iniziale;
-- conserva provenance `copiedFromVisitId/copiedFromVisitRevisionId`;
-- non riceve automaticamente modifiche future dalla Visit sorgente.
+Questo consente domande e approfondimenti semantici senza confondere:
 
-La copia usa structural sharing di dipendenze immutabili: puo continuare a puntare alle stesse EditorialRelease, ItemEdition e ItemRevision senza duplicarle fisicamente.
+- cosa esiste nel grafo;
+- quali Item appartengono alla Collection;
+- quali contenuti sono disponibili nello Space;
+- cosa è fisicamente presente nella Venue.
 
-Le modifiche alla struttura della copia (titolo, ordine, aggiunta/rimozione entry, role, anchor assignment, logistica) modificano soltanto la sua Visit lineage.
+## 17. Regole di evoluzione
 
-La modifica editoriale di un Item esterno richiede fork di quell'Item; la modifica di graph/curation esterni richiede un contesto controllato dall'autore.
+Per nuove feature:
 
-Qualunque futura relazione live/upstream non e una `copy`: sara un concetto distinto (template/linked/managed visit o equivalente) con policy esplicita.
-
-L'indipendenza della copia non congela l'infrastruttura fisica o i diritti esterni: nuove Session risolvono la VenueRelease corrente e possono fallire se un target o diritto non e piu disponibile.
-
-## 16. Generator
-
-Il generator accetta uno o piu EditorialContext come source scope.
-
-Se `editorialContextIds` sono espliciti, usa esattamente quelli e non inietta silently context di default. Se non sono espliciti, puo usare `Venue.primaryEditorialContextId` delle Venue selezionate.
-
-Per ogni Context risolve la current released EditorialRelease e ne snapshotta l'ID nel piano generato. Per ogni Venue risolve e snapshotta la VenueRelease rilevante.
-
-La candidate editoriale e una ItemEdition/ItemRevision/Representation. Default: al massimo una Edition per la stessa Item lineage, salvo futuro intento comparativo esplicito.
-
-Se la stessa identica ItemEdition/Revision proviene da piu Context selezionati viene materializzata come una candidate con provenance multipla, non duplicata. Revisioni differenti della stessa Edition restano versioned candidates da gestire tramite ranking/policy.
-
-Le candidate fisiche provengono dal PhysicalScope; il graph serve a valutarne coerenza semantica e a trovare contenuti contestuali, non a creare destinazioni.
-
-## 17. Presentation, DurationType e LanguageLevel
-
-`EditorialContext` descrive un approccio/editorial worldview complessivo (Academic, Kids, Comedy, ecc.).
-
-`DurationType` e `LanguageLevel` descrivono invece varianti di presentazione all'interno di quella stessa Edition/Context. Non sono sostituti dell'EditorialContext e non devono essere usati per modellare differenze editoriali sostanziali.
-
-La representation viene selezionata usando, in ordine concettuale:
-
-1. richiesta esplicita runtime dell'utente;
-2. preferenze esplicite pre-visita;
-3. learning affidabile;
-4. baseline della Visit/GeneratedPlan;
-5. `defaultPresentation` della ItemRevision.
-
-Quindi deve sempre esistere un fallback deterministico anche senza dati utente sufficienti.
-
-## 18. Learning
-
-Lo stato adattivo viene separato per scope:
-
-```text
-UserSubjectAffinity       # globale
-UserSubjectKnowledge      # globale
-UserItemEditionAffinity   # contenuto editoriale esatto
-UserContentExposure       # ItemEdition + Variant + Representation
-UserNamespaceFeatureAffinity
-VenueTargetObservation
-```
-
-La conoscenza/affinita del Subject e globale. La preferenza per un contributo editoriale esatto e ItemEdition-scoped. Le feature definite da Namespace sono trasferibili fra ContentSpace che condividono lo stesso Namespace.
-
-Namespace differenti interoperano soltanto tramite semanticRefs/mapping espliciti, mai tramite label.
-
-## 19. Session
-
-Una Session materializza una specifica VisitRevision o GeneratedVisitPlan e ne conserva le dipendenze editoriali esatte.
-
-All'avvio:
-
-- verifica accesso/entitlement necessari;
-- usa le versioni editoriali pinned dalla Visit/piano;
-- risolve le VenueRelease correnti per i VenueTarget del piano;
-- pinna tali VenueRelease per la Session;
-- calcola/ricalcola il routing fisico rispetto a quelle release.
-
-Durante la Session una richiesta semantica contestuale puo mostrare una diversa representation o un contenuto correlato nello stesso Anchor senza aggiungere automaticamente una tappa fisica.
-
-## 20. 18–27 e 18–33
-
-Il modello consente senza workaround:
-
-- release editoriali immutabili ma non pubblicamente discoverable per contenuti privati docente;
-- grant/session access specifici senza aprire l'intero ContentSpace;
-- sessioni sincronizzate e controllo teacher/student sopra lo stesso Visit/Session model;
-- quiz come concern separato dalla struttura Item/logistica;
-- QR/geolocalizzazione risolti su VenueTarget;
-- LLM che crea una nuova ItemEdition nello stesso Item/Subject quando serve una nuova espressione sotto un Namespace, oppure un nuovo Item quando crea un contributo editoriale distinto;
-- mapping NL verso action disponibili;
-- traduzione/nuove representation senza cambiare Subject, VenueTarget o VisitAnchor;
-- generazione dinamica su EditorialScope + PhysicalScope.
-
-## 21. Invarianti di refactoring
-
-Il v2 finale non deve contenere queste strutture legacy:
-
-```text
-Item.museumId
-Item.itemType come capability fisica
-Item.publishedRevisionId / workingRevisionId
-SemanticEdge.sourceItemId
-SemanticEdge.sourceItemRevisionId
-SemanticEdge.targetItemId
-SemanticEdge.relationTypeKey come identita
-Layout.itemPlacements
-Visit.kind official|community come ownership model
-Visit.ownerMuseumId
-VisitRevision.museumIds come source of truth
-ContentEntry.spatialMode
-routeHints legati alle ContentEntry
-EditorialContext.venueId
-```
-
-Durante il refactoring possono esistere temporaneamente accanto alle nuove strutture soltanto finche i consumer legacy non sono migrati. Non sono API v2 e non devono generare adapter permanenti.
-
-## 22. Stato di implementazione
-
-Questo file descrive il target definitivo. Il branch `main` al momento dell'introduzione del v2 e ancora museum-centric: usa MuseumVocabulary, Item come nodo del graph e target del layout, e Visit official/community. Il piano di refactoring migra questi boundary in vertical slice mantenendo CI e backend eseguibili a ogni passaggio.
+1. definire prima l'entità e l'invariante di dominio;
+2. non usare adapter per evitare di correggere strutture interne controllate da ArtAround;
+3. non reintrodurre uno scope Subject persistito della Collection: la composizione è Item-based e la semantica è GraphRevision-based;
+4. non reintrodurre entry di Collection basate soltanto su ItemEdition: la Collection seleziona Item e la release risolve/pinza la Edition/Revision compatibile;
+5. non legare il SemanticGraph a un singolo ContentSpace o a una singola Collection;
+6. non usare la presenza nel grafo come prova di appartenenza della risorsa editoriale alla Collection;
+7. non usare la membership nello Space come prova di entitlement;
+8. trattare i gap fra contenuti e grafo come coverage salvo violazioni reali di Namespace/revision/authorization;
+9. preservare snapshot immutabili per review, release, Visit e Session.

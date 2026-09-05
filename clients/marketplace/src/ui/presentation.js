@@ -7,6 +7,7 @@ const RESOURCE_LABELS = Object.freeze({
   editorial_release: "Versione pubblicata della raccolta",
   namespace: "Regole editoriali",
   namespace_revision: "Versione delle regole editoriali",
+  semantic_graph: "Grafo semantico",
   physical_vocabulary: "Vocabolario fisico",
   physical_vocabulary_revision: "Versione del vocabolario fisico",
   content_space: "Spazio editoriale",
@@ -36,6 +37,7 @@ const EDITOR_LABELS = Object.freeze({
   visit: "Modifica la visita",
   editorial_context: "Pubblica una nuova versione",
   namespace: "Modifica le regole editoriali",
+  semantic_graph: "Apri il grafo",
   physical_vocabulary: "Modifica il vocabolario fisico",
 });
 

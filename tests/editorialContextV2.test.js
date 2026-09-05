@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const ContentSpace = require("../models/contentSpace.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const { normalizeContentSpacePayload, validateContentSpacePayload } = require("../services/validation/contentSpace.validation");
 const { normalizeEditorialContextPayload, validateEditorialContextPayload } = require("../services/validation/editorialContext.validation");
@@ -17,23 +17,33 @@ test("ContentSpace is owner-scoped but Namespace-neutral", () => {
   assert.equal(doc.parentContentSpaceId, undefined);
 });
 
-test("ContentSpaceMembership is non-owning Item membership", () => {
-  const membership = new ContentSpaceMembership({ contentSpaceId: id(), itemId: id(), addedBy: id() });
+test("ContentSpaceItemMembership is non-owning Item membership", () => {
+  const membership = new ContentSpaceItemMembership({ contentSpaceId: id(), itemId: id(), addedBy: id() });
   assert.ok(membership.contentSpaceId);
   assert.ok(membership.itemId);
   assert.equal(membership.ownerId, undefined);
-  assert.equal(ContentSpaceMembership.schema.path("itemId").options.ref, "ItemV2");
-  assert.equal(ContentSpaceMembership.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.itemId === 1 && options.unique), true);
+  assert.equal(ContentSpaceItemMembership.schema.path("itemId").options.ref, "ItemV2");
+  assert.equal(ContentSpaceItemMembership.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.itemId === 1 && options.unique), true);
 });
 
-test("EditorialContext materializes one ContentSpace x Namespace pair without its own owner", () => {
-  const context = new EditorialContext({ contentSpaceId: id(), namespaceId: id(), displayName: "Approccio storico", createdBy: id() });
+test("EditorialContext materializes a collection over ContentSpace and Namespace while referencing a reusable SemanticGraph", () => {
+  const semanticGraphId = id();
+  const context = new EditorialContext({
+    contentSpaceId: id(),
+    namespaceId: id(),
+    semanticGraphId,
+    displayName: "Approccio storico",
+    createdBy: id(),
+  });
+  assert.equal(String(context.semanticGraphId), String(semanticGraphId));
+  assert.equal(EditorialContext.schema.path("semanticGraphId").options.ref, "SemanticGraph");
   assert.equal(context.ownerType, undefined);
   assert.equal(context.ownerId, undefined);
   assert.equal(context.venueId, undefined);
   assert.equal(context.durationTypeDefinitionId, undefined);
   assert.equal(context.languageLevelDefinitionId, undefined);
-  assert.equal(EditorialContext.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.namespaceId === 1 && options.unique), true);
+  assert.equal(EditorialContext.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.namespaceId === 1 && options.unique), false);
+  assert.equal(EditorialContext.schema.indexes().some(([keys]) => keys.semanticGraphId === 1 && keys.lifecycleStatus === 1), true);
 });
 
 test("ContentSpace payload validation keeps ownership immutable after creation", () => {

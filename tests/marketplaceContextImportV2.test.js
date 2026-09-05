@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
 
@@ -25,10 +26,12 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const { Adoption } = require("../models/adoption.model");
@@ -69,10 +72,14 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
     await edition.save();
 
     const sourceSpace = await ContentSpace.create({ name: "Source space", ownerType: "user", ownerId: seller._id, createdBy: seller._id });
-    await ContentSpaceMembership.create({ contentSpaceId: sourceSpace._id, itemId: item._id, addedBy: seller._id });
-    const sourceContext = await EditorialContext.create({ contentSpaceId: sourceSpace._id, namespaceId: namespace._id, displayName: "Source context", createdBy: seller._id });
-    const sourceGraph = await SemanticGraphRevision.create({
-      editorialContextId: sourceContext._id, version: 1, authoredAgainstNamespaceRevisionId: namespaceRevision._id, createdBy: seller._id,
+    await ContentSpaceItemMembership.create({ contentSpaceId: sourceSpace._id, itemId: item._id, addedBy: seller._id });
+    await ContentSpaceSubjectMembership.create({ contentSpaceId: sourceSpace._id, subjectId: subjectA._id, addedBy: seller._id });
+    const { context: sourceContext, graphRevision: sourceGraph } = await createEditorialContextWithGraph({
+      contentSpace: sourceSpace,
+      namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
+      displayName: "Source context",
+      createdBy: seller._id,
     });
     await GraphSubjectBinding.create([
       { graphRevisionId: sourceGraph._id, subjectId: subjectA._id, subjectClassDefinitionIds: [] },
@@ -91,11 +98,10 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
       version: 1,
       namespaceRevisionId: namespaceRevision._id,
       graphRevisionId: sourceGraph._id,
-      itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id }],
+      itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       releasedAt: new Date(), releasedBy: seller._id,
     });
-    sourceContext.workingGraphRevisionId = sourceGraph._id;
     sourceContext.publishedReleaseId = sourceRelease._id;
     await sourceContext.save();
 
@@ -134,19 +140,27 @@ test("context.import_snapshot crea workspace detached riusando Subject e Item es
 
     const targetSpace = await ContentSpace.findById(imported.contentSpace.id).lean();
     const targetContext = await EditorialContext.findById(imported.editorialContext.id).lean();
+    const targetGraph = await SemanticGraph.findById(targetContext.semanticGraphId).lean();
     assert.equal(String(targetSpace.ownerId), String(buyer._id));
     assert.equal(targetSpace.ownerType, "user");
     assert.equal(targetContext.displayName, "Buyer imported context");
     assert.equal(targetContext.publishedReleaseId, null, "import must not fabricate a published release");
     assert.equal(String(targetContext.namespaceId), String(namespace._id));
+    assert.equal(String(imported.semanticGraphId), String(targetContext.semanticGraphId));
+    assert.equal(imported.graphSubjectCount, 2);
+    assert.equal(imported.contentSubjectCount, 1);
+    assert.equal(imported.itemMembershipCount, 1);
     assert.equal(await Subject.countDocuments(), beforeSubjectCount, "Subject identities must be reused, not copied");
 
-    const memberships = await ContentSpaceMembership.find({ contentSpaceId: targetSpace._id }).lean();
+    const memberships = await ContentSpaceItemMembership.find({ contentSpaceId: targetSpace._id }).lean();
     assert.deepEqual(memberships.map((entry) => String(entry.itemId)), [String(item._id)]);
+    assert.equal(await ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: targetSpace._id, subjectId: subjectA._id }), 1);
+    assert.equal(await ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: targetSpace._id, subjectId: subjectB._id }), 0, "un Subject solo semantico non diventa inventario editoriale dello Space");
+    assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: targetContext._id, itemId: item._id }), 1);
     assert.equal(String(item.ownerId), String(seller._id), "external Item ownership must stay unchanged");
 
-    const bindings = await GraphSubjectBinding.find({ graphRevisionId: targetContext.workingGraphRevisionId }).lean();
-    const edges = await SemanticEdgeV2.find({ graphRevisionId: targetContext.workingGraphRevisionId }).lean();
+    const bindings = await GraphSubjectBinding.find({ graphRevisionId: targetGraph.workingRevisionId }).lean();
+    const edges = await SemanticEdgeV2.find({ graphRevisionId: targetGraph.workingRevisionId }).lean();
     assert.deepEqual(new Set(bindings.map((entry) => String(entry.subjectId))), new Set([String(subjectA._id), String(subjectB._id)]));
     assert.equal(edges.length, 1);
     assert.equal(edges[0].provenance.origin, "imported");

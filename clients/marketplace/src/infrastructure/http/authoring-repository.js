@@ -8,9 +8,7 @@ function queryString(params = {}) {
   return query.toString();
 }
 function body(payload = {}) { return { body: JSON.stringify(payload) }; }
-function visitCommandPath(visitId, suffix) {
-  return `/v2/visits/${encodeURIComponent(visitId)}/commands/${suffix}`;
-}
+function visitCommandPath(visitId, suffix) { return `/v2/visits/${encodeURIComponent(visitId)}/commands/${suffix}`; }
 
 export const authoringRepository = {
   searchSubjects({ search = "", externalScheme = null, externalId = null, limit = 30 } = {}) {
@@ -20,11 +18,8 @@ export const authoringRepository = {
   createSubject(payload) {
     return apiClient.request("/subjects", { method: "POST", body: JSON.stringify(payload) });
   },
-  createItem({ primarySubjectId, ownerType, ownerId }) {
-    return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
-  },
-  createItemWithPhysicalIntent(venueId, { primarySubjectId, ownerType, ownerId }) {
-    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/items-with-physical-intent`, { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId }) });
+  createItem({ primarySubjectId, ownerType, ownerId, contentSpaceId }) {
+    return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId, contentSpaceId }) });
   },
   getSubject(subjectId) {
     return apiClient.request(`/subjects/${encodeURIComponent(subjectId)}`);
@@ -36,40 +31,9 @@ export const authoringRepository = {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
     return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}${query}`);
   },
-  itemConnections(itemId, editionId) {
-    const query = queryString({ editionId });
-    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections?${query}`);
-  },
-  searchItemConnectionTargets(itemId, { editionId, q, limit = 20 }) {
-    const query = queryString({ editionId, q, limit });
-    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connection-targets?${query}`);
-  },
-  createItemConnection(itemId, payload) {
-    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections`, { method: "POST", body: JSON.stringify(payload) });
-  },
-  removeItemConnection(itemId, { editionId, connectionId, contextId }) {
-    const query = queryString({ editionId, contextId });
-    return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}/connections/${encodeURIComponent(connectionId)}?${query}`, { method: "DELETE" });
-  },
   namespaceControls(namespaceId, principal) {
     const query = queryString({ principalType: principal?.type || "user", principalId: principal?.id || null });
     return apiClient.request(`/v2/marketplace/namespace-authoring/${encodeURIComponent(namespaceId)}?${query}`);
-  },
-  venueTargets(venueId) {
-    return apiClient.request(`/v2/marketplace/venues/${encodeURIComponent(venueId)}/authoring-targets`);
-  },
-  venueSubjectCandidates(venueId, query = "", { limit = 25 } = {}) {
-    const search = queryString({ query, limit });
-    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/subject-candidates${search ? `?${search}` : ""}`);
-  },
-  venueTargetContext(venueTargetId) {
-    return apiClient.request(`/v2/marketplace/venue-targets/${encodeURIComponent(venueTargetId)}/authoring-context`);
-  },
-  editorialReleaseComposer(editorialContextId) {
-    return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/release-composer`);
-  },
-  createEditorialRelease(editorialContextId, payload) {
-    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/releases`, { method: "POST", body: JSON.stringify(payload) });
   },
   createEdition(itemId, payload) {
     return apiClient.request(`/items/${encodeURIComponent(itemId)}/editions`, { method: "POST", body: JSON.stringify(payload) });

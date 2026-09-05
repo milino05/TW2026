@@ -92,17 +92,14 @@ test("Catalog usa QueryState e ResourceBrowserController senza cambiare il contr
   assert.match(resourceBrowser, /this\.state\.result = result/);
 });
 
-test("Workspace browser usa lo stesso query lifecycle senza cambiare route e repository contract", () => {
-  assert.match(workspaceBrowser, /import \{ QueryState \}/);
-  assert.match(workspaceBrowser, /import \{ ResourceBrowserController \}/);
-  assert.match(workspaceBrowser, /class WorkspaceQueryState extends QueryState/);
-  assert.match(workspaceBrowser, /new ResourceBrowserController/);
+test("Workspace browser mantiene query e paginazioni indipendenti nei due domini della Libreria", () => {
   assert.match(workspaceBrowser, /marketplaceRepository\.workspaceContext\(principal\)/);
   assert.match(workspaceBrowser, /marketplaceRepository\.workspaceResources\(principal, \{/);
-  for (const field of ["ownership", "q", "resourceTypes", "page"]) assert.match(workspaceBrowser, new RegExp(`${field}:`));
-  assert.match(workspaceBrowser, /navigate\(`\/workspace\$\{p\.toString\(\)/);
-  assert.match(workspaceBrowser, /this\.browser\.dispose\(\)/);
-  assert.doesNotMatch(workspaceBrowser, /this\.busy = true; this\.error = null; this\.render\(\);\s*try/s);
+  assert.match(workspaceBrowser, /editorialRepository\.listSpaceItems\(/);
+  for (const field of ["resourceQuery", "resourcePage", "contentQuery", "contentPage"]) assert.match(workspaceBrowser, new RegExp(`${field} =`));
+  assert.match(workspaceBrowser, /navigationUrl\(\{/);
+  assert.match(workspaceBrowser, /data-resource-page/);
+  assert.match(workspaceBrowser, /data-content-page/);
 });
 
 test("Organization discovery usa lo stesso query lifecycle e preserva q/page", () => {

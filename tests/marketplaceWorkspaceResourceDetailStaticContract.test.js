@@ -28,7 +28,7 @@ test("workspace detail è esposto come endpoint autenticato con ObjectId validat
   assert.match(routes, /resourceId, controller\.creatorWorkspaceResourceDetail/);
 });
 
-test("dettagli e azioni espone una rimozione confermata che preserva lo storico", () => {
+test("dettagli e azioni espone una rimozione confermata che preserva storico e grafo condiviso", () => {
   assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId\/remove/);
   assert.match(removal, /lifecycleStatus:\s*"trashed"/);
   assert.match(removal, /findOneAndUpdate/);
@@ -42,8 +42,11 @@ test("dettagli e azioni espone una rimozione confermata che preserva lo storico"
   assert.match(view, /Acquisizioni, diritti già concessi e adozioni resteranno validi/);
   assert.match(removal, /"editorial_context"/);
   assert.match(removal, /"visit"/);
-  assert.match(view, /puoi perdere molti collegamenti/);
-  assert.match(view, /dovranno essere ricreati manualmente/);
+  assert.match(view, /Il grafo semantico viene conservato/);
+  assert.match(view, /non vengono eliminate/);
+  assert.match(view, /semanticGraphRelationCount/);
+  assert.match(view, /semanticGraphCollectionCount/);
+  assert.match(view, /Potrà essere riutilizzato da un'altra raccolta in futuro/);
   assert.match(view, /data-removal-ack/);
 });
 

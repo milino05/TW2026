@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -41,7 +42,6 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const EditorialContext = require("../models/editorialContext.model");
     const EditorialRelease = require("../models/editorialRelease.model");
     const Venue = require("../models/venue.model");
     const VenueTarget = require("../models/venueTarget.model");
@@ -76,18 +76,21 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     await edition.save();
 
     const contentSpace = await ContentSpace.create({ name: "Spazio visita", ownerType: "user", ownerId: user._id, createdBy: user._id });
-    const editorialContext = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
-      namespaceId: new mongoose.Types.ObjectId(),
+    const namespaceId = new mongoose.Types.ObjectId();
+    const namespaceRevisionId = new mongoose.Types.ObjectId();
+    const { context: editorialContext, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
+      namespaceId,
+      namespaceRevisionId,
       displayName: "Contesto visita",
       createdBy: user._id,
     });
     const editorialRelease = await EditorialRelease.create({
       editorialContextId: editorialContext._id,
       version: 1,
-      namespaceRevisionId: new mongoose.Types.ObjectId(),
-      graphRevisionId: new mongoose.Types.ObjectId(),
-      itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+      namespaceRevisionId,
+      graphRevisionId: graphRevision._id,
+      itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       releasedAt: new Date(),
       releasedBy: user._id,

@@ -1,11 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const EditorialContext = require("../models/editorialContext.model");
+const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const { validateGraphSnapshotAgainstNamespace, shortestSemanticPath } = require("../services/semanticGraphV2.service");
 const { materializeDirectEdge, materializeReverseEdge } = require("../services/relationSemanticsV2.service");
 const { validateEditorialReleasePayload } = require("../services/validation/editorialRelease.validation");
@@ -28,7 +30,7 @@ function namespaceRevisionFixture() {
   };
 }
 
-test("graph v2 is Subject-based and context-scoped", () => {
+test("graph v2 is Subject-based and revision-scoped", () => {
   const graphRevisionId = id(), sourceSubjectId = id(), targetSubjectId = id();
   const edge = new SemanticEdgeV2({ graphRevisionId, sourceSubjectId, targetSubjectId, relationTypeDefinitionId: "rel-created-by" });
   assert.equal(edge.museumId, undefined);
@@ -40,10 +42,12 @@ test("graph v2 is Subject-based and context-scoped", () => {
   assert.equal(GraphSubjectBinding.schema.indexes().some(([keys, options]) => keys.graphRevisionId === 1 && keys.subjectId === 1 && options.unique), true);
 });
 
-test("SemanticGraphRevision is immutable snapshot metadata", () => {
-  for (const path of ["editorialContextId", "version", "authoredAgainstNamespaceRevisionId", "createdBy"]) {
+test("SemanticGraph owns the working pointer while SemanticGraphRevision is immutable snapshot metadata", () => {
+  assert.equal(SemanticGraph.schema.path("workingRevisionId").options.ref, "SemanticGraphRevision");
+  for (const path of ["semanticGraphId", "version", "authoredAgainstNamespaceRevisionId", "createdBy"]) {
     assert.equal(SemanticGraphRevision.schema.path(path).options.immutable, true);
   }
+  assert.equal(SemanticGraphRevision.schema.path("editorialContextId"), undefined);
 });
 
 test("graph validation enforces SubjectClass domain and range", () => {
@@ -96,13 +100,16 @@ test("shortest semantic path traverses Subject nodes", () => {
   assert.deepEqual(path.subjectIds, [String(a), String(b), String(c)]);
 });
 
-test("EditorialRelease pins immutable schema graph and item revisions without visibility policy", () => {
+test("EditorialRelease pins immutable schema graph and item revisions without duplicate Subject scope", () => {
   assert.ok(EditorialRelease.schema.path("namespaceRevisionId"));
   assert.ok(EditorialRelease.schema.path("graphRevisionId"));
   assert.ok(EditorialRelease.schema.path("itemBindings"));
+  assert.equal(EditorialRelease.schema.path("subjectIds"), undefined);
+  assert.equal(EditorialContextRevision.schema.path("subjectIds"), undefined);
   assert.equal(EditorialRelease.schema.path("visibility"), undefined);
   assert.equal(EditorialRelease.schema.path("discoverability"), undefined);
-  assert.ok(EditorialContext.schema.path("workingGraphRevisionId"));
+  assert.ok(EditorialContext.schema.path("semanticGraphId"));
+  assert.equal(EditorialContext.schema.path("workingGraphRevisionId"), undefined);
   assert.ok(EditorialContext.schema.path("publishedReleaseId"));
 });
 

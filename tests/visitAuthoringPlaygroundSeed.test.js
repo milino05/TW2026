@@ -11,7 +11,7 @@ const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
 const { WORKS, seedVisitAuthoringPlayground } = require("../scripts/seedVisitAuthoringPlayground");
-const { listVenueAuthoringTargets } = require("../services/venueAuthoringTargetsV2.service");
+const { getVenueManagementProjection } = require("../services/marketplaceManagementV2.service");
 const { assessPreparedMapReadiness } = require("../services/navigationProjectionV2.service");
 
 async function withFreshDatabase(callback) {
@@ -77,7 +77,7 @@ test("visit authoring playground crea cinque tappe pubblicate, una mappa ed è i
       });
       assert.deepEqual(readiness.blockers, []);
 
-      const projection = await listVenueAuthoringTargets({
+      const projection = await getVenueManagementProjection({
         venueId: first.venue._id,
         actorUserId: actor._id,
       });

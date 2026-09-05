@@ -8,7 +8,6 @@ const commercial = require("../services/marketplaceCommercialV2.service");
 const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
 const management = require("../services/marketplaceManagementV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
-const itemConnections = require("../services/itemConnectionAuthoringV2.service");
 const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
@@ -31,9 +30,7 @@ function projectAcquisitionResult(result) {
   };
 }
 
-function selectedVenueIds(req) {
-  return marketplaceCatalog.normalizeVenueIds(req.query?.selectedVenueIds || []);
-}
+function selectedVenueIds(req) { return marketplaceCatalog.normalizeVenueIds(req.query?.selectedVenueIds || []); }
 
 async function catalog(req, res, next) {
   try {
@@ -49,12 +46,10 @@ async function catalog(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function venueSelector(req, res, next) {
   try { res.status(200).json(await marketplaceCatalog.resolveVenueSelectorProjection()); }
   catch (error) { next(error); }
 }
-
 async function detail(req, res, next) {
   try {
     res.status(200).json(await marketplaceCatalog.getListingDetail({
@@ -66,7 +61,6 @@ async function detail(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function itemAuthoringProjection(req, res, next) {
   try {
     res.status(200).json(await itemAuthoring.getItemAuthoringProjection({
@@ -76,53 +70,6 @@ async function itemAuthoringProjection(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
-async function itemConnectionAuthoring(req, res, next) {
-  try {
-    res.status(200).json(await itemConnections.getItemConnectionAuthoring({
-      itemId: req.params.itemId,
-      editionId: req.query?.editionId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-
-async function itemConnectionTargets(req, res, next) {
-  try {
-    res.status(200).json(await itemConnections.searchItemConnectionTargets({
-      itemId: req.params.itemId,
-      editionId: req.query?.editionId,
-      query: req.query?.q,
-      limit: req.query?.limit,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-
-async function createItemConnection(req, res, next) {
-  try {
-    const { editionId, ...payload } = req.body || {};
-    res.status(201).json(await itemConnections.createItemConnection({
-      itemId: req.params.itemId,
-      editionId,
-      payload,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-
-async function removeItemConnection(req, res, next) {
-  try {
-    res.status(200).json(await itemConnections.removeItemConnection({
-      itemId: req.params.itemId,
-      editionId: req.query?.editionId,
-      connectionId: req.params.connectionId,
-      contextId: req.query?.contextId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-
 async function namespaceAuthoringControls(req, res, next) {
   try {
     res.status(200).json(await getNamespaceAuthoringControls({
@@ -133,12 +80,6 @@ async function namespaceAuthoringControls(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
-async function venueTargetAuthoringContext(req, res, next) {
-  try { res.status(200).json(await itemAuthoring.getVenueTargetAuthoringContext({ venueTargetId: req.params.venueTargetId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-
 async function createListing(req, res, next) {
   try {
     const resourceType = req.body?.resourceType || (req.body?.visitId ? "visit" : null);
@@ -153,7 +94,6 @@ async function createListing(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function createOffer(req, res, next) {
   try {
     if (Array.isArray(req.body?.grants) && req.body.grants.length) {
@@ -163,7 +103,6 @@ async function createOffer(req, res, next) {
     res.status(201).json(await visitMarketplace.createVisitExecuteOffer({ listingId: req.params.listingId, payload: req.body || {}, actorUserId: req.user._id }));
   } catch (error) { next(error); }
 }
-
 async function acquire(req, res, next) {
   try {
     const result = await marketplace.acquireOffer({
@@ -175,7 +114,6 @@ async function acquire(req, res, next) {
     res.status(result.alreadyAcquired ? 200 : 201).json(projectAcquisitionResult(result));
   } catch (error) { next(error); }
 }
-
 async function acquisitionHistory(req, res, next) {
   try {
     const history = await marketplace.listAcquisitionHistory({
@@ -188,7 +126,6 @@ async function acquisitionHistory(req, res, next) {
     res.status(200).json(await marketplaceConsumer.enrichAcquisitionHistory({ actorUserId: req.user._id, history }));
   } catch (error) { next(error); }
 }
-
 async function commercialManagement(req, res, next) {
   try {
     res.status(200).json(await commercial.getCommercialManagement({
@@ -200,17 +137,14 @@ async function commercialManagement(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function withdrawListing(req, res, next) {
   try { res.status(200).json(await marketplace.withdrawListing({ listingId: req.params.listingId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function withdrawOffer(req, res, next) {
   try { res.status(200).json(await marketplace.withdrawOffer({ offerId: req.params.offerId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function creatorWorkspace(req, res, next) {
   try {
     res.status(200).json(await workspace.getCreatorWorkspace({
@@ -220,7 +154,6 @@ async function creatorWorkspace(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function creatorWorkspaceContext(req, res, next) {
   try {
     res.status(200).json(await workspaceResources.getCreatorWorkspaceContext({
@@ -230,7 +163,6 @@ async function creatorWorkspaceContext(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function creatorWorkspaceResources(req, res, next) {
   try {
     res.status(200).json(await workspaceResources.listCreatorWorkspaceResources({
@@ -245,7 +177,6 @@ async function creatorWorkspaceResources(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function creatorWorkspaceResourceDetail(req, res, next) {
   try {
     res.status(200).json(await workspaceResources.getCreatorWorkspaceResourceDetail({
@@ -258,7 +189,6 @@ async function creatorWorkspaceResourceDetail(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function removeCreatorWorkspaceResource(req, res, next) {
   try {
     res.status(200).json(await removeOwnedWorkspaceResource({
@@ -270,12 +200,10 @@ async function removeCreatorWorkspaceResource(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function marketplaceAccountWorkspace(req, res, next) {
   try { res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function marketplaceOrganizationDetail(req, res, next) {
   try {
     res.status(200).json(await accountWorkspace.getMarketplaceOrganizationDetail({
@@ -289,22 +217,18 @@ async function marketplaceOrganizationDetail(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function marketplaceNamespaceManagement(req, res, next) {
   try { res.status(200).json(await management.getNamespaceManagementProjection({ namespaceId: req.params.namespaceId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function marketplacePhysicalVocabularyManagement(req, res, next) {
   try { res.status(200).json(await management.getPhysicalVocabularyManagementProjection({ physicalVocabularyId: req.params.physicalVocabularyId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function marketplaceVenueManagement(req, res, next) {
   try { res.status(200).json(await management.getVenueManagementProjection({ venueId: req.params.venueId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function distributionDashboard(req, res, next) {
   try {
     res.status(200).json(await workspace.getDistributionDashboard({
@@ -315,7 +239,6 @@ async function distributionDashboard(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function workspaceOperation(req, res, next) {
   try {
     res.status(201).json(await executeWorkspaceOperation({
@@ -334,12 +257,7 @@ module.exports = {
   venueSelector,
   detail,
   itemAuthoringProjection,
-  itemConnectionAuthoring,
-  itemConnectionTargets,
-  createItemConnection,
-  removeItemConnection,
   namespaceAuthoringControls,
-  venueTargetAuthoringContext,
   createListing,
   createOffer,
   acquire,

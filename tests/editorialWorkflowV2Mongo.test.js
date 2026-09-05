@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const { assignStarterRole } = require("./helpers/organizationRbac");
 const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -87,31 +88,39 @@ async function createContentFixture({ manager, organization }) {
   });
   venue.publishedReleaseId = venueRelease._id;
   await venue.save();
-  return { item, edition, itemRevision, target };
+  return { subject, item, edition, itemRevision, target };
 }
 
-async function createEditorialSource({ ownerType, ownerId, createdBy, edition, itemRevision }) {
+async function createEditorialSource({ ownerType, ownerId, createdBy, item, edition, itemRevision }) {
   const ContentSpace = require("../models/contentSpace.model");
-  const EditorialContext = require("../models/editorialContext.model");
   const EditorialRelease = require("../models/editorialRelease.model");
+  const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
   const space = await ContentSpace.create({
     name: `${ownerType}-workflow-space`,
     ownerType,
     ownerId,
     createdBy,
   });
-  const context = await EditorialContext.create({
-    contentSpaceId: space._id,
-    namespaceId: oid(),
+  const namespaceId = oid();
+  const namespaceRevisionId = oid();
+  const { context, graphRevision } = await createEditorialContextWithGraph({
+    contentSpace: space,
+    namespaceId,
+    namespaceRevisionId,
     displayName: `${ownerType} workflow context`,
     createdBy,
+  });
+  await GraphSubjectBinding.create({
+    graphRevisionId: graphRevision._id,
+    subjectId: item.primarySubjectId,
+    subjectClassDefinitionIds: [],
   });
   const release = await EditorialRelease.create({
     editorialContextId: context._id,
     version: 1,
-    namespaceRevisionId: oid(),
-    graphRevisionId: oid(),
-    itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+    namespaceRevisionId,
+    graphRevisionId: graphRevision._id,
+    itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: createdBy },
     releasedAt: new Date(),
     releasedBy: createdBy,
@@ -164,6 +173,7 @@ test("Visit publication distingue ownership personale e review Organization", { 
       ownerType: "user",
       ownerId: manager._id,
       createdBy: manager._id,
+      item: fixture.item,
       edition: fixture.edition,
       itemRevision: fixture.itemRevision,
     });
@@ -171,6 +181,7 @@ test("Visit publication distingue ownership personale e review Organization", { 
       ownerType: "organization",
       ownerId: organization._id,
       createdBy: manager._id,
+      item: fixture.item,
       edition: fixture.edition,
       itemRevision: fixture.itemRevision,
     });

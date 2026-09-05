@@ -25,8 +25,20 @@ export const managementRepository = {
   async venue(venueId) {
     const projection = await apiClient.request(`/v2/marketplace/management/venues/${encoded(venueId)}`);
     assertOrganizationOperatingContext(projection?.venue?.organizationId, { resourceLabel: "Questa sede" });
-    const authoring = await apiClient.request(`/v2/marketplace/venues/${encoded(venueId)}/authoring-targets`);
-    return { ...projection, authoringPermissions: authoring.permissions || {} };
+    return projection;
+  },
+  venueInventoryProposals(venueId, { status = "pending" } = {}) {
+    const params = new URLSearchParams({ status: String(status || "pending") });
+    return apiClient.request(`/venues/${encoded(venueId)}/inventory-proposals?${params}`);
+  },
+  acceptVenueInventoryProposal(venueId, proposalId, { message = "" } = {}) {
+    return apiClient.request(`/venues/${encoded(venueId)}/inventory-proposals/${encoded(proposalId)}/accept`, { method: "POST", ...body({ message }) });
+  },
+  rejectVenueInventoryProposal(venueId, proposalId, { message }) {
+    return apiClient.request(`/venues/${encoded(venueId)}/inventory-proposals/${encoded(proposalId)}/reject`, { method: "POST", ...body({ message }) });
+  },
+  withdrawVenueInventoryProposal(venueId, proposalId, { message = "" } = {}) {
+    return apiClient.request(`/venues/${encoded(venueId)}/inventory-proposals/${encoded(proposalId)}/withdraw`, { method: "POST", ...body({ message }) });
   },
   venueLifecycleImpact(venueId) {
     return apiClient.request(`/venues/${encoded(venueId)}/lifecycle-impact`);

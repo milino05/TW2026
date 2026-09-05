@@ -1,0 +1,44 @@
+/* Context Workspace: shell comune per editor contestuali full-width (Venue e Raccolta). */
+.context-workspace-page,.venue-editor-page{display:grid;gap:1rem;scroll-padding-top:calc(var(--header-height) + 4.75rem)}
+.context-workspace-bar,.venue-context-bar{display:flex;align-items:flex-end;justify-content:space-between;gap:1.5rem;padding:.15rem 0 .8rem;border-bottom:1px solid var(--line)}
+.context-workspace-bar h1,.venue-context-bar h1{margin:.15rem 0 0;font-size:clamp(1.75rem,3vw,2.65rem);line-height:1.05}
+.context-workspace-bar p,.venue-context-bar p{max-width:58rem;margin:.35rem 0 0;color:var(--sage-600)}
+.context-workspace-status,.venue-editor-status{display:flex;justify-content:flex-end;gap:.45rem;flex-wrap:wrap;max-width:32rem}
+.context-workspace-tabs,.venue-editor-tabs{position:sticky;z-index:20;top:calc(var(--header-height) + .4rem);display:flex;gap:.25rem;overflow-x:auto;padding:.35rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:color-mix(in srgb,var(--surface) 94%,transparent);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);scrollbar-width:thin}
+.context-workspace-tabs button,.venue-editor-tabs button{flex:0 0 auto;min-height:2.5rem;border:0;border-radius:.65rem;padding:.55rem .85rem;background:transparent;color:var(--ink-800);font-size:.84rem;font-weight:750;white-space:nowrap;box-shadow:none}
+.context-workspace-tabs button:hover,.context-workspace-tabs button:focus-visible,.context-workspace-tabs button[aria-current="page"],.context-workspace-tabs button[aria-selected="true"],.venue-editor-tabs button:hover,.venue-editor-tabs button:focus-visible,.venue-editor-tabs button[aria-selected="true"]{background:var(--sage-100);color:var(--ink-950);transform:none;box-shadow:none}
+.context-workspace-tabs button[aria-current="page"],.context-workspace-tabs button[aria-selected="true"],.venue-editor-tabs button[aria-selected="true"]{box-shadow:inset 0 -.18rem 0 var(--sage-500)}
+.context-workspace-content,.venue-editor-content{display:block;min-width:0;overflow:visible}
+
+/* Inspector non modale: sovrappone gli strumenti al workspace senza ridurre mappa/grafo/inventario né bloccarne il contesto. */
+.context-workspace-inspector-layer{position:fixed;z-index:125;inset:0;pointer-events:none}
+.context-workspace-inspector,.venue-inventory-inspector{position:absolute;top:calc(var(--header-height) + 4.8rem);right:clamp(.75rem,2vw,1.5rem);bottom:clamp(.75rem,2vw,1.5rem);width:min(31rem,calc(100vw - 2rem));overflow:auto;overscroll-behavior:contain;padding:1rem;border:1px solid var(--line-strong);border-radius:var(--radius-xl);background:color-mix(in srgb,var(--surface) 97%,transparent);box-shadow:0 1.2rem 3rem rgba(0,0,0,.22);backdrop-filter:blur(14px);pointer-events:auto}
+.context-workspace-inspector>:first-child,.venue-inventory-inspector>:first-child{margin-top:0}.context-workspace-inspector>:last-child,.venue-inventory-inspector>:last-child{margin-bottom:0}
+
+/* Sidecar: workspace ampio e non modale, riusabile per strumenti contestuali senza smontare l'editor sottostante. */
+.workspace-sidecar-launcher{position:fixed;z-index:108;right:clamp(1rem,2vw,1.5rem);bottom:clamp(1rem,2vw,1.5rem);display:inline-flex;align-items:center;gap:.45rem;box-shadow:var(--shadow-md)}
+.workspace-sidecar-layer{position:fixed;z-index:112;inset:0;pointer-events:none}
+.workspace-sidecar{position:absolute;top:calc(var(--header-height) + .75rem);right:.75rem;bottom:.75rem;width:min(82vw,82rem);display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;border:1px solid var(--line-strong);border-radius:var(--radius-xl);background:color-mix(in srgb,var(--surface) 98%,transparent);box-shadow:0 1.6rem 4rem rgba(36,21,29,.24);backdrop-filter:blur(16px);pointer-events:auto}
+.workspace-sidecar__header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1rem;border-bottom:1px solid var(--line);background:var(--surface)}
+.workspace-sidecar__header>div{display:grid;gap:.1rem}.workspace-sidecar__body{min-height:0;overflow:auto;padding:1rem}
+.workspace-sidecar__chooser{display:grid;gap:1rem;max-width:64rem;margin:0 auto}.workspace-sidecar-choice-list{display:grid;gap:.55rem}
+.workspace-sidecar-choice{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.75rem;align-items:center;width:100%;padding:.85rem 1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);color:var(--ink-950);text-align:left;box-shadow:var(--shadow-sm)}
+.workspace-sidecar-choice:hover{border-color:var(--sage-400);background:var(--sage-50);color:var(--ink-950)}
+.workspace-sidecar-choice__icon{display:grid;place-items:center;width:2.4rem;height:2.4rem;border-radius:.75rem;background:var(--sage-100);color:var(--ink-800)}
+.workspace-sidecar-choice__copy{display:grid;gap:.12rem;min-width:0}.workspace-sidecar-choice__copy strong,.workspace-sidecar-choice__copy small,.workspace-sidecar-choice__copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.workspace-sidecar-choice__copy small,.workspace-sidecar-choice__copy span{color:var(--sage-600);font-size:.8rem;font-weight:600}
+.workspace-sidecar__graph{display:grid;grid-template-rows:auto minmax(34rem,1fr);gap:.75rem;min-height:100%}.workspace-sidecar__context{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--line)}.workspace-sidecar__context h2,.workspace-sidecar__context p{margin:.15rem 0}.workspace-sidecar__graph artaround-semantic-graph-editor{display:block;min-width:0;min-height:34rem}
+
+@media(max-width:52rem){
+  .context-workspace-bar,.venue-context-bar{align-items:stretch;flex-direction:column}
+  .context-workspace-status,.venue-editor-status{justify-content:flex-start;max-width:none}
+  .context-workspace-tabs,.venue-editor-tabs{top:calc(var(--header-height) + .2rem)}
+  .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 4rem);right:.65rem;bottom:.65rem;width:min(27rem,calc(100vw - 1.3rem));padding:.85rem}
+  .workspace-sidecar{top:calc(var(--header-height) + .4rem);right:.45rem;bottom:.45rem;width:calc(100vw - .9rem);border-radius:var(--radius-lg)}
+  .workspace-sidecar__context{align-items:stretch;flex-direction:column}.workspace-sidecar__context>button{align-self:flex-start}
+}
+@media(max-width:36rem){
+  .context-workspace-tabs button,.venue-editor-tabs button{padding-inline:.7rem}
+  .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 3.5rem);left:.45rem;right:.45rem;bottom:.45rem;width:auto;border-radius:var(--radius-lg)}
+  .workspace-sidecar-layer{z-index:122}.workspace-sidecar{inset:0;width:auto;border:0;border-radius:0}.workspace-sidecar__body{padding:.75rem}.workspace-sidecar__graph{grid-template-rows:auto minmax(30rem,1fr)}
+  .workspace-sidecar-launcher{right:.7rem;bottom:.7rem}
+}

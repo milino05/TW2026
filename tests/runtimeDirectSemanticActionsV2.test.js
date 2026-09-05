@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
 function isolatedMongoUri(uri) {
@@ -66,16 +67,13 @@ async function createPublishedItem({ ItemV2, ItemEdition, ItemRevisionV2, owner,
   return { item, edition, revision };
 }
 
-test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e il contenuto target owned anche fuori dalla sequenza", { skip: !mongoUri }, async () => {
+test("una Visit con ItemRevision diretta deriva il perimetro semantico dal graph pinned e il contenuto target owned anche fuori dalla sequenza", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
-    const EditorialContext = require("../models/editorialContext.model");
-    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
     const ItemV2 = require("../models/itemV2.model");
@@ -85,6 +83,7 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
     const VisitSessionV2 = require("../models/visitSessionV2.model");
+    const { addItemMembership } = require("../services/contentSpace.service");
     const { createExecutionPreparation, startExecutionPreparation } = require("../services/executionPreparationV2.service");
     const { dispatchAction } = require("../services/actionDispatcherV2.service");
 
@@ -147,20 +146,15 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       ownerId: owner._id,
       createdBy: owner._id,
     });
-    const context = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
+    const { graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
       namespaceId: namespace._id,
+      namespaceRevisionId: namespaceRevision._id,
       displayName: "Collegamenti Item 1",
       createdBy: owner._id,
     });
-    await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: main.item._id, addedBy: owner._id });
+    await addItemMembership({ contentSpaceId: contentSpace._id, itemId: main.item._id, actorUserId: owner._id });
 
-    const graphRevision = await SemanticGraphRevision.create({
-      editorialContextId: context._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-      createdBy: owner._id,
-    });
     await GraphSubjectBinding.insertMany([
       { graphRevisionId: graphRevision._id, subjectId: artworkSubject._id, subjectClassDefinitionIds: [] },
       { graphRevisionId: graphRevision._id, subjectId: artistSubject._id, subjectClassDefinitionIds: [] },
@@ -172,8 +166,6 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
       relationTypeDefinitionId: "relation-created-by",
       weight: 10,
     });
-    context.workingGraphRevisionId = graphRevision._id;
-    await context.save();
 
     const visit = await VisitV2.create({ ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const directSourceId = new mongoose.Types.ObjectId();
@@ -211,6 +203,7 @@ test("una Visit con ItemRevision diretta espone le relazioni del graph pinned e 
     assert.equal(plan.sourceEditorialReleaseIds.length, 0);
     assert.equal(plan.semanticGraphPins.length, 1);
     assert.equal(id(plan.semanticGraphPins[0].graphRevisionId), id(graphRevision._id));
+    assert.deepEqual(new Set(plan.semanticGraphPins[0].subjectIds.map(id)), new Set([id(artworkSubject._id), id(artistSubject._id)]));
     assert.ok(plan.semanticContentPins.some((entry) => id(entry.itemRevisionId) === id(artist.revision._id)), "Item 2 deve essere pinzato come contenuto semantico anche se non è nella sequenza della Visit");
 
     const authorAction = started.current.availableActions.find((entry) =>

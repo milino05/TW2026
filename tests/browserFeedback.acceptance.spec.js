@@ -143,6 +143,105 @@ test("Marketplace global feedback stays inside a mobile viewport", async ({ page
   expect(box.x + box.width).toBeLessThanOrEqual(390);
 });
 
+test("Semantic Graph Workspace navigates a paged first-level graph in a real browser", async ({ page }) => {
+  const contextId = "64a12f6800000000000000aa";
+  const alphaId = "64a12f6800000000000000a1";
+  const betaId = "64a12f6800000000000000b2";
+  const gammaId = "64a12f6800000000000000c3";
+  const revisionId = "64a12f6800000000000000d4";
+  const semanticGraphId = "64a12f6800000000000000e5";
+  const namespaceRevisionId = "64a12f6800000000000000f6";
+  const subjects = {
+    [alphaId]: { _id: alphaId, preferredLabel: "Alpha", description: "Soggetto centrale" },
+    [betaId]: { _id: betaId, preferredLabel: "Beta", description: "Primo vicino" },
+    [gammaId]: { _id: gammaId, preferredLabel: "Gamma", description: "Secondo vicino" },
+  };
+  const entry = (subjectId, relationCount) => ({
+    subject: subjects[subjectId],
+    subjectClassDefinitionIds: [],
+    relationCount,
+    presentationCoverage: { collectionItemCount: subjectId === alphaId ? 1 : 0, contentSpaceItemCount: 0, artaroundItemCount: 0 },
+  });
+  const edgeAB = { id: "64a12f680000000000000111", sourceSubjectId: alphaId, targetSubjectId: betaId, relationTypeDefinitionId: "related", weight: 1, metadata: null, provenance: null };
+  const edgeAC = { id: "64a12f680000000000000112", sourceSubjectId: alphaId, targetSubjectId: gammaId, relationTypeDefinitionId: "related", weight: 1, metadata: null, provenance: null };
+
+  await page.route("**/api/editorial-contexts/**/semantic-graph/neighborhood**", async (route) => {
+    const url = new URL(route.request().url());
+    const focus = url.searchParams.get("focusSubjectId");
+    const limit = Number(url.searchParams.get("limit") || 18);
+    const base = {
+      semanticGraph: { id: semanticGraphId, name: "Grafo acceptance", workingVersion: 3, workingRevisionId: revisionId },
+      revision: { id: revisionId, version: 3, basedOnRevisionId: null, authoredAgainstNamespaceRevisionId: namespaceRevisionId },
+      effectiveNamespaceRevisionId: namespaceRevisionId,
+    };
+    if (!focus) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...base, subjects: [], edges: [], neighborhood: { focusSubjectId: null, totalSubjects: 3, totalEdges: 2, totalNeighbors: 0, visibleNeighbors: 0, hiddenNeighbors: 0, limit } }) });
+      return;
+    }
+    if (focus === betaId) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...base, subjects: [entry(betaId, 1), entry(alphaId, 2)], edges: [edgeAB], neighborhood: { focusSubjectId: betaId, totalSubjects: 3, totalEdges: 2, totalNeighbors: 1, visibleNeighbors: 1, hiddenNeighbors: 0, limit } }) });
+      return;
+    }
+    const expanded = limit > 18;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...base, subjects: expanded ? [entry(alphaId, 2), entry(betaId, 1), entry(gammaId, 1)] : [entry(alphaId, 2), entry(betaId, 1)], edges: expanded ? [edgeAB, edgeAC] : [edgeAB], neighborhood: { focusSubjectId: alphaId, totalSubjects: 3, totalEdges: 2, totalNeighbors: 2, visibleNeighbors: expanded ? 2 : 1, hiddenNeighbors: expanded ? 0 : 1, limit } }) });
+  });
+
+  await page.route("**/api/editorial-contexts/**/semantic-graph/subject-candidates**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [entry(alphaId, 2), entry(betaId, 1), entry(gammaId, 1)].map((value) => ({ ...value, inGraph: true })),
+        pagination: { page: 1, limit: 12, total: 3, totalPages: 1 },
+        query: "",
+        scope: "graph",
+      }),
+    });
+  });
+
+  await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => customElements.whenDefined("artaround-semantic-graph-editor"));
+  await page.evaluate(({ contextId: idValue }) => {
+    const previous = document.querySelector("#acceptance-semantic-graph");
+    previous?.remove();
+    const editor = document.createElement("artaround-semantic-graph-editor");
+    editor.id = "acceptance-semantic-graph";
+    document.body.append(editor);
+    editor.configure({
+      editorialContextId: idValue,
+      editable: true,
+      locked: false,
+      relationTypes: [{ definitionId: "related", label: "Collega", domainDefinitionIds: [], rangeDefinitionIds: [] }],
+      subjectClasses: [],
+    });
+  }, { contextId });
+
+  const editor = page.locator("#acceptance-semantic-graph");
+  await expect(editor.getByText("Nessun soggetto di contesto")).toBeVisible();
+  await expect(editor.getByText("Il grafo contiene 3 soggetti.", { exact: false })).toBeVisible();
+
+  await editor.getByRole("button", { name: "Scegli soggetto" }).click();
+  await expect(editor.getByRole("heading", { name: "Scegli il soggetto di contesto" })).toBeVisible();
+  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(3);
+  await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
+
+  await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
+  await expect(editor.getByText("1 di 2 soggetti collegati mostrati")).toBeVisible();
+  await editor.getByRole("button", { name: "Mostra altri" }).click();
+  await expect(editor.locator('[data-graph-subject]')).toHaveCount(3);
+  await expect(editor.getByRole("button", { name: "Mostra altri" })).toHaveCount(0);
+
+  await editor.locator("[data-close-graph-inspector]").click();
+  await editor.locator(`[data-graph-subject="${betaId}"]`).dblclick();
+  await expect(editor.locator(".semantic-graph-toolbar strong")).toHaveText("Beta");
+  await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
+
+  await editor.getByRole("button", { name: "Aggiungi relazione" }).click();
+  await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
+  await expect(editor.getByRole("heading", { name: "Beta → Alpha" })).toBeVisible();
+  await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveValue("related");
+});
+
 test("Navigator toast stack is FIFO, stable and globally layered in a real browser", async ({ page }) => {
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });
   await page.locator(".feedback-toast-host").waitFor({ state: "attached" });
