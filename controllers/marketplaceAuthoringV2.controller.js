@@ -59,6 +59,7 @@ async function reusableSemanticGraphs(req, res, next) {
       ownerType: req.query?.ownerType || "user",
       ownerId: req.query?.ownerId || req.user._id,
       namespaceId: req.query?.namespaceId,
+      contentSpaceId: req.query?.contentSpaceId || null,
       query: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
