@@ -40,6 +40,7 @@ const EditorialContextRevisionSchema = new Schema({
   description: { type: String, trim: true, default: null, immutable: true },
   namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true, immutable: true, index: true },
   graphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", required: true, immutable: true, index: true },
+  subjectIds: { type: [{ type: Schema.Types.ObjectId, ref: "Subject" }], default: [], immutable: true },
   itemBindings: { type: [EditorialItemBindingSchema], default: [], immutable: true },
   integrity: {
     status: { type: String, enum: ["valid"], default: "valid", immutable: true },
@@ -60,5 +61,6 @@ const EditorialContextRevisionSchema = new Schema({
 
 EditorialContextRevisionSchema.index({ editorialContextId: 1, version: 1 }, { unique: true });
 EditorialContextRevisionSchema.index({ editorialContextId: 1, status: 1, createdAt: -1 });
+EditorialContextRevisionSchema.index({ subjectIds: 1 });
 
 module.exports = mongoose.model("EditorialContextRevision", EditorialContextRevisionSchema);
