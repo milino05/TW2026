@@ -26,6 +26,7 @@ const SessionSemanticGraphPinSchema = new Schema({
   editorialContextId: { type: Schema.Types.ObjectId, ref: "EditorialContext", required: true },
   graphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", required: true },
   namespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true },
+  subjectIds: [{ type: Schema.Types.ObjectId, ref: "Subject", required: true }],
 }, { _id: false });
 
 const SessionSemanticContentPinSchema = new Schema({

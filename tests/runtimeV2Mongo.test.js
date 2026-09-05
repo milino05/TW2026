@@ -150,7 +150,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       version: 1,
       namespaceRevisionId: namespaceRevision._id,
       graphRevisionId: graphRevision._id,
-      itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+      itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       releasedAt: new Date(),
       releasedBy: user._id,

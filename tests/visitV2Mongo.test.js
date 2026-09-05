@@ -90,7 +90,7 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
       version: 1,
       namespaceRevisionId,
       graphRevisionId: graphRevision._id,
-      itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+      itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
       releasedAt: new Date(),
       releasedBy: user._id,

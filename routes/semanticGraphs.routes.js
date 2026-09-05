@@ -8,7 +8,9 @@ const semanticGraphId = validateObjectIdParam("semanticGraphId");
 const subjectId = validateObjectIdParam("subjectId");
 const edgeId = validateObjectIdParam("edgeId");
 
-router.use(requireAuth);
+// Keep authentication local to this router's own URL family. An unscoped
+// middleware here would also intercept public routes mounted after this router.
+router.use("/semantic-graphs", requireAuth);
 
 router.route("/semantic-graphs")
   .get(controller.list)

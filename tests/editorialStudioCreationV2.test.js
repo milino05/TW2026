@@ -70,16 +70,24 @@ test("new Editorial Studio collection initializes an empty reusable graph agains
       baselineSnapshotRef: { resourceType: "namespace_revision", resourceId: revision1._id },
       status: "active",
     });
+    const contentSpace = await ContentSpace.create({
+      name: "Spazio editoriale pinned",
+      ownerType: "user",
+      ownerId: contextOwner._id,
+      createdBy: contextOwner._id,
+    });
 
     const created = await createEditorialStudioCollection({
       actorUserId: contextOwner._id,
       payload: {
         ownerType: "user",
         ownerId: contextOwner._id,
+        contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
+        graphMode: "new",
+        graphDisplayName: "Grafo raccolta pinned",
         displayName: "Raccolta pinned",
         shortDescription: "Test raccolta",
-        newContentSpaceName: "Spazio editoriale pinned",
       },
     });
 
@@ -122,15 +130,23 @@ test("multiple collections can reuse the same SemanticGraph while keeping indepe
     const revision = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: owner._id, status: "published" });
     namespace.publishedRevisionId = revision._id;
     await namespace.save();
+    const contentSpace = await require("../models/contentSpace.model").create({
+      name: "Spazio condiviso",
+      ownerType: "user",
+      ownerId: owner._id,
+      createdBy: owner._id,
+    });
 
     const first = await createEditorialStudioCollection({
       actorUserId: owner._id,
       payload: {
         ownerType: "user",
         ownerId: owner._id,
+        contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
+        graphMode: "new",
+        graphDisplayName: "Grafo condiviso",
         displayName: "Raccolta A",
-        newContentSpaceName: "Spazio condiviso",
       },
     });
     const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
@@ -142,6 +158,7 @@ test("multiple collections can reuse the same SemanticGraph while keeping indepe
         ownerType: "user",
         ownerId: owner._id,
         namespaceId: namespace._id,
+        graphMode: "shared",
         semanticGraphId: graph._id,
         contentSpaceId: first.contentSpace.id,
         displayName: "Raccolta B",
@@ -174,10 +191,24 @@ test("collection authoring lists only reusable graphs compatible with principal 
     const revision = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: owner._id, status: "published" });
     namespace.publishedRevisionId = revision._id;
     await namespace.save();
+    const contentSpace = await require("../models/contentSpace.model").create({
+      name: "Spazio grafi",
+      ownerType: "user",
+      ownerId: owner._id,
+      createdBy: owner._id,
+    });
 
     const first = await createEditorialStudioCollection({
       actorUserId: owner._id,
-      payload: { ownerType: "user", ownerId: owner._id, namespaceId: namespace._id, displayName: "Rinascimento condiviso", newContentSpaceName: "Spazio grafi" },
+      payload: {
+        ownerType: "user",
+        ownerId: owner._id,
+        contentSpaceId: contentSpace._id,
+        namespaceId: namespace._id,
+        graphMode: "new",
+        graphDisplayName: "Rinascimento condiviso",
+        displayName: "Rinascimento condiviso",
+      },
     });
     const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
     await createEditorialStudioCollection({
@@ -186,6 +217,7 @@ test("collection authoring lists only reusable graphs compatible with principal 
         ownerType: "user",
         ownerId: owner._id,
         namespaceId: namespace._id,
+        graphMode: "shared",
         semanticGraphId: firstContext.semanticGraphId,
         contentSpaceId: first.contentSpace.id,
         displayName: "Seconda raccolta",

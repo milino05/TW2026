@@ -26,6 +26,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   inventoryBusy = false;
   relationDraft = null;
   visibleNeighborLimit = 18;
+  renderedFocusSubjectId = null;
   subjectClickTimer = null;
   busy = false;
   error = null;
@@ -87,6 +88,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.inventoryPage = 1;
     this.relationDraft = null;
     this.visibleNeighborLimit = 18;
+    this.renderedFocusSubjectId = null;
   }
 
   fetchNeighborhood() {
@@ -653,7 +655,25 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   render() {
     if (!this.hasResource()) { this.innerHTML = `<div class="empty-state"><p>Preparazione del grafo…</p></div>`; return; }
+    const previousCanvas = this.querySelector("[data-semantic-graph-canvas]");
+    const focusSubjectId = id(this.focusSubjectId);
+    const preserveCanvasPosition = Boolean(
+      focusSubjectId
+      && id(this.renderedFocusSubjectId) === focusSubjectId
+      && previousCanvas?.querySelector("svg"),
+    );
+    const previousCanvasPosition = preserveCanvasPosition
+      ? { left: previousCanvas.scrollLeft, top: previousCanvas.scrollTop }
+      : null;
     this.innerHTML = `<section class="semantic-graph-workspace" aria-busy="${this.busy}">${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderToolbar()}${this.renderCanvas()}</section>${this.renderInspector()}`;
+    const canvas = this.querySelector("[data-semantic-graph-canvas]");
+    if (focusSubjectId && canvas?.querySelector("svg")) {
+      canvas.scrollLeft = previousCanvasPosition?.left ?? Math.max(0, (canvas.scrollWidth - canvas.clientWidth) / 2);
+      canvas.scrollTop = previousCanvasPosition?.top ?? 0;
+      this.renderedFocusSubjectId = focusSubjectId;
+    } else if (!focusSubjectId) {
+      this.renderedFocusSubjectId = null;
+    }
   }
 }
 

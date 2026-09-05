@@ -72,9 +72,10 @@ test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente R
   assert.match(editorialRepository, /\/v2\/marketplace\/editorial-relations/);
 });
 
-test("la creazione del contenuto parte dal Subject senza scegliere prima Venue o inventario", () => {
+test("la creazione del contenuto parte dal Subject nello spazio editoriale corrente", () => {
   assert.match(create, /Parti dal Subject di cui vuoi parlare/);
-  assert.match(create, /senza obbligarti a scegliere prima un inventario/);
+  assert.match(create, /Il nuovo Item verrà inserito nello spazio editoriale corrente/);
+  assert.match(create, /item-authoring\?contentSpaceId=/);
   assert.doesNotMatch(create, /Sede di riferimento|Nessuna sede specifica|venueTargetId|physicalIntent|organizationVenues\(/);
   assert.match(item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
   assert.match(item, /artaround-subject-presence/);
@@ -95,6 +96,6 @@ test("Item e Visit editor non permettono di cambiare principal dall'editor", () 
 });
 
 test("Libreria apre Crea senza serializzare il contesto nel link", () => {
-  assert.match(workspace, /createHref\(\) \{ return "\/create"; \}/);
+  assert.match(workspace, /data-route href="\/create"/);
   assert.doesNotMatch(workspace, /\/create\?\$\{p\.toString\(\)\}/);
 });

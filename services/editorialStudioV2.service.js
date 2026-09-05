@@ -332,6 +332,41 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
     candidateItemIds = candidateItemIds.filter((itemId) => matchingIds.has(id(itemId)));
   }
 
+  // A membership can be imported from an acquired resource, so do not assume
+  // that every row in a ContentSpace is still usable by its current principal.
+  // Filter before pagination to keep totals accurate and avoid presenting an
+  // action that the authoritative entry command would later reject.
+  const candidateItems = candidateItemIds.length
+    ? await ItemV2.find({ _id: { $in: candidateItemIds }, lifecycleStatus: "active" }).select("_id ownerType ownerId").lean()
+    : [];
+  const candidateEditions = candidateItems.length
+    ? await ItemEdition.find({ itemId: { $in: candidateItems.map((item) => item._id) }, namespaceId: context.namespaceId }).select("_id itemId").lean()
+    : [];
+  const usableEditionIds = new Set();
+  await Promise.all(candidateEditions.map(async (edition) => {
+    try {
+      await assertCanUseItemEditionForEditorialRelease({
+        itemEditionId: edition._id,
+        actorUserId,
+        principalType: contentSpace.ownerType,
+        principalId: contentSpace.ownerId,
+      });
+      usableEditionIds.add(id(edition._id));
+    } catch (error) {
+      if (![403, 404, 409].includes(error?.status)) throw error;
+    }
+  }));
+  const itemIdsWithUsableEdition = new Set(candidateEditions
+    .filter((edition) => usableEditionIds.has(id(edition._id)))
+    .map((edition) => id(edition.itemId)));
+  const authorizedItemIds = new Set(candidateItems
+    .filter((item) => (
+      (item.ownerType === contentSpace.ownerType && id(item.ownerId) === id(contentSpace.ownerId))
+      || itemIdsWithUsableEdition.has(id(item._id))
+    ))
+    .map((item) => id(item._id)));
+  candidateItemIds = candidateItemIds.filter((itemId) => authorizedItemIds.has(id(itemId)));
+
   const membershipQuery = { contentSpaceId: contentSpace._id, itemId: { $in: candidateItemIds } };
   const [total, memberships] = await Promise.all([
     ContentSpaceItemMembership.countDocuments(membershipQuery),
@@ -350,20 +385,6 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
   const itemById = new Map(items.map((item) => [id(item), item]));
   const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
   const existingItemIds = new Set(existingEntries.map((entry) => id(entry.itemId)));
-  const usableEditionIds = new Set();
-  await Promise.all(editions.map(async (edition) => {
-    try {
-      await assertCanUseItemEditionForEditorialRelease({
-        itemEditionId: edition._id,
-        actorUserId,
-        principalType: contentSpace.ownerType,
-        principalId: contentSpace.ownerId,
-      });
-      usableEditionIds.add(id(edition._id));
-    } catch (error) {
-      if (![403, 404, 409].includes(error?.status)) throw error;
-    }
-  }));
   const revisionIds = editions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
   const subjectIds = items.map((item) => item.primarySubjectId).filter(Boolean);
   const [revisions, subjects] = await Promise.all([

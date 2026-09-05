@@ -34,6 +34,7 @@ test("server and DB scripts install the Mongo unit-of-work compatibility boundar
     "seed:users",
     "migrate:organization-rbac",
     "migrate:exhibit-slots",
+    "migrate:editorial-inventory",
     "seed:demo",
     "verify:demo",
     "test",

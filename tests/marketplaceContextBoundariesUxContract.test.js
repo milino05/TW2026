@@ -147,7 +147,6 @@ test("i form di authoring e management diventano dirty solo dopo modifiche utent
     "artaround-visit-authoring-view",
     "artaround-item-authoring-view",
     "artaround-commerce-management-view",
-    "artaround-editorial-spaces-view",
     "artaround-editorial-collection-create-view",
     "artaround-editorial-studio-view",
   ]) assert.match(source.formGuard, new RegExp(host));

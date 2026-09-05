@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const ContentSpace = require("../models/contentSpace.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const { normalizeContentSpacePayload, validateContentSpacePayload } = require("../services/validation/contentSpace.validation");
 const { normalizeEditorialContextPayload, validateEditorialContextPayload } = require("../services/validation/editorialContext.validation");
@@ -17,13 +17,13 @@ test("ContentSpace is owner-scoped but Namespace-neutral", () => {
   assert.equal(doc.parentContentSpaceId, undefined);
 });
 
-test("ContentSpaceMembership is non-owning Item membership", () => {
-  const membership = new ContentSpaceMembership({ contentSpaceId: id(), itemId: id(), addedBy: id() });
+test("ContentSpaceItemMembership is non-owning Item membership", () => {
+  const membership = new ContentSpaceItemMembership({ contentSpaceId: id(), itemId: id(), addedBy: id() });
   assert.ok(membership.contentSpaceId);
   assert.ok(membership.itemId);
   assert.equal(membership.ownerId, undefined);
-  assert.equal(ContentSpaceMembership.schema.path("itemId").options.ref, "ItemV2");
-  assert.equal(ContentSpaceMembership.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.itemId === 1 && options.unique), true);
+  assert.equal(ContentSpaceItemMembership.schema.path("itemId").options.ref, "ItemV2");
+  assert.equal(ContentSpaceItemMembership.schema.indexes().some(([keys, options]) => keys.contentSpaceId === 1 && keys.itemId === 1 && options.unique), true);
 });
 
 test("EditorialContext materializes a collection over ContentSpace and Namespace while referencing a reusable SemanticGraph", () => {

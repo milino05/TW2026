@@ -22,12 +22,12 @@ test("semantic graph reuse authoring files pass the syntax gate", () => {
 });
 
 test("collection creation makes graph sharing explicit and keeps a new graph as the default", () => {
-  assert.match(source.createView, /graphMode = "new"/);
+  assert.match(source.createView, /semanticSource = "new"/);
   assert.match(source.createView, /Crea un nuovo grafo/);
-  assert.match(source.createView, /Riusa un grafo esistente/);
+  assert.match(source.createView, /Usa un grafo compatibile/);
   assert.match(source.createView, /semanticGraphId/);
-  assert.match(source.createView, /Le modifiche future alla bozza del grafo saranno condivise/);
-  assert.match(source.createView, /in revisione o pubblicata continuerà però a usare la revisione che ha congelato/);
+  assert.match(source.createView, /Le future modifiche alla working revision saranno condivise/);
+  assert.match(source.createView, /review e release già congelate resteranno immutabili/);
   assert.match(source.createView, /collectionUsageCount/);
 });
 

@@ -15,11 +15,12 @@ const marketplaceShell = read("clients/marketplace/src/ui/app-shell.js");
 const navigatorRepository = read("clients/navigator/src/infrastructure/http/authRepository.ts");
 const navigatorLogin = read("clients/navigator/src/ui/LoginView.vue");
 
-test("registration riusa il boundary auth condiviso senza autoassegnare ruoli", () => {
+test("registration riusa il boundary auth e prepara solo lo spazio personale iniziale", () => {
   assert.match(authRoutes, /router\.post\("\/auth\/register", register\)/);
   assert.match(authService, /async function registerUser\(\{ username, password \}\)/);
-  assert.match(authService, /new User\(\{\s*username: normalizedUsername,\s*passwordHash:/s);
-  assert.doesNotMatch(authService, /registerUser[\s\S]*?(membership|roleAssignments|owner)/i);
+  assert.match(authService, /new User\(\{\s*username: normalizedUsername,\s*passwordHash,\s*status: "active"/s);
+  assert.match(authService, /ensurePrincipalContentSpace\(\{\s*ownerType: "user"/s);
+  assert.doesNotMatch(authService, /registerUser[\s\S]*?(organizationMembership|roleAssignments)/i);
   assert.match(authDesign, /registrazione libera crea utenti senza membership Organization/);
 });
 

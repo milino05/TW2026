@@ -21,6 +21,7 @@
     "seed:visit-ui": "node -r ./config/mongoUnitOfWork.js scripts/seedVisitAuthoringPlayground.js",
     "migrate:organization-rbac": "node -r ./config/mongoUnitOfWork.js scripts/migrateOrganizationRbac.js",
     "migrate:exhibit-slots": "node -r ./config/mongoUnitOfWork.js scripts/migrateVenueExhibitSlots.js",
+    "migrate:editorial-inventory": "node -r ./config/mongoUnitOfWork.js scripts/migrateEditorialStudioInventory.js",
     "seed:demo": "node -r ./config/mongoUnitOfWork.js scripts/seedExamDataset.js && node -r ./config/mongoUnitOfWork.js scripts/enrichExamPresentationMatrix.js",
     "verify:demo": "node -r ./config/mongoUnitOfWork.js scripts/verifyExamDataset.js && node -r ./config/mongoUnitOfWork.js scripts/verifyExamPresentationMatrix.js",
     "check:syntax": "find . -name '*.js' -not -path './node_modules/*' -not -path './clients/*/node_modules/*' -not -path './clients/*/dist/*' -print0 | xargs -0 -n1 node --check",

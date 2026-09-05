@@ -45,7 +45,8 @@ test("l'Item viene creato dal Subject e dal principal operativo senza side effec
   assert.match(source, /primarySubjectId: id\(this\.selectedSubject\)/);
   assert.match(source, /ownerType: this\.principal\.type/);
   assert.match(source, /ownerId: this\.principal\.id/);
-  assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId \}\)/);
+  assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId \}\)/);
+  assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
   assert.doesNotMatch(authoringRepositorySource, /createItemWithPhysicalIntent|venueTargetContext|venueTargets\(/);
 });
 
@@ -88,12 +89,12 @@ test("gli spazi editoriali includono l'Item senza cambiarne owner o semantica", 
   assert.match(source, /La semantica della raccolta si gestisce nello Studio, non nell'Item Editor/);
 });
 
-test("la creazione avviata dalla Raccolta materializza membership e entry nel contesto corretto", () => {
+test("la creazione avviata dalla Raccolta materializza Item e entry nel contesto corretto", () => {
   assert.match(source, /contextContentSpaceId = params\(\)\.get\("contentSpaceId"\)/);
   assert.match(source, /contextEditorialContextId = params\(\)\.get\("editorialContextId"\)/);
   assert.match(source, /contextNamespaceId = params\(\)\.get\("namespaceId"\)/);
-  assert.match(source, /if \(this\.contextContentSpaceId\) \{/);
-  assert.match(source, /setContentSpaceMembership\(\{ contentSpaceId: this\.contextContentSpaceId, itemId: this\.itemId, member: true \}\)/);
+  assert.match(source, /if \(!this\.contextContentSpaceId\) throw new Error/);
+  assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
   assert.match(source, /id\(created\.edition\?\.namespaceId\) === id\(this\.contextNamespaceId\)/);
   assert.match(source, /editorialRepository\.addEntry\(this\.contextEditorialContextId/);
   assert.match(source, /Versione salvata e aggiunta alla raccolta/);

@@ -105,7 +105,7 @@ async function createEditorialFixture({ seller }) {
     await itemRevision.save();
     edition.publishedRevisionId = itemRevision._id;
     await edition.save();
-    bindings.push({ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] });
+    bindings.push({ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] });
     entries.push({ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id });
   }
 

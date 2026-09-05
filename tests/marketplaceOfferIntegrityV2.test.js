@@ -159,7 +159,7 @@ test("follow_current ricontrolla la closure prima di una nuova Acquisition", { s
     await externalEdition.save();
     const release2 = await EditorialRelease.create({
       editorialContextId: context._id, version: 2, basedOnReleaseId: release1._id, namespaceRevisionId: namespaceRevision._id,
-      graphRevisionId: graphRevision._id, itemBindings: [{ itemEditionId: externalEdition._id, itemRevisionId: externalRevision._id }],
+      graphRevisionId: graphRevision._id, itemBindings: [{ itemId: externalItem._id, itemEditionId: externalEdition._id, itemRevisionId: externalRevision._id }],
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id }, releasedAt: new Date(), releasedBy: seller._id,
     });
     context.publishedReleaseId = release2._id;

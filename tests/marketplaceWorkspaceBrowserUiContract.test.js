@@ -5,8 +5,6 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const browserSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-browser-view.js"), "utf8");
-const spacesSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/editorial-spaces-view.js"), "utf8");
-const libraryNavSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/library-section-nav.js"), "utf8");
 const catalogSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/catalog-view.js"), "utf8");
 const detailSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-view.js"), "utf8");
 const shellSource = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/app-shell.js"), "utf8");
@@ -26,13 +24,14 @@ test("workspace browser usa projection context/resources e non il dump legacy", 
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
 });
 
-test("Libreria espone Risorse e Spazi editoriali come sezioni sorelle, senza una card finale duplicata", () => {
-  assert.match(browserSource, /renderLibrarySectionNav\("resources"\)/);
-  assert.match(spacesSource, /renderLibrarySectionNav\("spaces"\)/);
-  assert.match(libraryNavSource, />Risorse<.*>Spazi editoriali</s);
-  assert.match(libraryNavSource, /href="\/workspace"/);
-  assert.match(libraryNavSource, /href="\/workspace\/editorial-spaces"/);
-  assert.doesNotMatch(browserSource, /renderEditorialSpaces|editorialRepository\.spaceSummaries|space-grid/);
+test("Libreria integra lavoro editoriale e risorse mantenendo esplicito lo spazio corrente", () => {
+  assert.match(browserSource, /renderLibraryTabs\(\)/);
+  assert.match(browserSource, /data-library-section="editorial"/);
+  assert.match(browserSource, /data-library-section="resources"/);
+  assert.match(browserSource, /Spazio editoriale corrente/);
+  assert.match(browserSource, /editorialRepository\.spaceSummaries/);
+  assert.match(browserSource, /editorialRepository\.spaceProjection/);
+  assert.doesNotMatch(browserSource, /editorial-spaces-view|library-section-nav/);
 });
 
 test("workspace detail usa una projection puntuale e non carica workspace o distribution", () => {
@@ -42,15 +41,16 @@ test("workspace detail usa una projection puntuale e non carica workspace o dist
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources\/\$\{encodeURIComponent\(resourceType\)\}\/\$\{encodeURIComponent\(resourceId\)\}/);
 });
 
-test("tab ownership e metadata del dettaglio usano attributi distinti", () => {
-  assert.match(browserSource, /button\[data-ownership\]/);
-  assert.match(browserSource, /data-resource-ownership=/);
-  assert.match(browserSource, /detail\.dataset\.resourceOwnership/);
-  assert.doesNotMatch(browserSource, /data-resource-detail[^>]*data-ownership=/);
+test("le risorse cross-space restano separate da raccolte e contenuti dello spazio", () => {
+  assert.match(browserSource, /const CROSS_SPACE_TYPES = \["visit", "namespace", "semantic_graph", "physical_vocabulary"\]/);
+  assert.match(browserSource, /resourceTypes: this\.resourceType \? \[this\.resourceType\] : CROSS_SPACE_TYPES/);
+  assert.match(browserSource, /Risorse cross-space/);
+  assert.doesNotMatch(browserSource, /CROSS_SPACE_TYPES[^;]*item_edition/);
 });
 
 test("catalogo e workspace gestiscono la propria paginazione senza handler globale", () => {
   assert.doesNotMatch(shellSource, /closest\("button\[data-(?:catalog-)?page\]"\)/);
-  assert.match(browserSource, /closest\("button\[data-page\]"\)/);
+  assert.match(browserSource, /closest\("button\[data-content-page\]"\)/);
+  assert.match(browserSource, /closest\("button\[data-resource-page\]"\)/);
   assert.match(catalogSource, /closest\("button\[data-catalog-page\]"\)/);
 });

@@ -19,6 +19,8 @@ Con MongoDB disponibile e `MONGO_URI` configurata:
 
 ```bash
 npm run migrate:organization-rbac
+npm run migrate:exhibit-slots
+npm run migrate:editorial-inventory
 npm run seed:demo
 npm run verify:demo
 ```
@@ -95,7 +97,15 @@ ADAPTIVE_CONTRIBUTOR_SECRET=<segreto casuale stabile>
 NAVIGATOR_CONFIG_DIR=<directory lato server, facoltativa>
 ```
 
-Su un database aggiornato da una versione precedente eseguire una sola volta `npm run migrate:organization-rbac` prima del seed/verifier o dell'avvio del nuovo backend.
+Su un database aggiornato da una versione precedente eseguire, prima del seed/verifier o dell'avvio del nuovo backend:
+
+```bash
+npm run migrate:organization-rbac
+npm run migrate:exhibit-slots
+npm run migrate:editorial-inventory
+```
+
+`migrate:exhibit-slots` e `migrate:editorial-inventory` supportano `--dry-run` e sono idempotenti. La migrazione dell'inventario editoriale copia le membership legacy nel nuovo inventario, ricostruisce le membership Subject e Collection, collega le revisioni ai nuovi grafi semantici e completa i binding delle release. I documenti legacy di origine non vengono eliminati.
 
 La forma esatta della URI deve usare i parametri Mongo forniti al proprio sito. Non committare password o secret nel repository.
 
