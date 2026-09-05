@@ -9,6 +9,7 @@ import "./editorial-collection-content-manager.js";
 import "./semantic-graph-editor.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function id(value) { return String(value?._id || value?.id || value || ""); }
 function formatDate(value) { if (!value) return "—"; try { return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); } catch { return String(value); } }
 function statusLabel(value) { return ({ in_review: "In revisione", approved: "Approvata", changes_requested: "Modifiche richieste", published: "Pubblicata", withdrawn: "Ritirata" })[value] || value || "Bozza di lavoro"; }
 function statusTone(value) { return ({ in_review: "info", approved: "success", changes_requested: "warning", published: "success", withdrawn: "neutral" })[value] || "neutral"; }
@@ -23,6 +24,11 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   busy = false;
   error = null;
   requestingChanges = false;
+  graphPickerOpen = false;
+  graphChoices = null;
+  graphQuery = "";
+  graphPage = 1;
+  graphBusy = false;
 
   connectedCallback() {
     const params = new URLSearchParams(window.location.search);
@@ -33,7 +39,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.addEventListener("artaround:revision-workflow-operation", this.onWorkflowOperation);
     this.addEventListener("editorial-content-changed", this.onChildChanged);
     this.addEventListener("editorial-graph-changed", this.onChildChanged);
-    this.load();
+    void this.load();
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
@@ -56,19 +62,43 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
           editorialRepository.releases(this.editorialContextId),
         ]);
       }
-    } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire lo Studio editoriale"; }
+    } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire la Raccolta editoriale"; }
     finally { this.busy = false; this.render(); }
   }
 
-  onChildChanged = () => { this.load(); };
+  async loadGraphChoices() {
+    if (!this.data) return;
+    this.graphBusy = true;
+    this.error = null;
+    this.render();
+    try {
+      this.graphChoices = await editorialRepository.reusableSemanticGraphs({
+        ownerType: this.data.contentSpace.ownerType,
+        ownerId: this.data.contentSpace.ownerId,
+        namespaceId: this.data.namespace.id,
+        contentSpaceId: this.data.contentSpace.id,
+        q: this.graphQuery,
+        page: this.graphPage,
+        limit: 12,
+      });
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile cercare i grafi compatibili";
+    } finally {
+      this.graphBusy = false;
+      this.render();
+    }
+  }
+
+  onChildChanged = () => { void this.load(); };
 
   setSection(section) {
     this.section = section;
+    this.graphPickerOpen = false;
     const params = new URLSearchParams(window.location.search);
     params.set("editorialContextId", this.editorialContextId);
     params.set("section", section);
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
-    if (section === "publication" && !this.revisions.length && !this.releases.length) { this.load(); return; }
+    if (section === "publication" && !this.revisions.length && !this.releases.length) { void this.load(); return; }
     this.render();
   }
 
@@ -87,6 +117,38 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data?.contentSpace?.id || "")}`);
       return;
     }
+    if (target?.closest("button[data-open-semantic-graph]")) {
+      navigate(`/workspace/semantic-graph?semanticGraphId=${encodeURIComponent(this.data?.semanticGraph?.id || "")}`);
+      return;
+    }
+    if (target?.closest("button[data-open-graph-picker]")) {
+      if (this.data?.context?.locked || !this.data?.permissions?.canEdit) return;
+      this.graphPickerOpen = true;
+      this.graphQuery = "";
+      this.graphPage = 1;
+      this.graphChoices = null;
+      this.render();
+      void this.loadGraphChoices();
+      return;
+    }
+    if (target?.closest("button[data-close-graph-picker]")) {
+      this.graphPickerOpen = false;
+      this.graphChoices = null;
+      this.error = null;
+      this.render();
+      return;
+    }
+    const graphPage = target?.closest("button[data-collection-graph-page]");
+    if (graphPage) {
+      this.graphPage = Math.max(1, Number(graphPage.dataset.collectionGraphPage) || 1);
+      void this.loadGraphChoices();
+      return;
+    }
+    const useGraph = target?.closest("button[data-use-collection-graph]");
+    if (useGraph) {
+      await this.changeGraph(useGraph.dataset.useCollectionGraph);
+      return;
+    }
     if (target?.closest("button[data-request-changes-cancel]")) {
       this.requestingChanges = false;
       this.error = null;
@@ -96,6 +158,20 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const action = target?.closest("button[data-studio-action]");
     if (action) await this.executeStudioAction(action.dataset.studioAction);
   };
+
+  async changeGraph(semanticGraphId) {
+    const choice = (this.graphChoices?.results || []).find((graph) => id(graph.id) === id(semanticGraphId));
+    if (!choice || id(choice.id) === id(this.data.semanticGraph.id)) return;
+    const confirmed = await openActionDialog({
+      title: `Usare “${choice.name}” per questa raccolta?`,
+      message: "Cambierà soltanto il grafo di lavoro della Raccolta. Contenuti e Spazio editoriale restano invariati; le review e release già congelate continuano a riferirsi alle revisioni storiche precedenti.",
+      confirmLabel: "Cambia grafo",
+    });
+    if (!confirmed) return;
+    this.graphPickerOpen = false;
+    this.graphChoices = null;
+    await this.run(() => editorialRepository.changeCollectionGraph(this.editorialContextId, choice.id));
+  }
 
   async executeStudioAction(code) {
     if (code === "collection.review.request") await this.run(() => editorialRepository.requestReview(this.editorialContextId));
@@ -132,6 +208,13 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
+    if (form.matches("[data-collection-graph-search]")) {
+      event.preventDefault();
+      this.graphQuery = String(new FormData(form).get("q") || "").trim();
+      this.graphPage = 1;
+      void this.loadGraphChoices();
+      return;
+    }
     if (form.matches("[data-request-changes-form]")) {
       event.preventDefault();
       const data = new FormData(form);
@@ -177,7 +260,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
 
   renderTabs() {
     const tabs = [
-      ["overview", "Panoramica"], ["content", "Contenuti"], ["relations", "Relazioni"], ["publication", "Pubblicazione"], ["settings", "Impostazioni"],
+      ["overview", "Panoramica"], ["content", "Contenuti"], ["relations", "Collegamenti"], ["publication", "Pubblicazione"], ["settings", "Impostazioni"],
     ];
     return `<nav class="context-workspace-tabs" aria-label="Sezioni della raccolta">${tabs.map(([key, label]) => `<button type="button" data-studio-section="${key}" aria-current="${this.section === key ? "page" : "false"}">${escapeHtml(label)}</button>`).join("")}</nav>`;
   }
@@ -187,7 +270,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const readiness = this.data.readiness || { ready: false, issues: [] };
     const review = this.data.review;
     const published = this.data.published;
-    return `<section class="studio-section"><dl class="stats studio-overview-stats"><div><dt>Contenuti</dt><dd>${stats.entryCount || 0}</dd></div><div><dt>Soggetti nel grafo</dt><dd>${stats.subjectCount || 0}</dd></div><div><dt>Relazioni</dt><dd>${stats.edgeCount || 0}</dd></div><div><dt>Modifiche dopo l'ultima pubblicazione</dt><dd>${stats.changesSincePublished ?? "—"}</dd></div></dl><div class="studio-overview-grid"><article class="panel"><span class="eyebrow">Stato editoriale</span><h2>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h2>${review ? `<p>Versione in revisione v${escapeHtml(review.version)} · richiesta ${escapeHtml(formatDate(review.requestedAt))}</p>${review.message ? `<artaround-callout tone="warning">${escapeHtml(review.message)}</artaround-callout>` : ""}` : `<p>La raccolta è modificabile. Quando contenuti e configurazione sono pronti puoi inviarne una versione in revisione.</p>`}${published ? `<p class="note">Ultima versione pubblicata: v${escapeHtml(published.version)} · ${escapeHtml(formatDate(published.releasedAt))}</p>` : `<p class="note">Nessuna versione ancora pubblicata.</p>`}</article><article class="panel"><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Pronta per la revisione" : `${readiness.issues?.length || 0} problemi da risolvere`}</h2>${readiness.ready ? `<artaround-callout tone="success">Contenuti, revisione del grafo e regole editoriali sono coerenti per creare una versione in revisione.</artaround-callout>` : `<artaround-issue-panel tone="warning"><ul class="studio-issue-list">${(readiness.issues || []).slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul></artaround-issue-panel>`}<div class="button-row"><button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 16 })} Ricontrolla</button>${this.hasOperation("collection.review.request") ? `<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>` : ""}</div></article></div></section>`;
+    return `<section class="studio-section"><dl class="stats studio-overview-stats"><div><dt>Contenuti</dt><dd>${stats.entryCount || 0}</dd></div><div><dt>Soggetti della raccolta</dt><dd>${stats.subjectCount || 0}</dd></div><div><dt>Relazioni</dt><dd>${stats.edgeCount || 0}</dd></div><div><dt>Modifiche dopo l'ultima pubblicazione</dt><dd>${stats.changesSincePublished ?? "—"}</dd></div></dl><div class="studio-overview-grid"><article class="panel"><span class="eyebrow">Stato editoriale</span><h2>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h2>${review ? `<p>Versione in revisione v${escapeHtml(review.version)} · richiesta ${escapeHtml(formatDate(review.requestedAt))}</p>${review.message ? `<artaround-callout tone="warning">${escapeHtml(review.message)}</artaround-callout>` : ""}` : `<p>La raccolta è modificabile. Quando contenuti e configurazione sono pronti puoi inviarne una versione in revisione.</p>`}${published ? `<p class="note">Ultima versione pubblicata: v${escapeHtml(published.version)} · ${escapeHtml(formatDate(published.releasedAt))}</p>` : `<p class="note">Nessuna versione ancora pubblicata.</p>`}</article><article class="panel"><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Pronta per la revisione" : `${readiness.issues?.length || 0} problemi da risolvere`}</h2>${readiness.ready ? `<artaround-callout tone="success">Contenuti, revisione del grafo e regole editoriali sono coerenti per creare una versione in revisione.</artaround-callout>` : `<artaround-issue-panel tone="warning"><ul class="studio-issue-list">${(readiness.issues || []).slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul></artaround-issue-panel>`}<div class="button-row"><button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 16 })} Ricontrolla</button>${this.hasOperation("collection.review.request") ? `<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>` : ""}</div></article></div></section>`;
   }
 
   renderContent() {
@@ -197,7 +280,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   renderRelations() {
     const graph = this.data.semanticGraph || {};
     const sharedCount = Number(graph.sharedByCollections || 1);
-    return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Semantica</span><h2>Relazioni fra soggetti</h2><p>Lavora sul grafo semantico collegato alla raccolta. I nodi e le relazioni sono indipendenti dall'esistenza di contenuti di presentazione.</p></div></header><div class="studio-graph-context"><div><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><p>${sharedCount > 1 ? `Questo grafo è condiviso da ${sharedCount} raccolte. Le modifiche aggiornano la sua bozza comune; le versioni delle raccolte già in revisione o pubblicate restano pinzate alla revisione precedente.` : "Questo grafo può essere riusato da altre raccolte. Le versioni in revisione e pubblicate congelano sempre una revisione precisa."}</p></div><span class="status">${sharedCount} ${sharedCount === 1 ? "raccolta" : "raccolte"}</span></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
+    return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Semantica</span><h2>Collegamenti fra soggetti</h2><p>Lavora sul grafo semantico collegato alla raccolta. I nodi e le relazioni sono indipendenti dall'esistenza di contenuti di presentazione.</p></div><button type="button" class="button-secondary" data-open-semantic-graph>${icon("link", { size: 15 })} Apri grafo</button></header><div class="studio-graph-context"><div><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><p>${sharedCount > 1 ? `Questo grafo è condiviso da ${sharedCount} raccolte. Le modifiche aggiornano la sua bozza comune; le versioni delle raccolte già in revisione o pubblicate restano pinzate alla revisione precedente.` : "Questo grafo può essere riusato da altre raccolte. Le versioni in revisione e pubblicate congelano sempre una revisione precisa."}</p></div><span class="status">${sharedCount} ${sharedCount === 1 ? "raccolta" : "raccolte"}</span></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
   renderRequestChangesForm() {
@@ -213,9 +296,18 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     return `<section class="studio-section studio-publication-flow"><header class="section-heading"><div><span class="eyebrow">Versioni</span><h2>Revisione e pubblicazione</h2><p>La Raccolta congela insieme composizione, Regole editoriali e una revisione precisa del grafo. Il grafo condiviso può continuare a evolvere senza modificare le versioni già congelate.</p></div></header><div class="studio-publication-grid"><article class="panel"><div class="section-heading"><div><span class="eyebrow">Stato corrente</span><h3>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h3></div><artaround-status-indicator tone="${statusTone(reviewState)}">${escapeHtml(review ? statusLabel(review.status) : "Bozza di lavoro")}</artaround-status-indicator></div>${review ? `<p>Versione in revisione <strong>v${escapeHtml(review.version)}</strong> · ${escapeHtml(review.itemCount)} contenuti.</p><p class="note">La revisione usa il grafo congelato ${escapeHtml(review.graphRevisionId || "")}. Le modifiche successive al grafo condiviso non cambiano questa versione.</p>` : `<p>Nessuna versione è attualmente in revisione. ${readiness.ready ? "La bozza è pronta per essere congelata." : "Completa il controllo di consistenza prima della revisione."}</p>`}<artaround-revision-workflow-controls actions-only></artaround-revision-workflow-controls>${this.renderRequestChangesForm()}</article><article class="panel"><span class="eyebrow">Ultima pubblicazione</span><h3>${published ? `Versione v${escapeHtml(published.version)}` : "Nessuna versione pubblicata"}</h3>${published ? `<p>Pubblicata ${escapeHtml(formatDate(published.releasedAt))}.</p><p class="note">Grafo congelato: ${escapeHtml(published.graphRevisionId || "—")}</p>` : `<p>Quando una versione approvata viene pubblicata, resta immutabile e riproducibile anche se contenuti e grafo continuano a evolvere.</p>`}<button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 15 })} Ricontrolla consistenza</button></article></div><article class="panel studio-history-panel"><h2>Storico</h2><div class="studio-history-grid"><div><h3>Versioni in revisione</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div><div><h3>Versioni pubblicate</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div></div></article></section>`;
   }
 
+  renderGraphPicker() {
+    if (!this.graphPickerOpen) return "";
+    const results = this.graphChoices?.results || [];
+    const pagination = this.graphChoices?.pagination || { page: this.graphPage, totalPages: 0 };
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Cambia grafo semantico"><div class="section-heading"><div><span class="eyebrow">Grafi compatibili</span><h2>Cambia grafo della raccolta</h2><p>La compatibilità dipende dal proprietario e dalle Regole editoriali, non dallo Spazio. Lo Spazio serve solo a mostrare coverage e priorità.</p></div><button type="button" class="button-secondary small" data-close-graph-picker aria-label="Chiudi">×</button></div><form data-collection-graph-search role="search"><label>Cerca<input name="q" value="${escapeHtml(this.graphQuery)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.graphBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${results.length ? results.map((graph) => { const current = id(graph.id) === id(this.data.semanticGraph.id); const coverage = graph.currentSpaceCoverage || {}; return `<article class="semantic-inventory-card"><span><strong>${escapeHtml(graph.name)}</strong><small>${escapeHtml(graph.description || "")}</small><small>${graph.usedInCurrentSpace ? "Già usato nello spazio" : "Compatibile con la raccolta"} · ${Number(graph.subjectCount || 0)} soggetti · ${Number(graph.relationCount || 0)} relazioni</small>${Number(coverage.totalSubjectCount || 0) ? `<small>Coverage nello spazio: ${Number(coverage.coveredSubjectCount || 0)}/${Number(coverage.totalSubjectCount || 0)}</small>` : ""}</span><button type="button" class="button-secondary small" data-use-collection-graph="${escapeHtml(id(graph.id))}" ${current || this.graphBusy ? "disabled" : ""}>${current ? "In uso" : "Usa questo grafo"}</button></article>`; }).join("") : `<div class="empty-state compact"><p>${this.graphBusy ? "Ricerca in corso…" : "Nessun grafo compatibile trovato."}</p></div>`}</div>${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine dei grafi"><button type="button" data-collection-graph-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.graphBusy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-collection-graph-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.graphBusy ? "disabled" : ""}>Successiva →</button></nav>` : ""}<div class="semantic-inventory-footer"><p>Vuoi una lineage indipendente? Apri prima un grafo, creane una copia indipendente e poi selezionala qui.</p></div></aside></div>`;
+  }
+
   renderSettings() {
     const data = this.data;
-    return `<section class="studio-section studio-settings-grid"><form class="panel" data-collection-settings><span class="eyebrow">Identità della raccolta</span><h2>Dettagli</h2><label>Nome<input name="displayName" required value="${escapeHtml(data.context.name)}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione breve<input name="shortDescription" maxlength="240" value="${escapeHtml(data.context.shortDescription || "")}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione<textarea name="description" rows="6" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}>${escapeHtml(data.context.description || "")}</textarea></label><label>Spazio editoriale<input value="${escapeHtml(data.contentSpace.name)}" disabled></label><label>Regole editoriali<input value="${escapeHtml(data.namespace.name)}" disabled></label>${data.permissions.canEdit && !data.context.locked ? `<button type="submit">Salva modifiche</button>` : `<p class="note">La raccolta non è modificabile nello stato corrente.</p>`}</form><article class="panel studio-danger-zone"><span class="eyebrow">Zona pericolosa</span><h2>Elimina raccolta</h2><p>Gli Item e lo Spazio editoriale non verranno eliminati. Le offerte future saranno ritirate; le versioni già acquisite restano valide secondo i relativi diritti.</p>${data.permissions.canRemove ? `<button type="button" class="button-secondary danger" data-studio-action="collection.remove">${icon("trash", { size: 16 })} Elimina raccolta</button>` : `<p class="note">Non disponi del permesso di gestione del ciclo di vita.</p>`}</article></section>`;
+    const graph = data.semanticGraph || {};
+    const canChangeGraph = data.permissions.canEdit && !data.context.locked;
+    return `<section class="studio-section studio-settings-grid"><form class="panel" data-collection-settings><span class="eyebrow">Identità della raccolta</span><h2>Dettagli</h2><label>Nome<input name="displayName" required value="${escapeHtml(data.context.name)}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione breve<input name="shortDescription" maxlength="240" value="${escapeHtml(data.context.shortDescription || "")}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione<textarea name="description" rows="6" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}>${escapeHtml(data.context.description || "")}</textarea></label><label>Spazio editoriale<input value="${escapeHtml(data.contentSpace.name)}" disabled></label><label>Regole editoriali<input value="${escapeHtml(data.namespace.name)}" disabled></label>${data.permissions.canEdit && !data.context.locked ? `<button type="submit">Salva modifiche</button>` : `<p class="note">La raccolta non è modificabile nello stato corrente.</p>`}</form><article class="panel"><span class="eyebrow">Struttura semantica</span><h2>${escapeHtml(graph.name || "Grafo semantico")}</h2><p>Il grafo è una risorsa autonoma. Cambiarlo non sposta contenuti e non modifica le versioni storiche già congelate.</p><div class="button-row"><button type="button" class="button-secondary" data-open-semantic-graph>${icon("link", { size: 15 })} Apri grafo</button>${canChangeGraph ? `<button type="button" data-open-graph-picker>Cambia grafo</button>` : ""}</div>${data.context.locked ? `<p class="note">Per cambiare grafo ritira prima la revisione attiva.</p>` : ""}</article><article class="panel studio-danger-zone"><span class="eyebrow">Zona pericolosa</span><h2>Elimina raccolta</h2><p>Gli Item, lo Spazio editoriale e il Grafo semantico non verranno eliminati. Le versioni già acquisite restano valide secondo i relativi diritti.</p>${data.permissions.canRemove ? `<button type="button" class="button-secondary danger" data-studio-action="collection.remove">${icon("trash", { size: 16 })} Elimina raccolta</button>` : `<p class="note">Non disponi del permesso di gestione del ciclo di vita.</p>`}</article>${this.renderGraphPicker()}</section>`;
   }
 
   configureChildren() {
@@ -244,12 +336,12 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   }
 
   render() {
-    if (this.busy && !this.data) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Apertura dello Studio editoriale…</p></div></main>`; return; }
-    if (this.error && !this.data) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Studio editoriale</h1><p role="alert">${escapeHtml(this.error)}</p><a data-route href="/workspace">Torna alla Libreria</a></div></main>`; return; }
+    if (this.busy && !this.data) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Apertura della Raccolta editoriale…</p></div></main>`; return; }
+    if (this.error && !this.data) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Raccolta editoriale</h1><p role="alert">${escapeHtml(this.error)}</p><a data-route href="/workspace">Torna alla Libreria</a></div></main>`; return; }
     if (!this.data) return;
     const section = ({ overview: () => this.renderOverview(), content: () => this.renderContent(), relations: () => this.renderRelations(), publication: () => this.renderPublication(), settings: () => this.renderSettings() })[this.section]();
     const graphSharedCount = Number(this.data.semanticGraph?.sharedByCollections || 1);
-    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data.contentSpace.id)}">${escapeHtml(this.data.contentSpace.name)}</a><span aria-hidden="true">/</span><span>${escapeHtml(this.data.context.name)}</span></nav><header class="context-workspace-bar"><div><span class="eyebrow">Raccolta editoriale</span><h1>${escapeHtml(this.data.context.name)}</h1><p>${escapeHtml(this.data.context.shortDescription || this.data.context.description || "Componi contenuti, relazioni e pubblicazioni in un unico contesto editoriale.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong>${this.data.namespace.revision ? ` · v${escapeHtml(this.data.namespace.revision.version)}` : ""}</p></div><div class="context-workspace-status">${this.data.context.locked ? `<span class="status">${icon("lock", { size: 14 })} ${escapeHtml(statusLabel(this.data.review?.status))}</span>` : `<span class="status success">Bozza di lavoro</span>`}${graphSharedCount > 1 ? `<span class="status">Grafo condiviso · ${graphSharedCount} raccolte</span>` : ""}</div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
+    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy || this.graphBusy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data.contentSpace.id)}">${escapeHtml(this.data.contentSpace.name)}</a><span aria-hidden="true">/</span><span>${escapeHtml(this.data.context.name)}</span></nav><header class="context-workspace-bar"><div><span class="eyebrow">Raccolta editoriale</span><h1>${escapeHtml(this.data.context.name)}</h1><p>${escapeHtml(this.data.context.shortDescription || this.data.context.description || "Componi contenuti, collegamenti e pubblicazioni in un unico contesto editoriale.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong>${this.data.namespace.revision ? ` · v${escapeHtml(this.data.namespace.revision.version)}` : ""}</p></div><div class="context-workspace-status">${this.data.context.locked ? `<span class="status">${icon("lock", { size: 14 })} ${escapeHtml(statusLabel(this.data.review?.status))}</span>` : `<span class="status success">Bozza di lavoro</span>`}${graphSharedCount > 1 ? `<span class="status">Grafo condiviso · ${graphSharedCount} raccolte</span>` : ""}</div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
     queueMicrotask(() => this.configureChildren());
   }
 }
