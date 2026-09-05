@@ -7,6 +7,7 @@ const CurationSignalSchema = new Schema({
 }, { _id: false });
 
 const EditorialItemBindingSchema = new Schema({
+  itemId: { type: Schema.Types.ObjectId, ref: "ItemV2", required: true },
   itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true },
   itemRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", required: true },
   curationSignals: { type: [CurationSignalSchema], default: [] },
