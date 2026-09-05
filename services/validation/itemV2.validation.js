@@ -59,11 +59,13 @@ function normalizeRevisionPayload(payload = {}) {
 
 function validateCreateItemPayload(payload = {}) {
   const issues = [];
-  const allowed = ["primarySubjectId", "ownerType", "ownerId", "provenance"];
+  const allowed = ["primarySubjectId", "ownerType", "ownerId", "contentSpaceId", "provenance"];
   for (const key of Object.keys(payload)) if (!allowed.includes(key)) issues.push({ field: key, code: "UNKNOWN_FIELD", message: `Campo non supportato: ${key}` });
   if (!mongoose.isValidObjectId(payload.primarySubjectId)) issues.push({ field: "primarySubjectId", code: "INVALID_OBJECT_ID", message: "primarySubjectId non valido" });
   if (!OWNER_TYPES.includes(payload.ownerType)) issues.push({ field: "ownerType", code: "INVALID_ENUM", message: "ownerType non valido", allowedValues: OWNER_TYPES });
   if (!mongoose.isValidObjectId(payload.ownerId)) issues.push({ field: "ownerId", code: "INVALID_OBJECT_ID", message: "ownerId non valido" });
+  if (!payload.contentSpaceId) issues.push({ field: "contentSpaceId", code: "REQUIRED", message: "contentSpaceId è obbligatorio" });
+  else if (!mongoose.isValidObjectId(payload.contentSpaceId)) issues.push({ field: "contentSpaceId", code: "INVALID_OBJECT_ID", message: "contentSpaceId non valido" });
   return issues;
 }
 
