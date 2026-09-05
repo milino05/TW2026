@@ -88,10 +88,10 @@ async function createContentFixture({ manager, organization }) {
   });
   venue.publishedReleaseId = venueRelease._id;
   await venue.save();
-  return { item, edition, itemRevision, target };
+  return { subject, item, edition, itemRevision, target };
 }
 
-async function createEditorialSource({ ownerType, ownerId, createdBy, edition, itemRevision }) {
+async function createEditorialSource({ ownerType, ownerId, createdBy, item, edition, itemRevision }) {
   const ContentSpace = require("../models/contentSpace.model");
   const EditorialRelease = require("../models/editorialRelease.model");
   const space = await ContentSpace.create({
@@ -114,7 +114,8 @@ async function createEditorialSource({ ownerType, ownerId, createdBy, edition, i
     version: 1,
     namespaceRevisionId,
     graphRevisionId: graphRevision._id,
-    itemBindings: [{ itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
+    subjectIds: [item.primarySubjectId],
+    itemBindings: [{ itemId: item._id, itemEditionId: edition._id, itemRevisionId: itemRevision._id, curationSignals: [] }],
     integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: createdBy },
     releasedAt: new Date(),
     releasedBy: createdBy,
@@ -167,6 +168,7 @@ test("Visit publication distingue ownership personale e review Organization", { 
       ownerType: "user",
       ownerId: manager._id,
       createdBy: manager._id,
+      item: fixture.item,
       edition: fixture.edition,
       itemRevision: fixture.itemRevision,
     });
@@ -174,6 +176,7 @@ test("Visit publication distingue ownership personale e review Organization", { 
       ownerType: "organization",
       ownerId: organization._id,
       createdBy: manager._id,
+      item: fixture.item,
       edition: fixture.edition,
       itemRevision: fixture.itemRevision,
     });
