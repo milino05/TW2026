@@ -1,8 +1,10 @@
 const ContentSpace = require("../models/contentSpace.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
-const ItemEdition = require("../models/itemEdition.model");
 const Namespace = require("../models/namespace.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
@@ -15,6 +17,7 @@ const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAu
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
+function id(value) { return String(value?._id || value || ""); }
 
 async function importEditorialContextSnapshot({
   sourceEditorialContextId,
@@ -66,12 +69,21 @@ async function importEditorialContextSnapshot({
 
   const sourceGraphRevision = await SemanticGraphRevision.findById(sourceRelease.graphRevisionId).lean();
   if (!sourceGraphRevision) throw new AppError("GraphRevision sorgente non disponibile", 409);
-  const [sourceBindings, sourceEdges, editions] = await Promise.all([
+  const [sourceBindings, sourceEdges] = await Promise.all([
     GraphSubjectBinding.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
     SemanticEdgeV2.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
-    ItemEdition.find({ _id: { $in: (sourceRelease.itemBindings || []).map((entry) => entry.itemEditionId) } }).select("_id itemId").lean(),
   ]);
-  const itemIds = [...new Set(editions.map((edition) => String(edition.itemId)))];
+  const subjectIds = [...new Set((sourceRelease.subjectIds || []).map(id).filter(Boolean))];
+  const itemBindings = (sourceRelease.itemBindings || []).map((binding) => ({
+    itemId: binding.itemId,
+    curationSignals: (binding.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
+  }));
+  if (itemBindings.some((binding) => !binding.itemId)) {
+    throw new AppError("La release sorgente non espone un corpus Item importabile", 409, [{ code: "EDITORIAL_RELEASE_ITEM_SCOPE_REQUIRED" }]);
+  }
+  if (itemBindings.length && !subjectIds.length) {
+    throw new AppError("La release sorgente non espone un perimetro semantico importabile", 409, [{ code: "EDITORIAL_RELEASE_SUBJECT_SCOPE_REQUIRED" }]);
+  }
 
   let contentSpace = null;
   let context = null;
@@ -134,11 +146,30 @@ async function importEditorialContextSnapshot({
         },
       })));
     }
-    if (itemIds.length) {
-      await ContentSpaceMembership.insertMany(itemIds.map((itemId) => ({
+    if (subjectIds.length) {
+      await ContentSpaceSubjectMembership.insertMany(subjectIds.map((subjectId) => ({
         contentSpaceId: contentSpace._id,
-        itemId,
+        subjectId,
         addedBy: actorUserId,
+      })));
+      await CollectionSubjectMembership.insertMany(subjectIds.map((subjectId) => ({
+        editorialContextId: context._id,
+        subjectId,
+        addedBy: actorUserId,
+      })));
+    }
+    if (itemBindings.length) {
+      await ContentSpaceItemMembership.insertMany(itemBindings.map((binding) => ({
+        contentSpaceId: contentSpace._id,
+        itemId: binding.itemId,
+        addedBy: actorUserId,
+      })));
+      await CollectionItemMembership.insertMany(itemBindings.map((binding) => ({
+        editorialContextId: context._id,
+        itemId: binding.itemId,
+        curationSignals: binding.curationSignals,
+        addedBy: actorUserId,
+        updatedBy: actorUserId,
       })));
     }
 
@@ -167,7 +198,8 @@ async function importEditorialContextSnapshot({
       semanticGraphId: semanticGraph._id,
       workingGraphRevisionId: graphRevision._id,
       importedFrom: { editorialContextId: sourceContext._id, editorialReleaseId: sourceRelease._id },
-      itemMembershipCount: itemIds.length,
+      subjectMembershipCount: subjectIds.length,
+      itemMembershipCount: itemBindings.length,
     };
   } catch (error) {
     await deleteAdoptions(adoptionIds).catch(() => {});
@@ -177,8 +209,19 @@ async function importEditorialContextSnapshot({
       await SemanticGraphRevision.deleteOne({ _id: graphRevision._id }).catch(() => {});
     }
     if (semanticGraph?._id) await SemanticGraph.deleteOne({ _id: semanticGraph._id }).catch(() => {});
-    if (contentSpace?._id) await ContentSpaceMembership.deleteMany({ contentSpaceId: contentSpace._id }).catch(() => {});
-    if (context?._id) await EditorialContext.deleteOne({ _id: context._id }).catch(() => {});
+    if (contentSpace?._id) {
+      await Promise.allSettled([
+        ContentSpaceItemMembership.deleteMany({ contentSpaceId: contentSpace._id }),
+        ContentSpaceSubjectMembership.deleteMany({ contentSpaceId: contentSpace._id }),
+      ]);
+    }
+    if (context?._id) {
+      await Promise.allSettled([
+        CollectionItemMembership.deleteMany({ editorialContextId: context._id }),
+        CollectionSubjectMembership.deleteMany({ editorialContextId: context._id }),
+        EditorialContext.deleteOne({ _id: context._id }),
+      ]);
+    }
     if (contentSpace?._id) await ContentSpace.deleteOne({ _id: contentSpace._id }).catch(() => {});
     throw error;
   }
