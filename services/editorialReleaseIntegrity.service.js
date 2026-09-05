@@ -34,6 +34,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     issues.push({ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_NOT_RELEASE_READY", message: "La NamespaceRevision deve essere una versione pubblicata immutabile e valida" });
   }
 
+  let graphSubjectIds = new Set();
   const graphRevision = await SemanticGraphRevision.findOne({ _id: graphRevisionId, semanticGraphId: context.semanticGraphId }).lean();
   if (!graphRevision) {
     issues.push({ field: "graphRevisionId", code: "GRAPH_REVISION_MISMATCH", message: "GraphRevision non appartiene al grafo semantico usato dalla raccolta" });
@@ -44,6 +45,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
       GraphSubjectBinding.find({ graphRevisionId: graphRevision._id }).lean(),
       SemanticEdgeV2.find({ graphRevisionId: graphRevision._id }).lean(),
     ]);
+    graphSubjectIds = new Set(subjectBindings.map((binding) => id(binding.subjectId)));
     issues.push(...validateGraphSnapshotAgainstNamespace({ subjectBindings, edges }, namespaceRevision));
   }
 
@@ -59,6 +61,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
   normalizedSubjectIds.forEach((subjectId, index) => {
     if (!existingSubjectIds.has(subjectId)) issues.push({ field: `subjectIds[${index}]`, code: "SUBJECT_NOT_FOUND", message: "Subject del perimetro editoriale non trovato" });
     if (!spaceSubjectIds.has(subjectId)) issues.push({ field: `subjectIds[${index}]`, code: "SUBJECT_NOT_IN_CONTENT_SPACE", message: "Subject non presente nel perimetro dello spazio editoriale" });
+    if (graphRevision && !graphSubjectIds.has(subjectId)) issues.push({ field: `subjectIds[${index}]`, code: "SUBJECT_NOT_IN_SEMANTIC_GRAPH", message: "Subject della raccolta non presente nella revisione del grafo semantico" });
   });
   const subjectScope = new Set(normalizedSubjectIds);
 
@@ -105,7 +108,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     }
     if (!["published", "superseded"].includes(revision.status)) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_REVISION_NOT_RELEASE_READY", message: "ItemRevision deve essere immutabile/pubblicata prima della Release" });
     if (!compatibleAuthoredRevisionIds.has(id(revision.authoredAgainstNamespaceRevisionId))) issues.push({ field: `${base}.itemRevisionId`, code: "ITEM_NAMESPACE_LINEAGE_MISMATCH", message: "ItemRevision authored contro un Namespace incompatibile" });
-    issues.push(...validatePresentationAgainstNamespace(revision, namespaceRevision).map((issue) => ({ ...issue, field: `${base}.${issue.field || "itemRevisionId"}` })));
+    issues.push(...validatePresentationAgainstNamespace(revision, namespaceRevision).map((entry) => ({ ...entry, field: `${base}.${entry.field || "itemRevisionId"}` })));
 
     (binding.curationSignals || []).forEach((signal, signalIndex) => {
       if (!selectionSignalIds.has(String(signal.definitionId))) issues.push({ field: `${base}.curationSignals[${signalIndex}].definitionId`, code: "UNKNOWN_CURATION_SIGNAL", message: `SelectionSignal non disponibile: ${signal.definitionId}` });
