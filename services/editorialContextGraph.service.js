@@ -1,12 +1,13 @@
 const mongoose = require("mongoose");
 const EditorialRelease = require("../models/editorialRelease.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
-const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const { findEditorialContextOrFail } = require("./editorialContext.service");
@@ -19,7 +20,30 @@ function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\
 function normalizedLimit(value, fallback = 12, max = 50) { return Math.max(1, Math.min(max, Number(value) || fallback)); }
 function emptyCoverage() { return { collectionItemCount: 0, contentSpaceItemCount: 0, artaroundItemCount: 0 }; }
 
-function projectGraph(graph, { semanticGraph = null, coverageBySubject = new Map() } = {}) {
+function projectGraph(graph, { semanticGraph = null, coverageBySubject = new Map(), visibleSubjectIds = null } = {}) {
+  const visible = visibleSubjectIds ? new Set([...visibleSubjectIds].map(id)) : null;
+  const subjects = graph
+    ? [...graph.nodes.values()]
+      .filter((node) => !visible || visible.has(id(node.subject?._id)))
+      .map((node) => ({
+        subject: node.subject,
+        subjectClassDefinitionIds: node.binding?.subjectClassDefinitionIds || [],
+        presentationCoverage: coverageBySubject.get(id(node.subject?._id)) || emptyCoverage(),
+      }))
+    : [];
+  const edges = graph
+    ? graph.authoritativeEdges
+      .filter((edge) => !visible || (visible.has(id(edge.sourceSubjectId)) && visible.has(id(edge.targetSubjectId))))
+      .map((edge) => ({
+        id: edge._id,
+        sourceSubjectId: edge.sourceSubjectId,
+        targetSubjectId: edge.targetSubjectId,
+        relationTypeDefinitionId: edge.relationTypeDefinitionId,
+        weight: edge.weight,
+        metadata: edge.metadata ?? null,
+        provenance: edge.provenance ?? null,
+      }))
+    : [];
   return {
     semanticGraph: semanticGraph ? {
       id: semanticGraph._id,
@@ -34,20 +58,8 @@ function projectGraph(graph, { semanticGraph = null, coverageBySubject = new Map
       authoredAgainstNamespaceRevisionId: graph.revision.authoredAgainstNamespaceRevisionId,
     } : null,
     effectiveNamespaceRevisionId: graph?.namespaceRevision?._id || null,
-    subjects: graph ? [...graph.nodes.values()].map((node) => ({
-      subject: node.subject,
-      subjectClassDefinitionIds: node.binding?.subjectClassDefinitionIds || [],
-      presentationCoverage: coverageBySubject.get(id(node.subject?._id)) || emptyCoverage(),
-    })) : [],
-    edges: graph ? graph.authoritativeEdges.map((edge) => ({
-      id: edge._id,
-      sourceSubjectId: edge.sourceSubjectId,
-      targetSubjectId: edge.targetSubjectId,
-      relationTypeDefinitionId: edge.relationTypeDefinitionId,
-      weight: edge.weight,
-      metadata: edge.metadata ?? null,
-      provenance: edge.provenance ?? null,
-    })) : [],
+    subjects,
+    edges,
   };
 }
 
@@ -69,14 +81,13 @@ function projectGraphRoot(semanticGraph, revision = null, effectiveNamespaceRevi
   };
 }
 
+async function collectionSubjectIds(editorialContextId) {
+  const memberships = await CollectionSubjectMembership.find({ editorialContextId }).select("subjectId").lean();
+  return [...new Set(memberships.map((membership) => id(membership.subjectId)).filter(Boolean))];
+}
+
 async function projectCollectionSubjects(editorialContextId) {
-  const entries = await EditorialContextEntry.find({ editorialContextId }).select("itemEditionId").lean();
-  if (!entries.length) return [];
-  const editions = await ItemEdition.find({ _id: { $in: entries.map((entry) => entry.itemEditionId) } }).select("itemId").lean();
-  const items = editions.length
-    ? await ItemV2.find({ _id: { $in: editions.map((edition) => edition.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean()
-    : [];
-  const subjectIds = [...new Set(items.map((item) => id(item.primarySubjectId)).filter(Boolean))];
+  const subjectIds = await collectionSubjectIds(editorialContextId);
   if (!subjectIds.length) return [];
   const subjects = await Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description externalIdentities").lean();
   const subjectById = new Map(subjects.map((subject) => [id(subject._id), subject]));
@@ -93,19 +104,18 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   for (const item of allItems) result.get(id(item.primarySubjectId)).artaroundItemCount += 1;
 
   const spaceMemberships = allItems.length
-    ? await ContentSpaceMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
+    ? await ContentSpaceItemMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
     : [];
   for (const membership of spaceMemberships) {
     const item = itemById.get(id(membership.itemId));
     if (item) result.get(id(item.primarySubjectId)).contentSpaceItemCount += 1;
   }
 
-  const entries = await EditorialContextEntry.find({ editorialContextId }).select("itemEditionId").lean();
-  const editions = entries.length
-    ? await ItemEdition.find({ _id: { $in: entries.map((entry) => entry.itemEditionId) } }).select("itemId").lean()
+  const collectionMemberships = allItems.length
+    ? await CollectionItemMembership.find({ editorialContextId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
     : [];
-  for (const edition of editions) {
-    const item = itemById.get(id(edition.itemId));
+  for (const membership of collectionMemberships) {
+    const item = itemById.get(id(membership.itemId));
     if (item) result.get(id(item.primarySubjectId)).collectionItemCount += 1;
   }
   return result;
@@ -142,18 +152,9 @@ async function candidateSubjectIds({ context, scope, semanticGraph = null }) {
     const bindings = await GraphSubjectBinding.find({ graphRevisionId: graph.workingRevisionId }).select("subjectId").lean();
     return [...new Set(bindings.map((entry) => id(entry.subjectId)).filter(Boolean))];
   }
-  if (scope === "collection") {
-    const entries = await EditorialContextEntry.find({ editorialContextId: context._id }).select("itemEditionId").lean();
-    if (!entries.length) return [];
-    const editions = await ItemEdition.find({ _id: { $in: entries.map((entry) => entry.itemEditionId) } }).select("itemId").lean();
-    if (!editions.length) return [];
-    const items = await ItemV2.find({ _id: { $in: editions.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
-    return [...new Set(items.map((entry) => id(entry.primarySubjectId)).filter(Boolean))];
-  }
-  const memberships = await ContentSpaceMembership.find({ contentSpaceId: context.contentSpaceId }).select("itemId").lean();
-  if (!memberships.length) return [];
-  const items = await ItemV2.find({ _id: { $in: memberships.map((entry) => entry.itemId) }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
-  return [...new Set(items.map((entry) => id(entry.primarySubjectId)).filter(Boolean))];
+  if (scope === "collection") return collectionSubjectIds(context._id);
+  const memberships = await ContentSpaceSubjectMembership.find({ contentSpaceId: context.contentSpaceId }).select("subjectId").lean();
+  return [...new Set(memberships.map((membership) => id(membership.subjectId)).filter(Boolean))];
 }
 
 async function searchEditorialGraphSubjectCandidates({ editorialContextId, actorUserId, scope = "collection", q = "", page = 1, limit = 12 }) {
@@ -218,6 +219,11 @@ async function resolveGraphRevisionForView({ context, semanticGraph, view }) {
   return { revision, effectiveNamespaceRevisionId: release.namespaceRevisionId, release };
 }
 
+async function visibleScopeForView({ context, view, release = null }) {
+  if (view === "published") return new Set((release?.subjectIds || []).map(id));
+  return new Set(await collectionSubjectIds(context._id));
+}
+
 async function getEditorialContextGraphNeighborhood({ editorialContextId, view = "working", actorUserId, focusSubjectId = null, limit = 18 }) {
   if (!["working", "published"].includes(view)) throw new AppError("view deve essere working o published", 400);
   if (focusSubjectId && !mongoose.isValidObjectId(focusSubjectId)) throw new AppError("focusSubjectId non valido", 400, [{ field: "focusSubjectId", code: "INVALID_OBJECT_ID" }]);
@@ -226,11 +232,13 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();
   if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 409);
-  const { revision, effectiveNamespaceRevisionId } = await resolveGraphRevisionForView({ context, semanticGraph, view });
+  const { revision, effectiveNamespaceRevisionId, release } = await resolveGraphRevisionForView({ context, semanticGraph, view });
+  const visibleScope = await visibleScopeForView({ context, view, release });
+  const visibleObjectIds = [...visibleScope].filter(mongoose.isValidObjectId).map((value) => new mongoose.Types.ObjectId(value));
   const maxNeighbors = normalizedLimit(limit, 18, 100);
-  if (!revision) {
+  if (!revision || !visibleObjectIds.length) {
     return {
-      ...projectGraphRoot(semanticGraph),
+      ...projectGraphRoot(semanticGraph, revision, effectiveNamespaceRevisionId),
       subjects: [],
       edges: [],
       neighborhood: { focusSubjectId: null, totalSubjects: 0, totalEdges: 0, totalNeighbors: 0, visibleNeighbors: 0, hiddenNeighbors: 0, limit: maxNeighbors },
@@ -238,8 +246,8 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
   }
 
   const [totalSubjects, totalEdges] = await Promise.all([
-    GraphSubjectBinding.countDocuments({ graphRevisionId: revision._id }),
-    SemanticEdgeV2.countDocuments({ graphRevisionId: revision._id }),
+    GraphSubjectBinding.countDocuments({ graphRevisionId: revision._id, subjectId: { $in: visibleObjectIds } }),
+    SemanticEdgeV2.countDocuments({ graphRevisionId: revision._id, sourceSubjectId: { $in: visibleObjectIds }, targetSubjectId: { $in: visibleObjectIds } }),
   ]);
   if (!focusSubjectId) {
     return {
@@ -249,11 +257,16 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
       neighborhood: { focusSubjectId: null, totalSubjects, totalEdges, totalNeighbors: 0, visibleNeighbors: 0, hiddenNeighbors: 0, limit: maxNeighbors },
     };
   }
+  if (!visibleScope.has(id(focusSubjectId))) {
+    throw new AppError("Il soggetto non appartiene al perimetro della raccolta", 404, [{ code: "COLLECTION_SUBJECT_NOT_FOUND" }]);
+  }
 
   const focusBinding = await GraphSubjectBinding.findOne({ graphRevisionId: revision._id, subjectId: focusSubjectId }).lean();
   if (!focusBinding) throw new AppError("Il soggetto di contesto non appartiene a questa revisione del grafo", 404, [{ code: "GRAPH_SUBJECT_NOT_FOUND" }]);
   const incidentEdges = await SemanticEdgeV2.find({
     graphRevisionId: revision._id,
+    sourceSubjectId: { $in: visibleObjectIds },
+    targetSubjectId: { $in: visibleObjectIds },
     $or: [{ sourceSubjectId: focusSubjectId }, { targetSubjectId: focusSubjectId }],
   }).lean();
   const focusId = id(focusSubjectId);
@@ -318,19 +331,24 @@ async function getEditorialContextGraph({ editorialContextId, view = "working", 
 
   if (view === "working") {
     const graph = semanticGraph.workingRevisionId ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId) : null;
-    const graphSubjectIds = graph ? [...graph.nodes.keys()] : [];
-    const [suggestedSubjects, coverageBySubject] = await Promise.all([
-      projectCollectionSubjects(context._id),
-      projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: graphSubjectIds }),
-    ]);
-    return { ...projectGraph(graph, { semanticGraph, coverageBySubject }), suggestedSubjects, availableSubjects: suggestedSubjects };
+    const collectionSubjects = await projectCollectionSubjects(context._id);
+    const visibleSubjectIds = new Set(collectionSubjects.map((subject) => id(subject._id)));
+    const graphSubjectIds = graph ? [...graph.nodes.keys()].filter((subjectId) => visibleSubjectIds.has(id(subjectId))) : [];
+    const coverageBySubject = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: graphSubjectIds });
+    return {
+      ...projectGraph(graph, { semanticGraph, coverageBySubject, visibleSubjectIds }),
+      suggestedSubjects: collectionSubjects,
+      availableSubjects: collectionSubjects,
+    };
   }
   if (!context.publishedReleaseId) return { ...projectGraph(null, { semanticGraph }), suggestedSubjects: [], availableSubjects: [] };
   const release = await EditorialRelease.findOne({ _id: context.publishedReleaseId, editorialContextId: context._id }).lean();
   if (!release) throw new AppError("Published EditorialRelease non trovata", 409);
   const graph = await loadSemanticGraphRevision(release.graphRevisionId, { namespaceRevisionId: release.namespaceRevisionId });
-  const coverageBySubject = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: [...graph.nodes.keys()] });
-  return { ...projectGraph(graph, { semanticGraph, coverageBySubject }), suggestedSubjects: [], availableSubjects: [] };
+  const visibleSubjectIds = new Set((release.subjectIds || []).map(id));
+  const graphSubjectIds = [...graph.nodes.keys()].filter((subjectId) => visibleSubjectIds.has(id(subjectId)));
+  const coverageBySubject = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: graphSubjectIds });
+  return { ...projectGraph(graph, { semanticGraph, coverageBySubject, visibleSubjectIds }), suggestedSubjects: [], availableSubjects: [] };
 }
 
 module.exports = {
