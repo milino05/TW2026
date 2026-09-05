@@ -1,5 +1,6 @@
 import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { setEditorialSpacePreference } from "../application/editorial-space-preference.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { icon } from "./icons.js";
@@ -84,6 +85,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
       this.selectedSpace = this.requestedContentSpaceId
         ? this.spaces.find((space) => id(space) === String(this.requestedContentSpaceId)) || null
         : null;
+      if (this.selectedSpace) setEditorialSpacePreference(principal, id(this.selectedSpace), { silent: true });
       const namespaces = this.preflight?.collection?.usableNamespaces || [];
       this.selectedNamespaceId = namespaces.some((entry) => id(entry.id) === id(this.selectedNamespaceId))
         ? this.selectedNamespaceId
@@ -126,10 +128,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     }
   }
 
-  backHref() {
-    const spaceId = id(this.selectedSpace) || this.requestedContentSpaceId;
-    return spaceId ? `/workspace/editorial-space?contentSpaceId=${encodeURIComponent(spaceId)}` : "/workspace/editorial-spaces";
-  }
+  backHref() { return "/workspace"; }
 
   resetSemanticSelection() {
     this.semanticSource = "new";
@@ -270,13 +269,13 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
 
   blocker() {
     if (!this.requestedContentSpaceId) {
-      return `<div class="empty-state"><span>${icon("workspace", { size: 28 })}</span><h1>Scegli prima uno spazio editoriale</h1><p>Le raccolte appartengono a uno spazio editoriale. Apri lo spazio in cui vuoi lavorare e avvia la creazione da lì.</p><a class="button-link" data-route href="/workspace/editorial-spaces">Apri gli spazi editoriali</a></div>`;
+      return `<div class="empty-state"><span>${icon("workspace", { size: 28 })}</span><h1>Scegli prima uno spazio editoriale</h1><p>Le raccolte appartengono allo spazio editoriale corrente della Libreria. Seleziona lo spazio e avvia la creazione dalla sezione Raccolte.</p><a class="button-link" data-route href="/workspace">Apri la Libreria</a></div>`;
     }
     if (!this.selectedSpace) {
-      return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>Spazio non disponibile</h1><p>Lo spazio richiesto non appartiene all'area di lavoro corrente o non è più disponibile.</p><a class="button-link" data-route href="/workspace/editorial-spaces">Torna agli spazi editoriali</a></div>`;
+      return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>Spazio non disponibile</h1><p>Lo spazio richiesto non appartiene all'area di lavoro corrente o non è più disponibile.</p><a class="button-link" data-route href="/workspace">Torna alla Libreria</a></div>`;
     }
     const blocker = this.preflight?.collection?.blockers?.[0];
-    return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>La raccolta non può ancora essere creata</h1><p>${escapeHtml(blocker?.message || "Mancano i prerequisiti editoriali.")}</p><button type="button" class="button-secondary" data-back-space>Torna allo spazio</button></div>`;
+    return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h1>La raccolta non può ancora essere creata</h1><p>${escapeHtml(blocker?.message || "Mancano i prerequisiti editoriali.")}</p><button type="button" class="button-secondary" data-back-space>Torna alla Libreria</button></div>`;
   }
 
   renderStepIndicator() {
@@ -360,9 +359,8 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     if (this.busy && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Preparazione della raccolta…</p></div></main>`; return; }
     if (this.error && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Nuova raccolta</h1><p role="alert">${escapeHtml(this.error)}</p></div></main>`; return; }
     if (!this.preflight || !this.selectedSpace || !this.preflight.collection?.allowed) { this.innerHTML = `<main class="page workspace-page">${this.blocker()}</main>`; return; }
-    const spaceId = id(this.selectedSpace);
     this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.graphBusy}">
-      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(spaceId)}">${escapeHtml(this.selectedSpace.name)}</a><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav>
+      <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>${escapeHtml(this.selectedSpace.name)}</span><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav>
       <header class="page-header"><div><span class="eyebrow">Nuova raccolta editoriale</span><h1>Crea una raccolta in ${escapeHtml(this.selectedSpace.name)}</h1><p>Definisci prima identità e Regole editoriali, poi scegli la struttura semantica. Nessuna risorsa viene creata finché non completi il secondo passaggio.</p>${this.renderStepIndicator()}</div></header>
       ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
       ${this.step === 1 ? this.renderIdentityStep() : this.renderSemanticStep()}
