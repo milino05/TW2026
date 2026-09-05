@@ -1,5 +1,6 @@
 const graphResourceService = require("../services/semanticGraphResource.service");
 const graphCommandService = require("../services/editorialGraphCommand.service");
+const { getSemanticGraphAuthoringProjection } = require("../services/semanticGraphAuthoringProjection.service");
 
 async function list(req, res, next) {
   try {
@@ -27,6 +28,15 @@ async function create(req, res, next) {
 async function get(req, res, next) {
   try {
     res.status(200).json(await graphResourceService.getSemanticGraphResource({
+      semanticGraphId: req.params.semanticGraphId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function authoring(req, res, next) {
+  try {
+    res.status(200).json(await getSemanticGraphAuthoringProjection({
       semanticGraphId: req.params.semanticGraphId,
       actorUserId: req.user._id,
     }));
@@ -175,6 +185,7 @@ module.exports = {
   list,
   create,
   get,
+  authoring,
   update,
   fork,
   trash,
