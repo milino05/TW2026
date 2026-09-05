@@ -83,7 +83,9 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
   const context = await findContextOrFail(editorialContextId);
   const contentSpace = await assertCanManageContext(context, actorUserId, "editorial_release.publish");
   const revision = await loadApprovedRevision({ context, editorialContextRevisionId });
+  const frozenSubjectIds = [...new Set((revision.subjectIds || []).map((subjectId) => String(subjectId)))];
   const frozenBindings = (revision.itemBindings || []).map((binding) => ({
+    itemId: binding.itemId,
     itemEditionId: binding.itemEditionId,
     itemRevisionId: binding.itemRevisionId,
     curationSignals: (binding.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
@@ -151,6 +153,7 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
         basedOnReleaseId: lockedContext.publishedReleaseId || null,
         namespaceRevisionId: lockedRevision.namespaceRevisionId,
         graphRevisionId: lockedRevision.graphRevisionId,
+        subjectIds: frozenSubjectIds,
         itemBindings: frozenBindings,
         integrity: { status: "valid", issues: [], checkedAt: now, checkedBy: actorUserId },
         releasedAt: now,
