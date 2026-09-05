@@ -31,11 +31,10 @@ test("ContentSpace browser projects Subject identity, presentation count, collec
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
-    const EditorialContextEntry = require("../models/editorialContextEntry.model");
-    const { listItemMemberships } = require("../services/contentSpace.service");
+    const { addItemMembership, listItemMemberships } = require("../services/contentSpace.service");
+    const { addEditorialContextEntry } = require("../services/editorialContextEntry.service");
 
     const user = await User.create({ username: "content-space-browser", passwordHash: "test-hash" });
     const [leonardo, michelangelo] = await Subject.create([
@@ -52,10 +51,8 @@ test("ContentSpace browser projects Subject identity, presentation count, collec
       { primarySubjectId: leonardo._id, ownerType: "user", ownerId: user._id, createdBy: user._id },
       { primarySubjectId: michelangelo._id, ownerType: "user", ownerId: user._id, createdBy: user._id },
     ]);
-    await ContentSpaceMembership.create([
-      { contentSpaceId: space._id, itemId: leonardoItem._id, addedBy: user._id },
-      { contentSpaceId: space._id, itemId: michelangeloItem._id, addedBy: user._id },
-    ]);
+    await addItemMembership({ contentSpaceId: space._id, itemId: leonardoItem._id, actorUserId: user._id });
+    await addItemMembership({ contentSpaceId: space._id, itemId: michelangeloItem._id, actorUserId: user._id });
 
     const [leonardoEditionA, leonardoEditionB, michelangeloEdition] = await ItemEdition.create([
       { itemId: leonardoItem._id, namespaceId: oid(), createdBy: user._id },
@@ -76,10 +73,8 @@ test("ContentSpace browser projects Subject identity, presentation count, collec
       displayName: "Leonardo approfondito",
       createdBy: user._id,
     });
-    await EditorialContextEntry.create([
-      { editorialContextId: collectionA.context._id, itemEditionId: leonardoEditionA._id, addedBy: user._id, updatedBy: user._id },
-      { editorialContextId: collectionB.context._id, itemEditionId: leonardoEditionB._id, addedBy: user._id, updatedBy: user._id },
-    ]);
+    await addEditorialContextEntry({ editorialContextId: collectionA.context._id, itemId: leonardoItem._id, actorUserId: user._id });
+    await addEditorialContextEntry({ editorialContextId: collectionB.context._id, itemId: leonardoItem._id, actorUserId: user._id });
 
     const firstPage = await listItemMemberships({
       contentSpaceId: space._id,
