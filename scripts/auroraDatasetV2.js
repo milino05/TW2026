@@ -11,8 +11,11 @@ const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const EditorialContext = require("../models/editorialContext.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -212,12 +215,15 @@ async function cleanupAuroraDataset() {
   await VenueTarget.deleteMany({ _id: { $in: ids.targetIds } });
   await Venue.deleteMany({ _id: IDS.venue });
   await EditorialRelease.deleteMany({ _id: IDS.editorialRelease });
+  await CollectionItemMembership.deleteMany({ editorialContextId: IDS.editorialContext });
+  await CollectionSubjectMembership.deleteMany({ editorialContextId: IDS.editorialContext });
   await SemanticEdgeV2.deleteMany({ graphRevisionId: IDS.graphRevision });
   await GraphSubjectBinding.deleteMany({ graphRevisionId: IDS.graphRevision });
   await SemanticGraphRevision.deleteMany({ _id: IDS.graphRevision });
   await EditorialContext.deleteMany({ _id: IDS.editorialContext });
   await SemanticGraph.deleteMany({ _id: IDS.semanticGraph });
-  await ContentSpaceMembership.deleteMany({ itemId: { $in: ids.itemIds } });
+  await ContentSpaceItemMembership.deleteMany({ contentSpaceId: IDS.contentSpace });
+  await ContentSpaceSubjectMembership.deleteMany({ contentSpaceId: IDS.contentSpace });
   await ContentSpace.deleteMany({ _id: IDS.contentSpace });
   await ItemRevisionV2.deleteMany({ _id: { $in: ids.revisionIds } });
   await ItemEdition.deleteMany({ _id: { $in: ids.editionIds } });
@@ -464,8 +470,12 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     ownerId: organization._id,
     createdBy: manager._id,
   });
-  await ContentSpaceMembership.create(
+  const editorialSubjectIds = [...workSubjectIds.values(), ...themeSubjectIds.values()];
+  await ContentSpaceItemMembership.create(
     itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
+  );
+  await ContentSpaceSubjectMembership.create(
+    editorialSubjectIds.map((subjectId) => ({ contentSpaceId: contentSpace._id, subjectId, addedBy: manager._id })),
   );
   const semanticGraph = await SemanticGraph.create({
     _id: IDS.semanticGraph,
@@ -486,6 +496,18 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     description: "Raccoglie dieci opere originali e tre temi: luce, spazi e comunità.",
     createdBy: manager._id,
   });
+  await CollectionItemMembership.create(itemRecords.map(({ item }) => ({
+    editorialContextId: editorialContext._id,
+    itemId: item._id,
+    curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
+    addedBy: manager._id,
+    updatedBy: manager._id,
+  })));
+  await CollectionSubjectMembership.create(editorialSubjectIds.map((subjectId) => ({
+    editorialContextId: editorialContext._id,
+    subjectId,
+    addedBy: manager._id,
+  })));
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
     semanticGraphId: semanticGraph._id,
@@ -527,8 +549,9 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     });
   }
   await SemanticEdgeV2.create(semanticEdges);
-  const itemBindings = itemRecords.map(({ edition, revision, work }) => ({
+  const itemBindings = itemRecords.map(({ item, edition, revision, work }) => ({
     _id: auroraId(`editorial-binding:${work.key}`),
+    itemId: item._id,
     itemEditionId: edition._id,
     itemRevisionId: revision._id,
     curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
@@ -539,6 +562,7 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     version: 1,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
+    subjectIds: editorialSubjectIds,
     itemBindings,
     integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: manager._id },
     releasedAt: FIXED_NOW,
@@ -548,6 +572,7 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     editorialContextId: editorialContext._id,
     namespaceRevisionId: namespaceRevision._id,
     graphRevisionId: graphRevision._id,
+    subjectIds: editorialSubjectIds,
     itemBindings,
   });
   assertNoIssues("EditorialRelease Aurora non coerente", editorialIssues);
@@ -856,6 +881,11 @@ async function verifyAuroraDataset() {
       count: editorialRelease?.itemBindings?.length || 0,
     });
   }
+  if (!editorialRelease || editorialRelease.subjectIds?.length !== WORKS.length + THEMES.length) {
+    add("AURORA_EDITORIAL_SUBJECT_SCOPE_INVALID", "La release Aurora deve congelare opere e temi del perimetro semantico", {
+      count: editorialRelease?.subjectIds?.length || 0,
+    });
+  }
   if (venue && layout && venueRelease) {
     const issues = await computeVenueReleaseIssues({ venue, release: venueRelease, layout });
     if (issues.some((entry) => entry.severity !== "warning")) add("AURORA_VENUE_RELEASE_INVALID", "VenueRelease Aurora non coerente", { issues });
@@ -865,6 +895,7 @@ async function verifyAuroraDataset() {
       editorialContextId: editorialRelease.editorialContextId,
       namespaceRevisionId: editorialRelease.namespaceRevisionId,
       graphRevisionId: editorialRelease.graphRevisionId,
+      subjectIds: editorialRelease.subjectIds || [],
       itemBindings: editorialRelease.itemBindings || [],
     });
     if (issues.length) add("AURORA_EDITORIAL_RELEASE_INCOHERENT", "EditorialRelease Aurora non coerente", { issues });
