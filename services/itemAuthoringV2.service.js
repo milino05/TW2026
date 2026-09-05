@@ -5,7 +5,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const AppError = require("../utils/AppError");
 const itemService = require("./itemV2.service");
 const { listContentSpaces } = require("./contentSpace.service");
@@ -163,7 +163,7 @@ async function projectMemberships({ itemId, actorUserId }) {
   const spaces = await listContentSpaces({ actorUserId });
   const spaceIds = spaces.map((space) => space._id);
   const memberships = spaceIds.length
-    ? await ContentSpaceMembership.find({ itemId, contentSpaceId: { $in: spaceIds } }).select("contentSpaceId").lean()
+    ? await ContentSpaceItemMembership.find({ itemId, contentSpaceId: { $in: spaceIds } }).select("contentSpaceId").lean()
     : [];
   const memberOf = new Set(memberships.map((entry) => id(entry.contentSpaceId)));
   return spaces.map((space) => ({
