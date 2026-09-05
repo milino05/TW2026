@@ -1,9 +1,13 @@
+const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const ContentSpace = require("../models/contentSpace.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
@@ -56,15 +60,41 @@ async function assertCanManageItem(item, actorUserId, permissionCode = "item.edi
 async function createItem({ payload, actorUserId }) {
   const issues = validateCreateItemPayload(payload || {});
   if (issues.length) throw new AppError("Payload non valido", 400, issues);
-  await assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId, permissionCode: "item.create" });
-  if (!await Subject.exists({ _id: payload.primarySubjectId })) throw new AppError("Subject non trovato", 404);
-  return ItemV2.create({
-    primarySubjectId: payload.primarySubjectId,
-    ownerType: payload.ownerType,
-    ownerId: payload.ownerId,
-    provenance: payload.provenance || { origin: "human" },
-    createdBy: actorUserId,
+  await Promise.all([
+    assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId, permissionCode: "item.create" }),
+    assertCanActForOwner({ actorUserId, ownerType: payload.ownerType, ownerId: payload.ownerId, permissionCode: "editorial_space.manage" }),
+  ]);
+  const [subject, contentSpace] = await Promise.all([
+    Subject.findById(payload.primarySubjectId).select("_id").lean(),
+    ContentSpace.findOne({ _id: payload.contentSpaceId, lifecycleStatus: "active" }).select("_id ownerType ownerId").lean(),
+  ]);
+  if (!subject) throw new AppError("Subject non trovato", 404);
+  if (!contentSpace) throw new AppError("Spazio editoriale non trovato", 404);
+  if (contentSpace.ownerType !== payload.ownerType || !sameId(contentSpace.ownerId, payload.ownerId)) {
+    throw new AppError("Lo spazio editoriale non appartiene al titolare del contenuto", 409, [{ code: "CONTENT_SPACE_OWNER_MISMATCH", field: "contentSpaceId" }]);
+  }
+
+  let item = null;
+  await mongoose.connection.transaction(async (session) => {
+    [item] = await ItemV2.create([{
+      primarySubjectId: payload.primarySubjectId,
+      ownerType: payload.ownerType,
+      ownerId: payload.ownerId,
+      provenance: payload.provenance || { origin: "human" },
+      createdBy: actorUserId,
+    }], { session });
+    await ContentSpaceSubjectMembership.findOneAndUpdate(
+      { contentSpaceId: contentSpace._id, subjectId: payload.primarySubjectId },
+      { $setOnInsert: { contentSpaceId: contentSpace._id, subjectId: payload.primarySubjectId, addedBy: actorUserId } },
+      { upsert: true, new: true, session },
+    );
+    await ContentSpaceItemMembership.create([{
+      contentSpaceId: contentSpace._id,
+      itemId: item._id,
+      addedBy: actorUserId,
+    }], { session });
   });
+  return item;
 }
 
 async function listItems({ ownerType, ownerId, primarySubjectId, includeTrashed = false } = {}) {
