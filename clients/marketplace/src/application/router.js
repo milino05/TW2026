@@ -22,8 +22,6 @@ const ROUTES = new Set([
   "/workspace/commerce",
   "/workspace/item-authoring",
   "/workspace/visit-authoring",
-  "/workspace/editorial-spaces",
-  "/workspace/editorial-space",
   "/workspace/editorial-collection-new",
   "/workspace/editorial-studio",
   "/workspace/semantic-graph",
