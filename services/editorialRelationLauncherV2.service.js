@@ -1,5 +1,5 @@
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const Namespace = require("../models/namespace.model");
@@ -66,7 +66,7 @@ async function listEditorialRelationChoices({
   const [graphs, namespaces, entryCounts, sharedCounts] = await Promise.all([
     SemanticGraph.find({ _id: { $in: graphIds }, lifecycleStatus: "active" }).select("displayName workingRevisionId workingVersion").lean(),
     Namespace.find({ _id: { $in: namespaceIds }, lifecycleStatus: "active" }).select("name").lean(),
-    EditorialContextEntry.aggregate([
+    CollectionItemMembership.aggregate([
       { $match: { editorialContextId: { $in: contextIds } } },
       { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
     ]),
