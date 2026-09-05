@@ -20,6 +20,7 @@ import "./editorial-spaces-view.js";
 import "./editorial-space-view.js";
 import "./editorial-collection-create-view.js";
 import "./editorial-studio-view.js";
+import "./semantic-graph-view.js";
 import "./profile-view.js";
 import "./organization-view.js";
 import "./namespace-editor-view.js";
@@ -36,7 +37,8 @@ const TITLES = {
   "/acquisitions": "Marketplace", "/create": "Crea", "/workspace": "Libreria", "/workspace/resource": "Dettaglio risorsa", "/workspace/commerce": "Vendite",
   "/workspace/item-authoring": "Modifica contenuto", "/workspace/visit-authoring": "Modifica visita",
   "/workspace/editorial-spaces": "Spazi editoriali", "/workspace/editorial-space": "Spazio editoriale",
-  "/workspace/editorial-collection-new": "Nuova raccolta", "/workspace/editorial-studio": "Studio editoriale",
+  "/workspace/editorial-collection-new": "Nuova raccolta", "/workspace/editorial-studio": "Raccolta editoriale",
+  "/workspace/semantic-graph": "Grafo semantico",
   "/profile": "Account", "/namespaces/editor": "Regole editoriali",
   "/physical-vocabularies/editor": "Vocabolario fisico", "/404": "Pagina non trovata",
 };
@@ -208,7 +210,7 @@ export class MarketplaceAppShell extends HTMLElement {
   renderNavigation(route) {
     const creation = authoringIsCreation(route);
     const organizationContext = this.context?.type === "organization";
-    const editorialLibraryRoutes = ["/workspace/editorial-spaces", "/workspace/editorial-space", "/workspace/editorial-studio"];
+    const editorialLibraryRoutes = ["/workspace/editorial-spaces", "/workspace/editorial-space", "/workspace/editorial-studio", "/workspace/semantic-graph"];
     const libraryActive = ["/workspace", "/workspace/resource", ...editorialLibraryRoutes].includes(route)
       || (!organizationContext && route === "/physical-vocabularies/editor")
       || (["/workspace/item-authoring", "/workspace/visit-authoring"].includes(route) && !creation);
@@ -253,6 +255,7 @@ export class MarketplaceAppShell extends HTMLElement {
     if (route === "/workspace/editorial-space") return "<artaround-editorial-space-view></artaround-editorial-space-view>";
     if (route === "/workspace/editorial-collection-new") return "<artaround-editorial-collection-create-view></artaround-editorial-collection-create-view>";
     if (route === "/workspace/editorial-studio") return "<artaround-editorial-studio-view></artaround-editorial-studio-view>";
+    if (route === "/workspace/semantic-graph") return "<artaround-semantic-graph-view></artaround-semantic-graph-view>";
     if (route === "/profile") return "<artaround-profile-view></artaround-profile-view>";
     if (route === "/organizations/detail") return "<artaround-organization-view></artaround-organization-view>";
     if (route === "/namespaces/editor") return "<artaround-namespace-editor-view></artaround-namespace-editor-view>";
