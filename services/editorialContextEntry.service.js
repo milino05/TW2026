@@ -1,14 +1,15 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
-const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function assertObjectId(value, field) {
@@ -58,39 +59,36 @@ async function assertCanEditContext(context, actorUserId) {
   return contentSpace;
 }
 
-async function assertEditionUsage({ contentSpace, itemEditionId, actorUserId }) {
-  return assertCanUseItemEditionForEditorialRelease({
-    itemEditionId,
-    actorUserId,
-    principalType: contentSpace.ownerType,
-    principalId: contentSpace.ownerId,
-  });
-}
-
-async function resolveEligibleEdition(context, itemEditionId, { session = null } = {}) {
-  assertObjectId(itemEditionId, "itemEditionId");
-  let editionQuery = ItemEdition.findById(itemEditionId);
-  if (session) editionQuery = editionQuery.session(session);
-  const edition = await editionQuery.lean();
-  if (!edition) throw new AppError("Versione editoriale non trovata", 404);
-  if (id(edition.namespaceId) !== id(context.namespaceId)) {
-    throw new AppError("La versione editoriale usa regole diverse dalla raccolta", 409, [{
-      field: "itemEditionId",
-      code: "ITEM_EDITION_NAMESPACE_MISMATCH",
-    }]);
-  }
-  let itemQuery = ItemV2.findOne({ _id: edition.itemId, lifecycleStatus: "active" });
-  let membershipQuery = ContentSpaceMembership.findOne({ contentSpaceId: context.contentSpaceId, itemId: edition.itemId });
+async function resolveEligibleItem(context, itemId, { session = null } = {}) {
+  assertObjectId(itemId, "itemId");
+  let itemQuery = ItemV2.findOne({ _id: itemId, lifecycleStatus: "active" });
+  let membershipQuery = ContentSpaceItemMembership.findOne({ contentSpaceId: context.contentSpaceId, itemId });
   if (session) { itemQuery = itemQuery.session(session); membershipQuery = membershipQuery.session(session); }
   const [item, membership] = await Promise.all([itemQuery.lean(), membershipQuery.lean()]);
   if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE" }]);
   if (!membership) {
     throw new AppError("Il contenuto deve appartenere allo spazio editoriale della raccolta", 409, [{
-      field: "itemEditionId",
+      field: "itemId",
       code: "ITEM_NOT_IN_CONTENT_SPACE",
     }]);
   }
-  return { edition, item };
+  let editionQuery = ItemEdition.findOne({ itemId: item._id, namespaceId: context.namespaceId });
+  if (session) editionQuery = editionQuery.session(session);
+  const edition = await editionQuery.lean();
+  return { item, edition: edition || null };
+}
+
+async function ensureSubjectScopes({ context, subjectId, actorUserId, session }) {
+  await ContentSpaceSubjectMembership.findOneAndUpdate(
+    { contentSpaceId: context.contentSpaceId, subjectId },
+    { $setOnInsert: { contentSpaceId: context.contentSpaceId, subjectId, addedBy: actorUserId } },
+    { upsert: true, new: true, session },
+  );
+  await CollectionSubjectMembership.findOneAndUpdate(
+    { editorialContextId: context._id, subjectId },
+    { $setOnInsert: { editorialContextId: context._id, subjectId, addedBy: actorUserId } },
+    { upsert: true, new: true, session },
+  );
 }
 
 async function bumpWorkingVersion({ context, session }) {
@@ -103,21 +101,21 @@ async function bumpWorkingVersion({ context, session }) {
   if (pointer.modifiedCount !== 1) throw workingConflict();
 }
 
-async function addEditorialContextEntry({ editorialContextId, itemEditionId, curationSignals = [], actorUserId }) {
+async function addEditorialContextEntry({ editorialContextId, itemId, curationSignals = [], actorUserId }) {
   const initial = await findContextOrFail(editorialContextId);
-  const contentSpace = await assertCanEditContext(initial, actorUserId);
+  await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
-  await assertEditionUsage({ contentSpace, itemEditionId, actorUserId });
   const normalizedSignals = normalizeCurationSignals(curationSignals) || [];
   let created = null;
   try {
     await mongoose.connection.transaction(async (session) => {
       const context = await findContextOrFail(editorialContextId, { session });
       assertWorkingStateEditable(context);
-      await resolveEligibleEdition(context, itemEditionId, { session });
-      [created] = await EditorialContextEntry.create([{
+      const { item } = await resolveEligibleItem(context, itemId, { session });
+      await ensureSubjectScopes({ context, subjectId: item.primarySubjectId, actorUserId, session });
+      [created] = await CollectionItemMembership.create([{
         editorialContextId: context._id,
-        itemEditionId,
+        itemId: item._id,
         curationSignals: normalizedSignals,
         addedBy: actorUserId,
         updatedBy: actorUserId,
@@ -126,7 +124,7 @@ async function addEditorialContextEntry({ editorialContextId, itemEditionId, cur
     });
     return created;
   } catch (error) {
-    if (error?.code === 11000) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "EDITORIAL_CONTEXT_ENTRY_EXISTS" }]);
+    if (error?.code === 11000) throw new AppError("Contenuto già presente nella raccolta", 409, [{ code: "COLLECTION_ITEM_MEMBERSHIP_EXISTS" }]);
     throw error;
   }
 }
@@ -134,25 +132,22 @@ async function addEditorialContextEntry({ editorialContextId, itemEditionId, cur
 async function updateEditorialContextEntry({ editorialContextId, entryId, curationSignals, actorUserId }) {
   assertObjectId(entryId, "entryId");
   const initial = await findContextOrFail(editorialContextId);
-  const contentSpace = await assertCanEditContext(initial, actorUserId);
+  await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals);
   if (normalizedSignals === null) throw new AppError("Nessuna modifica specificata", 400);
-  const existingEntry = await EditorialContextEntry.findOne({ _id: entryId, editorialContextId: initial._id }).select("itemEditionId").lean();
-  if (!existingEntry) throw new AppError("Contenuto della raccolta non trovato", 404);
-  await assertEditionUsage({ contentSpace, itemEditionId: existingEntry.itemEditionId, actorUserId });
   let updated = null;
   await mongoose.connection.transaction(async (session) => {
     const context = await findContextOrFail(editorialContextId, { session });
     assertWorkingStateEditable(context);
-    const entry = await EditorialContextEntry.findOne({ _id: entryId, editorialContextId: context._id }).session(session);
-    if (!entry) throw new AppError("Contenuto della raccolta non trovato", 404);
-    await resolveEligibleEdition(context, entry.itemEditionId, { session });
-    entry.curationSignals = normalizedSignals;
-    entry.updatedBy = actorUserId;
-    await entry.save({ session });
+    const membership = await CollectionItemMembership.findOne({ _id: entryId, editorialContextId: context._id }).session(session);
+    if (!membership) throw new AppError("Contenuto della raccolta non trovato", 404);
+    await resolveEligibleItem(context, membership.itemId, { session });
+    membership.curationSignals = normalizedSignals;
+    membership.updatedBy = actorUserId;
+    await membership.save({ session });
     await bumpWorkingVersion({ context, session });
-    updated = entry;
+    updated = membership;
   });
   return updated;
 }
@@ -165,14 +160,14 @@ async function removeEditorialContextEntry({ editorialContextId, entryId, actorU
   await mongoose.connection.transaction(async (session) => {
     const context = await findContextOrFail(editorialContextId, { session });
     assertWorkingStateEditable(context);
-    const result = await EditorialContextEntry.deleteOne({ _id: entryId, editorialContextId: context._id }, { session });
+    const result = await CollectionItemMembership.deleteOne({ _id: entryId, editorialContextId: context._id }, { session });
     if (result.deletedCount !== 1) throw new AppError("Contenuto della raccolta non trovato", 404);
     await bumpWorkingVersion({ context, session });
   });
   return { removed: true };
 }
 
-async function editionIdsMatchingQuery(context, q) {
+async function itemIdsMatchingQuery(context, q) {
   const normalized = String(q || "").trim();
   if (!normalized) return null;
   const pattern = escapedRegex(normalized);
@@ -184,17 +179,11 @@ async function editionIdsMatchingQuery(context, q) {
   const subjectItems = subjectIds.length
     ? await ItemV2.find({ primarySubjectId: { $in: subjectIds }, lifecycleStatus: "active" }).select("_id").limit(1000).lean()
     : [];
-  const itemIds = subjectItems.map((entry) => entry._id);
   const revisionEditionIds = matchingRevisions.map((entry) => entry.itemEditionId);
-  const clauses = [];
-  if (itemIds.length) clauses.push({ itemId: { $in: itemIds } });
-  if (revisionEditionIds.length) clauses.push({ _id: { $in: revisionEditionIds } });
-  if (!clauses.length) return [];
-  const editions = await ItemEdition.find({
-    namespaceId: context.namespaceId,
-    $or: clauses,
-  }).select("_id").limit(1500).lean();
-  return editions.map((entry) => entry._id);
+  const revisionEditions = revisionEditionIds.length
+    ? await ItemEdition.find({ _id: { $in: revisionEditionIds }, namespaceId: context.namespaceId }).select("itemId").limit(1500).lean()
+    : [];
+  return [...new Set([...subjectItems.map((entry) => id(entry._id)), ...revisionEditions.map((entry) => id(entry.itemId))])];
 }
 
 async function listEditorialContextEntries({ editorialContextId, actorUserId, q = "", page = 1, limit = 50 }) {
@@ -203,24 +192,24 @@ async function listEditorialContextEntries({ editorialContextId, actorUserId, q 
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.view");
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
-  const matchingEditionIds = await editionIdsMatchingQuery(context, q);
+  const matchingItemIds = await itemIdsMatchingQuery(context, q);
   const query = { editorialContextId: context._id };
-  if (matchingEditionIds) query.itemEditionId = { $in: matchingEditionIds };
+  if (matchingItemIds) query.itemId = { $in: matchingItemIds };
   const [total, entries] = await Promise.all([
-    EditorialContextEntry.countDocuments(query),
-    EditorialContextEntry.find(query)
+    CollectionItemMembership.countDocuments(query),
+    CollectionItemMembership.find(query)
       .sort({ createdAt: 1, _id: 1 })
       .skip((normalizedPage - 1) * normalizedLimit)
       .limit(normalizedLimit)
       .lean(),
   ]);
-  const editions = entries.length
-    ? await ItemEdition.find({ _id: { $in: entries.map((entry) => entry.itemEditionId) } }).lean()
-    : [];
-  const editionById = new Map(editions.map((edition) => [id(edition), edition]));
-  const itemIds = [...new Set(editions.map((edition) => id(edition.itemId)))];
+  const itemIds = entries.map((entry) => entry.itemId);
   const items = itemIds.length ? await ItemV2.find({ _id: { $in: itemIds } }).lean() : [];
   const itemById = new Map(items.map((item) => [id(item), item]));
+  const editions = itemIds.length
+    ? await ItemEdition.find({ itemId: { $in: itemIds }, namespaceId: context.namespaceId }).lean()
+    : [];
+  const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
   const revisionIds = [...new Set(editions.map((edition) => id(edition.workingRevisionId || edition.publishedRevisionId)).filter(Boolean))];
   const revisions = revisionIds.length ? await ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [];
   const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
@@ -231,8 +220,8 @@ async function listEditorialContextEntries({ editorialContextId, actorUserId, q 
   return {
     context: { id: context._id, name: context.displayName, workingVersion: context.workingVersion || 0, activeReviewRevisionId: context.activeReviewRevisionId || null },
     results: entries.map((entry) => {
-      const edition = editionById.get(id(entry.itemEditionId)) || null;
-      const item = edition ? itemById.get(id(edition.itemId)) || null : null;
+      const item = itemById.get(id(entry.itemId)) || null;
+      const edition = item ? editionByItemId.get(id(item._id)) || null : null;
       const revision = edition ? revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null : null;
       const subject = item ? subjectById.get(id(item.primarySubjectId)) || null : null;
       return { entry, edition, item, revision, subject };
@@ -250,7 +239,7 @@ module.exports = {
   findContextOrFail,
   assertWorkingStateEditable,
   assertCanEditContext,
-  resolveEligibleEdition,
+  resolveEligibleItem,
   addEditorialContextEntry,
   updateEditorialContextEntry,
   removeEditorialContextEntry,
