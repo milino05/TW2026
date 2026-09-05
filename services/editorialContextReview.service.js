@@ -1,10 +1,13 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
+const ItemEdition = require("../models/itemEdition.model");
+const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
@@ -72,36 +75,56 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
   const graphRevisionId = semanticGraph?.workingRevisionId || null;
   if (!graphRevisionId) issues.push(issue("graphRevisionId", "WORKING_GRAPH_REVISION_REQUIRED", "Definisci una revisione del grafo semantico prima della revisione"));
 
-  const entries = await EditorialContextEntry.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean();
-  if (!entries.length) issues.push(issue("itemBindings", "EDITORIAL_CONTEXT_EMPTY", "Aggiungi almeno un contenuto alla raccolta prima della revisione"));
+  const [subjectMemberships, itemMemberships] = await Promise.all([
+    CollectionSubjectMembership.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean(),
+    CollectionItemMembership.find({ editorialContextId: context._id }).sort({ createdAt: 1, _id: 1 }).lean(),
+  ]);
+  const subjectIds = [...new Set(subjectMemberships.map((membership) => id(membership.subjectId)).filter(Boolean))];
+  const subjectScope = new Set(subjectIds);
+  if (!itemMemberships.length) issues.push(issue("itemBindings", "EDITORIAL_CONTEXT_EMPTY", "Aggiungi almeno un contenuto alla raccolta prima della revisione"));
 
   const itemBindings = [];
-  for (const [index, entry] of entries.entries()) {
+  for (const [index, membership] of itemMemberships.entries()) {
+    const item = await ItemV2.findOne({ _id: membership.itemId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
+    if (!item) {
+      issues.push(issue(`itemBindings[${index}].itemId`, "ITEM_NOT_ACTIVE", "Il contenuto selezionato non è più disponibile", { itemId: membership.itemId }));
+      continue;
+    }
+    if (!subjectScope.has(id(item.primarySubjectId))) {
+      issues.push(issue(`itemBindings[${index}].itemId`, "COLLECTION_ITEM_SUBJECT_OUT_OF_SCOPE", "Il soggetto principale del contenuto non appartiene al perimetro della raccolta", { itemId: item._id, subjectId: item.primarySubjectId }));
+      continue;
+    }
+    const edition = await ItemEdition.findOne({ itemId: item._id, namespaceId: context.namespaceId }).select("_id").lean();
+    if (!edition) {
+      issues.push(issue(`itemBindings[${index}].itemEditionId`, "ITEM_EDITION_REQUIRED", "Il contenuto non ha ancora una versione compatibile con le regole editoriali della raccolta", { itemId: item._id, namespaceId: context.namespaceId }));
+      continue;
+    }
     try {
       const usage = await assertCanUseItemEditionForEditorialRelease({
-        itemEditionId: entry.itemEditionId,
+        itemEditionId: edition._id,
         actorUserId,
         principalType: contentSpace.ownerType,
         principalId: contentSpace.ownerId,
       });
       const ref = usage.access?.resolvedSnapshotRef;
       if (ref?.resourceType !== "item_revision") {
-        issues.push(issue(`itemBindings[${index}].itemRevisionId`, "ITEM_REVISION_NOT_RELEASE_READY", "Il contenuto non ha una versione pubblicata utilizzabile", { itemEditionId: entry.itemEditionId }));
+        issues.push(issue(`itemBindings[${index}].itemRevisionId`, "ITEM_REVISION_NOT_RELEASE_READY", "Il contenuto non ha una versione pubblicata utilizzabile", { itemId: item._id, itemEditionId: edition._id }));
         continue;
       }
       itemBindings.push({
-        itemEditionId: entry.itemEditionId,
+        itemId: item._id,
+        itemEditionId: edition._id,
         itemRevisionId: ref.resourceId,
-        curationSignals: (entry.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
+        curationSignals: (membership.curationSignals || []).map((signal) => ({ definitionId: signal.definitionId, weight: signal.weight })),
       });
     } catch (error) {
       if ([403, 404, 409].includes(error?.status)) {
-        issues.push(issue(`itemBindings[${index}].itemEditionId`, "ITEM_NOT_AUTHORIZED_FOR_RELEASE", error.message, { itemEditionId: entry.itemEditionId }));
+        issues.push(issue(`itemBindings[${index}].itemEditionId`, "ITEM_NOT_AUTHORIZED_FOR_RELEASE", error.message, { itemId: item._id, itemEditionId: edition._id }));
       } else throw error;
     }
   }
 
-  if (namespaceRevisionId && graphRevisionId && itemBindings.length === entries.length) {
+  if (namespaceRevisionId && graphRevisionId && itemBindings.length === itemMemberships.length) {
     const coherence = await validateEditorialReleaseCoherence({
       editorialContextId: context._id,
       namespaceRevisionId,
@@ -117,6 +140,7 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
       namespaceRevisionId,
       semanticGraphId: semanticGraph?._id || null,
       graphRevisionId,
+      subjectIds,
       itemBindings,
     },
   };
@@ -168,6 +192,7 @@ async function requestEditorialContextReview({ editorialContextId, actorUserId }
         description: current.description || null,
         namespaceRevisionId: readiness.snapshot.namespaceRevisionId,
         graphRevisionId: readiness.snapshot.graphRevisionId,
+        subjectIds: readiness.snapshot.subjectIds,
         itemBindings: readiness.snapshot.itemBindings,
         integrity: { status: "valid", issues: [], checkedAt: now, checkedBy: actorUserId },
         status: "in_review",
