@@ -47,12 +47,13 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
     const ContentSpace = require("../models/contentSpace.model");
-    const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+    const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
     const EditorialContext = require("../models/editorialContext.model");
     const ItemV2 = require("../models/itemV2.model");
     const ItemEdition = require("../models/itemEdition.model");
     const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
+    const { addItemMembership } = require("../services/contentSpace.service");
     const { createGraphRevision } = require("../services/semanticGraphV2.service");
     const { addEditorialContextEntry } = require("../services/editorialContextEntry.service");
     const { requestEditorialContextReview, approveEditorialContextReview } = require("../services/editorialContextReview.service");
@@ -93,7 +94,7 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
       createdBy: user._id,
     });
     const item = await ItemV2.create({ primarySubjectId: work._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
-    await ContentSpaceMembership.create({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: user._id });
+    await addItemMembership({ contentSpaceId: contentSpace._id, itemId: item._id, actorUserId: user._id });
     const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
     const revision = new ItemRevisionV2({
       itemEditionId: edition._id,
@@ -164,10 +165,15 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
 
     await addEditorialContextEntry({
       editorialContextId: context._id,
-      itemEditionId: edition._id,
+      itemId: item._id,
       curationSignals: [],
       actorUserId: user._id,
     });
+    await CollectionSubjectMembership.findOneAndUpdate(
+      { editorialContextId: context._id, subjectId: person._id },
+      { $setOnInsert: { editorialContextId: context._id, subjectId: person._id, addedBy: user._id } },
+      { upsert: true, new: true },
+    );
     const reviewRevision = await requestEditorialContextReview({ editorialContextId: context._id, actorUserId: user._id });
     await approveEditorialContextReview({ editorialContextId: context._id, revisionId: reviewRevision._id, actorUserId: user._id });
     const release = await createEditorialRelease({
@@ -179,7 +185,9 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     const refreshedContext = await EditorialContext.findById(context._id);
     assert.equal(String(refreshedContext.publishedReleaseId), String(release._id));
     assert.equal(String(release.graphRevisionId), String(revisedGraph.revision._id));
+    assert.equal(String(release.itemBindings[0].itemId), String(item._id));
     assert.equal(String(release.itemBindings[0].itemRevisionId), String(revision._id));
+    assert.deepEqual(release.subjectIds.map(String).sort(), [work._id, person._id].map(String).sort());
 
     const summary = await projectEditorialContext({ editorialContext: refreshedContext, contentSpace, namespace });
     assert.deepEqual(summary.stats, { availableItemCount: 1, subjectCount: 2 });
