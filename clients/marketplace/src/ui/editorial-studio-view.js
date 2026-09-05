@@ -1,5 +1,6 @@
 import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { setEditorialSpacePreference } from "../application/editorial-space-preference.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
@@ -56,6 +57,8 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.busy = true; this.error = null; this.render();
     try {
       this.data = await editorialRepository.studio(this.editorialContextId);
+      const principal = operatingPrincipal(this.context);
+      if (principal && this.data?.contentSpace?.id) setEditorialSpacePreference(principal, this.data.contentSpace.id, { silent: true });
       if (this.section === "publication") {
         [this.revisions, this.releases] = await Promise.all([
           editorialRepository.revisions(this.editorialContextId),
@@ -114,7 +117,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const tab = target?.closest("button[data-studio-section]");
     if (tab) { this.setSection(tab.dataset.studioSection); return; }
     if (target?.closest("button[data-back-space]")) {
-      navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data?.contentSpace?.id || "")}`);
+      navigate("/workspace");
       return;
     }
     if (target?.closest("button[data-open-semantic-graph]")) {
@@ -254,7 +257,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     try {
       this.busy = true; this.render();
       await marketplaceRepository.removeWorkspaceResource(principal, { resourceType: "editorial_context", resourceId: this.editorialContextId });
-      navigate(`/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data.contentSpace.id)}`);
+      navigate("/workspace");
     } catch (error) { this.error = error instanceof Error ? error.message : "Eliminazione non completata"; this.busy = false; this.render(); }
   }
 
@@ -341,7 +344,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     if (!this.data) return;
     const section = ({ overview: () => this.renderOverview(), content: () => this.renderContent(), relations: () => this.renderRelations(), publication: () => this.renderPublication(), settings: () => this.renderSettings() })[this.section]();
     const graphSharedCount = Number(this.data.semanticGraph?.sharedByCollections || 1);
-    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy || this.graphBusy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-spaces">Spazi editoriali</a><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-space?contentSpaceId=${encodeURIComponent(this.data.contentSpace.id)}">${escapeHtml(this.data.contentSpace.name)}</a><span aria-hidden="true">/</span><span>${escapeHtml(this.data.context.name)}</span></nav><header class="context-workspace-bar"><div><span class="eyebrow">Raccolta editoriale</span><h1>${escapeHtml(this.data.context.name)}</h1><p>${escapeHtml(this.data.context.shortDescription || this.data.context.description || "Componi contenuti, collegamenti e pubblicazioni in un unico contesto editoriale.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong>${this.data.namespace.revision ? ` · v${escapeHtml(this.data.namespace.revision.version)}` : ""}</p></div><div class="context-workspace-status">${this.data.context.locked ? `<span class="status">${icon("lock", { size: 14 })} ${escapeHtml(statusLabel(this.data.review?.status))}</span>` : `<span class="status success">Bozza di lavoro</span>`}${graphSharedCount > 1 ? `<span class="status">Grafo condiviso · ${graphSharedCount} raccolte</span>` : ""}</div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
+    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy || this.graphBusy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>${escapeHtml(this.data.contentSpace.name)}</span><span aria-hidden="true">/</span><span>${escapeHtml(this.data.context.name)}</span></nav><header class="context-workspace-bar"><div><span class="eyebrow">Raccolta editoriale</span><h1>${escapeHtml(this.data.context.name)}</h1><p>${escapeHtml(this.data.context.shortDescription || this.data.context.description || "Componi contenuti, collegamenti e pubblicazioni in un unico contesto editoriale.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(this.data.namespace.name)}</strong>${this.data.namespace.revision ? ` · v${escapeHtml(this.data.namespace.revision.version)}` : ""}</p></div><div class="context-workspace-status">${this.data.context.locked ? `<span class="status">${icon("lock", { size: 14 })} ${escapeHtml(statusLabel(this.data.review?.status))}</span>` : `<span class="status success">Bozza di lavoro</span>`}${graphSharedCount > 1 ? `<span class="status">Grafo condiviso · ${graphSharedCount} raccolte</span>` : ""}</div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
     queueMicrotask(() => this.configureChildren());
   }
 }
