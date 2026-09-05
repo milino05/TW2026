@@ -10,6 +10,7 @@ const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
+const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function assertObjectId(value, field) {
@@ -103,7 +104,7 @@ async function bumpWorkingVersion({ context, session }) {
 
 async function addEditorialContextEntry({ editorialContextId, itemId, curationSignals = [], actorUserId }) {
   const initial = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(initial, actorUserId);
+  const contentSpace = await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals) || [];
   let created = null;
@@ -112,6 +113,12 @@ async function addEditorialContextEntry({ editorialContextId, itemId, curationSi
       const context = await findContextOrFail(editorialContextId, { session });
       assertWorkingStateEditable(context);
       const { item } = await resolveEligibleItem(context, itemId, { session });
+      await assertCanReferenceItemInEditorialSpace({
+        itemId: item._id,
+        actorUserId,
+        principalType: contentSpace.ownerType,
+        principalId: contentSpace.ownerId,
+      });
       await ensureSubjectScopes({ context, subjectId: item.primarySubjectId, actorUserId, session });
       [created] = await CollectionItemMembership.create([{
         editorialContextId: context._id,
@@ -132,7 +139,7 @@ async function addEditorialContextEntry({ editorialContextId, itemId, curationSi
 async function updateEditorialContextEntry({ editorialContextId, entryId, curationSignals, actorUserId }) {
   assertObjectId(entryId, "entryId");
   const initial = await findContextOrFail(editorialContextId);
-  await assertCanEditContext(initial, actorUserId);
+  const contentSpace = await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
   const normalizedSignals = normalizeCurationSignals(curationSignals);
   if (normalizedSignals === null) throw new AppError("Nessuna modifica specificata", 400);
@@ -142,7 +149,13 @@ async function updateEditorialContextEntry({ editorialContextId, entryId, curati
     assertWorkingStateEditable(context);
     const membership = await CollectionItemMembership.findOne({ _id: entryId, editorialContextId: context._id }).session(session);
     if (!membership) throw new AppError("Contenuto della raccolta non trovato", 404);
-    await resolveEligibleItem(context, membership.itemId, { session });
+    const { item } = await resolveEligibleItem(context, membership.itemId, { session });
+    await assertCanReferenceItemInEditorialSpace({
+      itemId: item._id,
+      actorUserId,
+      principalType: contentSpace.ownerType,
+      principalId: contentSpace.ownerId,
+    });
     membership.curationSignals = normalizedSignals;
     membership.updatedBy = actorUserId;
     await membership.save({ session });
