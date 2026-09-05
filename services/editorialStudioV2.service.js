@@ -1,8 +1,10 @@
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialContextEntry = require("../models/editorialContextEntry.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const CollectionSubjectMembership = require("../models/collectionSubjectMembership.model");
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const EditorialRelease = require("../models/editorialRelease.model");
-const ContentSpaceMembership = require("../models/contentSpaceMembership.model");
+const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
@@ -87,8 +89,12 @@ async function listEditorialSpaceSummaries({ actorUserId, ownerType = null, owne
   const spaces = await listContentSpaces({ actorUserId, ownerType, ownerId });
   if (!spaces.length) return [];
   const spaceIds = spaces.map((space) => space._id);
-  const [membershipCounts, contextCounts, publishedCounts] = await Promise.all([
-    ContentSpaceMembership.aggregate([
+  const [itemCounts, subjectCounts, contextCounts, publishedCounts] = await Promise.all([
+    ContentSpaceItemMembership.aggregate([
+      { $match: { contentSpaceId: { $in: spaceIds } } },
+      { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
+    ]),
+    ContentSpaceSubjectMembership.aggregate([
       { $match: { contentSpaceId: { $in: spaceIds } } },
       { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
     ]),
@@ -101,7 +107,8 @@ async function listEditorialSpaceSummaries({ actorUserId, ownerType = null, owne
       { $group: { _id: "$contentSpaceId", count: { $sum: 1 } } },
     ]),
   ]);
-  const membershipById = new Map(membershipCounts.map((entry) => [id(entry._id), entry.count]));
+  const itemCountById = new Map(itemCounts.map((entry) => [id(entry._id), entry.count]));
+  const subjectCountById = new Map(subjectCounts.map((entry) => [id(entry._id), entry.count]));
   const contextById = new Map(contextCounts.map((entry) => [id(entry._id), entry.count]));
   const publishedById = new Map(publishedCounts.map((entry) => [id(entry._id), entry.count]));
   return spaces.map((space) => ({
@@ -111,7 +118,8 @@ async function listEditorialSpaceSummaries({ actorUserId, ownerType = null, owne
     ownerType: space.ownerType,
     ownerId: space.ownerId,
     stats: {
-      itemCount: membershipById.get(id(space._id)) || 0,
+      itemCount: itemCountById.get(id(space._id)) || 0,
+      subjectCount: subjectCountById.get(id(space._id)) || 0,
       collectionCount: contextById.get(id(space._id)) || 0,
       publishedCollectionCount: publishedById.get(id(space._id)) || 0,
     },
@@ -122,21 +130,29 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId });
   await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_space.view");
   const authority = await resolveAuthority({ contentSpace, actorUserId });
-  const [itemCount, contexts] = await Promise.all([
-    ContentSpaceMembership.countDocuments({ contentSpaceId: contentSpace._id }),
+  const [itemCount, subjectCount, contexts] = await Promise.all([
+    ContentSpaceItemMembership.countDocuments({ contentSpaceId: contentSpace._id }),
+    ContentSpaceSubjectMembership.countDocuments({ contentSpaceId: contentSpace._id }),
     EditorialContext.find({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }).sort({ displayName: 1, createdAt: 1 }).lean(),
   ]);
   const namespaces = contexts.length
     ? await Namespace.find({ _id: { $in: contexts.map((context) => context.namespaceId) } }).select("name").lean()
     : [];
   const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
-  const entryCounts = contexts.length
-    ? await EditorialContextEntry.aggregate([
-      { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
-      { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
+  const [itemCounts, subjectCounts] = contexts.length
+    ? await Promise.all([
+      CollectionItemMembership.aggregate([
+        { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
+        { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
+      ]),
+      CollectionSubjectMembership.aggregate([
+        { $match: { editorialContextId: { $in: contexts.map((context) => context._id) } } },
+        { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
+      ]),
     ])
-    : [];
-  const entryCountByContext = new Map(entryCounts.map((entry) => [id(entry._id), entry.count]));
+    : [[], []];
+  const itemCountByContext = new Map(itemCounts.map((entry) => [id(entry._id), entry.count]));
+  const subjectCountByContext = new Map(subjectCounts.map((entry) => [id(entry._id), entry.count]));
   const permissions = {
     canManageSpace: hasPermission(contentSpace, authority, "editorial_space.manage"),
     canCreateCollection: hasPermission(contentSpace, authority, "editorial_context.create"),
@@ -149,14 +165,15 @@ async function getEditorialSpaceProjection({ contentSpaceId, actorUserId }) {
       ownerType: contentSpace.ownerType,
       ownerId: contentSpace.ownerId,
     },
-    stats: { itemCount, collectionCount: contexts.length },
+    stats: { itemCount, subjectCount, collectionCount: contexts.length },
     collections: contexts.map((context) => ({
       id: context._id,
       name: context.displayName,
       shortDescription: context.shortDescription || null,
       semanticGraphId: context.semanticGraphId,
       namespace: { id: context.namespaceId, name: namespaceById.get(id(context.namespaceId))?.name || "Regole editoriali" },
-      itemCount: entryCountByContext.get(id(context._id)) || 0,
+      itemCount: itemCountByContext.get(id(context._id)) || 0,
+      subjectCount: subjectCountByContext.get(id(context._id)) || 0,
       published: Boolean(context.publishedReleaseId),
       reviewActive: Boolean(context.activeReviewRevisionId),
     })),
@@ -169,23 +186,29 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
   const authority = await resolveAuthority({ contentSpace, actorUserId });
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();
   if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 409);
-  const [namespace, readiness, entryCount, activeRevision, publishedRelease] = await Promise.all([
+  const [namespace, readiness, entryCount, collectionSubjects, activeRevision, publishedRelease] = await Promise.all([
     resolveNamespaceProjection({ context, contentSpace, actorUserId, semanticGraph }),
     checkEditorialContextReadiness({ editorialContextId: context._id, actorUserId }),
-    EditorialContextEntry.countDocuments({ editorialContextId: context._id }),
+    CollectionItemMembership.countDocuments({ editorialContextId: context._id }),
+    CollectionSubjectMembership.find({ editorialContextId: context._id }).select("subjectId").lean(),
     context.activeReviewRevisionId ? EditorialContextRevision.findById(context.activeReviewRevisionId).lean() : null,
     context.publishedReleaseId ? EditorialRelease.findById(context.publishedReleaseId).lean() : null,
   ]);
 
   const workingGraphRevisionId = semanticGraph.workingRevisionId || null;
+  const collectionSubjectIds = new Set(collectionSubjects.map((membership) => id(membership.subjectId)));
+  const collectionSubjectObjectIds = collectionSubjects.map((membership) => membership.subjectId);
   const [subjectBindings, edges, publishedSourceRevision, publishedGraphRevision] = await Promise.all([
-    workingGraphRevisionId ? GraphSubjectBinding.find({ graphRevisionId: workingGraphRevisionId }).select("subjectId").lean() : [],
-    workingGraphRevisionId ? SemanticEdgeV2.find({ graphRevisionId: workingGraphRevisionId }).select("sourceSubjectId targetSubjectId").lean() : [],
+    workingGraphRevisionId && collectionSubjectObjectIds.length
+      ? GraphSubjectBinding.find({ graphRevisionId: workingGraphRevisionId, subjectId: { $in: collectionSubjectObjectIds } }).select("subjectId").lean()
+      : [],
+    workingGraphRevisionId && collectionSubjectObjectIds.length
+      ? SemanticEdgeV2.find({ graphRevisionId: workingGraphRevisionId, sourceSubjectId: { $in: collectionSubjectObjectIds }, targetSubjectId: { $in: collectionSubjectObjectIds } }).select("sourceSubjectId targetSubjectId").lean()
+      : [],
     publishedRelease?.sourceContextRevisionId ? EditorialContextRevision.findById(publishedRelease.sourceContextRevisionId).select("sourceWorkingVersion version").lean() : null,
     publishedRelease?.graphRevisionId ? SemanticGraphRevision.findById(publishedRelease.graphRevisionId).select("version semanticGraphId").lean() : null,
   ]);
-  const subjectIds = new Set(subjectBindings.map((entry) => id(entry.subjectId)));
-  for (const edge of edges) { subjectIds.add(id(edge.sourceSubjectId)); subjectIds.add(id(edge.targetSubjectId)); }
+  const graphSubjectIds = new Set(subjectBindings.map((entry) => id(entry.subjectId)));
   const workingVersion = Number(context.workingVersion || 0);
   const publishedWorkingVersion = publishedSourceRevision ? Number(publishedSourceRevision.sourceWorkingVersion || 0) : null;
   const graphWorkingVersion = Number(semanticGraph.workingVersion || 0);
@@ -239,7 +262,9 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
     namespace,
     stats: {
       entryCount,
-      subjectCount: subjectIds.size,
+      subjectCount: collectionSubjectIds.size,
+      graphSubjectCount: graphSubjectIds.size,
+      subjectsOutsideGraph: Math.max(0, collectionSubjectIds.size - graphSubjectIds.size),
       edgeCount: edges.length,
       collectionChangesSincePublished: collectionChanges,
       graphChangesSincePublished: graphChanges,
@@ -257,6 +282,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       reviewedAt: activeRevision.review?.reviewedAt || null,
       message: activeRevision.review?.message || null,
       graphRevisionId: activeRevision.graphRevisionId,
+      subjectCount: (activeRevision.subjectIds || []).length,
       itemCount: (activeRevision.itemBindings || []).length,
     } : null,
     published: publishedRelease ? {
@@ -264,6 +290,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       version: publishedRelease.version,
       releasedAt: publishedRelease.releasedAt,
       graphRevisionId: publishedRelease.graphRevisionId,
+      subjectCount: (publishedRelease.subjectIds || []).length,
       sourceContextRevisionId: publishedRelease.sourceContextRevisionId || null,
     } : null,
     permissions,
@@ -277,40 +304,41 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
   const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
   const normalizedQuery = String(query || "").trim();
 
-  const compatibleItemIds = await ItemEdition.distinct("itemId", { namespaceId: context.namespaceId });
-  let candidateItemIds = compatibleItemIds;
-  if (normalizedQuery) {
+  let candidateItemIds = await ContentSpaceItemMembership.distinct("itemId", { contentSpaceId: contentSpace._id });
+  if (normalizedQuery && candidateItemIds.length) {
     const regex = new RegExp(escapeRegex(normalizedQuery), "i");
     const [subjects, matchingRevisions] = await Promise.all([
       Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(500).lean(),
       ItemRevisionV2.find({ label: regex }).select("itemEditionId").limit(500).lean(),
     ]);
     const revisionEditions = matchingRevisions.length
-      ? await ItemEdition.find({ _id: { $in: matchingRevisions.map((entry) => entry.itemEditionId) }, namespaceId: context.namespaceId }).select("itemId").lean()
+      ? await ItemEdition.find({ _id: { $in: matchingRevisions.map((entry) => entry.itemEditionId) } }).select("itemId").lean()
       : [];
     const subjectItems = subjects.length
-      ? await ItemV2.find({ primarySubjectId: { $in: subjects.map((entry) => entry._id) }, lifecycleStatus: "active" }).select("_id").lean()
+      ? await ItemV2.find({ _id: { $in: candidateItemIds }, primarySubjectId: { $in: subjects.map((entry) => entry._id) }, lifecycleStatus: "active" }).select("_id").lean()
       : [];
     const matchingIds = new Set([...revisionEditions.map((entry) => id(entry.itemId)), ...subjectItems.map((entry) => id(entry._id))]);
-    candidateItemIds = compatibleItemIds.filter((itemId) => matchingIds.has(id(itemId)));
+    candidateItemIds = candidateItemIds.filter((itemId) => matchingIds.has(id(itemId)));
   }
 
   const membershipQuery = { contentSpaceId: contentSpace._id, itemId: { $in: candidateItemIds } };
   const [total, memberships] = await Promise.all([
-    ContentSpaceMembership.countDocuments(membershipQuery),
-    ContentSpaceMembership.find(membershipQuery)
+    ContentSpaceItemMembership.countDocuments(membershipQuery),
+    ContentSpaceItemMembership.find(membershipQuery)
       .sort({ createdAt: 1, _id: 1 })
       .skip((normalizedPage - 1) * normalizedLimit)
       .limit(normalizedLimit)
       .lean(),
   ]);
   const itemIds = memberships.map((entry) => entry.itemId);
-  const [items, editions] = await Promise.all([
+  const [items, editions, existingEntries] = await Promise.all([
     ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(),
     ItemEdition.find({ itemId: { $in: itemIds }, namespaceId: context.namespaceId }).lean(),
+    CollectionItemMembership.find({ editorialContextId: context._id, itemId: { $in: itemIds } }).select("itemId").lean(),
   ]);
   const itemById = new Map(items.map((item) => [id(item), item]));
   const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
+  const existingItemIds = new Set(existingEntries.map((entry) => id(entry.itemId)));
   const usableEditionIds = new Set();
   await Promise.all(editions.map(async (edition) => {
     try {
@@ -322,32 +350,31 @@ async function listEditorialStudioCandidates({ editorialContextId, actorUserId, 
       });
       usableEditionIds.add(id(edition._id));
     } catch (error) {
-      if (error?.status !== 403) throw error;
+      if (![403, 404, 409].includes(error?.status)) throw error;
     }
   }));
-  const usableEditions = editions.filter((edition) => usableEditionIds.has(id(edition._id)));
-  const revisionIds = usableEditions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
+  const revisionIds = editions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
   const subjectIds = items.map((item) => item.primarySubjectId).filter(Boolean);
-  const [revisions, subjects, existingEntries] = await Promise.all([
+  const [revisions, subjects] = await Promise.all([
     revisionIds.length ? ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [],
     subjectIds.length ? Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean() : [],
-    usableEditions.length ? EditorialContextEntry.find({ editorialContextId: context._id, itemEditionId: { $in: usableEditions.map((edition) => edition._id) } }).select("itemEditionId").lean() : [],
   ]);
   const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
   const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
-  const existingEditionIds = new Set(existingEntries.map((entry) => id(entry.itemEditionId)));
 
   return {
     results: memberships.map((membership) => {
       const item = itemById.get(id(membership.itemId));
-      const edition = editionByItemId.get(id(membership.itemId));
-      if (!item || !edition || !usableEditionIds.has(id(edition._id))) return null;
-      const revision = revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null;
+      if (!item) return null;
+      const edition = editionByItemId.get(id(membership.itemId)) || null;
+      const revision = edition ? revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null : null;
       const subject = subjectById.get(id(item.primarySubjectId)) || null;
       return {
         itemId: item._id,
-        itemEditionId: edition._id,
-        inCollection: existingEditionIds.has(id(edition._id)),
+        itemEditionId: edition?._id || null,
+        compatibleEdition: Boolean(edition),
+        releaseUsable: Boolean(edition && usableEditionIds.has(id(edition._id))),
+        inCollection: existingItemIds.has(id(item._id)),
         subject: subject ? { id: subject._id, label: subject.preferredLabel, description: subject.description || "" } : null,
         revision: revision ? { id: revision._id, label: revision.label, status: revision.status, version: revision.version } : null,
       };
