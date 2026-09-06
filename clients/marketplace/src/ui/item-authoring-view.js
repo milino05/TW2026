@@ -161,6 +161,7 @@ export class ItemAuthoringView extends HTMLElement {
   contextContentSpaceId = params().get("contentSpaceId") || null;
   contextEditorialContextId = params().get("editorialContextId") || null;
   contextNamespaceId = params().get("namespaceId") || null;
+  forceNewEdition = params().get("newEdition") === "1";
   projection = null;
   namespaceControls = null;
   activeStep = 1;
@@ -324,15 +325,21 @@ export class ItemAuthoringView extends HTMLElement {
       }
       if (this.itemId) {
         await this.reloadProjection();
-        if (this.contextNamespaceId) {
-          const contextualEdition = (this.projection?.editions || []).find((edition) => id(edition.namespace?.id) === id(this.contextNamespaceId));
+        const contextualEdition = this.contextNamespaceId
+          ? (this.projection?.editions || []).find((edition) => id(edition.namespace?.id) === id(this.contextNamespaceId))
+          : null;
+        if (this.forceNewEdition) {
+          if (contextualEdition) throw new Error("Esiste già una Edition per le Regole editoriali richieste. Apri quella esistente invece di crearne una duplicata.");
+          this.clearWorkingDraft();
+          await this.prepareNewEdition();
+        } else {
           if (contextualEdition && id(this.selectedEdition()?.id) !== id(contextualEdition.id)) await this.reloadProjection(contextualEdition.id);
-        }
-        await this.loadSuggestedMedia();
-        const restored = await this.restoreWorkingDraft();
-        if (!restored) {
-          if (this.selectedRevision()) this.activeStep = 4;
-          else await this.prepareNewEdition();
+          await this.loadSuggestedMedia();
+          const restored = await this.restoreWorkingDraft();
+          if (!restored) {
+            if (this.selectedRevision()) this.activeStep = 4;
+            else await this.prepareNewEdition();
+          }
         }
       }
     } catch (error) { this.error = error instanceof Error ? error.message : "Impossibile inizializzare l'editor"; }
@@ -399,16 +406,21 @@ export class ItemAuthoringView extends HTMLElement {
   }
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
-    const illustrativeMedia = this.draft.illustrativeMedia || [];
+    const recognitionMedia = writableMedia(this.projection?.lineage?.recognitionMedia, { includeId: false });
+    const carryDraftMedia = !(this.projection?.editions || []).length ? (this.draft.illustrativeMedia || []) : [];
+    const illustrativeMedia = recognitionMedia ? [recognitionMedia] : carryDraftMedia;
     this.newEditionMode = true;
     this.namespaceControls = null;
     this.draft = newDraft(this.defaultAuthor(), illustrativeMedia);
     this.activeRepresentationIndex = null;
     this.activeStep = 2;
+    this.mediaSuggestionAttempted = Boolean(this.currentMedia());
+    this.mediaNotice = recognitionMedia ? "Immagine di riconoscimento dell'Item proposta come base per questa Edition." : null;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     const preferred = this.contextNamespaceId && choices.some((entry) => entry.id === id(this.contextNamespaceId)) ? id(this.contextNamespaceId) : null;
     if (preferred) await this.selectNamespace(preferred);
     else if (choices.length === 1) await this.selectNamespace(choices[0].id);
+    if (!this.currentMedia()) await this.loadSuggestedMedia();
     this.persistWorkingDraft();
   }
   async selectNamespace(namespaceId) {
@@ -598,14 +610,17 @@ export class ItemAuthoringView extends HTMLElement {
     }
     if (this.contextEditorialContextId && id(created.edition?.namespaceId) === id(this.contextNamespaceId)) {
       try {
-        await editorialRepository.addEntry(this.contextEditorialContextId, { itemEditionId: id(created.edition), curationSignals: [] });
+        await editorialRepository.addEntry(this.contextEditorialContextId, { itemId: this.itemId, curationSignals: [] });
         this.notice = "Versione salvata e aggiunta alla raccolta.";
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("già presente")) throw error;
       }
     }
     this.clearWorkingDraft();
-    this.newEditionMode = false; this.namespaceControls = null;
+    this.newEditionMode = false; this.namespaceControls = null; this.forceNewEdition = false;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("newEdition");
+    replaceCurrentHistoryUrl(url);
     await this.reloadProjection(created.edition._id);
     await this.reloadAuthoringContext();
     this.activeStep = 4;
@@ -812,7 +827,7 @@ export class ItemAuthoringView extends HTMLElement {
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     if (!choices.length) return `<div class="empty-state compact"><p>Nessun'altra regola editoriale disponibile.</p></div>`;
     const lockedToCollection = this.inCollectionContext() && this.contextNamespaceId;
-    return `<label>Regole editoriali<select name="namespaceId" data-namespace-select required ${lockedToCollection ? "disabled" : ""}><option value="">Scegli</option>${choices.map((choice) => `<option value="${escapeHtml(choice.id)}" ${choice.id === this.draft.namespaceId ? "selected" : ""}>${escapeHtml(choice.name)}</option>`).join("")}</select>${lockedToCollection ? `<input type="hidden" name="namespaceId" value="${escapeHtml(this.draft.namespaceId)}"><small>Impostate dalla raccolta.</small>` : ""}</label>`;
+    return `<label>Regole editoriali<select name="namespaceId" data-namespace-select required ${lockedToCollection ? "disabled" : ""}><option value="">Scegli</option>${choices.map((choice) => `<option value="${escapeHtml(choice.id)}" ${choice.id === this.draft.namespaceId ? "selected" : ""}>${escapeHtml(choice.name)}${choice.ownership ? ` · ${escapeHtml(choice.ownership)}` : ""}</option>`).join("")}</select>${lockedToCollection ? `<input type="hidden" name="namespaceId" value="${escapeHtml(this.draft.namespaceId)}"><small>Impostate dalla raccolta.</small>` : ""}</label>`;
   }
   personalizationControls() { return this.newEditionMode ? this.namespaceControls?.controls || null : this.selectedNamespace()?.revision || null; }
   renderSelectionSignals(controls) {
