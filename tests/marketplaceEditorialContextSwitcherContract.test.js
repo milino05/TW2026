@@ -17,8 +17,8 @@ test("la shell espone area di lavoro e spazio editoriale come due livelli dello 
   assert.match(switcher, /Spazio editoriale/);
   assert.match(switcher, /data-change-operating-context/);
   assert.match(switcher, /data-editorial-context-toggle/);
+  assert.match(switcher, /context-identity__owner/);
   assert.match(shellCss, /\.context-identity__levels/);
-  assert.match(shellCss, /\.context-identity__owner/);
   assert.match(shellCss, /\.context-identity__space/);
 });
 
