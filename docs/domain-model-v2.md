@@ -74,9 +74,12 @@ Item
   primarySubjectId
   ownerType
   ownerId
+  recognitionMedia?
   provenance
   lifecycleStatus
 ```
+
+`recognitionMedia` è un'immagine editoriale opzionale e generica dell'Item, coerente con la specifica ArtAround che ammette un'immagine descrittiva di riconoscimento associata al contenuto. Non rappresenta una specifica occorrenza fisica in una Venue, non contiene coordinate o placement e non sostituisce i metadati di riconoscimento fisico di `VenueTarget`.
 
 `ItemEdition = Item x Namespace`:
 
@@ -90,7 +93,7 @@ ItemEdition
 
 Esiste al massimo una lineage ItemEdition per coppia Item+Namespace.
 
-`ItemRevision` contiene il payload editoriale/presentazionale immutabile della Edition, inclusi autore, licenza, provenance della NamespaceRevision e le representation disponibili. Le representation possono differire per durata, LanguageLevel, lingua/locale e altre dimensioni di presentazione.
+`ItemRevision` contiene il payload editoriale/presentazionale immutabile della Edition, inclusi autore, licenza, provenance della NamespaceRevision e le representation disponibili. Le representation possono differire per durata, LanguageLevel, lingua/locale e altre dimensioni di presentazione. Gli eventuali `illustrativeMedia` della revisione appartengono a quella specifica presentazione editoriale e sono distinti da `Item.recognitionMedia`.
 
 La `defaultPresentation` è una scelta concreta di Variant/Representation valida come fallback.
 
@@ -288,7 +291,9 @@ VenueTarget
   recognition / physical metadata
 ```
 
-Il dominio fisico resta separato da Item, ContentSpace, Collection e SemanticGraph.
+Il dominio fisico resta separato da Item, ContentSpace, Collection e SemanticGraph. I dati di `VenueTarget` descrivono l'occorrenza fisica locale — riconoscimento nel luogo, placement, inventario e altri metadati dipendenti dalla Venue — e non devono essere incorporati nell'Item.
+
+`Item.recognitionMedia` resta invece un asset editoriale generico del contenuto: può aiutare l'utente a riconoscere ciò di cui l'Item parla, ma non prova che quel Subject sia esposto in una Venue né identifica una specifica occorrenza fisica.
 
 Le capability fisiche e di navigazione appartengono a VenueTarget/Layout, non agli Item.
 
@@ -361,4 +366,5 @@ Per nuove feature:
 6. non usare la presenza nel grafo come prova di appartenenza della risorsa editoriale alla Collection;
 7. non usare la membership nello Space come prova di entitlement;
 8. trattare i gap fra contenuti e grafo come coverage salvo violazioni reali di Namespace/revision/authorization;
-9. preservare snapshot immutabili per review, release, Visit e Session.
+9. preservare snapshot immutabili per review, release, Visit e Session;
+10. mantenere distinti `Item.recognitionMedia` (asset editoriale generico) e recognition/physical metadata di `VenueTarget` (occorrenza fisica locale).
