@@ -1,4 +1,5 @@
 const contentSpaceService = require("../services/contentSpace.service");
+const contentSpaceItemDetailService = require("../services/contentSpaceItemDetail.service");
 
 async function create(req, res, next) {
   try { res.status(201).json(await contentSpaceService.createContentSpace({ payload: req.body || {}, actorUserId: req.user._id })); }
@@ -32,6 +33,24 @@ async function listItems(req, res, next) {
   }
   catch (error) { next(error); }
 }
+async function itemAddContext(req, res, next) {
+  try {
+    res.status(200).json(await contentSpaceItemDetailService.getItemAddContext({
+      contentSpaceId: req.params.contentSpaceId,
+      subjectId: req.query?.subjectId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+async function itemDetail(req, res, next) {
+  try {
+    res.status(200).json(await contentSpaceItemDetailService.getItemLibraryDetail({
+      contentSpaceId: req.params.contentSpaceId,
+      itemId: req.params.itemId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
 async function addItem(req, res, next) {
   try { res.status(201).json(await contentSpaceService.addItemMembership({ contentSpaceId: req.params.contentSpaceId, itemId: req.params.itemId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
@@ -45,4 +64,4 @@ async function moveItem(req, res, next) {
   catch (error) { next(error); }
 }
 
-module.exports = { create, list, get, update, remove, listItems, addItem, removeItem, moveItem };
+module.exports = { create, list, get, update, remove, listItems, itemAddContext, itemDetail, addItem, removeItem, moveItem };
