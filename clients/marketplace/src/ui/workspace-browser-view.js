@@ -75,6 +75,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
+    this.addEventListener("keydown", this.onKeyDown);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
     this.addEventListener("library-item-added", this.onLibraryItemAdded);
@@ -95,6 +96,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
+    this.removeEventListener("keydown", this.onKeyDown);
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("input", this.onInput);
     this.removeEventListener("library-item-added", this.onLibraryItemAdded);
@@ -255,6 +257,14 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   };
   onLibraryItemDetailClose = () => {
     if (this.section === "editorial" && this.editorialSection === "content") void this.loadContent();
+  };
+  onKeyDown = (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const item = target?.closest('[data-open-item][role="button"]');
+    if (!item) return;
+    event.preventDefault();
+    this.openItemDetail(item.dataset.openItem);
   };
 
   navigationUrl({ section = this.section, editorial = this.editorialSection, q = "", resourceType = "", page = 1, contentQ = "", contentPage = 1 } = {}) {
@@ -444,7 +454,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       return;
     }
     const confirmed = await openActionDialog({
-      title: `Eliminare lo spazio “${this.spaceData?.space?.name || this.currentSpace.name || "editoriale"}?`,
+      title: `Eliminare lo spazio “${this.spaceData?.space?.name || this.currentSpace.name || "editoriale"}”?`,
       message: "Lo spazio verrà rimosso. Gli Item non vengono eliminati; l'operazione sarà bloccata se un contenuto posseduto resterebbe senza alcuno spazio editoriale attivo.",
       confirmLabel: "Elimina spazio",
       tone: "danger",
