@@ -1,36 +1,14 @@
 const mongoose = require("mongoose");
 const PresentationVariantV2Schema = require("../schemas/presentationVariantV2.schema");
 const IntegrityIssueSchema = require("../schemas/integrityIssue.schema");
+const ItemMediaSchema = require("../schemas/itemMedia.schema");
 const { Schema } = mongoose;
 const SelectionSignalUseV2Schema = new Schema({ definitionId: { type: String, required: true, trim: true }, weight: { type: Number, min: 0, max: 1, default: 1 } }, { _id: false });
-const MediaSourceSchema = new Schema({
-  provider: { type: String, trim: true, default: null },
-  wikidataEntityId: { type: String, trim: true, default: null },
-  fileTitle: { type: String, trim: true, default: null },
-  pageUrl: { type: String, trim: true, default: null },
-  retrievedAt: { type: Date, default: null },
-}, { _id: false });
-const MediaRightsSchema = new Schema({
-  creator: { type: String, trim: true, default: null },
-  attribution: { type: String, trim: true, default: null },
-  licenseName: { type: String, trim: true, default: null },
-  licenseUrl: { type: String, trim: true, default: null },
-}, { _id: false });
-const MediaSchema = new Schema({
-  url: { type: String, required: true, trim: true },
-  originalUrl: { type: String, trim: true, default: null },
-  altText: { type: String, trim: true, default: null },
-  mimeType: { type: String, trim: true, default: null },
-  width: { type: Number, min: 1, default: null },
-  height: { type: Number, min: 1, default: null },
-  source: { type: MediaSourceSchema, default: null },
-  rights: { type: MediaRightsSchema, default: null },
-}, { _id: true });
 const DefaultPresentationV2Schema = new Schema({ variantId: { type: Schema.Types.ObjectId, required: true }, representationId: { type: Schema.Types.ObjectId, required: true } }, { _id: false });
 const RevisionProvenanceSchema = new Schema({ origin: { type: String, enum: ["human", "ai_assisted", "ai_generated", "imported", "forked"], default: "human" }, sourceRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", default: null }, metadata: { type: Schema.Types.Mixed, default: null } }, { _id: false });
 const ReviewEventSchema = new Schema({ action: { type: String, enum: ["review_requested", "review_withdrawn", "changes_requested", "published"], required: true }, actorUserId: { type: Schema.Types.ObjectId, ref: "User", required: true }, at: { type: Date, required: true }, message: { type: String, trim: true, default: null } }, { _id: false });
 const ReviewSchema = new Schema({ requestedAt: { type: Date, default: null }, requestedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, reviewedAt: { type: Date, default: null }, reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, decision: { type: String, enum: ["pending", "approved", "changes_requested", null], default: null }, message: { type: String, trim: true, default: null }, events: { type: [ReviewEventSchema], default: [] } }, { _id: false });
-const ItemRevisionV2Schema = new Schema({ itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true, index: true }, version: { type: Number, required: true, min: 1 }, basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", default: null }, authoredAgainstNamespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true, index: true }, label: { type: String, required: true, trim: true }, relatedSubjectIds: [{ type: Schema.Types.ObjectId, ref: "Subject" }], tags: [{ type: String, trim: true }], authorCredits: [{ type: String, trim: true }], metadata: { license: { type: String, trim: true, default: null } }, illustrativeMedia: { type: [MediaSchema], default: [] }, selectionSignals: { type: [SelectionSignalUseV2Schema], default: [] }, presentationVariants: { type: [PresentationVariantV2Schema], default: [] }, defaultPresentation: { type: DefaultPresentationV2Schema, default: null }, provenance: { type: RevisionProvenanceSchema, default: () => ({ origin: "human" }) }, status: { type: String, enum: ["draft", "in_review", "changes_requested", "published", "superseded"], default: "draft", index: true }, integrity: { status: { type: String, enum: ["valid", "needs_review"], default: "needs_review" }, issues: { type: [IntegrityIssueSchema], default: [] }, checkedAt: { type: Date, default: null }, checkedBy: { type: Schema.Types.ObjectId, ref: "User", default: null } }, review: { type: ReviewSchema, default: () => ({}) }, publication: { publishedAt: { type: Date, default: null }, publishedBy: { type: Schema.Types.ObjectId, ref: "User", default: null } }, createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true }, updatedBy: { type: Schema.Types.ObjectId, ref: "User", required: true } }, { timestamps: true, collection: "item_revisions_v2" });
+const ItemRevisionV2Schema = new Schema({ itemEditionId: { type: Schema.Types.ObjectId, ref: "ItemEdition", required: true, index: true }, version: { type: Number, required: true, min: 1 }, basedOnRevisionId: { type: Schema.Types.ObjectId, ref: "ItemRevisionV2", default: null }, authoredAgainstNamespaceRevisionId: { type: Schema.Types.ObjectId, ref: "NamespaceRevision", required: true, index: true }, label: { type: String, required: true, trim: true }, relatedSubjectIds: [{ type: Schema.Types.ObjectId, ref: "Subject" }], tags: [{ type: String, trim: true }], authorCredits: [{ type: String, trim: true }], metadata: { license: { type: String, trim: true, default: null } }, illustrativeMedia: { type: [ItemMediaSchema], default: [] }, selectionSignals: { type: [SelectionSignalUseV2Schema], default: [] }, presentationVariants: { type: [PresentationVariantV2Schema], default: [] }, defaultPresentation: { type: DefaultPresentationV2Schema, default: null }, provenance: { type: RevisionProvenanceSchema, default: () => ({ origin: "human" }) }, status: { type: String, enum: ["draft", "in_review", "changes_requested", "published", "superseded"], default: "draft", index: true }, integrity: { status: { type: String, enum: ["valid", "needs_review"], default: "needs_review" }, issues: { type: [IntegrityIssueSchema], default: [] }, checkedAt: { type: Date, default: null }, checkedBy: { type: Schema.Types.ObjectId, ref: "User", default: null } }, review: { type: ReviewSchema, default: () => ({}) }, publication: { publishedAt: { type: Date, default: null }, publishedBy: { type: Schema.Types.ObjectId, ref: "User", default: null } }, createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true }, updatedBy: { type: Schema.Types.ObjectId, ref: "User", required: true } }, { timestamps: true, collection: "item_revisions_v2" });
 ItemRevisionV2Schema.index({ itemEditionId: 1, version: 1 }, { unique: true });
 ItemRevisionV2Schema.index({ itemEditionId: 1, status: 1, updatedAt: -1 });
 ItemRevisionV2Schema.index({ label: "text", tags: "text", authorCredits: "text" });
