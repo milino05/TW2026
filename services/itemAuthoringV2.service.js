@@ -269,7 +269,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
   const editAllowed = Boolean(workflowRevision && workflowRevision.status !== "in_review");
   return {
     subject: projectSubject(subject),
-    lineage: { id: item._id, owner, provenance: item.provenance || null },
+    lineage: { id: item._id, owner, provenance: item.provenance || null, recognitionMedia: projectIllustrativeMedia(item.recognitionMedia) },
     editions: editionSummaries,
     selected,
     workspaceMemberships: memberships,
