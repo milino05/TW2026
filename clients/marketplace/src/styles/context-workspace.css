@@ -50,7 +50,7 @@ artaround-workspace-browser-view .context-workspace-inspector-layer>.context-wor
   .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 4rem);right:.65rem;bottom:.65rem;width:min(27rem,calc(100vw - 1.3rem));padding:.85rem}
   .semantic-inventory-inspector{width:min(38rem,calc(100vw - 1.3rem))}
   .context-task-modal-layer,artaround-workspace-view .context-workspace-inspector-layer,artaround-workspace-browser-view .context-workspace-inspector-layer,.studio-settings-grid>.context-workspace-inspector-layer{padding:.65rem}
-  .context-task-modal,artaround-workspace-view .context-workspace-inspector-layer>.context-workspace-inspector,artaround-workspace-browser-view .context-workspace-inspector-layer>.context-workspace-inspector,.studio-settings-grid>.context-workspace-inspector-layer>.context-workspace-inspector{width:100%;max-height:calc(100vh - 1.3rem);padding:1rem}
+  .context-task-modal,artaround-workspace-view .context-workspace-inspector-layer>.context-workspace-inspector,artaround-workspace-browser-view .context-workspace-inspector-layer>.context-workspace-inspector,.studio-settings-grid>.context-workspace-inspector-layer>.context-workspace-inspector{inset:auto;width:100%;max-height:calc(100vh - 1.3rem);padding:1rem}
   .workspace-sidecar{top:calc(var(--header-height) + .4rem);right:.45rem;bottom:.45rem;width:calc(100vw - .9rem);border-radius:var(--radius-lg)}
   .workspace-sidecar__context{align-items:stretch;flex-direction:column}.workspace-sidecar__context>button{align-self:flex-start}
 }
@@ -58,7 +58,7 @@ artaround-workspace-browser-view .context-workspace-inspector-layer>.context-wor
   .context-workspace-tabs button,.venue-editor-tabs button{padding-inline:.7rem}
   .context-workspace-inspector,.venue-inventory-inspector{top:calc(var(--header-height) + 3.5rem);left:.45rem;right:.45rem;bottom:.45rem;width:auto;border-radius:var(--radius-lg)}
   .context-task-modal-layer,artaround-workspace-view .context-workspace-inspector-layer,artaround-workspace-browser-view .context-workspace-inspector-layer,.studio-settings-grid>.context-workspace-inspector-layer{padding:.45rem}
-  .context-task-modal,artaround-workspace-view .context-workspace-inspector-layer>.context-workspace-inspector,artaround-workspace-browser-view .context-workspace-inspector-layer>.context-workspace-inspector,.studio-settings-grid>.context-workspace-inspector-layer>.context-workspace-inspector{max-height:calc(100vh - .9rem);border-radius:var(--radius-lg);padding:.9rem}
+  .context-task-modal,artaround-workspace-view .context-workspace-inspector-layer>.context-workspace-inspector,artaround-workspace-browser-view .context-workspace-inspector-layer>.context-workspace-inspector,.studio-settings-grid>.context-workspace-inspector-layer>.context-workspace-inspector{inset:auto;max-height:calc(100vh - .9rem);border-radius:var(--radius-lg);padding:.9rem}
   .workspace-sidecar-layer{z-index:122}.workspace-sidecar{inset:0;width:auto;border:0;border-radius:0}.workspace-sidecar__body{padding:.75rem}.workspace-sidecar__graph{grid-template-rows:auto minmax(30rem,1fr)}
   .workspace-sidecar-launcher{right:.7rem;bottom:.7rem}
 }
