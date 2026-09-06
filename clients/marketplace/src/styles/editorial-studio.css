@@ -1,4 +1,9 @@
 /* Editorial Studio: contenuti specifici della Raccolta sopra la shell Context Workspace condivisa. */
+artaround-workspace-browser-view .workspace-page{display:grid;gap:1rem}
+artaround-workspace-browser-view .workspace-page>.page-header{margin-bottom:.25rem}
+artaround-workspace-browser-view .library-scope-panel{display:grid;gap:1rem}
+artaround-workspace-browser-view .library-tabs{margin:0}
+artaround-workspace-browser-view .library-work-area{background:var(--sage-50)}
 .studio-section{display:grid;gap:1rem}
 .studio-overview-stats.stats{grid-template-columns:repeat(4,minmax(0,1fr))}
 .studio-overview-grid,.studio-settings-grid,.studio-history-grid,.studio-publication-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
