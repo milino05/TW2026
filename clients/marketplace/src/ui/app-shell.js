@@ -4,6 +4,7 @@ import { authRepository } from "../infrastructure/http/auth-repository.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { icon } from "./icons.js";
 import { observeReliableSelects } from "./reliable-selects.js";
+import "./editorial-context-switcher.js";
 import "./context-hub-view.js";
 import "./home-view.js";
 import "./catalog-view.js";
@@ -200,8 +201,7 @@ export class MarketplaceAppShell extends HTMLElement {
 
   renderContextIdentity() {
     if (!this.context) return "";
-    const contextName = this.context.type === "user" ? (this.context.name || this.user?.username || "Account personale") : this.context.name;
-    return `<div class="context-identity"><span class="context-identity__icon">${icon(this.context.type === "organization" ? "building" : "user", { size: 16 })}</span><span><small>${escapeHtml(contextKindLabel(this.context))}</small><strong>${escapeHtml(contextName)}</strong></span><button type="button" data-change-context aria-label="Cambia area di lavoro">Cambia</button></div>`;
+    return `<artaround-editorial-context-switcher></artaround-editorial-context-switcher>`;
   }
 
   renderNavigation(route) {
