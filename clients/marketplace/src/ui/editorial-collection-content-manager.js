@@ -4,6 +4,8 @@ import { ResourceBrowserController } from "../application/resource-browser-contr
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
+import "./item-detail-dialog.js";
+import "./content-space-item-add-dialog.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function id(value) { return String(value?._id || value?.id || value || ""); }
@@ -35,11 +37,19 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     this.ensureBrowsers();
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
+    this.addEventListener("library-item-detail-close", this.onItemDetailClose);
+    this.addEventListener("library-item-detail-changed", this.onItemDetailChanged);
+    this.addEventListener("library-item-added", this.onQuickItemAdded);
+    this.addEventListener("library-item-open", this.onQuickItemOpen);
     void this.refreshCurrent();
   }
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("library-item-detail-close", this.onItemDetailClose);
+    this.removeEventListener("library-item-detail-changed", this.onItemDetailChanged);
+    this.removeEventListener("library-item-added", this.onQuickItemAdded);
+    this.removeEventListener("library-item-open", this.onQuickItemOpen);
     this.entriesBrowser?.dispose();
     this.candidatesBrowser?.dispose();
     this.externalBrowser?.dispose();
@@ -123,6 +133,57 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     else await this.entriesBrowser.refresh();
   }
 
+  openItemDetail(itemId) {
+    if (!itemId || !this.contentSpaceId) return;
+    this.querySelector("artaround-item-detail-dialog")?.remove();
+    const dialog = document.createElement("artaround-item-detail-dialog");
+    dialog.setAttribute("content-space-id", this.contentSpaceId);
+    dialog.setAttribute("item-id", itemId);
+    dialog.setAttribute("initial-collection-id", this.editorialContextId);
+    this.append(dialog);
+  }
+
+  async openQuickAdd() {
+    if (!this.contentSpaceId || this.querySelector("artaround-content-space-item-add-dialog")) return;
+    this.error = null;
+    try {
+      const studio = await editorialRepository.studio(this.editorialContextId);
+      const dialog = document.createElement("artaround-content-space-item-add-dialog");
+      dialog.setAttribute("content-space-id", this.contentSpaceId);
+      dialog.setAttribute("space-name", studio.contentSpace?.name || "Spazio editoriale");
+      dialog.setAttribute("owner-type", studio.contentSpace?.ownerType || "user");
+      dialog.setAttribute("owner-id", id(studio.contentSpace?.ownerId));
+      this.append(dialog);
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile avviare la creazione del contenuto";
+      this.render();
+    }
+  }
+
+  async addQuickItemToCollection(itemId) {
+    if (!itemId || !this.editable || this.locked) return;
+    this.error = null;
+    try {
+      await editorialRepository.addEntry(this.editorialContextId, { itemId, curationSignals: [] });
+      this.mode = "browse";
+      this.entriesData = null;
+      this.candidateData = null;
+      await this.refreshCurrent();
+      this.dispatchEvent(new CustomEvent("editorial-content-changed", { bubbles: true }));
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere il contenuto alla raccolta";
+      this.render();
+    }
+  }
+
+  onItemDetailChanged = () => {
+    this.entriesData = null;
+    this.candidateData = null;
+  };
+  onItemDetailClose = () => { void this.refreshCurrent(); };
+  onQuickItemAdded = (event) => { event.stopPropagation(); void this.addQuickItemToCollection(event.detail?.itemId); };
+  onQuickItemOpen = (event) => { event.stopPropagation(); void this.addQuickItemToCollection(event.detail?.itemId); };
+
   onSubmit = (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
@@ -163,7 +224,12 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     if (target?.closest("[data-content-mode='external']")) { this.mode = "external"; this.selected = null; this.error = null; this.render(); return; }
     if (target?.closest("[data-close-content-inspector]")) { this.selected = null; this.render(); return; }
     const inspect = target?.closest("[data-inspect-content]");
-    if (inspect) { this.selected = { kind: inspect.dataset.inspectKind, contentId: inspect.dataset.inspectContent }; this.render(); return; }
+    if (inspect) {
+      if (inspect.dataset.inspectKind === "entry") { this.openItemDetail(inspect.dataset.inspectContent); return; }
+      this.selected = { kind: inspect.dataset.inspectKind, contentId: inspect.dataset.inspectContent };
+      this.render();
+      return;
+    }
     const open = target?.closest("button[data-open-item]");
     if (open) { navigate(`/workspace/item-authoring?itemId=${encodeURIComponent(open.dataset.openItem)}&editorialContextId=${encodeURIComponent(this.editorialContextId)}`); return; }
     const entryPage = target?.closest("button[data-entry-page]");
@@ -202,13 +268,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
       await this.mutate(() => editorialRepository.removeEntry(this.editorialContextId, remove.dataset.removeEntry));
       return;
     }
-    if (target?.closest("button[data-create-context-content]")) {
-      const params = new URLSearchParams();
-      if (this.contentSpaceId) params.set("contentSpaceId", this.contentSpaceId);
-      if (this.editorialContextId) params.set("editorialContextId", this.editorialContextId);
-      if (this.namespaceId) params.set("namespaceId", this.namespaceId);
-      navigate(`/workspace/item-authoring?${params.toString()}`);
-    }
+    if (target?.closest("button[data-create-context-content]")) void this.openQuickAdd();
   };
 
   async mutate(operation, { afterAdd = false } = {}) {
@@ -237,7 +297,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const subject = row?.subject || {};
     const item = row?.item || {};
     const presentationState = revision.status ? statusLabel(revision.status) : "Da completare";
-    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<div class="stats"><span><strong>${revision.version ? `v${escapeHtml(revision.version)}` : "—"}</strong> versione</span></div>${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le regole editoriali della raccolta. Il contenuto può restare selezionato, ma dovrà essere completato prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-kind="entry" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button><button type="button" class="button-secondary" data-open-item="${escapeHtml(id(item))}">${icon("edit", { size: 15 })} Apri contenuto</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
+    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<div class="stats"><span><strong>${revision.version ? `v${escapeHtml(revision.version)}` : "—"}</strong> versione</span></div>${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le regole editoriali della raccolta. Il contenuto può restare selezionato, ma dovrà essere completato prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-kind="entry" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
   }
 
   renderCandidate(row) {
@@ -280,7 +340,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const versionNote = revision.status
       ? `${revision.version ? `Versione v${escapeHtml(revision.version)} · ` : ""}${escapeHtml(statusLabel(revision.status))}`
       : "Nessuna versione compatibile disponibile: il contenuto dovrà essere completato prima della revisione.";
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="Dettagli contenuto"><div class="section-heading"><div><span class="eyebrow">${eyebrow}</span><h2>${escapeHtml(label)}</h2></div><button type="button" class="button-secondary small" data-close-content-inspector aria-label="Chiudi dettagli">×</button></div><p><strong>Soggetto:</strong> ${escapeHtml(subject.preferredLabel || subject.label || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<p class="note">${versionNote}</p><div class="operations">${itemId ? `<button type="button" class="button-secondary" data-open-item="${escapeHtml(itemId)}">${icon("edit", { size: 15 })} Apri contenuto</button>` : ""}${isExternal && this.editable && !this.locked ? `<button type="button" data-import-edition="${escapeHtml(row.itemEditionId)}">${icon("plus", { size: 15 })} Aggiungi allo spazio e alla raccolta</button>` : ""}${isCandidate && !row.inCollection && this.editable && !this.locked ? `<button type="button" data-add-item="${escapeHtml(row.itemId)}">${icon("plus", { size: 15 })} Aggiungi alla raccolta</button>` : ""}${!isCandidate && !isExternal && this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(row.entry))}">${icon("trash", { size: 15 })} Rimuovi dalla raccolta</button>` : ""}</div></aside></div>`;
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="Dettagli contenuto"><div class="section-heading"><div><span class="eyebrow">${eyebrow}</span><h2>${escapeHtml(label)}</h2></div><button type="button" class="button-secondary small" data-close-content-inspector aria-label="Chiudi dettagli">×</button></div><p><strong>Soggetto:</strong> ${escapeHtml(subject.preferredLabel || subject.label || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<p class="note">${versionNote}</p><div class="operations">${itemId ? `<button type="button" class="button-secondary" data-open-item="${escapeHtml(itemId)}">${icon("edit", { size: 15 })} Apri contenuto</button>` : ""}${isExternal && this.editable && !this.locked ? `<button type="button" data-import-edition="${escapeHtml(row.itemEditionId)}">${icon("plus", { size: 15 })} Aggiungi allo spazio e alla raccolta</button>` : ""}${isCandidate && !row.inCollection && this.editable && !this.locked ? `<button type="button" data-add-item="${escapeHtml(row.itemId)}">${icon("plus", { size: 15 })} Aggiungi alla raccolta</button>` : ""}</div></aside></div>`;
   }
 
   renderPagination(kind, pagination = {}) {
