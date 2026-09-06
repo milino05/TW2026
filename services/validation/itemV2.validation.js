@@ -27,9 +27,10 @@ function normalizeMediaRights(value) {
   };
 }
 
-function normalizeIllustrativeMedia(values) {
-  if (!Array.isArray(values)) return values;
-  return values.map((value) => isPlainObject(value) ? {
+function normalizeRecognitionMedia(value) {
+  if (value === null || value === undefined) return value ?? null;
+  if (!isPlainObject(value)) return value;
+  return {
     ...(value._id ? { _id: value._id } : {}),
     url: trimIfString(value.url),
     originalUrl: trimIfString(value.originalUrl),
@@ -39,7 +40,12 @@ function normalizeIllustrativeMedia(values) {
     height: value.height || null,
     source: value.source ? normalizeMediaSource(value.source) : null,
     rights: value.rights ? normalizeMediaRights(value.rights) : null,
-  } : value);
+  };
+}
+
+function normalizeIllustrativeMedia(values) {
+  if (!Array.isArray(values)) return values;
+  return values.map((value) => normalizeRecognitionMedia(value));
 }
 
 function normalizeRevisionPayload(payload = {}) {
@@ -57,15 +63,48 @@ function normalizeRevisionPayload(payload = {}) {
   return out;
 }
 
+function validMediaUrl(value, { allowLocalUpload = false } = {}) {
+  const url = String(value || "").trim();
+  if (allowLocalUpload && /^\/uploads\/item-media\/[a-z0-9-]+\.(?:jpe?g|png|webp|avif)$/i.test(url)) return true;
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function validateMedia(media, base) {
+  const issues = [];
+  if (!isPlainObject(media)) {
+    issues.push({ field: base, code: "INVALID_TYPE", message: "L'immagine del contenuto non è valida" });
+    return issues;
+  }
+  if (!validMediaUrl(media.url, { allowLocalUpload: true })) issues.push({ field: `${base}.url`, code: "INVALID_URL", message: "Inserisci un indirizzo valido per l'immagine" });
+  if (!String(media.altText || "").trim()) issues.push({ field: `${base}.altText`, code: "REQUIRED", message: "Descrivi brevemente l'immagine per renderla accessibile" });
+  if (media.originalUrl && !validMediaUrl(media.originalUrl)) issues.push({ field: `${base}.originalUrl`, code: "INVALID_URL", message: "L'indirizzo dell'immagine originale non è valido" });
+  if (media.source !== null && media.source !== undefined && !isPlainObject(media.source)) issues.push({ field: `${base}.source`, code: "INVALID_TYPE", message: "La provenienza dell'immagine non è valida" });
+  if (media.rights !== null && media.rights !== undefined && !isPlainObject(media.rights)) issues.push({ field: `${base}.rights`, code: "INVALID_TYPE", message: "I diritti dell'immagine non sono validi" });
+  if (isPlainObject(media.source)) {
+    if (media.source.pageUrl && !validMediaUrl(media.source.pageUrl)) issues.push({ field: `${base}.source.pageUrl`, code: "INVALID_URL", message: "L'indirizzo della fonte dell'immagine non è valido" });
+    if (media.source.retrievedAt && !Number.isFinite(Date.parse(media.source.retrievedAt))) issues.push({ field: `${base}.source.retrievedAt`, code: "INVALID_DATE", message: "La data di acquisizione dell'immagine non è valida" });
+  }
+  if (isPlainObject(media.rights) && media.rights.licenseUrl && !validMediaUrl(media.rights.licenseUrl)) issues.push({ field: `${base}.rights.licenseUrl`, code: "INVALID_URL", message: "L'indirizzo della licenza dell'immagine non è valido" });
+  for (const dimension of ["width", "height"]) {
+    if (media[dimension] !== null && media[dimension] !== undefined && (!Number.isFinite(Number(media[dimension])) || Number(media[dimension]) <= 0)) issues.push({ field: `${base}.${dimension}`, code: "INVALID_NUMBER", message: "Le dimensioni dell'immagine devono essere numeri positivi" });
+  }
+  return issues;
+}
+
 function validateCreateItemPayload(payload = {}) {
   const issues = [];
-  const allowed = ["primarySubjectId", "ownerType", "ownerId", "contentSpaceId", "provenance"];
+  const allowed = ["primarySubjectId", "ownerType", "ownerId", "contentSpaceId", "recognitionMedia", "provenance"];
   for (const key of Object.keys(payload)) if (!allowed.includes(key)) issues.push({ field: key, code: "UNKNOWN_FIELD", message: `Campo non supportato: ${key}` });
   if (!mongoose.isValidObjectId(payload.primarySubjectId)) issues.push({ field: "primarySubjectId", code: "INVALID_OBJECT_ID", message: "primarySubjectId non valido" });
   if (!OWNER_TYPES.includes(payload.ownerType)) issues.push({ field: "ownerType", code: "INVALID_ENUM", message: "ownerType non valido", allowedValues: OWNER_TYPES });
   if (!mongoose.isValidObjectId(payload.ownerId)) issues.push({ field: "ownerId", code: "INVALID_OBJECT_ID", message: "ownerId non valido" });
   if (!payload.contentSpaceId) issues.push({ field: "contentSpaceId", code: "REQUIRED", message: "contentSpaceId è obbligatorio" });
   else if (!mongoose.isValidObjectId(payload.contentSpaceId)) issues.push({ field: "contentSpaceId", code: "INVALID_OBJECT_ID", message: "contentSpaceId non valido" });
+  if (hasOwn(payload, "recognitionMedia") && payload.recognitionMedia !== null) issues.push(...validateMedia(payload.recognitionMedia, "recognitionMedia"));
   return issues;
 }
 
@@ -79,40 +118,11 @@ function validateCreateEditionPayload(payload = {}) {
   return issues;
 }
 
-function validMediaUrl(value, { allowLocalUpload = false } = {}) {
-  const url = String(value || "").trim();
-  if (allowLocalUpload && /^\/uploads\/item-media\/[a-z0-9-]+\.(?:jpe?g|png|webp|avif)$/i.test(url)) return true;
-  try {
-    return ["http:", "https:"].includes(new URL(url).protocol);
-  } catch {
-    return false;
-  }
-}
-
 function validateIllustrativeMedia(values) {
   const issues = [];
   if (!Array.isArray(values)) return issues;
   if (values.length > 1) issues.push({ field: "illustrativeMedia", code: "MAX_ITEMS", message: "Puoi associare una sola immagine al contenuto" });
-  values.forEach((media, index) => {
-    const base = `illustrativeMedia[${index}]`;
-    if (!isPlainObject(media)) {
-      issues.push({ field: base, code: "INVALID_TYPE", message: "L'immagine del contenuto non è valida" });
-      return;
-    }
-    if (!validMediaUrl(media.url, { allowLocalUpload: true })) issues.push({ field: `${base}.url`, code: "INVALID_URL", message: "Inserisci un indirizzo valido per l'immagine" });
-    if (!String(media.altText || "").trim()) issues.push({ field: `${base}.altText`, code: "REQUIRED", message: "Descrivi brevemente l'immagine per renderla accessibile" });
-    if (media.originalUrl && !validMediaUrl(media.originalUrl)) issues.push({ field: `${base}.originalUrl`, code: "INVALID_URL", message: "L'indirizzo dell'immagine originale non è valido" });
-    if (media.source !== null && media.source !== undefined && !isPlainObject(media.source)) issues.push({ field: `${base}.source`, code: "INVALID_TYPE", message: "La provenienza dell'immagine non è valida" });
-    if (media.rights !== null && media.rights !== undefined && !isPlainObject(media.rights)) issues.push({ field: `${base}.rights`, code: "INVALID_TYPE", message: "I diritti dell'immagine non sono validi" });
-    if (isPlainObject(media.source)) {
-      if (media.source.pageUrl && !validMediaUrl(media.source.pageUrl)) issues.push({ field: `${base}.source.pageUrl`, code: "INVALID_URL", message: "L'indirizzo della fonte dell'immagine non è valido" });
-      if (media.source.retrievedAt && !Number.isFinite(Date.parse(media.source.retrievedAt))) issues.push({ field: `${base}.source.retrievedAt`, code: "INVALID_DATE", message: "La data di acquisizione dell'immagine non è valida" });
-    }
-    if (isPlainObject(media.rights) && media.rights.licenseUrl && !validMediaUrl(media.rights.licenseUrl)) issues.push({ field: `${base}.rights.licenseUrl`, code: "INVALID_URL", message: "L'indirizzo della licenza dell'immagine non è valido" });
-    for (const dimension of ["width", "height"]) {
-      if (media[dimension] !== null && media[dimension] !== undefined && (!Number.isFinite(Number(media[dimension])) || Number(media[dimension]) <= 0)) issues.push({ field: `${base}.${dimension}`, code: "INVALID_NUMBER", message: "Le dimensioni dell'immagine devono essere numeri positivi" });
-    }
-  });
+  values.forEach((media, index) => issues.push(...validateMedia(media, `illustrativeMedia[${index}]`)));
   return issues;
 }
 
@@ -133,6 +143,7 @@ function validateRevisionPayloadShape(payload = {}, { partial = false } = {}) {
 }
 
 module.exports = {
+  normalizeRecognitionMedia,
   normalizeIllustrativeMedia,
   normalizeRevisionPayload,
   validateCreateItemPayload,
