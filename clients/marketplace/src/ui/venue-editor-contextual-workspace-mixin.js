@@ -126,7 +126,7 @@ export const venueContextualWorkspaceMixin = {
 
   renderSpatialInspector(editable) {
     if (!this.spatialEditor) return "";
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector venue-context-inspector" aria-label="Dettagli elemento fisico">${this.renderSpatialEditor(editable)}</aside></div>`;
+    return this.renderSpatialEditor(editable);
   },
 
   renderMapAndPlaces(editable) {
