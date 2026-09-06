@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const ItemMediaSchema = require("../schemas/itemMedia.schema");
 const { Schema } = mongoose;
 
 const ProvenanceSchema = new Schema({
@@ -11,6 +12,7 @@ const ItemV2Schema = new Schema({
   primarySubjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true, immutable: true, index: true },
   ownerType: { type: String, enum: ["user", "organization"], required: true, index: true },
   ownerId: { type: Schema.Types.ObjectId, required: true, index: true },
+  recognitionMedia: { type: ItemMediaSchema, default: null },
   provenance: { type: ProvenanceSchema, default: () => ({ origin: "human" }) },
   lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
   trashedAt: { type: Date, default: null },
