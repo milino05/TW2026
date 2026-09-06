@@ -41,15 +41,28 @@ rejectFields(
   "Subject global identity",
 );
 
-// Item lineage, Edition and Revision are Editorial Domain resources. Physical
-// occurrence and recognition media stay in Venue/VenueRelease.
-for (const file of ["models/itemV2.model.js", "models/itemEdition.model.js", "models/itemRevisionV2.model.js"]) {
+// Item lineage, Edition and Revision are Editorial Domain resources. The Item may
+// carry one generic recognitionMedia asset, as required by the ArtAround content
+// specification, but it must remain Venue-neutral. Physical/local recognition and
+// placement belong to VenueTarget/VenueRelease. Edition/Revision media remain
+// presentation-specific illustrativeMedia rather than recognition fields.
+rejectFields(
+  "models/itemV2.model.js",
+  ["museumId", "venueId", "venueIds", "venueTargetId", "venueTargetIds", "recognitionImage"],
+  "Item lineage Venue-neutral boundary",
+);
+for (const file of ["models/itemEdition.model.js", "models/itemRevisionV2.model.js"]) {
   rejectFields(
     file,
     ["museumId", "venueId", "venueIds", "venueTargetId", "venueTargetIds", "recognitionMedia", "recognitionImage"],
-    "Item authoring domain",
+    "Item Edition/Revision boundary",
   );
 }
+requirePattern(
+  "models/itemV2.model.js",
+  /recognitionMedia\s*:/,
+  "Item generic recognition media",
+);
 
 // Namespace is reusable semantic/editorial vocabulary and is intrinsically Venue-neutral.
 rejectFields(
