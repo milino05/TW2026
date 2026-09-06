@@ -11,6 +11,8 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
+import "./content-space-item-add-dialog.js";
+import "./item-detail-dialog.js";
 
 const CROSS_SPACE_TYPES = ["visit", "namespace", "semantic_graph", "physical_vocabulary"];
 const RESOURCE_TYPES = [
@@ -75,6 +77,9 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
+    this.addEventListener("library-item-added", this.onLibraryItemAdded);
+    this.addEventListener("library-item-open", this.onLibraryItemOpen);
+    this.addEventListener("library-item-detail-close", this.onLibraryItemDetailClose);
     this.unregisterNavigationBlocker = registerNavigationLossBlocker({
       isBlocking: () => this.spaceDirty,
       confirm: () => openActionDialog({
@@ -92,6 +97,9 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("input", this.onInput);
+    this.removeEventListener("library-item-added", this.onLibraryItemAdded);
+    this.removeEventListener("library-item-open", this.onLibraryItemOpen);
+    this.removeEventListener("library-item-detail-close", this.onLibraryItemDetailClose);
     this.unregisterNavigationBlocker?.();
     this.unregisterNavigationBlocker = null;
   }
@@ -217,6 +225,37 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     if (!(await this.confirmPanelDiscard())) return;
     this.resetSpacePanel();
   }
+
+  openItemAddDialog() {
+    if (!this.currentSpace || this.querySelector("artaround-content-space-item-add-dialog")) return;
+    const dialog = document.createElement("artaround-content-space-item-add-dialog");
+    dialog.setAttribute("content-space-id", id(this.currentSpace));
+    dialog.setAttribute("space-name", this.spaceData?.space?.name || this.currentSpace.name || "Spazio editoriale");
+    dialog.setAttribute("owner-type", this.context.type || "user");
+    dialog.setAttribute("owner-id", id(this.context.id));
+    this.append(dialog);
+  }
+
+  openItemDetail(itemId) {
+    if (!this.currentSpace || !itemId) return;
+    this.querySelector("artaround-item-detail-dialog")?.remove();
+    const dialog = document.createElement("artaround-item-detail-dialog");
+    dialog.setAttribute("content-space-id", id(this.currentSpace));
+    dialog.setAttribute("item-id", id(itemId));
+    this.append(dialog);
+  }
+
+  onLibraryItemAdded = () => {
+    this.spaceData = null;
+    void this.loadEditorialSection();
+  };
+  onLibraryItemOpen = (event) => {
+    const itemId = event.detail?.itemId;
+    if (itemId) this.openItemDetail(itemId);
+  };
+  onLibraryItemDetailClose = () => {
+    if (this.section === "editorial" && this.editorialSection === "content") void this.loadContent();
+  };
 
   navigationUrl({ section = this.section, editorial = this.editorialSection, q = "", resourceType = "", page = 1, contentQ = "", contentPage = 1 } = {}) {
     const query = new URLSearchParams();
@@ -354,12 +393,12 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       return;
     }
     if (target.closest("[data-new-content]") && this.currentSpace) {
-      navigate(`/workspace/item-authoring?contentSpaceId=${encodeURIComponent(id(this.currentSpace))}`);
+      this.openItemAddDialog();
       return;
     }
     const item = target.closest("[data-open-item]");
     if (item) {
-      navigate(`/workspace/item-authoring?itemId=${encodeURIComponent(item.dataset.openItem)}`);
+      this.openItemDetail(item.dataset.openItem);
       return;
     }
     const contentPage = target.closest("button[data-content-page]");
@@ -405,7 +444,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       return;
     }
     const confirmed = await openActionDialog({
-      title: `Eliminare lo spazio “${this.spaceData?.space?.name || this.currentSpace.name || "editoriale"}”?`,
+      title: `Eliminare lo spazio “${this.spaceData?.space?.name || this.currentSpace.name || "editoriale"}?`,
       message: "Lo spazio verrà rimosso. Gli Item non vengono eliminati; l'operazione sarà bloccata se un contenuto posseduto resterebbe senza alcuno spazio editoriale attivo.",
       confirmLabel: "Elimina spazio",
       tone: "danger",
@@ -474,13 +513,13 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   renderContentCard(row) {
     const subject = row.subject || {};
-    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "presentazione" : "presentazioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations"><button type="button" class="button-secondary" data-open-item="${escapeHtml(id(row.itemId))}">${icon("edit", { size: 15 })} Apri contenuto</button></footer></article>`;
+    return `<article class="asset owned content-item-card" data-open-item="${escapeHtml(id(row.itemId))}" role="button" tabindex="0"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Item</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "edizione" : "edizioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations"><span class="button-link">Dettagli ${icon("chevron", { size: 14 })}</span></footer></article>`;
   }
 
   renderContents() {
     const rows = this.contentData?.results || [];
     const pagination = this.contentData?.pagination || { page: this.contentPage, total: 0, totalPages: 0 };
-    return `<section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Inventario editoriale</span><h2>Contenuti dello spazio</h2><p>Lo spazio contiene Item indipendenti dalle singole raccolte. Uno stesso contenuto può essere usato da più raccolte.</p></div><div class="button-row"><span class="count">${Number(pagination.total || 0)}</span><button type="button" data-new-content>${icon("plus", { size: 16 })} Aggiungi contenuto</button></div></div><section class="panel"><form class="inline-form" data-content-search role="search"><label>Cerca per soggetto<input name="q" value="${escapeHtml(this.contentQuery)}" placeholder="Opera, autore, tema…"></label><button type="submit" ${this.contentBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form></section>${this.contentError ? `<p role="alert">${escapeHtml(this.contentError)}</p>` : ""}${this.contentBusy && !this.contentData ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : rows.length ? `<div class="asset-grid">${rows.map((row) => this.renderContentCard(row)).join("")}</div>` : `<div class="empty-state"><h3>${this.contentQuery ? "Nessun contenuto corrispondente" : "Nessun contenuto nello spazio"}</h3><p>${this.contentQuery ? "Prova con un altro soggetto o rimuovi il filtro di ricerca." : "Crea il primo contenuto direttamente nello spazio editoriale corrente."}</p><button type="button" data-new-content>${icon("plus", { size: 15 })} Crea contenuto</button></div>`}<nav class="pagination" aria-label="Pagine dei contenuti"><button type="button" data-content-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.contentBusy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)}${Number(pagination.totalPages || 0) ? ` di ${Number(pagination.totalPages)}` : ""}</span><button type="button" data-content-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.contentBusy ? "disabled" : ""}>Successiva →</button></nav></section>`;
+    return `<section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Inventario editoriale</span><h2>Contenuti dello spazio</h2><p>Lo spazio contiene Item indipendenti dalle singole raccolte. Uno stesso contenuto può essere usato da più raccolte.</p></div><div class="button-row"><span class="count">${Number(pagination.total || 0)}</span><button type="button" data-new-content>${icon("plus", { size: 16 })} Aggiungi contenuto</button></div></div><section class="panel"><form class="inline-form" data-content-search role="search"><label>Cerca per soggetto<input name="q" value="${escapeHtml(this.contentQuery)}" placeholder="Opera, autore, tema…"></label><button type="submit" ${this.contentBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form></section>${this.contentError ? `<p role="alert">${escapeHtml(this.contentError)}</p>` : ""}${this.contentBusy && !this.contentData ? `<div class="asset-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : rows.length ? `<div class="asset-grid">${rows.map((row) => this.renderContentCard(row)).join("")}</div>` : `<div class="empty-state"><h3>${this.contentQuery ? "Nessun contenuto corrispondente" : "Nessun contenuto nello spazio"}</h3><p>${this.contentQuery ? "Prova con un altro soggetto o rimuovi il filtro di ricerca." : "Usa “Aggiungi contenuto” per inserire il primo Item nello spazio editoriale corrente."}</p></div>`}<nav class="pagination" aria-label="Pagine dei contenuti"><button type="button" data-content-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.contentBusy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)}${Number(pagination.totalPages || 0) ? ` di ${Number(pagination.totalPages)}` : ""}</span><button type="button" data-content-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.contentBusy ? "disabled" : ""}>Successiva →</button></nav></section>`;
   }
 
   renderEditorial() {
