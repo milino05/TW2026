@@ -10,6 +10,10 @@ const inventoryCss = read("clients/marketplace/src/styles/venue-inventory-search
 const venueSection = read("clients/marketplace/src/ui/venue-editor-section-mixin.js");
 const studio = read("clients/marketplace/src/ui/editorial-studio-view.js");
 const spatial = read("clients/marketplace/src/ui/venue-editor-contextual-workspace-mixin.js");
+const spatialOverlay = read("clients/marketplace/src/ui/venue-editor-spatial-overlay-mixin.js");
+const targets = read("clients/marketplace/src/ui/venue-editor-targets-mixin.js");
+const semanticGraph = read("clients/marketplace/src/ui/semantic-graph-editor.js");
+const contentManager = read("clients/marketplace/src/ui/editorial-collection-content-manager.js");
 
 test("Venue e Raccolta condividono la stessa shell Context Workspace full-width", () => {
   assert.match(workspaceCss, /\.context-workspace-page,\.venue-editor-page/);
@@ -22,13 +26,30 @@ test("Venue e Raccolta condividono la stessa shell Context Workspace full-width"
   assert.match(studio, /context-workspace-tabs/);
 });
 
-test("canvas e inventario usano inspector sovrapposti senza sacrificare la superficie di lavoro", () => {
-  assert.match(spatial, /context-workspace-inspector-layer/);
-  assert.match(spatial, /context-workspace-inspector venue-context-inspector/);
-  assert.match(workspaceCss, /\.context-workspace-inspector,\.venue-inventory-inspector/);
+test("i task autonomi usano modal e non vengono compressi negli inspector contestuali", () => {
+  assert.doesNotMatch(spatial, /context-workspace-inspector-layer/);
+  assert.match(spatial, /return this\.renderSpatialEditor\(editable\)/);
+  assert.match(spatialOverlay, /venue-modal-backdrop venue-spatial-editor-backdrop/);
+  assert.match(spatialOverlay, /role="dialog" aria-modal="true"/);
+  assert.match(targets, /context-task-modal-layer venue-inventory-modal-layer/);
+  assert.match(targets, /context-task-modal context-task-modal--large/);
+  assert.match(targets, /role="dialog" aria-modal="true"/);
+  assert.match(workspaceCss, /artaround-workspace-view \.context-workspace-inspector-layer/);
+  assert.match(workspaceCss, /artaround-workspace-browser-view \.context-workspace-inspector-layer/);
+  assert.match(workspaceCss, /\.studio-settings-grid>\.context-workspace-inspector-layer/);
+  assert.match(workspaceCss, /backdrop-filter:blur\(10px\)/);
+  assert.doesNotMatch(inventoryCss, /\.venue-inventory-inspector\{position:fixed/);
+});
+
+test("gli inspector restano laterali dove il contesto del workspace deve rimanere visibile", () => {
+  assert.match(workspaceCss, /\.context-workspace-inspector-layer\{position:fixed/);
+  assert.match(workspaceCss, /\.context-workspace-inspector,\.venue-inventory-inspector\{position:absolute/);
+  assert.match(workspaceCss, /\.semantic-inventory-inspector\{width:min\(42rem/);
+  assert.match(semanticGraph, /context-workspace-inspector-layer/);
+  assert.match(semanticGraph, /semantic-relation-inspector/);
+  assert.match(contentManager, /context-workspace-inspector-layer/);
+  assert.match(contentManager, /aria-label="Dettagli contenuto"/);
   assert.match(inventoryCss, /\.venue-inventory-workspace\{display:block/);
-  assert.match(inventoryCss, /\.venue-inventory-detail\.empty\{display:none\}/);
-  assert.match(inventoryCss, /\.venue-inventory-inspector\{position:fixed/);
   assert.doesNotMatch(inventoryCss, /venue-inventory-workspace\{[^}]*grid-template-columns/);
 });
 
