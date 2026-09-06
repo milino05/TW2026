@@ -12,6 +12,8 @@ router.route("/content-spaces")
   .post(controller.create);
 
 router.get("/content-spaces/:contentSpaceId/items", contentSpaceId, controller.listItems);
+router.get("/content-spaces/:contentSpaceId/item-add-context", contentSpaceId, controller.itemAddContext);
+router.get("/content-spaces/:contentSpaceId/items/:itemId/detail", contentSpaceId, itemId, controller.itemDetail);
 router.put("/content-spaces/:contentSpaceId/items/:itemId", contentSpaceId, itemId, controller.addItem);
 router.delete("/content-spaces/:contentSpaceId/items/:itemId", contentSpaceId, itemId, controller.removeItem);
 router.post("/content-spaces/:contentSpaceId/items/:itemId/move", contentSpaceId, itemId, controller.moveItem);
