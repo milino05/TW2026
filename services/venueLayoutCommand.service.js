@@ -9,6 +9,10 @@ const AppError = require("../utils/AppError");
 const { ensureWorkingVenueRelease } = require("./venueRelease.service");
 const { markRevisionEdited } = require("./revisionWorkflow.service");
 const {
+  layoutExhibitSlotIds,
+  retireWorkingRemovedExhibitSlots,
+} = require("./exhibitSlotLifecycle.service");
+const {
   deriveMetersPerPixel,
   distanceMetersForGeometry,
   samePoint,
@@ -319,7 +323,16 @@ async function mutateWorkingLayout({ venueId, actorUserId, mutate }) {
       const vocabulary = await PhysicalVocabularyRevision.findById(layout.authoredAgainstPhysicalVocabularyRevisionId).session(session);
       if (!vocabulary) commandError("Vocabolario fisico pinzato non disponibile", "PHYSICAL_VOCABULARY_REVISION_NOT_FOUND", null, 409);
       const maps = vocabularyMaps(vocabulary);
+      const exhibitSlotIdsBefore = layoutExhibitSlotIds(layout);
       const result = await mutate({ release, layout, vocabulary, maps, session });
+      const exhibitSlotIdsAfter = new Set(layoutExhibitSlotIds(layout));
+      const removedExhibitSlotIds = exhibitSlotIdsBefore.filter((slotId) => !exhibitSlotIdsAfter.has(slotId));
+      await retireWorkingRemovedExhibitSlots({
+        venueId,
+        exhibitSlotIds: removedExhibitSlotIds,
+        actorUserId,
+        session,
+      });
       layout.updatedBy = actorUserId;
       await layout.save({ session });
       await release.save({ session });
