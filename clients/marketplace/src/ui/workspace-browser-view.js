@@ -314,14 +314,12 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
 
-    const librarySection = target.closest("button[data-library-section]");
-    if (librarySection) {
-      navigate(librarySection.dataset.librarySection === "resources" ? "/workspace?section=resources" : "/workspace");
-      return;
-    }
-    const editorialTab = target.closest("button[data-editorial-section]");
-    if (editorialTab) {
-      navigate(this.navigationUrl({ section: "editorial", editorial: editorialTab.dataset.editorialSection }));
+    const libraryTab = target.closest("button[data-library-tab]");
+    if (libraryTab) {
+      const tab = libraryTab.dataset.libraryTab;
+      if (tab === "resources") navigate("/workspace?section=resources");
+      else if (tab === "content") navigate(this.navigationUrl({ section: "editorial", editorial: "content" }));
+      else navigate("/workspace");
       return;
     }
     if (target.closest("[data-change-space]")) { await this.openSpacePanel("choose"); return; }
@@ -429,14 +427,39 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     }
   }
 
+  activeLibraryTab() {
+    if (this.section === "resources") return "resources";
+    return this.editorialSection === "content" ? "content" : "collections";
+  }
+
   renderLibraryTabs() {
-    return `<nav class="button-row" aria-label="Sezioni della Libreria"><button type="button" data-library-section="editorial" class="${this.section === "editorial" ? "" : "button-secondary"}" aria-pressed="${this.section === "editorial"}">Editoriale</button><button type="button" data-library-section="resources" class="${this.section === "resources" ? "" : "button-secondary"}" aria-pressed="${this.section === "resources"}">Tutte le risorse</button></nav>`;
+    const active = this.activeLibraryTab();
+    return `<nav class="context-workspace-tabs library-tabs" aria-label="Sezioni della Libreria"><button type="button" data-library-tab="collections" aria-current="${active === "collections" ? "page" : "false"}">Raccolte</button><button type="button" data-library-tab="content" aria-current="${active === "content" ? "page" : "false"}">Contenuti</button><button type="button" data-library-tab="resources" aria-current="${active === "resources" ? "page" : "false"}">Risorse condivise</button></nav>`;
   }
 
   renderCurrentSpace() {
     if (!this.currentSpace || !this.spaceData) return "";
     const stats = this.spaceData.stats || {};
-    return `<section class="panel library-current-space"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale corrente</span><h2>${escapeHtml(this.spaceData.space.name)}</h2><p>${escapeHtml(this.spaceData.space.description || "Corpus editoriale condiviso da più raccolte.")}</p></div><div class="button-row"><button type="button" class="button-secondary" data-change-space>Cambia</button>${this.canManageSpaces() ? `<button type="button" class="button-secondary" data-space-settings>${icon("settings", { size: 15 })} Impostazioni</button>` : ""}</div></div><div class="stats"><span><strong>${Number(stats.collectionCount || 0)}</strong> raccolte</span><span><strong>${Number(stats.itemCount || 0)}</strong> contenuti</span><span><strong>${Number(stats.subjectCount || 0)}</strong> soggetti censiti</span></div></section>`;
+    return `<section class="panel library-current-space library-scope-panel"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>${escapeHtml(this.spaceData.space.name)}</h2><p>${escapeHtml(this.spaceData.space.description || "Corpus editoriale condiviso da più raccolte.")}</p></div><div class="button-row"><button type="button" class="button-secondary" data-change-space>Cambia</button>${this.canManageSpaces() ? `<button type="button" class="button-secondary" data-space-settings>${icon("settings", { size: 15 })} Impostazioni</button>` : ""}</div></div><div class="stats"><span><strong>${Number(stats.collectionCount || 0)}</strong> raccolte</span><span><strong>${Number(stats.itemCount || 0)}</strong> contenuti</span><span><strong>${Number(stats.subjectCount || 0)}</strong> soggetti censiti</span></div></section>`;
+  }
+
+  renderEditorialScope() {
+    if (this.currentSpace && this.spaceData) return this.renderCurrentSpace();
+    if (!this.spaces.length) {
+      return `<section class="panel library-current-space library-scope-panel"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>Nessuno spazio editoriale</h2><p>Gli spazi organizzano raccolte e contenuti in corpus editoriali distinti.</p></div>${this.canManageSpaces() ? `<button type="button" data-new-space>${icon("plus", { size: 15 })} Crea spazio editoriale</button>` : ""}</div></section>`;
+    }
+    return `<section class="panel library-current-space library-scope-panel"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>Nessuno spazio selezionato</h2><p>Scegli lo spazio in cui vuoi consultare raccolte e contenuti.</p></div><button type="button" class="button-secondary" data-change-space>Scegli spazio</button></div></section>`;
+  }
+
+  renderWorkAreaScope() {
+    const areaName = this.context?.type === "organization"
+      ? (this.context?.name || "Organizzazione")
+      : (this.context?.name || "Area personale");
+    return `<section class="panel library-current-space library-scope-panel library-work-area"><div class="section-heading"><div><span class="eyebrow">Area di lavoro</span><h2>${escapeHtml(areaName)}</h2><p>Risorse disponibili trasversalmente agli spazi editoriali di questa area di lavoro.</p></div></div></section>`;
+  }
+
+  renderLibraryScope() {
+    return this.section === "resources" ? this.renderWorkAreaScope() : this.renderEditorialScope();
   }
 
   renderCollectionCard(collection) {
@@ -462,11 +485,10 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   renderEditorial() {
     if (!this.spaces.length) {
-      return `<section class="empty-state"><span>${icon("workspace", { size: 30 })}</span><h2>Nessuno spazio editoriale</h2><p>Gli spazi organizzano i contenuti condivisi dalle raccolte. Crea il primo spazio per iniziare il lavoro editoriale.</p>${this.canManageSpaces() ? `<button type="button" data-new-space>${icon("plus", { size: 15 })} Crea spazio editoriale</button>` : `<p class="note">Non disponi del permesso necessario per creare spazi editoriali.</p>`}</section>`;
+      return `<section class="empty-state"><h3>Lavoro editoriale non ancora configurato</h3><p>Crea uno spazio editoriale dal pannello qui sopra per iniziare a organizzare raccolte e contenuti.</p></section>`;
     }
-    if (!this.currentSpace || !this.spaceData) return `<section class="empty-state"><p>Seleziona uno spazio editoriale per continuare.</p><button type="button" data-change-space>Scegli spazio</button></section>`;
-    const section = this.editorialSection === "content" ? this.renderContents() : this.renderCollections();
-    return `${this.renderCurrentSpace()}<nav class="button-row" aria-label="Sezioni editoriali"><button type="button" data-editorial-section="collections" class="${this.editorialSection === "collections" ? "" : "button-secondary"}" aria-pressed="${this.editorialSection === "collections"}">Raccolte</button><button type="button" data-editorial-section="content" class="${this.editorialSection === "content" ? "" : "button-secondary"}" aria-pressed="${this.editorialSection === "content"}">Contenuti</button></nav>${section}`;
+    if (!this.currentSpace || !this.spaceData) return `<section class="empty-state"><p>Seleziona uno spazio editoriale dal pannello qui sopra per continuare.</p></section>`;
+    return this.editorialSection === "content" ? this.renderContents() : this.renderCollections();
   }
 
   renderResourceCard(asset) {
@@ -486,7 +508,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     const page = Number(this.resources?.page || this.resourcePage);
     const pageSize = Number(this.resources?.pageSize || 12);
     const options = RESOURCE_TYPES.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === this.resourceType ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
-    return `<section class="panel"><form data-resource-search class="inline-form" role="search"><label>Cerca<input name="q" value="${escapeHtml(this.resourceQuery)}" placeholder="Titolo o descrizione"></label><label>Tipo di risorsa<select name="resourceType">${options}</select></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Mostra i risultati</button></form></section><section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Risorse cross-space</span><h2>Tutte le risorse</h2><p>Visite, Regole editoriali, grafi semantici e vocabolari fisici appartengono all'area di lavoro, non allo spazio editoriale selezionato.</p></div><span class="count">${total}</span></div>${results.length ? `<div class="asset-grid">${results.map((asset) => this.renderResourceCard(asset)).join("")}</div>` : `<div class="empty-state"><h3>Nessuna risorsa trovata</h3><p>${this.resourceQuery || this.resourceType ? "Prova a modificare ricerca o tipo di risorsa." : "Le risorse cross-space che creerai compariranno qui."}</p><a class="button-link" data-route href="/create">${icon("plus", { size: 15 })} Crea una risorsa</a></div>`}<nav class="pagination" aria-label="Pagine delle risorse"><button type="button" data-resource-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-resource-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section>`;
+    return `<section class="panel"><form data-resource-search class="inline-form" role="search"><label>Cerca<input name="q" value="${escapeHtml(this.resourceQuery)}" placeholder="Titolo o descrizione"></label><label>Tipo di risorsa<select name="resourceType">${options}</select></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Mostra i risultati</button></form></section><section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Risorse condivise</span><h2>Risorse dell'area di lavoro</h2><p>Visite, Regole editoriali, grafi semantici e vocabolari fisici sono riutilizzabili trasversalmente agli spazi editoriali dell'area di lavoro.</p></div><span class="count">${total}</span></div>${results.length ? `<div class="asset-grid">${results.map((asset) => this.renderResourceCard(asset)).join("")}</div>` : `<div class="empty-state"><h3>Nessuna risorsa trovata</h3><p>${this.resourceQuery || this.resourceType ? "Prova a modificare ricerca o tipo di risorsa." : "Le risorse condivise che creerai compariranno qui."}</p><a class="button-link" data-route href="/create">${icon("plus", { size: 15 })} Crea una risorsa</a></div>`}<nav class="pagination" aria-label="Pagine delle risorse"><button type="button" data-resource-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-resource-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section>`;
   }
 
   renderSpacePanel() {
@@ -494,7 +516,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     if (this.spacePanel === "choose") {
       const query = this.spaceSearch.trim().toLowerCase();
       const filtered = this.spaces.filter((space) => !query || `${space.name || ""} ${space.description || ""}`.toLowerCase().includes(query));
-      return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="Scegli spazio editoriale"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>Scegli dove lavorare</h2><p>La scelta modifica solo Raccolte e Contenuti della sezione Editoriale.</p></div><button type="button" class="button-secondary small" data-close-space-panel aria-label="Chiudi">×</button></div><label>Cerca spazio<input data-space-search value="${escapeHtml(this.spaceSearch)}" placeholder="Nome o descrizione"></label><div class="asset-grid">${filtered.length ? filtered.map((space) => { const stats = space.stats || {}; const selected = id(space) === id(this.currentSpace); return `<button type="button" class="semantic-inventory-card" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small></span><span class="semantic-inventory-meta">${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti${selected ? " · corrente" : ""}</span></button>`; }).join("") : `<div class="empty-state compact"><p>Nessuno spazio corrisponde alla ricerca.</p></div>`}</div>${this.canManageSpaces() ? `<div class="semantic-inventory-footer"><p>Ti serve un corpus editoriale separato?</p><button type="button" class="button-secondary" data-new-space>${icon("plus", { size: 15 })} Nuovo spazio editoriale</button></div>` : ""}</aside></div>`;
+      return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="Scegli spazio editoriale"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>Scegli dove lavorare</h2><p>La scelta modifica Raccolte e Contenuti della Libreria.</p></div><button type="button" class="button-secondary small" data-close-space-panel aria-label="Chiudi">×</button></div><label>Cerca spazio<input data-space-search value="${escapeHtml(this.spaceSearch)}" placeholder="Nome o descrizione"></label><div class="asset-grid">${filtered.length ? filtered.map((space) => { const stats = space.stats || {}; const selected = id(space) === id(this.currentSpace); return `<button type="button" class="semantic-inventory-card" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small></span><span class="semantic-inventory-meta">${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti${selected ? " · corrente" : ""}</span></button>`; }).join("") : `<div class="empty-state compact"><p>Nessuno spazio corrisponde alla ricerca.</p></div>`}</div>${this.canManageSpaces() ? `<div class="semantic-inventory-footer"><p>Ti serve un corpus editoriale separato?</p><button type="button" class="button-secondary" data-new-space>${icon("plus", { size: 15 })} Nuovo spazio editoriale</button></div>` : ""}</aside></div>`;
     }
 
     const creating = this.spacePanel === "create";
@@ -524,7 +546,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       return;
     }
     const content = this.section === "resources" ? this.renderResources() : this.renderEditorial();
-    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.contentBusy || this.panelBusy}"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>${this.section === "resources" ? "Tutte le risorse" : "Lavoro editoriale"}</h1><p>${this.section === "resources" ? "Consulta le risorse dell'area di lavoro che non dipendono da uno specifico spazio editoriale." : "Lavora su raccolte e contenuti nel corpus editoriale selezionato."}</p></div><a class="button-link" data-route href="/create">${icon("plus")} Crea</a></header>${this.renderLibraryTabs()}${this.renderRemovedMessage()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${content}</main>${this.renderSpacePanel()}`;
+    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.contentBusy || this.panelBusy}"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>Libreria</h1><p>Organizza raccolte e contenuti nello spazio editoriale corrente oppure consulta le risorse condivise dell'area di lavoro.</p></div></header>${this.renderLibraryScope()}${this.renderLibraryTabs()}${this.renderRemovedMessage()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${content}</main>${this.renderSpacePanel()}`;
   }
 }
 
