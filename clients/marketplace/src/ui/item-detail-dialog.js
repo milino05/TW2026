@@ -56,9 +56,10 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   collection(collectionId = this.focusedCollectionId) {
     return (this.data?.collections || []).find((entry) => id(entry.id) === id(collectionId)) || null;
   }
-  authoringHref(namespaceId = null) {
+  authoringHref(namespaceId = null, { newEdition = false } = {}) {
     const query = new URLSearchParams({ itemId: this.itemId, contentSpaceId: this.contentSpaceId });
     if (namespaceId) query.set("namespaceId", namespaceId);
+    if (newEdition) query.set("newEdition", "1");
     return `/workspace/item-authoring?${query.toString()}`;
   }
   notifyChanged(detail = {}) {
@@ -77,7 +78,8 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (focus) { this.tab = "collections"; this.view = "collection-detail"; this.focusedCollectionId = focus.dataset.focusCollection; this.render(); return; }
     const openEdition = target.closest("[data-open-item-edition]");
     if (openEdition) { navigate(this.authoringHref(openEdition.dataset.openItemEdition)); return; }
-    if (target.closest("[data-create-item-edition]")) { navigate(this.authoringHref(target.closest("[data-create-item-edition]").dataset.createItemEdition || null)); return; }
+    const createEdition = target.closest("[data-create-item-edition]");
+    if (createEdition) { navigate(this.authoringHref(createEdition.dataset.createItemEdition || null, { newEdition: true })); return; }
     const openCollection = target.closest("[data-open-collection]");
     if (openCollection) { navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(openCollection.dataset.openCollection)}&section=content`); return; }
     const openGraph = target.closest("[data-open-collection-graph]");
