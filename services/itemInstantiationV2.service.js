@@ -14,7 +14,7 @@ const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthoriza
 const { assertCanForkItemEdition } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
-const { validateCreateItemPayload } = require("./validation/itemV2.validation");
+const { normalizeRecognitionMedia, validateCreateItemPayload } = require("./validation/itemV2.validation");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
@@ -93,6 +93,7 @@ async function createItem({ payload, actorUserId }) {
       primarySubjectId: subject._id,
       ownerType: payload.ownerType,
       ownerId: payload.ownerId,
+      recognitionMedia: payload.recognitionMedia ? normalizeRecognitionMedia(payload.recognitionMedia) : null,
       provenance: payload.provenance || { origin: "human" },
       createdBy: actorUserId,
     }], { session });
@@ -185,6 +186,7 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, con
       primarySubjectId: sourceItem.primarySubjectId,
       ownerType,
       ownerId,
+      recognitionMedia: sourceItem.recognitionMedia ? sourceItem.recognitionMedia.toObject() : null,
       provenance: { origin: "forked", sourceItemId: sourceItem._id },
       createdBy: actorUserId,
     }], { session });
