@@ -123,16 +123,20 @@ test("ContentSpace quick add preserves Item identity, recognition media, collect
   });
 });
 
-test("ContentSpace quick add exposes only published forkable marketplace content and keeps owned Item reuse first", { skip: !mongoUri }, async () => {
+test("ContentSpace quick add exposes only actionable marketplace forks and preserves owned Item reuse priority", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
     const ContentSpace = require("../models/contentSpace.model");
     const Namespace = require("../models/namespace.model");
+    const NamespaceRevision = require("../models/namespaceRevision.model");
     const ItemEdition = require("../models/itemEdition.model");
+    const ItemRevisionV2 = require("../models/itemRevisionV2.model");
+    const Entitlement = require("../models/entitlement.model");
     const MarketplaceListing = require("../models/marketplaceListing.model");
     const MarketplaceOffer = require("../models/marketplaceOffer.model");
-    const { createItem } = require("../services/itemInstantiationV2.service");
+    const { createItem, forkItem } = require("../services/itemInstantiationV2.service");
+    const { acquireOffer } = require("../services/marketplaceV2.service");
     const { getItemAddContext } = require("../services/contentSpaceItemAddContext.service");
 
     const seller = await User.create({ username: "quick-add-seller", passwordHash: "test-hash" });
@@ -169,7 +173,36 @@ test("ContentSpace quick add exposes only published forkable marketplace content
       ownerId: seller._id,
       createdBy: seller._id,
     });
+    const namespaceRevision = await NamespaceRevision.create({
+      namespaceId: namespace._id,
+      version: 1,
+      durationTypes: [],
+      languageLevels: [],
+      presentationAspects: [],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+      publication: { publishedAt: new Date(), publishedBy: seller._id },
+      createdBy: seller._id,
+      updatedBy: seller._id,
+    });
+    namespace.publishedRevisionId = namespaceRevision._id;
+    await namespace.save();
+
     const sellerEdition = await ItemEdition.create({ itemId: sellerItem._id, namespaceId: namespace._id, createdBy: seller._id });
+    const sellerRevision = await ItemRevisionV2.create({
+      itemEditionId: sellerEdition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      label: "Gioconda completa",
+      presentationVariants: [],
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
+      publication: { publishedAt: new Date(), publishedBy: seller._id },
+      createdBy: seller._id,
+      updatedBy: seller._id,
+    });
+    sellerEdition.publishedRevisionId = sellerRevision._id;
+    await sellerEdition.save();
 
     const privateContext = await getItemAddContext({
       contentSpaceId: buyerSpace._id,
@@ -215,6 +248,45 @@ test("ContentSpace quick add exposes only published forkable marketplace content
     listing.publishedAt = new Date();
     await listing.save();
 
+    const missingNamespaceAccessContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.deepEqual(missingNamespaceAccessContext.marketplaceOptions, []);
+
+    const existingNamespaceEntitlement = await Entitlement.create({
+      beneficiaryType: "user",
+      beneficiaryId: buyer._id,
+      resourceType: "namespace",
+      resourceId: namespace._id,
+      capability: "namespace.author",
+      versionPolicy: "follow_current",
+      status: "active",
+    });
+    const existingNamespaceAccessContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.equal(existingNamespaceAccessContext.marketplaceOptions.length, 1);
+    await Entitlement.deleteOne({ _id: existingNamespaceEntitlement._id });
+
+    const noAccessAgainContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.deepEqual(noAccessAgainContext.marketplaceOptions, []);
+
+    offer.grants.push({
+      resourceType: "namespace",
+      resourceId: namespace._id,
+      capability: "namespace.author",
+      versionPolicy: "pin_at_acquisition",
+    });
+    await offer.save();
+
     const marketplaceContext = await getItemAddContext({
       contentSpaceId: buyerSpace._id,
       subjectId: subject._id,
@@ -228,22 +300,31 @@ test("ContentSpace quick add exposes only published forkable marketplace content
     assert.equal(String(marketplaceContext.marketplaceOptions[0].offerId), String(offer._id));
     assert.equal(marketplaceContext.marketplaceOptions[0].pricing.type, "free");
 
-    const buyerItem = await createItem({
-      payload: {
-        primarySubjectId: subject._id,
-        ownerType: "user",
-        ownerId: buyer._id,
-        contentSpaceId: buyerSpace._id,
-      },
+    await acquireOffer({
+      offerId: offer._id,
+      actorUserId: buyer._id,
+      beneficiaryType: "user",
+      beneficiaryId: buyer._id,
+    });
+    const forked = await forkItem({
+      sourceItemId: sellerItem._id,
+      sourceEditionId: sellerEdition._id,
+      ownerType: "user",
+      ownerId: buyer._id,
+      contentSpaceId: buyerSpace._id,
       actorUserId: buyer._id,
     });
+    assert.equal(String(forked.item.ownerId), String(buyer._id));
+    assert.equal(String(forked.edition.namespaceId), String(namespace._id));
+
     const ownedContext = await getItemAddContext({
       contentSpaceId: buyerSpace._id,
       subjectId: subject._id,
       actorUserId: buyer._id,
     });
     assert.equal(ownedContext.ownedItems.length, 1);
-    assert.equal(String(ownedContext.ownedItems[0].id), String(buyerItem._id));
+    assert.equal(String(ownedContext.ownedItems[0].id), String(forked.item._id));
+    assert.equal(ownedContext.ownedItems[0].alreadyInCurrentSpace, true);
     assert.deepEqual(ownedContext.marketplaceOptions, []);
   });
 });
