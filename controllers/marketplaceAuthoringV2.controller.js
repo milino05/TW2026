@@ -3,8 +3,8 @@ const {
   listEditorialSpaceSummaries,
   getEditorialSpaceProjection,
   getEditorialStudioProjection,
-  listEditorialStudioCandidates,
 } = require("../services/editorialStudioV2.service");
+const { listEditorialCollectionAvailableItems } = require("../services/editorialCollectionAvailableItems.service");
 const {
   searchExternalEditorialCandidates,
   importExternalEditorialCandidate,
@@ -74,7 +74,7 @@ async function editorialStudio(req, res, next) {
 
 async function editorialStudioCandidates(req, res, next) {
   try {
-    res.status(200).json(await listEditorialStudioCandidates({
+    res.status(200).json(await listEditorialCollectionAvailableItems({
       editorialContextId: req.params.editorialContextId,
       actorUserId: req.user._id,
       query: req.query?.q || "",
