@@ -4,10 +4,7 @@ const EditorialContextRevision = require("../models/editorialContextRevision.mod
 const EditorialRelease = require("../models/editorialRelease.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
-const ItemEdition = require("../models/itemEdition.model");
-const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
-const Subject = require("../models/subject.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
@@ -17,12 +14,10 @@ const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
-const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { resolveOrganizationAuthority } = require("./organizationAuthorization.service");
 const { checkEditorialContextReadiness } = require("./editorialContextReview.service");
 
 function id(value) { return String(value?._id || value || ""); }
-function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function hasPermission(contentSpace, authority, code) {
   if (contentSpace.ownerType === "user") return true;
   return (authority?.effectivePermissions || []).includes(code);
@@ -309,116 +304,8 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
   };
 }
 
-async function listEditorialStudioCandidates({ editorialContextId, actorUserId, query = "", page = 1, limit = 30 }) {
-  const { context, contentSpace } = await loadContextAndSpace({ editorialContextId, actorUserId });
-  const normalizedPage = Math.max(1, Number(page) || 1);
-  const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
-  const normalizedQuery = String(query || "").trim();
-
-  let candidateItemIds = await ContentSpaceItemMembership.distinct("itemId", { contentSpaceId: contentSpace._id });
-  if (normalizedQuery && candidateItemIds.length) {
-    const regex = new RegExp(escapeRegex(normalizedQuery), "i");
-    const [subjects, matchingRevisions] = await Promise.all([
-      Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(500).lean(),
-      ItemRevisionV2.find({ label: regex }).select("itemEditionId").limit(500).lean(),
-    ]);
-    const revisionEditions = matchingRevisions.length
-      ? await ItemEdition.find({ _id: { $in: matchingRevisions.map((entry) => entry.itemEditionId) } }).select("itemId").lean()
-      : [];
-    const subjectItems = subjects.length
-      ? await ItemV2.find({ _id: { $in: candidateItemIds }, primarySubjectId: { $in: subjects.map((entry) => entry._id) }, lifecycleStatus: "active" }).select("_id").lean()
-      : [];
-    const matchingIds = new Set([...revisionEditions.map((entry) => id(entry.itemId)), ...subjectItems.map((entry) => id(entry._id))]);
-    candidateItemIds = candidateItemIds.filter((itemId) => matchingIds.has(id(itemId)));
-  }
-
-  // A membership can be imported from an acquired resource, so do not assume
-  // that every row in a ContentSpace is still usable by its current principal.
-  // Filter before pagination to keep totals accurate and avoid presenting an
-  // action that the authoritative entry command would later reject.
-  const candidateItems = candidateItemIds.length
-    ? await ItemV2.find({ _id: { $in: candidateItemIds }, lifecycleStatus: "active" }).select("_id ownerType ownerId").lean()
-    : [];
-  const candidateEditions = candidateItems.length
-    ? await ItemEdition.find({ itemId: { $in: candidateItems.map((item) => item._id) }, namespaceId: context.namespaceId }).select("_id itemId").lean()
-    : [];
-  const usableEditionIds = new Set();
-  await Promise.all(candidateEditions.map(async (edition) => {
-    try {
-      await assertCanUseItemEditionForEditorialRelease({
-        itemEditionId: edition._id,
-        actorUserId,
-        principalType: contentSpace.ownerType,
-        principalId: contentSpace.ownerId,
-      });
-      usableEditionIds.add(id(edition._id));
-    } catch (error) {
-      if (![403, 404, 409].includes(error?.status)) throw error;
-    }
-  }));
-  const itemIdsWithUsableEdition = new Set(candidateEditions
-    .filter((edition) => usableEditionIds.has(id(edition._id)))
-    .map((edition) => id(edition.itemId)));
-  const authorizedItemIds = new Set(candidateItems
-    .filter((item) => (
-      (item.ownerType === contentSpace.ownerType && id(item.ownerId) === id(contentSpace.ownerId))
-      || itemIdsWithUsableEdition.has(id(item._id))
-    ))
-    .map((item) => id(item._id)));
-  candidateItemIds = candidateItemIds.filter((itemId) => authorizedItemIds.has(id(itemId)));
-
-  const membershipQuery = { contentSpaceId: contentSpace._id, itemId: { $in: candidateItemIds } };
-  const [total, memberships] = await Promise.all([
-    ContentSpaceItemMembership.countDocuments(membershipQuery),
-    ContentSpaceItemMembership.find(membershipQuery)
-      .sort({ createdAt: 1, _id: 1 })
-      .skip((normalizedPage - 1) * normalizedLimit)
-      .limit(normalizedLimit)
-      .lean(),
-  ]);
-  const itemIds = memberships.map((entry) => entry.itemId);
-  const [items, editions, existingEntries] = await Promise.all([
-    ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(),
-    ItemEdition.find({ itemId: { $in: itemIds }, namespaceId: context.namespaceId }).lean(),
-    CollectionItemMembership.find({ editorialContextId: context._id, itemId: { $in: itemIds } }).select("itemId").lean(),
-  ]);
-  const itemById = new Map(items.map((item) => [id(item), item]));
-  const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
-  const existingItemIds = new Set(existingEntries.map((entry) => id(entry.itemId)));
-  const revisionIds = editions.map((edition) => edition.workingRevisionId || edition.publishedRevisionId).filter(Boolean);
-  const subjectIds = items.map((item) => item.primarySubjectId).filter(Boolean);
-  const [revisions, subjects] = await Promise.all([
-    revisionIds.length ? ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [],
-    subjectIds.length ? Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean() : [],
-  ]);
-  const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
-  const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
-
-  return {
-    results: memberships.map((membership) => {
-      const item = itemById.get(id(membership.itemId));
-      if (!item) return null;
-      const edition = editionByItemId.get(id(membership.itemId)) || null;
-      const revision = edition ? revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null : null;
-      const subject = subjectById.get(id(item.primarySubjectId)) || null;
-      return {
-        itemId: item._id,
-        itemEditionId: edition?._id || null,
-        compatibleEdition: Boolean(edition),
-        releaseUsable: Boolean(edition && usableEditionIds.has(id(edition._id))),
-        inCollection: existingItemIds.has(id(item._id)),
-        subject: subject ? { id: subject._id, label: subject.preferredLabel, description: subject.description || "" } : null,
-        revision: revision ? { id: revision._id, label: revision.label, status: revision.status, version: revision.version } : null,
-      };
-    }).filter(Boolean),
-    pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
-    query: normalizedQuery,
-  };
-}
-
 module.exports = {
   listEditorialSpaceSummaries,
   getEditorialSpaceProjection,
   getEditorialStudioProjection,
-  listEditorialStudioCandidates,
 };
