@@ -202,8 +202,8 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
         subjectClasses: this.collectionData?.namespace?.revision?.subjectClasses || [],
         editable: this.collectionData?.permissions?.canEditGraph === true,
         locked: false,
+        initialFocusSubjectId: this.focusSubjectId,
       });
-      if (this.focusSubjectId) void editor.setFocus(this.focusSubjectId);
       return;
     }
     editor.configure({
