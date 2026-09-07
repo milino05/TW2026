@@ -35,9 +35,12 @@ test("il quick add riusa il picker Subject e distingue Item esistenti da un nuov
 test("un Item di altro proprietario passa dal Marketplace: acquisizione e fork precedono l'aggiunta allo Space", () => {
   assert.match(addContextService, /marketplaceOptions/);
   assert.match(addContextService, /canAcquireAndForkMarketplaceItem/);
+  assert.match(addContextService, /actorUserId/);
   assert.match(marketplaceForkOptions, /status:\s*"published"/);
   assert.match(marketplaceForkOptions, /status:\s*"active"/);
   assert.match(marketplaceForkOptions, /capability:\s*"content\.fork"/);
+  assert.match(marketplaceForkOptions, /namespace\.author/);
+  assert.match(marketplaceForkOptions, /resolveCapabilitySource/);
   assert.match(quickAdd, /marketplaceRepository\.acquire\(/);
   assert.match(quickAdd, /marketplaceRepository\.executeWorkspaceOperation\(/);
   assert.match(quickAdd, /operationCode:\s*"content\.fork"/);
