@@ -42,7 +42,13 @@ test("ContentSpace quick add preserves Item identity, recognition media, collect
     const subject = await Subject.create({
       preferredLabel: "Leonardo da Vinci",
       description: "Artista e inventore",
-      externalIdentities: [{ scheme: "wikidata", id: "Q762", role: "canonical", verification: { status: "verified" } }],
+      externalIdentities: [{
+        scheme: "wikidata",
+        id: "Q762",
+        role: "canonical",
+        confirmation: { source: "seed", confirmedAt: new Date() },
+        verification: { status: "verified" },
+      }],
       createdBy: user._id,
     });
     const space = await ContentSpace.create({
@@ -176,9 +182,10 @@ test("ContentSpace quick add exposes only actionable marketplace forks and prese
     const namespaceRevision = await NamespaceRevision.create({
       namespaceId: namespace._id,
       version: 1,
-      durationTypes: [],
-      languageLevels: [],
-      presentationAspects: [],
+      durationTypes: [{ definitionId: "duration-short", key: "short", label: "Breve", targetSeconds: 60 }],
+      languageLevels: [{ definitionId: "language-simple", key: "simple", label: "Semplice" }],
+      presentationAspects: [{ definitionId: "aspect-story", key: "story", label: "Racconto" }],
+      selectionSignals: [{ definitionId: "signal-core", key: "core", label: "Principale" }],
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },
@@ -189,12 +196,30 @@ test("ContentSpace quick add exposes only actionable marketplace forks and prese
     await namespace.save();
 
     const sellerEdition = await ItemEdition.create({ itemId: sellerItem._id, namespaceId: namespace._id, createdBy: seller._id });
+    const variantId = oid();
+    const representationId = oid();
     const sellerRevision = await ItemRevisionV2.create({
       itemEditionId: sellerEdition._id,
       version: 1,
       authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       label: "Gioconda completa",
-      presentationVariants: [],
+      authorCredits: ["Autore demo"],
+      metadata: { license: "CC BY" },
+      selectionSignals: [{ definitionId: "signal-core", weight: 1 }],
+      presentationVariants: [{
+        _id: variantId,
+        key: "default",
+        label: "Default",
+        presentationAspects: [{ definitionId: "aspect-story", weight: 1 }],
+        representations: [{
+          _id: representationId,
+          durationTypeDefinitionId: "duration-short",
+          languageLevelDefinitionId: "language-simple",
+          locale: "it-IT",
+          text: "Testo di prova",
+        }],
+      }],
+      defaultPresentation: { variantId, representationId },
       status: "published",
       integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: seller._id },
       publication: { publishedAt: new Date(), publishedBy: seller._id },
