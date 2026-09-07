@@ -7,6 +7,7 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const paths = {
   createView: "clients/marketplace/src/ui/editorial-collection-create-view.js",
+  graphDialog: "clients/marketplace/src/ui/collection-graph-dialog.js",
   repository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
   route: "routes/marketplaceV2.routes.js",
   controller: "controllers/marketplaceAuthoringV2.controller.js",
@@ -21,17 +22,32 @@ test("semantic graph reuse authoring files pass the syntax gate", () => {
   }
 });
 
-test("collection creation makes graph sharing explicit and keeps a new graph as the default", () => {
-  assert.match(source.createView, /semanticSource = "new"/);
+test("collection creation makes new, shared and independent graph choices explicit without the legacy radio picker", () => {
   assert.match(source.createView, /Crea un nuovo grafo/);
-  assert.match(source.createView, /Usa un grafo compatibile/);
+  assert.match(source.createView, /Usa un grafo esistente/);
+  assert.match(source.createView, /data-collection-graph-action="new"/);
+  assert.match(source.createView, /data-collection-graph-action="existing"/);
+  assert.match(source.createView, /graphSelection/);
   assert.match(source.createView, /semanticGraphId/);
-  assert.match(source.createView, /Le future modifiche alla working revision saranno condivise/);
-  assert.match(source.createView, /review e release già congelate resteranno immutabili/);
-  assert.match(source.createView, /collectionUsageCount/);
+  assert.doesNotMatch(source.createView, /semanticSource|reuseMode|type="radio"/);
+
+  assert.match(source.graphDialog, /graphMode: "new"/);
+  assert.match(source.graphDialog, /graphMode: "shared"/);
+  assert.match(source.graphDialog, /graphMode: "fork"/);
+  assert.match(source.graphDialog, /Crea una copia indipendente/);
+  assert.match(source.graphDialog, /data-use-shared-graph/);
+  assert.match(source.graphDialog, /data-start-graph-fork/);
+  assert.match(source.graphDialog, /collectionUsageCount/);
+  assert.match(source.graphDialog, /usedInCurrentSpace/);
 });
 
 test("reusable graph choices are backend-authoritative, scoped and paginated", () => {
+  assert.match(source.graphDialog, /editorialRepository\.reusableSemanticGraphs/);
+  assert.match(source.graphDialog, /ownerType: this\.config\.ownerType/);
+  assert.match(source.graphDialog, /ownerId: this\.config\.ownerId/);
+  assert.match(source.graphDialog, /namespaceId: this\.config\.namespaceId/);
+  assert.match(source.graphDialog, /contentSpaceId: this\.config\.contentSpaceId/);
+  assert.match(source.graphDialog, /page: this\.page/);
   assert.match(source.repository, /reusableSemanticGraphs/);
   assert.match(source.repository, /\/v2\/marketplace\/semantic-graphs/);
   assert.match(source.route, /\/v2\/marketplace\/semantic-graphs/);

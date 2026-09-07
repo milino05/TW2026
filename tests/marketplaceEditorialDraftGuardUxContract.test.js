@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const paths = {
   workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
   collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
+  graphDialog: "clients/marketplace/src/ui/collection-graph-dialog.js",
   guard: "clients/marketplace/src/ui/form-navigation-loss-guard.js",
 };
 const source = Object.fromEntries(Object.entries(paths).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
@@ -19,14 +20,23 @@ test("le superfici editoriali correnti con draft e il guard superano il syntax c
   }
 });
 
-test("Nuova raccolta conserva i campi testuali attraverso i rerender di Namespace e grafo", () => {
-  assert.match(source.collection, /draft = \{[\s\S]*displayName: ""[\s\S]*graphDisplayName: ""[\s\S]*\}/);
+test("Nuova Raccolta conserva il draft testuale e la configurazione del grafo attraverso i rerender", () => {
+  assert.match(source.collection, /draft = \{[\s\S]*displayName: ""[\s\S]*shortDescription: ""[\s\S]*description: ""[\s\S]*\}/);
+  assert.match(source.collection, /graphSelection = null/);
   assert.match(source.collection, /this\.addEventListener\("input", this\.onInput\)/);
   assert.match(source.collection, /captureDraft\(target\.form\)/);
+  assert.match(source.collection, /this\.captureDraft\(\);[\s\S]*openGraphDialog/);
+  assert.match(source.collection, /currentSelection: this\.graphSelection/);
+  assert.match(source.collection, /this\.graphSelection = event\.detail\?\.selection \|\| null/);
   assert.match(source.collection, /value="\$\{escapeHtml\(this\.draft\.displayName\)\}"/);
   assert.match(source.collection, />\$\{escapeHtml\(this\.draft\.description\)\}<\/textarea>/);
   assert.match(source.collection, /hasUnsavedChanges\(\) \{ return this\.dirty; \}/);
   assert.match(source.collection, /this\.dirty = false;\s*navigate\(`/);
+
+  assert.match(source.graphDialog, /newDraft = \{ name: "", description: "" \}/);
+  assert.match(source.graphDialog, /forkDraft = \{ name: "", description: "" \}/);
+  assert.match(source.graphDialog, /current\?\.graphMode === "new"/);
+  assert.match(source.graphDialog, /current\?\.graphMode === "fork"/);
 });
 
 test("creazione Spazio integrata nella Libreria conserva e protegge il draft", () => {

@@ -5,6 +5,9 @@ const PUBLIC_CODE_INDEX_NAME = "publicCode_1";
 const SESSION_PLAN_COLLECTION = "session_plan_revisions_v2";
 const SESSION_PLAN_VERSION_INDEX = "planOwnerType_1_planOwnerId_1_version_1";
 const SESSION_PLAN_STATUS_INDEX = "planOwnerType_1_planOwnerId_1_status_1";
+const SEMANTIC_GRAPH_REVISION_COLLECTION = "semantic_graph_revisions_v2";
+const SEMANTIC_GRAPH_VERSION_INDEX = "semanticGraphId_1_version_1";
+const SEMANTIC_GRAPH_CREATED_AT_INDEX = "semanticGraphId_1_createdAt_-1";
 
 function isPublicCodeIndex(index) {
   const keys = Object.keys(index?.key || {});
@@ -119,10 +122,74 @@ async function ensureSessionPlanOwnerShape() {
   };
 }
 
+function usesLegacyEditorialContextIndex(index) {
+  return Object.prototype.hasOwnProperty.call(index?.key || {}, "editorialContextId");
+}
+
+function editorialInventoryMigrationRequired(legacyDocuments) {
+  const error = new Error(
+    `Schema editoriale legacy rilevato (${legacyDocuments} revisioni del grafo da migrare). `
+    + "Esegui npm run migrate:editorial-inventory; con Docker esegui docker compose exec backend npm run migrate:editorial-inventory dalla root di TW2026, quindi riavvia il backend.",
+  );
+  error.code = "EDITORIAL_INVENTORY_MIGRATION_REQUIRED";
+  error.legacyDocuments = legacyDocuments;
+  return error;
+}
+
+async function ensureSemanticGraphRevisionIndexes() {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error("Connessione MongoDB non inizializzata");
+  const exists = await db.listCollections({ name: SEMANTIC_GRAPH_REVISION_COLLECTION }, { nameOnly: true }).hasNext();
+  if (!exists) return { changed: false, reason: "collection_missing", legacyDocuments: 0 };
+
+  const collection = db.collection(SEMANTIC_GRAPH_REVISION_COLLECTION);
+  const legacyDocuments = await collection.countDocuments({
+    semanticGraphId: { $exists: false },
+    editorialContextId: { $exists: true },
+  });
+  if (legacyDocuments) throw editorialInventoryMigrationRequired(legacyDocuments);
+
+  let indexes = await collection.indexes();
+  const legacyIndexes = indexes.filter(usesLegacyEditorialContextIndex);
+  for (const index of legacyIndexes) await collection.dropIndex(index.name);
+
+  const versionKey = { semanticGraphId: 1, version: 1 };
+  const createdAtKey = { semanticGraphId: 1, createdAt: -1 };
+  let createdVersionIndex = false;
+  let createdCreatedAtIndex = false;
+
+  indexes = await collection.indexes();
+  if (!hasIndex(indexes, versionKey, { unique: true })) {
+    for (const index of indexes.filter((entry) => (
+      entry.name === SEMANTIC_GRAPH_VERSION_INDEX || hasIndex([entry], versionKey, { unique: false })
+    ))) await collection.dropIndex(index.name);
+    await collection.createIndex(versionKey, { unique: true, name: SEMANTIC_GRAPH_VERSION_INDEX });
+    createdVersionIndex = true;
+  }
+
+  indexes = await collection.indexes();
+  if (!hasIndex(indexes, createdAtKey)) {
+    for (const index of indexes.filter((entry) => entry.name === SEMANTIC_GRAPH_CREATED_AT_INDEX)) await collection.dropIndex(index.name);
+    await collection.createIndex(createdAtKey, { name: SEMANTIC_GRAPH_CREATED_AT_INDEX });
+    createdCreatedAtIndex = true;
+  }
+
+  return {
+    changed: Boolean(legacyIndexes.length || createdVersionIndex || createdCreatedAtIndex),
+    legacyDocuments: 0,
+    droppedIndexes: legacyIndexes.map((index) => index.name),
+    createdIndexes: [
+      ...(createdVersionIndex ? [SEMANTIC_GRAPH_VERSION_INDEX] : []),
+      ...(createdCreatedAtIndex ? [SEMANTIC_GRAPH_CREATED_AT_INDEX] : []),
+    ],
+  };
+}
+
 async function ensureDatabaseSchemaReadiness() {
   return {
     venueTargetPublicCodeIndex: await ensureVenueTargetPublicCodeIndex(),
     sessionPlanOwnerShape: await ensureSessionPlanOwnerShape(),
+    semanticGraphRevisionIndexes: await ensureSemanticGraphRevisionIndexes(),
   };
 }
 
@@ -130,5 +197,6 @@ module.exports = {
   ensureDatabaseSchemaReadiness,
   ensureVenueTargetPublicCodeIndex,
   ensureSessionPlanOwnerShape,
+  ensureSemanticGraphRevisionIndexes,
   isExpectedPublicCodeIndex,
 };
