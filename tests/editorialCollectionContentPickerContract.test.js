@@ -10,6 +10,9 @@ const picker = read("clients/marketplace/src/ui/collection-item-add-dialog.js");
 const quickAdd = read("clients/marketplace/src/ui/content-space-item-add-dialog.js");
 const itemDetail = read("clients/marketplace/src/ui/item-detail-dialog.js");
 const graphView = read("clients/marketplace/src/ui/semantic-graph-view.js");
+const editorialRepository = read("clients/marketplace/src/infrastructure/http/editorial-repository.js");
+const marketplaceRoutes = read("routes/marketplaceV2.routes.js");
+const authoringController = read("controllers/marketplaceAuthoringV2.controller.js");
 const graphNeighborhoodService = read("services/editorialCollectionGraphNeighborhood.service.js");
 const availableItemsService = read("services/editorialCollectionAvailableItems.service.js");
 
@@ -27,7 +30,7 @@ test("Aggiungi contenuti apre un modal con ricerca e card dei soli Item ancora d
   assert.doesNotMatch(availableItemsService, /inCollection:/);
 });
 
-test("l'escalation fuori dallo spazio riusa il quick-add canonico invece di un browser parallelo", () => {
+test("l'escalation fuori dallo spazio riusa il quick-add canonico e rimuove il browser parallelo", () => {
   assert.match(picker, /import "\.\/content-space-item-add-dialog\.js"/);
   assert.match(picker, /document\.createElement\("artaround-content-space-item-add-dialog"\)/);
   assert.match(picker, /data-add-content-to-space/);
@@ -37,6 +40,9 @@ test("l'escalation fuori dallo spazio riusa il quick-add canonico invece di un b
   assert.match(quickAdd, /operationCode:\s*"content\.fork"/);
   assert.match(quickAdd, /data-confirm-new-item/);
   assert.doesNotMatch(picker, /externalCandidates|importExternalCandidate/);
+  assert.doesNotMatch(editorialRepository, /externalCandidates|importExternalCandidate|external-candidates|import-entry/);
+  assert.doesNotMatch(marketplaceRoutes, /external-candidates|import-entry|editorialExternalCandidates|importEditorialExternalCandidate/);
+  assert.doesNotMatch(authoringController, /searchExternalEditorialCandidates|importExternalEditorialCandidate|editorialExternalCandidates|importEditorialExternalCandidate/);
 });
 
 test("il dettaglio Item apre il grafo nel contesto della raccolta e focalizza il Subject", () => {
