@@ -32,6 +32,9 @@ async function startServer() {
     if (schemaReadiness.sessionPlanOwnerShape?.changed) {
       console.log(`Schema MongoDB riallineato: ${schemaReadiness.sessionPlanOwnerShape.migratedDocuments} SessionPlan migrati all'owner tipizzato`);
     }
+    if (schemaReadiness.semanticGraphRevisionIndexes?.changed) {
+      console.log("Schema MongoDB riallineato: indici SemanticGraphRevision aggiornati");
+    }
 
     // Carichiamo l'app soltanto dopo il controllo degli indici legacy, così i
     // model Mongoose vedono uno schema Mongo già coerente con il dominio attuale.
@@ -42,7 +45,8 @@ async function startServer() {
       console.log(`Server avviato su porta ${PORT}`);
     });
   } catch (err) {
-    console.error("Errore connessione MongoDB:", err);
+    if (err?.code === "EDITORIAL_INVENTORY_MIGRATION_REQUIRED") console.error(err.message);
+    else console.error("Errore connessione MongoDB:", err);
     process.exit(1);
   }
 }
