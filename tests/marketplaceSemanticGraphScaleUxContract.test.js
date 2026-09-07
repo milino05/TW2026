@@ -21,8 +21,8 @@ test("Graph Workspace usa neighborhood server-side invece dello snapshot complet
   assert.match(graphService, /hiddenNeighbors/);
 });
 
-test("inventario semantico è ricercabile e paginato sul server", () => {
-  assert.match(editor, /scope:\s*"graph"/);
+test("inventario semantico è ricercabile e paginato sul server con scope coerente col task", () => {
+  assert.match(editor, /scope:\s*this\.pickerMode\s*===\s*"focus"\s*\?\s*"collection"\s*:\s*"graph"/);
   assert.match(editor, /data-semantic-inventory-search/);
   assert.match(editor, /data-semantic-inventory-page/);
   assert.match(graphService, /\["graph", "collection", "space"\]/);
