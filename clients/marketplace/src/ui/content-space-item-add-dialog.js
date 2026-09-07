@@ -1,4 +1,5 @@
 import { libraryRepository } from "../infrastructure/http/library-repository.js";
+import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { semanticRepository } from "../infrastructure/http/semantic-repository.js";
 import { suggestRecognitionMedia } from "../application/subject-recognition-media.js";
 import { icon } from "./icons.js";
@@ -12,6 +13,11 @@ function wikidataLabel(subject) {
   const identity = (subject?.externalIdentities || []).find((entry) => entry.scheme === "wikidata" && entry.role === "canonical")
     || (subject?.externalIdentities || []).find((entry) => entry.scheme === "wikidata");
   return identity?.id ? `Wikidata · ${identity.id}` : "Identità ArtAround";
+}
+function pricingLabel(pricing) {
+  if (!pricing || pricing.type === "free") return "Gratis";
+  const amount = Number(pricing.amountMinor || 0) / 100;
+  return `${amount.toFixed(2)} ${pricing.currency || ""}`.trim();
 }
 
 export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
@@ -56,6 +62,8 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
       this.subject = this.addContext.subject || subject;
       if ((this.addContext.ownedItems || []).length) {
         this.step = "existing";
+      } else if ((this.addContext.marketplaceOptions || []).length) {
+        this.step = "marketplace";
       } else {
         await this.prepareNewItem();
       }
@@ -131,6 +139,36 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
       }
       return;
     }
+    const acquireMarketplace = target.closest("[data-acquire-marketplace-item]");
+    if (acquireMarketplace) {
+      const offerId = acquireMarketplace.dataset.acquireMarketplaceItem;
+      const editionId = acquireMarketplace.dataset.marketplaceEditionId;
+      if (!offerId || !editionId || !this.addContext?.availableOperations?.canAcquireAndForkMarketplaceItem) return;
+      this.busy = true; this.error = null; this.render();
+      try {
+        await marketplaceRepository.acquire(offerId, {
+          beneficiaryType: this.ownerType,
+          beneficiaryId: this.ownerId,
+        });
+        const result = await marketplaceRepository.executeWorkspaceOperation({
+          operationCode: "content.fork",
+          sourceRef: { resourceType: "item_edition", resourceId: editionId },
+          targetPrincipal: { type: this.ownerType, id: this.ownerId },
+          payload: { contentSpaceId: this.contentSpaceId },
+        });
+        const itemId = id(result?.resultRef?.resourceId);
+        if (!itemId) throw new Error("Il Marketplace non ha restituito il nuovo Item");
+        this.dispatchEvent(new CustomEvent("library-item-added", {
+          bubbles: true,
+          detail: { itemId, reused: false, acquired: true, forked: true },
+        }));
+        this.close();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : "Non è stato possibile acquisire e aggiungere il contenuto";
+        this.busy = false; this.render();
+      }
+      return;
+    }
     if (target.closest("[data-confirm-new-item]")) {
       if (!this.subject || !this.addContext?.availableOperations?.canCreateItem) return;
       this.busy = true; this.error = null; this.render();
@@ -163,13 +201,25 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
     }).join("")}</div>${this.addContext?.availableOperations?.canCreateItem ? `<div class="task-secondary-action"><button type="button" class="button-secondary" data-create-distinct-item ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} Crea un Item distinto</button></div>` : ""}<button type="button" class="button-secondary" data-back-subject>← Cambia Subject</button></section>`;
   }
 
+  renderMarketplaceStep() {
+    const options = this.addContext?.marketplaceOptions || [];
+    const canAcquire = this.addContext?.availableOperations?.canAcquireAndForkMarketplaceItem;
+    return `<section><div class="task-step-heading"><span class="eyebrow">2 · Marketplace</span><h2>${escapeHtml(this.subject?.preferredLabel || "Subject selezionato")}</h2><p>Per questo Subject esiste già contenuto pubblicato da un altro autore. Acquisiscilo per creare nello spazio corrente una tua lineage derivata, invece di duplicarlo inconsapevolmente.</p></div>${!canAcquire ? `<p class="note" role="status">Nel contesto corrente non hai i permessi necessari per acquisire e derivare questo contenuto.</p>` : ""}<div class="quick-item-list">${options.map((option) => `<article class="panel quick-item-choice"><div><span class="eyebrow">Marketplace</span><strong>${escapeHtml(option.listingTitle || this.subject?.preferredLabel || "Contenuto")}</strong>${option.listingSummary ? `<p>${escapeHtml(option.listingSummary)}</p>` : ""}<small>${escapeHtml(option.offerLabel || "Offerta")} · ${escapeHtml(pricingLabel(option.pricing))}</small></div><button type="button" data-acquire-marketplace-item="${escapeHtml(id(option.offerId))}" data-marketplace-edition-id="${escapeHtml(id(option.editionId))}" ${this.busy || !canAcquire ? "disabled" : ""}>Acquisisci e aggiungi</button></article>`).join("")}</div>${this.addContext?.availableOperations?.canCreateItem ? `<div class="task-secondary-action"><button type="button" class="button-secondary" data-create-distinct-item ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} Crea comunque un Item distinto</button></div>` : ""}<button type="button" class="button-secondary" data-back-subject>← Cambia Subject</button></section>`;
+  }
+
   renderPreviewStep() {
     const media = this.recognitionMedia;
     return `<section><div class="task-step-heading"><span class="eyebrow">2 · Item</span><h2>Conferma il nuovo contenuto</h2><p>L'Item viene aggiunto direttamente a <strong>${escapeHtml(this.spaceName)}</strong>. Titoli, testi, licenza e metadati editoriali verranno definiti nelle sue Edition.</p></div><article class="item-preview-card">${media?.url ? `<figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || this.subject?.preferredLabel || "")}"></figure>` : `<div class="item-preview-placeholder">${icon("image", { size: 30 })}</div>`}<div><span class="eyebrow">Subject</span><h3>${escapeHtml(this.subject?.preferredLabel || "")}</h3><p>${escapeHtml(this.subject?.description || "Nessuna descrizione disponibile")}</p><p class="note">${escapeHtml(wikidataLabel(this.subject))}</p><p class="note">${escapeHtml(this.mediaNotice || "")}</p>${media?.url ? `<button type="button" class="button-secondary small" data-remove-recognition-media>Rimuovi immagine</button>` : ""}</div></article><div class="step-actions"><button type="button" class="button-secondary" data-back-subject>Indietro</button><button type="button" data-confirm-new-item ${this.busy || !this.addContext?.availableOperations?.canCreateItem ? "disabled" : ""}>${icon("plus", { size: 15 })} Aggiungi contenuto</button></div></section>`;
   }
 
   render() {
-    const body = this.step === "existing" ? this.renderExistingStep() : this.step === "preview" ? this.renderPreviewStep() : this.renderSubjectStep();
+    const body = this.step === "existing"
+      ? this.renderExistingStep()
+      : this.step === "marketplace"
+        ? this.renderMarketplaceStep()
+        : this.step === "preview"
+          ? this.renderPreviewStep()
+          : this.renderSubjectStep();
     this.innerHTML = `<div class="context-task-modal-layer" role="presentation"><section class="context-task-modal content-space-item-add-modal" role="dialog" aria-modal="true" aria-label="Aggiungi contenuto"><header class="task-modal-header"><div><span class="eyebrow">${escapeHtml(this.spaceName)}</span><h1>Aggiungi contenuto</h1></div><button type="button" class="button-secondary small" data-close-item-add aria-label="Chiudi">×</button></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && this.step === "subject" ? `<p>Preparazione…</p>` : body}</section></div>`;
   }
 }
