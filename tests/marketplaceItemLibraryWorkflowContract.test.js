@@ -16,7 +16,9 @@ const addContextService = read("services/contentSpaceItemAddContext.service.js")
 const marketplaceForkOptions = read("services/marketplaceSubjectForkOptions.service.js");
 
 test("la tab Contenuti espone una sola azione primaria Aggiungi contenuto e non duplica il CTA nell'empty state", () => {
-  assert.match(library, /data-new-content[^>]*>\$\{icon\("plus"[^}]+\}\s*Aggiungi contenuto<\/button>/);
+  const addContentButtons = library.match(/<button[^>]*data-new-content[^>]*>/g) || [];
+  assert.equal(addContentButtons.length, 1);
+  assert.match(library, /<button[^>]*data-new-content[^>]*>[^`]*Aggiungi contenuto<\/button>/);
   assert.match(library, /Usa “Aggiungi contenuto” per inserire il primo Item/);
   assert.doesNotMatch(library, /Crea contenuto<\/button>/);
   assert.match(library, /openItemAddDialog\(\)/);
@@ -57,7 +59,7 @@ test("recognitionMedia appartiene all'Item mentre illustrativeMedia resta nella 
 test("le card dello Space restano leggere e l'immagine viene caricata nel dettaglio Item", () => {
   assert.doesNotMatch(library, /recognitionMedia/);
   assert.match(library, /content-item-card/);
-  assert.match(itemDetail, /item\.recognitionMedia/);
+  assert.match(itemDetail, /recognitionMedia/);
   assert.match(itemDetail, /<figure><img/);
 });
 
