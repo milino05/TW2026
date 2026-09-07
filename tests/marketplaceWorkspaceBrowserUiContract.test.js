@@ -24,14 +24,17 @@ test("workspace browser usa projection context/resources e non il dump legacy", 
   assert.match(repositorySource, /\/v2\/marketplace\/workspace\/resources/);
 });
 
-test("Libreria integra lavoro editoriale e risorse mantenendo esplicito lo spazio corrente", () => {
+test("Libreria integra raccolte, contenuti e risorse mantenendo esplicito lo spazio editoriale", () => {
   assert.match(browserSource, /renderLibraryTabs\(\)/);
-  assert.match(browserSource, /data-library-section="editorial"/);
-  assert.match(browserSource, /data-library-section="resources"/);
-  assert.match(browserSource, /Spazio editoriale corrente/);
+  assert.match(browserSource, /data-library-tab="collections"/);
+  assert.match(browserSource, /data-library-tab="content"/);
+  assert.match(browserSource, /data-library-tab="resources"/);
+  assert.match(browserSource, /renderLibraryScope\(\)/);
+  assert.match(browserSource, /Spazio editoriale/);
+  assert.match(browserSource, /data-change-space/);
   assert.match(browserSource, /editorialRepository\.spaceSummaries/);
   assert.match(browserSource, /editorialRepository\.spaceProjection/);
-  assert.doesNotMatch(browserSource, /editorial-spaces-view|library-section-nav/);
+  assert.doesNotMatch(browserSource, /data-library-section=|editorial-spaces-view|library-section-nav/);
 });
 
 test("workspace detail usa una projection puntuale e non carica workspace o distribution", () => {
@@ -44,7 +47,9 @@ test("workspace detail usa una projection puntuale e non carica workspace o dist
 test("le risorse cross-space restano separate da raccolte e contenuti dello spazio", () => {
   assert.match(browserSource, /const CROSS_SPACE_TYPES = \["visit", "namespace", "semantic_graph", "physical_vocabulary"\]/);
   assert.match(browserSource, /resourceTypes: this\.resourceType \? \[this\.resourceType\] : CROSS_SPACE_TYPES/);
-  assert.match(browserSource, /Risorse cross-space/);
+  assert.match(browserSource, /renderWorkAreaScope\(\)/);
+  assert.match(browserSource, /Risorse condivise/);
+  assert.match(browserSource, /Risorse dell'area di lavoro/);
   assert.doesNotMatch(browserSource, /CROSS_SPACE_TYPES[^;]*item_edition/);
 });
 

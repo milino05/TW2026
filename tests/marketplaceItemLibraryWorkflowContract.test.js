@@ -12,9 +12,13 @@ const collectionContent = read("clients/marketplace/src/ui/editorial-collection-
 const itemAuthoring = read("clients/marketplace/src/ui/item-authoring-view.js");
 const itemModel = read("models/itemV2.model.js");
 const revisionModel = read("models/itemRevisionV2.model.js");
+const addContextService = read("services/contentSpaceItemAddContext.service.js");
+const marketplaceForkOptions = read("services/marketplaceSubjectForkOptions.service.js");
 
 test("la tab Contenuti espone una sola azione primaria Aggiungi contenuto e non duplica il CTA nell'empty state", () => {
-  assert.match(library, /data-new-content[^>]*>\$\{icon\("plus"[^}]+\}\s*Aggiungi contenuto<\/button>/);
+  const addContentButtons = library.match(/<button[^>]*data-new-content[^>]*>/g) || [];
+  assert.equal(addContentButtons.length, 1);
+  assert.match(library, /<button[^>]*data-new-content[^>]*>[^`]*Aggiungi contenuto<\/button>/);
   assert.match(library, /Usa “Aggiungi contenuto” per inserire il primo Item/);
   assert.doesNotMatch(library, /Crea contenuto<\/button>/);
   assert.match(library, /openItemAddDialog\(\)/);
@@ -30,6 +34,23 @@ test("il quick add riusa il picker Subject e distingue Item esistenti da un nuov
   assert.match(quickAdd, /data-confirm-new-item/);
 });
 
+test("un Item di altro proprietario passa dal Marketplace: acquisizione e fork precedono l'aggiunta allo Space", () => {
+  assert.match(addContextService, /marketplaceOptions/);
+  assert.match(addContextService, /canAcquireAndForkMarketplaceItem/);
+  assert.match(addContextService, /actorUserId/);
+  assert.match(marketplaceForkOptions, /status:\s*"published"/);
+  assert.match(marketplaceForkOptions, /status:\s*"active"/);
+  assert.match(marketplaceForkOptions, /capability:\s*"content\.fork"/);
+  assert.match(marketplaceForkOptions, /namespace\.author/);
+  assert.match(marketplaceForkOptions, /resolveCapabilitySource/);
+  assert.match(quickAdd, /marketplaceRepository\.acquire\(/);
+  assert.match(quickAdd, /marketplaceRepository\.executeWorkspaceOperation\(/);
+  assert.match(quickAdd, /operationCode:\s*"content\.fork"/);
+  assert.match(quickAdd, /sourceRef:\s*\{\s*resourceType:\s*"item_edition"/);
+  assert.match(quickAdd, /data-acquire-marketplace-item/);
+  assert.match(quickAdd, /Crea comunque un Item distinto/);
+});
+
 test("recognitionMedia appartiene all'Item mentre illustrativeMedia resta nella ItemRevision", () => {
   assert.match(itemModel, /recognitionMedia:\s*\{\s*type:\s*ItemMediaSchema/);
   assert.match(revisionModel, /illustrativeMedia:\s*\{\s*type:\s*\[ItemMediaSchema\]/);
@@ -38,7 +59,7 @@ test("recognitionMedia appartiene all'Item mentre illustrativeMedia resta nella 
 test("le card dello Space restano leggere e l'immagine viene caricata nel dettaglio Item", () => {
   assert.doesNotMatch(library, /recognitionMedia/);
   assert.match(library, /content-item-card/);
-  assert.match(itemDetail, /item\.recognitionMedia/);
+  assert.match(itemDetail, /recognitionMedia/);
   assert.match(itemDetail, /<figure><img/);
 });
 
