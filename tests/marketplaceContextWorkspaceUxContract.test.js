@@ -14,6 +14,7 @@ const spatialOverlay = read("clients/marketplace/src/ui/venue-editor-spatial-ove
 const targets = read("clients/marketplace/src/ui/venue-editor-targets-mixin.js");
 const semanticGraph = read("clients/marketplace/src/ui/semantic-graph-editor.js");
 const contentManager = read("clients/marketplace/src/ui/editorial-collection-content-manager.js");
+const collectionItemAddDialog = read("clients/marketplace/src/ui/collection-item-add-dialog.js");
 
 test("Venue e Raccolta condividono la stessa shell Context Workspace full-width", () => {
   assert.match(workspaceCss, /\.context-workspace-page,\.venue-editor-page/);
@@ -34,6 +35,11 @@ test("i task autonomi usano modal e non vengono compressi negli inspector contes
   assert.match(targets, /context-task-modal-layer venue-inventory-modal-layer/);
   assert.match(targets, /context-task-modal context-task-modal--large/);
   assert.match(targets, /role="dialog" aria-modal="true"/);
+  assert.match(collectionItemAddDialog, /context-task-modal-layer collection-item-add-modal-layer/);
+  assert.match(collectionItemAddDialog, /context-task-modal context-task-modal--large collection-item-add-modal/);
+  assert.match(collectionItemAddDialog, /role="dialog" aria-modal="true"/);
+  assert.match(contentManager, /document\.createElement\("artaround-collection-item-add-dialog"\)/);
+  assert.doesNotMatch(contentManager, /data-content-mode=['"]external['"]/);
   assert.match(workspaceCss, /artaround-workspace-view \.context-workspace-inspector-layer/);
   assert.match(workspaceCss, /artaround-workspace-browser-view \.context-workspace-inspector-layer/);
   assert.match(workspaceCss, /\.studio-settings-grid>\.context-workspace-inspector-layer/);
@@ -47,8 +53,7 @@ test("gli inspector restano laterali dove il contesto del workspace deve rimaner
   assert.match(workspaceCss, /\.semantic-inventory-inspector\{width:min\(42rem/);
   assert.match(semanticGraph, /context-workspace-inspector-layer/);
   assert.match(semanticGraph, /semantic-relation-inspector/);
-  assert.match(contentManager, /context-workspace-inspector-layer/);
-  assert.match(contentManager, /aria-label="Dettagli contenuto"/);
+  assert.doesNotMatch(collectionItemAddDialog, /context-workspace-inspector-layer/);
   assert.match(inventoryCss, /\.venue-inventory-workspace\{display:block/);
   assert.doesNotMatch(inventoryCss, /venue-inventory-workspace\{[^}]*grid-template-columns/);
 });
