@@ -122,3 +122,128 @@ test("ContentSpace quick add preserves Item identity, recognition media, collect
     assert.equal(completeDetail.collections[0].compatibleEdition.revision.label, "Leonardo per bambini");
   });
 });
+
+test("ContentSpace quick add exposes only published forkable marketplace content and keeps owned Item reuse first", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Subject = require("../models/subject.model");
+    const ContentSpace = require("../models/contentSpace.model");
+    const Namespace = require("../models/namespace.model");
+    const ItemEdition = require("../models/itemEdition.model");
+    const MarketplaceListing = require("../models/marketplaceListing.model");
+    const MarketplaceOffer = require("../models/marketplaceOffer.model");
+    const { createItem } = require("../services/itemInstantiationV2.service");
+    const { getItemAddContext } = require("../services/contentSpaceItemAddContext.service");
+
+    const seller = await User.create({ username: "quick-add-seller", passwordHash: "test-hash" });
+    const buyer = await User.create({ username: "quick-add-buyer", passwordHash: "test-hash" });
+    const subject = await Subject.create({
+      preferredLabel: "La Gioconda",
+      description: "Dipinto di Leonardo",
+      createdBy: seller._id,
+    });
+    const sellerSpace = await ContentSpace.create({
+      name: "Seller space",
+      ownerType: "user",
+      ownerId: seller._id,
+      createdBy: seller._id,
+    });
+    const buyerSpace = await ContentSpace.create({
+      name: "Buyer space",
+      ownerType: "user",
+      ownerId: buyer._id,
+      createdBy: buyer._id,
+    });
+    const sellerItem = await createItem({
+      payload: {
+        primarySubjectId: subject._id,
+        ownerType: "user",
+        ownerId: seller._id,
+        contentSpaceId: sellerSpace._id,
+      },
+      actorUserId: seller._id,
+    });
+    const namespace = await Namespace.create({
+      name: "Regole seller",
+      ownerType: "user",
+      ownerId: seller._id,
+      createdBy: seller._id,
+    });
+    const sellerEdition = await ItemEdition.create({ itemId: sellerItem._id, namespaceId: namespace._id, createdBy: seller._id });
+
+    const privateContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.equal(privateContext.ownedItems.length, 0);
+    assert.deepEqual(privateContext.marketplaceOptions, []);
+    assert.equal(privateContext.availableOperations.canAcquireAndForkMarketplaceItem, true);
+
+    const listing = await MarketplaceListing.create({
+      sellerType: "user",
+      sellerId: seller._id,
+      resourceType: "item_edition",
+      resourceId: sellerEdition._id,
+      title: "Gioconda · versione completa",
+      summary: "Contenuto editoriale pubblicato",
+      status: "draft",
+      createdBy: seller._id,
+    });
+    const offer = await MarketplaceOffer.create({
+      listingId: listing._id,
+      label: "Licenza gratuita",
+      pricing: { type: "free" },
+      grants: [{
+        resourceType: "item_edition",
+        resourceId: sellerEdition._id,
+        capability: "content.fork",
+        versionPolicy: "follow_current",
+      }],
+      status: "active",
+      createdBy: seller._id,
+    });
+
+    const draftContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.deepEqual(draftContext.marketplaceOptions, []);
+
+    listing.status = "published";
+    listing.publishedAt = new Date();
+    await listing.save();
+
+    const marketplaceContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.equal(marketplaceContext.ownedItems.length, 0);
+    assert.equal(marketplaceContext.marketplaceOptions.length, 1);
+    assert.equal(String(marketplaceContext.marketplaceOptions[0].itemId), String(sellerItem._id));
+    assert.equal(String(marketplaceContext.marketplaceOptions[0].editionId), String(sellerEdition._id));
+    assert.equal(String(marketplaceContext.marketplaceOptions[0].listingId), String(listing._id));
+    assert.equal(String(marketplaceContext.marketplaceOptions[0].offerId), String(offer._id));
+    assert.equal(marketplaceContext.marketplaceOptions[0].pricing.type, "free");
+
+    const buyerItem = await createItem({
+      payload: {
+        primarySubjectId: subject._id,
+        ownerType: "user",
+        ownerId: buyer._id,
+        contentSpaceId: buyerSpace._id,
+      },
+      actorUserId: buyer._id,
+    });
+    const ownedContext = await getItemAddContext({
+      contentSpaceId: buyerSpace._id,
+      subjectId: subject._id,
+      actorUserId: buyer._id,
+    });
+    assert.equal(ownedContext.ownedItems.length, 1);
+    assert.equal(String(ownedContext.ownedItems[0].id), String(buyerItem._id));
+    assert.deepEqual(ownedContext.marketplaceOptions, []);
+  });
+});
