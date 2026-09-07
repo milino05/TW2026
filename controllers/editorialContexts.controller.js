@@ -3,7 +3,8 @@ const editorialContextEntryService = require("../services/editorialContextEntry.
 const editorialContextReviewService = require("../services/editorialContextReview.service");
 const editorialContextGraphSelectionService = require("../services/editorialContextGraphSelection.service");
 const editorialGraphCommandService = require("../services/editorialGraphCommand.service");
-const { getEditorialContextGraph, getEditorialContextGraphNeighborhood, projectGraph, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
+const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
+const { getEditorialCollectionGraphNeighborhood } = require("../services/editorialCollectionGraphNeighborhood.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
 
 async function create(req, res, next) {
@@ -53,7 +54,7 @@ async function changeGraph(req, res, next) {
 }
 async function getGraphNeighborhood(req, res, next) {
   try {
-    res.status(200).json(await getEditorialContextGraphNeighborhood({
+    res.status(200).json(await getEditorialCollectionGraphNeighborhood({
       editorialContextId: req.params.editorialContextId,
       view: req.query?.view || "working",
       focusSubjectId: req.query?.focusSubjectId || null,

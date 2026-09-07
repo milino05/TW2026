@@ -83,7 +83,15 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const openCollection = target.closest("[data-open-collection]");
     if (openCollection) { navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(openCollection.dataset.openCollection)}&section=content`); return; }
     const openGraph = target.closest("[data-open-collection-graph]");
-    if (openGraph) { navigate(`/workspace/semantic-graph?semanticGraphId=${encodeURIComponent(openGraph.dataset.openCollectionGraph)}`); return; }
+    if (openGraph) {
+      const query = new URLSearchParams({
+        semanticGraphId: openGraph.dataset.openCollectionGraph,
+        editorialContextId: this.focusedCollectionId || "",
+        focusSubjectId: id(this.data?.subject),
+      });
+      navigate(`/workspace/semantic-graph?${query.toString()}`);
+      return;
+    }
     const add = target.closest("[data-add-to-collection]");
     if (add) {
       this.busy = true; this.error = null; this.render();
@@ -135,8 +143,16 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
 
   collectionDiagnostic(collection) {
     const edition = collection.compatibleEdition;
-    const coverage = collection.semanticCoverage;
-    return `<div class="collection-diagnostics"><span class="${edition ? "ok" : "warning"}">${edition ? "✓ Edizione disponibile" : "⚠ Edizione da creare"}</span><span class="${coverage === "covered" ? "ok" : "warning"}">${coverage === "covered" ? "✓ Subject nel grafo" : coverage === "missing" ? "⚠ Subject non nel grafo" : "– Grafo non disponibile"}</span></div>`;
+    const graphAvailable = Boolean(collection.semanticGraph?.id);
+    const explicit = collection.semanticCoverage === "covered";
+    const semanticLabel = !graphAvailable
+      ? "– Grafo non disponibile"
+      : explicit
+        ? "✓ Subject collegabile nel grafo"
+        : collection.containsItem
+          ? "✓ Subject disponibile nel grafo"
+          : "⚠ Subject non disponibile";
+    return `<div class="collection-diagnostics"><span class="${edition ? "ok" : "warning"}">${edition ? "✓ Edizione disponibile" : "⚠ Edizione da creare"}</span><span class="${graphAvailable && (explicit || collection.containsItem) ? "ok" : "warning"}">${semanticLabel}</span></div>`;
   }
 
   renderCollectionCard(collection) {
@@ -159,7 +175,12 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (!collection) return `<section class="empty-state"><p>Raccolta non disponibile.</p><button type="button" class="button-secondary" data-back-collections>← Raccolte</button></section>`;
     const edition = collection.compatibleEdition;
     const revision = edition?.revision;
-    return `<section class="item-detail-section collection-item-detail"><div class="section-heading"><div><span class="eyebrow">Item nella raccolta</span><h2>${escapeHtml(collection.name)}</h2><p>${escapeHtml(collection.namespace?.name || "Regole editoriali")}</p></div><button type="button" class="button-secondary" data-back-collections>← Raccolte</button></div><div class="detail-block-grid"><article class="panel"><span class="eyebrow">Versione editoriale</span>${edition ? `<h3>${escapeHtml(revision?.label || "Edizione compatibile")}</h3><p>${revision ? `${escapeHtml(statusLabel(revision.status))} · v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${collection.availableOperations?.canOpenEdition ? `<button type="button" class="button-secondary" data-open-item-edition="${escapeHtml(id(collection.namespace?.id))}">Apri versione</button>` : ""}` : `<h3>Versione mancante</h3><p>La raccolta usa queste Regole editoriali, ma l'Item non ha ancora una Edition compatibile. Può restare nella raccolta, ma la revisione verrà bloccata finché non la completi.</p>${collection.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition="${escapeHtml(id(collection.namespace?.id))}">Crea versione</button>` : ""}`}</article><article class="panel"><span class="eyebrow">Semantica</span><h3>${escapeHtml(collection.semanticGraph?.name || "Grafo non disponibile")}</h3><p>${collection.semanticCoverage === "covered" ? "✓ Il Subject è presente nel grafo della raccolta." : collection.semanticCoverage === "missing" ? "⚠ Il Subject non è ancora presente nel grafo della raccolta." : "La coverage semantica non è disponibile."}</p>${collection.availableOperations?.canOpenGraph && collection.semanticGraph?.id ? `<button type="button" class="button-secondary" data-open-collection-graph="${escapeHtml(id(collection.semanticGraph))}">Apri grafo</button>` : ""}</article></div><div class="operations"><button type="button" class="button-secondary" data-open-collection="${escapeHtml(id(collection))}">Apri raccolta</button>${collection.availableOperations?.canRemove ? `<button type="button" class="button-secondary danger" data-remove-from-collection="${escapeHtml(id(collection))}">Rimuovi dalla raccolta</button>` : ""}</div></section>`;
+    const semanticCopy = !collection.semanticGraph?.id
+      ? "La struttura semantica non è disponibile."
+      : collection.semanticCoverage === "covered"
+        ? "Il Subject è già materializzato nel SemanticGraph e può avere collegamenti."
+        : "Il Subject è disponibile automaticamente perché questo Item appartiene alla raccolta. Puoi aprirlo subito con 0 collegamenti; verrà materializzato nel SemanticGraph quando creerai una relazione o una classificazione.";
+    return `<section class="item-detail-section collection-item-detail"><div class="section-heading"><div><span class="eyebrow">Item nella raccolta</span><h2>${escapeHtml(collection.name)}</h2><p>${escapeHtml(collection.namespace?.name || "Regole editoriali")}</p></div><button type="button" class="button-secondary" data-back-collections>← Raccolte</button></div><div class="detail-block-grid"><article class="panel"><span class="eyebrow">Versione editoriale</span>${edition ? `<h3>${escapeHtml(revision?.label || "Edizione compatibile")}</h3><p>${revision ? `${escapeHtml(statusLabel(revision.status))} · v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${collection.availableOperations?.canOpenEdition ? `<button type="button" class="button-secondary" data-open-item-edition="${escapeHtml(id(collection.namespace?.id))}">Apri versione</button>` : ""}` : `<h3>Versione mancante</h3><p>La raccolta usa queste Regole editoriali, ma l'Item non ha ancora una Edition compatibile. Può restare nella raccolta, ma la revisione verrà bloccata finché non la completi.</p>${collection.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition="${escapeHtml(id(collection.namespace?.id))}">Crea versione</button>` : ""}`}</article><article class="panel"><span class="eyebrow">Semantica</span><h3>${escapeHtml(collection.semanticGraph?.name || "Grafo non disponibile")}</h3><p>${escapeHtml(semanticCopy)}</p>${collection.availableOperations?.canOpenGraph && collection.semanticGraph?.id ? `<button type="button" class="button-secondary" data-open-collection-graph="${escapeHtml(id(collection.semanticGraph))}">Apri nel grafo</button>` : ""}</article></div><div class="operations"><button type="button" class="button-secondary" data-open-collection="${escapeHtml(id(collection))}">Apri raccolta</button>${collection.availableOperations?.canRemove ? `<button type="button" class="button-secondary danger" data-remove-from-collection="${escapeHtml(id(collection))}">Rimuovi dalla raccolta</button>` : ""}</div></section>`;
   }
 
   renderBody() {

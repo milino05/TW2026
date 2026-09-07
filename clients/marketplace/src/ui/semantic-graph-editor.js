@@ -53,7 +53,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.removeEventListener("subject-selected", this.onSubjectSelected);
   }
 
-  configure({ editorialContextId = null, semanticGraphId = null, relationTypes = [], subjectClasses = [], editable = false, locked = false } = {}) {
+  configure({ editorialContextId = null, semanticGraphId = null, relationTypes = [], subjectClasses = [], editable = false, locked = false, initialFocusSubjectId = null } = {}) {
     const nextContextId = editorialContextId || null;
     const nextGraphId = semanticGraphId || null;
     if (nextContextId && nextGraphId) throw new Error("Il graph editor richiede editorialContextId oppure semanticGraphId, non entrambi");
@@ -64,11 +64,15 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.subjectClasses = subjectClasses || [];
     this.editable = editable === true;
     this.locked = locked === true;
-    if (changed) this.resetWorkspace();
+    if (changed) {
+      this.resetWorkspace();
+      if (initialFocusSubjectId) this.focusSubjectId = id(initialFocusSubjectId);
+    } else if (initialFocusSubjectId && !this.focusSubjectId) this.focusSubjectId = id(initialFocusSubjectId);
     if (this.isConnected) void this.load();
   }
 
   standaloneMode() { return Boolean(this.semanticGraphId && !this.editorialContextId); }
+  collectionMode() { return Boolean(this.editorialContextId && !this.semanticGraphId); }
   hasResource() { return Boolean(this.editorialContextId || this.semanticGraphId); }
 
   clearSubjectClickTimer() {
@@ -114,7 +118,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       });
     }
     return editorialRepository.graphSubjectCandidates(this.editorialContextId, {
-      scope: "graph",
+      scope: this.pickerMode === "focus" ? "collection" : "graph",
       q: this.inventoryQuery,
       page: this.inventoryPage,
       limit: this.inventoryPageSize,
@@ -333,7 +337,14 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (!target) return;
     if (target.closest("[data-close-graph-inspector]")) { this.closeInspector(); return; }
     if (target.closest("[data-choose-focus]")) { this.openInventory("focus"); return; }
-    if (target.closest("[data-add-graph-subject]")) { this.pickerMode = "add-focus"; this.selected = null; this.relationDraft = null; this.render(); return; }
+    if (target.closest("[data-add-graph-subject]")) {
+      if (!this.standaloneMode()) return;
+      this.pickerMode = "add-focus";
+      this.selected = null;
+      this.relationDraft = null;
+      this.render();
+      return;
+    }
     if (target.closest("[data-start-relation]")) { this.openInventory("target"); return; }
     if (target.closest("[data-add-target-subject]")) { this.pickerMode = "add-target"; this.inventoryData = null; this.render(); return; }
 
@@ -345,7 +356,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       else await this.setFocus(row.subject._id);
       return;
     }
-    const inventoryPage = target.closest("[data-semantic-inventory-page]");
+    const inventoryPage = target.closest("button[data-semantic-inventory-page]");
     if (inventoryPage) {
       this.inventoryPage = Math.max(1, Number(inventoryPage.dataset.semanticInventoryPage) || 1);
       await this.loadInventory();
@@ -376,7 +387,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (target.closest("[data-semantic-graph-canvas]")) { this.selected = null; this.render(); return; }
 
     const removeSubject = target.closest("[data-remove-graph-subject]");
-    if (removeSubject && this.editable && !this.locked) {
+    if (removeSubject && this.standaloneMode() && this.editable && !this.locked) {
       const subject = this.subject(removeSubject.dataset.removeGraphSubject);
       const confirmed = await openActionDialog({
         title: `Rimuovere “${subject?.preferredLabel || "questo soggetto"}” dal grafo?`,
@@ -405,12 +416,12 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     event.stopPropagation();
     const subject = event.detail.subject;
     if (this.pickerMode === "add-target") this.startRelationTo(subject);
-    else await this.addSubjectAndFocus(subject);
+    else if (this.standaloneMode()) await this.addSubjectAndFocus(subject);
   };
 
   async addSubjectAndFocus(subject) {
     const subjectId = id(subject);
-    if (!subjectId) return;
+    if (!subjectId || !this.standaloneMode()) return;
     await this.mutate(() => this.addSubject(subjectId), {
       beforeReload: () => { this.focusSubjectId = subjectId; },
       after: () => { this.selected = { kind: "subject", id: subjectId }; this.pickerMode = null; },
@@ -536,7 +547,12 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   renderCanvas() {
     if (!this.focusSubjectId) {
       const totalSubjects = Number(this.data?.neighborhood?.totalSubjects || 0);
-      return `<div class="semantic-graph-empty" data-semantic-graph-canvas><div><span class="eyebrow">Grafo semantico</span><h3>Nessun soggetto di contesto</h3><p>${totalSubjects ? `Il grafo contiene ${totalSubjects} soggetti. Scegline uno per visualizzare soltanto i suoi collegamenti diretti.` : "Aggiungi o scegli un soggetto per iniziare a costruire le relazioni."}</p><div class="button-row"><button type="button" data-choose-focus>${icon("search", { size: 16 })} Scegli soggetto</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 16 })} Aggiungi soggetto</button>` : ""}</div></div></div>`;
+      const contextualCopy = this.collectionMode()
+        ? "Scegli il Subject di uno dei contenuti della raccolta per visualizzare i suoi collegamenti. Non devi aggiungerlo manualmente al grafo."
+        : totalSubjects
+          ? `Il grafo contiene ${totalSubjects} soggetti. Scegline uno per visualizzare soltanto i suoi collegamenti diretti.`
+          : "Aggiungi o scegli un soggetto per iniziare a costruire le relazioni.";
+      return `<div class="semantic-graph-empty" data-semantic-graph-canvas><div><span class="eyebrow">Grafo semantico</span><h3>Nessun soggetto di contesto</h3><p>${contextualCopy}</p><div class="button-row"><button type="button" data-choose-focus>${icon("search", { size: 16 })} Scegli soggetto</button>${this.standaloneMode() && this.editable && !this.locked ? `<button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 16 })} Aggiungi soggetto</button>` : ""}</div></div></div>`;
     }
     const focus = this.subject(this.focusSubjectId);
     if (!focus) return `<div class="empty-state"><p>Il soggetto di contesto non è più disponibile.</p></div>`;
@@ -595,20 +611,38 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   renderInventoryPicker() {
     const targetMode = this.pickerMode === "target";
     const subjects = (this.inventoryData?.results || []).filter((entry) => !targetMode || id(entry.subject) !== id(this.focusSubjectId));
-    const addCopy = this.standaloneMode()
-      ? "Il soggetto non è ancora nel grafo? Cercalo tra i Subject di ArtAround o tramite il resolver semantico."
+    const standalone = this.standaloneMode();
+    const searchLabel = standalone
+      ? "Cerca nel grafo"
       : targetMode
-        ? "Il soggetto non è ancora nel grafo? Cercalo nei contenuti della raccolta, nello spazio editoriale o nell'identità semantica globale."
-        : "Aggiungi un nuovo soggetto al grafo semantico.";
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Inventario semantico"><div class="section-heading"><div><span class="eyebrow">Inventario del grafo</span><h2>${targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><form data-semantic-inventory-search role="search"><label>Cerca nel grafo<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryBusy ? "Ricerca in corso…" : this.inventoryQuery ? "Nessun soggetto corrispondente nel grafo." : "Il grafo non contiene ancora soggetti."}</p></div>`}</div>${this.renderInventoryPagination()}${this.editable && !this.locked ? `<div class="semantic-inventory-footer"><p>${addCopy}</p><button type="button" class="button-secondary" ${targetMode ? "data-add-target-subject" : "data-add-graph-subject"}>${icon("plus", { size: 15 })} Aggiungi soggetto</button></div>` : ""}</aside></div>`;
+        ? "Cerca tra i soggetti già collegati"
+        : "Cerca tra i contenuti della raccolta";
+    const emptyCopy = this.inventoryBusy
+      ? "Ricerca in corso…"
+      : this.inventoryQuery
+        ? "Nessun soggetto corrispondente."
+        : targetMode
+          ? "Il grafo non contiene ancora altre destinazioni."
+          : "La raccolta non contiene ancora soggetti selezionabili.";
+    const footer = !this.editable || this.locked
+      ? ""
+      : standalone
+        ? `<div class="semantic-inventory-footer"><p>Il soggetto non è ancora nel grafo? Cercalo tra i Subject di ArtAround o tramite il resolver semantico.</p><button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 15 })} Aggiungi soggetto</button></div>`
+        : targetMode
+          ? `<div class="semantic-inventory-footer"><p>Non trovi la destinazione? Cercala nei contenuti della raccolta, nello spazio editoriale o nell'identità semantica globale. Il Subject verrà materializzato soltanto quando confermerai la relazione.</p><button type="button" class="button-secondary" data-add-target-subject>${icon("search", { size: 15 })} Cerca un altro soggetto</button></div>`
+          : "";
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Inventario semantico"><div class="section-heading"><div><span class="eyebrow">${standalone ? "Inventario del grafo" : "Contesto semantico"}</span><h2>${targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div><form data-semantic-inventory-search role="search"><label>${searchLabel}<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${emptyCopy}</p></div>`}</div>${this.renderInventoryPagination()}${footer}</aside></div>`;
   }
 
   renderAddSubjectPicker() {
     const targetMode = this.pickerMode === "add-target";
+    if (!this.standaloneMode() && !targetMode) return "";
     const picker = this.standaloneMode()
       ? `<div class="semantic-source-explanation"><p>Il grafo è autonomo rispetto a Raccolte e Spazi editoriali. Cerca un Subject globale; se non esiste, il resolver può proseguire su fonti esterne o crearne uno.</p></div><artaround-semantic-entity-picker></artaround-semantic-entity-picker>`
       : `<artaround-semantic-subject-source-browser editorial-context-id="${escapeHtml(this.editorialContextId)}"></artaround-semantic-subject-source-browser>`;
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="Aggiungi soggetto"><div class="section-heading"><div><span class="eyebrow">Aggiungi soggetto</span><h2>${targetMode ? "Nuova destinazione" : "Nuovo soggetto nel grafo"}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${picker}</aside></div>`;
+    const eyebrow = this.standaloneMode() ? "Aggiungi soggetto" : "Nuova destinazione";
+    const title = this.standaloneMode() ? "Nuovo soggetto nel grafo" : "Cerca il soggetto da collegare";
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-inventory-inspector" aria-label="${escapeHtml(title)}"><div class="section-heading"><div><span class="eyebrow">${eyebrow}</span><h2>${title}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${picker}</aside></div>`;
   }
 
   renderSubjectInspector() {
@@ -617,7 +651,10 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const subject = entry.subject || {};
     const selectedClasses = new Set(classIds(entry));
     const relationCount = this.relationCount(subject._id);
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-subject-inspector" aria-label="Dettagli soggetto"><div class="section-heading"><div><span class="eyebrow">Soggetto</span><h2>${escapeHtml(subject.preferredLabel || "Soggetto")}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<div class="button-row">${this.renderCoverage(entry)}<span class="status">${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"}</span></div>${this.subjectClasses.length ? `<form data-classes-form data-subject-id="${escapeHtml(id(subject))}"><fieldset ${this.editable && !this.locked ? "" : "disabled"}><legend>Tipo nel grafo</legend>${this.subjectClasses.map((definition) => `<label class="check"><input type="checkbox" name="subjectClassDefinitionIds" value="${escapeHtml(definition.definitionId)}" ${selectedClasses.has(String(definition.definitionId)) ? "checked" : ""}><span><strong>${escapeHtml(definition.label)}</strong>${definition.description ? `<small>${escapeHtml(definition.description)}</small>` : ""}</span></label>`).join("")}</fieldset>${this.editable && !this.locked ? `<button type="submit" class="button-secondary">Salva tipi</button>` : ""}</form>` : `<p class="note">Le regole editoriali non definiscono tipi di soggetto.</p>`}<div class="operations">${id(subject) !== id(this.focusSubjectId) ? `<button type="button" data-recenter-subject="${escapeHtml(id(subject))}">Mostra i suoi collegamenti</button>` : ""}${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-graph-subject="${escapeHtml(id(subject))}">${icon("trash", { size: 15 })} Rimuovi dal grafo</button>` : ""}</div></aside></div>`;
+    const removeAction = this.standaloneMode() && this.editable && !this.locked
+      ? `<button type="button" class="button-secondary danger" data-remove-graph-subject="${escapeHtml(id(subject))}">${icon("trash", { size: 15 })} Rimuovi dal grafo</button>`
+      : "";
+    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector semantic-subject-inspector" aria-label="Dettagli soggetto"><div class="section-heading"><div><span class="eyebrow">Soggetto</span><h2>${escapeHtml(subject.preferredLabel || "Soggetto")}</h2></div><button type="button" class="button-secondary small" data-close-graph-inspector aria-label="Chiudi">×</button></div>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}<div class="button-row">${this.renderCoverage(entry)}<span class="status">${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"}</span></div>${this.subjectClasses.length ? `<form data-classes-form data-subject-id="${escapeHtml(id(subject))}"><fieldset ${this.editable && !this.locked ? "" : "disabled"}><legend>Tipo nel grafo</legend>${this.subjectClasses.map((definition) => `<label class="check"><input type="checkbox" name="subjectClassDefinitionIds" value="${escapeHtml(definition.definitionId)}" ${selectedClasses.has(String(definition.definitionId)) ? "checked" : ""}><span><strong>${escapeHtml(definition.label)}</strong>${definition.description ? `<small>${escapeHtml(definition.description)}</small>` : ""}</span></label>`).join("")}</fieldset>${this.editable && !this.locked ? `<button type="submit" class="button-secondary">Salva tipi</button>` : ""}</form>` : `<p class="note">Le regole editoriali non definiscono tipi di soggetto.</p>`}<div class="operations">${id(subject) !== id(this.focusSubjectId) ? `<button type="button" data-recenter-subject="${escapeHtml(id(subject))}">Mostra i suoi collegamenti</button>` : ""}${removeAction}</div></aside></div>`;
   }
 
   renderClassRequirement(subjectId, allowedDefinitionIds, role) {

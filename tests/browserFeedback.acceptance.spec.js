@@ -143,7 +143,7 @@ test("Marketplace global feedback stays inside a mobile viewport", async ({ page
   expect(box.x + box.width).toBeLessThanOrEqual(390);
 });
 
-test("Semantic Graph Workspace navigates a paged first-level graph in a real browser", async ({ page }) => {
+test("Semantic Graph Workspace navigates Collection focus and graph targets in a real browser", async ({ page }) => {
   const contextId = "64a12f6800000000000000aa";
   const alphaId = "64a12f6800000000000000a1";
   const betaId = "64a12f6800000000000000b2";
@@ -151,6 +151,7 @@ test("Semantic Graph Workspace navigates a paged first-level graph in a real bro
   const revisionId = "64a12f6800000000000000d4";
   const semanticGraphId = "64a12f6800000000000000e5";
   const namespaceRevisionId = "64a12f6800000000000000f6";
+  const candidateScopes = [];
   const subjects = {
     [alphaId]: { _id: alphaId, preferredLabel: "Alpha", description: "Soggetto centrale" },
     [betaId]: { _id: betaId, preferredLabel: "Beta", description: "Primo vicino" },
@@ -187,14 +188,20 @@ test("Semantic Graph Workspace navigates a paged first-level graph in a real bro
   });
 
   await page.route("**/api/editorial-contexts/**/semantic-graph/subject-candidates**", async (route) => {
+    const url = new URL(route.request().url());
+    const scope = url.searchParams.get("scope") || "collection";
+    candidateScopes.push(scope);
+    const candidateEntries = scope === "collection"
+      ? [entry(alphaId, 2)]
+      : [entry(alphaId, 2), entry(betaId, 1), entry(gammaId, 1)];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        results: [entry(alphaId, 2), entry(betaId, 1), entry(gammaId, 1)].map((value) => ({ ...value, inGraph: true })),
-        pagination: { page: 1, limit: 12, total: 3, totalPages: 1 },
+        results: candidateEntries.map((value) => ({ ...value, inGraph: scope === "graph" })),
+        pagination: { page: 1, limit: 12, total: candidateEntries.length, totalPages: 1 },
         query: "",
-        scope: "graph",
+        scope,
       }),
     });
   });
@@ -218,11 +225,12 @@ test("Semantic Graph Workspace navigates a paged first-level graph in a real bro
 
   const editor = page.locator("#acceptance-semantic-graph");
   await expect(editor.getByText("Nessun soggetto di contesto")).toBeVisible();
-  await expect(editor.getByText("Il grafo contiene 3 soggetti.", { exact: false })).toBeVisible();
+  await expect(editor.getByText("Scegli il Subject di uno dei contenuti della raccolta", { exact: false })).toBeVisible();
 
   await editor.getByRole("button", { name: "Scegli soggetto" }).click();
   await expect(editor.getByRole("heading", { name: "Scegli il soggetto di contesto" })).toBeVisible();
-  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(3);
+  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(1);
+  expect(candidateScopes.at(-1)).toBe("collection");
   await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
 
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
@@ -237,6 +245,8 @@ test("Semantic Graph Workspace navigates a paged first-level graph in a real bro
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
 
   await editor.getByRole("button", { name: "Aggiungi relazione" }).click();
+  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(2);
+  expect(candidateScopes.at(-1)).toBe("graph");
   await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
   await expect(editor.getByRole("heading", { name: "Beta → Alpha" })).toBeVisible();
   await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveValue("related");

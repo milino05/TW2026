@@ -9,8 +9,11 @@ function id(value) { return String(value?._id || value?.id || value || ""); }
 
 export class ArtAroundSemanticGraphView extends HTMLElement {
   semanticGraphId = null;
+  editorialContextId = null;
+  focusSubjectId = null;
   section = "graph";
   data = null;
+  collectionData = null;
   busy = false;
   error = null;
   dirty = false;
@@ -18,7 +21,9 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   connectedCallback() {
     const params = new URLSearchParams(window.location.search);
     this.semanticGraphId = params.get("semanticGraphId");
-    this.section = ["graph", "settings"].includes(params.get("section")) ? params.get("section") : "graph";
+    this.editorialContextId = params.get("editorialContextId");
+    this.focusSubjectId = params.get("focusSubjectId");
+    this.section = !this.editorialContextId && params.get("section") === "settings" ? "settings" : "graph";
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("input", this.onInput);
@@ -33,6 +38,7 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
     this.removeEventListener("semantic-graph-changed", this.onGraphChanged);
   }
 
+  contextualMode() { return Boolean(this.editorialContextId); }
   hasUnsavedChanges() { return this.dirty; }
   discardUnsavedChanges() { this.dirty = false; }
 
@@ -49,7 +55,19 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      this.data = await editorialRepository.semanticGraphAuthoring(this.semanticGraphId);
+      if (this.contextualMode()) {
+        [this.data, this.collectionData] = await Promise.all([
+          editorialRepository.semanticGraphAuthoring(this.semanticGraphId),
+          editorialRepository.studio(this.editorialContextId),
+        ]);
+        if (id(this.collectionData?.semanticGraph?.id) !== id(this.semanticGraphId)) {
+          throw new Error("Il grafo richiesto non è quello attualmente collegato alla raccolta");
+        }
+        this.section = "graph";
+      } else {
+        this.data = await editorialRepository.semanticGraphAuthoring(this.semanticGraphId);
+        this.collectionData = null;
+      }
       if (!preserveSection) this.dirty = false;
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile aprire il grafo semantico";
@@ -60,7 +78,7 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   }
 
   setSection(section) {
-    if (!["graph", "settings"].includes(section)) return;
+    if (this.contextualMode() || !["graph", "settings"].includes(section)) return;
     this.section = section;
     const params = new URLSearchParams(window.location.search);
     params.set("semanticGraphId", this.semanticGraphId);
@@ -73,6 +91,10 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     const tab = target?.closest("button[data-graph-section]");
     if (tab) { this.setSection(tab.dataset.graphSection); return; }
+    if (target?.closest("button[data-back-collection-context]")) {
+      navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(this.editorialContextId)}&section=content`);
+      return;
+    }
     const collection = target?.closest("button[data-open-graph-collection]");
     if (collection) {
       navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(collection.dataset.openGraphCollection)}`);
@@ -82,6 +104,7 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   };
 
   onSubmit = async (event) => {
+    if (this.contextualMode()) return;
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
     if (form.matches("[data-graph-settings]")) {
@@ -129,7 +152,7 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   }
 
   async trashGraph() {
-    if (!this.data?.permissions?.canEdit) return;
+    if (this.contextualMode() || !this.data?.permissions?.canEdit) return;
     const usage = Number(this.data?.graph?.collectionUsageCount || 0);
     const confirmed = await openActionDialog({
       title: `Eliminare il grafo “${this.data.graph.name}”?`,
@@ -148,11 +171,16 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   }
 
   renderTabs() {
+    if (this.contextualMode()) return `<nav class="context-workspace-tabs" aria-label="Sezioni del grafo"><button type="button" aria-current="page">Collegamenti</button></nav>`;
     return `<nav class="context-workspace-tabs" aria-label="Sezioni del grafo"><button type="button" data-graph-section="graph" aria-current="${this.section === "graph" ? "page" : "false"}">Collegamenti</button><button type="button" data-graph-section="settings" aria-current="${this.section === "settings" ? "page" : "false"}">Impostazioni</button></nav>`;
   }
 
   renderGraph() {
     const graph = this.data.graph;
+    if (this.contextualMode()) {
+      const collection = this.collectionData?.context || {};
+      return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Grafo nel contesto della raccolta</span><h2>Collegamenti fra soggetti</h2><p>I Subject dei contenuti della raccolta sono disponibili automaticamente, anche con 0 collegamenti. Non devi aggiungere nodi: crea direttamente le relazioni che servono.</p></div><button type="button" class="button-secondary" data-back-collection-context>← Torna a ${escapeHtml(collection.name || "raccolta")}</button></header><artaround-callout tone="info"><strong>Contesto: ${escapeHtml(collection.name || "Raccolta")}</strong> · Le modifiche alle relazioni aggiornano la working lineage del grafo condiviso; review e release già congelate restano immutabili.</artaround-callout><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
+    }
     const usages = this.data.usages || [];
     return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Grafo semantico autonomo</span><h2>Subject e relazioni</h2><p>Il grafo descrive conoscenza semantica indipendentemente dai contenuti e dagli spazi editoriali. Le raccolte che lo condividono usano la stessa working lineage.</p></div><div class="stats"><span><strong>${Number(graph.subjectCount || 0)}</strong> soggetti</span><span><strong>${Number(graph.relationCount || 0)}</strong> relazioni</span></div></header><artaround-semantic-graph-editor></artaround-semantic-graph-editor>${usages.length ? `<article class="panel"><span class="eyebrow">Utilizzi attivi</span><h3>${usages.length} ${usages.length === 1 ? "raccolta usa" : "raccolte usano"} questo grafo</h3><div class="semantic-inventory-list">${usages.map((usage) => `<button type="button" class="semantic-inventory-card" data-open-graph-collection="${escapeHtml(id(usage.editorialContextId))}"><span><strong>${escapeHtml(usage.collectionName || "Raccolta")}</strong><small>${escapeHtml(usage.contentSpaceName || "Spazio editoriale")}</small></span><span class="status">working v${Number(usage.workingVersion || 0)}</span></button>`).join("")}</div></article>` : `<div class="empty-state compact"><h3>Nessuna raccolta lo usa ancora</h3><p>Il grafo resta comunque una risorsa valida e modificabile. Potrà essere scelto da una raccolta compatibile in seguito.</p></div>`}</section>`;
   }
@@ -167,6 +195,17 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
   configureEditor() {
     const editor = this.querySelector("artaround-semantic-graph-editor");
     if (!editor || !this.data) return;
+    if (this.contextualMode()) {
+      editor.configure({
+        editorialContextId: this.editorialContextId,
+        relationTypes: this.collectionData?.namespace?.revision?.relationTypes || [],
+        subjectClasses: this.collectionData?.namespace?.revision?.subjectClasses || [],
+        editable: this.collectionData?.permissions?.canEditGraph === true,
+        locked: false,
+        initialFocusSubjectId: this.focusSubjectId,
+      });
+      return;
+    }
     editor.configure({
       semanticGraphId: this.semanticGraphId,
       relationTypes: this.data.namespaceRevision?.relationTypes || [],
@@ -181,8 +220,14 @@ export class ArtAroundSemanticGraphView extends HTMLElement {
     if (this.error && !this.data) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Grafo semantico</h1><p role="alert">${escapeHtml(this.error)}</p><a data-route href="/workspace">Torna alla Libreria</a></div></main>`; return; }
     if (!this.data) return;
     const graph = this.data.graph;
-    const section = this.section === "settings" ? this.renderSettings() : this.renderGraph();
-    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>Grafi semantici</span><span aria-hidden="true">/</span><span>${escapeHtml(graph.name)}</span></nav><header class="context-workspace-bar"><div><span class="eyebrow">Grafo semantico</span><h1>${escapeHtml(graph.name)}</h1><p>${escapeHtml(graph.description || "Struttura semantica autonoma e riusabile tra raccolte compatibili.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(this.data.namespace?.name || "")}</strong> · revisione v${Number(this.data.namespaceRevision?.version || 0)}</p></div><div class="context-workspace-status"><span class="status">${Number(graph.subjectCount || 0)} soggetti</span><span class="status">${Number(graph.relationCount || 0)} relazioni</span><span class="status">${Number(graph.collectionUsageCount || 0)} raccolte · ${Number(graph.contentSpaceUsageCount || 0)} spazi</span></div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
+    const section = this.section === "settings" && !this.contextualMode() ? this.renderSettings() : this.renderGraph();
+    const contextual = this.contextualMode();
+    const collection = this.collectionData?.context || {};
+    const space = this.collectionData?.contentSpace || {};
+    const breadcrumb = contextual
+      ? `<a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>${escapeHtml(space.name || "Spazio editoriale")}</span><span aria-hidden="true">/</span><a data-route href="/workspace/editorial-studio?editorialContextId=${encodeURIComponent(this.editorialContextId)}">${escapeHtml(collection.name || "Raccolta")}</a><span aria-hidden="true">/</span><span>${escapeHtml(graph.name)}</span>`
+      : `<a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>Grafi semantici</span><span aria-hidden="true">/</span><span>${escapeHtml(graph.name)}</span>`;
+    this.innerHTML = `<main class="page context-workspace-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso">${breadcrumb}</nav><header class="context-workspace-bar"><div><span class="eyebrow">${contextual ? "Grafo della raccolta" : "Grafo semantico"}</span><h1>${escapeHtml(graph.name)}</h1><p>${escapeHtml(contextual ? `Contesto: ${collection.name || "Raccolta"}. I Subject dei contenuti sono disponibili automaticamente.` : graph.description || "Struttura semantica autonoma e riusabile tra raccolte compatibili.")}</p><p class="note">Regole editoriali: <strong>${escapeHtml(contextual ? this.collectionData?.namespace?.name || "" : this.data.namespace?.name || "")}</strong></p></div><div class="context-workspace-status"><span class="status">${Number(graph.subjectCount || 0)} soggetti espliciti</span><span class="status">${Number(graph.relationCount || 0)} relazioni</span>${!contextual ? `<span class="status">${Number(graph.collectionUsageCount || 0)} raccolte · ${Number(graph.contentSpaceUsageCount || 0)} spazi</span>` : ""}</div></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderTabs()}<div class="context-workspace-content">${section}</div></main>`;
     queueMicrotask(() => this.configureEditor());
   }
 }
