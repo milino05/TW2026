@@ -32,30 +32,36 @@ async function listEditorialCollectionAvailableItems({ editorialContextId, actor
   ]);
   const existingItemIds = new Set(existingEntries.map((entry) => id(entry.itemId)));
   let candidateItemIds = spaceItemIds.filter((itemId) => !existingItemIds.has(id(itemId)));
-
-  if (normalizedQuery && candidateItemIds.length) {
-    const regex = new RegExp(escapeRegex(normalizedQuery), "i");
-    const [subjects, matchingRevisions] = await Promise.all([
-      Subject.find({ $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").limit(500).lean(),
-      ItemRevisionV2.find({ label: regex }).select("itemEditionId").limit(500).lean(),
-    ]);
-    const revisionEditionIds = matchingRevisions.map((entry) => entry.itemEditionId);
-    const revisionEditions = revisionEditionIds.length
-      ? await ItemEdition.find({ _id: { $in: revisionEditionIds }, namespaceId: context.namespaceId }).select("itemId").lean()
-      : [];
-    const subjectItems = subjects.length
-      ? await ItemV2.find({ _id: { $in: candidateItemIds }, primarySubjectId: { $in: subjects.map((entry) => entry._id) }, lifecycleStatus: "active" }).select("_id").lean()
-      : [];
-    const matchingIds = new Set([...revisionEditions.map((entry) => id(entry.itemId)), ...subjectItems.map((entry) => id(entry._id))]);
-    candidateItemIds = candidateItemIds.filter((itemId) => matchingIds.has(id(itemId)));
-  }
-
-  const candidateItems = candidateItemIds.length
+  let candidateItems = candidateItemIds.length
     ? await ItemV2.find({ _id: { $in: candidateItemIds }, lifecycleStatus: "active" }).select("_id ownerType ownerId primarySubjectId").lean()
     : [];
-  const candidateEditions = candidateItems.length
+  let candidateEditions = candidateItems.length
     ? await ItemEdition.find({ itemId: { $in: candidateItems.map((item) => item._id) }, namespaceId: context.namespaceId }).lean()
     : [];
+
+  if (normalizedQuery && candidateItems.length) {
+    const regex = new RegExp(escapeRegex(normalizedQuery), "i");
+    const candidateSubjectIds = [...new Set(candidateItems.map((item) => id(item.primarySubjectId)).filter(Boolean))];
+    const candidateEditionIds = candidateEditions.map((edition) => edition._id);
+    const [matchingSubjects, matchingRevisions] = await Promise.all([
+      candidateSubjectIds.length
+        ? Subject.find({ _id: { $in: candidateSubjectIds }, $or: [{ preferredLabel: regex }, { description: regex }] }).select("_id").lean()
+        : [],
+      candidateEditionIds.length
+        ? ItemRevisionV2.find({ itemEditionId: { $in: candidateEditionIds }, label: regex }).select("itemEditionId").lean()
+        : [],
+    ]);
+    const matchingSubjectIds = new Set(matchingSubjects.map((entry) => id(entry._id)));
+    const matchingEditionIds = new Set(matchingRevisions.map((entry) => id(entry.itemEditionId)));
+    const matchingItemIds = new Set([
+      ...candidateItems.filter((item) => matchingSubjectIds.has(id(item.primarySubjectId))).map((item) => id(item._id)),
+      ...candidateEditions.filter((edition) => matchingEditionIds.has(id(edition._id))).map((edition) => id(edition.itemId)),
+    ]);
+    candidateItemIds = candidateItemIds.filter((itemId) => matchingItemIds.has(id(itemId)));
+    candidateItems = candidateItems.filter((item) => matchingItemIds.has(id(item._id)));
+    candidateEditions = candidateEditions.filter((edition) => matchingItemIds.has(id(edition.itemId)));
+  }
+
   const editionByItemId = new Map(candidateEditions.map((edition) => [id(edition.itemId), edition]));
   const usableEditionIds = new Set();
   await Promise.all(candidateEditions.map(async (edition) => {
