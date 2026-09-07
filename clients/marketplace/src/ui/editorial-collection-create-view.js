@@ -357,12 +357,12 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
 
   render() {
     if (this.busy && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Preparazione della raccolta…</p></div></main>`; return; }
-    if (this.error && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Nuova raccolta</h1><p role="alert">${escapeHtml(this.error)}</p></div></main>`; return; }
+    if (this.error && !this.preflight) { this.innerHTML = `<main class="page"><div class="empty-state"><h1>Nuova raccolta</h1><artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout></div></main>`; return; }
     if (!this.preflight || !this.selectedSpace || !this.preflight.collection?.allowed) { this.innerHTML = `<main class="page workspace-page">${this.blocker()}</main>`; return; }
     this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.graphBusy}">
       <nav class="breadcrumb" aria-label="Percorso"><a data-route href="/workspace">Libreria</a><span aria-hidden="true">/</span><span>${escapeHtml(this.selectedSpace.name)}</span><span aria-hidden="true">/</span><span>Nuova raccolta</span></nav>
       <header class="page-header"><div><span class="eyebrow">Nuova raccolta editoriale</span><h1>Crea una raccolta in ${escapeHtml(this.selectedSpace.name)}</h1><p>Definisci prima identità e Regole editoriali, poi scegli la struttura semantica. Nessuna risorsa viene creata finché non completi il secondo passaggio.</p>${this.renderStepIndicator()}</div></header>
-      ${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}
+      ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
       ${this.step === 1 ? this.renderIdentityStep() : this.renderSemanticStep()}
     </main>`;
   }
