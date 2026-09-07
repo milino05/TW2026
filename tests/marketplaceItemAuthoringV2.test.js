@@ -252,7 +252,7 @@ test("dangling relatedSubject, semanticFocus and knowledgeRequirement keep ItemR
   });
 });
 
-test("Editorial Studio candidates expose only ContentSpace members usable by the collection owner", { skip: !mongoUri }, async () => {
+test("Collection candidates expose only ContentSpace members usable by the collection owner", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -260,7 +260,7 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     const ContentSpace = require("../models/contentSpace.model");
     const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
     const { addItemMembership } = require("../services/contentSpace.service");
-    const { listEditorialStudioCandidates } = require("../services/editorialStudioV2.service");
+    const { listEditorialCollectionAvailableItems } = require("../services/editorialCollectionAvailableItems.service");
 
     const owner = await User.create({ username: "studio-owner", passwordHash: "hash" });
     const external = await User.create({ username: "studio-external", passwordHash: "hash" });
@@ -288,7 +288,7 @@ test("Editorial Studio candidates expose only ContentSpace members usable by the
     await addItemMembership({ contentSpaceId: space._id, itemId: ownedItem._id, actorUserId: owner._id });
     await ContentSpaceItemMembership.create({ contentSpaceId: space._id, itemId: externalItem._id, addedBy: owner._id });
 
-    const projection = await listEditorialStudioCandidates({ editorialContextId: context._id, actorUserId: owner._id, page: 1, limit: 20 });
+    const projection = await listEditorialCollectionAvailableItems({ editorialContextId: context._id, actorUserId: owner._id, page: 1, limit: 20 });
     assert.equal(projection.results.length, 1);
     assert.equal(projection.results[0].revision.label, "Owned content");
     assert.equal(String(projection.results[0].itemEditionId), String(ownedEdition.edition._id));
