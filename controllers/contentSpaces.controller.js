@@ -1,5 +1,6 @@
 const contentSpaceService = require("../services/contentSpace.service");
 const contentSpaceItemDetailService = require("../services/contentSpaceItemDetail.service");
+const contentSpaceItemAddContextService = require("../services/contentSpaceItemAddContext.service");
 
 async function create(req, res, next) {
   try { res.status(201).json(await contentSpaceService.createContentSpace({ payload: req.body || {}, actorUserId: req.user._id })); }
@@ -35,7 +36,7 @@ async function listItems(req, res, next) {
 }
 async function itemAddContext(req, res, next) {
   try {
-    res.status(200).json(await contentSpaceItemDetailService.getItemAddContext({
+    res.status(200).json(await contentSpaceItemAddContextService.getItemAddContext({
       contentSpaceId: req.params.contentSpaceId,
       subjectId: req.query?.subjectId,
       actorUserId: req.user._id,
