@@ -26,6 +26,7 @@ async function getItemAddContext({ contentSpaceId, subjectId, actorUserId }) {
       subjectId,
       ownerType: contentSpace.ownerType,
       ownerId: contentSpace.ownerId,
+      actorUserId,
     });
 
   return {
