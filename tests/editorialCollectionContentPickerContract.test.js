@@ -27,6 +27,9 @@ test("Aggiungi contenuti apre un modal con ricerca e card dei soli Item ancora d
   assert.match(picker, /editorialRepository\.candidates/);
   assert.match(availableItemsService, /existingItemIds/);
   assert.match(availableItemsService, /candidateItemIds = spaceItemIds\.filter/);
+  assert.match(availableItemsService, /candidateSubjectIds/);
+  assert.match(availableItemsService, /itemEditionId:\s*\{\s*\$in:\s*candidateEditionIds\s*\}/);
+  assert.doesNotMatch(availableItemsService, /\.limit\(500\)/);
   assert.doesNotMatch(availableItemsService, /inCollection:/);
 });
 
