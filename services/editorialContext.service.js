@@ -1,15 +1,11 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
-const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces } = require("./contentSpace.service");
-const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
-const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { projectEditorialContext } = require("./editorialContextProjection.service");
 const { normalizeEditorialContextPayload, validateEditorialContextPayload } = require("./validation/editorialContext.validation");
 
-function id(value) { return String(value?._id || value || ""); }
 function validateMetadata(rawPayload, { creating }) {
   const normalized = normalizeEditorialContextPayload(rawPayload || {});
   const issues = validateEditorialContextPayload({ payload: normalized, rawPayload: rawPayload || {}, creating });
@@ -44,61 +40,6 @@ function assertContextWorkingStateEditable(editorialContext) {
       context: { activeReviewRevisionId: editorialContext.activeReviewRevisionId },
     }]);
   }
-}
-
-async function createEditorialContext({ payload, actorUserId }) {
-  const normalized = validateMetadata(payload || {}, { creating: true });
-  const [contentSpace, namespace, semanticGraph] = await Promise.all([
-    findContentSpaceOrFail({ contentSpaceId: normalized.contentSpaceId }),
-    Namespace.findOne({ _id: normalized.namespaceId, lifecycleStatus: "active" }),
-    SemanticGraph.findOne({ _id: normalized.semanticGraphId, lifecycleStatus: "active" }),
-  ]);
-  if (!namespace) throw new AppError("Namespace non trovato", 404);
-  if (!semanticGraph) throw new AppError("Grafo semantico non disponibile", 404);
-  await assertCanManageContentSpace(contentSpace, actorUserId, "editorial_context.create");
-  if (semanticGraph.ownerType !== contentSpace.ownerType || id(semanticGraph.ownerId) !== id(contentSpace.ownerId)) {
-    throw new AppError("Il grafo semantico appartiene a un'altra area di lavoro", 409, [{ code: "SEMANTIC_GRAPH_OWNER_MISMATCH" }]);
-  }
-  if (id(semanticGraph.namespaceId) !== id(namespace._id)) {
-    throw new AppError("Il grafo semantico usa regole editoriali diverse", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
-  }
-  if (!semanticGraph.workingRevisionId) {
-    throw new AppError("Il grafo semantico non ha una revisione di lavoro", 409, [{ code: "SEMANTIC_GRAPH_WORKING_REVISION_REQUIRED" }]);
-  }
-
-  const namespaceAccess = await assertCanUseNamespaceForEditorialContext({
-    namespace,
-    actorUserId,
-    principalType: contentSpace.ownerType,
-    principalId: contentSpace.ownerId,
-  });
-
-  let editorialContext = null;
-  let adoption = null;
-  try {
-    editorialContext = await EditorialContext.create({
-      contentSpaceId: contentSpace._id,
-      namespaceId: namespace._id,
-      semanticGraphId: semanticGraph._id,
-      displayName: normalized.displayName,
-      shortDescription: normalized.shortDescription ?? null,
-      description: normalized.description ?? null,
-      createdBy: actorUserId,
-    });
-    adoption = await recordAdoptionFromAccess({
-      access: namespaceAccess,
-      actorUserId,
-      action: "namespace_use",
-      sourceResourceRef: { resourceType: "namespace", resourceId: namespace._id },
-      sourceSnapshotRef: namespaceAccess.resolvedSnapshotRef,
-      resultResourceRef: { resourceType: "editorial_context", resourceId: editorialContext._id },
-    });
-  } catch (error) {
-    if (adoption) await adoption.deleteOne().catch(() => {});
-    if (editorialContext?._id) await EditorialContext.deleteOne({ _id: editorialContext._id }).catch(() => {});
-    throw error;
-  }
-  return projectEditorialContext({ editorialContext, contentSpace, namespace });
 }
 
 async function updateEditorialContext({ editorialContextId, payload, actorUserId }) {
@@ -165,7 +106,6 @@ module.exports = {
   findEditorialContextOrFail,
   loadContextDependencies,
   assertContextWorkingStateEditable,
-  createEditorialContext,
   updateEditorialContext,
   getEditorialContext,
   listEditorialContexts,
