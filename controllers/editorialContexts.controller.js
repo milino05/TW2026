@@ -7,10 +7,6 @@ const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandi
 const { getEditorialCollectionGraphNeighborhood } = require("../services/editorialCollectionGraphNeighborhood.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
 
-async function create(req, res, next) {
-  try { res.status(201).json(await editorialContextService.createEditorialContext({ payload: req.body || {}, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
 async function list(req, res, next) {
   try { res.status(200).json(await editorialContextService.listEditorialContexts({ actorUserId: req.user._id, contentSpaceId: req.query?.contentSpaceId || null, namespaceId: req.query?.namespaceId || null })); }
   catch (error) { next(error); }
@@ -166,7 +162,7 @@ async function getCurrentRelease(req, res, next) {
 }
 
 module.exports = {
-  create, list, get, update,
+  list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
   getGraph, getGraphNeighborhood, searchGraphSubjectCandidates,
   previewGraphImport, listGraphImportSources, attachGraphImportSource, importGraphSubjects,
