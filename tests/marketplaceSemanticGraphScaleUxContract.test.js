@@ -21,20 +21,41 @@ test("Graph Workspace usa neighborhood server-side invece dello snapshot complet
   assert.match(graphService, /hiddenNeighbors/);
 });
 
-test("inventario semantico è ricercabile e paginato sul server con scope coerente col task", () => {
-  assert.match(editor, /scope:\s*this\.pickerMode\s*===\s*"focus"\s*\?\s*"collection"\s*:\s*"graph"/);
+test("focus e target della Raccolta cercano soltanto Subject rappresentati dai suoi contenuti", () => {
+  assert.match(editor, /scope: "collection"/);
+  assert.doesNotMatch(editor, /scope:\s*this\.pickerMode\s*===\s*"focus"\s*\?\s*"collection"\s*:\s*"graph"/);
   assert.match(editor, /data-semantic-inventory-search/);
   assert.match(editor, /data-semantic-inventory-page/);
+  assert.match(editor, /Per collegare un Subject che non ha ancora contenuti nella Raccolta/);
   assert.match(graphService, /\["graph", "collection", "space"\]/);
   assert.match(graphService, /relationCount/);
   assert.match(graphService, /presentationCoverage/);
 });
 
-test("il grafo resta leggibile su viewport strette e centra il nuovo focus", () => {
+test("click modifica, doppio click ricentra e la tastiera offre un percorso equivalente", () => {
+  assert.match(editor, /window\.setTimeout\([\s\S]*220/);
+  assert.match(editor, /onDoubleClick/);
+  assert.match(editor, /openSubjectEditor/);
+  assert.match(editor, /openEdgeEditor/);
+  assert.match(editor, /event\.key === "f" \|\| event\.key === "F"/);
+  assert.match(editor, /\["Enter", " "\]\.includes\(event\.key\)/);
+});
+
+test("gli editor del grafo usano il modal blurred centrale e non inspector laterali", () => {
+  assert.match(editor, /context-task-modal-layer semantic-graph-modal-layer/);
+  assert.match(editor, /role="dialog" aria-modal="true"/);
+  assert.match(editor, /data-graph-modal-backdrop/);
+  assert.doesNotMatch(editor, /context-workspace-inspector-layer|semantic-subject-inspector|semantic-relation-inspector/);
+});
+
+test("il grafo resta leggibile su viewport strette, centra il focus ed evidenzia hover e focus-visible", () => {
   assert.match(editor, /renderedFocusSubjectId/);
   assert.match(editor, /Math\.max\(0, \(canvas\.scrollWidth - canvas\.clientWidth\) \/ 2\)/);
+  assert.match(styles, /\.semantic-node:hover circle/);
+  assert.match(styles, /\.semantic-node:focus-visible circle/);
+  assert.match(styles, /transform:scale\(1\.08\)/);
+  assert.match(styles, /\.semantic-edge:hover line/);
+  assert.match(styles, /\.semantic-edge:focus-visible line/);
   assert.match(styles, /@media\(max-width:54rem\)/);
-  assert.match(styles, /\.workspace-page \.library-current-space>\.section-heading/);
-  assert.match(styles, /\.studio-section>\.section-heading\{align-items:stretch;flex-direction:column\}/);
   assert.match(styles, /\.semantic-graph-canvas\{min-height:28rem\}/);
 });
