@@ -1,8 +1,8 @@
 const editorialContextService = require("../services/editorialContext.service");
 const editorialContextEntryService = require("../services/editorialContextEntry.service");
 const editorialContextReviewService = require("../services/editorialContextReview.service");
-const editorialContextGraphSelectionService = require("../services/editorialContextGraphSelection.service");
 const editorialGraphCommandService = require("../services/editorialGraphCommand.service");
+const editorialGraphImportService = require("../services/editorialGraphImport.service");
 const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
 const { getEditorialCollectionGraphNeighborhood } = require("../services/editorialCollectionGraphNeighborhood.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
@@ -36,21 +36,18 @@ async function updateEntry(req, res, next) {
   catch (error) { next(error); }
 }
 async function removeEntry(req, res, next) {
-  try { res.status(200).json(await editorialContextEntryService.removeEditorialContextEntry({ editorialContextId: req.params.editorialContextId, entryId: req.params.entryId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
+  try {
+    res.status(200).json(await editorialContextEntryService.removeEditorialContextEntry({
+      editorialContextId: req.params.editorialContextId,
+      entryId: req.params.entryId,
+      cascadeGraph: req.query?.cascadeGraph === "true" || req.body?.cascadeGraph === true,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
 }
 async function getGraph(req, res, next) {
   try { res.status(200).json(await getEditorialContextGraph({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", actorUserId: req.user._id })); }
   catch (error) { next(error); }
-}
-async function changeGraph(req, res, next) {
-  try {
-    res.status(200).json(await editorialContextGraphSelectionService.changeEditorialContextSemanticGraph({
-      editorialContextId: req.params.editorialContextId,
-      semanticGraphId: req.body?.semanticGraphId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
 }
 async function getGraphNeighborhood(req, res, next) {
   try {
@@ -72,6 +69,38 @@ async function searchGraphSubjectCandidates(req, res, next) {
       q: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+async function previewGraphImport(req, res, next) {
+  try {
+    res.status(200).json(await editorialGraphImportService.previewSemanticGraphImport({
+      editorialContextId: req.params.editorialContextId,
+      sourceSemanticGraphId: req.params.semanticGraphId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+async function listGraphImportSources(req, res, next) {
+  try { res.status(200).json(await editorialGraphImportService.listEditorialGraphImportSources({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+async function attachGraphImportSource(req, res, next) {
+  try {
+    res.status(201).json(await editorialGraphImportService.attachEditorialGraphImportSource({
+      editorialContextId: req.params.editorialContextId,
+      sourceSemanticGraphId: req.body?.semanticGraphId,
+      actorUserId: req.user._id,
+    }));
+  } catch (error) { next(error); }
+}
+async function importGraphSubjects(req, res, next) {
+  try {
+    res.status(200).json(await editorialGraphImportService.importEditorialGraphSubjects({
+      editorialContextId: req.params.editorialContextId,
+      sourceId: req.params.sourceId,
+      itemIds: req.body?.itemIds || [],
+      actorUserId: req.user._id,
     }));
   } catch (error) { next(error); }
 }
@@ -139,7 +168,9 @@ async function getCurrentRelease(req, res, next) {
 module.exports = {
   create, list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
-  getGraph, changeGraph, getGraphNeighborhood, searchGraphSubjectCandidates, addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
+  getGraph, getGraphNeighborhood, searchGraphSubjectCandidates,
+  previewGraphImport, listGraphImportSources, attachGraphImportSource, importGraphSubjects,
+  addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
   checkReadiness, requestReview, withdrawReview, requestChanges, approveReview, listRevisions,
   createRelease, listReleases, getCurrentRelease,
 };
