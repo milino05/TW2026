@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
+const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const ItemV2 = require("../models/itemV2.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -72,6 +74,41 @@ function applyClassAssignments(snapshot, assignments) {
   }
 }
 
+async function collectionSubjectIds(context) {
+  const memberships = await CollectionItemMembership.find({ editorialContextId: context._id }).select("itemId").lean();
+  if (!memberships.length) return new Set();
+  const items = await ItemV2.find({
+    _id: { $in: memberships.map((entry) => entry.itemId) },
+    lifecycleStatus: "active",
+  }).select("primarySubjectId").lean();
+  return new Set(items.map((entry) => id(entry.primarySubjectId)).filter(Boolean));
+}
+
+async function collectionContainmentIssues(context, snapshot) {
+  if (!context) return [];
+  const allowed = await collectionSubjectIds(context);
+  return (snapshot.subjectBindings || [])
+    .filter((binding) => !allowed.has(id(binding.subjectId)))
+    .map((binding) => ({
+      field: "subjectId",
+      code: "GRAPH_SUBJECT_WITHOUT_COLLECTION_CONTENT",
+      message: "Il Subject del grafo deve essere rappresentato da almeno un contenuto della Raccolta",
+      context: { subjectId: binding.subjectId },
+    }));
+}
+
+async function assertCollectionSubjectsAvailable(context, subjectIds) {
+  if (!context) return;
+  const allowed = await collectionSubjectIds(context);
+  const missing = [...new Set(subjectIds.map(id).filter(Boolean))].filter((subjectId) => !allowed.has(subjectId));
+  if (!missing.length) return;
+  throw new AppError("Aggiungi prima alla Raccolta i contenuti che rappresentano i Subject selezionati", 409, missing.map((subjectId) => ({
+    field: "subjectId",
+    code: "GRAPH_SUBJECT_WITHOUT_COLLECTION_CONTENT",
+    context: { subjectId },
+  })));
+}
+
 async function loadGraphAuthoringState({ semanticGraphId, actorUserId }) {
   const semanticGraph = await findSemanticGraphResourceOrFail({ semanticGraphId, actorUserId, write: true });
   const namespace = await Namespace.findOne({ _id: semanticGraph.namespaceId, lifecycleStatus: "active" });
@@ -135,9 +172,10 @@ async function nextVersion(semanticGraphId, session) {
   return (latest?.version || 0) + 1;
 }
 
-async function commitSnapshot({ semanticGraph, namespaceRevision, snapshot, actorUserId }) {
+async function commitSnapshot({ semanticGraph, namespaceRevision, snapshot, actorUserId, context = null }) {
   const issues = [
     ...await validateSubjects(snapshot),
+    ...await collectionContainmentIssues(context, snapshot),
     ...validateGraphSnapshotAgainstNamespace(snapshot, namespaceRevision),
   ];
   if (issues.length) throw new AppError("Il grafo non rispetta le regole editoriali", 409, issues);
@@ -193,6 +231,7 @@ function normalizeWeight(value) {
 async function addGraphSubject({ semanticGraphId = null, editorialContextId = null, subjectId, actorUserId }) {
   assertObjectId(subjectId, "subjectId");
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
+  await assertCollectionSubjectsAvailable(state.context, [subjectId]);
   if (state.snapshot.subjectBindings.some((binding) => sameId(binding.subjectId, subjectId))) return state.graph;
   ensureBinding(state.snapshot, subjectId);
   return commitSnapshot({ ...state, actorUserId });
@@ -219,6 +258,7 @@ async function addGraphEdge({ semanticGraphId = null, editorialContextId = null,
   if (!relationTypeDefinitionId) throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
   if (sameId(sourceSubjectId, targetSubjectId)) throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{ code: "SELF_RELATION_NOT_ALLOWED" }]);
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
+  await assertCollectionSubjectsAvailable(state.context, [sourceSubjectId, targetSubjectId]);
   if (state.snapshot.edges.some((edge) => sameId(edge.sourceSubjectId, sourceSubjectId) && sameId(edge.targetSubjectId, targetSubjectId) && String(edge.relationTypeDefinitionId) === relationTypeDefinitionId)) {
     throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
   }
@@ -241,6 +281,7 @@ async function updateGraphEdge({ semanticGraphId = null, editorialContextId = nu
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   const edge = state.graph?.authoritativeEdges.find((entry) => sameId(entry._id, edgeId));
   if (!edge) throw new AppError("Relazione non trovata", 404);
+  await assertCollectionSubjectsAvailable(state.context, [edge.sourceSubjectId, edge.targetSubjectId]);
   const relationTypeDefinitionId = payload?.relationTypeDefinitionId === undefined
     ? String(edge.relationTypeDefinitionId)
     : String(payload.relationTypeDefinitionId || "").trim();
@@ -285,6 +326,7 @@ async function setGraphSubjectClasses({ semanticGraphId = null, editorialContext
   if (!Array.isArray(subjectClassDefinitionIds)) throw new AppError("subjectClassDefinitionIds deve essere un array", 400);
   const definitions = [...new Set(subjectClassDefinitionIds.map((value) => String(value || "").trim()).filter(Boolean))];
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
+  await assertCollectionSubjectsAvailable(state.context, [subjectId]);
   const binding = state.snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, subjectId));
   if (!binding) {
     throw new AppError("Aggiungi prima il Subject al grafo semantico", 409, [{
@@ -319,6 +361,7 @@ function setEditorialGraphSubjectClasses({ editorialContextId, subjectId, subjec
 module.exports = {
   loadGraphAuthoringState,
   loadAuthoringContext,
+  collectionContainmentIssues,
   addGraphSubject,
   removeGraphSubject,
   addGraphEdge,
