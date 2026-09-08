@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const ItemV2 = require("../models/itemV2.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
@@ -138,14 +139,28 @@ async function editorialContextRemovalTarget({ resourceId, principal }) {
     EditorialRelease.find({ editorialContextId: context._id }).distinct("_id"),
     semanticGraphRemovalImpact(context),
   ]);
+  if (Number(graphImpact.semanticGraphCollectionCount || 0) !== 1) {
+    throw new AppError("Il grafo della Raccolta non è locale e indipendente", 409, [{
+      code: "COLLECTION_GRAPH_NOT_LOCAL",
+      context: {
+        semanticGraphId: context.semanticGraphId,
+        collectionCount: Number(graphImpact.semanticGraphCollectionCount || 0),
+      },
+    }]);
+  }
   return {
     lifecycleModel: EditorialContext,
     lifecycleId: context._id,
     unavailableMessage: "Raccolta editoriale non disponibile",
     aggregateType: "editorial_context",
     aggregateId: context._id,
+    localSemanticGraphId: context.semanticGraphId,
     ...graphImpact,
-    references: [reference("editorial_context", [context._id]), reference("editorial_release", releaseIds)].filter(Boolean),
+    references: [
+      reference("editorial_context", [context._id]),
+      reference("editorial_release", releaseIds),
+      reference("semantic_graph", [context.semanticGraphId]),
+    ].filter(Boolean),
   };
 }
 
@@ -209,7 +224,38 @@ async function cleanupMarketplaceDistribution({ references, actorUserId, now }) 
 }
 
 async function applyLifecycleRemoval({ target, actorUserId, now }) {
-  const removed = await target.lifecycleModel.findOneAndUpdate(
+  let removed = null;
+  if (target.localSemanticGraphId) {
+    await mongoose.connection.transaction(async (session) => {
+      const collectionCount = await EditorialContext.countDocuments({
+        semanticGraphId: target.localSemanticGraphId,
+        lifecycleStatus: "active",
+      }).session(session);
+      if (Number(collectionCount || 0) !== 1) {
+        throw new AppError("Il grafo della Raccolta non è locale e indipendente", 409, [{
+          code: "COLLECTION_GRAPH_NOT_LOCAL",
+          context: { semanticGraphId: target.localSemanticGraphId, collectionCount: Number(collectionCount || 0) },
+        }]);
+      }
+      removed = await target.lifecycleModel.findOneAndUpdate(
+        { _id: target.lifecycleId, lifecycleStatus: "active", semanticGraphId: target.localSemanticGraphId },
+        { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
+        { new: true, session },
+      );
+      if (!removed) throw new AppError(target.unavailableMessage, 404, [{ code: "WORKSPACE_RESOURCE_NOT_FOUND" }]);
+      const removedGraph = await SemanticGraph.findOneAndUpdate(
+        { _id: target.localSemanticGraphId, lifecycleStatus: "active" },
+        { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
+        { new: true, session },
+      );
+      if (!removedGraph) {
+        throw new AppError("Grafo locale della Raccolta non disponibile", 409, [{ code: "COLLECTION_LOCAL_GRAPH_NOT_FOUND" }]);
+      }
+    });
+    return removed;
+  }
+
+  removed = await target.lifecycleModel.findOneAndUpdate(
     { _id: target.lifecycleId, lifecycleStatus: "active" },
     { $set: { lifecycleStatus: "trashed", trashedAt: now, trashedBy: actorUserId } },
     { new: true },
