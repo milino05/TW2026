@@ -128,9 +128,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     });
   };
 
-  onItemDetailChanged = () => {
-    this.entriesData = null;
-  };
+  onItemDetailChanged = () => { this.entriesData = null; };
   onItemDetailClose = () => { void this.refresh(); };
 
   onSubmit = (event) => {
@@ -140,6 +138,26 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     this.entriesState.setQuery(String(new FormData(form).get("q") || "").trim());
     void this.entriesBrowser.refresh();
   };
+
+  async removeEntry(entryId) {
+    try {
+      await editorialRepository.removeEntry(this.editorialContextId, entryId);
+      return true;
+    } catch (error) {
+      if (error?.code !== "COLLECTION_ITEM_GRAPH_SUBJECT_IN_USE") throw error;
+      const impact = error.details?.[0]?.context || {};
+      const relationCount = Number(impact.relationCount || 0);
+      const confirmed = await openActionDialog({
+        title: "Rimuovere anche il soggetto dal grafo?",
+        message: `Questo è l'ultimo contenuto della Raccolta che rappresenta un soggetto usato nel grafo. Continuando verranno rimossi il nodo${relationCount ? ` e ${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"}` : ""}. Il contenuto resterà nello Spazio editoriale.`,
+        confirmLabel: "Rimuovi contenuto e collegamenti",
+        tone: "danger",
+      });
+      if (!confirmed) return false;
+      await editorialRepository.removeEntry(this.editorialContextId, entryId, { cascadeGraph: true });
+      return true;
+    }
+  }
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -156,18 +174,19 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const remove = target.closest("button[data-remove-entry]");
     if (remove && this.editable && !this.locked) {
       const confirmed = await openActionDialog({
-        title: "Rimuovere questo contenuto dalla raccolta?",
-        message: "Il contenuto resterà nello spazio editoriale e potrà continuare a essere usato da altre raccolte.",
-        confirmLabel: "Rimuovi dalla raccolta",
+        title: "Rimuovere questo contenuto dalla Raccolta?",
+        message: "Il contenuto resterà nello Spazio editoriale e potrà continuare a essere usato da altre Raccolte.",
+        confirmLabel: "Rimuovi dalla Raccolta",
         tone: "danger",
       });
       if (!confirmed) return;
       this.error = null;
       try {
-        await editorialRepository.removeEntry(this.editorialContextId, remove.dataset.removeEntry);
+        if (!await this.removeEntry(remove.dataset.removeEntry)) return;
         this.entriesData = null;
         await this.refresh();
         this.dispatchEvent(new CustomEvent("editorial-content-changed", { bubbles: true }));
+        this.dispatchEvent(new CustomEvent("editorial-graph-changed", { bubbles: true }));
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Operazione non completata";
         this.render();
@@ -181,7 +200,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const subject = row?.subject || {};
     const item = row?.item || {};
     const presentationState = revision.status ? statusLabel(revision.status) : "Da completare";
-    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le regole editoriali della raccolta. Puoi mantenerlo nella selezione e completarlo prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
+    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le Regole editoriali della Raccolta. Puoi mantenerlo nella selezione e completarlo prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
   }
 
   renderPagination(pagination = {}) {
@@ -196,7 +215,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const entries = this.entriesData?.results || [];
     const pagination = this.entriesData?.pagination || { page: this.entriesState.page, total: 0, totalPages: 0 };
     const disabledNote = this.locked ? `<div class="inline-notice">${icon("lock", { size: 16 })}<span>La composizione è bloccata durante la revisione.</span></div>` : "";
-    this.innerHTML = `<style>artaround-editorial-collection-content-manager{display:grid;gap:1rem}artaround-editorial-collection-content-manager>section{display:grid;gap:1rem}artaround-editorial-collection-content-manager .inline-notice{display:flex;gap:.5rem;align-items:center;padding:.7rem .85rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}</style>${disabledNote}${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}<section aria-busy="${this.entriesBusy}"><div class="section-heading"><div><span class="eyebrow">Contenuti</span><h2>${Number(pagination.total || 0)} nella raccolta</h2><p>Questa è la selezione editoriale della raccolta. I contenuti restano risorse dello spazio anche quando vengono rimossi da qui.</p></div>${this.editable && !this.locked ? `<button type="button" data-add-collection-content>${icon("plus", { size: 16 })} Aggiungi contenuti</button>` : ""}</div><form class="inline-form" data-search-entries role="search"><label>Cerca nella raccolta<input name="q" value="${escapeHtml(this.entriesState.query)}" placeholder="Titolo o soggetto"></label><button type="submit" class="button-secondary" ${this.entriesBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${entries.length ? `<div class="asset-grid">${entries.map((row) => this.renderEntry(row)).join("")}</div>` : `<div class="empty-state"><h3>${this.entriesState.query ? "Nessun contenuto trovato" : "La raccolta è vuota"}</h3><p>${this.entriesState.query ? "Prova una ricerca diversa." : this.editable && !this.locked ? "Usa “Aggiungi contenuti” per scegliere gli Item già disponibili nello spazio editoriale." : "Non ci sono contenuti nella raccolta."}</p></div>`}${this.renderPagination(pagination)}</section>`;
+    this.innerHTML = `<style>artaround-editorial-collection-content-manager{display:grid;gap:1rem}artaround-editorial-collection-content-manager>section{display:grid;gap:1rem}artaround-editorial-collection-content-manager .inline-notice{display:flex;gap:.5rem;align-items:center;padding:.7rem .85rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}</style>${disabledNote}${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}<section aria-busy="${this.entriesBusy}"><div class="section-heading"><div><span class="eyebrow">Contenuti</span><h2>${Number(pagination.total || 0)} nella Raccolta</h2><p>Questa è la selezione editoriale della Raccolta. I contenuti restano risorse dello Spazio anche quando vengono rimossi da qui.</p></div>${this.editable && !this.locked ? `<button type="button" data-add-collection-content>${icon("plus", { size: 16 })} Aggiungi contenuti</button>` : ""}</div><form class="inline-form" data-search-entries role="search"><label>Cerca nella Raccolta<input name="q" value="${escapeHtml(this.entriesState.query)}" placeholder="Titolo o soggetto"></label><button type="submit" class="button-secondary" ${this.entriesBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${entries.length ? `<div class="asset-grid">${entries.map((row) => this.renderEntry(row)).join("")}</div>` : `<div class="empty-state"><h3>${this.entriesState.query ? "Nessun contenuto trovato" : "La Raccolta è vuota"}</h3><p>${this.entriesState.query ? "Prova una ricerca diversa." : this.editable && !this.locked ? "Usa “Aggiungi contenuti” per scegliere gli Item già disponibili nello Spazio editoriale." : "Non ci sono contenuti nella Raccolta."}</p></div>`}${this.renderPagination(pagination)}</section>`;
   }
 }
 
