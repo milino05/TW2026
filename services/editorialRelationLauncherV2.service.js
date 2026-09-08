@@ -63,16 +63,12 @@ async function listEditorialRelationChoices({
   const graphIds = [...new Set(contexts.map((context) => id(context.semanticGraphId)).filter(Boolean))];
   const namespaceIds = [...new Set(contexts.map((context) => id(context.namespaceId)).filter(Boolean))];
   const contextIds = contexts.map((context) => context._id);
-  const [graphs, namespaces, entryCounts, sharedCounts] = await Promise.all([
+  const [graphs, namespaces, entryCounts] = await Promise.all([
     SemanticGraph.find({ _id: { $in: graphIds }, lifecycleStatus: "active" }).select("displayName workingRevisionId workingVersion").lean(),
     Namespace.find({ _id: { $in: namespaceIds }, lifecycleStatus: "active" }).select("name").lean(),
     CollectionItemMembership.aggregate([
       { $match: { editorialContextId: { $in: contextIds } } },
       { $group: { _id: "$editorialContextId", count: { $sum: 1 } } },
-    ]),
-    EditorialContext.aggregate([
-      { $match: { semanticGraphId: { $in: graphIds }, lifecycleStatus: "active" } },
-      { $group: { _id: "$semanticGraphId", count: { $sum: 1 } } },
     ]),
   ]);
 
@@ -80,7 +76,6 @@ async function listEditorialRelationChoices({
   const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
   const spaceById = new Map(spaces.map((space) => [id(space._id), space]));
   const entryCountById = new Map(entryCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
-  const sharedCountByGraphId = new Map(sharedCounts.map((entry) => [id(entry._id), Number(entry.count || 0)]));
   const workingRevisionIds = graphs.map((graph) => graph.workingRevisionId).filter(Boolean);
   const edgeCounts = workingRevisionIds.length
     ? await SemanticEdgeV2.aggregate([
@@ -103,9 +98,9 @@ async function listEditorialRelationChoices({
         namespace: { id: context.namespaceId, name: namespace?.name || "Regole editoriali" },
         semanticGraph: {
           id: context.semanticGraphId,
-          name: graph?.displayName || "Grafo semantico",
+          name: graph?.displayName || "Grafo della Raccolta",
           workingVersion: Number(graph?.workingVersion || 0),
-          sharedByCollections: sharedCountByGraphId.get(id(context.semanticGraphId)) || 1,
+          localToCollection: true,
         },
         itemCount: entryCountById.get(id(context._id)) || 0,
         relationCount: graph?.workingRevisionId ? edgeCountByRevisionId.get(id(graph.workingRevisionId)) || 0 : 0,
