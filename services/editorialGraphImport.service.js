@@ -168,6 +168,7 @@ async function buildImportPreview({ sourceGraph, sourceSnapshot, contentSpace, n
       graphRevisionId: sourceSnapshot.revision._id,
       name: sourceGraph.displayName,
       description: sourceGraph.description || "",
+      lifecycleStatus: sourceGraph.lifecycleStatus || "active",
     },
     summary,
     results,
@@ -256,7 +257,7 @@ async function listEditorialGraphImportSources({ editorialContextId, actorUserId
   const results = [];
   for (const source of sources) {
     const [sourceGraph, sourceSnapshot] = await Promise.all([
-      SemanticGraph.findOne({ _id: source.sourceSemanticGraphId, lifecycleStatus: "active" }).lean(),
+      SemanticGraph.findById(source.sourceSemanticGraphId).lean(),
       loadSemanticGraphRevision(source.sourceGraphRevisionId),
     ]);
     if (!sourceGraph) continue;
@@ -348,6 +349,7 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
   const snapshot = cloneGraphSnapshot(localGraph);
   const currentSubjectIds = new Set(snapshot.subjectBindings.map((entry) => id(entry.subjectId)));
   const selectedSubjectIds = [...new Set(selectedItems.map((entry) => id(entry.primarySubjectId)))];
+  let activatedSubjectCount = 0;
   for (const subjectId of selectedSubjectIds) {
     if (currentSubjectIds.has(subjectId)) continue;
     const sourceBinding = sourceBindingBySubject.get(subjectId);
@@ -356,9 +358,11 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
       subjectClassDefinitionIds: [...(sourceBinding.subjectClassDefinitionIds || [])],
     });
     currentSubjectIds.add(subjectId);
+    activatedSubjectCount += 1;
   }
 
   const existingEdgeKeys = new Set(snapshot.edges.map(edgeKey));
+  let activatedRelationCount = 0;
   for (const edge of sourceSnapshot.authoritativeEdges) {
     if (!currentSubjectIds.has(id(edge.sourceSubjectId)) || !currentSubjectIds.has(id(edge.targetSubjectId))) continue;
     const key = edgeKey(edge);
@@ -376,6 +380,7 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
       },
     });
     existingEdgeKeys.add(key);
+    activatedRelationCount += 1;
   }
 
   const issues = validateGraphSnapshotAgainstNamespace(snapshot, namespaceRevision);
@@ -387,8 +392,19 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
   const alreadyPresent = await CollectionItemMembership.find({ editorialContextId: context._id, itemId: { $in: objectIds } }).select("itemId").lean();
   const existingItemIds = new Set(alreadyPresent.map((entry) => id(entry.itemId)));
   const newItems = selectedItems.filter((entry) => !existingItemIds.has(id(entry)));
-  let revision = null;
+  const graphChanged = activatedSubjectCount > 0 || activatedRelationCount > 0;
+  const collectionChanged = newItems.length > 0 || graphChanged;
+  if (!collectionChanged) {
+    return {
+      importedItemCount: 0,
+      activatedSubjectCount: 0,
+      activatedRelationCount: 0,
+      graphRevisionId: semanticGraph.workingRevisionId || null,
+      graph: localGraph,
+    };
+  }
 
+  let revision = null;
   await mongoose.connection.transaction(async (session) => {
     const lockedContext = await EditorialContext.findOne({
       _id: context._id,
@@ -397,13 +413,16 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
       workingVersion: expectedCollectionVersion,
     }).session(session);
     if (!lockedContext) throw collectionConflict();
-    const lockedGraph = await SemanticGraph.findOne({
-      _id: semanticGraph._id,
-      lifecycleStatus: "active",
-      workingVersion: expectedGraphVersion,
-      workingRevisionId: expectedGraphRevisionId,
-    }).session(session);
-    if (!lockedGraph) throw graphConflict();
+    let lockedGraph = null;
+    if (graphChanged) {
+      lockedGraph = await SemanticGraph.findOne({
+        _id: semanticGraph._id,
+        lifecycleStatus: "active",
+        workingVersion: expectedGraphVersion,
+        workingRevisionId: expectedGraphRevisionId,
+      }).session(session);
+      if (!lockedGraph) throw graphConflict();
+    }
 
     if (newItems.length) {
       await CollectionItemMembership.insertMany(newItems.map((item) => ({
@@ -420,45 +439,50 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
           { upsert: true, new: true, session },
         );
       }
-      lockedContext.workingVersion = expectedCollectionVersion + 1;
-      await lockedContext.save({ session });
     }
 
-    [revision] = await SemanticGraphRevision.create([{
-      semanticGraphId: lockedGraph._id,
-      version: await nextGraphVersion(lockedGraph._id, session),
-      basedOnRevisionId: expectedGraphRevisionId,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-      createdBy: actorUserId,
-    }], { session });
-    if (snapshot.subjectBindings.length) {
-      await GraphSubjectBinding.insertMany(snapshot.subjectBindings.map((binding) => ({
-        graphRevisionId: revision._id,
-        subjectId: binding.subjectId,
-        subjectClassDefinitionIds: binding.subjectClassDefinitionIds || [],
-      })), { session, ordered: true });
+    lockedContext.workingVersion = expectedCollectionVersion + 1;
+    await lockedContext.save({ session });
+
+    if (graphChanged) {
+      [revision] = await SemanticGraphRevision.create([{
+        semanticGraphId: lockedGraph._id,
+        version: await nextGraphVersion(lockedGraph._id, session),
+        basedOnRevisionId: expectedGraphRevisionId,
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        createdBy: actorUserId,
+      }], { session });
+      if (snapshot.subjectBindings.length) {
+        await GraphSubjectBinding.insertMany(snapshot.subjectBindings.map((binding) => ({
+          graphRevisionId: revision._id,
+          subjectId: binding.subjectId,
+          subjectClassDefinitionIds: binding.subjectClassDefinitionIds || [],
+        })), { session, ordered: true });
+      }
+      if (snapshot.edges.length) {
+        await SemanticEdgeV2.insertMany(snapshot.edges.map((edge) => ({
+          graphRevisionId: revision._id,
+          sourceSubjectId: edge.sourceSubjectId,
+          targetSubjectId: edge.targetSubjectId,
+          relationTypeDefinitionId: edge.relationTypeDefinitionId,
+          weight: edge.weight,
+          metadata: edge.metadata ?? null,
+          provenance: edge.provenance || { origin: "human" },
+        })), { session, ordered: true });
+      }
+      lockedGraph.workingRevisionId = revision._id;
+      lockedGraph.workingVersion = expectedGraphVersion + 1;
+      await lockedGraph.save({ session });
     }
-    if (snapshot.edges.length) {
-      await SemanticEdgeV2.insertMany(snapshot.edges.map((edge) => ({
-        graphRevisionId: revision._id,
-        sourceSubjectId: edge.sourceSubjectId,
-        targetSubjectId: edge.targetSubjectId,
-        relationTypeDefinitionId: edge.relationTypeDefinitionId,
-        weight: edge.weight,
-        metadata: edge.metadata ?? null,
-        provenance: edge.provenance || { origin: "human" },
-      })), { session, ordered: true });
-    }
-    lockedGraph.workingRevisionId = revision._id;
-    lockedGraph.workingVersion = expectedGraphVersion + 1;
-    await lockedGraph.save({ session });
   });
 
+  const finalRevisionId = revision?._id || semanticGraph.workingRevisionId || null;
   return {
     importedItemCount: newItems.length,
-    activatedSubjectCount: selectedSubjectIds.filter((subjectId) => !localGraph?.nodes?.has?.(subjectId)).length,
-    graphRevisionId: revision._id,
-    graph: await loadSemanticGraphRevision(revision._id, { bypassCache: true }),
+    activatedSubjectCount,
+    activatedRelationCount,
+    graphRevisionId: finalRevisionId,
+    graph: revision ? await loadSemanticGraphRevision(revision._id, { bypassCache: true }) : localGraph,
   };
 }
 
