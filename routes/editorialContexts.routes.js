@@ -8,6 +8,8 @@ const entryId = validateObjectIdParam("entryId");
 const revisionId = validateObjectIdParam("revisionId");
 const edgeId = validateObjectIdParam("edgeId");
 const subjectId = validateObjectIdParam("subjectId");
+const semanticGraphId = validateObjectIdParam("semanticGraphId");
+const sourceId = validateObjectIdParam("sourceId");
 
 router.use(requireAuth);
 router.route("/editorial-contexts")
@@ -28,12 +30,15 @@ router.route("/editorial-contexts/:editorialContextId/entries/:entryId")
   .patch(controller.updateEntry)
   .delete(controller.removeEntry);
 
-router.route("/editorial-contexts/:editorialContextId/semantic-graph")
-  .all(editorialContextId)
-  .get(controller.getGraph)
-  .patch(controller.changeGraph);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph", editorialContextId, controller.getGraph);
 router.get("/editorial-contexts/:editorialContextId/semantic-graph/neighborhood", editorialContextId, controller.getGraphNeighborhood);
 router.get("/editorial-contexts/:editorialContextId/semantic-graph/subject-candidates", editorialContextId, controller.searchGraphSubjectCandidates);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph/import-preview/:semanticGraphId", editorialContextId, semanticGraphId, controller.previewGraphImport);
+router.route("/editorial-contexts/:editorialContextId/semantic-graph/import-sources")
+  .all(editorialContextId)
+  .get(controller.listGraphImportSources)
+  .post(controller.attachGraphImportSource);
+router.post("/editorial-contexts/:editorialContextId/semantic-graph/import-sources/:sourceId/subjects", editorialContextId, sourceId, controller.importGraphSubjects);
 router.route("/editorial-contexts/:editorialContextId/semantic-graph/subjects/:subjectId")
   .all(editorialContextId, subjectId)
   .post(controller.addGraphSubject)
