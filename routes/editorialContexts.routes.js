@@ -12,9 +12,7 @@ const semanticGraphId = validateObjectIdParam("semanticGraphId");
 const sourceId = validateObjectIdParam("sourceId");
 
 router.use(requireAuth);
-router.route("/editorial-contexts")
-  .get(controller.list)
-  .post(controller.create);
+router.get("/editorial-contexts", controller.list);
 
 router.route("/editorial-contexts/:editorialContextId")
   .all(editorialContextId)
