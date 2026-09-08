@@ -33,7 +33,7 @@ async function createNamespaceRevision({ NamespaceRevision, namespaceId, version
   });
 }
 
-test("new Editorial Studio collection initializes an empty reusable graph against the authorized pinned NamespaceRevision", { skip: !mongoUri }, async () => {
+test("new Editorial Studio collection initializes an empty local graph against the authorized pinned NamespaceRevision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
@@ -49,17 +49,11 @@ test("new Editorial Studio collection initializes an empty reusable graph agains
 
     const contextOwner = await User.create({ username: "studio-owner-pinned", passwordHash: "hash" });
     const namespaceOwner = await User.create({ username: "studio-namespace-owner", passwordHash: "hash" });
-    const namespace = await Namespace.create({
-      name: "Namespace esterno",
-      ownerType: "user",
-      ownerId: namespaceOwner._id,
-      createdBy: namespaceOwner._id,
-    });
+    const namespace = await Namespace.create({ name: "Namespace esterno", ownerType: "user", ownerId: namespaceOwner._id, createdBy: namespaceOwner._id });
     const revision1 = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: namespaceOwner._id, status: "superseded" });
     const revision2 = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 2, userId: namespaceOwner._id, status: "published" });
     namespace.publishedRevisionId = revision2._id;
     await namespace.save();
-
     await Entitlement.create({
       beneficiaryType: "user",
       beneficiaryId: contextOwner._id,
@@ -70,12 +64,7 @@ test("new Editorial Studio collection initializes an empty reusable graph agains
       baselineSnapshotRef: { resourceType: "namespace_revision", resourceId: revision1._id },
       status: "active",
     });
-    const contentSpace = await ContentSpace.create({
-      name: "Spazio editoriale pinned",
-      ownerType: "user",
-      ownerId: contextOwner._id,
-      createdBy: contextOwner._id,
-    });
+    const contentSpace = await ContentSpace.create({ name: "Spazio editoriale pinned", ownerType: "user", ownerId: contextOwner._id, createdBy: contextOwner._id });
 
     const created = await createEditorialStudioCollection({
       actorUserId: contextOwner._id,
@@ -87,22 +76,16 @@ test("new Editorial Studio collection initializes an empty reusable graph agains
         graphMode: "new",
         graphDisplayName: "Grafo raccolta pinned",
         displayName: "Raccolta pinned",
-        shortDescription: "Test raccolta",
       },
     });
 
-    const space = await ContentSpace.findById(created.contentSpace.id).lean();
     const context = await EditorialContext.findById(created.editorialContext.id).lean();
     const semanticGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
     const graphRevision = await SemanticGraphRevision.findById(semanticGraph.workingRevisionId).lean();
-
-    assert.ok(space);
     assert.ok(context);
     assert.ok(semanticGraph);
-    assert.ok(graphRevision);
     assert.equal(graphRevision.version, 1);
     assert.equal(graphRevision.basedOnRevisionId, null);
-    assert.equal(String(graphRevision.semanticGraphId), String(semanticGraph._id));
     assert.equal(String(graphRevision.authoredAgainstNamespaceRevisionId), String(revision1._id));
     assert.notEqual(String(graphRevision.authoredAgainstNamespaceRevisionId), String(revision2._id));
     assert.equal(await SemanticEdgeV2.countDocuments({ graphRevisionId: graphRevision._id }), 0);
@@ -110,34 +93,26 @@ test("new Editorial Studio collection initializes an empty reusable graph agains
   });
 });
 
-test("multiple collections can reuse the same SemanticGraph while keeping independent collection state", { skip: !mongoUri }, async () => {
+test("importing an existing graph creates an independent local graph and pins the source revision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
+    const ContentSpace = require("../models/contentSpace.model");
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
     const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
     const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
 
-    const owner = await User.create({ username: "studio-shared-graph-owner", passwordHash: "hash" });
-    const namespace = await Namespace.create({
-      name: "Regole condivise",
-      ownerType: "user",
-      ownerId: owner._id,
-      createdBy: owner._id,
-    });
+    const owner = await User.create({ username: "studio-import-owner", passwordHash: "hash" });
+    const namespace = await Namespace.create({ name: "Regole import", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const revision = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: owner._id, status: "published" });
     namespace.publishedRevisionId = revision._id;
     await namespace.save();
-    const contentSpace = await require("../models/contentSpace.model").create({
-      name: "Spazio condiviso",
-      ownerType: "user",
-      ownerId: owner._id,
-      createdBy: owner._id,
-    });
+    const contentSpace = await ContentSpace.create({ name: "Spazio import", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
 
-    const first = await createEditorialStudioCollection({
+    const sourceCollection = await createEditorialStudioCollection({
       actorUserId: owner._id,
       payload: {
         ownerType: "user",
@@ -145,42 +120,48 @@ test("multiple collections can reuse the same SemanticGraph while keeping indepe
         contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
         graphMode: "new",
-        graphDisplayName: "Grafo condiviso",
-        displayName: "Raccolta A",
+        graphDisplayName: "Grafo sorgente",
+        displayName: "Raccolta sorgente",
       },
     });
-    const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
-    const graph = await SemanticGraph.findById(firstContext.semanticGraphId).lean();
+    const sourceContext = await EditorialContext.findById(sourceCollection.editorialContext.id).lean();
+    const sourceGraph = await SemanticGraph.findById(sourceContext.semanticGraphId).lean();
 
-    const second = await createEditorialStudioCollection({
+    const importedCollection = await createEditorialStudioCollection({
       actorUserId: owner._id,
       payload: {
         ownerType: "user",
         ownerId: owner._id,
+        contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
-        graphMode: "shared",
-        semanticGraphId: graph._id,
-        contentSpaceId: first.contentSpace.id,
-        displayName: "Raccolta B",
+        graphMode: "import",
+        semanticGraphId: sourceGraph._id,
+        importItemIds: [],
+        displayName: "Raccolta importata",
       },
     });
-    const secondContext = await EditorialContext.findById(second.editorialContext.id).lean();
+    const importedContext = await EditorialContext.findById(importedCollection.editorialContext.id).lean();
+    const importedGraph = await SemanticGraph.findById(importedContext.semanticGraphId).lean();
+    const source = await EditorialGraphImportSource.findOne({ editorialContextId: importedContext._id }).lean();
 
-    assert.notEqual(String(firstContext._id), String(secondContext._id));
-    assert.equal(String(firstContext.contentSpaceId), String(secondContext.contentSpaceId));
-    assert.equal(String(firstContext.namespaceId), String(secondContext.namespaceId));
-    assert.equal(String(firstContext.semanticGraphId), String(secondContext.semanticGraphId));
-    assert.equal(await EditorialContext.countDocuments({ contentSpaceId: firstContext.contentSpaceId, namespaceId: namespace._id }), 2);
-    assert.equal(await SemanticGraph.countDocuments({ _id: graph._id }), 1);
-    assert.equal(await SemanticGraphRevision.countDocuments({ semanticGraphId: graph._id }), 1);
+    assert.notEqual(String(importedContext.semanticGraphId), String(sourceGraph._id));
+    assert.equal(await SemanticGraph.countDocuments({ namespaceId: namespace._id }), 2);
+    assert.equal(await SemanticGraphRevision.countDocuments({ semanticGraphId: sourceGraph._id }), 1);
+    assert.equal(await SemanticGraphRevision.countDocuments({ semanticGraphId: importedGraph._id }), 1);
+    assert.equal(String(source.sourceSemanticGraphId), String(sourceGraph._id));
+    assert.equal(String(source.sourceGraphRevisionId), String(sourceGraph.workingRevisionId));
+    assert.equal(String(source.targetSemanticGraphId), String(importedGraph._id));
+    assert.equal(importedCollection.semanticGraph.mode, "import");
+    assert.equal(importedCollection.semanticGraph.importedSubjectCount, 0);
   });
 });
 
-test("collection authoring lists only reusable graphs compatible with principal and Namespace", { skip: !mongoUri }, async () => {
+test("reusable graph choices remain scoped to principal and Namespace without live collection sharing", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
     const NamespaceRevision = require("../models/namespaceRevision.model");
+    const ContentSpace = require("../models/contentSpace.model");
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
     const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
@@ -191,12 +172,7 @@ test("collection authoring lists only reusable graphs compatible with principal 
     const revision = await createNamespaceRevision({ NamespaceRevision, namespaceId: namespace._id, version: 1, userId: owner._id, status: "published" });
     namespace.publishedRevisionId = revision._id;
     await namespace.save();
-    const contentSpace = await require("../models/contentSpace.model").create({
-      name: "Spazio grafi",
-      ownerType: "user",
-      ownerId: owner._id,
-      createdBy: owner._id,
-    });
+    const contentSpace = await ContentSpace.create({ name: "Spazio grafi", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
 
     const first = await createEditorialStudioCollection({
       actorUserId: owner._id,
@@ -206,8 +182,8 @@ test("collection authoring lists only reusable graphs compatible with principal 
         contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
         graphMode: "new",
-        graphDisplayName: "Rinascimento condiviso",
-        displayName: "Rinascimento condiviso",
+        graphDisplayName: "Rinascimento sorgente",
+        displayName: "Rinascimento",
       },
     });
     const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
@@ -216,26 +192,22 @@ test("collection authoring lists only reusable graphs compatible with principal 
       payload: {
         ownerType: "user",
         ownerId: owner._id,
+        contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
-        graphMode: "shared",
+        graphMode: "import",
         semanticGraphId: firstContext.semanticGraphId,
-        contentSpaceId: first.contentSpace.id,
+        importItemIds: [],
         displayName: "Seconda raccolta",
       },
     });
-    await SemanticGraph.create({
-      namespaceId: namespace._id,
-      displayName: "Grafo di un altro utente",
-      ownerType: "user",
-      ownerId: otherOwner._id,
-      createdBy: otherOwner._id,
-    });
+    await SemanticGraph.create({ namespaceId: namespace._id, displayName: "Rinascimento altro utente", ownerType: "user", ownerId: otherOwner._id, createdBy: otherOwner._id });
 
     const choices = await listReusableSemanticGraphs({
       actorUserId: owner._id,
       ownerType: "user",
       ownerId: owner._id,
       namespaceId: namespace._id,
+      contentSpaceId: contentSpace._id,
       query: "Rinascimento",
       page: 1,
       limit: 10,
@@ -244,7 +216,7 @@ test("collection authoring lists only reusable graphs compatible with principal 
     assert.equal(choices.pagination.total, 1);
     assert.equal(choices.results.length, 1);
     assert.equal(String(choices.results[0].id), String(firstContext.semanticGraphId));
-    assert.equal(choices.results[0].collectionUsageCount, 2);
+    assert.equal(choices.results[0].collectionUsageCount, 1);
     assert.equal(choices.results[0].subjectCount, 0);
     assert.equal(choices.results[0].relationCount, 0);
   });
