@@ -11,6 +11,7 @@ const listingId = validateObjectIdParam("listingId");
 const offerId = validateObjectIdParam("offerId");
 const itemId = validateObjectIdParam("itemId");
 const subjectId = validateObjectIdParam("subjectId");
+const semanticGraphId = validateObjectIdParam("semanticGraphId");
 const namespaceId = validateObjectIdParam("namespaceId");
 const physicalVocabularyId = validateObjectIdParam("physicalVocabularyId");
 const organizationId = validateObjectIdParam("organizationId");
@@ -36,6 +37,7 @@ router.get("/v2/marketplace/editorial-spaces", authoringController.editorialSpac
 router.get("/v2/marketplace/editorial-spaces/:contentSpaceId", contentSpaceId, authoringController.editorialSpace);
 router.get("/v2/marketplace/editorial-relations", authoringController.editorialRelationChoices);
 router.get("/v2/marketplace/semantic-graphs", authoringController.reusableSemanticGraphs);
+router.get("/v2/marketplace/semantic-graphs/:semanticGraphId/import-preview", semanticGraphId, authoringController.semanticGraphImportPreview);
 router.post("/v2/marketplace/editorial-collections", authoringController.createEditorialCollection);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/studio", editorialContextId, authoringController.editorialStudio);
 router.get("/v2/marketplace/editorial-contexts/:editorialContextId/candidates", editorialContextId, authoringController.editorialStudioCandidates);
