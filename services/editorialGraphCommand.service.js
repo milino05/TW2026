@@ -109,8 +109,17 @@ async function assertCollectionSubjectsAvailable(context, subjectIds) {
   })));
 }
 
-async function loadGraphAuthoringState({ semanticGraphId, actorUserId }) {
+async function loadGraphAuthoringState({ semanticGraphId, actorUserId, allowCollectionBound = false }) {
   const semanticGraph = await findSemanticGraphResourceOrFail({ semanticGraphId, actorUserId, write: true });
+  if (!allowCollectionBound) {
+    const boundContext = await EditorialContext.findOne({ semanticGraphId: semanticGraph._id, lifecycleStatus: "active" }).select("_id").lean();
+    if (boundContext) {
+      throw new AppError("Il grafo locale di una Raccolta si modifica dal contesto della Raccolta", 409, [{
+        code: "SEMANTIC_GRAPH_COLLECTION_BOUND_USE_CONTEXT_API",
+        context: { editorialContextId: boundContext._id },
+      }]);
+    }
+  }
   const namespace = await Namespace.findOne({ _id: semanticGraph.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Regole editoriali non disponibili", 409);
   await assertCanUseNamespaceForAuthoring({
@@ -146,7 +155,7 @@ async function loadAuthoringContext({ editorialContextId, actorUserId }) {
   if (!sameId(semanticGraph.namespaceId, context.namespaceId)) {
     throw new AppError("Il grafo semantico usa regole editoriali diverse dalla raccolta", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
   }
-  const state = await loadGraphAuthoringState({ semanticGraphId: semanticGraph._id, actorUserId });
+  const state = await loadGraphAuthoringState({ semanticGraphId: semanticGraph._id, actorUserId, allowCollectionBound: true });
   return { context, contentSpace, ...state };
 }
 
