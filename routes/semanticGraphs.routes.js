@@ -1,6 +1,7 @@
 const express = require("express");
 const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
+const { requireStandaloneSemanticGraph } = require("../middlewares/requireStandaloneSemanticGraph");
 const controller = require("../controllers/semanticGraphs.controller");
 
 const router = express.Router();
@@ -17,8 +18,8 @@ router.route("/semantic-graphs")
   .post(controller.create);
 
 router.get("/semantic-graphs/:semanticGraphId/authoring", semanticGraphId, controller.authoring);
-router.post("/semantic-graphs/:semanticGraphId/restore", semanticGraphId, controller.restore);
-router.post("/semantic-graphs/:semanticGraphId/fork", semanticGraphId, controller.fork);
+router.post("/semantic-graphs/:semanticGraphId/restore", semanticGraphId, requireStandaloneSemanticGraph, controller.restore);
+router.post("/semantic-graphs/:semanticGraphId/fork", semanticGraphId, requireStandaloneSemanticGraph, controller.fork);
 router.get("/semantic-graphs/:semanticGraphId/snapshot", semanticGraphId, controller.getSnapshot);
 router.get("/semantic-graphs/:semanticGraphId/neighborhood", semanticGraphId, controller.getNeighborhood);
 router.get("/semantic-graphs/:semanticGraphId/subjects", semanticGraphId, controller.listSubjects);
@@ -26,19 +27,19 @@ router.get("/semantic-graphs/:semanticGraphId/subjects", semanticGraphId, contro
 router.route("/semantic-graphs/:semanticGraphId")
   .all(semanticGraphId)
   .get(controller.get)
-  .patch(controller.update)
-  .delete(controller.trash);
+  .patch(requireStandaloneSemanticGraph, controller.update)
+  .delete(requireStandaloneSemanticGraph, controller.trash);
 
 router.route("/semantic-graphs/:semanticGraphId/subjects/:subjectId")
   .all(semanticGraphId, subjectId)
-  .post(controller.addSubject)
-  .delete(controller.removeSubject);
+  .post(requireStandaloneSemanticGraph, controller.addSubject)
+  .delete(requireStandaloneSemanticGraph, controller.removeSubject);
 
-router.put("/semantic-graphs/:semanticGraphId/subjects/:subjectId/classes", semanticGraphId, subjectId, controller.setSubjectClasses);
-router.post("/semantic-graphs/:semanticGraphId/edges", semanticGraphId, controller.addEdge);
+router.put("/semantic-graphs/:semanticGraphId/subjects/:subjectId/classes", semanticGraphId, subjectId, requireStandaloneSemanticGraph, controller.setSubjectClasses);
+router.post("/semantic-graphs/:semanticGraphId/edges", semanticGraphId, requireStandaloneSemanticGraph, controller.addEdge);
 router.route("/semantic-graphs/:semanticGraphId/edges/:edgeId")
   .all(semanticGraphId, edgeId)
-  .patch(controller.updateEdge)
-  .delete(controller.removeEdge);
+  .patch(requireStandaloneSemanticGraph, controller.updateEdge)
+  .delete(requireStandaloneSemanticGraph, controller.removeEdge);
 
 module.exports = router;
