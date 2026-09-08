@@ -52,28 +52,32 @@ test("opening a collection never mutates graph membership and does not materiali
   assert.match(openGraph, /subjectInGraph/);
 });
 
-test("adding the Item Subject to the graph is an explicit semantic-only action", () => {
+test("adding the Item Subject is explicit and respects Collection containment", () => {
   const addSubject = methodBody(source.sidecar, "addSubjectToGraph", "onSubmit");
   assert.match(addSubject, /editorialRepository\.addGraphSubject/);
   assert.match(addSubject, /focusedGraphProjection/);
   assert.match(source.sidecar, /data-add-sidecar-subject/);
-  assert.match(source.sidecar, /Aggiungi al grafo e usa come contesto/);
+  assert.match(source.sidecar, /Aggiungi al grafo/);
+  assert.match(source.sidecar, /soltanto se almeno un contenuto che lo rappresenta appartiene già alla Raccolta/);
+  assert.match(source.sidecar, /data-open-sidecar-collection-content/);
+  assert.match(source.sidecar, /section=content/);
   assert.doesNotMatch(source.sidecar, /createItemConnection|createEdition|setContentSpaceMembership|VenueTarget|physicalIntent/);
   assert.match(source.repository, /addGraphSubject/);
 });
 
-test("collection context is reused when present, otherwise the sidecar asks for an editable collection", () => {
+test("collection context is reused when present, otherwise the sidecar asks for an editable collection-local graph", () => {
   assert.match(source.sidecar, /itemParams\(\)\.get\("editorialContextId"\)/);
   assert.match(source.sidecar, /editorialRepository\.relationChoices/);
   assert.match(source.sidecar, /permissions\?\.canEditGraph/);
   assert.match(source.sidecar, /Scegli dove lavorare/);
-  assert.match(source.sidecar, /grafo condiviso da/);
+  assert.match(source.sidecar, /Ogni Raccolta modifica soltanto il proprio grafo locale/);
+  assert.doesNotMatch(source.sidecar, /sharedByCollections|grafo condiviso/);
 });
 
-test("semantic sidecar explains graph reuse without conflating presentation or physical presence", () => {
-  assert.match(source.sidecar, /non aggiunge contenuti alla raccolta/);
-  assert.match(source.sidecar, /non modifica la presenza fisica/);
-  assert.match(source.sidecar, /Il grafo è condiviso da/);
+test("semantic sidecar distinguishes Collection content membership from physical presence", () => {
+  assert.match(source.sidecar, /aggiungi prima il contenuto/);
+  assert.match(source.sidecar, /il grafo non può contenere Subject privi di contenuto nella Raccolta/);
+  assert.doesNotMatch(source.sidecar, /non aggiunge contenuti alla raccolta|Il grafo è condiviso da/);
 });
 
 test("semantic sidecar does not resurrect the deleted Item-level connection authoring boundary", () => {
