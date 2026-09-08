@@ -7,16 +7,25 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
+const SemanticGraph = require("../models/semanticGraph.model");
+const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
+const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function sameId(left, right) { return id(left) === id(right); }
 function assertObjectId(value, field) {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`${field} non valido`, 400, [{ field, code: "INVALID_OBJECT_ID" }]);
 }
 function workingConflict() {
   return new AppError("La raccolta è stata modificata da un'altra operazione", 409, [{ code: "EDITORIAL_CONTEXT_WORKING_CONFLICT" }]);
+}
+function graphConflict() {
+  return new AppError("Il grafo semantico è stato modificato da un'altra operazione", 409, [{ code: "SEMANTIC_GRAPH_WORKING_CONFLICT" }]);
 }
 function normalizeCurationSignals(value) {
   if (value === undefined) return null;
@@ -159,19 +168,131 @@ async function updateEditorialContextEntry({ editorialContextId, entryId, curati
   return updated;
 }
 
-async function removeEditorialContextEntry({ editorialContextId, entryId, actorUserId }) {
+async function remainingCollectionItemsForSubject({ context, subjectId, excludingEntryId, session }) {
+  const memberships = await CollectionItemMembership.find({
+    editorialContextId: context._id,
+    _id: { $ne: excludingEntryId },
+  }).select("itemId").session(session).lean();
+  if (!memberships.length) return [];
+  const items = await ItemV2.find({
+    _id: { $in: memberships.map((entry) => entry.itemId) },
+    primarySubjectId: subjectId,
+    lifecycleStatus: "active",
+  }).select("_id").session(session).lean();
+  return items;
+}
+
+async function nextGraphVersion(semanticGraphId, session) {
+  const latest = await SemanticGraphRevision.findOne({ semanticGraphId }).sort({ version: -1 }).select("version").session(session).lean();
+  return (latest?.version || 0) + 1;
+}
+
+function graphSnapshotWithoutSubject(graph, subjectId) {
+  if (!graph) return { subjectBindings: [], edges: [], removedRelationCount: 0, contained: false };
+  const contained = [...graph.nodes.values()].some((node) => node.binding && sameId(node.subject, subjectId));
+  const subjectBindings = [...graph.nodes.values()]
+    .filter((node) => node.binding && !sameId(node.subject, subjectId))
+    .map((node) => ({
+      subjectId: node.subject._id,
+      subjectClassDefinitionIds: [...(node.binding.subjectClassDefinitionIds || [])],
+    }));
+  const removedEdges = graph.authoritativeEdges.filter((edge) => sameId(edge.sourceSubjectId, subjectId) || sameId(edge.targetSubjectId, subjectId));
+  const edges = graph.authoritativeEdges
+    .filter((edge) => !sameId(edge.sourceSubjectId, subjectId) && !sameId(edge.targetSubjectId, subjectId))
+    .map((edge) => ({
+      sourceSubjectId: edge.sourceSubjectId,
+      targetSubjectId: edge.targetSubjectId,
+      relationTypeDefinitionId: edge.relationTypeDefinitionId,
+      weight: edge.weight,
+      metadata: edge.metadata ?? null,
+      provenance: edge.provenance || { origin: "human" },
+    }));
+  return { subjectBindings, edges, removedRelationCount: removedEdges.length, contained };
+}
+
+async function writeGraphSnapshot({ semanticGraph, sourceGraph, snapshot, actorUserId, session }) {
+  const lockedGraph = await SemanticGraph.findOne({
+    _id: semanticGraph._id,
+    lifecycleStatus: "active",
+    workingVersion: Number(semanticGraph.workingVersion || 0),
+    workingRevisionId: semanticGraph.workingRevisionId || null,
+  }).session(session);
+  if (!lockedGraph) throw graphConflict();
+  const [revision] = await SemanticGraphRevision.create([{
+    semanticGraphId: lockedGraph._id,
+    version: await nextGraphVersion(lockedGraph._id, session),
+    basedOnRevisionId: lockedGraph.workingRevisionId || null,
+    authoredAgainstNamespaceRevisionId: sourceGraph.revision.authoredAgainstNamespaceRevisionId,
+    createdBy: actorUserId,
+  }], { session });
+  if (snapshot.subjectBindings.length) {
+    await GraphSubjectBinding.insertMany(snapshot.subjectBindings.map((binding) => ({
+      graphRevisionId: revision._id,
+      subjectId: binding.subjectId,
+      subjectClassDefinitionIds: binding.subjectClassDefinitionIds || [],
+    })), { session, ordered: true });
+  }
+  if (snapshot.edges.length) {
+    await SemanticEdgeV2.insertMany(snapshot.edges.map((edge) => ({
+      graphRevisionId: revision._id,
+      sourceSubjectId: edge.sourceSubjectId,
+      targetSubjectId: edge.targetSubjectId,
+      relationTypeDefinitionId: edge.relationTypeDefinitionId,
+      weight: edge.weight,
+      metadata: edge.metadata ?? null,
+      provenance: edge.provenance || { origin: "human" },
+    })), { session, ordered: true });
+  }
+  lockedGraph.workingRevisionId = revision._id;
+  lockedGraph.workingVersion = Number(semanticGraph.workingVersion || 0) + 1;
+  await lockedGraph.save({ session });
+  return revision;
+}
+
+async function removeEditorialContextEntry({ editorialContextId, entryId, cascadeGraph = false, actorUserId }) {
   assertObjectId(entryId, "entryId");
   const initial = await findContextOrFail(editorialContextId);
   await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
+  const semanticGraph = await SemanticGraph.findOne({ _id: initial.semanticGraphId, lifecycleStatus: "active" });
+  const sourceGraph = semanticGraph?.workingRevisionId ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId) : null;
+  let removal = { removed: true, removedGraphSubject: false, removedRelationCount: 0 };
+
   await mongoose.connection.transaction(async (session) => {
     const context = await findContextOrFail(editorialContextId, { session });
     assertWorkingStateEditable(context);
-    const result = await CollectionItemMembership.deleteOne({ _id: entryId, editorialContextId: context._id }, { session });
-    if (result.deletedCount !== 1) throw new AppError("Contenuto della raccolta non trovato", 404);
+    const membership = await CollectionItemMembership.findOne({ _id: entryId, editorialContextId: context._id }).session(session);
+    if (!membership) throw new AppError("Contenuto della raccolta non trovato", 404);
+    const item = await ItemV2.findOne({ _id: membership.itemId, lifecycleStatus: "active" }).select("primarySubjectId").session(session).lean();
+    if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE" }]);
+    const remaining = await remainingCollectionItemsForSubject({ context, subjectId: item.primarySubjectId, excludingEntryId: membership._id, session });
+    const isLastRepresentation = remaining.length === 0;
+    const projected = isLastRepresentation ? graphSnapshotWithoutSubject(sourceGraph, item.primarySubjectId) : null;
+
+    if (projected?.contained && !cascadeGraph) {
+      throw new AppError("Questo è l'ultimo contenuto della Raccolta che rappresenta un Subject usato nel grafo", 409, [{
+        code: "COLLECTION_ITEM_GRAPH_SUBJECT_IN_USE",
+        context: {
+          subjectId: item.primarySubjectId,
+          relationCount: projected.removedRelationCount,
+        },
+      }]);
+    }
+
+    await CollectionItemMembership.deleteOne({ _id: membership._id }, { session });
     await bumpWorkingVersion({ context, session });
+
+    if (projected?.contained && cascadeGraph) {
+      if (!semanticGraph || !sourceGraph) throw new AppError("Grafo semantico non disponibile", 409);
+      await writeGraphSnapshot({ semanticGraph, sourceGraph, snapshot: projected, actorUserId, session });
+      removal = {
+        removed: true,
+        removedGraphSubject: true,
+        removedRelationCount: projected.removedRelationCount,
+      };
+    }
   });
-  return { removed: true };
+  return removal;
 }
 
 async function itemIdsMatchingQuery(context, q) {
