@@ -177,10 +177,11 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
       contentSpaceId: id(this.selectedSpace),
       namespaceId: this.selectedNamespaceId,
       graphMode,
-      ...(["shared", "fork"].includes(graphMode) ? {
+      ...(graphMode === "import" ? {
         semanticGraphId: this.graphSelection.semanticGraphId,
+        importItemIds: this.graphSelection.importItemIds || [],
       } : {}),
-      ...(["new", "fork"].includes(graphMode) ? {
+      ...(graphMode === "new" ? {
         graphDisplayName: String(this.graphSelection.graphDisplayName || "").trim(),
         graphDescription: String(this.graphSelection.graphDescription || "").trim() || null,
       } : {}),
@@ -232,22 +233,18 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
   renderGraphChooser() {
     if (!this.graphSelection) {
       return `<div class="collection-graph-action-grid" role="group" aria-label="Scegli struttura semantica" aria-invalid="${Boolean(this.graphError)}" ${this.graphError ? 'aria-describedby="collection-graph-error"' : ""}>
-        <button type="button" class="collection-graph-action-card" data-collection-graph-action="new"><span class="collection-graph-action-icon">${icon("plus", { size: 21 })}</span><span><strong>Crea un nuovo grafo</strong><small>Parti da una struttura semantica vuota e indipendente.</small></span><span class="collection-graph-action-arrow">${icon("chevron", { size: 16 })}</span></button>
-        <button type="button" class="collection-graph-action-card" data-collection-graph-action="existing"><span class="collection-graph-action-icon">${icon("link", { size: 21 })}</span><span><strong>Usa un grafo esistente</strong><small>Scegli tra i grafi compatibili con queste Regole editoriali.</small></span><span class="collection-graph-action-arrow">${icon("chevron", { size: 16 })}</span></button>
+        <button type="button" class="collection-graph-action-card" data-collection-graph-action="new"><span class="collection-graph-action-icon">${icon("plus", { size: 21 })}</span><span><strong>Crea un nuovo grafo</strong><small>Parti da una struttura semantica locale vuota e indipendente.</small></span><span class="collection-graph-action-arrow">${icon("chevron", { size: 16 })}</span></button>
+        <button type="button" class="collection-graph-action-card" data-collection-graph-action="existing"><span class="collection-graph-action-icon">${icon("link", { size: 21 })}</span><span><strong>Importa da un grafo esistente</strong><small>Usalo come sorgente e scegli quali contenuti e relazioni attivare.</small></span><span class="collection-graph-action-arrow">${icon("chevron", { size: 16 })}</span></button>
       </div>${this.graphError ? `<artaround-field-feedback id="collection-graph-error">${escapeHtml(this.graphError)}</artaround-field-feedback>` : ""}`;
     }
 
     const selection = this.graphSelection;
     const graph = selection.graph || {};
-    const modeLabel = selection.graphMode === "new"
-      ? "Nuovo grafo"
-      : selection.graphMode === "fork"
-        ? `Copia indipendente${graph.sourceName ? ` da ${graph.sourceName}` : ""}`
-        : "Grafo condiviso";
+    const modeLabel = selection.graphMode === "new" ? "Nuovo grafo locale" : "Sorgente semantica importata";
     const stats = selection.graphMode === "new"
       ? "Verrà creato insieme alla Raccolta."
-      : `${Number(graph.subjectCount || 0)} soggetti · ${Number(graph.relationCount || 0)} relazioni`;
-    const summaryIcon = selection.graphMode === "new" ? "plus" : selection.graphMode === "fork" ? "copy" : "link";
+      : `${Number(graph.selectedSubjectCount || 0)} contenuti selezionati · sorgente con ${Number(graph.subjectCount || 0)} soggetti e ${Number(graph.relationCount || 0)} relazioni`;
+    const summaryIcon = selection.graphMode === "new" ? "plus" : "link";
     return `<article class="collection-graph-selection-summary"><span class="collection-graph-action-icon">${icon(summaryIcon, { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(modeLabel)}</span><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><p>${escapeHtml(stats)}</p></div><button type="button" class="button-secondary small" data-collection-graph-action="edit">Modifica</button></article>`;
   }
 
@@ -261,7 +258,7 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
         <label>Descrizione<textarea name="description" rows="3" placeholder="Obiettivo, pubblico o criterio curatoriale">${escapeHtml(this.draft.description)}</textarea></label>
       </div></section>
       <section class="collection-create-section"><header class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Vocabolario della Raccolta</h2><p>Determina classificazioni, relazioni e modalità di presentazione disponibili.</p></div></header><div class="collection-create-fields collection-create-fields--compact"><label>Regole editoriali<select name="namespaceId" required>${namespaceOptions}</select><span class="note">Dopo la creazione la Raccolta continuerà a usare queste Regole editoriali.</span></label></div></section>
-      <section class="collection-create-section"><header class="section-heading"><div><span class="eyebrow">Struttura semantica</span><h2>Grafo della Raccolta</h2><p>Crea una nuova struttura oppure riusa un grafo compatibile. Nessun grafo nuovo viene salvato finché non crei la Raccolta.</p></div></header>${this.renderGraphChooser()}</section>
+      <section class="collection-create-section"><header class="section-heading"><div><span class="eyebrow">Struttura semantica</span><h2>Grafo della Raccolta</h2><p>Crea una struttura locale nuova oppure inizializzala da una revisione sorgente. Un grafo importato non viene condiviso: la Raccolta materializza soltanto la porzione supportata dai contenuti che scegli.</p></div></header>${this.renderGraphChooser()}</section>
       <footer class="collection-create-actions"><button type="button" class="button-secondary" data-back-space>Annulla</button><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Creazione…" : `Crea Raccolta ${icon("chevron", { size: 15 })}`}</button></footer>
     </form>`;
   }
