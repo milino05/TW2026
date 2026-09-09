@@ -51,10 +51,17 @@ function buildFederatedSemanticGraph(graphBundles = []) {
   return { nodes, canonicalIndex, edgesFrom, bindingsByNamespaceSubject, namespaceIds };
 }
 
+function isReachableNode(graph, subjectId) {
+  const node = graph?.nodes.get(id(subjectId));
+  return Boolean(node && Array.isArray(node.sources) && node.sources.length);
+}
+
 function resolveFeatureToSubjectIds(graph, feature = {}) {
   if (!graph || !feature?.kind) return [];
-  if (feature.kind === "subject") return graph.nodes.has(id(feature.subjectId)) ? [id(feature.subjectId)] : [];
-  if (feature.kind === "canonical") return [...(graph.canonicalIndex.get(canonicalKey(feature)) || [])];
+  if (feature.kind === "subject") return isReachableNode(graph, feature.subjectId) ? [id(feature.subjectId)] : [];
+  if (feature.kind === "canonical") {
+    return [...(graph.canonicalIndex.get(canonicalKey(feature)) || [])].filter((subjectId) => isReachableNode(graph, subjectId));
+  }
   if (!["subject_class", "relation_type"].includes(feature.kind)) return [];
   const namespaceId = id(feature.namespaceId);
   const definitionId = String(feature.definitionId || "");
@@ -62,6 +69,7 @@ function resolveFeatureToSubjectIds(graph, feature = {}) {
   if (feature.kind === "subject_class") {
     const result = [];
     for (const subjectId of graph.nodes.keys()) {
+      if (!isReachableNode(graph, subjectId)) continue;
       const binding = graph.bindingsByNamespaceSubject.get(`${namespaceId}:${subjectId}`);
       if ((binding?.subjectClassDefinitionIds || []).some((entry) => String(entry) === definitionId)) result.push(subjectId);
     }
@@ -69,13 +77,17 @@ function resolveFeatureToSubjectIds(graph, feature = {}) {
   }
   const result = [];
   for (const [subjectId, edges] of graph.edgesFrom) {
-    if (edges.some((edge) => id(edge.namespaceId) === namespaceId && String(edge.relationTypeDefinitionId) === definitionId)) result.push(subjectId);
+    if (!isReachableNode(graph, subjectId)) continue;
+    if (edges.some((edge) => isReachableNode(graph, edge.toSubjectId)
+      && id(edge.namespaceId) === namespaceId
+      && String(edge.relationTypeDefinitionId) === definitionId)) result.push(subjectId);
   }
   return result;
 }
 
 function neighbors(graph, subjectId, { relationType = null } = {}) {
-  const values = graph?.edgesFrom.get(id(subjectId)) || [];
+  if (!isReachableNode(graph, subjectId)) return [];
+  const values = (graph?.edgesFrom.get(id(subjectId)) || []).filter((edge) => isReachableNode(graph, edge.toSubjectId));
   if (!relationType) return values;
   return values.filter((edge) => id(edge.namespaceId) === id(relationType.namespaceId)
     && String(edge.relationTypeDefinitionId) === String(relationType.definitionId));
