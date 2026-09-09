@@ -9,13 +9,12 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Subject = require("../models/subject.model");
 const SemanticGraph = require("../models/semanticGraph.model");
-const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
-const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
 const { loadSemanticGraphRevision, validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
+const { writeSemanticGraphSnapshot } = require("./semanticGraphSnapshotWriter.service");
 const { loadCompatibleGraph } = require("./editorialStudioCreationV2.service");
 const { findContextOrFail, assertWorkingStateEditable } = require("./editorialContextEntry.service");
 const NamespaceRevision = require("../models/namespaceRevision.model");
@@ -24,9 +23,6 @@ function id(value) { return String(value?._id || value || ""); }
 function sameId(left, right) { return id(left) === id(right); }
 function assertObjectId(value, field) {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`${field} non valido`, 400, [{ field, code: "INVALID_OBJECT_ID" }]);
-}
-function graphConflict() {
-  return new AppError("Il grafo semantico è stato modificato da un'altra operazione", 409, [{ code: "SEMANTIC_GRAPH_WORKING_CONFLICT" }]);
 }
 function collectionConflict() {
   return new AppError("La raccolta è stata modificata da un'altra operazione", 409, [{ code: "EDITORIAL_CONTEXT_WORKING_CONFLICT" }]);
@@ -291,12 +287,11 @@ function cloneGraphSnapshot(graph) {
 }
 
 function edgeKey(edge) {
-  return `${id(edge.sourceSubjectId)}|${String(edge.relationTypeDefinitionId)}|${id(edge.targetSubjectId)}`;
-}
-
-async function nextGraphVersion(semanticGraphId, session) {
-  const latest = await SemanticGraphRevision.findOne({ semanticGraphId }).sort({ version: -1 }).select("version").session(session).lean();
-  return (latest?.version || 0) + 1;
+  return JSON.stringify([
+    id(edge.sourceSubjectId),
+    String(edge.relationTypeDefinitionId || ""),
+    id(edge.targetSubjectId),
+  ]);
 }
 
 async function importEditorialGraphSubjects({ editorialContextId, sourceId, itemIds = [], actorUserId }) {
@@ -332,11 +327,21 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
 
   const selectedItems = [];
   for (const itemId of normalizedItemIds) {
-    if (!spaceItemIds.has(itemId)) throw new AppError("Il contenuto deve appartenere allo spazio editoriale", 409, [{ code: "ITEM_NOT_IN_CONTENT_SPACE", context: { itemId } }]);
+    if (!spaceItemIds.has(itemId)) {
+      throw new AppError("Il contenuto deve appartenere allo spazio editoriale", 409, [{
+        code: "ITEM_NOT_IN_CONTENT_SPACE",
+        context: { itemId },
+      }]);
+    }
     const item = itemById.get(itemId);
     if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE", context: { itemId } }]);
     const subjectId = id(item.primarySubjectId);
-    if (!sourceBindingBySubject.has(subjectId)) throw new AppError("Il contenuto non rappresenta un Subject della sorgente", 409, [{ code: "IMPORT_ITEM_SUBJECT_NOT_IN_SOURCE_GRAPH", context: { itemId, subjectId } }]);
+    if (!sourceBindingBySubject.has(subjectId)) {
+      throw new AppError("Il contenuto non rappresenta un Subject della sorgente", 409, [{
+        code: "IMPORT_ITEM_SUBJECT_NOT_IN_SOURCE_GRAPH",
+        context: { itemId, subjectId },
+      }]);
+    }
     await assertCanReferenceItemInEditorialSpace({
       itemId: item._id,
       actorUserId,
@@ -362,11 +367,12 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
   }
 
   const existingEdgeKeys = new Set(snapshot.edges.map(edgeKey));
+  const suppressedEdgeKeys = new Set(source.suppressedEdgeKeys || []);
   let activatedRelationCount = 0;
   for (const edge of sourceSnapshot.authoritativeEdges) {
     if (!currentSubjectIds.has(id(edge.sourceSubjectId)) || !currentSubjectIds.has(id(edge.targetSubjectId))) continue;
     const key = edgeKey(edge);
-    if (existingEdgeKeys.has(key)) continue;
+    if (existingEdgeKeys.has(key) || suppressedEdgeKeys.has(key)) continue;
     snapshot.edges.push({
       sourceSubjectId: edge.sourceSubjectId,
       targetSubjectId: edge.targetSubjectId,
@@ -386,10 +392,11 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
   const issues = validateGraphSnapshotAgainstNamespace(snapshot, namespaceRevision);
   if (issues.length) throw new AppError("L'importazione produrrebbe un grafo non compatibile con le Regole editoriali", 409, issues);
 
-  const expectedGraphVersion = Number(semanticGraph.workingVersion || 0);
-  const expectedGraphRevisionId = semanticGraph.workingRevisionId || null;
   const expectedCollectionVersion = Number(context.workingVersion || 0);
-  const alreadyPresent = await CollectionItemMembership.find({ editorialContextId: context._id, itemId: { $in: objectIds } }).select("itemId").lean();
+  const alreadyPresent = await CollectionItemMembership.find({
+    editorialContextId: context._id,
+    itemId: { $in: objectIds },
+  }).select("itemId").lean();
   const existingItemIds = new Set(alreadyPresent.map((entry) => id(entry.itemId)));
   const newItems = selectedItems.filter((entry) => !existingItemIds.has(id(entry)));
   const graphChanged = activatedSubjectCount > 0 || activatedRelationCount > 0;
@@ -413,16 +420,6 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
       workingVersion: expectedCollectionVersion,
     }).session(session);
     if (!lockedContext) throw collectionConflict();
-    let lockedGraph = null;
-    if (graphChanged) {
-      lockedGraph = await SemanticGraph.findOne({
-        _id: semanticGraph._id,
-        lifecycleStatus: "active",
-        workingVersion: expectedGraphVersion,
-        workingRevisionId: expectedGraphRevisionId,
-      }).session(session);
-      if (!lockedGraph) throw graphConflict();
-    }
 
     if (newItems.length) {
       await CollectionItemMembership.insertMany(newItems.map((item) => ({
@@ -445,34 +442,13 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
     await lockedContext.save({ session });
 
     if (graphChanged) {
-      [revision] = await SemanticGraphRevision.create([{
-        semanticGraphId: lockedGraph._id,
-        version: await nextGraphVersion(lockedGraph._id, session),
-        basedOnRevisionId: expectedGraphRevisionId,
-        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-        createdBy: actorUserId,
-      }], { session });
-      if (snapshot.subjectBindings.length) {
-        await GraphSubjectBinding.insertMany(snapshot.subjectBindings.map((binding) => ({
-          graphRevisionId: revision._id,
-          subjectId: binding.subjectId,
-          subjectClassDefinitionIds: binding.subjectClassDefinitionIds || [],
-        })), { session, ordered: true });
-      }
-      if (snapshot.edges.length) {
-        await SemanticEdgeV2.insertMany(snapshot.edges.map((edge) => ({
-          graphRevisionId: revision._id,
-          sourceSubjectId: edge.sourceSubjectId,
-          targetSubjectId: edge.targetSubjectId,
-          relationTypeDefinitionId: edge.relationTypeDefinitionId,
-          weight: edge.weight,
-          metadata: edge.metadata ?? null,
-          provenance: edge.provenance || { origin: "human" },
-        })), { session, ordered: true });
-      }
-      lockedGraph.workingRevisionId = revision._id;
-      lockedGraph.workingVersion = expectedGraphVersion + 1;
-      await lockedGraph.save({ session });
+      revision = await writeSemanticGraphSnapshot({
+        semanticGraph,
+        namespaceRevision,
+        snapshot,
+        actorUserId,
+        session,
+      });
     }
   });
 
