@@ -6,6 +6,7 @@ const EditorialGraphImportSourceSchema = new Schema({
   targetSemanticGraphId: { type: Schema.Types.ObjectId, ref: "SemanticGraph", required: true, index: true, immutable: true },
   sourceSemanticGraphId: { type: Schema.Types.ObjectId, ref: "SemanticGraph", required: true, index: true, immutable: true },
   sourceGraphRevisionId: { type: Schema.Types.ObjectId, ref: "SemanticGraphRevision", required: true, index: true, immutable: true },
+  suppressedEdgeKeys: { type: [String], default: [] },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
 }, { timestamps: true, collection: "editorial_graph_import_sources" });
 
