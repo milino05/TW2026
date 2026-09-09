@@ -10,6 +10,7 @@ const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const AppError = require("../utils/AppError");
+const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -75,18 +76,17 @@ async function releaseSemanticPins(releaseIds = []) {
       throw new AppError("EditorialRelease pinzata dalla Session non disponibile", 409, [{ code: "SESSION_EDITORIAL_SCOPE_UNAVAILABLE" }]);
     }
   }
-  const subjectsByRevision = await subjectIdsByGraphRevision(releases.map((release) => release.graphRevisionId));
-  return ids.map((releaseId) => {
-    const release = releaseById.get(releaseId);
-    return {
-      sourceType: "editorial_release",
-      sourceEditorialReleaseId: release._id,
-      editorialContextId: release.editorialContextId,
-      graphRevisionId: release.graphRevisionId,
-      namespaceRevisionId: release.namespaceRevisionId,
-      subjectIds: [...(subjectsByRevision.get(id(release.graphRevisionId)) || new Set())],
-    };
-  });
+
+  const projections = await Promise.all(ids.map((releaseId) =>
+    resolveEditorialReleaseCollectionProjection({ release: releaseById.get(releaseId) })));
+  return projections.map((projection) => ({
+    sourceType: "editorial_release",
+    sourceEditorialReleaseId: projection.editorialReleaseId,
+    editorialContextId: projection.editorialContextId,
+    graphRevisionId: projection.graphRevisionId,
+    namespaceRevisionId: projection.namespaceRevisionId,
+    subjectIds: projection.graphSubjectIds,
+  }));
 }
 
 async function directSemanticContext({ source, contentEntries }) {
