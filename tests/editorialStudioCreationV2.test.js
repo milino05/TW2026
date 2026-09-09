@@ -33,6 +33,27 @@ async function createNamespaceRevision({ NamespaceRevision, namespaceId, version
   });
 }
 
+async function createStandaloneGraph({ SemanticGraph, SemanticGraphRevision, namespaceId, namespaceRevisionId, ownerId, displayName }) {
+  const graph = await SemanticGraph.create({
+    namespaceId,
+    displayName,
+    ownerType: "user",
+    ownerId,
+    createdBy: ownerId,
+  });
+  const revision = await SemanticGraphRevision.create({
+    semanticGraphId: graph._id,
+    version: 1,
+    basedOnRevisionId: null,
+    authoredAgainstNamespaceRevisionId: namespaceRevisionId,
+    createdBy: ownerId,
+  });
+  graph.workingRevisionId = revision._id;
+  graph.workingVersion = 1;
+  await graph.save();
+  return { graph, revision };
+}
+
 test("new Editorial Studio collection initializes an empty local graph against the authorized pinned NamespaceRevision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
@@ -93,7 +114,7 @@ test("new Editorial Studio collection initializes an empty local graph against t
   });
 });
 
-test("importing an existing graph creates an independent local graph and pins the source revision", { skip: !mongoUri }, async () => {
+test("importing a standalone graph creates an independent local graph and pins the source revision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
@@ -111,21 +132,14 @@ test("importing an existing graph creates an independent local graph and pins th
     namespace.publishedRevisionId = revision._id;
     await namespace.save();
     const contentSpace = await ContentSpace.create({ name: "Spazio import", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
-
-    const sourceCollection = await createEditorialStudioCollection({
-      actorUserId: owner._id,
-      payload: {
-        ownerType: "user",
-        ownerId: owner._id,
-        contentSpaceId: contentSpace._id,
-        namespaceId: namespace._id,
-        graphMode: "new",
-        graphDisplayName: "Grafo sorgente",
-        displayName: "Raccolta sorgente",
-      },
+    const { graph: sourceGraph } = await createStandaloneGraph({
+      SemanticGraph,
+      SemanticGraphRevision,
+      namespaceId: namespace._id,
+      namespaceRevisionId: revision._id,
+      ownerId: owner._id,
+      displayName: "Grafo sorgente standalone",
     });
-    const sourceContext = await EditorialContext.findById(sourceCollection.editorialContext.id).lean();
-    const sourceGraph = await SemanticGraph.findById(sourceContext.semanticGraphId).lean();
 
     const importedCollection = await createEditorialStudioCollection({
       actorUserId: owner._id,
@@ -156,7 +170,7 @@ test("importing an existing graph creates an independent local graph and pins th
   });
 });
 
-test("reusable graph choices remain scoped to principal and Namespace without live collection sharing", { skip: !mongoUri }, async () => {
+test("reusable graph choices expose standalone sources only and reject collection-local graph IDs", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
@@ -164,7 +178,8 @@ test("reusable graph choices remain scoped to principal and Namespace without li
     const ContentSpace = require("../models/contentSpace.model");
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
-    const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
+    const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const { createEditorialStudioCollection, listReusableSemanticGraphs, loadCompatibleGraph } = require("../services/editorialStudioCreationV2.service");
 
     const owner = await User.create({ username: "studio-graph-choice-owner", passwordHash: "hash" });
     const otherOwner = await User.create({ username: "studio-graph-choice-other", passwordHash: "hash" });
@@ -174,7 +189,7 @@ test("reusable graph choices remain scoped to principal and Namespace without li
     await namespace.save();
     const contentSpace = await ContentSpace.create({ name: "Spazio grafi", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
 
-    const first = await createEditorialStudioCollection({
+    const localCollection = await createEditorialStudioCollection({
       actorUserId: owner._id,
       payload: {
         ownerType: "user",
@@ -182,25 +197,27 @@ test("reusable graph choices remain scoped to principal and Namespace without li
         contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
         graphMode: "new",
-        graphDisplayName: "Rinascimento sorgente",
+        graphDisplayName: "Rinascimento locale",
         displayName: "Rinascimento",
       },
     });
-    const firstContext = await EditorialContext.findById(first.editorialContext.id).lean();
-    await createEditorialStudioCollection({
-      actorUserId: owner._id,
-      payload: {
-        ownerType: "user",
-        ownerId: owner._id,
-        contentSpaceId: contentSpace._id,
-        namespaceId: namespace._id,
-        graphMode: "import",
-        semanticGraphId: firstContext.semanticGraphId,
-        importItemIds: [],
-        displayName: "Seconda raccolta",
-      },
+    const localContext = await EditorialContext.findById(localCollection.editorialContext.id).lean();
+    const { graph: standaloneGraph } = await createStandaloneGraph({
+      SemanticGraph,
+      SemanticGraphRevision,
+      namespaceId: namespace._id,
+      namespaceRevisionId: revision._id,
+      ownerId: owner._id,
+      displayName: "Rinascimento sorgente standalone",
     });
-    await SemanticGraph.create({ namespaceId: namespace._id, displayName: "Rinascimento altro utente", ownerType: "user", ownerId: otherOwner._id, createdBy: otherOwner._id });
+    await createStandaloneGraph({
+      SemanticGraph,
+      SemanticGraphRevision,
+      namespaceId: namespace._id,
+      namespaceRevisionId: revision._id,
+      ownerId: otherOwner._id,
+      displayName: "Rinascimento altro utente",
+    });
 
     const choices = await listReusableSemanticGraphs({
       actorUserId: owner._id,
@@ -215,9 +232,19 @@ test("reusable graph choices remain scoped to principal and Namespace without li
 
     assert.equal(choices.pagination.total, 1);
     assert.equal(choices.results.length, 1);
-    assert.equal(String(choices.results[0].id), String(firstContext.semanticGraphId));
-    assert.equal(choices.results[0].collectionUsageCount, 1);
+    assert.equal(String(choices.results[0].id), String(standaloneGraph._id));
+    assert.equal(choices.results[0].collectionUsageCount, 0);
     assert.equal(choices.results[0].subjectCount, 0);
     assert.equal(choices.results[0].relationCount, 0);
+
+    await assert.rejects(
+      loadCompatibleGraph({
+        semanticGraphId: localContext.semanticGraphId,
+        ownerType: "user",
+        ownerId: owner._id,
+        namespaceId: namespace._id,
+      }),
+      (error) => error?.details?.some((detail) => detail.code === "SEMANTIC_GRAPH_COLLECTION_BOUND"),
+    );
   });
 });
