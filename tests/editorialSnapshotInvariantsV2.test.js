@@ -92,6 +92,9 @@ test("una NamespaceRevision superseded resta valida per uno snapshot editoriale 
 test("assegnare classi non può inserire implicitamente un Subject nel grafo", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticGraph = require("../models/semanticGraph.model");
     const {
@@ -101,6 +104,24 @@ test("assegnare classi non può inserire implicitamente un Subject nel grafo", {
 
     const fixture = await createBaseFixture();
     const subject = await Subject.create({ preferredLabel: "Opera esplicita", createdBy: fixture.user._id });
+    const item = await ItemV2.create({
+      primarySubjectId: subject._id,
+      ownerType: "user",
+      ownerId: fixture.user._id,
+      createdBy: fixture.user._id,
+    });
+    await ContentSpaceItemMembership.create({
+      contentSpaceId: fixture.contentSpace._id,
+      itemId: item._id,
+      addedBy: fixture.user._id,
+    });
+    await CollectionItemMembership.create({
+      editorialContextId: fixture.context._id,
+      itemId: item._id,
+      curationSignals: [],
+      addedBy: fixture.user._id,
+      updatedBy: fixture.user._id,
+    });
 
     await assert.rejects(
       () => setEditorialGraphSubjectClasses({
