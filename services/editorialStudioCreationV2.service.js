@@ -47,6 +47,10 @@ async function contentSpaceSubjectInventory(contentSpaceId) {
   return inventory;
 }
 
+async function collectionBoundSemanticGraphIds() {
+  return EditorialContext.distinct("semanticGraphId", { semanticGraphId: { $ne: null } });
+}
+
 async function listReusableSemanticGraphs({
   actorUserId,
   ownerType,
@@ -84,11 +88,13 @@ async function listReusableSemanticGraphs({
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
   const normalizedQuery = clean(query).slice(0, 160);
+  const collectionGraphIds = await collectionBoundSemanticGraphIds();
   const match = {
     ownerType,
     ownerId,
     namespaceId: namespace._id,
     lifecycleStatus: "active",
+    ...(collectionGraphIds.length ? { _id: { $nin: collectionGraphIds } } : {}),
     ...(normalizedQuery ? {
       $or: [
         { displayName: new RegExp(escapeRegex(normalizedQuery), "i") },
@@ -220,6 +226,9 @@ async function loadCompatibleGraph({ semanticGraphId, ownerType, ownerId, namesp
   if (!sameId(semanticGraph.namespaceId, namespaceId)) {
     throw new AppError("Il grafo semantico usa regole editoriali diverse", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
   }
+  if (await EditorialContext.exists({ semanticGraphId: semanticGraph._id })) {
+    throw new AppError("Un grafo locale di Raccolta non può essere usato come sorgente riutilizzabile", 409, [{ code: "SEMANTIC_GRAPH_COLLECTION_BOUND" }]);
+  }
   if (!semanticGraph.workingRevisionId) {
     throw new AppError("Il grafo semantico non ha una revisione di lavoro", 409, [{ code: "SEMANTIC_GRAPH_WORKING_REVISION_REQUIRED" }]);
   }
@@ -246,7 +255,6 @@ async function resolveImportItems({ contentSpace, sourceSnapshot, importItemIds,
   const sourceSubjectIds = new Set([...sourceSnapshot.nodes.values()]
     .filter((node) => node.binding)
     .map((node) => id(node.subject)));
-
   const resolved = [];
   for (const itemId of importItemIds) {
     if (!membershipIds.has(itemId)) {
