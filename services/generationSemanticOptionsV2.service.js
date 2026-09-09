@@ -1,9 +1,6 @@
-const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
-const ItemEdition = require("../models/itemEdition.model");
-const ItemRevisionV2 = require("../models/itemRevisionV2.model");
-const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
 const { resolveGenerationSources } = require("./generationSourceV2.service");
+const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
 const semanticResolver = require("./semanticResolver/semanticResolver.service");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -35,39 +32,12 @@ function sourceScopedGroundedSubjectIds({ candidates = [], sourceSubjectIds = []
 }
 
 async function subjectIdsForResolvedSources(resolvedSources) {
-  const releases = resolvedSources.map((entry) => entry.editorialRelease);
-  const graphRevisionIds = uniqueIds(releases.map((release) => release.graphRevisionId));
-  const graphBindings = graphRevisionIds.length
-    ? await GraphSubjectBinding.find({ graphRevisionId: { $in: graphRevisionIds } }).select("subjectId").lean()
-    : [];
-
-  const itemBindings = releases.flatMap((release) => release.itemBindings || []);
-  const editionIds = uniqueIds(itemBindings.map((binding) => binding.itemEditionId));
-  const revisionIds = uniqueIds(itemBindings.map((binding) => binding.itemRevisionId));
-  const [editions, revisions] = await Promise.all([
-    editionIds.length ? ItemEdition.find({ _id: { $in: editionIds } }).select("_id itemId").lean() : [],
-    revisionIds.length
-      ? ItemRevisionV2.find({ _id: { $in: revisionIds } })
-        .select("relatedSubjectIds presentationVariants.semanticFocus presentationVariants.knowledgeRequirements")
-        .lean()
-      : [],
-  ]);
-  const itemIds = uniqueIds(editions.map((edition) => edition.itemId));
-  const items = itemIds.length
-    ? await ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).select("primarySubjectId").lean()
-    : [];
-
-  return uniqueIds([
-    ...graphBindings.map((binding) => binding.subjectId),
-    ...items.map((item) => item.primarySubjectId),
-    ...revisions.flatMap((revision) => [
-      ...(revision.relatedSubjectIds || []),
-      ...(revision.presentationVariants || []).flatMap((variant) => [
-        ...(variant.semanticFocus || []).map((entry) => entry.subjectId),
-        ...(variant.knowledgeRequirements || []).map((entry) => entry.subjectId),
-      ]),
-    ]),
-  ]);
+  const projections = await Promise.all((resolvedSources || []).map((entry) =>
+    resolveEditorialReleaseCollectionProjection({ release: entry.editorialRelease })));
+  // Search may expose every primary Subject represented by an Item in the selected
+  // Collections. Related/focus/knowledge metadata may rank those Items, but must
+  // never enlarge the source universe with Subjects outside the Collection.
+  return uniqueIds(projections.flatMap((projection) => projection.itemSubjectIds));
 }
 
 async function searchGenerationSubjectsV2({ actorUserId, editorialSources, query = "", locale = "it", limit = 20 }) {
