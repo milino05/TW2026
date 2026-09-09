@@ -93,32 +93,39 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
       displayName: "Approccio",
       createdBy: user._id,
     });
-    const item = await ItemV2.create({ primarySubjectId: work._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
-    await addItemMembership({ contentSpaceId: contentSpace._id, itemId: item._id, actorUserId: user._id });
-    const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
-    const revision = new ItemRevisionV2({
-      itemEditionId: edition._id,
-      version: 1,
-      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-      label: "Descrizione opera",
-      authorCredits: ["Autore test"],
-      metadata: { license: "CC BY" },
-      presentationVariants: [{
-        key: "standard",
-        label: "Standard",
-        semanticFocus: [{ subjectId: work._id, weight: 1 }],
-        representations: [{ durationTypeDefinitionId: "dur-short", languageLevelDefinitionId: "lang-simple", locale: "it-IT", text: "Testo della descrizione" }],
-      }],
-      status: "published",
-      integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
-      publication: { publishedAt: new Date(), publishedBy: user._id },
-      createdBy: user._id,
-      updatedBy: user._id,
-    });
-    revision.defaultPresentation = { variantId: revision.presentationVariants[0]._id, representationId: revision.presentationVariants[0].representations[0]._id };
-    await revision.save();
-    edition.publishedRevisionId = revision._id;
-    await edition.save();
+
+    async function createPublishedItem({ subject, label, text }) {
+      const item = await ItemV2.create({ primarySubjectId: subject._id, ownerType: "user", ownerId: user._id, createdBy: user._id });
+      await addItemMembership({ contentSpaceId: contentSpace._id, itemId: item._id, actorUserId: user._id });
+      const edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: user._id });
+      const revision = new ItemRevisionV2({
+        itemEditionId: edition._id,
+        version: 1,
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        label,
+        authorCredits: ["Autore test"],
+        metadata: { license: "CC BY" },
+        presentationVariants: [{
+          key: "standard",
+          label: "Standard",
+          semanticFocus: [{ subjectId: subject._id, weight: 1 }],
+          representations: [{ durationTypeDefinitionId: "dur-short", languageLevelDefinitionId: "lang-simple", locale: "it-IT", text }],
+        }],
+        status: "published",
+        integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: user._id },
+        publication: { publishedAt: new Date(), publishedBy: user._id },
+        createdBy: user._id,
+        updatedBy: user._id,
+      });
+      revision.defaultPresentation = { variantId: revision.presentationVariants[0]._id, representationId: revision.presentationVariants[0].representations[0]._id };
+      await revision.save();
+      edition.publishedRevisionId = revision._id;
+      await edition.save();
+      return { item, edition, revision };
+    }
+
+    const workContent = await createPublishedItem({ subject: work, label: "Descrizione opera", text: "Testo della descrizione" });
+    const personContent = await createPublishedItem({ subject: person, label: "Profilo autore", text: "Testo sul profilo dell'autore" });
 
     const graph = await createGraphRevision({
       editorialContextId: context._id,
@@ -163,12 +170,14 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
       "una snapshot basata su una revisione superata non deve sostituire il grafo corrente",
     );
 
-    await addEditorialContextEntry({
-      editorialContextId: context._id,
-      itemId: item._id,
-      curationSignals: [],
-      actorUserId: user._id,
-    });
+    for (const content of [workContent, personContent]) {
+      await addEditorialContextEntry({
+        editorialContextId: context._id,
+        itemId: content.item._id,
+        curationSignals: [],
+        actorUserId: user._id,
+      });
+    }
     const reviewRevision = await requestEditorialContextReview({ editorialContextId: context._id, actorUserId: user._id });
     await approveEditorialContextReview({ editorialContextId: context._id, revisionId: reviewRevision._id, actorUserId: user._id });
     const release = await createEditorialRelease({
@@ -180,12 +189,14 @@ test("v2 EditorialContext releases an immutable Subject graph and pinned ItemRev
     const refreshedContext = await EditorialContext.findById(context._id);
     assert.equal(String(refreshedContext.publishedReleaseId), String(release._id));
     assert.equal(String(release.graphRevisionId), String(revisedGraph.revision._id));
-    assert.equal(String(release.itemBindings[0].itemId), String(item._id));
-    assert.equal(String(release.itemBindings[0].itemRevisionId), String(revision._id));
+    const releasedWork = release.itemBindings.find((binding) => String(binding.itemId) === String(workContent.item._id));
+    assert.ok(releasedWork);
+    assert.equal(String(releasedWork.itemRevisionId), String(workContent.revision._id));
+    assert.equal(release.itemBindings.length, 2);
     assert.equal(release.subjectIds, undefined, "la semantica pubblicata è pinzata dalla GraphRevision, non duplicata nella Release");
     assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: release.graphRevisionId }), 2);
 
     const summary = await projectEditorialContext({ editorialContext: refreshedContext, contentSpace, namespace });
-    assert.deepEqual(summary.stats, { availableItemCount: 1, subjectCount: 2 });
+    assert.deepEqual(summary.stats, { availableItemCount: 2, subjectCount: 2 });
   });
 });
