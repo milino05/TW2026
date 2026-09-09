@@ -167,10 +167,26 @@ function workText(work, level) {
   return `${base} Per una lettura avanzata considera ${work.focus}, distinguendo organizzazione compositiva, funzione delle figure, gestione della luce e rapporto con il contesto storico-editoriale del percorso. Il confronto con le altre tappe serve a formulare ipotesi motivate, non a ridurre l'opera a una sola etichetta stilistica.`;
 }
 
+function periodText(period, level) {
+  const base = `${period.label} è un contesto storico-artistico usato dalla Raccolta per collegare e approfondire le opere del percorso.`;
+  if (level === "essential") return `${base} Serve come contenuto contestuale: non rappresenta una tappa fisica autonoma del museo.`;
+  if (level === "context") return `${base} Nel grafo semantico permette di passare dalle opere al loro quadro storico e di confrontare i contenuti della stessa Raccolta senza uscire dal corpus editoriale.`;
+  return `${base} L'approfondimento distingue il ruolo del periodo come Subject editoriale dalla localizzazione delle singole opere: il Navigator può raggiungerlo semanticamente, ma ogni contenuto mostrato resta pinzato alla Raccolta pubblicata.`;
+}
+
 async function cleanupDemo() {
-  const itemIds = WORKS.map((work) => demoId(`item:${work.key}`));
-  const editionIds = WORKS.map((work) => demoId(`edition:${work.key}`));
-  const revisionIds = WORKS.map((work) => demoId(`item-revision:${work.key}`));
+  const itemIds = [
+    ...WORKS.map((work) => demoId(`item:${work.key}`)),
+    ...PERIODS.map((period) => demoId(`item:period:${period.key}`)),
+  ];
+  const editionIds = [
+    ...WORKS.map((work) => demoId(`edition:${work.key}`)),
+    ...PERIODS.map((period) => demoId(`edition:period:${period.key}`)),
+  ];
+  const revisionIds = [
+    ...WORKS.map((work) => demoId(`item-revision:${work.key}`)),
+    ...PERIODS.map((period) => demoId(`item-revision:period:${period.key}`)),
+  ];
   const targetIds = WORKS.map((work) => demoId(`venue-target:${work.key}`));
   const subjectIds = [...workSubjectIds.values(), ...periodSubjectIds.values()];
   const visitIds = VISIT_DEFINITIONS.map((visit) => demoId(`visit:${visit.key}`));
@@ -422,6 +438,95 @@ async function seedExamDataset() {
     itemRecords.push({ work, item, edition, revision });
   }
 
+  const periodItemRecords = [];
+  for (const period of PERIODS) {
+    const item = await ItemV2.create({
+      _id: demoId(`item:period:${period.key}`),
+      primarySubjectId: periodSubjectIds.get(period.key),
+      ownerType: "organization",
+      ownerId: organization._id,
+      provenance: { origin: "human", metadata: { dataset: "TW2026 exam demo", role: "semantic_context" } },
+      createdBy: manager._id,
+    });
+    const edition = await ItemEdition.create({
+      _id: demoId(`edition:period:${period.key}`),
+      itemId: item._id,
+      namespaceId: namespace._id,
+      createdBy: manager._id,
+    });
+    const variants = {
+      essential: demoId(`variant:period:${period.key}:essential`),
+      context: demoId(`variant:period:${period.key}:context`),
+      advanced: demoId(`variant:period:${period.key}:advanced`),
+    };
+    const reps = {
+      essential: demoId(`representation:period:${period.key}:essential`),
+      context: demoId(`representation:period:${period.key}:context`),
+      advanced: demoId(`representation:period:${period.key}:advanced`),
+    };
+    const signalDefinitionId = period.key === "rinascimento" ? DEF.signalRenaissance : DEF.signalSeicento;
+    const revision = await ItemRevisionV2.create({
+      _id: demoId(`item-revision:period:${period.key}`),
+      itemEditionId: edition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      label: `${period.label} — contesto storico-artistico`,
+      relatedSubjectIds: [],
+      tags: [period.key, "contesto storico-artistico"],
+      authorCredits: ["Dataset dimostrativo ArtAround"],
+      metadata: { license: "CC BY 4.0 — testo dimostrativo ArtAround" },
+      selectionSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+      presentationVariants: [
+        {
+          _id: variants.essential,
+          key: "essential",
+          label: "Essenziale",
+          description: "Introduzione al contesto storico-artistico.",
+          semanticFocus: [{ subjectId: item.primarySubjectId, weight: 1 }],
+          presentationAspects: [{ definitionId: DEF.aspectContext, weight: 1 }],
+          audienceSuitability: { minAgeYears: 10, minMaturity: 0.1, maxMaturity: 1 },
+          knowledgeRequirements: [],
+          representations: [{ _id: reps.essential, durationTypeDefinitionId: DEF.durationShort, languageLevelDefinitionId: DEF.languageSimple, locale: "it-IT", text: periodText(period, "essential") }],
+        },
+        {
+          _id: variants.context,
+          key: "context",
+          label: "Contesto",
+          description: "Approfondimento storico-editoriale.",
+          semanticFocus: [{ subjectId: item.primarySubjectId, weight: 1 }],
+          presentationAspects: [{ definitionId: DEF.aspectContext, weight: 1 }],
+          audienceSuitability: { minAgeYears: 14, minMaturity: 0.3, maxMaturity: 1 },
+          knowledgeRequirements: [],
+          representations: [{ _id: reps.context, durationTypeDefinitionId: DEF.durationMedium, languageLevelDefinitionId: DEF.languageStandard, locale: "it-IT", text: periodText(period, "context") }],
+        },
+        {
+          _id: variants.advanced,
+          key: "advanced",
+          label: "Approfondimento",
+          description: "Lettura avanzata del contesto e delle relazioni.",
+          semanticFocus: [{ subjectId: item.primarySubjectId, weight: 1 }],
+          presentationAspects: [{ definitionId: DEF.aspectAnalysis, weight: 1 }],
+          audienceSuitability: { minAgeYears: 16, minMaturity: 0.5, maxMaturity: 1 },
+          knowledgeRequirements: [],
+          representations: [{ _id: reps.advanced, durationTypeDefinitionId: DEF.durationLong, languageLevelDefinitionId: DEF.languageAdvanced, locale: "it-IT", text: periodText(period, "advanced") }],
+        },
+      ],
+      defaultPresentation: { variantId: variants.essential, representationId: reps.essential },
+      provenance: { origin: "human", metadata: { dataset: "TW2026 exam demo", role: "semantic_context" } },
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: manager._id },
+      review: reviewApproved(operator._id, manager._id),
+      publication: { publishedAt: FIXED_NOW, publishedBy: manager._id },
+      createdBy: manager._id,
+      updatedBy: manager._id,
+    });
+    assertNoIssues(`ItemRevision demo non coerente: ${period.key}`, validatePresentationAgainstNamespace(revision, namespaceRevision));
+    edition.publishedRevisionId = revision._id;
+    await edition.save();
+    periodItemRecords.push({ period, item, edition, revision, signalDefinitionId });
+  }
+
+  const allItemRecords = [...itemRecords, ...periodItemRecords];
   const contentSpace = await ContentSpace.create({
     _id: IDS.contentSpace,
     name: "Pinacoteca Bologna — Collezione demo",
@@ -432,7 +537,7 @@ async function seedExamDataset() {
   });
   const editorialSubjectIds = [...workSubjectIds.values(), ...periodSubjectIds.values()];
   await ContentSpaceItemMembership.create(
-    itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
+    allItemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
   );
   await ContentSpaceSubjectMembership.create(
     editorialSubjectIds.map((subjectId) => ({ contentSpaceId: contentSpace._id, subjectId, addedBy: manager._id })),
@@ -456,13 +561,22 @@ async function seedExamDataset() {
     description: "Contesto che raccoglie le opere selezionate e un semplice grafo semantico Rinascimento/Seicento.",
     createdBy: manager._id,
   });
-  await CollectionItemMembership.create(itemRecords.map(({ item }) => ({
-    editorialContextId: editorialContext._id,
-    itemId: item._id,
-    curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
-    addedBy: manager._id,
-    updatedBy: manager._id,
-  })));
+  await CollectionItemMembership.create([
+    ...itemRecords.map(({ item }) => ({
+      editorialContextId: editorialContext._id,
+      itemId: item._id,
+      curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
+      addedBy: manager._id,
+      updatedBy: manager._id,
+    })),
+    ...periodItemRecords.map(({ item, signalDefinitionId }) => ({
+      editorialContextId: editorialContext._id,
+      itemId: item._id,
+      curationSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+      addedBy: manager._id,
+      updatedBy: manager._id,
+    })),
+  ]);
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
     semanticGraphId: semanticGraph._id,
@@ -496,13 +610,22 @@ async function seedExamDataset() {
     });
   }
   await SemanticEdgeV2.create(semanticEdges);
-  const itemBindings = itemRecords.map(({ item, edition, revision, work }) => ({
-    _id: demoId(`editorial-binding:${work.key}`),
-    itemId: item._id,
-    itemEditionId: edition._id,
-    itemRevisionId: revision._id,
-    curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
-  }));
+  const itemBindings = [
+    ...itemRecords.map(({ item, edition, revision, work }) => ({
+      _id: demoId(`editorial-binding:${work.key}`),
+      itemId: item._id,
+      itemEditionId: edition._id,
+      itemRevisionId: revision._id,
+      curationSignals: [{ definitionId: DEF.signalMasterpiece, weight: 0.8 }],
+    })),
+    ...periodItemRecords.map(({ item, edition, revision, period, signalDefinitionId }) => ({
+      _id: demoId(`editorial-binding:period:${period.key}`),
+      itemId: item._id,
+      itemEditionId: edition._id,
+      itemRevisionId: revision._id,
+      curationSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+    })),
+  ];
   const editorialRelease = await EditorialRelease.create({
     _id: IDS.editorialRelease,
     editorialContextId: editorialContext._id,
@@ -759,6 +882,7 @@ async function seedExamDataset() {
     layoutRevision,
     venueRelease,
     itemRecords,
+    periodItemRecords,
     targets,
     visitRecords,
   };
@@ -931,6 +1055,7 @@ module.exports = {
   DEMO_MAP_URL,
   IDS,
   DEF,
+  PERIODS,
   WORKS,
   VISIT_DEFINITIONS,
   ensureRequiredUsers,
