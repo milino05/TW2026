@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const EditorialContextSchema = new Schema({
   contentSpaceId: { type: Schema.Types.ObjectId, ref: "ContentSpace", required: true, index: true },
   namespaceId: { type: Schema.Types.ObjectId, ref: "Namespace", required: true, index: true },
-  semanticGraphId: { type: Schema.Types.ObjectId, ref: "SemanticGraph", required: true, index: true },
+  semanticGraphId: { type: Schema.Types.ObjectId, ref: "SemanticGraph", required: true, unique: true },
   displayName: { type: String, required: true, trim: true, index: true },
   shortDescription: { type: String, trim: true, default: null },
   description: { type: String, trim: true, default: null },
