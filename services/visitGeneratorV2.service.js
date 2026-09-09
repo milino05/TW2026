@@ -11,7 +11,7 @@ const Subject = require("../models/subject.model");
 const GeneratedVisitPlanV2 = require("../models/generatedVisitPlanV2.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
-const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
+const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
 const {
   id,
   canonicalKey,
@@ -185,12 +185,12 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
       code: "GENERATION_SOURCE_NAMESPACE_REVISION_MISSING",
       context: { editorialReleaseId: release._id },
     }]);
-    const graph = await loadSemanticGraphRevision(release.graphRevisionId, { namespaceRevisionId: release.namespaceRevisionId });
+    const projection = await resolveEditorialReleaseCollectionProjection({ release });
     bundles.push({
       context,
       release,
       namespaceRevision,
-      graph,
+      graph: projection.graph,
       namespaceId: context.namespaceId,
       generationSource: {
         requestedSourceRef: source.requestedSourceRef,
