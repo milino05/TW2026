@@ -214,3 +214,83 @@ test("collection-bound graph commands enforce containment while standalone graph
     assert.equal(sourceAfter.workingVersion, 2);
   });
 });
+
+test("local deletion of an imported edge is authoritative across later source activations", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const EditorialContext = require("../models/editorialContext.model");
+    const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
+    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+    const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
+    const { importEditorialGraphSubjects } = require("../services/editorialGraphImport.service");
+    const { removeEditorialGraphEdge } = require("../services/editorialGraphCommand.service");
+    const data = await fixture();
+
+    const created = await createEditorialStudioCollection({
+      actorUserId: data.owner._id,
+      payload: {
+        ownerType: "user",
+        ownerId: data.owner._id,
+        contentSpaceId: data.contentSpace._id,
+        namespaceId: data.namespace._id,
+        graphMode: "import",
+        semanticGraphId: data.sourceGraph._id,
+        importItemIds: [data.itemA._id],
+        displayName: "Raccolta con override locale",
+      },
+    });
+    const context = await EditorialContext.findById(created.editorialContext.id).lean();
+    const source = await EditorialGraphImportSource.findOne({ editorialContextId: context._id });
+
+    await importEditorialGraphSubjects({
+      editorialContextId: context._id,
+      sourceId: source._id,
+      itemIds: [data.itemB1._id],
+      actorUserId: data.owner._id,
+    });
+
+    let localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    let edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(edges.length, 1);
+    const importedAB = edges[0];
+
+    await removeEditorialGraphEdge({
+      editorialContextId: context._id,
+      edgeId: importedAB._id,
+      actorUserId: data.owner._id,
+    });
+
+    const sourceAfterDelete = await EditorialGraphImportSource.findById(source._id).lean();
+    assert.equal(sourceAfterDelete.suppressedEdgeKeys.length, 1);
+
+    const itemC = await ItemV2.create({
+      primarySubjectId: data.subjectC._id,
+      ownerType: "user",
+      ownerId: data.owner._id,
+      createdBy: data.owner._id,
+    });
+    await ContentSpaceItemMembership.create({
+      contentSpaceId: data.contentSpace._id,
+      itemId: itemC._id,
+      addedBy: data.owner._id,
+    });
+
+    const activatedC = await importEditorialGraphSubjects({
+      editorialContextId: context._id,
+      sourceId: source._id,
+      itemIds: [itemC._id],
+      actorUserId: data.owner._id,
+    });
+    assert.equal(activatedC.activatedSubjectCount, 1);
+    assert.equal(activatedC.activatedRelationCount, 1);
+
+    localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(edges.length, 1);
+    assert.equal(String(edges[0].sourceSubjectId), String(data.subjectB._id));
+    assert.equal(String(edges[0].targetSubjectId), String(data.subjectC._id));
+    assert.equal(edges.some((edge) => String(edge.sourceSubjectId) === String(data.subjectA._id) && String(edge.targetSubjectId) === String(data.subjectB._id)), false);
+  });
+});
