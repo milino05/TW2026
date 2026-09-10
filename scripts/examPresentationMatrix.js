@@ -4,7 +4,7 @@ const NamespaceRevision = require("../models/namespaceRevision.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const { validatePresentationAgainstNamespace } = require("../services/itemV2Presentation.service");
 const { resolveInitialPresentation, findAdjacentPresentation } = require("../services/presentationRuntimeV2.service");
-const { IDS, DEF, WORKS } = require("./examDatasetV2");
+const { IDS, DEF, PERIODS, WORKS } = require("./examDatasetV2");
 
 const DURATION_AXIS = Object.freeze([
   { key: "short", definitionId: DEF.durationShort },
@@ -28,7 +28,106 @@ function periodLabel(work) {
   return work.period === "rinascimento" ? "Rinascimento" : "Seicento";
 }
 
+function semanticContextSentences(content, languageKey, variantKey) {
+  const title = content.title || content.label;
+  const description = content.description || "Contesto storico-artistico della Raccolta.";
+  if (languageKey === "simple") {
+    const base = [
+      `${title} è un contesto storico-artistico usato dalla Raccolta.`,
+      description,
+    ];
+    if (variantKey === "context") {
+      return [
+        ...base,
+        "Serve a collegare opere che condividono riferimenti storici e culturali.",
+        "Puoi usarlo per confrontare le tappe senza confondere il tema con un luogo fisico del museo.",
+        "Le relazioni del grafo aiutano a passare dalle opere al contesto e poi tornare alle opere collegate.",
+        "Osserva quali caratteristiche ricorrono e quali cambiano da una tappa all'altra.",
+      ];
+    }
+    if (variantKey === "advanced") {
+      return [
+        ...base,
+        "Il periodo funziona come Subject editoriale autonomo e non come tappa fisica.",
+        "Le relazioni semantiche rendono esplicito perché più opere possono essere lette nello stesso quadro storico.",
+        "Confronta continuità e differenze senza trasformare il periodo in una spiegazione automatica di ogni scelta formale.",
+        "Usa il contesto come guida per formulare domande verificabili sulle opere collegate.",
+      ];
+    }
+    return [
+      ...base,
+      "Non è una tappa fisica: è un contenuto di approfondimento.",
+      "Dal grafo puoi raggiungere le opere collegate a questo contesto.",
+      "Confronta almeno due opere e cerca una somiglianza e una differenza.",
+      "Poi torna alla visita mantenendo distinto il luogo dal contenuto editoriale.",
+    ];
+  }
+
+  if (languageKey === "advanced") {
+    const base = [
+      `${title} è modellato come Subject editoriale di contesto nella Raccolta ArtAround.`,
+      `${description} La sua funzione è semantica e interpretativa, non topologica.`,
+    ];
+    if (variantKey === "context") {
+      return [
+        ...base,
+        "La modellazione separa il riferimento storico dalla presenza fisica delle opere e permette una navigazione semantica esplicita.",
+        "Le relazioni verso le opere sono quindi strumenti di contestualizzazione e confronto, non scorciatoie per inferire automaticamente attribuzioni o significati.",
+        "Il valore del nodo emerge dalla possibilità di confrontare più Item pubblicati che condividono lo stesso quadro storico-editoriale.",
+        "La lettura resta verificabile perché ogni passaggio mostrato al visitatore deriva da contenuti e relazioni pinzati nella release.",
+      ];
+    }
+    if (variantKey === "advanced") {
+      return [
+        ...base,
+        "Il nodo consente di distinguere identità semantica, corpus editoriale e collocazione fisica mantenendo separati i rispettivi invarianti.",
+        "Nel confronto tra opere, il periodo opera come categoria interpretativa fallibile: orienta l'analisi ma non sostituisce le evidenze formali e iconografiche.",
+        "La rete di relazioni permette di esplicitare convergenze e scarti tra opere senza appiattirle su una tassonomia unica.",
+        "Questa struttura resta estendibile a interrogazioni, traduzione e generazione assistita senza introdurre contenuti fantasma nel grafo della Raccolta.",
+      ];
+    }
+    return [
+      ...base,
+      "La release conserva separatamente Item, grafo semantico e riferimenti fisici, così il contesto può essere fruito senza diventare una tappa autonoma.",
+      "Le opere collegate costituiscono esempi concreti attraverso cui verificare il significato operativo della categoria.",
+      "Il confronto deve distinguere osservazioni direttamente ricavabili dalle opere da interpretazioni dipendenti dal quadro storico.",
+      "Il ritorno alla sequenza di visita mantiene il contenuto contestuale disponibile come approfondimento senza alterare il routing.",
+    ];
+  }
+
+  const base = [
+    `${title} è un contenuto storico-artistico della Raccolta ArtAround.`,
+    `${description} Nel grafo semantico è distinto dalle singole opere e dalla loro collocazione fisica.`,
+  ];
+  if (variantKey === "context") {
+    return [
+      ...base,
+      "Il nodo permette di collegare più opere allo stesso quadro storico e di confrontarne le diverse soluzioni figurative.",
+      "Questa relazione non sostituisce l'osservazione delle opere: fornisce invece un contesto esplicito per interpretare somiglianze e differenze.",
+      "La navigazione può passare dall'opera al periodo e dal periodo alle altre opere senza inventare tappe o posizioni nel museo.",
+      "Il risultato è un approfondimento coerente con la Raccolta pubblicata e con i contenuti realmente disponibili.",
+    ];
+  }
+  if (variantKey === "advanced") {
+    return [
+      ...base,
+      "Come Subject di contesto, il periodo organizza relazioni editoriali che possono essere percorse e interrogate indipendentemente dal layout della Venue.",
+      "L'analisi comparativa deve usare la categoria storica come ipotesi interpretativa e confrontarla con composizione, luce, gestualità e iconografia delle opere.",
+      "La distinzione fra nodo semantico e Item consente inoltre di associare più presentazioni dello stesso contesto senza duplicarne l'identità concettuale.",
+      "La release pinzata garantisce che sia il contenuto sia le relazioni consultate dal Navigator appartengano allo stesso snapshot editoriale.",
+    ];
+  }
+  return [
+    ...base,
+    "Il contenuto serve a introdurre il quadro storico prima di esplorare le opere collegate.",
+    "Le relazioni del grafo rendono esplicito quali tappe della Raccolta sono pertinenti a questo contesto.",
+    "Confrontando due opere si possono riconoscere continuità e differenze senza ridurle a una semplice etichetta.",
+    "Il contesto resta disponibile come approfondimento, mentre il percorso fisico continua a essere governato dalla Venue.",
+  ];
+}
+
 function simpleSentences(work, variantKey) {
+  if (work.contentKind === "period") return semanticContextSentences(work, "simple", variantKey);
   const base = [
     `${work.title} è un'opera di ${work.artist}.`,
     `Guarda soprattutto ${work.focus}.`,
@@ -61,6 +160,7 @@ function simpleSentences(work, variantKey) {
 }
 
 function standardSentences(work, variantKey) {
+  if (work.contentKind === "period") return semanticContextSentences(work, "standard", variantKey);
   const base = [
     `${work.title}, di ${work.artist}, è una delle opere considerate nel percorso ArtAround della Pinacoteca Nazionale di Bologna.`,
     `Il primo elemento da osservare è ${work.focus}.`,
@@ -93,6 +193,7 @@ function standardSentences(work, variantKey) {
 }
 
 function advancedSentences(work, variantKey) {
+  if (work.contentKind === "period") return semanticContextSentences(work, "advanced", variantKey);
   const base = [
     `${work.title} di ${work.artist} può essere analizzata distinguendo struttura iconografica, articolazione spaziale e organizzazione compositiva.`,
     `Il focus della tappa è ${work.focus}, assunto come punto di partenza per una lettura formale verificabile sull'opera.`,
@@ -158,6 +259,25 @@ function buildVariantMatrix(work, variant) {
   };
 }
 
+function presentationContentByRevisionId() {
+  return new Map([
+    ...WORKS.map((work) => [
+      String(demoId(`item-revision:${work.key}`)),
+      { ...work, contentKind: "work" },
+    ]),
+    ...PERIODS.map((period) => [
+      String(demoId(`item-revision:period:${period.key}`)),
+      {
+        key: `period:${period.key}`,
+        title: period.label,
+        description: period.description,
+        period: period.key,
+        contentKind: "period",
+      },
+    ]),
+  ]);
+}
+
 function expectedCombinationKeys() {
   return new Set(DURATION_AXIS.flatMap((duration) => LANGUAGE_AXIS.map((language) => `${duration.definitionId}|${language.definitionId}|it-it`)));
 }
@@ -209,19 +329,15 @@ async function enrichExamPresentationMatrix() {
   if (!namespaceRevision) throw new Error("NamespaceRevision demo non disponibile");
   if (!editorialRelease) throw new Error("EditorialRelease demo non disponibile");
 
-  const workByRevisionId = new Map();
-  for (let index = 0; index < (editorialRelease.itemBindings || []).length && index < WORKS.length; index += 1) {
-    workByRevisionId.set(String(editorialRelease.itemBindings[index].itemRevisionId), WORKS[index]);
-  }
-
+  const contentByRevisionId = presentationContentByRevisionId();
   const revisionIds = (editorialRelease.itemBindings || []).map((binding) => binding.itemRevisionId);
   const revisions = await ItemRevisionV2.find({ _id: { $in: revisionIds } });
   if (revisions.length !== revisionIds.length) throw new Error("Una o più ItemRevision demo non sono disponibili");
 
   for (const revision of revisions) {
-    const work = workByRevisionId.get(String(revision._id));
-    if (!work) throw new Error(`Impossibile associare l'opera alla ItemRevision ${revision._id}`);
-    const variants = (revision.presentationVariants || []).map((variant) => buildVariantMatrix(work, variant.toObject ? variant.toObject() : variant));
+    const content = contentByRevisionId.get(String(revision._id));
+    if (!content) throw new Error(`Impossibile associare il contenuto alla ItemRevision ${revision._id}`);
+    const variants = (revision.presentationVariants || []).map((variant) => buildVariantMatrix(content, variant.toObject ? variant.toObject() : variant));
     const essential = variants.find((variant) => variant.key === "essential") || variants[0];
     const defaultRepresentation = essential?.representations.find((representation) =>
       String(representation.durationTypeDefinitionId) === String(DEF.durationShort)
