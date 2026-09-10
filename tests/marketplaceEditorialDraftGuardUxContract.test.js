@@ -34,9 +34,11 @@ test("Nuova Raccolta conserva il draft testuale e la configurazione del grafo at
   assert.match(source.collection, /this\.dirty = false;\s*navigate\(`/);
 
   assert.match(source.graphDialog, /newDraft = \{ name: "", description: "" \}/);
-  assert.match(source.graphDialog, /forkDraft = \{ name: "", description: "" \}/);
+  assert.match(source.graphDialog, /selectedItems = new Map\(\)/);
   assert.match(source.graphDialog, /current\?\.graphMode === "new"/);
-  assert.match(source.graphDialog, /current\?\.graphMode === "fork"/);
+  assert.match(source.graphDialog, /current\?\.graphMode === "import"/);
+  assert.match(source.graphDialog, /importItemIds/);
+  assert.doesNotMatch(source.graphDialog, /forkDraft|graphMode === "fork"|graphMode: "fork"/);
 });
 
 test("creazione Spazio integrata nella Libreria conserva e protegge il draft", () => {
