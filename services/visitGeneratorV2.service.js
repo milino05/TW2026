@@ -288,7 +288,7 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
       editorialReleaseId: bundle.release._id,
       versionMode: bundle.generationSource.versionMode,
     })),
-    sourceEditorialReleaseIds: bundles.map((entry) => bundle.release._id),
+    sourceEditorialReleaseIds: bundles.map((entry) => entry.release._id),
   };
 }
 
@@ -485,7 +485,7 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
 }
 
 async function getGeneratedPlanV2({ planId, userId }) {
-  const plan = await getGeneratedPlanV2({ planId, userId });
+  const plan = await GeneratedVisitPlanV2.findOne({ _id: planId, userId });
   if (!plan) throw new AppError("Piano generato v2 non trovato", 404);
   return plan;
 }
