@@ -82,10 +82,14 @@ test("federation merges the same Subject while preserving namespaced relation pr
   assert.equal(path.depth, 1);
 });
 
-test("physical association never creates a target: it only scores an already supplied VenueTarget", () => {
+test("physical association never creates a target: it only scores an already supplied reachable VenueTarget", () => {
   const subjectA = oid(), subjectB = oid(), target = { subjectId: subjectB }, namespaceId = oid();
+  const source = { editorialReleaseId: oid(), editorialContextId: oid(), namespaceId, graphRevisionId: oid() };
   const graph = {
-    nodes: new Map([[String(subjectA), {}], [String(subjectB), {}]]),
+    nodes: new Map([
+      [String(subjectA), { sources: [source] }],
+      [String(subjectB), { sources: [source] }],
+    ]),
     canonicalIndex: new Map(), bindingsByNamespaceSubject: new Map(),
     edgesFrom: new Map([
       [String(subjectA), [{ fromSubjectId: subjectA, toSubjectId: subjectB, namespaceId, relationTypeDefinitionId: "rel", traversalWeight: 1 }]],
