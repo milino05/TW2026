@@ -8,6 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const editor = read("clients/marketplace/src/ui/semantic-graph-editor.js");
 const repository = read("clients/marketplace/src/infrastructure/http/editorial-repository.js");
 const graphService = read("services/editorialContextGraph.service.js");
+const relationCommand = read("services/editorialCollectionRelationCommand.service.js");
 const routes = read("routes/editorialContexts.routes.js");
 const styles = read("clients/marketplace/src/styles/editorial-studio.css");
 
@@ -21,15 +22,19 @@ test("Graph Workspace usa neighborhood server-side invece dello snapshot complet
   assert.match(graphService, /hiddenNeighbors/);
 });
 
-test("focus e target della Raccolta cercano soltanto Subject rappresentati dai suoi contenuti", () => {
-  assert.match(editor, /scope: "collection"/);
-  assert.doesNotMatch(editor, /scope:\s*this\.pickerMode\s*===\s*"focus"\s*\?\s*"collection"\s*:\s*"graph"/);
-  assert.match(editor, /data-semantic-inventory-search/);
-  assert.match(editor, /data-semantic-inventory-page/);
-  assert.match(editor, /Per collegare un Subject che non ha ancora contenuti nella Raccolta/);
+test("focus resta nella Raccolta mentre il target può usare contenuti dello Spazio con commit atomico", () => {
+  assert.match(editor, /this\.pickerMode === "target" \? "space" : "collection"/);
+  assert.match(editor, /Cerca tra i contenuti dello Spazio editoriale/);
+  assert.match(editor, /targetItemCandidates/);
+  assert.match(editor, /name="targetItemId"/);
+  assert.match(editor, /Aggiungi contenuto e crea relazione/);
   assert.match(graphService, /\["graph", "collection", "space"\]/);
-  assert.match(graphService, /relationCount/);
-  assert.match(graphService, /presentationCoverage/);
+  assert.match(graphService, /itemCandidates/);
+  assert.match(graphService, /projectItemCandidates/);
+  assert.match(relationCommand, /mongoose\.connection\.transaction/);
+  assert.match(relationCommand, /CollectionItemMembership\.create/);
+  assert.match(relationCommand, /writeSemanticGraphSnapshot/);
+  assert.match(relationCommand, /COLLECTION_GRAPH_TARGET_ITEM_SELECTION_REQUIRED/);
 });
 
 test("click modifica, doppio click ricentra e la tastiera offre un percorso equivalente", () => {
