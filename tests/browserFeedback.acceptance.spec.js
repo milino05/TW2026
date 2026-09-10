@@ -265,7 +265,7 @@ test("Navigator toast stack is FIFO, stable and globally layered in a real brows
 
   const toasts = page.locator(".feedback-toast");
   await expect(toasts).toHaveCount(3);
-  await expect(toasts).toContainText(["Navigazione uno", "Navigazione due", "Terza notifica"]);
+  await expect(toasts).toContainText(["Navigazione uno", "Navigazione due", "Navigazione tre"]);
 
   const tops = await toasts.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
   expect(tops[0]).toBeLessThan(tops[1]);
