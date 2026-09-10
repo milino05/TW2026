@@ -176,11 +176,24 @@ function workText(work, level) {
   return `${base} Per una lettura approfondita considera ${work.focus}, distinguendo composizione, punto di vista, ritmo visivo e relazione con il contesto urbano. Formula quindi un confronto motivato con le altre tappe del percorso.`;
 }
 
+function themeText(theme) {
+  return `${theme.label} è un contenuto curatoriale del Museo Civico Aurora. ${theme.description} Nel grafo semantico collega più opere della Raccolta, ma non rappresenta una tappa fisica autonoma.`;
+}
+
 function datasetIds() {
   return {
-    itemIds: WORKS.map((work) => auroraId(`item:${work.key}`)),
-    editionIds: WORKS.map((work) => auroraId(`edition:${work.key}`)),
-    revisionIds: WORKS.map((work) => auroraId(`item-revision:${work.key}`)),
+    itemIds: [
+      ...WORKS.map((work) => auroraId(`item:${work.key}`)),
+      ...THEMES.map((theme) => auroraId(`item:theme:${theme.key}`)),
+    ],
+    editionIds: [
+      ...WORKS.map((work) => auroraId(`edition:${work.key}`)),
+      ...THEMES.map((theme) => auroraId(`edition:theme:${theme.key}`)),
+    ],
+    revisionIds: [
+      ...WORKS.map((work) => auroraId(`item-revision:${work.key}`)),
+      ...THEMES.map((theme) => auroraId(`item-revision:theme:${theme.key}`)),
+    ],
     targetIds: WORKS.map((work) => auroraId(`venue-target:${work.key}`)),
     subjectIds: [...workSubjectIds.values(), ...themeSubjectIds.values()],
     visitIds: VISIT_DEFINITIONS.map((visit) => auroraId(`visit:${visit.key}`)),
@@ -460,6 +473,69 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     itemRecords.push({ work, item, edition, revision });
   }
 
+  const themeItemRecords = [];
+  for (const theme of THEMES) {
+    const item = await ItemV2.create({
+      _id: auroraId(`item:theme:${theme.key}`),
+      primarySubjectId: themeSubjectIds.get(theme.key),
+      ownerType: "organization",
+      ownerId: organization._id,
+      provenance: { origin: "human", metadata: { dataset: "TW2026 Museo Aurora demo", role: "semantic_context" } },
+      createdBy: manager._id,
+    });
+    const edition = await ItemEdition.create({
+      _id: auroraId(`edition:theme:${theme.key}`),
+      itemId: item._id,
+      namespaceId: namespace._id,
+      createdBy: manager._id,
+    });
+    const variantId = auroraId(`variant:theme:${theme.key}:context`);
+    const representationId = auroraId(`representation:theme:${theme.key}:context`);
+    const signalDefinitionId = theme.key === "comunita" ? DEF.signalCommunity : DEF.signalLight;
+    const revision = await ItemRevisionV2.create({
+      _id: auroraId(`item-revision:theme:${theme.key}`),
+      itemEditionId: edition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+      label: `${theme.label} — tema curatoriale`,
+      relatedSubjectIds: [],
+      tags: [theme.key, "tema curatoriale", "museo-aurora"],
+      authorCredits: ["Dataset dimostrativo ArtAround"],
+      metadata: { license: "CC BY 4.0 — contenuto dimostrativo originale ArtAround" },
+      selectionSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+      presentationVariants: [{
+        _id: variantId,
+        key: "context",
+        label: "Contesto",
+        description: "Approfondimento sul tema curatoriale.",
+        semanticFocus: [{ subjectId: item.primarySubjectId, weight: 1 }],
+        presentationAspects: [{ definitionId: DEF.aspectContext, weight: 1 }],
+        audienceSuitability: { minAgeYears: 12, minMaturity: 0.2, maxMaturity: 1 },
+        knowledgeRequirements: [],
+        representations: [{
+          _id: representationId,
+          durationTypeDefinitionId: DEF.durationMedium,
+          languageLevelDefinitionId: DEF.languageStandard,
+          locale: "it-IT",
+          text: themeText(theme),
+        }],
+      }],
+      defaultPresentation: { variantId, representationId },
+      provenance: { origin: "human", metadata: { dataset: "TW2026 Museo Aurora demo", role: "semantic_context" } },
+      status: "published",
+      integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: manager._id },
+      review: reviewApproved(operator._id, manager._id),
+      publication: { publishedAt: FIXED_NOW, publishedBy: manager._id },
+      createdBy: manager._id,
+      updatedBy: manager._id,
+    });
+    assertNoIssues(`ItemRevision Aurora non coerente: ${theme.key}`, validatePresentationAgainstNamespace(revision, namespaceRevision));
+    edition.publishedRevisionId = revision._id;
+    await edition.save();
+    themeItemRecords.push({ theme, item, edition, revision, signalDefinitionId });
+  }
+
+  const allItemRecords = [...itemRecords, ...themeItemRecords];
   const contentSpace = await ContentSpace.create({
     _id: IDS.contentSpace,
     name: "Museo Aurora — Collezione demo",
@@ -470,7 +546,7 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
   });
   const editorialSubjectIds = [...workSubjectIds.values(), ...themeSubjectIds.values()];
   await ContentSpaceItemMembership.create(
-    itemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
+    allItemRecords.map(({ item }) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: manager._id })),
   );
   await ContentSpaceSubjectMembership.create(
     editorialSubjectIds.map((subjectId) => ({ contentSpaceId: contentSpace._id, subjectId, addedBy: manager._id })),
@@ -494,13 +570,22 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     description: "Raccoglie dieci opere originali e tre temi: luce, spazi e comunità.",
     createdBy: manager._id,
   });
-  await CollectionItemMembership.create(itemRecords.map(({ item }) => ({
-    editorialContextId: editorialContext._id,
-    itemId: item._id,
-    curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
-    addedBy: manager._id,
-    updatedBy: manager._id,
-  })));
+  await CollectionItemMembership.create([
+    ...itemRecords.map(({ item }) => ({
+      editorialContextId: editorialContext._id,
+      itemId: item._id,
+      curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
+      addedBy: manager._id,
+      updatedBy: manager._id,
+    })),
+    ...themeItemRecords.map(({ item, signalDefinitionId }) => ({
+      editorialContextId: editorialContext._id,
+      itemId: item._id,
+      curationSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+      addedBy: manager._id,
+      updatedBy: manager._id,
+    })),
+  ]);
   const graphRevision = await SemanticGraphRevision.create({
     _id: IDS.graphRevision,
     semanticGraphId: semanticGraph._id,
@@ -542,13 +627,22 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     });
   }
   await SemanticEdgeV2.create(semanticEdges);
-  const itemBindings = itemRecords.map(({ item, edition, revision, work }) => ({
-    _id: auroraId(`editorial-binding:${work.key}`),
-    itemId: item._id,
-    itemEditionId: edition._id,
-    itemRevisionId: revision._id,
-    curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
-  }));
+  const itemBindings = [
+    ...itemRecords.map(({ item, edition, revision, work }) => ({
+      _id: auroraId(`editorial-binding:${work.key}`),
+      itemId: item._id,
+      itemEditionId: edition._id,
+      itemRevisionId: revision._id,
+      curationSignals: [{ definitionId: DEF.signalCollection, weight: 1 }],
+    })),
+    ...themeItemRecords.map(({ item, edition, revision, theme, signalDefinitionId }) => ({
+      _id: auroraId(`editorial-binding:theme:${theme.key}`),
+      itemId: item._id,
+      itemEditionId: edition._id,
+      itemRevisionId: revision._id,
+      curationSignals: [{ definitionId: signalDefinitionId, weight: 1 }],
+    })),
+  ];
   const editorialRelease = await EditorialRelease.create({
     _id: IDS.editorialRelease,
     editorialContextId: editorialContext._id,
@@ -842,6 +936,7 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     layoutRevision,
     venueRelease,
     itemRecords,
+    themeItemRecords,
     targets,
     visitRecords,
     acquisitions: { aurora: acquiredAurora, pinacoteca: acquiredPinacoteca },
@@ -867,8 +962,8 @@ async function verifyAuroraDataset() {
       workingRevisionId: semanticGraph?.workingRevisionId || null,
     });
   }
-  if (!editorialRelease || editorialRelease.itemBindings?.length !== WORKS.length) {
-    add("AURORA_EDITORIAL_RELEASE_INVALID", "La release Aurora deve contenere dieci item", {
+  if (!editorialRelease || editorialRelease.itemBindings?.length !== WORKS.length + THEMES.length) {
+    add("AURORA_EDITORIAL_RELEASE_INVALID", "La release Aurora deve contenere dieci opere e tre contenuti tematici", {
       count: editorialRelease?.itemBindings?.length || 0,
     });
   }
