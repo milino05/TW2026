@@ -7,7 +7,10 @@ const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
 const { loadAuthoringContext } = require("./editorialGraphCommand.service");
-const { writeSemanticGraphSnapshot } = require("./semanticGraphSnapshotWriter.service");
+const {
+  validateSemanticGraphSnapshot,
+  writeSemanticGraphSnapshot,
+} = require("./semanticGraphSnapshotWriter.service");
 const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
 
 function id(value) {
@@ -188,6 +191,17 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
     metadata: payload?.metadata ?? null,
     provenance: { origin: "human" },
   });
+
+  // Department MongoDB runs standalone, so the unit-of-work fallback cannot roll
+  // back earlier writes. Validate the complete graph mutation before touching
+  // Collection membership or workingVersion; the writer validates again at commit.
+  const graphIssues = await validateSemanticGraphSnapshot({
+    snapshot: state.snapshot,
+    namespaceRevision: state.namespaceRevision,
+  });
+  if (graphIssues.length) {
+    throw new AppError("Il grafo non rispetta le regole editoriali", 409, graphIssues);
+  }
 
   const expectedContextVersion = Number(state.context.workingVersion || 0);
   let revisionId = null;
