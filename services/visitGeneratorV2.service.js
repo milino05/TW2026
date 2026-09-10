@@ -207,7 +207,9 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
     ItemRevisionV2.find({ _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } }).lean(),
   ]);
   const editionById = mapById(editions), revisionById = mapById(revisions), itemIds = uniqueIds(editions.map((entry) => entry.itemId));
-  const items = await ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(), itemById = mapById(items);
+  // Pinned EditorialRelease consumption is historical: lifecycle filtering belongs to live authoring,
+  // not to Items already frozen into an immutable release.
+  const items = await ItemV2.find({ _id: { $in: itemIds } }).lean(), itemById = mapById(items);
   const candidateByEditionRevision = new Map();
   for (const bundle of bundles) {
     for (const binding of bundle.release.itemBindings || []) {
@@ -286,7 +288,7 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
       editorialReleaseId: bundle.release._id,
       versionMode: bundle.generationSource.versionMode,
     })),
-    sourceEditorialReleaseIds: bundles.map((entry) => entry.release._id),
+    sourceEditorialReleaseIds: bundles.map((entry) => bundle.release._id),
   };
 }
 
@@ -483,7 +485,7 @@ async function generateVisitPlanV2({ userId, request, persist = true }) {
 }
 
 async function getGeneratedPlanV2({ planId, userId }) {
-  const plan = await GeneratedVisitPlanV2.findOne({ _id: planId, userId });
+  const plan = await getGeneratedPlanV2({ planId, userId });
   if (!plan) throw new AppError("Piano generato v2 non trovato", 404);
   return plan;
 }
