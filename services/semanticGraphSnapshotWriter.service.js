@@ -31,6 +31,13 @@ async function validateSubjects(snapshot) {
     }));
 }
 
+async function validateSemanticGraphSnapshot({ snapshot, namespaceRevision = null }) {
+  return [
+    ...await validateSubjects(snapshot),
+    ...(namespaceRevision ? validateGraphSnapshotAgainstNamespace(snapshot, namespaceRevision) : []),
+  ];
+}
+
 async function nextVersion(semanticGraphId, session) {
   const latest = await SemanticGraphRevision.findOne({ semanticGraphId })
     .sort({ version: -1 })
@@ -110,10 +117,7 @@ async function writeSemanticGraphSnapshot({
     }]);
   }
 
-  const issues = [
-    ...await validateSubjects(snapshot),
-    ...(namespaceRevision ? validateGraphSnapshotAgainstNamespace(snapshot, namespaceRevision) : []),
-  ];
+  const issues = await validateSemanticGraphSnapshot({ snapshot, namespaceRevision });
   if (issues.length) throw new AppError("Il grafo non rispetta le regole editoriali", 409, issues);
 
   const execute = (activeSession) => persistSnapshot({
@@ -135,5 +139,6 @@ async function writeSemanticGraphSnapshot({
 }
 
 module.exports = {
+  validateSemanticGraphSnapshot,
   writeSemanticGraphSnapshot,
 };
