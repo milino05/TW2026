@@ -28,7 +28,7 @@ test("workspace detail è esposto come endpoint autenticato con ObjectId validat
   assert.match(routes, /resourceId, controller\.creatorWorkspaceResourceDetail/);
 });
 
-test("dettagli e azioni espone una rimozione confermata che preserva storico e grafo condiviso", () => {
+test("dettagli e azioni espone una rimozione confermata che preserva storico e ritira il grafo locale", () => {
   assert.match(routes, /workspace\/resources\/:resourceType\/:resourceId\/remove/);
   assert.match(removal, /lifecycleStatus:\s*"trashed"/);
   assert.match(removal, /findOneAndUpdate/);
@@ -42,11 +42,13 @@ test("dettagli e azioni espone una rimozione confermata che preserva storico e g
   assert.match(view, /Acquisizioni, diritti già concessi e adozioni resteranno validi/);
   assert.match(removal, /"editorial_context"/);
   assert.match(removal, /"visit"/);
-  assert.match(view, /Il grafo semantico viene conservato/);
-  assert.match(view, /non vengono eliminate/);
+  assert.match(view, /Anche il grafo locale verrà ritirato/);
+  assert.match(view, /non resterà come grafo modificabile indipendente/);
+  assert.match(view, /Le revisioni immutabili del grafo e le release già pubblicate restano conservate/);
   assert.match(view, /semanticGraphRelationCount/);
-  assert.match(view, /semanticGraphCollectionCount/);
-  assert.match(view, /Potrà essere riutilizzato da un'altra raccolta in futuro/);
+  assert.match(removal, /semanticGraphCollectionCount/);
+  assert.match(removal, /COLLECTION_GRAPH_NOT_LOCAL/);
+  assert.doesNotMatch(view, /Potrà essere riutilizzato da un'altra raccolta in futuro/);
   assert.match(view, /data-removal-ack/);
 });
 
