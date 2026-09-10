@@ -15,23 +15,24 @@ test("workspace resource detail still opens editorial collections in the current
   assert.doesNotMatch(workspace, /\/workspace\/context-compose/);
 });
 
-test("collection removal UI describes SemanticGraph preservation instead of relation loss", () => {
+test("collection removal UI explains local graph trashing and immutable release preservation", () => {
   assert.match(workspace, /semanticGraphRelationCount/);
-  assert.match(workspace, /semanticGraphCollectionCount/);
-  assert.match(workspace, /Il grafo semantico viene conservato/);
-  assert.match(workspace, /non vengono eliminate/);
-  assert.match(workspace, /Potrà essere riutilizzato/);
+  assert.match(workspace, /grafo locale/);
+  assert.match(workspace, /revisioni immutabili/);
+  assert.match(workspace, /release già pubblicate/);
+  assert.doesNotMatch(workspace, /Potrà essere riutilizzato da un'altra raccolta/);
   assert.doesNotMatch(workspace, /collegamenti dovranno essere ricreati/);
-  assert.doesNotMatch(workspace, /puoi perdere molti collegamenti/);
   assert.doesNotMatch(workspace, /affectedConnectionCount/);
 });
 
-test("collection removal impact follows SemanticGraph ownership and never trashes the graph", () => {
+test("collection removal trashes the one-to-one local SemanticGraph while preserving its revisions", () => {
   assert.match(removal, /SemanticGraph\.findOne/);
   assert.match(removal, /semanticGraphRelationCount/);
   assert.match(removal, /semanticGraphCollectionCount/);
-  assert.doesNotMatch(removal, /workingGraphRevisionId/);
-  assert.doesNotMatch(removal, /SemanticGraph\.findOneAndUpdate|SemanticGraph\.updateOne|SemanticGraph\.delete/);
+  assert.match(removal, /COLLECTION_GRAPH_NOT_LOCAL/);
+  assert.match(removal, /SemanticGraph\.findOneAndUpdate/);
+  assert.match(removal, /lifecycleStatus: "trashed"/);
+  assert.doesNotMatch(removal, /SemanticGraphRevision\.delete|SemanticEdgeV2\.delete/);
 });
 
 test("collection removal UX files pass the syntax gate", () => {

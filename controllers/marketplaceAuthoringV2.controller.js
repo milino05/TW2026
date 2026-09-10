@@ -7,6 +7,7 @@ const {
 const { listEditorialCollectionAvailableItems } = require("../services/editorialCollectionAvailableItems.service");
 const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
 const { createEditorialStudioCollection, listReusableSemanticGraphs } = require("../services/editorialStudioCreationV2.service");
+const { previewSemanticGraphImport } = require("../services/editorialGraphImport.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
 async function subjectVenuePresence(req, res, next) {
@@ -59,6 +60,19 @@ async function reusableSemanticGraphs(req, res, next) {
       query: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
+    }));
+  } catch (error) { next(error); }
+}
+
+async function semanticGraphImportPreview(req, res, next) {
+  try {
+    res.status(200).json(await previewSemanticGraphImport({
+      actorUserId: req.user._id,
+      sourceSemanticGraphId: req.params.semanticGraphId,
+      contentSpaceId: req.query?.contentSpaceId,
+      ownerType: req.query?.ownerType || "user",
+      ownerId: req.query?.ownerId || req.user._id,
+      namespaceId: req.query?.namespaceId,
     }));
   } catch (error) { next(error); }
 }
@@ -135,6 +149,7 @@ module.exports = {
   editorialSpace,
   editorialRelationChoices,
   reusableSemanticGraphs,
+  semanticGraphImportPreview,
   editorialStudio,
   editorialStudioCandidates,
   createEditorialCollection,

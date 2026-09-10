@@ -66,6 +66,26 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     this.dispatchEvent(new CustomEvent("library-item-detail-changed", { bubbles: true, detail: { itemId: this.itemId, ...detail } }));
   }
 
+  async removeCollectionEntry(collection) {
+    try {
+      return await editorialRepository.removeEntry(collection.id, collection.entryId);
+    } catch (error) {
+      if (error?.code !== "COLLECTION_ITEM_GRAPH_SUBJECT_IN_USE") throw error;
+      const impact = error.details?.find((detail) => detail.code === "COLLECTION_ITEM_GRAPH_SUBJECT_IN_USE")?.context || {};
+      const relationCount = Number(impact.relationCount || 0);
+      const confirmed = await openActionDialog({
+        title: "Rimuovere anche il soggetto dal grafo della Raccolta?",
+        message: relationCount
+          ? `Questo è l'ultimo contenuto della Raccolta che rappresenta il Subject. Rimuovendolo verranno rimossi anche il nodo semantico e ${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"} dal grafo locale.`
+          : "Questo è l'ultimo contenuto della Raccolta che rappresenta il Subject. Rimuovendolo verrà rimosso anche il nodo semantico dal grafo locale.",
+        confirmLabel: "Rimuovi contenuto e collegamenti",
+        tone: "danger",
+      });
+      if (!confirmed) return null;
+      return editorialRepository.removeEntry(collection.id, collection.entryId, { cascadeGraph: true });
+    }
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -110,14 +130,15 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
       if (!collection?.entryId) return;
       const confirmed = await openActionDialog({
         title: `Rimuovere il contenuto da “${collection.name}”?`,
-        message: "L'Item resterà nello spazio editoriale e potrà continuare a essere usato da altre raccolte.",
+        message: "L'Item resterà nello spazio editoriale e potrà continuare a essere usato da altre raccolte. Se è l'ultima rappresentazione di un Subject già usato nel grafo locale, ti verrà mostrato l'impatto semantico prima di procedere.",
         confirmLabel: "Rimuovi dalla raccolta",
         tone: "danger",
       });
       if (!confirmed) return;
       this.busy = true; this.error = null; this.render();
       try {
-        await editorialRepository.removeEntry(collection.id, collection.entryId);
+        const removed = await this.removeCollectionEntry(collection);
+        if (!removed) { this.busy = false; this.render(); return; }
         this.view = "tabs"; this.focusedCollectionId = null;
         await this.load();
         this.notifyChanged({ editorialContextId: collection.id, action: "removed" });
@@ -178,8 +199,8 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const semanticCopy = !collection.semanticGraph?.id
       ? "La struttura semantica non è disponibile."
       : collection.semanticCoverage === "covered"
-        ? "Il Subject è già materializzato nel SemanticGraph e può avere collegamenti."
-        : "Il Subject è disponibile automaticamente perché questo Item appartiene alla raccolta. Puoi aprirlo subito con 0 collegamenti; verrà materializzato nel SemanticGraph quando creerai una relazione o una classificazione.";
+        ? "Il Subject è già materializzato nel grafo locale della Raccolta e può avere collegamenti."
+        : "Il Subject è disponibile automaticamente perché questo Item appartiene alla Raccolta. Puoi aprirlo subito con 0 collegamenti; verrà materializzato nel grafo locale quando creerai una relazione o una classificazione.";
     return `<section class="item-detail-section collection-item-detail"><div class="section-heading"><div><span class="eyebrow">Item nella raccolta</span><h2>${escapeHtml(collection.name)}</h2><p>${escapeHtml(collection.namespace?.name || "Regole editoriali")}</p></div><button type="button" class="button-secondary" data-back-collections>← Raccolte</button></div><div class="detail-block-grid"><article class="panel"><span class="eyebrow">Versione editoriale</span>${edition ? `<h3>${escapeHtml(revision?.label || "Edizione compatibile")}</h3><p>${revision ? `${escapeHtml(statusLabel(revision.status))} · v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${collection.availableOperations?.canOpenEdition ? `<button type="button" class="button-secondary" data-open-item-edition="${escapeHtml(id(collection.namespace?.id))}">Apri versione</button>` : ""}` : `<h3>Versione mancante</h3><p>La raccolta usa queste Regole editoriali, ma l'Item non ha ancora una Edition compatibile. Può restare nella raccolta, ma la revisione verrà bloccata finché non la completi.</p>${collection.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition="${escapeHtml(id(collection.namespace?.id))}">Crea versione</button>` : ""}`}</article><article class="panel"><span class="eyebrow">Semantica</span><h3>${escapeHtml(collection.semanticGraph?.name || "Grafo non disponibile")}</h3><p>${escapeHtml(semanticCopy)}</p>${collection.availableOperations?.canOpenGraph && collection.semanticGraph?.id ? `<button type="button" class="button-secondary" data-open-collection-graph="${escapeHtml(id(collection.semanticGraph))}">Apri nel grafo</button>` : ""}</article></div><div class="operations"><button type="button" class="button-secondary" data-open-collection="${escapeHtml(id(collection))}">Apri raccolta</button>${collection.availableOperations?.canRemove ? `<button type="button" class="button-secondary danger" data-remove-from-collection="${escapeHtml(id(collection))}">Rimuovi dalla raccolta</button>` : ""}</div></section>`;
   }
 

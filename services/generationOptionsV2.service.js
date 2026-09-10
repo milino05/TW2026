@@ -160,8 +160,9 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
   contextIds.push(...uniqueIds(pinnedReleases.map((release) => release.editorialContextId)));
   if (!ownedSpaceIds.length && !contextIds.length) return [];
 
+  // Historical records must remain readable for pinned EditorialRelease sources.
+  // Live follow_current availability is enforced separately below on every live aggregate.
   const contexts = await EditorialContext.find({
-    lifecycleStatus: "active",
     $or: [
       ...(ownedSpaceIds.length ? [{ contentSpaceId: { $in: ownedSpaceIds } }] : []),
       ...(contextIds.length ? [{ _id: { $in: contextIds } }] : []),
@@ -170,12 +171,12 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
   const contextById = new Map(contexts.map((context) => [id(context._id), context]));
   const spaceIds = uniqueIds(contexts.map((context) => context.contentSpaceId));
   const spaces = spaceIds.length
-    ? await ContentSpace.find({ _id: { $in: spaceIds }, lifecycleStatus: "active" }).lean()
+    ? await ContentSpace.find({ _id: { $in: spaceIds } }).lean()
     : [];
   const spaceById = new Map(spaces.map((space) => [id(space._id), space]));
   const namespaceIds = uniqueIds(contexts.map((context) => context.namespaceId));
   const namespaces = namespaceIds.length
-    ? await Namespace.find({ _id: { $in: namespaceIds }, lifecycleStatus: "active" }).select("_id name description").lean()
+    ? await Namespace.find({ _id: { $in: namespaceIds } }).select("_id name description lifecycleStatus").lean()
     : [];
   const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
   const ownerByKey = await ownerSummaries(spaces);
@@ -200,6 +201,7 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
     const space = spaceById.get(id(context.contentSpaceId));
     const namespace = namespaceById.get(id(context.namespaceId));
     if (!space || !namespace) continue;
+    if (context.lifecycleStatus !== "active" || space.lifecycleStatus !== "active" || namespace.lifecycleStatus !== "active") continue;
     const currentRelease = currentReleaseById.get(id(context.publishedReleaseId));
     if (currentRelease && (actorOwnsSpace(space) || liveEntitledContextIds.has(id(context._id)))) {
       sourceRows.push({

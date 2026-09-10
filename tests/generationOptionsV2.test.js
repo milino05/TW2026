@@ -136,6 +136,49 @@ test("GenerationOptions keeps PhysicalScope independent and defaults only an aut
   });
 });
 
+test("GenerationOptions keeps a pinned EditorialRelease selectable after its live Collection hierarchy is trashed", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const Organization = require("../models/organization.model");
+    const Entitlement = require("../models/entitlement.model");
+    const { getGenerationOptionsProjection } = require("../services/generationOptionsV2.service");
+
+    const consumer = await User.create({ username: "options-pinned-consumer", passwordHash: "hash" });
+    const publisher = await User.create({ username: "options-pinned-publisher", passwordHash: "hash" });
+    const organization = await Organization.create({ name: "Pinned lifecycle organization", createdBy: consumer._id });
+    const pinnedContext = await createContext({ userId: publisher._id, ownerId: publisher._id, name: "Pinned historical" });
+    const { venue } = await createReadyVenue({ userId: consumer._id, organizationId: organization._id });
+
+    await Entitlement.create({
+      beneficiaryType: "user",
+      beneficiaryId: consumer._id,
+      resourceType: "editorial_release",
+      resourceId: pinnedContext.release._id,
+      capability: "context.generate",
+      versionPolicy: "pinned",
+      baselineSnapshotRef: { resourceType: "editorial_release", resourceId: pinnedContext.release._id },
+      status: "active",
+    });
+
+    const trashedAt = new Date();
+    await Promise.all([
+      pinnedContext.context.updateOne({ lifecycleStatus: "trashed", trashedAt, trashedBy: publisher._id }),
+      pinnedContext.space.updateOne({ lifecycleStatus: "trashed", trashedAt, trashedBy: publisher._id }),
+      pinnedContext.namespace.updateOne({ lifecycleStatus: "trashed", trashedAt, trashedBy: publisher._id }),
+    ]);
+
+    const projection = await getGenerationOptionsProjection({ actorUserId: consumer._id, selectedVenueIds: [venue._id] });
+    const sources = flattenSources(projection);
+    const pinned = sources.find((entry) => String(entry.source.sourceRef.resourceId) === String(pinnedContext.release._id));
+    const resurrectedLive = sources.find((entry) => String(entry.context.id) === String(pinnedContext.context._id) && entry.source.sourceRef.resourceType === "editorial_context");
+
+    assert.ok(pinned, "La EditorialRelease pinned valida deve restare visibile nel picker dopo il trash della gerarchia live");
+    assert.equal(pinned.source.sourceRef.resourceType, "editorial_release");
+    assert.equal(pinned.source.versionMode, "pinned");
+    assert.equal(resurrectedLive, undefined, "Il picker non deve resuscitare la Collection/EditorialContext come sorgente follow_current");
+  });
+});
+
 test("GenerationOptions returns no editorial sources for an actor without ownership or context.generate", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");

@@ -7,11 +7,15 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const Subject = require("../models/subject.model");
+const SemanticGraph = require("../models/semanticGraph.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
+const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
+const { writeSemanticGraphSnapshot } = require("./semanticGraphSnapshotWriter.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function sameId(left, right) { return id(left) === id(right); }
 function assertObjectId(value, field) {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`${field} non valido`, 400, [{ field, code: "INVALID_OBJECT_ID" }]);
 }
@@ -63,7 +67,10 @@ async function resolveEligibleItem(context, itemId, { session = null } = {}) {
   assertObjectId(itemId, "itemId");
   let itemQuery = ItemV2.findOne({ _id: itemId, lifecycleStatus: "active" });
   let membershipQuery = ContentSpaceItemMembership.findOne({ contentSpaceId: context.contentSpaceId, itemId });
-  if (session) { itemQuery = itemQuery.session(session); membershipQuery = membershipQuery.session(session); }
+  if (session) {
+    itemQuery = itemQuery.session(session);
+    membershipQuery = membershipQuery.session(session);
+  }
   const [item, membership] = await Promise.all([itemQuery.lean(), membershipQuery.lean()]);
   if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE" }]);
   if (!membership) {
@@ -159,19 +166,110 @@ async function updateEditorialContextEntry({ editorialContextId, entryId, curati
   return updated;
 }
 
-async function removeEditorialContextEntry({ editorialContextId, entryId, actorUserId }) {
+async function remainingCollectionItemsForSubject({ context, subjectId, excludingEntryId, session }) {
+  const memberships = await CollectionItemMembership.find({
+    editorialContextId: context._id,
+    _id: { $ne: excludingEntryId },
+  }).select("itemId").session(session).lean();
+  if (!memberships.length) return [];
+  const items = await ItemV2.find({
+    _id: { $in: memberships.map((entry) => entry.itemId) },
+    primarySubjectId: subjectId,
+    lifecycleStatus: "active",
+  }).select("_id").session(session).lean();
+  return items;
+}
+
+function graphSnapshotWithoutSubject(graph, subjectId) {
+  if (!graph) return { subjectBindings: [], edges: [], removedRelationCount: 0, contained: false };
+  const contained = [...graph.nodes.values()].some((node) => node.binding && sameId(node.subject, subjectId));
+  const subjectBindings = [...graph.nodes.values()]
+    .filter((node) => node.binding && !sameId(node.subject, subjectId))
+    .map((node) => ({
+      subjectId: node.subject._id,
+      subjectClassDefinitionIds: [...(node.binding.subjectClassDefinitionIds || [])],
+    }));
+  const removedEdges = graph.authoritativeEdges.filter((edge) => (
+    sameId(edge.sourceSubjectId, subjectId) || sameId(edge.targetSubjectId, subjectId)
+  ));
+  const edges = graph.authoritativeEdges
+    .filter((edge) => !sameId(edge.sourceSubjectId, subjectId) && !sameId(edge.targetSubjectId, subjectId))
+    .map((edge) => ({
+      sourceSubjectId: edge.sourceSubjectId,
+      targetSubjectId: edge.targetSubjectId,
+      relationTypeDefinitionId: edge.relationTypeDefinitionId,
+      weight: edge.weight,
+      metadata: edge.metadata ?? null,
+      provenance: edge.provenance || { origin: "human" },
+    }));
+  return { subjectBindings, edges, removedRelationCount: removedEdges.length, contained };
+}
+
+async function removeEditorialContextEntry({ editorialContextId, entryId, cascadeGraph = false, actorUserId }) {
   assertObjectId(entryId, "entryId");
   const initial = await findContextOrFail(editorialContextId);
   await assertCanEditContext(initial, actorUserId);
   assertWorkingStateEditable(initial);
+  const semanticGraph = await SemanticGraph.findOne({ _id: initial.semanticGraphId, lifecycleStatus: "active" });
+  const sourceGraph = semanticGraph?.workingRevisionId
+    ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId)
+    : null;
+  let removal = { removed: true, removedGraphSubject: false, removedRelationCount: 0 };
+
   await mongoose.connection.transaction(async (session) => {
     const context = await findContextOrFail(editorialContextId, { session });
     assertWorkingStateEditable(context);
-    const result = await CollectionItemMembership.deleteOne({ _id: entryId, editorialContextId: context._id }, { session });
-    if (result.deletedCount !== 1) throw new AppError("Contenuto della raccolta non trovato", 404);
+    const membership = await CollectionItemMembership.findOne({
+      _id: entryId,
+      editorialContextId: context._id,
+    }).session(session);
+    if (!membership) throw new AppError("Contenuto della raccolta non trovato", 404);
+    const item = await ItemV2.findOne({
+      _id: membership.itemId,
+      lifecycleStatus: "active",
+    }).select("primarySubjectId").session(session).lean();
+    if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE" }]);
+    const remaining = await remainingCollectionItemsForSubject({
+      context,
+      subjectId: item.primarySubjectId,
+      excludingEntryId: membership._id,
+      session,
+    });
+    const isLastRepresentation = remaining.length === 0;
+    const projected = isLastRepresentation
+      ? graphSnapshotWithoutSubject(sourceGraph, item.primarySubjectId)
+      : null;
+
+    if (projected?.contained && !cascadeGraph) {
+      throw new AppError("Questo è l'ultimo contenuto della Raccolta che rappresenta un Subject usato nel grafo", 409, [{
+        code: "COLLECTION_ITEM_GRAPH_SUBJECT_IN_USE",
+        context: {
+          subjectId: item.primarySubjectId,
+          relationCount: projected.removedRelationCount,
+        },
+      }]);
+    }
+
+    await CollectionItemMembership.deleteOne({ _id: membership._id }, { session });
     await bumpWorkingVersion({ context, session });
+
+    if (projected?.contained && cascadeGraph) {
+      if (!semanticGraph || !sourceGraph) throw new AppError("Grafo semantico non disponibile", 409);
+      await writeSemanticGraphSnapshot({
+        semanticGraph,
+        namespaceRevision: sourceGraph.namespaceRevision,
+        snapshot: projected,
+        actorUserId,
+        session,
+      });
+      removal = {
+        removed: true,
+        removedGraphSubject: true,
+        removedRelationCount: projected.removedRelationCount,
+      };
+    }
   });
-  return { removed: true };
+  return removal;
 }
 
 async function itemIdsMatchingQuery(context, q) {
@@ -190,7 +288,10 @@ async function itemIdsMatchingQuery(context, q) {
   const revisionEditions = revisionEditionIds.length
     ? await ItemEdition.find({ _id: { $in: revisionEditionIds }, namespaceId: context.namespaceId }).select("itemId").limit(1500).lean()
     : [];
-  return [...new Set([...subjectItems.map((entry) => id(entry._id)), ...revisionEditions.map((entry) => id(entry.itemId))])];
+  return [...new Set([
+    ...subjectItems.map((entry) => id(entry._id)),
+    ...revisionEditions.map((entry) => id(entry.itemId)),
+  ])];
 }
 
 async function listEditorialContextEntries({ editorialContextId, actorUserId, q = "", page = 1, limit = 50 }) {
@@ -217,15 +318,26 @@ async function listEditorialContextEntries({ editorialContextId, actorUserId, q 
     ? await ItemEdition.find({ itemId: { $in: itemIds }, namespaceId: context.namespaceId }).lean()
     : [];
   const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
-  const revisionIds = [...new Set(editions.map((edition) => id(edition.workingRevisionId || edition.publishedRevisionId)).filter(Boolean))];
-  const revisions = revisionIds.length ? await ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean() : [];
+  const revisionIds = [...new Set(editions
+    .map((edition) => id(edition.workingRevisionId || edition.publishedRevisionId))
+    .filter(Boolean))];
+  const revisions = revisionIds.length
+    ? await ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label status version").lean()
+    : [];
   const revisionById = new Map(revisions.map((revision) => [id(revision), revision]));
   const subjectIds = [...new Set(items.map((item) => id(item.primarySubjectId)).filter(Boolean))];
-  const subjects = subjectIds.length ? await Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean() : [];
+  const subjects = subjectIds.length
+    ? await Subject.find({ _id: { $in: subjectIds } }).select("preferredLabel description").lean()
+    : [];
   const subjectById = new Map(subjects.map((subject) => [id(subject), subject]));
 
   return {
-    context: { id: context._id, name: context.displayName, workingVersion: context.workingVersion || 0, activeReviewRevisionId: context.activeReviewRevisionId || null },
+    context: {
+      id: context._id,
+      name: context.displayName,
+      workingVersion: context.workingVersion || 0,
+      activeReviewRevisionId: context.activeReviewRevisionId || null,
+    },
     results: entries.map((entry) => {
       const item = itemById.get(id(entry.itemId)) || null;
       const edition = item ? editionByItemId.get(id(item._id)) || null : null;

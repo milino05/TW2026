@@ -8,6 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const editor = read("clients/marketplace/src/ui/semantic-graph-editor.js");
 const repository = read("clients/marketplace/src/infrastructure/http/editorial-repository.js");
 const graphService = read("services/editorialContextGraph.service.js");
+const relationCommand = read("services/editorialCollectionRelationCommand.service.js");
 const routes = read("routes/editorialContexts.routes.js");
 const styles = read("clients/marketplace/src/styles/editorial-studio.css");
 
@@ -21,20 +22,45 @@ test("Graph Workspace usa neighborhood server-side invece dello snapshot complet
   assert.match(graphService, /hiddenNeighbors/);
 });
 
-test("inventario semantico è ricercabile e paginato sul server con scope coerente col task", () => {
-  assert.match(editor, /scope:\s*this\.pickerMode\s*===\s*"focus"\s*\?\s*"collection"\s*:\s*"graph"/);
-  assert.match(editor, /data-semantic-inventory-search/);
-  assert.match(editor, /data-semantic-inventory-page/);
+test("focus resta nella Raccolta mentre il target può usare contenuti dello Spazio con commit atomico", () => {
+  assert.match(editor, /this\.pickerMode === "target" \? "space" : "collection"/);
+  assert.match(editor, /Cerca tra i contenuti dello Spazio editoriale/);
+  assert.match(editor, /targetItemCandidates/);
+  assert.match(editor, /name="targetItemId"/);
+  assert.match(editor, /Aggiungi contenuto e crea relazione/);
   assert.match(graphService, /\["graph", "collection", "space"\]/);
-  assert.match(graphService, /relationCount/);
-  assert.match(graphService, /presentationCoverage/);
+  assert.match(graphService, /itemCandidates/);
+  assert.match(graphService, /projectItemCandidates/);
+  assert.match(relationCommand, /mongoose\.connection\.transaction/);
+  assert.match(relationCommand, /CollectionItemMembership\.create/);
+  assert.match(relationCommand, /writeSemanticGraphSnapshot/);
+  assert.match(relationCommand, /COLLECTION_GRAPH_TARGET_ITEM_SELECTION_REQUIRED/);
 });
 
-test("il grafo resta leggibile su viewport strette e centra il nuovo focus", () => {
+test("click modifica, doppio click ricentra e la tastiera offre un percorso equivalente", () => {
+  assert.match(editor, /window\.setTimeout\([\s\S]*220/);
+  assert.match(editor, /onDoubleClick/);
+  assert.match(editor, /openSubjectEditor/);
+  assert.match(editor, /openEdgeEditor/);
+  assert.match(editor, /event\.key === "f" \|\| event\.key === "F"/);
+  assert.match(editor, /\["Enter", " "\]\.includes\(event\.key\)/);
+});
+
+test("gli editor del grafo usano il modal blurred centrale e non inspector laterali", () => {
+  assert.match(editor, /context-task-modal-layer semantic-graph-modal-layer/);
+  assert.match(editor, /role="dialog" aria-modal="true"/);
+  assert.match(editor, /data-graph-modal-backdrop/);
+  assert.doesNotMatch(editor, /context-workspace-inspector-layer|semantic-subject-inspector|semantic-relation-inspector/);
+});
+
+test("il grafo resta leggibile su viewport strette, centra il focus ed evidenzia hover e focus-visible", () => {
   assert.match(editor, /renderedFocusSubjectId/);
   assert.match(editor, /Math\.max\(0, \(canvas\.scrollWidth - canvas\.clientWidth\) \/ 2\)/);
+  assert.match(styles, /\.semantic-node:hover circle/);
+  assert.match(styles, /\.semantic-node:focus-visible circle/);
+  assert.match(styles, /\.semantic-node:hover,\.semantic-node:focus-visible\{transform:scale\(1\.[0-9]+\)\}/);
+  assert.match(styles, /\.semantic-edge:hover line/);
+  assert.match(styles, /\.semantic-edge:focus-visible line/);
   assert.match(styles, /@media\(max-width:54rem\)/);
-  assert.match(styles, /\.workspace-page \.library-current-space>\.section-heading/);
-  assert.match(styles, /\.studio-section>\.section-heading\{align-items:stretch;flex-direction:column\}/);
   assert.match(styles, /\.semantic-graph-canvas\{min-height:28rem\}/);
 });

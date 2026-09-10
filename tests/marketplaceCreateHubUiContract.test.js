@@ -61,13 +61,13 @@ test("Create Hub presenta Contenuto, Visita e Collega soggetti senza creare Racc
   assert.doesNotMatch(create, /\/workspace\/editorial-collection-new/);
 });
 
-test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente Relazioni", () => {
+test("Collega soggetti seleziona una Raccolta modificabile e apre direttamente il suo grafo locale", () => {
   assert.match(create, /editorialRepository\.relationChoices/);
   assert.match(create, /ownerType: this\.context\.type/);
   assert.match(create, /ownerId: this\.context\.id/);
   assert.match(create, /Scegli la raccolta/);
-  assert.match(create, /const graph = choice\.semanticGraph/);
-  assert.match(create, /graph\.sharedByCollections/);
+  assert.match(create, /grafo locale/);
+  assert.doesNotMatch(create, /sharedByCollections|grafo semantico può essere condiviso|raccolte condividono il grafo/);
   assert.match(create, /section=relations/);
   assert.match(editorialRepository, /\/v2\/marketplace\/editorial-relations/);
 });
@@ -84,7 +84,7 @@ test("la creazione del contenuto parte dal Subject nello spazio editoriale corre
 test("la semantica curatoriale usa lo Studio ma resta separata dai contenuti dell'Item", () => {
   assert.match(collection, /EditorialContext|editorialContext|Raccolta/);
   assert.match(studio, /semantic|Semantica|grafo|Relazioni/i);
-  assert.match(create, /Il grafo semantico può essere condiviso con altre raccolte/);
+  assert.match(create, /La Raccolta determina sia i contenuti utilizzabili sia il grafo locale da modificare/);
   assert.doesNotMatch(item, /createItemConnection|removeItemConnection|data-add-connection|data-connection-search/);
 });
 

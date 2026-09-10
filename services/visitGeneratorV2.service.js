@@ -11,7 +11,7 @@ const Subject = require("../models/subject.model");
 const GeneratedVisitPlanV2 = require("../models/generatedVisitPlanV2.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
-const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
+const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
 const {
   id,
   canonicalKey,
@@ -185,12 +185,12 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
       code: "GENERATION_SOURCE_NAMESPACE_REVISION_MISSING",
       context: { editorialReleaseId: release._id },
     }]);
-    const graph = await loadSemanticGraphRevision(release.graphRevisionId, { namespaceRevisionId: release.namespaceRevisionId });
+    const projection = await resolveEditorialReleaseCollectionProjection({ release });
     bundles.push({
       context,
       release,
       namespaceRevision,
-      graph,
+      graph: projection.graph,
       namespaceId: context.namespaceId,
       generationSource: {
         requestedSourceRef: source.requestedSourceRef,
@@ -207,7 +207,9 @@ async function loadEditorialScope({ request, physicalScope, actorUserId }) {
     ItemRevisionV2.find({ _id: { $in: revisionIds }, status: { $in: ["published", "superseded"] } }).lean(),
   ]);
   const editionById = mapById(editions), revisionById = mapById(revisions), itemIds = uniqueIds(editions.map((entry) => entry.itemId));
-  const items = await ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).lean(), itemById = mapById(items);
+  // Pinned EditorialRelease consumption is historical: lifecycle filtering belongs to live authoring,
+  // not to Items already frozen into an immutable release.
+  const items = await ItemV2.find({ _id: { $in: itemIds } }).lean(), itemById = mapById(items);
   const candidateByEditionRevision = new Map();
   for (const bundle of bundles) {
     for (const binding of bundle.release.itemBindings || []) {

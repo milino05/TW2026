@@ -28,16 +28,17 @@ test("rich exam seed exposes all four presentation controls in a real VisitSessi
     const User = require("../models/user");
     const { acquireOffer } = require("../services/marketplaceV2.service");
     const { createExecutionPreparation, startExecutionPreparation } = require("../services/executionPreparationV2.service");
-    const { DEF, seedExamDataset } = require("../scripts/examDatasetV2");
+    const { DEF, PERIODS, WORKS, seedExamDataset } = require("../scripts/examDatasetV2");
     const { enrichExamPresentationMatrix, verifyExamPresentationMatrix } = require("../scripts/examPresentationMatrix");
 
     const seeded = await seedExamDataset();
     await enrichExamPresentationMatrix();
     const matrixVerification = await verifyExamPresentationMatrix();
     assert.equal(matrixVerification.ok, true, JSON.stringify(matrixVerification.failures));
-    assert.equal(matrixVerification.summary.itemRevisions, 12);
-    assert.equal(matrixVerification.summary.variants, 36);
-    assert.equal(matrixVerification.summary.representations, 324);
+    const expectedItemRevisions = WORKS.length + PERIODS.length;
+    assert.equal(matrixVerification.summary.itemRevisions, expectedItemRevisions);
+    assert.equal(matrixVerification.summary.variants, expectedItemRevisions * 3);
+    assert.equal(matrixVerification.summary.representations, expectedItemRevisions * 3 * 9);
 
     const visitor = await User.findOne({ username: "visitatore1" });
     const middleVisit = seeded.visitRecords.find((entry) => entry.definition.key === "rinascimento-seicento");

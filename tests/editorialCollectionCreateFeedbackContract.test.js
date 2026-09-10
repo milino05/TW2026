@@ -32,26 +32,29 @@ test("la creazione Raccolta è una pagina unica contestualizzata e non un wizard
   assert.doesNotMatch(source, /name="semanticGraphId"|type="radio"/);
 });
 
-test("il dialog del grafo riusa il task modal ArtAround e presenta grafi compatibili come card cliccabili", () => {
+test("il dialog del grafo usa il task modal ArtAround e configura una sorgente importabile", () => {
   assert.match(dialog, /context-task-modal-layer collection-graph-dialog-layer/);
   assert.match(dialog, /context-task-modal context-task-modal--large collection-graph-dialog/);
   assert.match(dialog, /editorialRepository\.reusableSemanticGraphs/);
+  assert.match(dialog, /editorialRepository\.semanticGraphImportPreview/);
   assert.match(dialog, /data-collection-graph-choice/);
   assert.match(dialog, /aria-pressed/);
-  assert.match(dialog, /data-use-shared-graph/);
-  assert.match(dialog, /data-start-graph-fork/);
+  assert.match(dialog, /data-preview-graph-import/);
+  assert.match(dialog, /data-use-source-only/);
+  assert.match(dialog, /data-import-subject-toggle/);
   assert.match(dialog, /collection-graph-selected/);
-  assert.doesNotMatch(dialog, /type="radio"/);
+  assert.doesNotMatch(dialog, /type="radio"|data-use-shared-graph|data-start-graph-fork/);
 });
 
-test("il modal configura new/shared/fork senza creare risorse prima del submit Raccolta", () => {
+test("il modal configura solo new/import senza creare risorse prima del submit Raccolta", () => {
   assert.match(dialog, /graphMode: "new"/);
-  assert.match(dialog, /graphMode: "shared"/);
-  assert.match(dialog, /graphMode: "fork"/);
+  assert.match(dialog, /graphMode: "import"/);
+  assert.doesNotMatch(dialog, /graphMode: "shared"|graphMode: "fork"/);
   assert.doesNotMatch(dialog, /createCollection|createSemanticGraph|createGraph/);
   assert.match(source, /editorialRepository\.createCollection\(payload\)/);
-  assert.match(source, /\["shared", "fork"\]/);
-  assert.match(source, /\["new", "fork"\]/);
+  assert.match(source, /graphMode === "import"/);
+  assert.match(source, /graphMode === "new"/);
+  assert.match(source, /importItemIds/);
 });
 
 test("gli stili dedicati mantengono banner, card e modal responsive nel linguaggio ArtAround", () => {

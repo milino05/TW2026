@@ -23,6 +23,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
     issues.push({ field: "namespaceRevisionId", code: "NAMESPACE_REVISION_NOT_RELEASE_READY", message: "La NamespaceRevision deve essere una versione pubblicata immutabile e valida" });
   }
 
+  let graphSubjectBindings = [];
   const graphRevision = await SemanticGraphRevision.findOne({ _id: graphRevisionId, semanticGraphId: context.semanticGraphId }).lean();
   if (!graphRevision) {
     issues.push({ field: "graphRevisionId", code: "GRAPH_REVISION_MISMATCH", message: "GraphRevision non appartiene al grafo semantico usato dalla raccolta" });
@@ -33,6 +34,7 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
       GraphSubjectBinding.find({ graphRevisionId: graphRevision._id }).lean(),
       SemanticEdgeV2.find({ graphRevisionId: graphRevision._id }).lean(),
     ]);
+    graphSubjectBindings = subjectBindings;
     issues.push(...validateGraphSnapshotAgainstNamespace({ subjectBindings, edges }, namespaceRevision));
   }
 
@@ -52,6 +54,18 @@ async function validateEditorialReleaseCoherence({ editorialContextId, namespace
   const itemById = new Map(items.map((item) => [id(item._id), item]));
   const memberItemIds = new Set(memberships.map((membership) => id(membership.itemId)));
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+  const boundSubjectIds = new Set(items.map((item) => id(item.primarySubjectId)).filter(Boolean));
+
+  for (const binding of graphSubjectBindings) {
+    if (!boundSubjectIds.has(id(binding.subjectId))) {
+      issues.push({
+        field: "graphRevisionId",
+        code: "GRAPH_SUBJECT_WITHOUT_COLLECTION_CONTENT",
+        message: "Ogni Subject del grafo della Raccolta deve essere rappresentato da almeno un Item della stessa Release",
+        context: { subjectId: binding.subjectId },
+      });
+    }
+  }
 
   itemBindings.forEach((binding, index) => {
     const base = `itemBindings[${index}]`;

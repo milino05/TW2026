@@ -49,6 +49,10 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId, q, page, limit });
     return apiClient.request(`/v2/marketplace/semantic-graphs?${query}`);
   },
+  semanticGraphImportPreview(semanticGraphId, { ownerType = null, ownerId = null, namespaceId = null, contentSpaceId = null } = {}) {
+    const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId });
+    return apiClient.request(`/v2/marketplace/semantic-graphs/${encodeURIComponent(semanticGraphId)}/import-preview?${query}`);
+  },
   semanticGraphs({ ownerType, ownerId, namespaceId = null, q = "", page = 1, limit = 30 } = {}) {
     const query = queryString({ ownerType, ownerId, namespaceId, q, page, limit });
     return apiClient.request(`/semantic-graphs?${query}`);
@@ -112,12 +116,6 @@ export const editorialRepository = {
   updateCollection(editorialContextId, payload) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}`, { method: "PATCH", ...jsonBody(payload) });
   },
-  changeCollectionGraph(editorialContextId, semanticGraphId) {
-    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph`, {
-      method: "PATCH",
-      ...jsonBody({ semanticGraphId }),
-    });
-  },
   studio(editorialContextId) {
     return apiClient.request(`/v2/marketplace/editorial-contexts/${encodeURIComponent(editorialContextId)}/studio`);
   },
@@ -135,8 +133,9 @@ export const editorialRepository = {
   updateEntry(editorialContextId, entryId, payload) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/entries/${encodeURIComponent(entryId)}`, { method: "PATCH", ...jsonBody(payload) });
   },
-  removeEntry(editorialContextId, entryId) {
-    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/entries/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+  removeEntry(editorialContextId, entryId, { cascadeGraph = false } = {}) {
+    const query = queryString({ cascadeGraph: cascadeGraph ? "true" : null });
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/entries/${encodeURIComponent(entryId)}${query ? `?${query}` : ""}`, { method: "DELETE" });
   },
   graph(editorialContextId, { view = "working" } = {}) {
     const query = queryString({ view });
@@ -149,6 +148,24 @@ export const editorialRepository = {
   graphSubjectCandidates(editorialContextId, { scope = "collection", q = "", page = 1, limit = 12 } = {}) {
     const query = queryString({ scope, q, page, limit });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subject-candidates?${query}`);
+  },
+  collectionGraphImportPreview(editorialContextId, semanticGraphId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/import-preview/${encodeURIComponent(semanticGraphId)}`);
+  },
+  graphImportSources(editorialContextId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/import-sources`);
+  },
+  attachGraphImportSource(editorialContextId, semanticGraphId) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/import-sources`, {
+      method: "POST",
+      ...jsonBody({ semanticGraphId }),
+    });
+  },
+  importGraphSubjects(editorialContextId, sourceId, itemIds) {
+    return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/import-sources/${encodeURIComponent(sourceId)}/subjects`, {
+      method: "POST",
+      ...jsonBody({ itemIds }),
+    });
   },
   addGraphSubject(editorialContextId, subjectId) {
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subjects/${encodeURIComponent(subjectId)}`, { method: "POST" });

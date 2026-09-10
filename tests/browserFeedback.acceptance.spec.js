@@ -225,7 +225,7 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
 
   const editor = page.locator("#acceptance-semantic-graph");
   await expect(editor.getByText("Nessun soggetto di contesto")).toBeVisible();
-  await expect(editor.getByText("Scegli il Subject di uno dei contenuti della raccolta", { exact: false })).toBeVisible();
+  await expect(editor.getByText("Scegli il Subject di un contenuto della Raccolta", { exact: false })).toBeVisible();
 
   await editor.getByRole("button", { name: "Scegli soggetto" }).click();
   await expect(editor.getByRole("heading", { name: "Scegli il soggetto di contesto" })).toBeVisible();
@@ -239,14 +239,13 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(3);
   await expect(editor.getByRole("button", { name: "Mostra altri" })).toHaveCount(0);
 
-  await editor.locator("[data-close-graph-inspector]").click();
   await editor.locator(`[data-graph-subject="${betaId}"]`).dblclick();
   await expect(editor.locator(".semantic-graph-toolbar strong")).toHaveText("Beta");
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
 
   await editor.getByRole("button", { name: "Aggiungi relazione" }).click();
   await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(2);
-  expect(candidateScopes.at(-1)).toBe("graph");
+  expect(candidateScopes.at(-1)).toBe("space");
   await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
   await expect(editor.getByRole("heading", { name: "Beta → Alpha" })).toBeVisible();
   await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveValue("related");

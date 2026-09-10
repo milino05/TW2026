@@ -254,7 +254,7 @@ async function getEditorialStudioProjection({ editorialContextId, actorUserId })
       name: semanticGraph.displayName,
       workingRevisionId: semanticGraph.workingRevisionId || null,
       workingVersion: graphWorkingVersion,
-      sharedByCollections: await EditorialContext.countDocuments({ semanticGraphId: semanticGraph._id, lifecycleStatus: "active" }),
+      localToCollection: true,
     },
     contentSpace: {
       id: contentSpace._id,
