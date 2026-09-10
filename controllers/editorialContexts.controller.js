@@ -2,6 +2,7 @@ const editorialContextService = require("../services/editorialContext.service");
 const editorialContextEntryService = require("../services/editorialContextEntry.service");
 const editorialContextReviewService = require("../services/editorialContextReview.service");
 const editorialGraphCommandService = require("../services/editorialGraphCommand.service");
+const { addCollectionGraphEdge } = require("../services/editorialCollectionRelationCommand.service");
 const editorialGraphImportService = require("../services/editorialGraphImport.service");
 const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
 const { getEditorialCollectionGraphNeighborhood } = require("../services/editorialCollectionGraphNeighborhood.service");
@@ -109,7 +110,7 @@ async function removeGraphSubject(req, res, next) {
   catch (error) { next(error); }
 }
 async function addGraphEdge(req, res, next) {
-  try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); }
+  try { res.status(201).json(projectGraph(await addCollectionGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); }
   catch (error) { next(error); }
 }
 async function updateGraphEdge(req, res, next) {
