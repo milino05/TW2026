@@ -33,6 +33,7 @@ test("Aurora seed is idempotent and exposes a complete second Navigator museum",
     const { seedExamDataset } = require("../scripts/examDatasetV2");
     const {
       AURORA_VENUE_ID,
+      THEMES,
       WORKS,
       VISIT_DEFINITIONS,
       seedAuroraDataset,
@@ -43,7 +44,7 @@ test("Aurora seed is idempotent and exposes a complete second Navigator museum",
     const aurora = await seedAuroraDataset({ pinacotecaVisitRecords: pinacoteca.visitRecords });
     const first = await verifyAuroraDataset();
     assert.equal(first.ok, true, JSON.stringify(first.failures));
-    assert.equal(first.summary.publishedItems, 10);
+    assert.equal(first.summary.publishedItems, WORKS.length + THEMES.length);
     assert.equal(first.summary.publishedVisits, 3);
     assert.equal(first.summary.visitorEntitlements, 3);
 
