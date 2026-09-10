@@ -200,7 +200,7 @@ test("rimuovere regole editoriali mantiene utilizzabile la revisione già acquis
   });
 });
 
-test("rimuovere una raccolta preserva grafo, relazioni, release e diritti acquisiti", { skip: !mongoUri }, async () => {
+test("rimuovere una raccolta cestina il grafo locale e preserva revisioni, release e diritti acquisiti", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Subject = require("../models/subject.model");
@@ -289,7 +289,7 @@ test("rimuovere una raccolta preserva grafo, relazioni, release e diritti acquis
     assert.equal((await Namespace.findById(namespace._id).lean()).lifecycleStatus, "active");
     const storedGraph = await SemanticGraph.findById(semanticGraph._id).lean();
     assert.ok(storedGraph);
-    assert.equal(storedGraph.lifecycleStatus, "active");
+    assert.equal(storedGraph.lifecycleStatus, "trashed");
     assert.equal(String(storedGraph.workingRevisionId), String(graph._id));
     assert.equal(await SemanticEdgeV2.countDocuments({ graphRevisionId: graph._id }), 2);
     assert.equal(await EditorialRelease.countDocuments({ _id: release._id }), 1);
