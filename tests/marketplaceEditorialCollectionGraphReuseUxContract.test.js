@@ -63,11 +63,13 @@ test("reusable graph choices are backend-authoritative, scoped and expose import
   assert.match(source.importService, /sourceGraphRevisionId/);
 });
 
-test("studio import dialog treats source-only, selected and bulk import as explicit operations", () => {
+test("studio import dialog treats source-only, selected and bulk selection as explicit operations", () => {
   assert.match(source.importDialog, /context-task-modal-layer/);
-  assert.match(source.importDialog, /graphImportSources/);
+  assert.match(source.importDialog, /collectionGraphImportPreview/);
   assert.match(source.importDialog, /attachGraphImportSource/);
   assert.match(source.importDialog, /importGraphSubjects/);
-  assert.match(source.importDialog, /Importa tutti/);
-  assert.doesNotMatch(source.importDialog, /changeCollectionGraph/);
+  assert.match(source.importDialog, /data-select-direct-imports/);
+  assert.match(source.importDialog, /data-attach-source-only/);
+  assert.match(source.importDialog, /Importa selezionati/);
+  assert.doesNotMatch(source.importDialog, /changeCollectionGraph|graphMode:\s*"shared"|graphMode:\s*"fork"/);
 });
