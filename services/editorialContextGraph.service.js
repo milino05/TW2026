@@ -7,6 +7,8 @@ const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const ItemV2 = require("../models/itemV2.model");
+const ItemEdition = require("../models/itemEdition.model");
+const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Subject = require("../models/subject.model");
 const { findEditorialContextOrFail } = require("./editorialContext.service");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
@@ -111,7 +113,7 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   for (const item of allItems) result.get(id(item.primarySubjectId)).artaroundItemCount += 1;
 
   const spaceMemberships = allItems.length
-    ? await ContentSpaceItemMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
+    ? await ContentSpaceItemMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) }).select("itemId").lean()
     : [];
   for (const membership of spaceMemberships) {
     const item = itemById.get(id(membership.itemId));
@@ -119,11 +121,67 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   }
 
   const collectionMemberships = allItems.length
-    ? await CollectionItemMembership.find({ editorialContextId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
+    ? await CollectionItemMembership.find({ editorialContextId, itemId: { $in: allItems.map((item) => item._id) }).select("itemId").lean()
     : [];
   for (const membership of collectionMemberships) {
     const item = itemById.get(id(membership.itemId));
     if (item) result.get(id(item.primarySubjectId)).collectionItemCount += 1;
+  }
+  return result;
+}
+
+async function projectItemCandidates({ context, subjectIds }) {
+  const ids = [...new Set((subjectIds || []).map(id).filter(Boolean))];
+  const result = new Map(ids.map((subjectId) => [subjectId, []]));
+  if (!ids.length) return result;
+
+  const items = await ItemV2.find({
+    primarySubjectId: { $in: ids },
+    lifecycleStatus: "active",
+  }).select("_id primarySubjectId").lean();
+  if (!items.length) return result;
+
+  const spaceMemberships = await ContentSpaceItemMembership.find({
+    contentSpaceId: context.contentSpaceId,
+    itemId: { $in: items.map((item) => item._id) },
+  }).select("itemId").lean();
+  const spaceItemIds = new Set(spaceMemberships.map((entry) => id(entry.itemId)));
+  const eligibleItems = items.filter((item) => spaceItemIds.has(id(item._id)));
+  if (!eligibleItems.length) return result;
+
+  const collectionMemberships = await CollectionItemMembership.find({
+    editorialContextId: context._id,
+    itemId: { $in: eligibleItems.map((item) => item._id) },
+  }).select("itemId").lean();
+  const collectionItemIds = new Set(collectionMemberships.map((entry) => id(entry.itemId)));
+
+  const editions = await ItemEdition.find({
+    itemId: { $in: eligibleItems.map((item) => item._id) },
+    namespaceId: context.namespaceId,
+  }).select("_id itemId workingRevisionId publishedRevisionId").lean();
+  const editionByItemId = new Map(editions.map((edition) => [id(edition.itemId), edition]));
+  const revisionIds = [...new Set(editions
+    .map((edition) => id(edition.workingRevisionId || edition.publishedRevisionId))
+    .filter(Boolean))];
+  const revisions = revisionIds.length
+    ? await ItemRevisionV2.find({ _id: { $in: revisionIds } }).select("label").lean()
+    : [];
+  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
+
+  for (const item of eligibleItems) {
+    const edition = editionByItemId.get(id(item._id)) || null;
+    const revision = edition
+      ? revisionById.get(id(edition.workingRevisionId || edition.publishedRevisionId)) || null
+      : null;
+    result.get(id(item.primarySubjectId)).push({
+      itemId: item._id,
+      itemEditionId: edition?._id || null,
+      label: revision?.label || `Contenuto ${id(item._id).slice(-6)}`,
+      inCollection: collectionItemIds.has(id(item._id)),
+    });
+  }
+  for (const candidates of result.values()) {
+    candidates.sort((left, right) => String(left.label || "").localeCompare(String(right.label || ""), "it"));
   }
   return result;
 }
@@ -188,12 +246,16 @@ async function searchEditorialGraphSubjectCandidates({ editorialContextId, actor
       .limit(normalizedLimit)
       .lean(),
   ]);
-  const coverageBySubject = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: subjects.map((entry) => entry._id) });
+  const subjectIdsOnPage = subjects.map((entry) => entry._id);
+  const [coverageBySubject, itemCandidatesBySubject] = await Promise.all([
+    projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: subjectIdsOnPage }),
+    projectItemCandidates({ context, subjectIds: subjectIdsOnPage }),
+  ]);
   const graphBindings = semanticGraph?.workingRevisionId && subjects.length
-    ? await GraphSubjectBinding.find({ graphRevisionId: semanticGraph.workingRevisionId, subjectId: { $in: subjects.map((entry) => entry._id) } }).select("subjectId subjectClassDefinitionIds").lean()
+    ? await GraphSubjectBinding.find({ graphRevisionId: semanticGraph.workingRevisionId, subjectId: { $in: subjectIdsOnPage } }).select("subjectId subjectClassDefinitionIds").lean()
     : [];
   const bindingBySubjectId = new Map(graphBindings.map((entry) => [id(entry.subjectId), entry]));
-  const relationCounts = await projectRelationCounts({ graphRevisionId: semanticGraph?.workingRevisionId || null, subjectIds: subjects.map((entry) => entry._id) });
+  const relationCounts = await projectRelationCounts({ graphRevisionId: semanticGraph?.workingRevisionId || null, subjectIds: subjectIdsOnPage });
   return {
     results: subjects.map((subject) => ({
       subject,
@@ -201,6 +263,7 @@ async function searchEditorialGraphSubjectCandidates({ editorialContextId, actor
       subjectClassDefinitionIds: bindingBySubjectId.get(id(subject._id))?.subjectClassDefinitionIds || [],
       relationCount: relationCounts.get(id(subject._id)) || 0,
       presentationCoverage: coverageBySubject.get(id(subject._id)) || emptyCoverage(),
+      itemCandidates: itemCandidatesBySubject.get(id(subject._id)) || [],
     })),
     pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
     query: normalizedQuery,
