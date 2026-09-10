@@ -29,7 +29,9 @@ function validateGenerationSourceRef(source, field = "editorialSources") {
 }
 
 async function contextForRelease(release) {
-  const context = await EditorialContext.findOne({ _id: release.editorialContextId, lifecycleStatus: "active" }).lean();
+  // A pinned release is an immutable consumer snapshot. Its historical context
+  // remains readable even when the live Collection aggregate is later trashed.
+  const context = await EditorialContext.findById(release.editorialContextId).lean();
   if (!context) throw new AppError("EditorialContext della EditorialRelease non disponibile", 409, [{ code: "GENERATION_SOURCE_CONTEXT_UNAVAILABLE" }]);
   return context;
 }
