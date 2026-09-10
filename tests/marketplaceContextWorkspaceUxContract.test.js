@@ -47,12 +47,13 @@ test("i task autonomi usano modal e non vengono compressi negli inspector contes
   assert.doesNotMatch(inventoryCss, /\.venue-inventory-inspector\{position:fixed/);
 });
 
-test("gli inspector restano laterali dove il contesto del workspace deve rimanere visibile", () => {
+test("gli inspector laterali restano disponibili per task contestuali, mentre il grafo usa modal centrali", () => {
   assert.match(workspaceCss, /\.context-workspace-inspector-layer\{position:fixed/);
   assert.match(workspaceCss, /\.context-workspace-inspector,\.venue-inventory-inspector\{position:absolute/);
   assert.match(workspaceCss, /\.semantic-inventory-inspector\{width:min\(42rem/);
-  assert.match(semanticGraph, /context-workspace-inspector-layer/);
-  assert.match(semanticGraph, /semantic-relation-inspector/);
+  assert.doesNotMatch(semanticGraph, /context-workspace-inspector-layer|semantic-relation-inspector|semantic-subject-inspector/);
+  assert.match(semanticGraph, /context-task-modal-layer semantic-graph-modal-layer/);
+  assert.match(semanticGraph, /role="dialog" aria-modal="true"/);
   assert.doesNotMatch(collectionItemAddDialog, /context-workspace-inspector-layer/);
   assert.match(inventoryCss, /\.venue-inventory-workspace\{display:block/);
   assert.doesNotMatch(inventoryCss, /venue-inventory-workspace\{[^}]*grid-template-columns/);
