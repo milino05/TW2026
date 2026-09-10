@@ -53,7 +53,7 @@ test("il grafo resta leggibile su viewport strette, centra il focus ed evidenzia
   assert.match(editor, /Math\.max\(0, \(canvas\.scrollWidth - canvas\.clientWidth\) \/ 2\)/);
   assert.match(styles, /\.semantic-node:hover circle/);
   assert.match(styles, /\.semantic-node:focus-visible circle/);
-  assert.match(styles, /transform:scale\(1\.08\)/);
+  assert.match(styles, /\.semantic-node:hover,\.semantic-node:focus-visible\{transform:scale\(1\.[0-9]+\)\}/);
   assert.match(styles, /\.semantic-edge:hover line/);
   assert.match(styles, /\.semantic-edge:focus-visible line/);
   assert.match(styles, /@media\(max-width:54rem\)/);
