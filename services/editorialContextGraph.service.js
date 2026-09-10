@@ -113,7 +113,7 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   for (const item of allItems) result.get(id(item.primarySubjectId)).artaroundItemCount += 1;
 
   const spaceMemberships = allItems.length
-    ? await ContentSpaceItemMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) }).select("itemId").lean()
+    ? await ContentSpaceItemMembership.find({ contentSpaceId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
     : [];
   for (const membership of spaceMemberships) {
     const item = itemById.get(id(membership.itemId));
@@ -121,7 +121,7 @@ async function projectPresentationCoverage({ editorialContextId, contentSpaceId,
   }
 
   const collectionMemberships = allItems.length
-    ? await CollectionItemMembership.find({ editorialContextId, itemId: { $in: allItems.map((item) => item._id) }).select("itemId").lean()
+    ? await CollectionItemMembership.find({ editorialContextId, itemId: { $in: allItems.map((item) => item._id) } }).select("itemId").lean()
     : [];
   for (const membership of collectionMemberships) {
     const item = itemById.get(id(membership.itemId));
