@@ -109,7 +109,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       });
     }
     return editorialRepository.graphSubjectCandidates(this.editorialContextId, {
-      scope: "collection",
+      scope: this.pickerMode === "target" ? "space" : "collection",
       q: this.inventoryQuery,
       page: this.inventoryPage,
       limit: this.inventoryPageSize,
@@ -284,6 +284,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       this.relationDraft.relationTypeDefinitionId = target.value;
       this.render();
     }
+    if (target.name === "targetItemId") this.relationDraft.targetItemId = target.value;
   };
 
   onKeyDown = (event) => {
@@ -338,7 +339,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (inventorySubject) {
       const row = (this.inventoryData?.results || []).find((entry) => id(entry.subject) === id(inventorySubject.dataset.useInventorySubject));
       if (!row?.subject) return;
-      if (this.pickerMode === "target") this.startRelationTo(row.subject);
+      if (this.pickerMode === "target") this.startRelationTo(row);
       else await this.setFocus(row.subject._id);
       return;
     }
@@ -412,9 +413,13 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     });
   }
 
-  startRelationTo(subject) {
+  startRelationTo(row) {
+    const subject = row?.subject || row;
     const targetSubjectId = id(subject);
     if (!this.focusSubjectId || !targetSubjectId || id(this.focusSubjectId) === targetSubjectId) return;
+    const collectionItemCount = Number(row?.presentationCoverage?.collectionItemCount || 0);
+    const itemCandidates = Array.isArray(row?.itemCandidates) ? row.itemCandidates : [];
+    const targetNeedsCollectionItem = this.collectionMode() && collectionItemCount === 0;
     this.pickerMode = null;
     this.inventoryData = null;
     this.selected = null;
@@ -423,6 +428,9 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       sourceSubjectId: id(this.focusSubjectId),
       targetSubjectId,
       targetSubject: subject,
+      targetNeedsCollectionItem,
+      targetItemCandidates: itemCandidates,
+      targetItemId: targetNeedsCollectionItem && itemCandidates.length === 1 ? id(itemCandidates[0].itemId) : "",
       relationTypeDefinitionId: String(this.relationTypes?.[0]?.definitionId || ""),
       note: "",
       weight: "1",
@@ -479,6 +487,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (this.relationDraft.mode === "create") {
       payload.sourceSubjectId = this.relationDraft.sourceSubjectId;
       payload.targetSubjectId = this.relationDraft.targetSubjectId;
+      if (this.relationDraft.targetNeedsCollectionItem) payload.targetItemId = String(data.get("targetItemId") || this.relationDraft.targetItemId || "");
       await this.mutate(() => this.addEdge(payload), { clearSelection: true });
     } else {
       await this.mutate(() => this.updateEdge(this.relationDraft.edgeId, payload), { clearSelection: true });
@@ -573,9 +582,10 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (this.standaloneMode()) return `<span class="status">Nel grafo</span>`;
     const coverage = entry?.presentationCoverage || {};
     const collection = Number(coverage.collectionItemCount || 0);
-    return collection
-      ? `<span class="status" data-tone="success">${collection} ${collection === 1 ? "contenuto nella Raccolta" : "contenuti nella Raccolta"}</span>`
-      : `<span class="status" data-tone="warning">Nessun contenuto nella Raccolta</span>`;
+    const space = Number(coverage.contentSpaceItemCount || 0);
+    if (collection) return `<span class="status" data-tone="success">${collection} ${collection === 1 ? "contenuto nella Raccolta" : "contenuti nella Raccolta"}</span>`;
+    if (space) return `<span class="status">${space} ${space === 1 ? "contenuto nello Spazio" : "contenuti nello Spazio"}</span>`;
+    return `<span class="status" data-tone="warning">Nessun contenuto disponibile</span>`;
   }
 
   renderInventoryPagination() {
@@ -595,10 +605,14 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const subjects = (this.inventoryData?.results || []).filter((entry) => !targetMode || id(entry.subject) !== id(this.focusSubjectId));
     const standalone = this.standaloneMode();
     const title = targetMode ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto";
-    const searchLabel = standalone ? "Cerca nel grafo" : "Cerca tra i contenuti della Raccolta";
+    const searchLabel = standalone
+      ? "Cerca nel grafo"
+      : targetMode
+        ? "Cerca tra i contenuti dello Spazio editoriale"
+        : "Cerca tra i contenuti della Raccolta";
     const emptyCopy = this.inventoryBusy ? "Ricerca in corso…" : this.inventoryQuery ? "Nessun soggetto corrispondente." : "Nessun soggetto selezionabile.";
-    const body = `<form data-semantic-inventory-search role="search"><label>${searchLabel}<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${escapeHtml(emptyCopy)}</p></div>`}</div>${this.renderInventoryPagination()}${this.collectionMode() && targetMode ? `<p class="note">Per collegare un Subject che non ha ancora contenuti nella Raccolta, aggiungi prima il contenuto oppure importalo da una sorgente semantica.</p>` : ""}${standalone && this.editable && !this.locked ? `<div class="semantic-inventory-footer"><button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 15 })} Aggiungi un nuovo Subject al grafo</button></div>` : ""}`;
-    return this.modal(title, body, { eyebrow: standalone ? "Inventario del grafo" : "Contenuti della Raccolta", large: true });
+    const body = `<form data-semantic-inventory-search role="search"><label>${searchLabel}<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span>${this.renderCoverage(entry)}</button>`).join("") : `<div class="empty-state compact"><p>${escapeHtml(emptyCopy)}</p></div>`}</div>${this.renderInventoryPagination()}${this.collectionMode() && targetMode ? `<p class="note">Puoi scegliere anche un Subject rappresentato nello Spazio ma non ancora nella Raccolta. La conferma della relazione aggiungerà il contenuto scelto e il nodo semanticamente in un'unica operazione.</p>` : ""}${standalone && this.editable && !this.locked ? `<div class="semantic-inventory-footer"><button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 15 })} Aggiungi un nuovo Subject al grafo</button></div>` : ""}`;
+    return this.modal(title, body, { eyebrow: standalone ? "Inventario del grafo" : targetMode ? "Spazio editoriale" : "Contenuti della Raccolta", large: true });
   }
 
   renderAddSubjectPicker() {
@@ -638,6 +652,17 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     return `<label>Tipo richiesto per ${role === "source" ? "la partenza" : "la destinazione"}<select name="${name}" required><option value="">Scegli…</option>${allowedDefinitionIds.map((definitionId) => `<option value="${escapeHtml(definitionId)}">${escapeHtml(this.classById(definitionId)?.label || definitionId)}</option>`).join("")}</select></label>`;
   }
 
+  renderTargetContentSelection(draft) {
+    if (!this.collectionMode() || !draft.targetNeedsCollectionItem) return "";
+    const candidates = draft.targetItemCandidates || [];
+    if (!candidates.length) return `<artaround-callout tone="danger">Questo Subject non ha più un contenuto disponibile nello Spazio editoriale.</artaround-callout>`;
+    if (candidates.length === 1) {
+      const candidate = candidates[0];
+      return `<artaround-callout tone="info"><strong>Il contenuto entrerà nella Raccolta.</strong> Per creare la relazione verrà aggiunto “${escapeHtml(candidate.label || "Contenuto")}". Contenuto e relazione saranno salvati atomicamente.</artaround-callout><input type="hidden" name="targetItemId" value="${escapeHtml(id(candidate.itemId))}">`;
+    }
+    return `<artaround-callout tone="info"><strong>Il Subject non è ancora nella Raccolta.</strong> Scegli quale contenuto usare: verrà aggiunto insieme alla relazione nella stessa operazione.</artaround-callout><label>Contenuto da aggiungere<select name="targetItemId" required><option value="">Scegli…</option>${candidates.map((candidate) => `<option value="${escapeHtml(id(candidate.itemId))}" ${id(candidate.itemId) === id(draft.targetItemId) ? "selected" : ""}>${escapeHtml(candidate.label || `Contenuto ${id(candidate.itemId).slice(-6)}`)}</option>`).join("")}</select></label>`;
+  }
+
   renderRelationEditor() {
     if (!this.relationDraft) return "";
     const draft = this.relationDraft;
@@ -645,8 +670,9 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     const target = this.subject(draft.targetSubjectId) || draft.targetSubject || {};
     const relation = this.relationById(draft.relationTypeDefinitionId);
     const relationOptions = (this.relationTypes || []).map((definition) => `<option value="${escapeHtml(definition.definitionId)}" ${String(definition.definitionId) === String(draft.relationTypeDefinitionId) ? "selected" : ""}>${escapeHtml(definition.label)}</option>`).join("");
+    const createLabel = draft.targetNeedsCollectionItem ? "Aggiungi contenuto e crea relazione" : "Crea relazione";
     const body = relationOptions
-      ? `<form data-relation-composer><label>Tipo di relazione<select name="relationTypeDefinitionId" required>${relationOptions}</select></label>${relation ? `<section class="relation-requirements"><span class="eyebrow">Tipi richiesti dalle regole</span>${this.renderClassRequirement(draft.sourceSubjectId, relation.domainDefinitionIds || [], "source")}${this.renderClassRequirement(draft.targetSubjectId, relation.rangeDefinitionIds || [], "target")}</section>` : ""}<label>Nota<input name="note" maxlength="500" value="${escapeHtml(draft.note || "")}" placeholder="Facoltativa"></label><details><summary>Opzioni avanzate</summary><label>Peso della relazione<input name="weight" type="number" min="0" max="10" step=".5" value="${escapeHtml(draft.weight ?? 1)}"></label></details><div class="button-row"><button type="submit">${icon("check", { size: 15 })} ${draft.mode === "create" ? "Crea relazione" : "Salva relazione"}</button>${draft.mode === "edit" && this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-edge="${escapeHtml(draft.edgeId)}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</div></form>`
+      ? `<form data-relation-composer>${this.renderTargetContentSelection(draft)}<label>Tipo di relazione<select name="relationTypeDefinitionId" required>${relationOptions}</select></label>${relation ? `<section class="relation-requirements"><span class="eyebrow">Tipi richiesti dalle regole</span>${this.renderClassRequirement(draft.sourceSubjectId, relation.domainDefinitionIds || [], "source")}${this.renderClassRequirement(draft.targetSubjectId, relation.rangeDefinitionIds || [], "target")}</section>` : ""}<label>Nota<input name="note" maxlength="500" value="${escapeHtml(draft.note || "")}" placeholder="Facoltativa"></label><details><summary>Opzioni avanzate</summary><label>Peso della relazione<input name="weight" type="number" min="0" max="10" step=".5" value="${escapeHtml(draft.weight ?? 1)}"></label></details><div class="button-row"><button type="submit">${icon("check", { size: 15 })} ${draft.mode === "create" ? createLabel : "Salva relazione"}</button>${draft.mode === "edit" && this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-edge="${escapeHtml(draft.edgeId)}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</div></form>`
       : `<div class="empty-state compact"><h3>Nessun tipo di relazione</h3><p>Le Regole editoriali non definiscono ancora relazioni utilizzabili.</p></div>`;
     return this.modal(`${source?.preferredLabel || "Soggetto"} → ${target?.preferredLabel || "Soggetto"}`, body, { eyebrow: draft.mode === "create" ? "Nuova relazione" : "Modifica relazione" });
   }
