@@ -77,6 +77,7 @@ export class ArtAroundSemanticSubjectSourceBrowser extends HTMLElement {
         q: this.query,
         page: this.page,
         limit: this.pageSize,
+        excludeSubjectIds: this.excludeSubjectIds,
         requiredClassDefinitionIds: this.requiredClassIds,
         includeUnclassified: true,
       });
