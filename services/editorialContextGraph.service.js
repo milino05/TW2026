@@ -337,37 +337,6 @@ async function resolveGraphRevisionForView({ context, semanticGraph, view }) {
   return { revision, effectiveNamespaceRevisionId: release.namespaceRevisionId };
 }
 
-async function virtualCollectionFocus({ context, contentSpace, semanticGraph, revision, effectiveNamespaceRevisionId, focusSubjectId, totalSubjects = 0, totalEdges = 0, maxNeighbors }) {
-  const available = new Set(await collectionContentSubjectIds(context._id));
-  if (!available.has(id(focusSubjectId))) {
-    throw new AppError("Il soggetto di contesto non è rappresentato dai contenuti della Raccolta", 404, [{ code: "GRAPH_FOCUS_NOT_IN_COLLECTION" }]);
-  }
-  const subject = await Subject.findById(focusSubjectId).select("preferredLabel description externalIdentities").lean();
-  if (!subject) throw new AppError("Subject non trovato", 404);
-  const coverage = await projectPresentationCoverage({ editorialContextId: context._id, contentSpaceId: contentSpace._id, subjectIds: [focusSubjectId] });
-  return {
-    ...projectGraphRoot(semanticGraph, revision, effectiveNamespaceRevisionId),
-    subjects: [{
-      subject,
-      inGraph: false,
-      subjectClassDefinitionIds: [],
-      relationCount: 0,
-      presentationCoverage: coverage.get(id(focusSubjectId)) || emptyCoverage(),
-    }],
-    edges: [],
-    neighborhood: {
-      focusSubjectId,
-      totalSubjects,
-      totalEdges,
-      totalNeighbors: 0,
-      visibleNeighbors: 0,
-      hiddenNeighbors: 0,
-      limit: maxNeighbors,
-      virtualFocus: true,
-    },
-  };
-}
-
 async function getEditorialContextGraphNeighborhood({ editorialContextId, view = "working", actorUserId, focusSubjectId = null, limit = 18 }) {
   if (!["working", "published"].includes(view)) throw new AppError("view deve essere working o published", 400);
   if (focusSubjectId && !mongoose.isValidObjectId(focusSubjectId)) throw new AppError("focusSubjectId non valido", 400, [{ field: "focusSubjectId", code: "INVALID_OBJECT_ID" }]);
@@ -379,9 +348,6 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
   const { revision, effectiveNamespaceRevisionId } = await resolveGraphRevisionForView({ context, semanticGraph, view });
   const maxNeighbors = normalizedLimit(limit, 18, 100);
   if (!revision) {
-    if (view === "working" && focusSubjectId) {
-      return virtualCollectionFocus({ context, contentSpace, semanticGraph, revision, effectiveNamespaceRevisionId, focusSubjectId, maxNeighbors });
-    }
     return {
       ...projectGraphRoot(semanticGraph, revision, effectiveNamespaceRevisionId),
       subjects: [],
@@ -404,12 +370,7 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
   }
 
   const focusBinding = await GraphSubjectBinding.findOne({ graphRevisionId: revision._id, subjectId: focusSubjectId }).lean();
-  if (!focusBinding) {
-    if (view === "working") {
-      return virtualCollectionFocus({ context, contentSpace, semanticGraph, revision, effectiveNamespaceRevisionId, focusSubjectId, totalSubjects, totalEdges, maxNeighbors });
-    }
-    throw new AppError("Il soggetto di contesto non appartiene a questa revisione del grafo", 404, [{ code: "GRAPH_SUBJECT_NOT_FOUND" }]);
-  }
+  if (!focusBinding) throw new AppError("Il soggetto di contesto non appartiene a questa revisione del grafo", 404, [{ code: "GRAPH_SUBJECT_NOT_FOUND" }]);
   const incidentEdges = await SemanticEdgeV2.find({
     graphRevisionId: revision._id,
     $or: [{ sourceSubjectId: focusSubjectId }, { targetSubjectId: focusSubjectId }],
@@ -464,7 +425,6 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
       visibleNeighbors: visibleNeighborIds.length,
       hiddenNeighbors: Math.max(0, neighborIds.length - visibleNeighborIds.length),
       limit: maxNeighbors,
-      virtualFocus: false,
     },
   };
 }
