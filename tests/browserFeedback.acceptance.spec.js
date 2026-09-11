@@ -218,7 +218,16 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
       editorialContextId: idValue,
       editable: true,
       locked: false,
-      relationTypes: [{ definitionId: "related", label: "Collega", domainDefinitionIds: [], rangeDefinitionIds: [] }],
+      relationTypes: [{
+        definitionId: "related",
+        key: "related",
+        label: "Collega",
+        description: "Collega il soggetto a un altro soggetto.",
+        domainDefinitionIds: [],
+        rangeDefinitionIds: [],
+        directionality: "directed",
+        reverse: { label: "È collegato da", description: "Legge lo stesso collegamento dal verso opposto." },
+      }],
       subjectClasses: [],
     });
   }, { contextId });
@@ -243,12 +252,20 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
   await expect(editor.locator(".semantic-graph-toolbar strong")).toHaveText("Beta");
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
 
-  await editor.getByRole("button", { name: "Aggiungi relazione" }).click();
+  await editor.getByRole("button", { name: "Aggiungi collegamento" }).click();
+  await expect(editor.getByRole("heading", { name: "Scegli il collegamento" })).toBeVisible();
+  await editor.getByRole("button", { name: "Collega", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Scegli il soggetto da collegare" })).toBeVisible();
+  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(1);
+  expect(candidateScopes.at(-1)).toBe("collection");
+
+  await editor.getByRole("tab", { name: "Nello spazio editoriale" }).click();
   await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(2);
   expect(candidateScopes.at(-1)).toBe("space");
   await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
-  await expect(editor.getByRole("heading", { name: "Beta → Alpha" })).toBeVisible();
-  await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveValue("related");
+  await expect(editor.getByRole("heading", { name: "Beta · Collega · Alpha" })).toBeVisible();
+  await expect(editor.locator(".semantic-relation-summary-label")).toHaveText("Collega");
+  await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveCount(0);
 });
 
 test("Navigator toast stack is FIFO, stable and globally layered in a real browser", async ({ page }) => {
@@ -265,7 +282,7 @@ test("Navigator toast stack is FIFO, stable and globally layered in a real brows
 
   const toasts = page.locator(".feedback-toast");
   await expect(toasts).toHaveCount(3);
-  await expect(toasts).toContainText(["Navigazione uno", "Navigazione due", "Navigazione tre"]);
+  await expect(toasts).toContainText(["Navigazione uno", "Navigazione due", "Terza notifica"]);
 
   const tops = await toasts.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
   expect(tops[0]).toBeLessThan(tops[1]);
