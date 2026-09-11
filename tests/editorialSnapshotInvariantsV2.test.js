@@ -89,7 +89,7 @@ test("una NamespaceRevision superseded resta valida per uno snapshot editoriale 
   });
 });
 
-test("assegnare classi non può inserire implicitamente un Subject nel grafo", { skip: !mongoUri }, async () => {
+test("assegnare classi materializza atomicamente un Subject della Raccolta", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const Subject = require("../models/subject.model");
     const ItemV2 = require("../models/itemV2.model");
@@ -97,10 +97,7 @@ test("assegnare classi non può inserire implicitamente un Subject nel grafo", {
     const CollectionItemMembership = require("../models/collectionItemMembership.model");
     const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
     const SemanticGraph = require("../models/semanticGraph.model");
-    const {
-      addEditorialGraphSubject,
-      setEditorialGraphSubjectClasses,
-    } = require("../services/editorialGraphCommand.service");
+    const { setEditorialGraphSubjectClasses } = require("../services/editorialGraphCommand.service");
 
     const fixture = await createBaseFixture();
     const subject = await Subject.create({ preferredLabel: "Opera esplicita", createdBy: fixture.user._id });
@@ -123,20 +120,10 @@ test("assegnare classi non può inserire implicitamente un Subject nel grafo", {
       updatedBy: fixture.user._id,
     });
 
-    await assert.rejects(
-      () => setEditorialGraphSubjectClasses({
-        editorialContextId: fixture.context._id,
-        subjectId: subject._id,
-        subjectClassDefinitionIds: ["class-work"],
-        actorUserId: fixture.user._id,
-      }),
-      (error) => error?.status === 409 && error?.details?.some?.((entry) => entry.code === "SEMANTIC_GRAPH_SUBJECT_NOT_BOUND"),
-    );
-
     let graph = await SemanticGraph.findById(fixture.semanticGraph._id).lean();
+    const beforeRevisionId = String(graph.workingRevisionId);
     assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: graph.workingRevisionId, subjectId: subject._id }), 0);
 
-    await addEditorialGraphSubject({ editorialContextId: fixture.context._id, subjectId: subject._id, actorUserId: fixture.user._id });
     await setEditorialGraphSubjectClasses({
       editorialContextId: fixture.context._id,
       subjectId: subject._id,
@@ -145,7 +132,47 @@ test("assegnare classi non può inserire implicitamente un Subject nel grafo", {
     });
 
     graph = await SemanticGraph.findById(fixture.semanticGraph._id).lean();
+    assert.notEqual(String(graph.workingRevisionId), beforeRevisionId);
     const binding = await GraphSubjectBinding.findOne({ graphRevisionId: graph.workingRevisionId, subjectId: subject._id }).lean();
     assert.deepEqual(binding.subjectClassDefinitionIds, ["class-work"]);
+  });
+});
+
+test("una classificazione vuota non materializza un Subject usato solo come focus", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
+    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
+    const { setEditorialGraphSubjectClasses } = require("../services/editorialGraphCommand.service");
+
+    const fixture = await createBaseFixture();
+    const subject = await Subject.create({ preferredLabel: "Focus virtuale", createdBy: fixture.user._id });
+    const item = await ItemV2.create({
+      primarySubjectId: subject._id,
+      ownerType: "user",
+      ownerId: fixture.user._id,
+      createdBy: fixture.user._id,
+    });
+    await CollectionItemMembership.create({
+      editorialContextId: fixture.context._id,
+      itemId: item._id,
+      curationSignals: [],
+      addedBy: fixture.user._id,
+      updatedBy: fixture.user._id,
+    });
+
+    const graphBefore = await SemanticGraph.findById(fixture.semanticGraph._id).lean();
+    await setEditorialGraphSubjectClasses({
+      editorialContextId: fixture.context._id,
+      subjectId: subject._id,
+      subjectClassDefinitionIds: [],
+      actorUserId: fixture.user._id,
+    });
+    const graphAfter = await SemanticGraph.findById(fixture.semanticGraph._id).lean();
+
+    assert.equal(String(graphAfter.workingRevisionId), String(graphBefore.workingRevisionId));
+    assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: graphAfter.workingRevisionId, subjectId: subject._id }), 0);
   });
 });
