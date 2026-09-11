@@ -56,7 +56,9 @@ test("il dettaglio Item apre il grafo nel contesto della raccolta e focalizza il
   assert.match(graphView, /this\.focusSubjectId = params\.get\("focusSubjectId"\)/);
   assert.match(graphView, /editorialContextId:\s*this\.editorialContextId/);
   assert.match(graphView, /initialFocusSubjectId:\s*this\.focusSubjectId/);
-  assert.match(graphView, /I Subject dei contenuti della raccolta sono disponibili automaticamente/);
+  assert.match(graphView, /<h2>Collegamenti<\/h2>/);
+  assert.match(graphView, /<artaround-semantic-graph-editor>/);
+  assert.doesNotMatch(graphView, /I Subject dei contenuti della raccolta sono disponibili automaticamente/);
 });
 
 test("un Subject implicito della raccolta è focalizzabile senza creare un GraphSubjectBinding", () => {
