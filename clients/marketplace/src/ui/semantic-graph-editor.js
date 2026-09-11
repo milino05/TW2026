@@ -121,7 +121,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       : editorialRepository.graphNeighborhood(this.editorialContextId, { view: "working", focusSubjectId: this.focusSubjectId, limit: this.visibleNeighborLimit });
   }
 
-  // Legacy inventory remains as graceful degradation for old relation definitions.
+  // Legacy inventory remains as graceful degradation for old relation definitions and is also
+  // the canonical target browser for standalone graphs, which have no Collection subject scope.
   fetchInventory() {
     if (this.standaloneMode()) {
       return editorialRepository.semanticGraphSubjects(this.semanticGraphId, {
@@ -198,7 +199,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   }
 
   async loadInventory() {
-    if (!this.hasResource() || !["focus", "target"].includes(this.pickerMode)) return;
+    if (!this.hasResource() || !["focus", "target", "relation-target"].includes(this.pickerMode)) return;
     this.inventoryBusy = true;
     this.error = null;
     this.render();
@@ -300,6 +301,18 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     void this.loadInventory();
   }
 
+  openStandaloneRelationTarget() {
+    if (!this.standaloneMode() || !this.relationFlow) return;
+    this.pickerMode = "relation-target";
+    this.browserMode = null;
+    this.selected = null;
+    this.inventoryData = null;
+    this.inventoryQuery = "";
+    this.inventoryPage = 1;
+    this.render();
+    void this.loadInventory();
+  }
+
   openSubjectBrowser(mode, { source = "collection" } = {}) {
     this.browserMode = mode;
     this.browserSource = source;
@@ -382,7 +395,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.relationFlow.view = view;
     if (this.relationFlow.entryMode === "relation-first") {
       this.relationFlow.step = "target";
-      this.openSubjectBrowser("relation-target", { source: "collection" });
+      if (this.collectionMode()) this.openSubjectBrowser("relation-target", { source: "collection" });
+      else this.openStandaloneRelationTarget();
       return;
     }
     this.relationFlow.step = "confirm";
@@ -502,7 +516,12 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (target.closest("[data-choose-focus]")) { this.openInventory("focus"); return; }
     if (target.closest("[data-browse-subjects]")) { this.openSubjectBrowser("browse", { source: "collection" }); return; }
     if (target.closest("[data-start-relation]")) { this.startRelationFirst(); return; }
-    if (target.closest("[data-classify-focus]")) { this.classificationPromptSubjectId = id(this.focusSubjectId); this.render(); return; }
+    if (target.closest("[data-classify-focus]")) {
+      if (!this.editable || this.locked) return;
+      this.classificationPromptSubjectId = id(this.focusSubjectId);
+      this.render();
+      return;
+    }
     if (target.closest("[data-skip-classification]")) {
       if (this.classificationPromptSubjectId) this.skippedClassification.add(id(this.classificationPromptSubjectId));
       this.classificationPromptSubjectId = null;
@@ -510,7 +529,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       return;
     }
     if (target.closest("[data-change-relation]")) {
-      if (this.relationFlow) { this.relationFlow.step = "relation"; this.relationQuery = ""; this.render(); }
+      if (this.relationFlow) { this.relationFlow.step = "relation"; this.relationQuery = ""; this.pickerMode = null; this.inventoryData = null; this.render(); }
       return;
     }
     const relationCard = target.closest("[data-relation-view]");
@@ -520,6 +539,8 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
       if (this.relationFlow.entryMode === "relation-first" && this.relationFlow.step === "target") this.relationFlow.step = "relation";
       else if (this.relationFlow.entryMode === "target-first") { this.relationFlow = null; this.openSubjectBrowser("browse", { source: "collection" }); return; }
       this.browserMode = null;
+      this.pickerMode = null;
+      this.inventoryData = null;
       this.render();
       return;
     }
@@ -537,6 +558,14 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (inventorySubject) {
       const row = (this.inventoryData?.results || []).find((entry) => id(entry.subject) === id(inventorySubject.dataset.useInventorySubject));
       if (!row?.subject) return;
+      if (this.pickerMode === "relation-target" && this.relationFlow) {
+        this.relationFlow.otherRow = row;
+        this.relationFlow.step = "confirm";
+        this.pickerMode = null;
+        this.inventoryData = null;
+        this.render();
+        return;
+      }
       await this.setFocus(row.subject._id, { offerClassification: true });
       return;
     }
@@ -849,7 +878,10 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   renderClassChips(entry) {
     const ids = classIds(entry);
-    if (!ids.length) return `<button type="button" class="semantic-class-missing" data-classify-focus>Categoria non assegnata · Aggiungi</button>`;
+    if (!ids.length) {
+      if (!this.editable || this.locked) return `<span class="semantic-class-missing semantic-class-missing--readonly">Categoria non assegnata</span>`;
+      return `<button type="button" class="semantic-class-missing" data-classify-focus>Categoria non assegnata · Aggiungi</button>`;
+    }
     return `<span class="semantic-subject-class-list">${ids.map((definitionId) => `<span class="semantic-subject-class-chip">${escapeHtml(this.classById(definitionId)?.label || definitionId)}</span>`).join("")}</span>`;
   }
 
@@ -884,9 +916,14 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   renderStandaloneInventoryPicker() {
     const subjects = (this.inventoryData?.results || []).filter((entry) => id(entry.subject) !== id(this.focusSubjectId));
-    const title = "Scegli il soggetto di contesto";
-    const body = `<form data-semantic-inventory-search role="search"><label>Cerca nel grafo<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span></button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryBusy ? "Ricerca in corso…" : "Nessun soggetto selezionabile."}</p></div>`}</div>${this.renderInventoryPagination()}${this.editable && !this.locked ? `<div class="semantic-inventory-footer"><button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 15 })} Aggiungi un nuovo Subject al grafo</button></div>` : ""}`;
-    return this.modal(title, body, { eyebrow: "Inventario del grafo", large: true });
+    const relationTarget = this.pickerMode === "relation-target";
+    const title = relationTarget ? "Scegli il soggetto da collegare" : "Scegli il soggetto di contesto";
+    const back = relationTarget ? `<button type="button" class="button-secondary small" data-back-relation>← Collegamento</button>` : "";
+    const addSubject = !relationTarget && this.editable && !this.locked
+      ? `<div class="semantic-inventory-footer"><button type="button" class="button-secondary" data-add-graph-subject>${icon("plus", { size: 15 })} Aggiungi un nuovo Subject al grafo</button></div>`
+      : "";
+    const body = `${back}<form data-semantic-inventory-search role="search"><label>Cerca nel grafo<input name="q" value="${escapeHtml(this.inventoryQuery)}" placeholder="Nome del soggetto"></label><button type="submit" class="button-secondary" ${this.inventoryBusy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="semantic-inventory-list">${subjects.length ? subjects.map((entry) => `<button type="button" class="semantic-inventory-card" data-use-inventory-subject="${escapeHtml(id(entry.subject))}"><span><strong>${escapeHtml(entry.subject?.preferredLabel || "Soggetto")}</strong><small>${escapeHtml(entry.subject?.description || "")}</small></span><span class="semantic-inventory-meta">${Number(entry.relationCount || 0)} relazioni</span></button>`).join("") : `<div class="empty-state compact"><p>${this.inventoryBusy ? "Ricerca in corso…" : "Nessun soggetto selezionabile."}</p></div>`}</div>${this.renderInventoryPagination()}${addSubject}`;
+    return this.modal(title, body, { eyebrow: relationTarget ? "Collegamenti" : "Inventario del grafo", large: true });
   }
 
   renderSubjectBrowser() {
@@ -904,7 +941,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   renderClassificationPrompt() {
     const entry = this.subjectEntry(this.classificationPromptSubjectId);
-    if (!entry) return "";
+    if (!entry || !this.editable || this.locked) return "";
     const subject = entry.subject || {};
     const selectedClasses = new Set(classIds(entry));
     const body = `<p>La categoria permette ad ArtAround di proporti soltanto i collegamenti semanticamente compatibili. Puoi anche decidere di farlo più tardi.</p><form data-classification-prompt data-subject-id="${escapeHtml(id(subject))}"><fieldset><legend>Che tipo di soggetto è “${escapeHtml(subject.preferredLabel || "questo soggetto")}”?</legend>${this.subjectClasses.map((definition) => `<label class="check semantic-class-option"><input type="checkbox" name="subjectClassDefinitionIds" value="${escapeHtml(definition.definitionId)}" ${selectedClasses.has(String(definition.definitionId)) ? "checked" : ""}><span><strong>${escapeHtml(definition.label)}</strong>${definition.description ? `<small>${escapeHtml(definition.description)}</small>` : ""}</span></label>`).join("")}</fieldset><div class="button-row"><button type="submit">${icon("check", { size: 15 })} Conferma</button><button type="button" class="button-secondary" data-skip-classification>Non ora</button></div></form>`;
@@ -1008,7 +1045,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (this.relationFlow?.step === "relation") return this.renderRelationPicker();
     if (this.relationFlow?.step === "confirm") return this.renderRelationConfirmation();
     if (this.browserMode) return this.renderSubjectBrowser();
-    if (this.pickerMode === "focus" && this.standaloneMode()) return this.renderStandaloneInventoryPicker();
+    if (["focus", "relation-target"].includes(this.pickerMode) && this.standaloneMode()) return this.renderStandaloneInventoryPicker();
     if (this.pickerMode === "add-focus") return this.renderAddSubjectPicker();
     if (this.selected?.kind === "subject") return this.renderSubjectEditor();
     return "";
