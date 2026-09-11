@@ -70,6 +70,7 @@ async function searchGraphSubjectCandidates(req, res, next) {
       q: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
+      excludeSubjectIds: commaSeparatedValues(req.query?.excludeSubjectIds),
       requiredClassDefinitionIds: commaSeparatedValues(req.query?.requiredClassDefinitionIds),
       includeUnclassified: req.query?.includeUnclassified !== "false",
     }));
