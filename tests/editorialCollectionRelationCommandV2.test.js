@@ -35,14 +35,34 @@ async function fixture() {
     durationTypes: [],
     languageLevels: [],
     subjectClasses: [],
-    relationTypes: [{
-      definitionId: "related",
-      key: "related",
-      label: "Collegato a",
-      domainDefinitionIds: [],
-      rangeDefinitionIds: [],
-      directionality: "directed",
-    }],
+    relationTypes: [
+      {
+        definitionId: "related",
+        key: "related",
+        label: "Collegato a",
+        domainDefinitionIds: [],
+        rangeDefinitionIds: [],
+        directionality: "directed",
+        reverse: { label: "Collegato da" },
+      },
+      {
+        definitionId: "created-by",
+        key: "created_by",
+        label: "Creato da",
+        domainDefinitionIds: [],
+        rangeDefinitionIds: [],
+        directionality: "directed",
+        reverse: { label: "Ha creato" },
+      },
+      {
+        definitionId: "associated",
+        key: "associated",
+        label: "Associato a",
+        domainDefinitionIds: [],
+        rangeDefinitionIds: [],
+        directionality: "symmetric",
+      },
+    ],
     presentationAspects: [],
     selectionSignals: [],
     status: "published",
@@ -87,7 +107,7 @@ async function fixture() {
   return { owner, namespace, contentSpace, contextId: context._id, subjectA, subjectB, itemA, itemB1, itemB2 };
 }
 
-test("relation command requires an explicit Item when multiple ContentSpace presentations back the target Subject", { skip: !mongoUri }, async () => {
+test("relation command requires an explicit Item when multiple ContentSpace presentations back a missing Subject", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const EditorialContext = require("../models/editorialContext.model");
     const CollectionItemMembership = require("../models/collectionItemMembership.model");
@@ -107,7 +127,7 @@ test("relation command requires an explicit Item when multiple ContentSpace pres
           relationTypeDefinitionId: "related",
         },
       }),
-      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "COLLECTION_GRAPH_TARGET_ITEM_SELECTION_REQUIRED"),
+      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "COLLECTION_GRAPH_SUBJECT_ITEM_SELECTION_REQUIRED"),
     );
 
     const afterContext = await EditorialContext.findById(data.contextId).lean();
@@ -152,6 +172,68 @@ test("relation command atomically adds the selected Item, materializes the Subje
     assert.equal(String(edges[0].sourceSubjectId), String(data.subjectA._id));
     assert.equal(String(edges[0].targetSubjectId), String(data.subjectB._id));
     assert.equal(edges[0].relationTypeDefinitionId, "related");
+  });
+});
+
+test("relation command can add the canonical source when the UI relation is viewed in reverse", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const EditorialContext = require("../models/editorialContext.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
+    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+    const { addCollectionGraphEdge } = require("../services/editorialCollectionRelationCommand.service");
+    const data = await fixture();
+
+    await addCollectionGraphEdge({
+      editorialContextId: data.contextId,
+      actorUserId: data.owner._id,
+      payload: {
+        sourceSubjectId: data.subjectB._id,
+        targetSubjectId: data.subjectA._id,
+        relationTypeDefinitionId: "created-by",
+        subjectItemSelections: [{ subjectId: data.subjectB._id, itemId: data.itemB1._id }],
+      },
+    });
+
+    const context = await EditorialContext.findById(data.contextId).lean();
+    const graph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    const edge = await SemanticEdgeV2.findOne({ graphRevisionId: graph.workingRevisionId }).lean();
+    const memberships = await CollectionItemMembership.find({ editorialContextId: data.contextId }).lean();
+    assert.equal(String(edge.sourceSubjectId), String(data.subjectB._id));
+    assert.equal(String(edge.targetSubjectId), String(data.subjectA._id));
+    assert.equal(edge.relationTypeDefinitionId, "created-by");
+    assert.equal(memberships.some((entry) => String(entry.itemId) === String(data.itemB1._id)), true);
+  });
+});
+
+test("symmetric relations reject the same pair in the opposite orientation", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const { addCollectionGraphEdge } = require("../services/editorialCollectionRelationCommand.service");
+    const data = await fixture();
+
+    await addCollectionGraphEdge({
+      editorialContextId: data.contextId,
+      actorUserId: data.owner._id,
+      payload: {
+        sourceSubjectId: data.subjectA._id,
+        targetSubjectId: data.subjectB._id,
+        targetItemId: data.itemB1._id,
+        relationTypeDefinitionId: "associated",
+      },
+    });
+
+    await assert.rejects(
+      () => addCollectionGraphEdge({
+        editorialContextId: data.contextId,
+        actorUserId: data.owner._id,
+        payload: {
+          sourceSubjectId: data.subjectB._id,
+          targetSubjectId: data.subjectA._id,
+          relationTypeDefinitionId: "associated",
+        },
+      }),
+      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "SEMANTIC_EDGE_EXISTS"),
+    );
   });
 });
 

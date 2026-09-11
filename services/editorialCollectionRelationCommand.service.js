@@ -70,6 +70,27 @@ function normalizeClassAssignments(value) {
   });
 }
 
+function normalizeSubjectItemSelections(payload) {
+  const result = new Map();
+  const selections = payload?.subjectItemSelections;
+  if (selections !== undefined && !Array.isArray(selections)) {
+    throw new AppError("subjectItemSelections deve essere un array", 400, [{
+      field: "subjectItemSelections",
+      code: "INVALID_TYPE",
+    }]);
+  }
+  for (const [index, selection] of (selections || []).entries()) {
+    assertObjectId(selection?.subjectId, `subjectItemSelections[${index}].subjectId`);
+    assertObjectId(selection?.itemId, `subjectItemSelections[${index}].itemId`);
+    result.set(id(selection.subjectId), selection.itemId);
+  }
+  if (payload?.targetItemId && payload?.targetSubjectId && !result.has(id(payload.targetSubjectId))) {
+    assertObjectId(payload.targetItemId, "targetItemId");
+    result.set(id(payload.targetSubjectId), payload.targetItemId);
+  }
+  return result;
+}
+
 function ensureBinding(snapshot, subjectId) {
   const existing = snapshot.subjectBindings.find((binding) => sameId(binding.subjectId, subjectId));
   if (existing) return existing;
@@ -83,6 +104,21 @@ function applyClassAssignments(snapshot, assignments) {
     const binding = ensureBinding(snapshot, assignment.subjectId);
     binding.subjectClassDefinitionIds = assignment.subjectClassDefinitionIds;
   }
+}
+
+function relationDefinition(namespaceRevision, relationTypeDefinitionId) {
+  return (namespaceRevision?.relationTypes || []).find((entry) => (
+    String(entry.definitionId) === String(relationTypeDefinitionId)
+  )) || null;
+}
+
+function sameRelationEdge(edge, sourceSubjectId, targetSubjectId, relationTypeDefinitionId, relation) {
+  if (String(edge.relationTypeDefinitionId) !== String(relationTypeDefinitionId)) return false;
+  const direct = sameId(edge.sourceSubjectId, sourceSubjectId) && sameId(edge.targetSubjectId, targetSubjectId);
+  if (direct) return true;
+  return relation?.directionality === "symmetric"
+    && sameId(edge.sourceSubjectId, targetSubjectId)
+    && sameId(edge.targetSubjectId, sourceSubjectId);
 }
 
 async function collectionSubjectIds(editorialContextId, session) {
@@ -112,35 +148,35 @@ async function itemCandidatesForSubject({ context, subjectId, session }) {
   return items.filter((item) => allowed.has(id(item._id)));
 }
 
-async function resolveTargetItem({ state, context, targetSubjectId, targetItemId, actorUserId, session }) {
-  const candidates = await itemCandidatesForSubject({ context, subjectId: targetSubjectId, session });
+async function resolveCollectionItemForSubject({ state, context, subjectId, itemId, actorUserId, session }) {
+  const candidates = await itemCandidatesForSubject({ context, subjectId, session });
   if (!candidates.length) {
     throw new AppError("Il Subject selezionato non ha contenuti utilizzabili nello Spazio editoriale", 409, [{
-      field: "targetSubjectId",
-      code: "COLLECTION_GRAPH_TARGET_CONTENT_REQUIRED",
-      context: { subjectId: targetSubjectId },
+      field: "subjectId",
+      code: "COLLECTION_GRAPH_SUBJECT_CONTENT_REQUIRED",
+      context: { subjectId },
     }]);
   }
 
   let selected = null;
-  if (targetItemId) {
-    assertObjectId(targetItemId, "targetItemId");
-    selected = candidates.find((item) => sameId(item._id, targetItemId)) || null;
+  if (itemId) {
+    assertObjectId(itemId, "itemId");
+    selected = candidates.find((item) => sameId(item._id, itemId)) || null;
     if (!selected) {
       throw new AppError("Il contenuto scelto non rappresenta il Subject o non appartiene allo Spazio editoriale", 409, [{
-        field: "targetItemId",
-        code: "COLLECTION_GRAPH_TARGET_ITEM_INVALID",
-        context: { subjectId: targetSubjectId, itemId: targetItemId },
+        field: "itemId",
+        code: "COLLECTION_GRAPH_SUBJECT_ITEM_INVALID",
+        context: { subjectId, itemId },
       }]);
     }
   } else if (candidates.length === 1) {
     [selected] = candidates;
   } else {
     throw new AppError("Scegli quale contenuto aggiungere alla Raccolta per questo Subject", 409, [{
-      field: "targetItemId",
-      code: "COLLECTION_GRAPH_TARGET_ITEM_SELECTION_REQUIRED",
+      field: "itemId",
+      code: "COLLECTION_GRAPH_SUBJECT_ITEM_SELECTION_REQUIRED",
       context: {
-        subjectId: targetSubjectId,
+        subjectId,
         itemIds: candidates.map((item) => item._id),
       },
     }]);
@@ -162,21 +198,15 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
   assertObjectId(sourceSubjectId, "sourceSubjectId");
   assertObjectId(targetSubjectId, "targetSubjectId");
   if (!relationTypeDefinitionId) {
-    throw new AppError("Tipo di relazione obbligatorio", 400, [{
-      field: "relationTypeDefinitionId",
-      code: "REQUIRED",
-    }]);
+    throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
   }
   if (sameId(sourceSubjectId, targetSubjectId)) {
     throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{ code: "SELF_RELATION_NOT_ALLOWED" }]);
   }
 
   const state = await loadAuthoringContext({ editorialContextId, actorUserId });
-  if (state.snapshot.edges.some((edge) => (
-    sameId(edge.sourceSubjectId, sourceSubjectId)
-    && sameId(edge.targetSubjectId, targetSubjectId)
-    && String(edge.relationTypeDefinitionId) === relationTypeDefinitionId
-  ))) {
+  const relation = relationDefinition(state.namespaceRevision, relationTypeDefinitionId);
+  if (state.snapshot.edges.some((edge) => sameRelationEdge(edge, sourceSubjectId, targetSubjectId, relationTypeDefinitionId, relation))) {
     throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
   }
 
@@ -192,9 +222,6 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
     provenance: { origin: "human" },
   });
 
-  // Department MongoDB runs standalone, so the unit-of-work fallback cannot roll
-  // back earlier writes. Validate the complete graph mutation before touching
-  // Collection membership or workingVersion; the writer validates again at commit.
   const graphIssues = await validateSemanticGraphSnapshot({
     snapshot: state.snapshot,
     namespaceRevision: state.namespaceRevision,
@@ -204,6 +231,7 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
   }
 
   const expectedContextVersion = Number(state.context.workingVersion || 0);
+  const subjectItemSelections = normalizeSubjectItemSelections(payload);
   let revisionId = null;
   try {
     await mongoose.connection.transaction(async (session) => {
@@ -215,41 +243,48 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
       if (!context) throw new AppError("Raccolta editoriale non trovata", 404);
 
       let allowedSubjects = await collectionSubjectIds(context._id, session);
-      if (!allowedSubjects.has(id(sourceSubjectId))) {
-        throw new AppError("Il Subject di partenza non è più rappresentato dai contenuti della Raccolta", 409, [{
-          field: "sourceSubjectId",
-          code: "GRAPH_SUBJECT_WITHOUT_COLLECTION_CONTENT",
-          context: { subjectId: sourceSubjectId },
+      const endpoints = [...new Set([id(sourceSubjectId), id(targetSubjectId)])];
+      const missingSubjects = endpoints.filter((subjectId) => !allowedSubjects.has(subjectId));
+      if (missingSubjects.length === endpoints.length) {
+        throw new AppError("Almeno uno dei Subject collegati deve essere già rappresentato nella Raccolta", 409, [{
+          code: "COLLECTION_GRAPH_ANCHOR_REQUIRED",
+        }]);
+      }
+      if (missingSubjects.length && context.activeReviewRevisionId) {
+        throw new AppError("La Raccolta è in revisione: ritira la richiesta prima di modificarne i contenuti", 409, [{
+          code: "EDITORIAL_CONTEXT_REVIEW_LOCKED",
         }]);
       }
 
-      const targetAlreadyBacked = allowedSubjects.has(id(targetSubjectId));
-      if (!targetAlreadyBacked) {
-        if (context.activeReviewRevisionId) {
-          throw new AppError("La Raccolta è in revisione: ritira la richiesta prima di modificarne i contenuti", 409, [{
-            code: "EDITORIAL_CONTEXT_REVIEW_LOCKED",
-          }]);
-        }
-        const targetItem = await resolveTargetItem({
+      const selectedItems = [];
+      for (const subjectId of missingSubjects) {
+        const selectedItem = await resolveCollectionItemForSubject({
           state,
           context,
-          targetSubjectId,
-          targetItemId: payload?.targetItemId || null,
+          subjectId,
+          itemId: subjectItemSelections.get(subjectId) || null,
           actorUserId,
           session,
         });
+        selectedItems.push({ subjectId, item: selectedItem });
+      }
+
+      for (const selection of selectedItems) {
         await ContentSpaceSubjectMembership.findOneAndUpdate(
-          { contentSpaceId: context.contentSpaceId, subjectId: targetSubjectId },
-          { $setOnInsert: { contentSpaceId: context.contentSpaceId, subjectId: targetSubjectId, addedBy: actorUserId } },
+          { contentSpaceId: context.contentSpaceId, subjectId: selection.subjectId },
+          { $setOnInsert: { contentSpaceId: context.contentSpaceId, subjectId: selection.subjectId, addedBy: actorUserId } },
           { upsert: true, new: true, session },
         );
-        await CollectionItemMembership.create([{
+      }
+      if (selectedItems.length) {
+        await CollectionItemMembership.insertMany(selectedItems.map((selection) => ({
           editorialContextId: context._id,
-          itemId: targetItem._id,
+          itemId: selection.item._id,
           curationSignals: [],
           addedBy: actorUserId,
           updatedBy: actorUserId,
-        }], { session });
+        })), { session, ordered: true });
+
         const contextPointer = await EditorialContext.updateOne({
           _id: context._id,
           lifecycleStatus: "active",
@@ -261,7 +296,7 @@ async function addCollectionGraphEdge({ editorialContextId, payload, actorUserId
             code: "EDITORIAL_CONTEXT_WORKING_CONFLICT",
           }]);
         }
-        allowedSubjects = new Set([...allowedSubjects, id(targetSubjectId)]);
+        allowedSubjects = new Set([...allowedSubjects, ...missingSubjects]);
       }
 
       const unsupported = state.snapshot.subjectBindings

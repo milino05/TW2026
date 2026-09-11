@@ -145,8 +145,26 @@ export const editorialRepository = {
     const query = queryString({ view, focusSubjectId, limit });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/neighborhood?${query}`);
   },
-  graphSubjectCandidates(editorialContextId, { scope = "collection", q = "", page = 1, limit = 12 } = {}) {
-    const query = queryString({ scope, q, page, limit });
+  graphSubjectCandidates(editorialContextId, {
+    scope = "collection",
+    q = "",
+    page = 1,
+    limit = 12,
+    excludeSubjectIds = [],
+    requiredClassDefinitionIds = [],
+    includeUnclassified = true,
+  } = {}) {
+    const excluded = (excludeSubjectIds || []).map(String).filter(Boolean).join(",");
+    const required = (requiredClassDefinitionIds || []).map(String).filter(Boolean).join(",");
+    const query = queryString({
+      scope,
+      q,
+      page,
+      limit,
+      excludeSubjectIds: excluded || null,
+      requiredClassDefinitionIds: required || null,
+      includeUnclassified: required ? String(includeUnclassified !== false) : null,
+    });
     return apiClient.request(`/editorial-contexts/${encodeURIComponent(editorialContextId)}/semantic-graph/subject-candidates?${query}`);
   },
   collectionGraphImportPreview(editorialContextId, semanticGraphId) {

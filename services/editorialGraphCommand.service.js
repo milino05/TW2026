@@ -106,6 +106,21 @@ function applyClassAssignments(snapshot, assignments) {
   }
 }
 
+function relationDefinition(namespaceRevision, relationTypeDefinitionId) {
+  return (namespaceRevision?.relationTypes || []).find((entry) => (
+    String(entry.definitionId) === String(relationTypeDefinitionId)
+  )) || null;
+}
+
+function sameRelationEdge(edge, sourceSubjectId, targetSubjectId, relationTypeDefinitionId, relation) {
+  if (String(edge.relationTypeDefinitionId) !== String(relationTypeDefinitionId)) return false;
+  const direct = sameId(edge.sourceSubjectId, sourceSubjectId) && sameId(edge.targetSubjectId, targetSubjectId);
+  if (direct) return true;
+  return relation?.directionality === "symmetric"
+    && sameId(edge.sourceSubjectId, targetSubjectId)
+    && sameId(edge.targetSubjectId, sourceSubjectId);
+}
+
 async function collectionSubjectIds(context) {
   const memberships = await CollectionItemMembership.find({ editorialContextId: context._id })
     .select("itemId")
@@ -322,24 +337,16 @@ async function addGraphEdge({ semanticGraphId = null, editorialContextId = null,
   assertObjectId(sourceSubjectId, "sourceSubjectId");
   assertObjectId(targetSubjectId, "targetSubjectId");
   if (!relationTypeDefinitionId) {
-    throw new AppError("Tipo di relazione obbligatorio", 400, [{
-      field: "relationTypeDefinitionId",
-      code: "REQUIRED",
-    }]);
+    throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
   }
   if (sameId(sourceSubjectId, targetSubjectId)) {
-    throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{
-      code: "SELF_RELATION_NOT_ALLOWED",
-    }]);
+    throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{ code: "SELF_RELATION_NOT_ALLOWED" }]);
   }
 
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   await assertCollectionSubjectsAvailable(state.context, [sourceSubjectId, targetSubjectId]);
-  if (state.snapshot.edges.some((edge) => (
-    sameId(edge.sourceSubjectId, sourceSubjectId)
-    && sameId(edge.targetSubjectId, targetSubjectId)
-    && String(edge.relationTypeDefinitionId) === relationTypeDefinitionId
-  ))) {
+  const relation = relationDefinition(state.namespaceRevision, relationTypeDefinitionId);
+  if (state.snapshot.edges.some((edge) => sameRelationEdge(edge, sourceSubjectId, targetSubjectId, relationTypeDefinitionId, relation))) {
     throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
   }
 
@@ -362,16 +369,21 @@ async function updateGraphEdge({ semanticGraphId = null, editorialContextId = nu
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   const edge = state.graph?.authoritativeEdges.find((entry) => sameId(entry._id, edgeId));
   if (!edge) throw new AppError("Relazione non trovata", 404);
-  await assertCollectionSubjectsAvailable(state.context, [edge.sourceSubjectId, edge.targetSubjectId]);
+
+  const sourceSubjectId = payload?.sourceSubjectId === undefined ? edge.sourceSubjectId : payload.sourceSubjectId;
+  const targetSubjectId = payload?.targetSubjectId === undefined ? edge.targetSubjectId : payload.targetSubjectId;
+  assertObjectId(sourceSubjectId, "sourceSubjectId");
+  assertObjectId(targetSubjectId, "targetSubjectId");
+  if (sameId(sourceSubjectId, targetSubjectId)) {
+    throw new AppError("Una relazione deve collegare due Subject distinti", 400, [{ code: "SELF_RELATION_NOT_ALLOWED" }]);
+  }
+  await assertCollectionSubjectsAvailable(state.context, [sourceSubjectId, targetSubjectId]);
 
   const relationTypeDefinitionId = payload?.relationTypeDefinitionId === undefined
     ? String(edge.relationTypeDefinitionId)
     : String(payload.relationTypeDefinitionId || "").trim();
   if (!relationTypeDefinitionId) {
-    throw new AppError("Tipo di relazione obbligatorio", 400, [{
-      field: "relationTypeDefinitionId",
-      code: "REQUIRED",
-    }]);
+    throw new AppError("Tipo di relazione obbligatorio", 400, [{ field: "relationTypeDefinitionId", code: "REQUIRED" }]);
   }
 
   state.snapshot.edges = state.snapshot.edges.filter((entry) => !(
@@ -379,20 +391,17 @@ async function updateGraphEdge({ semanticGraphId = null, editorialContextId = nu
     && sameId(entry.targetSubjectId, edge.targetSubjectId)
     && String(entry.relationTypeDefinitionId) === String(edge.relationTypeDefinitionId)
   ));
-  if (state.snapshot.edges.some((entry) => (
-    sameId(entry.sourceSubjectId, edge.sourceSubjectId)
-    && sameId(entry.targetSubjectId, edge.targetSubjectId)
-    && String(entry.relationTypeDefinitionId) === relationTypeDefinitionId
-  ))) {
+  const relation = relationDefinition(state.namespaceRevision, relationTypeDefinitionId);
+  if (state.snapshot.edges.some((entry) => sameRelationEdge(entry, sourceSubjectId, targetSubjectId, relationTypeDefinitionId, relation))) {
     throw new AppError("Questa relazione esiste già", 409, [{ code: "SEMANTIC_EDGE_EXISTS" }]);
   }
 
-  ensureBinding(state.snapshot, edge.sourceSubjectId);
-  ensureBinding(state.snapshot, edge.targetSubjectId);
+  ensureBinding(state.snapshot, sourceSubjectId);
+  ensureBinding(state.snapshot, targetSubjectId);
   applyClassAssignments(state.snapshot, normalizeClassAssignments(payload?.subjectClassAssignments));
   state.snapshot.edges.push({
-    sourceSubjectId: edge.sourceSubjectId,
-    targetSubjectId: edge.targetSubjectId,
+    sourceSubjectId,
+    targetSubjectId,
     relationTypeDefinitionId,
     weight: payload?.weight === undefined ? normalizeWeight(edge.weight) : normalizeWeight(payload.weight),
     metadata: payload?.metadata === undefined ? (edge.metadata ?? null) : (payload.metadata ?? null),
@@ -441,13 +450,10 @@ async function setGraphSubjectClasses({
     .filter(Boolean))];
   const state = await loadAuthoringTarget({ semanticGraphId, editorialContextId, actorUserId });
   await assertCollectionSubjectsAvailable(state.context, [subjectId]);
-  const binding = state.snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, subjectId));
+  let binding = state.snapshot.subjectBindings.find((entry) => sameId(entry.subjectId, subjectId));
   if (!binding) {
-    throw new AppError("Aggiungi prima il Subject al grafo semantico", 409, [{
-      field: "subjectId",
-      code: "SEMANTIC_GRAPH_SUBJECT_NOT_BOUND",
-      context: { subjectId },
-    }]);
+    if (!definitions.length) return state.graph;
+    binding = ensureBinding(state.snapshot, subjectId);
   }
   binding.subjectClassDefinitionIds = definitions;
   return commitSnapshot({ ...state, actorUserId });
@@ -479,12 +485,7 @@ function setEditorialGraphSubjectClasses({
   subjectClassDefinitionIds,
   actorUserId,
 }) {
-  return setGraphSubjectClasses({
-    editorialContextId,
-    subjectId,
-    subjectClassDefinitionIds,
-    actorUserId,
-  });
+  return setGraphSubjectClasses({ editorialContextId, subjectId, subjectClassDefinitionIds, actorUserId });
 }
 
 module.exports = {

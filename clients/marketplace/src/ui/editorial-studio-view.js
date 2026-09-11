@@ -20,6 +20,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   context = readOperatingContext();
   editorialContextId = null;
   section = "overview";
+  graphFocusSubjectId = null;
   data = null;
   graphSources = [];
   revisions = [];
@@ -32,11 +33,13 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const params = new URLSearchParams(window.location.search);
     this.editorialContextId = params.get("editorialContextId");
     this.section = ["overview", "content", "relations", "publication", "settings"].includes(params.get("section")) ? params.get("section") : "overview";
+    this.graphFocusSubjectId = params.get("focusSubjectId");
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("artaround:revision-workflow-operation", this.onWorkflowOperation);
     this.addEventListener("editorial-content-changed", this.onChildChanged);
     this.addEventListener("editorial-graph-changed", this.onChildChanged);
+    this.addEventListener("semantic-graph-focus-changed", this.onGraphFocusChanged);
     void this.load();
   }
   disconnectedCallback() {
@@ -45,6 +48,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.removeEventListener("artaround:revision-workflow-operation", this.onWorkflowOperation);
     this.removeEventListener("editorial-content-changed", this.onChildChanged);
     this.removeEventListener("editorial-graph-changed", this.onChildChanged);
+    this.removeEventListener("semantic-graph-focus-changed", this.onGraphFocusChanged);
   }
 
   hasOperation(code) { return (this.data?.availableOperations || []).some((entry) => entry.code === code); }
@@ -71,7 +75,23 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     finally { this.busy = false; this.render(); }
   }
 
-  onChildChanged = () => { void this.load(); };
+  onChildChanged = () => {
+    const graph = this.querySelector("artaround-semantic-graph-editor");
+    if (graph) this.graphFocusSubjectId = id(graph.focusSubjectId) || null;
+    void this.load();
+  };
+
+  onGraphFocusChanged = (event) => {
+    const next = id(event.detail?.focusSubjectId) || null;
+    if (id(this.graphFocusSubjectId) === id(next)) return;
+    this.graphFocusSubjectId = next;
+    const params = new URLSearchParams(window.location.search);
+    params.set("editorialContextId", this.editorialContextId);
+    params.set("section", this.section);
+    if (next) params.set("focusSubjectId", next);
+    else params.delete("focusSubjectId");
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}`);
+  };
 
   setSection(section) {
     this.section = section;
@@ -234,9 +254,8 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   }
 
   renderRelations() {
-    const graph = this.data.semanticGraph || {};
     const canImport = this.data.permissions.canEditGraph && !this.data.context.locked;
-    return `<section class="studio-section"><header class="section-heading"><div><span class="eyebrow">Semantica</span><h2>Collegamenti fra soggetti</h2><p>Il grafo della Raccolta collega soltanto Subject rappresentati dai suoi contenuti. Un contenuto può restare nella Raccolta senza essere materializzato nel grafo.</p></div>${canImport ? `<button type="button" class="button-secondary" data-import-semantic-source>${icon("link", { size: 15 })} Importa da un grafo</button>` : ""}</header><div class="studio-graph-context"><div><strong>${escapeHtml(graph.name || "Grafo della Raccolta")}</strong><p>Questo grafo è locale e indipendente. Le sorgenti importate sono pinzate a revisioni precise e non aggiornano automaticamente questa Raccolta.</p>${this.renderSourceSummary()}</div><span class="status">Grafo locale</span></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
+    return `<section class="studio-section studio-relations-section">${canImport ? `<div class="button-row studio-relations-actions"><button type="button" class="button-secondary" data-import-semantic-source>${icon("link", { size: 15 })} Importa da un grafo</button></div>` : ""}<artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
   renderRequestChangesForm() {
@@ -275,6 +294,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       subjectClasses: this.data.namespace.revision?.subjectClasses || [],
       editable: this.data.permissions.canEditGraph,
       locked: false,
+      initialFocusSubjectId: this.graphFocusSubjectId,
     });
     const workflow = this.querySelector("artaround-revision-workflow-controls");
     if (workflow) {

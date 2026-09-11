@@ -24,6 +24,7 @@ function projectGraph(graph, { semanticGraph = null, coverageBySubject = new Map
   const subjects = graph
     ? [...graph.nodes.values()].map((node) => ({
       subject: node.subject,
+      inGraph: Boolean(node.binding),
       subjectClassDefinitionIds: node.binding?.subjectClassDefinitionIds || [],
       presentationCoverage: coverageBySubject.get(id(node.subject?._id)) || emptyCoverage(),
     }))
@@ -221,7 +222,42 @@ async function candidateSubjectIds({ context, scope, semanticGraph = null }) {
   return contentSpaceContentSubjectIds(context.contentSpaceId);
 }
 
-async function searchEditorialGraphSubjectCandidates({ editorialContextId, actorUserId, scope = "collection", q = "", page = 1, limit = 12 }) {
+function normalizeDefinitionIds(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values])
+    .flatMap((value) => String(value || "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean))];
+}
+
+async function filterCandidateSubjectIdsByClasses({ subjectIds, semanticGraph, requiredClassDefinitionIds, includeUnclassified }) {
+  const required = normalizeDefinitionIds(requiredClassDefinitionIds);
+  if (!required.length) return subjectIds;
+  if (!semanticGraph?.workingRevisionId) return includeUnclassified ? subjectIds : [];
+  const bindings = await GraphSubjectBinding.find({
+    graphRevisionId: semanticGraph.workingRevisionId,
+    subjectId: { $in: subjectIds },
+  }).select("subjectId subjectClassDefinitionIds").lean();
+  const bindingBySubjectId = new Map(bindings.map((entry) => [id(entry.subjectId), entry]));
+  const requiredSet = new Set(required);
+  return subjectIds.filter((subjectId) => {
+    const binding = bindingBySubjectId.get(id(subjectId));
+    const classes = binding?.subjectClassDefinitionIds || [];
+    if (!binding || !classes.length) return includeUnclassified;
+    return classes.some((definitionId) => requiredSet.has(String(definitionId)));
+  });
+}
+
+async function searchEditorialGraphSubjectCandidates({
+  editorialContextId,
+  actorUserId,
+  scope = "collection",
+  q = "",
+  page = 1,
+  limit = 12,
+  excludeSubjectIds = [],
+  requiredClassDefinitionIds = [],
+  includeUnclassified = true,
+}) {
   if (!["graph", "collection", "space"].includes(scope)) throw new AppError("scope deve essere graph, collection o space", 400);
   const context = await findEditorialContextOrFail({ editorialContextId });
   const contentSpace = await findContentSpaceOrFail({ contentSpaceId: context.contentSpaceId });
@@ -229,9 +265,28 @@ async function searchEditorialGraphSubjectCandidates({ editorialContextId, actor
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = normalizedLimitValue(limit);
   const normalizedQuery = String(q || "").trim().slice(0, 160);
+  const excludedIds = normalizeDefinitionIds(excludeSubjectIds);
+  const excludedSet = new Set(excludedIds);
+  const requiredClasses = normalizeDefinitionIds(requiredClassDefinitionIds);
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).select("workingRevisionId").lean();
-  const subjectIds = await candidateSubjectIds({ context, scope, semanticGraph });
-  if (!subjectIds.length) return { results: [], pagination: { page: normalizedPage, limit: normalizedLimit, total: 0, totalPages: 0 }, query: normalizedQuery, scope };
+  const candidateIds = await candidateSubjectIds({ context, scope, semanticGraph });
+  const eligibleCandidateIds = excludedSet.size
+    ? candidateIds.filter((subjectId) => !excludedSet.has(id(subjectId)))
+    : candidateIds;
+  const subjectIds = await filterCandidateSubjectIdsByClasses({
+    subjectIds: eligibleCandidateIds,
+    semanticGraph,
+    requiredClassDefinitionIds: requiredClasses,
+    includeUnclassified: includeUnclassified !== false,
+  });
+  if (!subjectIds.length) return {
+    results: [],
+    pagination: { page: normalizedPage, limit: normalizedLimit, total: 0, totalPages: 0 },
+    query: normalizedQuery,
+    scope,
+    excludeSubjectIds: excludedIds,
+    requiredClassDefinitionIds: requiredClasses,
+  };
   const query = { _id: { $in: subjectIds } };
   if (normalizedQuery) {
     const pattern = new RegExp(escapeRegex(normalizedQuery), "i");
@@ -268,6 +323,8 @@ async function searchEditorialGraphSubjectCandidates({ editorialContextId, actor
     pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
     query: normalizedQuery,
     scope,
+    excludeSubjectIds: excludedIds,
+    requiredClassDefinitionIds: requiredClasses,
   };
 }
 
@@ -344,9 +401,11 @@ async function getEditorialContextGraphNeighborhood({ editorialContextId, view =
   const subjects = nodeIds.map((subjectId) => {
     const subject = subjectById.get(subjectId);
     if (!subject) return null;
+    const binding = bindingBySubjectId.get(subjectId) || null;
     return {
       subject,
-      subjectClassDefinitionIds: bindingBySubjectId.get(subjectId)?.subjectClassDefinitionIds || [],
+      inGraph: Boolean(binding),
+      subjectClassDefinitionIds: binding?.subjectClassDefinitionIds || [],
       relationCount: relationCounts.get(subjectId) || 0,
       presentationCoverage: coverageBySubject.get(subjectId) || emptyCoverage(),
     };
