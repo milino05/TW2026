@@ -150,15 +150,18 @@ export const editorialRepository = {
     q = "",
     page = 1,
     limit = 12,
+    excludeSubjectIds = [],
     requiredClassDefinitionIds = [],
     includeUnclassified = true,
   } = {}) {
+    const excluded = (excludeSubjectIds || []).map(String).filter(Boolean).join(",");
     const required = (requiredClassDefinitionIds || []).map(String).filter(Boolean).join(",");
     const query = queryString({
       scope,
       q,
       page,
       limit,
+      excludeSubjectIds: excluded || null,
       requiredClassDefinitionIds: required || null,
       includeUnclassified: required ? String(includeUnclassified !== false) : null,
     });
