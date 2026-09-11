@@ -254,7 +254,7 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
 
   await editor.getByRole("button", { name: "Aggiungi collegamento" }).click();
   await expect(editor.getByRole("heading", { name: "Scegli il collegamento" })).toBeVisible();
-  await editor.getByRole("button", { name: "Collega", exact: true }).click();
+  await editor.locator('[data-relation-view="related"]').click();
   await expect(editor.getByRole("heading", { name: "Scegli il soggetto da collegare" })).toBeVisible();
   await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(1);
   expect(candidateScopes.at(-1)).toBe("collection");
@@ -267,7 +267,6 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
   await expect(editor.locator(".semantic-relation-summary-label")).toHaveText("Collega");
   await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveCount(0);
 });
-
 test("Navigator toast stack is FIFO, stable and globally layered in a real browser", async ({ page }) => {
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });
   await page.locator(".feedback-toast-host").waitFor({ state: "attached" });
