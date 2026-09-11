@@ -254,6 +254,7 @@ async function searchEditorialGraphSubjectCandidates({
   q = "",
   page = 1,
   limit = 12,
+  excludeSubjectIds = [],
   requiredClassDefinitionIds = [],
   includeUnclassified = true,
 }) {
@@ -264,11 +265,16 @@ async function searchEditorialGraphSubjectCandidates({
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = normalizedLimitValue(limit);
   const normalizedQuery = String(q || "").trim().slice(0, 160);
+  const excludedIds = normalizeDefinitionIds(excludeSubjectIds);
+  const excludedSet = new Set(excludedIds);
   const requiredClasses = normalizeDefinitionIds(requiredClassDefinitionIds);
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).select("workingRevisionId").lean();
   const candidateIds = await candidateSubjectIds({ context, scope, semanticGraph });
+  const eligibleCandidateIds = excludedSet.size
+    ? candidateIds.filter((subjectId) => !excludedSet.has(id(subjectId)))
+    : candidateIds;
   const subjectIds = await filterCandidateSubjectIdsByClasses({
-    subjectIds: candidateIds,
+    subjectIds: eligibleCandidateIds,
     semanticGraph,
     requiredClassDefinitionIds: requiredClasses,
     includeUnclassified: includeUnclassified !== false,
@@ -278,6 +284,7 @@ async function searchEditorialGraphSubjectCandidates({
     pagination: { page: normalizedPage, limit: normalizedLimit, total: 0, totalPages: 0 },
     query: normalizedQuery,
     scope,
+    excludeSubjectIds: excludedIds,
     requiredClassDefinitionIds: requiredClasses,
   };
   const query = { _id: { $in: subjectIds } };
@@ -316,6 +323,7 @@ async function searchEditorialGraphSubjectCandidates({
     pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },
     query: normalizedQuery,
     scope,
+    excludeSubjectIds: excludedIds,
     requiredClassDefinitionIds: requiredClasses,
   };
 }
