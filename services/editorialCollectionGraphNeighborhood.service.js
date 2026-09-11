@@ -43,6 +43,7 @@ async function implicitCollectionFocus({ editorialContextId, focusSubjectId, bas
     ...base,
     subjects: [{
       subject,
+      inGraph: false,
       subjectClassDefinitionIds: [],
       relationCount: 0,
       implicitFromCollection: true,
@@ -61,6 +62,7 @@ async function implicitCollectionFocus({ editorialContextId, focusSubjectId, bas
       visibleNeighbors: 0,
       hiddenNeighbors: 0,
       implicitFocus: true,
+      virtualFocus: true,
     },
   };
 }
