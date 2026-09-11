@@ -172,6 +172,21 @@ test("il Subject Browser filtra le categorie prima della paginazione e conserva 
     assert.equal(permissive.pagination.totalPages, 2);
     assert.equal(permissive.results.length, 1);
 
+    const withoutFocus = await searchEditorialGraphSubjectCandidates({
+      editorialContextId: context._id,
+      actorUserId: user._id,
+      scope: "collection",
+      excludeSubjectIds: [work._id],
+      requiredClassDefinitionIds: ["work"],
+      includeUnclassified: true,
+      page: 1,
+      limit: 1,
+    });
+    assert.equal(withoutFocus.pagination.total, 1, "il focus escluso non deve occupare il totale o uno slot della pagina");
+    assert.equal(withoutFocus.pagination.totalPages, 1);
+    assert.equal(withoutFocus.results.length, 1);
+    assert.equal(String(withoutFocus.results[0].subject._id), String(unclassified._id));
+
     const strict = await searchEditorialGraphSubjectCandidates({
       editorialContextId: context._id,
       actorUserId: user._id,
