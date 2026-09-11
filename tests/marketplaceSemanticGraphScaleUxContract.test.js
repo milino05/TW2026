@@ -11,6 +11,7 @@ const subjectBrowser = read("clients/marketplace/src/ui/semantic-subject-source-
 const relationViews = read("clients/marketplace/src/ui/semantic-relation-views.js");
 const repository = read("clients/marketplace/src/infrastructure/http/editorial-repository.js");
 const graphService = read("services/editorialContextGraph.service.js");
+const collectionNeighborhood = read("services/editorialCollectionGraphNeighborhood.service.js");
 const relationCommand = read("services/editorialCollectionRelationCommand.service.js");
 const routes = read("routes/editorialContexts.routes.js");
 const styles = read("clients/marketplace/src/styles/editorial-studio.css");
@@ -23,7 +24,9 @@ test("Graph Workspace usa neighborhood server-side invece dello snapshot complet
   assert.match(graphService, /getEditorialContextGraphNeighborhood/);
   assert.match(graphService, /totalNeighbors/);
   assert.match(graphService, /hiddenNeighbors/);
-  assert.match(graphService, /virtualFocus/);
+  assert.match(collectionNeighborhood, /implicitFromCollection:\s*true/);
+  assert.match(collectionNeighborhood, /virtualFocus:\s*true/);
+  assert.match(collectionNeighborhood, /inGraph:\s*false/);
 });
 
 test("il comando Collection collega endpoint canonici in modo neutro e aggiunge contenuti atomici", () => {
@@ -38,6 +41,13 @@ test("il comando Collection collega endpoint canonici in modo neutro e aggiunge 
   assert.match(relationCommand, /writeSemanticGraphSnapshot/);
   assert.match(relationCommand, /COLLECTION_GRAPH_SUBJECT_ITEM_SELECTION_REQUIRED/);
   assert.match(relationCommand, /COLLECTION_GRAPH_ANCHOR_REQUIRED/);
+});
+
+test("il Subject Browser applica la compatibilità prima della paginazione", () => {
+  assert.match(subjectBrowser, /requiredClassDefinitionIds: this\.requiredClassIds/);
+  assert.match(repository, /requiredClassDefinitionIds/);
+  assert.match(graphService, /filterCandidateSubjectIdsByClasses/);
+  assert.match(graphService, /includeUnclassified/);
 });
 
 test("relation-first e target-first convergono nello stesso relation flow", () => {
