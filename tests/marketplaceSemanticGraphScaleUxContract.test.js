@@ -65,6 +65,15 @@ test("relation-first e target-first convergono nello stesso relation flow", () =
   assert.match(subjectBrowser, /Nello spazio editoriale/);
 });
 
+test("relation-first standalone riusa l'inventario del grafo senza dipendere da una Raccolta", () => {
+  assert.match(editor, /openStandaloneRelationTarget/);
+  assert.match(editor, /this\.pickerMode = "relation-target"/);
+  assert.match(editor, /editorialRepository\.semanticGraphSubjects/);
+  assert.match(editor, /\["focus", "target", "relation-target"\]\.includes\(this\.pickerMode\)/);
+  assert.match(editor, /this\.pickerMode === "relation-target" && this\.relationFlow/);
+  assert.match(editor, /Scegli il soggetto da collegare/);
+});
+
 test("la UI usa viste semantiche dirette, reverse e simmetriche senza duplicare gli edge", () => {
   assert.match(relationViews, /direction: "reverse"/);
   assert.match(relationViews, /direction: "symmetric"/);
@@ -84,12 +93,15 @@ test("il focus appartiene al workspace parent e sopravvive ai reload del grafo",
   assert.match(editor, /this\.data = await this\.fetchNeighborhood\(\)/);
 });
 
-test("la classificazione progressiva non è un prerequisito rigido", () => {
+test("la classificazione progressiva non è un prerequisito rigido e in read-only non simula un'azione", () => {
   assert.match(editor, /data-classification-prompt/);
   assert.match(editor, /data-skip-classification/);
   assert.match(editor, /Categoria non assegnata/);
   assert.match(editor, /subjectClassAssignments/);
   assert.match(editor, /classesNeeded/);
+  assert.match(editor, /if \(!this\.editable \|\| this\.locked\) return `<span class="semantic-class-missing semantic-class-missing--readonly">Categoria non assegnata<\/span>`/);
+  assert.match(editor, /if \(!this\.editable \|\| this\.locked\) return;[\s\S]*classificationPromptSubjectId/);
+  assert.match(styles, /\.semantic-class-missing--readonly\{cursor:default;text-decoration:none\}/);
 });
 
 test("click modifica, doppio click ricentra e la tastiera offre un percorso equivalente", () => {
