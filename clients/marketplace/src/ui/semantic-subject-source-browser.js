@@ -77,6 +77,8 @@ export class ArtAroundSemanticSubjectSourceBrowser extends HTMLElement {
         q: this.query,
         page: this.page,
         limit: this.pageSize,
+        requiredClassDefinitionIds: this.requiredClassIds,
+        includeUnclassified: true,
       });
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Ricerca dei soggetti non disponibile";
@@ -186,7 +188,7 @@ export class ArtAroundSemanticSubjectSourceBrowser extends HTMLElement {
       const availableNext = this.allowedSources.filter((value) => value !== this.source);
       const next = availableNext[0] || null;
       const label = next === "space" ? "Cerca nello spazio editoriale" : next === "global" ? "Cerca in ArtAround e Wikidata" : next === "collection" ? "Torna alla raccolta" : "";
-      return `<div class="empty-state compact"><h4>${this.query ? "Nessun soggetto corrispondente" : "Nessun soggetto disponibile in questo livello"}</h4><p>${this.requiredClassIds.length ? "Non ci sono soggetti classificati in modo compatibile in questa pagina; i soggetti senza categoria restano selezionabili quando disponibili." : "Prosegui al livello successivo senza interrompere il flusso di lavoro."}</p>${next ? `<button type="button" class="button-secondary" data-next-semantic-source="${next}">${label}</button>` : ""}</div>`;
+      return `<div class="empty-state compact"><h4>${this.query ? "Nessun soggetto corrispondente" : "Nessun soggetto disponibile in questo livello"}</h4><p>${this.requiredClassIds.length ? "Non ci sono soggetti compatibili con il collegamento scelto; i soggetti senza categoria restano selezionabili." : "Prosegui al livello successivo senza interrompere il flusso di lavoro."}</p>${next ? `<button type="button" class="button-secondary" data-next-semantic-source="${next}">${label}</button>` : ""}</div>`;
     }
     return `<div class="semantic-inventory-list">${results.map((row) => {
       const subjectId = id(row.subject);
