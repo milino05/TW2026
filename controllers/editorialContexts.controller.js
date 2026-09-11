@@ -8,6 +8,10 @@ const { getEditorialContextGraph, projectGraph, searchEditorialGraphSubjectCandi
 const { getEditorialCollectionGraphNeighborhood } = require("../services/editorialCollectionGraphNeighborhood.service");
 const editorialReleaseService = require("../services/editorialRelease.service");
 
+function commaSeparatedValues(value) {
+  return [...new Set(String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean))];
+}
+
 async function list(req, res, next) {
   try { res.status(200).json(await editorialContextService.listEditorialContexts({ actorUserId: req.user._id, contentSpaceId: req.query?.contentSpaceId || null, namespaceId: req.query?.namespaceId || null })); }
   catch (error) { next(error); }
@@ -66,6 +70,8 @@ async function searchGraphSubjectCandidates(req, res, next) {
       q: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
+      requiredClassDefinitionIds: commaSeparatedValues(req.query?.requiredClassDefinitionIds),
+      includeUnclassified: req.query?.includeUnclassified !== "false",
     }));
   } catch (error) { next(error); }
 }
