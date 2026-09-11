@@ -161,3 +161,84 @@ test("un Subject della Raccolta può essere focus senza essere ancora materializ
     assert.equal(focused.neighborhood.totalNeighbors, 0);
   });
 });
+
+test("il Subject Browser filtra le categorie prima della paginazione e conserva i non classificati", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const User = require("../models/user");
+    const ContentSpace = require("../models/contentSpace.model");
+    const Subject = require("../models/subject.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
+    const CollectionItemMembership = require("../models/collectionItemMembership.model");
+    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+    const { searchEditorialGraphSubjectCandidates } = require("../services/editorialContextGraph.service");
+
+    const user = await User.create({ username: "class-filter-owner", passwordHash: "hash" });
+    const contentSpace = await ContentSpace.create({
+      name: "Spazio class filter",
+      ownerType: "user",
+      ownerId: user._id,
+      createdBy: user._id,
+    });
+    const { context, graphRevision } = await createEditorialContextWithGraph({
+      contentSpace,
+      namespaceId: new mongoose.Types.ObjectId(),
+      namespaceRevisionId: new mongoose.Types.ObjectId(),
+      displayName: "Raccolta class filter",
+      createdBy: user._id,
+    });
+    const [work, person, unclassified] = await Subject.create([
+      { preferredLabel: "Opera compatibile", createdBy: user._id },
+      { preferredLabel: "Persona incompatibile", createdBy: user._id },
+      { preferredLabel: "Soggetto da classificare", createdBy: user._id },
+    ]);
+    const items = await ItemV2.create([work, person, unclassified].map((subject) => ({
+      primarySubjectId: subject._id,
+      ownerType: "user",
+      ownerId: user._id,
+      createdBy: user._id,
+    })));
+    await ContentSpaceItemMembership.insertMany(items.map((item) => ({
+      contentSpaceId: contentSpace._id,
+      itemId: item._id,
+      addedBy: user._id,
+    })));
+    await CollectionItemMembership.insertMany(items.map((item) => ({
+      editorialContextId: context._id,
+      itemId: item._id,
+      curationSignals: [],
+      addedBy: user._id,
+      updatedBy: user._id,
+    })));
+    await GraphSubjectBinding.insertMany([
+      { graphRevisionId: graphRevision._id, subjectId: work._id, subjectClassDefinitionIds: ["work"] },
+      { graphRevisionId: graphRevision._id, subjectId: person._id, subjectClassDefinitionIds: ["person"] },
+    ]);
+
+    const permissive = await searchEditorialGraphSubjectCandidates({
+      editorialContextId: context._id,
+      actorUserId: user._id,
+      scope: "collection",
+      requiredClassDefinitionIds: ["work"],
+      includeUnclassified: true,
+      page: 1,
+      limit: 1,
+    });
+    assert.equal(permissive.pagination.total, 2, "compatibile + non classificato devono essere contati prima della paginazione");
+    assert.equal(permissive.pagination.totalPages, 2);
+    assert.equal(permissive.results.length, 1);
+
+    const strict = await searchEditorialGraphSubjectCandidates({
+      editorialContextId: context._id,
+      actorUserId: user._id,
+      scope: "collection",
+      requiredClassDefinitionIds: ["work"],
+      includeUnclassified: false,
+      page: 1,
+      limit: 10,
+    });
+    assert.equal(strict.pagination.total, 1);
+    assert.equal(strict.results.length, 1);
+    assert.equal(String(strict.results[0].subject._id), String(work._id));
+  });
+});
