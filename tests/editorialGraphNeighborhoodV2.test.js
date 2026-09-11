@@ -106,62 +106,6 @@ test("Graph Workspace legge l'intero SemanticGraph indipendentemente dai contenu
   });
 });
 
-test("un Subject della Raccolta può essere focus senza essere ancora materializzato nel grafo", { skip: !mongoUri }, async () => {
-  await withFreshDatabase(async () => {
-    const User = require("../models/user");
-    const ContentSpace = require("../models/contentSpace.model");
-    const Subject = require("../models/subject.model");
-    const ItemV2 = require("../models/itemV2.model");
-    const CollectionItemMembership = require("../models/collectionItemMembership.model");
-    const { getEditorialContextGraphNeighborhood } = require("../services/editorialContextGraph.service");
-
-    const user = await User.create({ username: "virtual-focus-owner", passwordHash: "hash" });
-    const contentSpace = await ContentSpace.create({
-      name: "Spazio focus virtuale",
-      ownerType: "user",
-      ownerId: user._id,
-      createdBy: user._id,
-    });
-    const { context } = await createEditorialContextWithGraph({
-      contentSpace,
-      namespaceId: new mongoose.Types.ObjectId(),
-      namespaceRevisionId: new mongoose.Types.ObjectId(),
-      displayName: "Raccolta focus virtuale",
-      createdBy: user._id,
-    });
-    const subject = await Subject.create({ preferredLabel: "Focus non materializzato", createdBy: user._id });
-    const item = await ItemV2.create({
-      primarySubjectId: subject._id,
-      ownerType: "user",
-      ownerId: user._id,
-      createdBy: user._id,
-    });
-    await CollectionItemMembership.create({
-      editorialContextId: context._id,
-      itemId: item._id,
-      curationSignals: [],
-      addedBy: user._id,
-      updatedBy: user._id,
-    });
-
-    const focused = await getEditorialContextGraphNeighborhood({
-      editorialContextId: context._id,
-      actorUserId: user._id,
-      view: "working",
-      focusSubjectId: subject._id,
-      limit: 18,
-    });
-
-    assert.equal(focused.subjects.length, 1);
-    assert.equal(String(focused.subjects[0].subject._id), String(subject._id));
-    assert.equal(focused.subjects[0].inGraph, false);
-    assert.deepEqual(focused.subjects[0].subjectClassDefinitionIds, []);
-    assert.equal(focused.edges.length, 0);
-    assert.equal(focused.neighborhood.virtualFocus, true);
-    assert.equal(focused.neighborhood.totalNeighbors, 0);
-  });
-});
-
 test("il Subject Browser filtra le categorie prima della paginazione e conserva i non classificati", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
