@@ -127,3 +127,5 @@ Per il launcher Item → Semantic Graph, il backend filtra le Collection per cop
 I contract test devono impedire il ritorno delle vecchie surface invece di mantenere allowlist permanenti. Una nuova eccezione non va aggiunta per comodità: richiede una decisione architetturale esplicita.
 
 Il browser acceptance verifica la shell condivisa, il contratto Escape, il dirty-discard, il focus trap, il restore-focus, il single-scroll e il comportamento responsive. I test statici verificano inoltre l'assenza delle surface legacy e i boundary specializzati del Semantic Graph e della Venue.
+
+Durante l'hardening CI, una failure di contract va classificata prima di intervenire: se il test descrive una surface legacy ormai rimossa, il contract deve essere riallineato al boundary canonico corrente; se invece rivela un consumer legacy reale, va corretto il consumer. Non reintrodurre markup o stato obsoleto per soddisfare una regex di test.
