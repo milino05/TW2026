@@ -46,6 +46,13 @@ test("modal lifecycle traps focus and restores the original opener across portal
   assert.match(lifecycle, /initialFocus/);
 });
 
+test("custom-element modal rerenders use a visual handoff instead of tearing down the backdrop", () => {
+  assert.match(lifecycle, /visualHandoff:\s*Boolean\(owner && !restoreFocus\)/);
+  assert.match(layerManager, /visualHandoff = false/);
+  assert.match(layerManager, /queueMicrotask\(\(\) => finalize\(\{ returnToOwner: false \}\)\)/);
+  assert.match(layerManager, /prevents a compositor-visible backdrop\/blur and scroll-lock gap/);
+});
+
 test("unmounted modal staging nodes stay invisible until LayerManager owns them", () => {
   assert.match(styles, /html\s*\{\s*scrollbar-gutter:\s*stable/);
   assert.match(styles, /\.artaround-modal-layer:not\(\[data-artaround-layer\]\)\s*\{[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s);
