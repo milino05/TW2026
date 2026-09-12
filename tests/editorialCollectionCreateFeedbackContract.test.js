@@ -43,11 +43,14 @@ test("il submit crea solo la Raccolta e lascia il grafo locale al backend", () =
   assert.match(source, /section=relations/);
 });
 
-test("gli stili dedicati mantengono modal, stepper e responsive layout", () => {
+test("gli stili dedicati mantengono il flusso a due passaggi e il dialog sorgenti", () => {
   assert.match(index, /editorial-collection-create\.css/);
   assert.match(styles, /\.collection-create-modal/);
-  assert.match(styles, /\.collection-create-stepper/);
+  assert.match(styles, /\.collection-create-stepper\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(styles, /\.collection-create-context-banner/);
+  assert.match(styles, /\.collection-graph-import-row/);
+  assert.doesNotMatch(styles, /\.collection-graph-action-grid/);
+  assert.doesNotMatch(styles, /\.collection-create-graph-step/);
   assert.match(styles, /@media\(max-width:52rem\)/);
   assert.match(styles, /@media\(max-width:36rem\)/);
 });
