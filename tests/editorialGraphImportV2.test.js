@@ -15,6 +15,23 @@ async function withFreshDatabase(callback) {
   }
 }
 
+async function createGraph({ SemanticGraph, SemanticGraphRevision, GraphSubjectBinding, SemanticEdgeV2, namespaceId, namespaceRevisionId, ownerId, name, bindings, edges }) {
+  const graph = await SemanticGraph.create({ namespaceId, displayName: name, ownerType: "user", ownerId, createdBy: ownerId });
+  const revision = await SemanticGraphRevision.create({
+    semanticGraphId: graph._id,
+    version: 1,
+    basedOnRevisionId: null,
+    authoredAgainstNamespaceRevisionId: namespaceRevisionId,
+    createdBy: ownerId,
+  });
+  if (bindings.length) await GraphSubjectBinding.insertMany(bindings.map((entry) => ({ graphRevisionId: revision._id, ...entry })));
+  if (edges.length) await SemanticEdgeV2.insertMany(edges.map((entry) => ({ graphRevisionId: revision._id, weight: 1, ...entry })));
+  graph.workingRevisionId = revision._id;
+  graph.workingVersion = 1;
+  await graph.save();
+  return { graph, revision };
+}
+
 async function fixture() {
   const User = require("../models/user");
   const Namespace = require("../models/namespace.model");
@@ -35,7 +52,10 @@ async function fixture() {
     version: 1,
     durationTypes: [],
     languageLevels: [],
-    subjectClasses: [],
+    subjectClasses: [
+      { definitionId: "class-a", key: "class-a", label: "Classe A" },
+      { definitionId: "class-b", key: "class-b", label: "Classe B" },
+    ],
     relationTypes: [{
       definitionId: "related",
       key: "related",
@@ -53,6 +73,7 @@ async function fixture() {
     updatedBy: owner._id,
   });
   namespace.publishedRevisionId = namespaceRevision._id;
+  namespace.workingRevisionId = namespaceRevision._id;
   await namespace.save();
 
   const contentSpace = await ContentSpace.create({ name: "Spazio importazione", ownerType: "user", ownerId: owner._id, createdBy: owner._id });
@@ -62,235 +83,216 @@ async function fixture() {
     { preferredLabel: "C", createdBy: owner._id },
     { preferredLabel: "D", createdBy: owner._id },
   ]);
-  const [itemA, itemB1, itemB2] = await ItemV2.create([
+  const [itemA, itemB1, itemB2, itemC] = await ItemV2.create([
     { primarySubjectId: subjectA._id, ownerType: "user", ownerId: owner._id, createdBy: owner._id },
     { primarySubjectId: subjectB._id, ownerType: "user", ownerId: owner._id, createdBy: owner._id },
     { primarySubjectId: subjectB._id, ownerType: "user", ownerId: owner._id, createdBy: owner._id },
+    { primarySubjectId: subjectC._id, ownerType: "user", ownerId: owner._id, createdBy: owner._id },
   ]);
-  await ContentSpaceItemMembership.insertMany([itemA, itemB1, itemB2].map((item) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: owner._id })));
+  await ContentSpaceItemMembership.insertMany([itemA, itemB1, itemB2, itemC].map((item) => ({ contentSpaceId: contentSpace._id, itemId: item._id, addedBy: owner._id })));
 
-  const sourceGraph = await SemanticGraph.create({
-    namespaceId: namespace._id,
-    displayName: "Grafo sorgente import",
-    ownerType: "user",
-    ownerId: owner._id,
-    createdBy: owner._id,
+  const sourceOne = await createGraph({
+    SemanticGraph, SemanticGraphRevision, GraphSubjectBinding, SemanticEdgeV2,
+    namespaceId: namespace._id, namespaceRevisionId: namespaceRevision._id, ownerId: owner._id, name: "Grafo sorgente uno",
+    bindings: [
+      { subjectId: subjectA._id, subjectClassDefinitionIds: ["class-a"] },
+      { subjectId: subjectB._id, subjectClassDefinitionIds: ["class-a"] },
+      { subjectId: subjectC._id, subjectClassDefinitionIds: ["class-a"] },
+    ],
+    edges: [
+      { sourceSubjectId: subjectA._id, targetSubjectId: subjectB._id, relationTypeDefinitionId: "related" },
+      { sourceSubjectId: subjectB._id, targetSubjectId: subjectC._id, relationTypeDefinitionId: "related" },
+    ],
   });
-  const sourceRevision = await SemanticGraphRevision.create({
-    semanticGraphId: sourceGraph._id,
-    version: 1,
-    basedOnRevisionId: null,
-    authoredAgainstNamespaceRevisionId: namespaceRevision._id,
-    createdBy: owner._id,
+  const sourceTwo = await createGraph({
+    SemanticGraph, SemanticGraphRevision, GraphSubjectBinding, SemanticEdgeV2,
+    namespaceId: namespace._id, namespaceRevisionId: namespaceRevision._id, ownerId: owner._id, name: "Grafo sorgente due",
+    bindings: [
+      { subjectId: subjectA._id, subjectClassDefinitionIds: ["class-b"] },
+      { subjectId: subjectB._id, subjectClassDefinitionIds: ["class-b"] },
+    ],
+    edges: [
+      { sourceSubjectId: subjectA._id, targetSubjectId: subjectB._id, relationTypeDefinitionId: "related" },
+    ],
   });
-  await GraphSubjectBinding.insertMany([subjectA, subjectB, subjectC].map((subject) => ({
-    graphRevisionId: sourceRevision._id,
-    subjectId: subject._id,
-    subjectClassDefinitionIds: [],
-  })));
-  await SemanticEdgeV2.insertMany([
-    { graphRevisionId: sourceRevision._id, sourceSubjectId: subjectA._id, targetSubjectId: subjectB._id, relationTypeDefinitionId: "related", weight: 1 },
-    { graphRevisionId: sourceRevision._id, sourceSubjectId: subjectB._id, targetSubjectId: subjectC._id, relationTypeDefinitionId: "related", weight: 1 },
-  ]);
-  sourceGraph.workingRevisionId = sourceRevision._id;
-  sourceGraph.workingVersion = 1;
-  await sourceGraph.save();
 
-  return { owner, namespace, namespaceRevision, contentSpace, sourceGraph, sourceRevision, subjectA, subjectB, subjectC, subjectD, itemA, itemB1, itemB2 };
+  return {
+    owner, namespace, namespaceRevision, contentSpace,
+    sourceGraph: sourceOne.graph, sourceRevision: sourceOne.revision,
+    secondSourceGraph: sourceTwo.graph, secondSourceRevision: sourceTwo.revision,
+    subjectA, subjectB, subjectC, subjectD, itemA, itemB1, itemB2, itemC,
+  };
+}
+
+async function createCollection(data, name = "Raccolta") {
+  const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
+  const EditorialContext = require("../models/editorialContext.model");
+  const created = await createEditorialStudioCollection({
+    actorUserId: data.owner._id,
+    payload: {
+      ownerType: "user",
+      ownerId: data.owner._id,
+      contentSpaceId: data.contentSpace._id,
+      namespaceId: data.namespace._id,
+      displayName: name,
+    },
+  });
+  return EditorialContext.findById(created.editorialContext.id).lean();
 }
 
 function statusBySubject(preview) {
   return new Map((preview.results || []).map((entry) => [String(entry.subject.id), entry]));
 }
 
-test("collection graph import pins the source revision and projects only collection-backed subjects", { skip: !mongoUri }, async () => {
+test("source pin stays on its immutable revision until explicit update", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
-    const EditorialContext = require("../models/editorialContext.model");
     const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
-    const CollectionItemMembership = require("../models/collectionItemMembership.model");
     const SemanticGraph = require("../models/semanticGraph.model");
-    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
-    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
-    const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
-    const { listEditorialGraphImportSources, importEditorialGraphSubjects } = require("../services/editorialGraphImport.service");
     const { addGraphSubject } = require("../services/editorialGraphCommand.service");
+    const {
+      attachEditorialGraphImportSource,
+      listEditorialGraphImportSources,
+      previewEditorialGraphImportSourceUpdate,
+      updateEditorialGraphImportSource,
+      importEditorialGraphSubjects,
+    } = require("../services/editorialGraphImport.service");
     const data = await fixture();
+    const context = await createCollection(data, "Raccolta pin");
 
-    const created = await createEditorialStudioCollection({
-      actorUserId: data.owner._id,
-      payload: {
-        ownerType: "user",
-        ownerId: data.owner._id,
-        contentSpaceId: data.contentSpace._id,
-        namespaceId: data.namespace._id,
-        graphMode: "import",
-        semanticGraphId: data.sourceGraph._id,
-        importItemIds: [data.itemA._id],
-        displayName: "Raccolta proiettata",
-      },
-    });
-    const context = await EditorialContext.findById(created.editorialContext.id).lean();
-    const localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
-    assert.notEqual(String(localGraph._id), String(data.sourceGraph._id));
-    assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: context._id }), 1);
-    assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: localGraph.workingRevisionId }), 1);
-    assert.equal(await SemanticEdgeV2.countDocuments({ graphRevisionId: localGraph.workingRevisionId }), 0);
-
-    const source = await EditorialGraphImportSource.findOne({ editorialContextId: context._id }).lean();
-    assert.equal(String(source.sourceGraphRevisionId), String(data.sourceRevision._id));
+    const attached = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.sourceGraph._id, actorUserId: data.owner._id });
+    const sourceId = attached.source._id;
+    assert.equal(String(attached.source.sourceGraphRevisionId), String(data.sourceRevision._id));
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId, itemIds: [data.itemA._id], actorUserId: data.owner._id });
 
     await addGraphSubject({ semanticGraphId: data.sourceGraph._id, subjectId: data.subjectD._id, actorUserId: data.owner._id });
     const evolvedSource = await SemanticGraph.findById(data.sourceGraph._id).lean();
     assert.notEqual(String(evolvedSource.workingRevisionId), String(data.sourceRevision._id));
 
-    const sources = await listEditorialGraphImportSources({ editorialContextId: context._id, actorUserId: data.owner._id });
-    assert.equal(sources.results.length, 1);
-    const preview = sources.results[0].preview;
-    assert.equal(String(preview.source.graphRevisionId), String(data.sourceRevision._id));
-    assert.equal(preview.summary.totalSubjectCount, 3);
-    const bySubject = statusBySubject(preview);
-    assert.equal(bySubject.get(String(data.subjectA._id)).status, "active");
-    assert.equal(bySubject.get(String(data.subjectB._id)).status, "ambiguous");
-    assert.equal(bySubject.get(String(data.subjectB._id)).itemCandidates.length, 2);
-    assert.equal(bySubject.get(String(data.subjectC._id)).status, "unavailable");
-    assert.equal(bySubject.has(String(data.subjectD._id)), false);
+    const sourcesBefore = await listEditorialGraphImportSources({ editorialContextId: context._id, actorUserId: data.owner._id });
+    assert.equal(sourcesBefore.results[0].updateAvailable, true);
+    assert.equal(String(sourcesBefore.results[0].preview.source.graphRevisionId), String(data.sourceRevision._id));
+    assert.equal(sourcesBefore.results[0].preview.summary.totalSubjectCount, 3);
+    assert.equal(statusBySubject(sourcesBefore.results[0].preview).has(String(data.subjectD._id)), false);
 
-    const imported = await importEditorialGraphSubjects({
-      editorialContextId: context._id,
-      sourceId: source._id,
-      itemIds: [data.itemB1._id],
-      actorUserId: data.owner._id,
-    });
-    assert.equal(imported.importedItemCount, 1);
-    const updatedContext = await EditorialContext.findById(context._id).lean();
-    const updatedGraph = await SemanticGraph.findById(localGraph._id).lean();
-    assert.equal(updatedContext.workingVersion, 2);
-    assert.equal(await CollectionItemMembership.countDocuments({ editorialContextId: context._id }), 2);
-    assert.equal(await GraphSubjectBinding.countDocuments({ graphRevisionId: updatedGraph.workingRevisionId }), 2);
-    const edges = await SemanticEdgeV2.find({ graphRevisionId: updatedGraph.workingRevisionId }).lean();
-    assert.equal(edges.length, 1);
-    assert.equal(String(edges[0].sourceSubjectId), String(data.subjectA._id));
-    assert.equal(String(edges[0].targetSubjectId), String(data.subjectB._id));
-    assert.equal(edges[0].provenance.origin, "imported");
-    assert.equal(String(edges[0].provenance.sourceGraphRevisionId), String(data.sourceRevision._id));
+    const updatePreview = await previewEditorialGraphImportSourceUpdate({ editorialContextId: context._id, sourceId, actorUserId: data.owner._id });
+    assert.equal(updatePreview.updateAvailable, true);
+    assert.equal(updatePreview.diff.addedSubjectCount, 1);
+    await updateEditorialGraphImportSource({ editorialContextId: context._id, sourceId, actorUserId: data.owner._id });
+
+    const pinAfter = await EditorialGraphImportSource.findById(sourceId).lean();
+    assert.equal(String(pinAfter.sourceGraphRevisionId), String(evolvedSource.workingRevisionId));
+    const sourcesAfter = await listEditorialGraphImportSources({ editorialContextId: context._id, actorUserId: data.owner._id });
+    assert.equal(sourcesAfter.results[0].updateAvailable, false);
+    assert.equal(statusBySubject(sourcesAfter.results[0].preview).has(String(data.subjectD._id)), true);
   });
 });
 
-test("collection-bound graph commands enforce containment while standalone graphs remain general", { skip: !mongoUri }, async () => {
+test("multiple pinned sources share global Subjects, keep local classification authoritative and deduplicate the same edge", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
-    const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
-    const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
+    const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
+    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+    const {
+      attachEditorialGraphImportSource,
+      listEditorialGraphImportSources,
+      importEditorialGraphSubjects,
+      detachEditorialGraphImportSource,
+    } = require("../services/editorialGraphImport.service");
+    const data = await fixture();
+    const context = await createCollection(data, "Raccolta multi-source");
+
+    const first = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.sourceGraph._id, actorUserId: data.owner._id });
+    const duplicateAttach = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.sourceGraph._id, actorUserId: data.owner._id });
+    assert.equal(String(first.source._id), String(duplicateAttach.source._id));
+    const second = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.secondSourceGraph._id, actorUserId: data.owner._id });
+
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId: first.source._id, itemIds: [data.itemA._id], actorUserId: data.owner._id });
+    const sources = await listEditorialGraphImportSources({ editorialContextId: context._id, actorUserId: data.owner._id });
+    const secondPreview = sources.results.find((entry) => String(entry.id) === String(second.source._id)).preview;
+    const aFromSecond = statusBySubject(secondPreview).get(String(data.subjectA._id));
+    assert.equal(aFromSecond.status, "active");
+    assert.equal(aFromSecond.classificationConflict, true);
+
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId: second.source._id, itemIds: [data.itemB1._id], actorUserId: data.owner._id });
+    let localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    let bindings = await GraphSubjectBinding.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    let edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(bindings.length, 2);
+    assert.equal(edges.length, 1);
+    const bindingA = bindings.find((entry) => String(entry.subjectId) === String(data.subjectA._id));
+    assert.deepEqual(bindingA.subjectClassDefinitionIds, ["class-a"]);
+
+    await detachEditorialGraphImportSource({ editorialContextId: context._id, sourceId: second.source._id, actorUserId: data.owner._id });
+    localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    bindings = await GraphSubjectBinding.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(bindings.length, 2);
+    assert.equal(edges.length, 1);
+  });
+});
+
+test("deleting a source-supported local edge creates one local suppression and restore derives all supporting sources", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const EditorialGraphEdgeSuppression = require("../models/editorialGraphEdgeSuppression.model");
+    const SemanticGraph = require("../models/semanticGraph.model");
+    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+    const { removeEditorialGraphEdge } = require("../services/editorialGraphCommand.service");
+    const {
+      attachEditorialGraphImportSource,
+      importEditorialGraphSubjects,
+      listRestorableEditorialGraphEdges,
+      restoreEditorialGraphEdge,
+    } = require("../services/editorialGraphImport.service");
+    const data = await fixture();
+    const context = await createCollection(data, "Raccolta restore");
+    const first = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.sourceGraph._id, actorUserId: data.owner._id });
+    const second = await attachEditorialGraphImportSource({ editorialContextId: context._id, sourceSemanticGraphId: data.secondSourceGraph._id, actorUserId: data.owner._id });
+
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId: first.source._id, itemIds: [data.itemA._id], actorUserId: data.owner._id });
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId: second.source._id, itemIds: [data.itemB1._id], actorUserId: data.owner._id });
+    let localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    let edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(edges.length, 1);
+
+    await removeEditorialGraphEdge({ editorialContextId: context._id, edgeId: edges[0]._id, actorUserId: data.owner._id });
+    assert.equal(await EditorialGraphEdgeSuppression.countDocuments({ editorialContextId: context._id }), 1);
+
+    const restorable = await listRestorableEditorialGraphEdges({ editorialContextId: context._id, actorUserId: data.owner._id });
+    assert.equal(restorable.results.length, 1);
+    assert.equal(restorable.results[0].supportSources.length, 2);
+
+    await importEditorialGraphSubjects({ editorialContextId: context._id, sourceId: first.source._id, itemIds: [data.itemC._id], actorUserId: data.owner._id });
+    localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(edges.some((edge) => String(edge.sourceSubjectId) === String(data.subjectA._id) && String(edge.targetSubjectId) === String(data.subjectB._id)), false);
+    assert.equal(edges.some((edge) => String(edge.sourceSubjectId) === String(data.subjectB._id) && String(edge.targetSubjectId) === String(data.subjectC._id)), true);
+
+    await restoreEditorialGraphEdge({ editorialContextId: context._id, suppressionId: restorable.results[0].id, actorUserId: data.owner._id });
+    assert.equal(await EditorialGraphEdgeSuppression.countDocuments({ editorialContextId: context._id }), 0);
+    localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
+    assert.equal(edges.length, 2);
+  });
+});
+
+test("collection-bound graph commands enforce containment while standalone source graphs remain independently editable", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const SemanticGraph = require("../models/semanticGraph.model");
     const { addEditorialGraphSubject, addGraphSubject } = require("../services/editorialGraphCommand.service");
     const data = await fixture();
-
-    const created = await createEditorialStudioCollection({
-      actorUserId: data.owner._id,
-      payload: {
-        ownerType: "user",
-        ownerId: data.owner._id,
-        contentSpaceId: data.contentSpace._id,
-        namespaceId: data.namespace._id,
-        graphMode: "import",
-        semanticGraphId: data.sourceGraph._id,
-        importItemIds: [data.itemA._id],
-        displayName: "Raccolta containment",
-      },
-    });
-    const context = await EditorialContext.findById(created.editorialContext.id).lean();
-    const localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
+    const context = await createCollection(data, "Raccolta containment");
 
     await assert.rejects(
       () => addEditorialGraphSubject({ editorialContextId: context._id, subjectId: data.subjectB._id, actorUserId: data.owner._id }),
       (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "GRAPH_SUBJECT_WITHOUT_COLLECTION_CONTENT"),
     );
     await assert.rejects(
-      () => addGraphSubject({ semanticGraphId: localGraph._id, subjectId: data.subjectB._id, actorUserId: data.owner._id }),
+      () => addGraphSubject({ semanticGraphId: context.semanticGraphId, subjectId: data.subjectB._id, actorUserId: data.owner._id }),
       (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "SEMANTIC_GRAPH_COLLECTION_BOUND_USE_CONTEXT_API"),
     );
 
     await addGraphSubject({ semanticGraphId: data.sourceGraph._id, subjectId: data.subjectD._id, actorUserId: data.owner._id });
     const sourceAfter = await SemanticGraph.findById(data.sourceGraph._id).lean();
     assert.equal(sourceAfter.workingVersion, 2);
-  });
-});
-
-test("local deletion of an imported edge is authoritative across later source activations", { skip: !mongoUri }, async () => {
-  await withFreshDatabase(async () => {
-    const EditorialContext = require("../models/editorialContext.model");
-    const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
-    const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
-    const ItemV2 = require("../models/itemV2.model");
-    const SemanticGraph = require("../models/semanticGraph.model");
-    const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
-    const { createEditorialStudioCollection } = require("../services/editorialStudioCreationV2.service");
-    const { importEditorialGraphSubjects } = require("../services/editorialGraphImport.service");
-    const { removeEditorialGraphEdge } = require("../services/editorialGraphCommand.service");
-    const data = await fixture();
-
-    const created = await createEditorialStudioCollection({
-      actorUserId: data.owner._id,
-      payload: {
-        ownerType: "user",
-        ownerId: data.owner._id,
-        contentSpaceId: data.contentSpace._id,
-        namespaceId: data.namespace._id,
-        graphMode: "import",
-        semanticGraphId: data.sourceGraph._id,
-        importItemIds: [data.itemA._id],
-        displayName: "Raccolta con override locale",
-      },
-    });
-    const context = await EditorialContext.findById(created.editorialContext.id).lean();
-    const source = await EditorialGraphImportSource.findOne({ editorialContextId: context._id });
-
-    await importEditorialGraphSubjects({
-      editorialContextId: context._id,
-      sourceId: source._id,
-      itemIds: [data.itemB1._id],
-      actorUserId: data.owner._id,
-    });
-
-    let localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
-    let edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
-    assert.equal(edges.length, 1);
-    const importedAB = edges[0];
-
-    await removeEditorialGraphEdge({
-      editorialContextId: context._id,
-      edgeId: importedAB._id,
-      actorUserId: data.owner._id,
-    });
-
-    const sourceAfterDelete = await EditorialGraphImportSource.findById(source._id).lean();
-    assert.equal(sourceAfterDelete.suppressedEdgeKeys.length, 1);
-
-    const itemC = await ItemV2.create({
-      primarySubjectId: data.subjectC._id,
-      ownerType: "user",
-      ownerId: data.owner._id,
-      createdBy: data.owner._id,
-    });
-    await ContentSpaceItemMembership.create({
-      contentSpaceId: data.contentSpace._id,
-      itemId: itemC._id,
-      addedBy: data.owner._id,
-    });
-
-    const activatedC = await importEditorialGraphSubjects({
-      editorialContextId: context._id,
-      sourceId: source._id,
-      itemIds: [itemC._id],
-      actorUserId: data.owner._id,
-    });
-    assert.equal(activatedC.activatedSubjectCount, 1);
-    assert.equal(activatedC.activatedRelationCount, 1);
-
-    localGraph = await SemanticGraph.findById(context.semanticGraphId).lean();
-    edges = await SemanticEdgeV2.find({ graphRevisionId: localGraph.workingRevisionId }).lean();
-    assert.equal(edges.length, 1);
-    assert.equal(String(edges[0].sourceSubjectId), String(data.subjectB._id));
-    assert.equal(String(edges[0].targetSubjectId), String(data.subjectC._id));
-    assert.equal(edges.some((edge) => String(edge.sourceSubjectId) === String(data.subjectA._id) && String(edge.targetSubjectId) === String(data.subjectB._id)), false);
   });
 });

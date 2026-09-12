@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, "..");
 const paths = {
   workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
   collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
-  graphDialog: "clients/marketplace/src/ui/collection-graph-dialog.js",
+  sourceDialog: "clients/marketplace/src/ui/collection-graph-import-dialog.js",
   guard: "clients/marketplace/src/ui/form-navigation-loss-guard.js",
 };
 const source = Object.fromEntries(Object.entries(paths).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
@@ -20,29 +20,29 @@ test("le superfici editoriali correnti con draft e il guard superano il syntax c
   }
 });
 
-test("Nuova Raccolta conserva draft, step e configurazione grafo attraverso i rerender", () => {
-  assert.match(source.collection, /draft = \{[\s\S]*displayName: ""[\s\S]*shortDescription: ""[\s\S]*description: ""[\s\S]*\}/);
-  assert.match(source.collection, /graphSelection = null/);
-  assert.match(source.collection, /graphEditorMode = null/);
+test("Nuova Raccolta conserva draft e step attraverso i rerender senza configurare sorgenti", () => {
+  assert.match(source.collection, /draft = \{ displayName: "", shortDescription: "", description: "" \}/);
   assert.match(source.collection, /step = "details"/);
   assert.match(source.collection, /this\.addEventListener\("input", this\.onInput\)/);
   assert.match(source.collection, /this\.captureDraft\(form\)/);
   assert.match(source.collection, /this\.step = "rules"/);
-  assert.match(source.collection, /this\.step = "graph"/);
-  assert.match(source.collection, /currentSelection: this\.graphSelection/);
-  assert.match(source.collection, /this\.graphSelection = event\.detail\?\.selection \|\| null/);
+  assert.doesNotMatch(source.collection, /this\.step = "graph"|graphSelection|graphEditorMode/);
   assert.match(source.collection, /value="\$\{escapeHtml\(this\.draft\.displayName\)\}"/);
   assert.match(source.collection, />\$\{escapeHtml\(this\.draft\.description\)\}<\/textarea>/);
   assert.match(source.collection, /hasUnsavedChanges\(\) \{ return this\.dirty; \}/);
   assert.match(source.collection, /this\.dirty = false;\s*navigate\(`/);
+});
 
-  assert.match(source.graphDialog, /newDraft = \{ name: "", description: "" \}/);
-  assert.match(source.graphDialog, /selectedItems = new Map\(\)/);
-  assert.match(source.graphDialog, /current\?\.graphMode === "new"/);
-  assert.match(source.graphDialog, /current\?\.graphMode === "import"/);
-  assert.match(source.graphDialog, /importItemIds/);
-  assert.match(source.graphDialog, /this\.embedded/);
-  assert.doesNotMatch(source.graphDialog, /forkDraft|graphMode === "fork"|graphMode: "fork"/);
+test("il source manager mantiene pinning e importazione distinti nello stesso modal", () => {
+  assert.match(source.sourceDialog, /view = "list"/);
+  assert.match(source.sourceDialog, /this\.view = "add"/);
+  assert.match(source.sourceDialog, /this\.view = "import"/);
+  assert.match(source.sourceDialog, /attachGraphImportSource/);
+  assert.match(source.sourceDialog, /importGraphSubjects/);
+  assert.match(source.sourceDialog, /Aggiungi sorgente/);
+  assert.match(source.sourceDialog, /Importa contenuti/);
+  assert.match(source.sourceDialog, /aria-label="Gestisci sorgenti"/);
+  assert.doesNotMatch(source.sourceDialog, /data-attach-source-only|submitImport\(\[\]\)|config\.mode === "import-content"/);
 });
 
 test("creazione Spazio integrata nella Libreria conserva e protegge il draft", () => {
@@ -56,10 +56,7 @@ test("creazione Spazio integrata nella Libreria conserva e protegge il draft", (
 });
 
 test("il guard riconosce i nuovi editor anche dopo la sostituzione del nodo form", () => {
-  for (const host of [
-    "artaround-editorial-collection-create-view",
-    "artaround-editorial-studio-view",
-  ]) assert.match(source.guard, new RegExp(host));
+  for (const host of ["artaround-editorial-collection-create-view", "artaround-editorial-studio-view"]) assert.match(source.guard, new RegExp(host));
   assert.match(source.guard, /hostHasDurableDirtyState/);
   assert.match(source.guard, /protectedHosts\(\)\.some\(hostHasDurableDirtyState\)/);
   assert.match(source.guard, /host\.discardUnsavedChanges\?\.\(\)/);

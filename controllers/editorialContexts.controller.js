@@ -12,30 +12,12 @@ function commaSeparatedValues(value) {
   return [...new Set(String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean))];
 }
 
-async function list(req, res, next) {
-  try { res.status(200).json(await editorialContextService.listEditorialContexts({ actorUserId: req.user._id, contentSpaceId: req.query?.contentSpaceId || null, namespaceId: req.query?.namespaceId || null })); }
-  catch (error) { next(error); }
-}
-async function get(req, res, next) {
-  try { res.status(200).json(await editorialContextService.getEditorialContext({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function update(req, res, next) {
-  try { res.status(200).json(await editorialContextService.updateEditorialContext({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function listEntries(req, res, next) {
-  try { res.status(200).json(await editorialContextEntryService.listEditorialContextEntries({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id, q: req.query?.q || "", page: req.query?.page, limit: req.query?.limit })); }
-  catch (error) { next(error); }
-}
-async function addEntry(req, res, next) {
-  try { res.status(201).json(await editorialContextEntryService.addEditorialContextEntry({ editorialContextId: req.params.editorialContextId, itemId: req.body?.itemId, curationSignals: req.body?.curationSignals || [], actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function updateEntry(req, res, next) {
-  try { res.status(200).json(await editorialContextEntryService.updateEditorialContextEntry({ editorialContextId: req.params.editorialContextId, entryId: req.params.entryId, curationSignals: req.body?.curationSignals, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
+async function list(req, res, next) { try { res.status(200).json(await editorialContextService.listEditorialContexts({ actorUserId: req.user._id, contentSpaceId: req.query?.contentSpaceId || null, namespaceId: req.query?.namespaceId || null })); } catch (error) { next(error); } }
+async function get(req, res, next) { try { res.status(200).json(await editorialContextService.getEditorialContext({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function update(req, res, next) { try { res.status(200).json(await editorialContextService.updateEditorialContext({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function listEntries(req, res, next) { try { res.status(200).json(await editorialContextEntryService.listEditorialContextEntries({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id, q: req.query?.q || "", page: req.query?.page, limit: req.query?.limit })); } catch (error) { next(error); } }
+async function addEntry(req, res, next) { try { res.status(201).json(await editorialContextEntryService.addEditorialContextEntry({ editorialContextId: req.params.editorialContextId, itemId: req.body?.itemId, curationSignals: req.body?.curationSignals || [], actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function updateEntry(req, res, next) { try { res.status(200).json(await editorialContextEntryService.updateEditorialContextEntry({ editorialContextId: req.params.editorialContextId, entryId: req.params.entryId, curationSignals: req.body?.curationSignals, actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function removeEntry(req, res, next) {
   try {
     res.status(200).json(await editorialContextEntryService.removeEditorialContextEntry({
@@ -46,19 +28,10 @@ async function removeEntry(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-async function getGraph(req, res, next) {
-  try { res.status(200).json(await getEditorialContextGraph({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
+async function getGraph(req, res, next) { try { res.status(200).json(await getEditorialContextGraph({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", actorUserId: req.user._id })); } catch (error) { next(error); } }
 async function getGraphNeighborhood(req, res, next) {
   try {
-    res.status(200).json(await getEditorialCollectionGraphNeighborhood({
-      editorialContextId: req.params.editorialContextId,
-      view: req.query?.view || "working",
-      focusSubjectId: req.query?.focusSubjectId || null,
-      limit: req.query?.limit,
-      actorUserId: req.user._id,
-    }));
+    res.status(200).json(await getEditorialCollectionGraphNeighborhood({ editorialContextId: req.params.editorialContextId, view: req.query?.view || "working", focusSubjectId: req.query?.focusSubjectId || null, limit: req.query?.limit, actorUserId: req.user._id }));
   } catch (error) { next(error); }
 }
 async function searchGraphSubjectCandidates(req, res, next) {
@@ -77,13 +50,8 @@ async function searchGraphSubjectCandidates(req, res, next) {
   } catch (error) { next(error); }
 }
 async function previewGraphImport(req, res, next) {
-  try {
-    res.status(200).json(await editorialGraphImportService.previewSemanticGraphImport({
-      editorialContextId: req.params.editorialContextId,
-      sourceSemanticGraphId: req.params.semanticGraphId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
+  try { res.status(200).json(await editorialGraphImportService.previewSemanticGraphImport({ editorialContextId: req.params.editorialContextId, sourceSemanticGraphId: req.params.semanticGraphId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 async function listGraphImportSources(req, res, next) {
   try { res.status(200).json(await editorialGraphImportService.listEditorialGraphImportSources({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
@@ -91,89 +59,56 @@ async function listGraphImportSources(req, res, next) {
 }
 async function attachGraphImportSource(req, res, next) {
   try {
-    res.status(201).json(await editorialGraphImportService.attachEditorialGraphImportSource({
-      editorialContextId: req.params.editorialContextId,
-      sourceSemanticGraphId: req.body?.semanticGraphId,
-      actorUserId: req.user._id,
-    }));
+    res.status(201).json(await editorialGraphImportService.attachEditorialGraphImportSource({ editorialContextId: req.params.editorialContextId, sourceSemanticGraphId: req.body?.semanticGraphId, actorUserId: req.user._id }));
   } catch (error) { next(error); }
+}
+async function previewGraphImportSourceUpdate(req, res, next) {
+  try { res.status(200).json(await editorialGraphImportService.previewEditorialGraphImportSourceUpdate({ editorialContextId: req.params.editorialContextId, sourceId: req.params.sourceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+async function updateGraphImportSource(req, res, next) {
+  try { res.status(200).json(await editorialGraphImportService.updateEditorialGraphImportSource({ editorialContextId: req.params.editorialContextId, sourceId: req.params.sourceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
+}
+async function detachGraphImportSource(req, res, next) {
+  try { res.status(200).json(await editorialGraphImportService.detachEditorialGraphImportSource({ editorialContextId: req.params.editorialContextId, sourceId: req.params.sourceId, actorUserId: req.user._id })); }
+  catch (error) { next(error); }
 }
 async function importGraphSubjects(req, res, next) {
-  try {
-    res.status(200).json(await editorialGraphImportService.importEditorialGraphSubjects({
-      editorialContextId: req.params.editorialContextId,
-      sourceId: req.params.sourceId,
-      itemIds: req.body?.itemIds || [],
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-async function addGraphSubject(req, res, next) {
-  try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphSubject({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, actorUserId: req.user._id }))); }
+  try { res.status(200).json(await editorialGraphImportService.importEditorialGraphSubjects({ editorialContextId: req.params.editorialContextId, sourceId: req.params.sourceId, itemIds: req.body?.itemIds || [], actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-async function removeGraphSubject(req, res, next) {
-  try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphSubject({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, actorUserId: req.user._id }))); }
+async function listRestorableGraphEdges(req, res, next) {
+  try { res.status(200).json(await editorialGraphImportService.listRestorableEditorialGraphEdges({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-async function addGraphEdge(req, res, next) {
-  try { res.status(201).json(projectGraph(await addCollectionGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); }
+async function restoreGraphEdge(req, res, next) {
+  try { res.status(200).json(projectGraph(await editorialGraphImportService.restoreEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, suppressionId: req.params.suppressionId, actorUserId: req.user._id }))); }
   catch (error) { next(error); }
 }
-async function updateGraphEdge(req, res, next) {
-  try { res.status(200).json(projectGraph(await editorialGraphCommandService.updateEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, payload: req.body || {}, actorUserId: req.user._id }))); }
-  catch (error) { next(error); }
-}
-async function removeGraphEdge(req, res, next) {
-  try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, actorUserId: req.user._id }))); }
-  catch (error) { next(error); }
-}
-async function setGraphSubjectClasses(req, res, next) {
-  try { res.status(200).json(projectGraph(await editorialGraphCommandService.setEditorialGraphSubjectClasses({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, subjectClassDefinitionIds: req.body?.subjectClassDefinitionIds || [], actorUserId: req.user._id }))); }
-  catch (error) { next(error); }
-}
-async function checkReadiness(req, res, next) {
-  try { res.status(200).json(await editorialContextReviewService.checkEditorialContextReadiness({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function requestReview(req, res, next) {
-  try { res.status(201).json(await editorialContextReviewService.requestEditorialContextReview({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function withdrawReview(req, res, next) {
-  try { res.status(200).json(await editorialContextReviewService.withdrawEditorialContextReview({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId || null, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function requestChanges(req, res, next) {
-  try { res.status(200).json(await editorialContextReviewService.requestEditorialContextChanges({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId, message: req.body?.message, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function approveReview(req, res, next) {
-  try { res.status(200).json(await editorialContextReviewService.approveEditorialContextReview({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function listRevisions(req, res, next) {
-  try { res.status(200).json(await editorialContextReviewService.listEditorialContextRevisions({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function createRelease(req, res, next) {
-  try { res.status(201).json(await editorialReleaseService.createEditorialRelease({ editorialContextId: req.params.editorialContextId, editorialContextRevisionId: req.body?.editorialContextRevisionId || null, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function listReleases(req, res, next) {
-  try { res.status(200).json(await editorialReleaseService.listEditorialReleases({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
-async function getCurrentRelease(req, res, next) {
-  try { res.status(200).json(await editorialReleaseService.getCurrentEditorialRelease({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
-  catch (error) { next(error); }
-}
+async function addGraphSubject(req, res, next) { try { res.status(201).json(projectGraph(await editorialGraphCommandService.addEditorialGraphSubject({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function removeGraphSubject(req, res, next) { try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphSubject({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function addGraphEdge(req, res, next) { try { res.status(201).json(projectGraph(await addCollectionGraphEdge({ editorialContextId: req.params.editorialContextId, payload: req.body || {}, actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function updateGraphEdge(req, res, next) { try { res.status(200).json(projectGraph(await editorialGraphCommandService.updateEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, payload: req.body || {}, actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function removeGraphEdge(req, res, next) { try { res.status(200).json(projectGraph(await editorialGraphCommandService.removeEditorialGraphEdge({ editorialContextId: req.params.editorialContextId, edgeId: req.params.edgeId, actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function setGraphSubjectClasses(req, res, next) { try { res.status(200).json(projectGraph(await editorialGraphCommandService.setEditorialGraphSubjectClasses({ editorialContextId: req.params.editorialContextId, subjectId: req.params.subjectId, subjectClassDefinitionIds: req.body?.subjectClassDefinitionIds || [], actorUserId: req.user._id }))); } catch (error) { next(error); } }
+async function checkReadiness(req, res, next) { try { res.status(200).json(await editorialContextReviewService.checkEditorialContextReadiness({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function requestReview(req, res, next) { try { res.status(201).json(await editorialContextReviewService.requestEditorialContextReview({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function withdrawReview(req, res, next) { try { res.status(200).json(await editorialContextReviewService.withdrawEditorialContextReview({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId || null, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function requestChanges(req, res, next) { try { res.status(200).json(await editorialContextReviewService.requestEditorialContextChanges({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId, message: req.body?.message, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function approveReview(req, res, next) { try { res.status(200).json(await editorialContextReviewService.approveEditorialContextReview({ editorialContextId: req.params.editorialContextId, revisionId: req.params.revisionId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function listRevisions(req, res, next) { try { res.status(200).json(await editorialContextReviewService.listEditorialContextRevisions({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function createRelease(req, res, next) { try { res.status(201).json(await editorialReleaseService.createEditorialRelease({ editorialContextId: req.params.editorialContextId, editorialContextRevisionId: req.body?.editorialContextRevisionId || null, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function listReleases(req, res, next) { try { res.status(200).json(await editorialReleaseService.listEditorialReleases({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
+async function getCurrentRelease(req, res, next) { try { res.status(200).json(await editorialReleaseService.getCurrentEditorialRelease({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); } catch (error) { next(error); } }
 
 module.exports = {
   list, get, update,
   listEntries, addEntry, updateEntry, removeEntry,
   getGraph, getGraphNeighborhood, searchGraphSubjectCandidates,
-  previewGraphImport, listGraphImportSources, attachGraphImportSource, importGraphSubjects,
+  previewGraphImport, listGraphImportSources, attachGraphImportSource,
+  previewGraphImportSourceUpdate, updateGraphImportSource, detachGraphImportSource, importGraphSubjects,
+  listRestorableGraphEdges, restoreGraphEdge,
   addGraphSubject, removeGraphSubject, addGraphEdge, updateGraphEdge, removeGraphEdge, setGraphSubjectClasses,
   checkReadiness, requestReview, withdrawReview, requestChanges, approveReview, listRevisions,
   createRelease, listReleases, getCurrentRelease,

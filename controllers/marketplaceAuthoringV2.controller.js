@@ -10,6 +10,10 @@ const { createEditorialStudioCollection, listReusableSemanticGraphs } = require(
 const { previewSemanticGraphImport } = require("../services/editorialGraphImport.service");
 const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
 
+function commaSeparatedValues(value) {
+  return [...new Set(String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean))];
+}
+
 async function subjectVenuePresence(req, res, next) {
   try {
     res.status(200).json(await getSubjectVenuePresence({
@@ -57,7 +61,7 @@ async function reusableSemanticGraphs(req, res, next) {
       ownerId: req.query?.ownerId || req.user._id,
       namespaceId: req.query?.namespaceId,
       contentSpaceId: req.query?.contentSpaceId || null,
-      excludeSemanticGraphId: req.query?.excludeSemanticGraphId || null,
+      excludeSemanticGraphIds: commaSeparatedValues(req.query?.excludeSemanticGraphIds),
       query: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,
@@ -82,7 +86,6 @@ async function editorialStudio(req, res, next) {
   try { res.status(200).json(await getEditorialStudioProjection({ editorialContextId: req.params.editorialContextId, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function editorialStudioCandidates(req, res, next) {
   try {
     res.status(200).json(await listEditorialCollectionAvailableItems({
@@ -94,12 +97,10 @@ async function editorialStudioCandidates(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function createEditorialCollection(req, res, next) {
   try { res.status(201).json(await createEditorialStudioCollection({ payload: req.body || {}, actorUserId: req.user._id })); }
   catch (error) { next(error); }
 }
-
 async function newVisitAuthoring(req, res, next) {
   try {
     res.status(200).json(await getVisitAuthoringProjection({
@@ -109,12 +110,10 @@ async function newVisitAuthoring(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function visitAuthoring(req, res, next) {
   try { res.status(200).json(await getVisitAuthoringProjection({ actorUserId: req.user._id, visitId: req.params.visitId })); }
   catch (error) { next(error); }
 }
-
 async function visitAuthoringContent(req, res, next) {
   try {
     res.status(200).json(await searchVisitAuthoringContent({
@@ -128,7 +127,6 @@ async function visitAuthoringContent(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-
 async function visitAuthoringCandidates(req, res, next) {
   try {
     res.status(200).json(await searchVisitAuthoringCandidates({

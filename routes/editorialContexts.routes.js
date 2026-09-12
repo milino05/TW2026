@@ -10,15 +10,14 @@ const edgeId = validateObjectIdParam("edgeId");
 const subjectId = validateObjectIdParam("subjectId");
 const semanticGraphId = validateObjectIdParam("semanticGraphId");
 const sourceId = validateObjectIdParam("sourceId");
+const suppressionId = validateObjectIdParam("suppressionId");
 
 router.use(requireAuth);
 router.get("/editorial-contexts", controller.list);
-
 router.route("/editorial-contexts/:editorialContextId")
   .all(editorialContextId)
   .get(controller.get)
   .patch(controller.update);
-
 router.route("/editorial-contexts/:editorialContextId/entries")
   .all(editorialContextId)
   .get(controller.listEntries)
@@ -36,7 +35,14 @@ router.route("/editorial-contexts/:editorialContextId/semantic-graph/import-sour
   .all(editorialContextId)
   .get(controller.listGraphImportSources)
   .post(controller.attachGraphImportSource);
+router.route("/editorial-contexts/:editorialContextId/semantic-graph/import-sources/:sourceId")
+  .all(editorialContextId, sourceId)
+  .delete(controller.detachGraphImportSource);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph/import-sources/:sourceId/update-preview", editorialContextId, sourceId, controller.previewGraphImportSourceUpdate);
+router.post("/editorial-contexts/:editorialContextId/semantic-graph/import-sources/:sourceId/update", editorialContextId, sourceId, controller.updateGraphImportSource);
 router.post("/editorial-contexts/:editorialContextId/semantic-graph/import-sources/:sourceId/subjects", editorialContextId, sourceId, controller.importGraphSubjects);
+router.get("/editorial-contexts/:editorialContextId/semantic-graph/restorable-edges", editorialContextId, controller.listRestorableGraphEdges);
+router.post("/editorial-contexts/:editorialContextId/semantic-graph/restorable-edges/:suppressionId/restore", editorialContextId, suppressionId, controller.restoreGraphEdge);
 router.route("/editorial-contexts/:editorialContextId/semantic-graph/subjects/:subjectId")
   .all(editorialContextId, subjectId)
   .post(controller.addGraphSubject)
@@ -56,7 +62,6 @@ router.route("/editorial-contexts/:editorialContextId/review")
 router.post("/editorial-contexts/:editorialContextId/review/:revisionId/request-changes", editorialContextId, revisionId, controller.requestChanges);
 router.post("/editorial-contexts/:editorialContextId/review/:revisionId/approve", editorialContextId, revisionId, controller.approveReview);
 router.get("/editorial-contexts/:editorialContextId/revisions", editorialContextId, controller.listRevisions);
-
 router.route("/editorial-contexts/:editorialContextId/releases")
   .all(editorialContextId)
   .get(controller.listReleases)
