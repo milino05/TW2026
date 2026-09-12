@@ -54,18 +54,28 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     this.close();
   }
 
+  async excludedGraphId() {
+    if (this.config?.excludeSemanticGraphId) return id(this.config.excludeSemanticGraphId);
+    if (!this.config?.editorialContextId) return null;
+    const studio = await editorialRepository.studio(this.config.editorialContextId);
+    const semanticGraphId = id(studio?.semanticGraph?.id) || null;
+    if (semanticGraphId) this.config = { ...this.config, excludeSemanticGraphId: semanticGraphId };
+    return semanticGraphId;
+  }
+
   async loadChoices() {
     if (!this.config) return;
     this.busy = true;
     this.error = null;
     this.render();
     try {
+      const excludeSemanticGraphId = await this.excludedGraphId();
       this.choices = await editorialRepository.reusableSemanticGraphs({
         ownerType: this.config.ownerType,
         ownerId: this.config.ownerId,
         namespaceId: this.config.namespaceId,
         contentSpaceId: this.config.contentSpaceId,
-        excludeSemanticGraphId: this.config.excludeSemanticGraphId,
+        excludeSemanticGraphId,
         q: this.query,
         page: this.page,
         limit: 12,
