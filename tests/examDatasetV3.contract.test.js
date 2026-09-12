@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const {
   REQUIRED_USERNAMES,
   REQUIRED_PASSWORD,
@@ -35,4 +37,18 @@ test("regole editoriali demo espongono le matrici richieste", () => {
   assert.equal(archaeology.durationTypes.length, 2);
   assert.equal(archaeology.languageLevels.length, 2);
   assert.equal(archaeology.relationTypes.length, 3);
+});
+
+test("le regole dei due musei d'arte restano allineate al modello culturale starter corrente", async () => {
+  const starterPath = path.join(__dirname, "..", "clients", "marketplace", "src", "application", "namespace-editor-starter.js");
+  const { starterDefinitions } = await import(pathToFileURL(starterPath).href);
+  const starter = starterDefinitions({});
+  const art = artNamespaceSnapshot();
+  const pick = (values, fields) => values.map((entry) => Object.fromEntries(fields.map((field) => [field, entry[field]])));
+
+  assert.deepEqual(pick(art.durationTypes, ["key", "label", "targetSeconds"]), pick(starter.durationTypes, ["key", "label", "targetSeconds"]));
+  assert.deepEqual(pick(art.languageLevels, ["key", "label"]), pick(starter.languageLevels, ["key", "label"]));
+  assert.deepEqual(pick(art.subjectClasses, ["key", "label"]), pick(starter.subjectClasses, ["key", "label"]));
+  assert.deepEqual(pick(art.relationTypes, ["key", "label"]), pick(starter.relationTypes, ["key", "label"]));
+  assert.deepEqual(pick(art.selectionSignals, ["key", "label"]), pick(starter.selectionSignals, ["key", "label"]));
 });
