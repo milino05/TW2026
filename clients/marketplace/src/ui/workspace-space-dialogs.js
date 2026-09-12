@@ -11,7 +11,17 @@ function escapeHtml(value = "") {
 }
 function id(value) { return String(value?._id || value?.id || value || ""); }
 
-export function openSpaceSelectionDialog({ spaces = [], currentSpace = null, canCreate = false, onChoose, onCreate, onDismiss } = {}) {
+export function openSpaceSelectionDialog({
+  spaces = [],
+  currentSpace = null,
+  canCreate = false,
+  eyebrow = "Spazio editoriale",
+  title = "Scegli dove lavorare",
+  description = "La scelta definisce il corpus usato dalle sezioni Raccolte e Contenuti della Libreria.",
+  onChoose,
+  onCreate,
+  onDismiss,
+} = {}) {
   const state = { query: "" };
   let dialog = null;
   const filtered = () => {
@@ -19,9 +29,9 @@ export function openSpaceSelectionDialog({ spaces = [], currentSpace = null, can
     return spaces.filter((space) => !query || `${space.name || ""} ${space.description || ""}`.toLowerCase().includes(query));
   };
   dialog = createTaskDialog({
-    eyebrow: "Spazio editoriale",
-    title: "Scegli dove lavorare",
-    description: "La scelta definisce il corpus usato dalle sezioni Raccolte e Contenuti della Libreria.",
+    eyebrow,
+    title,
+    description,
     size: "large",
     initialFocus: "input[name='spaceQuery']",
     renderBody: () => `<div class="task-selection-layout"><label>Cerca spazio<input name="spaceQuery" value="${escapeHtml(state.query)}" placeholder="Nome o descrizione"></label><div class="task-resource-choice-list">${filtered().length ? filtered().map((space) => { const stats = space.stats || {}; const selected = id(space) === id(currentSpace); return `<button type="button" class="task-resource-choice" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span class="resource-mark">${icon("workspace", { size: 18 })}</span><span><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small><span>${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti${selected ? " · corrente" : ""}</span></span>${icon("chevron", { size: 15 })}</button>`; }).join("") : `<div class="empty-state compact"><p>Nessuno spazio corrisponde alla ricerca.</p></div>`}</div></div>`,
