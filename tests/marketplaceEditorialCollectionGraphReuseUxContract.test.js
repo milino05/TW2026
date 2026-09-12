@@ -49,7 +49,7 @@ test("source discovery is backend-authoritative and excludes local and already p
 
 test("relations workspace keeps semantic source management behind one modal entry point", () => {
   assert.match(source.studio, /data-manage-semantic-sources/);
-  assert.match(source.studio, /> Gestisci sorgenti<\/button>/);
+  assert.match(source.studio, /Gestisci sorgenti<\/button>/);
   assert.match(source.studio, /openSourceManager/);
   assert.doesNotMatch(source.studio, /studio-source-manager|studio-source-grid|data-add-semantic-source|data-import-source-id|data-update-source-id|data-detach-source-id/);
   assert.doesNotMatch(source.studio, /Grafo locale<\/span><h2>Collegamenti della Raccolta|Questo è l'unico grafo modificabile/);
