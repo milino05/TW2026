@@ -7,14 +7,18 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js");
 const stylePath = path.join(root, "clients/marketplace/src/styles/physical-vocabulary-editor.css");
+const taskDialogPath = path.join(root, "clients/marketplace/src/ui/task-dialog.js");
 const organizationPath = path.join(root, "clients/marketplace/src/ui/organization-view.js");
 const source = fs.readFileSync(viewPath, "utf8");
 const styles = fs.readFileSync(stylePath, "utf8");
+const taskDialog = fs.readFileSync(taskDialogPath, "utf8");
 const organizationSource = fs.readFileSync(organizationPath, "utf8");
 
 test("il tutorial del vocabolario fisico passa il syntax gate", () => {
-  const result = spawnSync(process.execPath, ["--check", viewPath], { encoding: "utf8" });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  for (const file of [viewPath, taskDialogPath]) {
+    const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${file}: ${result.stderr || result.stdout}`);
+  }
 });
 
 test("il primo vocabolario vuoto apre una guida facoltativa e ripetibile", () => {
@@ -41,14 +45,18 @@ test("la guida usa bubble ancorate, spotlight e navigazione avanti-indietro", ()
   assert.match(styles, /\.physical-tutorial-bubble\[data-side="right"\]/);
 });
 
-test("overlay e dialoghi bloccano lo scroll e trattengono il focus", () => {
-  assert.match(source, /physical-overlay-open/);
+test("solo il tutorial conserva il proprio spotlight lock; lo starter usa Task Dialog", () => {
+  assert.match(source, /syncOverlayLock\(\)/);
+  assert.match(source, /Boolean\(this\.tutorialOpen\)/);
   assert.match(source, /onTutorialScroll/);
-  assert.match(source, /event\.key !== "Tab"/);
-  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /if \(!this\.tutorialOpen\) return/);
   assert.match(styles, /html\.physical-overlay-open,body\.physical-overlay-open\{overflow:hidden!important/);
   assert.match(styles, /\.physical-tutorial-overlay\[data-centered="true"\]/);
-  assert.match(styles, /\.physical-modal-backdrop/);
+  assert.match(source, /createTaskDialog/);
+  assert.match(source, /starterDialog/);
+  assert.match(source, /title: "Partire da una base pronta\?"/);
+  assert.match(taskDialog, /mountModalInteraction/);
+  assert.doesNotMatch(source, /starterOpen|renderStarterDialog|physical-modal-backdrop|data-starter-close/);
 });
 
 test("la configurazione base è proposta alla fine e resta disponibile nella pagina", () => {
@@ -58,6 +66,7 @@ test("la configurazione base è proposta alla fine e resta disponibile nella pag
   assert.match(source, /data-starter-open/);
   assert.match(source, /Configurazione base<\/button>/);
   assert.match(source, /data-starter-apply/);
+  assert.match(source, /data-starter-confirm/);
   assert.match(source, /applyPhysicalVocabularyStarter/);
   for (const summary of ["13 tipi di luogo", "8 collegamenti", "9 caratteristiche", "4 profili"]) assert.match(source, new RegExp(summary));
 });
