@@ -1,5 +1,12 @@
 import { mountModalInteraction } from "../application/modal-interaction.js";
 
+const DISMISS_SELECTOR = [
+  "[data-close-floor-dialog]",
+  "[data-close-map-creation-dialog]",
+  "[data-close-spatial-editor]",
+  "[data-cancel-calibration-distance]",
+].join(", ");
+
 function modalPanel(layer) {
   return layer.querySelector(".venue-modal-card, .venue-spatial-dialog-frame");
 }
@@ -55,7 +62,11 @@ export const venueModalLifecycleMixin = {
       .filter((layer) => layer instanceof HTMLElement && modalPanel(layer));
     this._venueModalLayers = layers.map((layer) => {
       layer.dataset.modalBackdrop = "true";
-      const click = (event) => { void this.onClick(event); };
+      const click = (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || target === layer || target.closest(DISMISS_SELECTOR)) return;
+        void this.onClick(event);
+      };
       const submit = (event) => { void this.onSubmit(event); };
       const change = (event) => { this.onChange?.(event); };
       const input = (event) => { this.onInput?.(event); };
@@ -67,8 +78,8 @@ export const venueModalLifecycleMixin = {
         layer,
         panel: () => modalPanel(layer),
         kind: "modal",
-        initialFocus: () => layer.querySelector("[autofocus], input:not([type=hidden]), select, textarea, button"),
-        dismissSelector: "[data-close-floor-dialog], [data-close-map-creation-dialog], [data-close-spatial-editor], [data-cancel-calibration-distance]",
+        initialFocus: "[autofocus], input:not([type=hidden]), select, textarea, button",
+        dismissSelector: DISMISS_SELECTOR,
         backdropSelector: "[data-modal-backdrop]",
         canDismiss: () => !this.busy,
         onRequestDismiss: () => {
