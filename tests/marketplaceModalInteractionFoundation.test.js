@@ -1,0 +1,57 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+
+const lifecycle = read("clients/marketplace/src/application/modal-interaction.js");
+const layerManager = read("clients/marketplace/src/application/layer-manager.js");
+const styles = read("clients/marketplace/src/styles/modal-interaction.css");
+const index = read("clients/marketplace/index.html");
+
+test("Task Modal foundation delegates global layering and Escape to LayerManager", () => {
+  assert.match(index, /modal-interaction\.css/);
+  assert.match(lifecycle, /mountUiLayer/);
+  assert.match(lifecycle, /kind,\s*lockScroll/);
+  assert.match(lifecycle, /onEscape:\s*\(\)\s*=>\s*void requestDismiss\("escape"\)/);
+  assert.match(layerManager, /event\.key !== "Escape" \|\| event\.defaultPrevented/);
+  assert.doesNotMatch(lifecycle, /document\.addEventListener\(["']keydown/);
+});
+
+test("Escape, backdrop and explicit cancel converge on the same non-destructive dismiss request", () => {
+  assert.match(lifecycle, /requestDismiss\("escape"\)/);
+  assert.match(lifecycle, /requestDismiss\("backdrop"\)/);
+  assert.match(lifecycle, /requestDismiss\("dismiss"\)/);
+  assert.match(lifecycle, /canDismiss/);
+  assert.match(lifecycle, /onRequestDismiss/);
+  assert.doesNotMatch(lifecycle, /confirm|delete|remove|repository|fetch\(/i);
+});
+
+test("modal lifecycle traps focus and restores it to the opener", () => {
+  assert.match(lifecycle, /event\.key !== "Tab"/);
+  assert.match(lifecycle, /document\.activeElement instanceof HTMLElement/);
+  assert.match(lifecycle, /returnFocus\.focus/);
+  assert.match(lifecycle, /initialFocus/);
+});
+
+test("Task Modal shell has one application-level vertical scroll owner", () => {
+  const layerRule = styles.match(/\.artaround-modal-layer\s*\{([\s\S]*?)\}/)?.[1] || "";
+  const panelRule = styles.match(/\.artaround-task-modal\s*\{([\s\S]*?)\}/)?.[1] || "";
+  const bodyRule = styles.match(/\.artaround-task-modal__body\s*\{([\s\S]*?)\}/)?.[1] || "";
+  assert.match(layerRule, /overflow:\s*hidden/);
+  assert.match(panelRule, /overflow:\s*hidden/);
+  assert.match(panelRule, /grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/);
+  assert.match(bodyRule, /overflow-y:\s*auto/);
+  assert.match(bodyRule, /min-height:\s*0/);
+  assert.match(styles, /100dvh/);
+  assert.match(styles, /safe-area-inset-top/);
+});
+
+test("narrow viewports use a full-height modal without introducing a second scrollbar", () => {
+  assert.match(styles, /@media\s*\(max-width:\s*36rem\)/);
+  assert.match(styles, /height:\s*100dvh/);
+  assert.match(styles, /border-radius:\s*0/);
+  assert.doesNotMatch(styles, /\.artaround-modal-layer[\s\S]*?overflow:\s*(auto|scroll)/);
+});
