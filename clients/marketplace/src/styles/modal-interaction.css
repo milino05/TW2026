@@ -176,7 +176,8 @@ html { scrollbar-gutter: stable; }
   background: var(--sage-50);
   box-shadow: inset 0 0 0 1px var(--sage-400);
 }
-.task-resource-choice__mark {
+.task-resource-choice__mark,
+.task-resource-choice > .resource-mark {
   display: grid;
   place-items: center;
   width: 2.5rem;
@@ -185,19 +186,25 @@ html { scrollbar-gutter: stable; }
   background: var(--sage-100);
   color: var(--ink-800);
 }
-.task-resource-choice__copy {
+.task-resource-choice__copy,
+.task-resource-choice > span:nth-child(2) {
   display: grid;
   gap: .18rem;
   min-width: 0;
 }
 .task-resource-choice__copy strong,
 .task-resource-choice__copy small,
-.task-resource-choice__meta {
+.task-resource-choice__meta,
+.task-resource-choice > span:nth-child(2) > strong,
+.task-resource-choice > span:nth-child(2) > small,
+.task-resource-choice > span:nth-child(2) > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.task-resource-choice__copy strong { white-space: nowrap; }
-.task-resource-choice__copy small {
+.task-resource-choice__copy strong,
+.task-resource-choice > span:nth-child(2) > strong { white-space: nowrap; }
+.task-resource-choice__copy small,
+.task-resource-choice > span:nth-child(2) > small {
   display: -webkit-box;
   color: var(--sage-600);
   font-size: .8rem;
@@ -206,7 +213,8 @@ html { scrollbar-gutter: stable; }
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.task-resource-choice__meta {
+.task-resource-choice__meta,
+.task-resource-choice > span:nth-child(2) > span {
   color: var(--sage-600);
   font-size: .74rem;
   font-weight: 700;
@@ -221,7 +229,8 @@ html { scrollbar-gutter: stable; }
   font-weight: 800;
   white-space: nowrap;
 }
-.task-resource-choice__chevron {
+.task-resource-choice__chevron,
+.task-resource-choice > svg:last-child {
   display: grid;
   place-items: center;
   color: var(--sage-600);
