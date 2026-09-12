@@ -45,8 +45,17 @@ export const editorialRepository = {
     const query = queryString({ ownerType, ownerId, q, page, limit });
     return apiClient.request(`/v2/marketplace/editorial-relations?${query}`);
   },
-  reusableSemanticGraphs({ ownerType = null, ownerId = null, namespaceId = null, contentSpaceId = null, q = "", page = 1, limit = 30 } = {}) {
-    const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId, q, page, limit });
+  reusableSemanticGraphs({
+    ownerType = null,
+    ownerId = null,
+    namespaceId = null,
+    contentSpaceId = null,
+    excludeSemanticGraphId = null,
+    q = "",
+    page = 1,
+    limit = 30,
+  } = {}) {
+    const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId, excludeSemanticGraphId, q, page, limit });
     return apiClient.request(`/v2/marketplace/semantic-graphs?${query}`);
   },
   semanticGraphImportPreview(semanticGraphId, { ownerType = null, ownerId = null, namespaceId = null, contentSpaceId = null } = {}) {
