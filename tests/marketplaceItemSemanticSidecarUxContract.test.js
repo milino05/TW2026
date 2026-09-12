@@ -11,6 +11,9 @@ const paths = {
   graphView: "clients/marketplace/src/ui/semantic-graph-view.js",
   graphEditor: "clients/marketplace/src/ui/semantic-graph-editor.js",
   repository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
+  relationController: "controllers/marketplaceAuthoringV2.controller.js",
+  relationService: "services/editorialRelationLauncherV2.service.js",
+  collectionNeighborhood: "services/editorialCollectionGraphNeighborhood.service.js",
 };
 const source = Object.fromEntries(Object.entries(paths).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
 
@@ -31,24 +34,30 @@ test("Item editor no longer mounts a sidecar and uses the shared Task Dialog sel
   assert.doesNotMatch(source.launcher, /artaround-semantic-graph-editor/);
 });
 
-test("collection choice prepares only the focused graph context before opening the full-page workspace", () => {
-  assert.match(source.launcher, /editorialRepository\.relationChoices/);
+test("Collection choice is backend-filtered by Subject coverage before pagination", () => {
+  assert.match(source.launcher, /editorialRepository\.relationChoices\(\{[\s\S]*subjectId/);
+  assert.match(source.repository, /relationChoices\(\{[^}]*subjectId = null/);
+  assert.match(source.repository, /queryString\(\{ ownerType, ownerId, subjectId, q, page, limit \}\)/);
+  assert.match(source.relationController, /subjectId: req\.query\?\.subjectId \|\| null/);
+  assert.match(source.relationService, /collectionIdsRepresentingSubject/);
+  assert.match(source.relationService, /primarySubjectId: subjectId/);
+  assert.match(source.relationService, /CollectionItemMembership\.distinct\("editorialContextId"/);
+  assert.match(source.relationService, /filter\._id = \{ \$in: eligibleContextIds \}/);
+  assert.match(source.relationService, /EditorialContext\.countDocuments\(filter\)/);
+  assert.match(source.relationService, /\.skip\(\(normalizedPage - 1\) \* normalizedLimit\)/);
+});
+
+test("focused Item opens the canonical Collection graph through virtual focus without launcher materialization", () => {
   assert.match(source.launcher, /editorialRepository\.studio/);
   assert.match(source.launcher, /editorialRepository\.graphNeighborhood/);
   assert.match(source.launcher, /focusSubjectId: id\(this\.subject\)/);
-  assert.match(source.launcher, /error\?\.code === "GRAPH_SUBJECT_NOT_FOUND"/);
+  assert.match(source.collectionNeighborhood, /implicitFromCollection: true/);
+  assert.match(source.collectionNeighborhood, /inGraph: false/);
+  assert.match(source.collectionNeighborhood, /virtualFocus: true/);
   assert.match(source.launcher, /\/workspace\/semantic-graph\?/);
   assert.match(source.launcher, /returnTo/);
   assert.doesNotMatch(source.launcher, /editorialRepository\.graph\(/);
-});
-
-test("Subject materialization remains explicit and respects Collection content membership", () => {
-  assert.match(source.launcher, /data-add-relation-subject/);
-  assert.match(source.launcher, /editorialRepository\.addGraphSubject/);
-  assert.match(source.launcher, /Puoi aggiungerlo soltanto se almeno un contenuto che lo rappresenta appartiene già alla Raccolta/);
-  assert.match(source.launcher, /data-open-relation-collection-content/);
-  assert.doesNotMatch(source.launcher, /createItemConnection|createEdition|setContentSpaceMembership|VenueTarget|physicalIntent/);
-  assert.match(source.repository, /addGraphSubject/);
+  assert.doesNotMatch(source.launcher, /editorialRepository\.addGraphSubject|data-add-relation-subject|state = "membership"|renderMembershipPrompt/);
 });
 
 test("leaving Item authoring for relations preserves the local working draft and graph focus", () => {
