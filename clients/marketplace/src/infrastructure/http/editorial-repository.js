@@ -18,7 +18,7 @@ export const editorialRepository = {
   spaceProjection(contentSpaceId) { return apiClient.request(`/v2/marketplace/editorial-spaces/${encodeURIComponent(contentSpaceId)}`); },
   listSpaceItems(contentSpaceId, { q = "", page = 1, limit = 30 } = {}) { const query = queryString({ q, page, limit }); return apiClient.request(`/content-spaces/${encodeURIComponent(contentSpaceId)}/items?${query}`); },
   listCollections({ contentSpaceId = null, namespaceId = null } = {}) { const query = queryString({ contentSpaceId, namespaceId }); return apiClient.request(`/editorial-contexts${query ? `?${query}` : ""}`); },
-  relationChoices({ ownerType = null, ownerId = null, q = "", page = 1, limit = 12 } = {}) { const query = queryString({ ownerType, ownerId, q, page, limit }); return apiClient.request(`/v2/marketplace/editorial-relations?${query}`); },
+  relationChoices({ ownerType = null, ownerId = null, subjectId = null, q = "", page = 1, limit = 12 } = {}) { const query = queryString({ ownerType, ownerId, subjectId, q, page, limit }); return apiClient.request(`/v2/marketplace/editorial-relations?${query}`); },
   reusableSemanticGraphs({ ownerType = null, ownerId = null, namespaceId = null, contentSpaceId = null, excludeSemanticGraphIds = [], q = "", page = 1, limit = 30 } = {}) {
     const excluded = (excludeSemanticGraphIds || []).map(String).filter(Boolean).join(",");
     const query = queryString({ ownerType, ownerId, namespaceId, contentSpaceId, excludeSemanticGraphIds: excluded || null, q, page, limit });
