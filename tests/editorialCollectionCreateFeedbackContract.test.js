@@ -21,20 +21,29 @@ test("la creazione Raccolta usa le superfici feedback standard", () => {
   assert.doesNotMatch(source, /<p role="alert">/);
 });
 
-test("la creazione Raccolta è una pagina unica contestualizzata e non un wizard a riquadri", () => {
+test("la creazione Raccolta è sempre un unico task modal a tre passaggi", () => {
+  assert.match(source, /context-task-modal-layer collection-create-modal-layer/);
+  assert.match(source, /context-task-modal context-task-modal--large collection-create-modal/);
+  assert.match(source, /role="dialog" aria-modal="true"/);
+  assert.match(source, /collection-create-stepper/);
+  assert.match(source, /Passaggio 1 di 3/);
+  assert.match(source, /Passaggio 2 di 3/);
+  assert.match(source, /Passaggio 3 di 3/);
+  assert.match(source, /data-back-step/);
   assert.match(source, /collection-create-context-banner/);
   assert.match(source, /contextKindLabel\(this\.context\)/);
   assert.match(source, /data-collection-graph-action="new"/);
   assert.match(source, /data-collection-graph-action="existing"/);
-  assert.match(source, /collection-graph-selection-summary/);
-  assert.match(source, /rows="3"/);
-  assert.doesNotMatch(source, /renderStepIndicator|data-back-step|semanticSource|reuseMode/);
+  assert.match(source, /artaround-collection-graph-dialog embedded/);
+  assert.doesNotMatch(source, /<main class="page workspace-page collection-create-page"/);
   assert.doesNotMatch(source, /name="semanticGraphId"|type="radio"/);
 });
 
-test("il dialog del grafo usa il task modal ArtAround e configura una sorgente importabile", () => {
+test("il configuratore del grafo supporta sia task modal standalone sia contenuto embedded", () => {
+  assert.match(dialog, /embedded = false/);
+  assert.match(dialog, /options\.embedded === true/);
+  assert.match(dialog, /collection-graph-dialog--embedded/);
   assert.match(dialog, /context-task-modal-layer collection-graph-dialog-layer/);
-  assert.match(dialog, /context-task-modal context-task-modal--large collection-graph-dialog/);
   assert.match(dialog, /editorialRepository\.reusableSemanticGraphs/);
   assert.match(dialog, /editorialRepository\.semanticGraphImportPreview/);
   assert.match(dialog, /data-collection-graph-choice/);
@@ -57,16 +66,18 @@ test("il modal configura solo new/import senza creare risorse prima del submit R
   assert.match(source, /importItemIds/);
 });
 
-test("gli stili dedicati mantengono banner, card e modal responsive nel linguaggio ArtAround", () => {
+test("gli stili dedicati mantengono modal, stepper e grafo embedded responsive", () => {
   assert.match(index, /editorial-collection-create\.css/);
+  assert.match(styles, /\.collection-create-modal/);
+  assert.match(styles, /\.collection-create-stepper/);
   assert.match(styles, /\.collection-create-context-banner/);
-  assert.match(styles, /\.collection-graph-action-card/);
+  assert.match(styles, /\.collection-graph-dialog--embedded/);
   assert.match(styles, /\.collection-graph-choice-card\[aria-pressed="true"\]/);
   assert.match(styles, /@media\(max-width:52rem\)/);
   assert.match(styles, /@media\(max-width:36rem\)/);
 });
 
-test("view e dialog della creazione Raccolta passano il syntax gate", () => {
+test("view e configuratore grafo della creazione Raccolta passano il syntax gate", () => {
   for (const target of [viewPath, dialogPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
