@@ -14,14 +14,17 @@ const FOCUSABLE_SELECTOR = [
 function focusableElements(root) {
   if (!(root instanceof HTMLElement)) return [];
   return [...root.querySelectorAll(FOCUSABLE_SELECTOR)]
-    .filter((element) => element instanceof HTMLElement && !element.hidden && element.getAttribute("aria-hidden") !== "true");
+    .filter((element) => element instanceof HTMLElement
+      && !element.hidden
+      && element.getAttribute("aria-hidden") !== "true"
+      && element.getClientRects().length > 0);
 }
 
 function resolveInitialFocus(layer, initialFocus, panel) {
   if (initialFocus instanceof HTMLElement) return initialFocus;
   if (typeof initialFocus === "string") {
     const target = layer.querySelector(initialFocus);
-    if (target instanceof HTMLElement) return target;
+    if (target instanceof HTMLElement && target.getClientRects().length > 0) return target;
   }
   return focusableElements(panel)[0] || (panel instanceof HTMLElement ? panel : null);
 }
@@ -66,8 +69,8 @@ export function mountModalInteraction({
     if (released || dismissPending || !dismissAllowed()) return false;
     dismissPending = true;
     try {
-      await onRequestDismiss(reason);
-      return true;
+      const outcome = await onRequestDismiss(reason);
+      return outcome !== false;
     } finally {
       dismissPending = false;
     }
