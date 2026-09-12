@@ -30,6 +30,7 @@ export function openRichActionDialog({
       title,
       description,
       size,
+      kind: "dialog",
       initialFocus: "[data-rich-action-cancel]",
       renderBody: () => `<div class="rich-action-dialog__content" data-tone="${tone}">${body}</div>`,
       renderFooter: () => `<button type="button" class="button-secondary" data-rich-action-cancel>${cancelLabel}</button><button type="button" class="${tone === "danger" ? "danger" : ""}" data-rich-action-confirm>${confirmLabel}</button>`,
