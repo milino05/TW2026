@@ -4,6 +4,7 @@ import { setEditorialSpacePreference } from "../application/editorial-space-pref
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
+import { openMessageActionDialog } from "./message-action-dialog.js";
 import { icon } from "./icons.js";
 import "./revision-workflow-controls.js";
 import "./editorial-collection-content-manager.js";
@@ -29,7 +30,6 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   releases = [];
   busy = false;
   error = null;
-  requestingChanges = false;
 
   connectedCallback() {
     const params = new URLSearchParams(window.location.search);
@@ -143,12 +143,6 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     if (tab) { this.setSection(tab.dataset.studioSection); return; }
     if (target?.closest("button[data-back-space]")) { navigate("/workspace"); return; }
     if (target?.closest("button[data-manage-semantic-sources]")) { this.openSourceManager(); return; }
-    if (target?.closest("button[data-request-changes-cancel]")) {
-      this.requestingChanges = false;
-      this.error = null;
-      this.render();
-      return;
-    }
     const action = target?.closest("button[data-studio-action]");
     if (action) await this.executeStudioAction(action.dataset.studioAction);
   };
@@ -156,18 +150,22 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   async executeStudioAction(code) {
     if (code === "collection.review.request") await this.run(() => editorialRepository.requestReview(this.editorialContextId));
     else if (code === "collection.review.withdraw") {
-      const confirmed = await openActionDialog({ title: "Ritirare la raccolta dalla revisione?", message: "La versione in revisione verrà ritirata e la bozza della raccolta tornerà modificabile.", confirmLabel: "Ritira revisione" });
+      const confirmed = await openActionDialog({ title: "Ritirare la raccolta dalla revisione?", message: "La versione in revisione verrà ritirata e la bozza della raccolta tornerà modificabile.", confirmLabel: "Ritira revisione", cancelLabel: "Annulla" });
       if (confirmed) await this.run(() => editorialRepository.withdrawReview(this.editorialContextId));
     } else if (code === "collection.review.approve") {
-      const confirmed = await openActionDialog({ title: "Approvare questa versione in revisione?", message: "L'approvazione riguarda esattamente contenuti, regole e revisione del grafo congelati per questa revisione.", confirmLabel: "Approva versione" });
+      const confirmed = await openActionDialog({ title: "Approvare questa versione in revisione?", message: "L'approvazione riguarda esattamente contenuti, regole e revisione del grafo congelati per questa revisione.", confirmLabel: "Approva versione", cancelLabel: "Annulla" });
       if (confirmed) await this.run(() => editorialRepository.approveReview(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.review.request_changes") {
-      this.requestingChanges = true;
-      this.error = null;
-      this.render();
-      requestAnimationFrame(() => this.querySelector("[data-request-changes-message]")?.focus());
+      const message = await openMessageActionDialog({
+        title: "Richiedi modifiche",
+        description: "Il messaggio verrà associato alla versione in revisione e guiderà il curatore nelle correzioni.",
+        label: "Che cosa deve essere rivisto?",
+        placeholder: "Descrivi in modo sintetico le modifiche necessarie",
+        confirmLabel: "Invia richiesta",
+      });
+      if (message !== null) await this.run(() => editorialRepository.requestChanges(this.editorialContextId, this.data.review.id, message));
     } else if (code === "collection.publish") {
-      const confirmed = await openActionDialog({ title: "Pubblicare una nuova versione della raccolta?", message: "Verrà pubblicata la versione approvata come nuova versione immutabile della raccolta.", confirmLabel: "Pubblica versione" });
+      const confirmed = await openActionDialog({ title: "Pubblicare una nuova versione della raccolta?", message: "Verrà pubblicata la versione approvata come nuova versione immutabile della raccolta.", confirmLabel: "Pubblica versione", cancelLabel: "Annulla" });
       if (confirmed) await this.run(() => editorialRepository.publish(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.check") await this.run(() => editorialRepository.check(this.editorialContextId));
     else if (code === "collection.remove") await this.removeCollection();
@@ -175,17 +173,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
 
   onSubmit = async (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form) return;
-    if (form.matches("[data-request-changes-form]")) {
-      event.preventDefault();
-      const data = new FormData(form);
-      const message = String(data.get("message") || "").trim();
-      if (!message) { this.error = "Inserisci il motivo delle modifiche richieste."; this.render(); return; }
-      this.requestingChanges = false;
-      await this.run(() => editorialRepository.requestChanges(this.editorialContextId, this.data.review.id, message));
-      return;
-    }
-    if (!form.matches("[data-collection-settings]")) return;
+    if (!form?.matches("[data-collection-settings]")) return;
     event.preventDefault();
     const data = new FormData(form);
     await this.run(() => editorialRepository.updateCollection(this.editorialContextId, {
@@ -211,7 +199,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
 
   async removeCollection() {
     if (!this.data?.permissions?.canRemove) return;
-    const confirmed = await openActionDialog({ title: `Eliminare la raccolta “${this.data.context.name}”?`, message: "Le versioni già acquisite resteranno valide e gli Item non verranno eliminati.", confirmLabel: "Elimina raccolta", tone: "danger" });
+    const confirmed = await openActionDialog({ title: `Eliminare la raccolta “${this.data.context.name}”?`, message: "Le versioni già acquisite resteranno valide e gli Item non verranno eliminati.", confirmLabel: "Elimina raccolta", cancelLabel: "Annulla", tone: "danger" });
     if (!confirmed) return;
     const principal = operatingPrincipal(this.context);
     if (!principal) return;
@@ -253,17 +241,12 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     return `<section class="studio-section studio-relations-section"><div class="studio-relations-toolbar"><button type="button" class="button-secondary" data-manage-semantic-sources>${icon("link", { size: 15 })} Gestisci sorgenti</button></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
-  renderRequestChangesForm() {
-    if (!this.requestingChanges || !this.hasOperation("collection.review.request_changes")) return "";
-    return `<form class="panel studio-request-changes-form" data-request-changes-form><span class="eyebrow">Richiedi modifiche</span><h3>Che cosa deve essere rivisto?</h3><p>Il messaggio verrà associato alla versione in revisione e guiderà il curatore nelle correzioni.</p><label>Messaggio<textarea name="message" rows="4" required data-request-changes-message></textarea></label><div class="button-row"><button type="submit">Invia richiesta</button><button type="button" class="button-secondary" data-request-changes-cancel>Annulla</button></div></form>`;
-  }
-
   renderPublication() {
     const review = this.data.review;
     const readiness = this.data.readiness || { ready: false, issues: [] };
     const published = this.data.published;
     const reviewState = review?.status || "draft";
-    return `<section class="studio-section studio-publication-flow"><header class="section-heading"><div><span class="eyebrow">Versioni</span><h2>Revisione e pubblicazione</h2><p>La Raccolta congela insieme composizione, Regole editoriali e una revisione precisa del proprio grafo locale.</p></div></header><div class="studio-publication-grid"><article class="panel"><div class="section-heading"><div><span class="eyebrow">Stato corrente</span><h3>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h3></div><artaround-status-indicator tone="${statusTone(reviewState)}">${escapeHtml(review ? statusLabel(review.status) : "Bozza di lavoro")}</artaround-status-indicator></div>${review ? `<p>Versione in revisione <strong>v${escapeHtml(review.version)}</strong> · ${escapeHtml(review.itemCount)} contenuti.</p><p class="note">La revisione usa il grafo congelato ${escapeHtml(review.graphRevisionId || "")}. Le modifiche successive alla bozza locale non cambiano questa versione.</p>` : `<p>Nessuna versione è attualmente in revisione. ${readiness.ready ? "La bozza è pronta per essere congelata." : "Completa il controllo di consistenza prima della revisione."}</p>`}<artaround-revision-workflow-controls actions-only></artaround-revision-workflow-controls>${this.renderRequestChangesForm()}</article><article class="panel"><span class="eyebrow">Ultima pubblicazione</span><h3>${published ? `Versione v${escapeHtml(published.version)}` : "Nessuna versione pubblicata"}</h3>${published ? `<p>Pubblicata ${escapeHtml(formatDate(published.releasedAt))}.</p><p class="note">Grafo congelato: ${escapeHtml(published.graphRevisionId || "—")}</p>` : `<p>Quando una versione approvata viene pubblicata, resta immutabile e riproducibile anche se contenuti e grafo locale continuano a evolvere.</p>`}<button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 15 })} Ricontrolla consistenza</button></article></div><article class="panel studio-history-panel"><h2>Storico</h2><div class="studio-history-grid"><div><h3>Versioni in revisione</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div><div><h3>Versioni pubblicate</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div></div></article></section>`;
+    return `<section class="studio-section studio-publication-flow"><header class="section-heading"><div><span class="eyebrow">Versioni</span><h2>Revisione e pubblicazione</h2><p>La Raccolta congela insieme composizione, Regole editoriali e una revisione precisa del proprio grafo locale.</p></div></header><div class="studio-publication-grid"><article class="panel"><div class="section-heading"><div><span class="eyebrow">Stato corrente</span><h3>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h3></div><artaround-status-indicator tone="${statusTone(reviewState)}">${escapeHtml(review ? statusLabel(review.status) : "Bozza di lavoro")}</artaround-status-indicator></div>${review ? `<p>Versione in revisione <strong>v${escapeHtml(review.version)}</strong> · ${escapeHtml(review.itemCount)} contenuti.</p><p class="note">La revisione usa il grafo congelato ${escapeHtml(review.graphRevisionId || "")}. Le modifiche successive alla bozza locale non cambiano questa versione.</p>` : `<p>Nessuna versione è attualmente in revisione. ${readiness.ready ? "La bozza è pronta per essere congelata." : "Completa il controllo di consistenza prima della revisione."}</p>`}<artaround-revision-workflow-controls actions-only></artaround-revision-workflow-controls></article><article class="panel"><span class="eyebrow">Ultima pubblicazione</span><h3>${published ? `Versione v${escapeHtml(published.version)}` : "Nessuna versione pubblicata"}</h3>${published ? `<p>Pubblicata ${escapeHtml(formatDate(published.releasedAt))}.</p><p class="note">Grafo congelato: ${escapeHtml(published.graphRevisionId || "—")}</p>` : `<p>Quando una versione approvata viene pubblicata, resta immutabile e riproducibile anche se contenuti e grafo locale continuano a evolvere.</p>`}<button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 15 })} Ricontrolla consistenza</button></article></div><article class="panel studio-history-panel"><h2>Storico</h2><div class="studio-history-grid"><div><h3>Versioni in revisione</h3>${this.revisions.length ? `<ol>${this.revisions.slice(0, 8).map((revision) => `<li><strong>v${escapeHtml(revision.version)}</strong> · ${escapeHtml(statusLabel(revision.status))} <small>${escapeHtml(formatDate(revision.createdAt))}</small></li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div><div><h3>Versioni pubblicate</h3>${this.releases.length ? `<ol>${this.releases.slice(0, 8).map((release) => `<li><strong>v${escapeHtml(release.version)}</strong> · ${escapeHtml(formatDate(release.releasedAt))}</li>`).join("")}</ol>` : `<p class="muted">Nessuna versione.</p>`}</div></div></article></section>`;
   }
 
   renderSettings() {
