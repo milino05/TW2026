@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="/marketplace/src/styles/marketplace.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/feedback-primitives.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/interaction-primitives.css" />
-    <link rel="stylesheet" href="/marketplace/src/styles/modal-interaction.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/context-shell.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/discovery.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/consumer-marketplace.css" />
@@ -33,6 +32,9 @@
     <link rel="stylesheet" href="/marketplace/src/styles/venue-inventory-search.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/venue-map-refinement.css" />
     <link rel="stylesheet" href="/marketplace/src/styles/venue-slot-inventory-browser.css" />
+    <!-- Interaction invariants intentionally load last so legacy domain CSS cannot
+         re-introduce nested modal scroll owners while consumers migrate. -->
+    <link rel="stylesheet" href="/marketplace/src/styles/modal-interaction.css" />
   </head>
   <body>
     <artaround-marketplace-app></artaround-marketplace-app>
