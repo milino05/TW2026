@@ -14,7 +14,6 @@ const index = fs.readFileSync(indexPath, "utf8");
 
 test("la creazione Raccolta usa le superfici feedback standard", () => {
   assert.match(source, /<artaround-callout tone="danger" role="alert">/);
-  assert.match(source, /<artaround-callout tone="info">/);
   assert.doesNotMatch(source, /<p role="alert">/);
 });
 
@@ -29,8 +28,7 @@ test("la creazione Raccolta è sempre un unico task modal a due passaggi", () =>
   assert.match(source, /data-back-step/);
   assert.match(source, /collection-create-context-banner/);
   assert.match(source, /contextKindLabel\(this\.context\)/);
-  assert.match(source, /Grafo locale indipendente/);
-  assert.match(source, /potrai aggiungere una o più sorgenti dalla sezione Collegamenti/);
+  assert.doesNotMatch(source, /Grafo locale indipendente|creerà automaticamente un nuovo grafo|sorgenti dalla sezione Collegamenti/);
   assert.doesNotMatch(source, /collection-graph-dialog|data-collection-graph-action|semanticGraphId|importItemIds|graphMode/);
 });
 
