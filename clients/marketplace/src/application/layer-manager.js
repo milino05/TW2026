@@ -41,32 +41,14 @@ export function mountUiLayer(element, { kind = "floating", onEscape = null, lock
   const entry = { element, kind, onEscape, lockScroll };
   mountedLayers.push(entry);
   syncScrollLock();
-  let released = false;
 
-  const finalize = ({ returnToOwner = true } = {}) => {
-    if (released) return;
-    released = true;
+  return () => {
     const index = mountedLayers.indexOf(entry);
     if (index >= 0) mountedLayers.splice(index, 1);
     delete element.dataset.artaroundLayer;
-    if (returnToOwner && returnParent?.isConnected && element.parentNode !== returnParent) {
+    if (returnParent?.isConnected && element.parentNode !== returnParent) {
       returnParent.insertBefore(element, returnNextSibling?.isConnected ? returnNextSibling : null);
-    } else if (!returnToOwner || !returnParent?.isConnected) {
-      element.remove();
-    }
+    } else if (!returnParent?.isConnected) element.remove();
     syncScrollLock();
-  };
-
-  return ({ visualHandoff = false } = {}) => {
-    if (released) return;
-    if (visualHandoff) {
-      // Custom-element modal owners often rerender synchronously by replacing
-      // their staging DOM and immediately mounting a new body-level layer.
-      // Keeping the outgoing layer mounted until the microtask checkpoint
-      // prevents a compositor-visible backdrop/blur and scroll-lock gap.
-      queueMicrotask(() => finalize({ returnToOwner: false }));
-      return;
-    }
-    finalize({ returnToOwner: true });
   };
 }
