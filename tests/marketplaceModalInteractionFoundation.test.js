@@ -46,6 +46,13 @@ test("modal lifecycle traps focus and restores the original opener across portal
   assert.match(lifecycle, /initialFocus/);
 });
 
+test("unmounted modal staging nodes stay invisible until LayerManager owns them", () => {
+  assert.match(styles, /html\s*\{\s*scrollbar-gutter:\s*stable/);
+  assert.match(styles, /\.artaround-modal-layer:not\(\[data-artaround-layer\]\)\s*\{[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s);
+  assert.match(layerManager, /element\.dataset\.artaroundLayer = kind/);
+  assert.match(layerManager, /delete element\.dataset\.artaroundLayer/);
+});
+
 test("Task Modal shell has one application-level vertical scroll owner", () => {
   const layerRule = cssRule("\\.artaround-modal-layer");
   const panelRule = cssRule("\\.artaround-task-modal");
@@ -60,6 +67,22 @@ test("Task Modal shell has one application-level vertical scroll owner", () => {
   assert.doesNotMatch(styles, /context-task-modal/);
   assert.match(styles, /100dvh/);
   assert.match(styles, /safe-area-inset-top/);
+});
+
+test("large Task Modals remain bounded on desktop while preserving the shared scroll body", () => {
+  const largeRule = cssRule("\\.artaround-task-modal--large");
+  assert.match(largeRule, /width:\s*min\(62rem,\s*100%\)/);
+  assert.match(largeRule, /max-height:\s*min\(48rem,/);
+  assert.match(largeRule, /100dvh\s*-\s*3rem/);
+  assert.match(cssRule("\\.artaround-task-modal__body"), /overflow-y:\s*auto/);
+});
+
+test("resource-selection tasks share one responsive choice-card grammar", () => {
+  assert.match(styles, /\.task-selection-layout/);
+  assert.match(styles, /\.task-selection-toolbar/);
+  assert.match(styles, /\.task-resource-choice-list/);
+  assert.match(styles, /\.task-resource-choice\s*\{/);
+  assert.match(styles, /\.task-resource-choice\[aria-current="true"\]/);
 });
 
 test("narrow viewports use a full-height modal without changing the scroll ownership contract", () => {
