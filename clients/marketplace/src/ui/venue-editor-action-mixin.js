@@ -1,6 +1,8 @@
 import { navigate } from "../application/router.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
+import { openMessageActionDialog } from "./message-action-dialog.js";
 
 const WORKFLOW_CONFIG = {
   "venue.release.check": ["check-consistency", {}],
@@ -11,31 +13,36 @@ const WORKFLOW_CONFIG = {
 };
 
 function number(value, fallback = null) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
+function id(value) { return String(value?._id || value?.id || value || ""); }
 
 export const venueActionMixin = {
-  requestDestructiveAction(action) {
-    this.pendingDestructiveAction = action;
-    this.pendingWorkflow = null;
-    this.error = null;
-    this.render();
-    requestAnimationFrame(() => this.querySelector("[data-confirm-destructive-action]")?.focus());
-  },
-
   destructiveActionRequest(action) {
     if (action.type === "floor") return () => managementRepository.removeVenueFloor(this.id, action.id);
     if (action.type === "place") return () => managementRepository.removeVenuePlace(this.id, action.id);
     if (action.type === "connection") return () => managementRepository.removeVenueConnection(this.id, action.id);
     if (["slot", "exhibit-slot"].includes(action.type)) return () => managementRepository.removeExhibitSlot(this.id, action.id);
     if (action.type === "target_detach") return () => managementRepository.detachVenueTarget(this.id, action.id);
-    if (action.type === "recognition_media") {
-      return () => managementRepository.removeVenueTargetRecognitionMedia(this.id, action.targetId, action.mediaId);
-    }
+    if (action.type === "recognition_media") return () => managementRepository.removeVenueTargetRecognitionMedia(this.id, action.targetId, action.mediaId);
     return null;
   },
 
-  async requestLayoutRemoval({ type, id, label }) {
+  async requestDestructiveAction(action) {
+    const request = this.destructiveActionRequest(action);
+    if (!request) return false;
+    const confirmed = await openActionDialog({
+      title: action.title || "Confermare l'operazione?",
+      message: action.description || "Questa operazione modifica la configurazione fisica di lavoro.",
+      confirmLabel: action.confirmLabel || "Conferma",
+      cancelLabel: "Annulla",
+      tone: "danger",
+    });
+    if (!confirmed) return false;
+    return this.execute(request, action.successMessage || "Configurazione fisica aggiornata.");
+  },
+
+  async requestLayoutRemoval({ type, id: targetId, label }) {
     try {
-      const impact = await managementRepository.venueLayoutRemovalImpact(this.id, type, id);
+      const impact = await managementRepository.venueLayoutRemovalImpact(this.id, type, targetId);
       const counts = impact.counts || {};
       const summary = [
         counts.places ? `${counts.places} luogh${counts.places === 1 ? "o" : "i"}` : "",
@@ -43,11 +50,62 @@ export const venueActionMixin = {
         counts.exhibitSlots ? `${counts.exhibitSlots} slot` : "",
         counts.assignedEntities ? `${counts.assignedEntities} entità scollegate` : "",
       ].filter(Boolean).join(", ") || "nessuna risorsa dipendente";
-      this.requestDestructiveAction({ type, id, title: `Rimuovere “${label}”?`, description: `Impatto sulla sola bozza di lavoro: ${summary}. Gli snapshot pubblicati e le sessioni pinzate non cambiano.`, confirmLabel: "Conferma rimozione", successMessage: "Configurazione di lavoro aggiornata." });
+      await this.requestDestructiveAction({
+        type,
+        id: targetId,
+        title: `Rimuovere “${label}”?`,
+        description: `Impatto sulla sola bozza di lavoro: ${summary}. Gli snapshot pubblicati e le sessioni pinzate non cambiano.`,
+        confirmLabel: "Conferma rimozione",
+        successMessage: "Configurazione di lavoro aggiornata.",
+      });
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Impatto della rimozione non disponibile";
       this.render();
     }
+  },
+
+  async requestVenueRemoval() {
+    if (!this.canManageLifecycle || !this.data?.venue) return;
+    const impact = this.lifecycleImpact || {};
+    const targetCount = Number(impact.venueTargetCount || 0);
+    const visitCount = Number(impact.publishedVisitCount || 0);
+    const visitWarning = visitCount
+      ? `${visitCount} ${visitCount === 1 ? "visita pubblicata dipende" : "visite pubblicate dipendono"} attualmente da questa sede. Finché la sede resta nel cestino, nuove esecuzioni che la richiedono non potranno partire.`
+      : "Nessuna visita pubblicata corrente dipende da questa sede.";
+    const confirmed = await openActionDialog({
+      title: `Spostare “${this.data.venue.name}” nel cestino?`,
+      message: `La sede sparirà dalle superfici attive. VenueRelease, LayoutRevision e ${targetCount} ${targetCount === 1 ? "entità fisica" : "entità fisiche"} resteranno conservati come stato storico e potranno tornare disponibili ripristinando la sede. ${visitWarning}`,
+      confirmLabel: "Sposta sede nel cestino",
+      cancelLabel: "Annulla",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.render();
+    try {
+      await managementRepository.trashVenue(this.id);
+      navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues&removed=venue`);
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la sede";
+      this.busy = false;
+      this.render();
+    }
+  },
+
+  async requestTargetRemoval(targetId) {
+    const target = (this.data?.targets || []).find((entry) => id(entry.id) === id(targetId));
+    if (!target) return;
+    const confirmed = await openActionDialog({
+      title: `Rimuovere “${target.label}” dall’inventario?`,
+      message: "Subject e Item non verranno eliminati. L’operazione è possibile solo se nessuna configurazione corrente usa l’entità.",
+      confirmLabel: "Rimuovi dall’inventario",
+      cancelLabel: "Annulla",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    await this.execute(() => managementRepository.trashVenueTarget(this.id, targetId), "Entità della sede spostata nel cestino.");
   },
 
   async onClick(event) {
@@ -55,20 +113,6 @@ export const venueActionMixin = {
     if (!target) return;
     if (await this.handleTargetMediaClick?.(event)) return;
     if (await this.handleMapAuthoringClick?.(event)) return;
-
-    if (target.closest("[data-cancel-destructive-action]")) {
-      this.pendingDestructiveAction = null;
-      this.error = null;
-      this.render();
-      return;
-    }
-    if (target.closest("[data-confirm-destructive-action]") && this.pendingDestructiveAction) {
-      const action = this.pendingDestructiveAction;
-      const request = this.destructiveActionRequest(action);
-      if (!request) { this.pendingDestructiveAction = null; this.render(); return; }
-      await this.execute(request, action.successMessage || "Configurazione fisica aggiornata.");
-      return;
-    }
 
     const sectionTab = target.closest("[data-venue-section]");
     if (sectionTab) { this.showSection(sectionTab.dataset.venueSection, { scroll: true }); return; }
@@ -78,27 +122,7 @@ export const venueActionMixin = {
       return;
     }
 
-    if (target.closest("[data-cancel-venue-removal]")) { this.pendingVenueRemoval = false; this.error = null; this.render(); return; }
-    if (target.closest("[data-request-venue-removal]")) {
-      this.pendingVenueRemoval = true;
-      this.pendingWorkflow = null;
-      this.error = null;
-      this.render();
-      requestAnimationFrame(() => this.querySelector("[data-confirm-venue-removal]")?.focus());
-      return;
-    }
-    if (target.closest("[data-confirm-venue-removal]")) {
-      this.busy = true; this.error = null; this.message = null; this.render();
-      try {
-        await managementRepository.trashVenue(this.id);
-        navigate(`/organizations/detail?organizationId=${encodeURIComponent(this.data.venue.organizationId)}&section=venues&removed=venue`);
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la sede";
-        this.busy = false;
-        this.render();
-      }
-      return;
-    }
+    if (target.closest("[data-request-venue-removal]")) { await this.requestVenueRemoval(); return; }
 
     const venueSubject = target.closest("[data-use-venue-subject]");
     if (venueSubject) {
@@ -119,36 +143,14 @@ export const venueActionMixin = {
       return;
     }
 
-    if (target.closest("[data-cancel-target-removal]")) { this.pendingTargetRemovalId = null; this.error = null; this.render(); return; }
     const requestTargetRemoval = target.closest("[data-request-target-removal]");
-    if (requestTargetRemoval) {
-      this.pendingTargetRemovalId = requestTargetRemoval.dataset.requestTargetRemoval;
-      this.pendingWorkflow = null;
-      this.error = null;
-      this.render();
-      requestAnimationFrame(() => this.querySelector(`[data-confirm-target-removal="${CSS.escape(this.pendingTargetRemovalId)}"]`)?.focus());
-      return;
-    }
-    const confirmTargetRemoval = target.closest("[data-confirm-target-removal]");
-    if (confirmTargetRemoval) {
-      await this.execute(
-        () => managementRepository.trashVenueTarget(this.id, confirmTargetRemoval.dataset.confirmTargetRemoval),
-        "Entità della sede spostata nel cestino.",
-      );
-      return;
-    }
+    if (requestTargetRemoval) { await this.requestTargetRemoval(requestTargetRemoval.dataset.requestTargetRemoval); return; }
 
     if (target.closest("[data-ensure-release]")) {
       await this.execute(() => managementRepository.ensureVenueRelease(this.id), "Nuova bozza fisica pronta.");
       return;
     }
 
-    if (target.closest("[data-cancel-workflow]")) { this.pendingWorkflow = null; this.workflowMessage = ""; this.render(); return; }
-    if (target.closest("[data-confirm-workflow]") && this.pendingWorkflow) {
-      const code = this.pendingWorkflow;
-      await this.execute(() => this.runWorkflowRequest(code), "Workflow della sede aggiornato.");
-      return;
-    }
     const workflow = target.closest("[data-workflow]");
     if (workflow) { await this.performWorkflow(workflow.dataset.workflow); return; }
 
@@ -167,7 +169,7 @@ export const venueActionMixin = {
     const removeConnection = target.closest("[data-remove-connection]");
     if (removeConnection) {
       const label = removeConnection.closest("article")?.querySelector("h3")?.textContent?.trim() || "questo collegamento";
-      this.requestDestructiveAction({ type: "connection", id: removeConnection.dataset.removeConnection, title: `Rimuovere “${label}”?`, description: "Il collegamento non sarà più disponibile nel grafo della bozza.", confirmLabel: "Rimuovi collegamento", successMessage: "Collegamento rimosso." });
+      await this.requestDestructiveAction({ type: "connection", id: removeConnection.dataset.removeConnection, title: `Rimuovere “${label}”?`, description: "Il collegamento non sarà più disponibile nel grafo della bozza.", confirmLabel: "Rimuovi collegamento", successMessage: "Collegamento rimosso." });
       return;
     }
     const removeSlot = target.closest("[data-remove-slot]");
@@ -180,7 +182,7 @@ export const venueActionMixin = {
     const detach = target.closest("[data-detach-target]");
     if (detach) {
       const label = detach.dataset.label || "questa entità";
-      this.requestDestructiveAction({ type: "target_detach", id: detach.dataset.detachTarget, title: `Rimuovere “${label}” dalla configurazione?`, description: "Collocazione, disponibilità e immagini di riconoscimento verranno rimosse soltanto dalla bozza. L’entità resterà nell’inventario della sede.", confirmLabel: "Rimuovi dalla bozza", successMessage: "Entità rimossa dalla configurazione fisica di lavoro." });
+      await this.requestDestructiveAction({ type: "target_detach", id: detach.dataset.detachTarget, title: `Rimuovere “${label}” dalla configurazione?`, description: "Collocazione, disponibilità e immagini di riconoscimento verranno rimosse soltanto dalla bozza. L’entità resterà nell’inventario della sede.", confirmLabel: "Rimuovi dalla bozza", successMessage: "Entità rimossa dalla configurazione fisica di lavoro." });
     }
   },
 
@@ -202,10 +204,7 @@ export const venueActionMixin = {
     }
 
     if (form.matches("[data-venue-metadata]")) {
-      await this.execute(() => accountRepository.updateVenue(this.id, {
-        name: String(data.get("name") || ""),
-        description: String(data.get("description") || ""),
-      }), "Profilo della sede aggiornato.");
+      await this.execute(() => accountRepository.updateVenue(this.id, { name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Profilo della sede aggiornato.");
       return;
     }
 
@@ -216,37 +215,20 @@ export const venueActionMixin = {
     }
 
     if (form.matches("[data-target-metadata]")) {
-      await this.execute(() => managementRepository.updateVenueTarget(this.id, form.dataset.targetMetadata, {
-        displayLabelOverride: String(data.get("displayLabelOverride") || "").trim() || null,
-        inventoryNote: String(data.get("inventoryNote") || "").trim() || null,
-      }), "Entità dell’inventario aggiornata.");
+      await this.execute(() => managementRepository.updateVenueTarget(this.id, form.dataset.targetMetadata, { displayLabelOverride: String(data.get("displayLabelOverride") || "").trim() || null, inventoryNote: String(data.get("inventoryNote") || "").trim() || null }), "Entità dell’inventario aggiornata.");
       return;
     }
 
     if (form.matches("[data-target-availability]")) {
-      await this.execute(() => managementRepository.setVenueTargetAvailability(
-        this.id,
-        form.dataset.targetAvailability,
-        String(data.get("availability") || "active"),
-      ), "Disponibilità dell’entità aggiornata.");
+      await this.execute(() => managementRepository.setVenueTargetAvailability(this.id, form.dataset.targetAvailability, String(data.get("availability") || "active")), "Disponibilità dell’entità aggiornata.");
       return;
     }
 
     if (form.matches("[data-create-target]")) {
       const success = await this.execute(async () => {
-        await managementRepository.createVenueTarget(this.id, {
-          subjectId: String(data.get("subjectId") || ""),
-          displayLabelOverride: String(data.get("displayLabelOverride") || "").trim() || null,
-          inventoryNote: String(data.get("inventoryNote") || "").trim() || null,
-          provenance: { origin: "human" },
-        });
+        await managementRepository.createVenueTarget(this.id, { subjectId: String(data.get("subjectId") || ""), displayLabelOverride: String(data.get("displayLabelOverride") || "").trim() || null, inventoryNote: String(data.get("inventoryNote") || "").trim() || null, provenance: { origin: "human" } });
       }, "Entità aggiunta all’inventario della sede.");
-      if (success) {
-        this.selectedSubject = null;
-        this.venueSubjectCandidates = null;
-        this.activeSpatialTab = "inventory";
-        this.render();
-      }
+      if (success) { this.selectedSubject = null; this.venueSubjectCandidates = null; this.activeSpatialTab = "inventory"; this.render(); }
       return;
     }
 
@@ -260,42 +242,44 @@ export const venueActionMixin = {
     }
 
     if (form.matches("[data-place-editor]")) {
-      await this.execute(() => managementRepository.updateVenuePlace(this.id, form.dataset.placeEditor, {
-        label: String(data.get("label") || ""),
-        placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || ""),
-      }), "Luogo aggiornato.");
+      await this.execute(() => managementRepository.updateVenuePlace(this.id, form.dataset.placeEditor, { label: String(data.get("label") || ""), placeTypeDefinitionId: String(data.get("placeTypeDefinitionId") || "") }), "Luogo aggiornato.");
       return;
     }
 
     if (form.matches("[data-connection-editor]")) {
       const metricMode = String(data.get("metricMode") || "manual_override");
-      const payload = {
-        connectionTypeDefinitionId: String(data.get("connectionTypeDefinitionId") || "") || null,
-        directionality: String(data.get("directionality") || "bidirectional"),
-        metricMode,
-        additionalDelaySeconds: number(data.get("additionalDelaySeconds"), 0),
-        instructions: { forward: String(data.get("forward") || ""), backward: String(data.get("backward") || "") },
-      };
+      const payload = { connectionTypeDefinitionId: String(data.get("connectionTypeDefinitionId") || "") || null, directionality: String(data.get("directionality") || "bidirectional"), metricMode, additionalDelaySeconds: number(data.get("additionalDelaySeconds"), 0), instructions: { forward: String(data.get("forward") || ""), backward: String(data.get("backward") || "") } };
       if (metricMode !== "geometry_derived") payload.distanceMeters = number(data.get("distanceMeters"));
       await this.execute(() => managementRepository.updateVenueConnection(this.id, form.dataset.connectionEditor, payload), "Collegamento aggiornato.");
     }
   },
 
-  async runWorkflowRequest(code) {
+  async runWorkflowRequest(code, { message = null } = {}) {
     const config = WORKFLOW_CONFIG[code];
     if (!config) return;
     const options = { ...config[1] };
     if (code === "venue.release.request_changes") {
-      const message = this.workflowMessage.trim();
-      if (!message) throw new Error("Inserisci una motivazione per le modifiche richieste.");
-      options.payload = { message };
+      const normalized = String(message || "").trim();
+      if (!normalized) throw new Error("Inserisci una motivazione per le modifiche richieste.");
+      options.payload = { message: normalized };
     }
     await managementRepository.venueWorkflow(this.id, config[0], options);
   },
 
   async performWorkflow(code) {
     if (!WORKFLOW_CONFIG[code]) return;
-    if (code === "venue.release.request_changes") { this.pendingWorkflow = code; this.workflowMessage = ""; this.render(); return; }
+    if (code === "venue.release.request_changes") {
+      const message = await openMessageActionDialog({
+        title: "Richiedi modifiche",
+        description: "La motivazione verrà registrata nel workflow della VenueRelease.",
+        label: "Quali modifiche sono necessarie?",
+        placeholder: "Descrivi in modo sintetico cosa deve essere corretto",
+        confirmLabel: "Invia richiesta",
+      });
+      if (message === null) return;
+      await this.execute(() => this.runWorkflowRequest(code, { message }), "Workflow della sede aggiornato.");
+      return;
+    }
     await this.execute(() => this.runWorkflowRequest(code), "Workflow della sede aggiornato.");
   },
 
