@@ -6,16 +6,18 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/commerce-management-view.js");
+const offerDialogPath = path.join(root, "clients/marketplace/src/ui/offer-create-dialog.js");
 const repoPath = path.join(root, "clients/marketplace/src/infrastructure/http/marketplace-repository.js");
 const utilsPath = path.join(root, "clients/marketplace/src/ui/commercial-utils.js");
 const servicePath = path.join(root, "services/marketplaceCommercialV2.service.js");
 const view = fs.readFileSync(viewPath, "utf8");
+const offerDialog = fs.readFileSync(offerDialogPath, "utf8");
 const repository = fs.readFileSync(repoPath, "utf8");
 const utils = fs.readFileSync(utilsPath, "utf8");
 const service = fs.readFileSync(servicePath, "utf8");
 
 test("seller commerce boundary passa il syntax gate", () => {
-  for (const target of [viewPath, repoPath, utilsPath, servicePath]) {
+  for (const target of [viewPath, offerDialogPath, repoPath, utilsPath, servicePath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
@@ -38,21 +40,25 @@ test("projection commerciale resta backend-authoritative", () => {
   assert.match(repository, /principalParams\(principal\)/);
 });
 
-test("offerte mantengono prezzo, diritti e policy di versione", () => {
-  assert.match(view, /data-pricing-type/);
-  assert.match(view, /pricingType/);
-  assert.match(view, /amountMinor/);
-  assert.match(view, /currency/);
-  assert.match(view, /capability/);
-  assert.match(view, /versionPolicy/);
-  assert.match(view, /createOffer/);
+test("offerte mantengono prezzo, diritti e policy di versione nel Task Dialog dedicato", () => {
+  assert.match(view, /openOfferCreateDialog/);
+  assert.match(offerDialog, /pricingType/);
+  assert.match(offerDialog, /priceInMinorUnits/);
+  assert.match(offerDialog, /currency/);
+  assert.match(offerDialog, /capability/);
+  assert.match(offerDialog, /versionPolicy/);
+  assert.match(offerDialog, /offerConfiguration/);
+  assert.match(offerDialog, /marketplaceRepository\.createOffer/);
+  assert.match(offerDialog, /createTaskDialog/);
 });
 
-test("dashboard vendite mantiene metriche e lifecycle di ritiro", () => {
+test("dashboard vendite mantiene metriche e lifecycle di ritiro tramite Action Dialog", () => {
   for (const term of ["Acquisizioni", "Adozioni", "Ricavi simulati", "Attività recente"]) assert.match(view, new RegExp(term));
   assert.match(view, /withdrawOffer/);
   assert.match(view, /withdrawListing/);
-  assert.match(view, /data-confirm-withdraw/);
+  assert.match(view, /requestWithdrawal/);
+  assert.match(view, /openActionDialog/);
+  assert.doesNotMatch(view, /data-confirm-withdraw|confirmation-panel/);
   assert.doesNotMatch(view, /window\.confirm\(/);
 });
 
@@ -89,7 +95,11 @@ test("una risorsa senza offerte è privata e può ricevere una nuova offerta", (
   assert.match(service, /\["draft", "published", "withdrawn"\]\.includes\(listing\.status\)/);
 });
 
-test("il modulo Nuova offerta è chiuso inizialmente", () => {
-  assert.match(view, /canCreateOffer \? this\.renderOfferForm\(listing\) : ""/);
-  assert.doesNotMatch(view, /this\.renderOfferForm\(listing, \{ open: !hasActiveOffer \}\)/);
+test("Nuova offerta non è un form inline: viene aperta soltanto dal comando esplicito", () => {
+  assert.match(view, /data-create-offer-dialog/);
+  assert.match(view, /this\.openOfferDialog\(create\.dataset\.createOfferDialog\)/);
+  assert.match(view, /openOfferCreateDialog/);
+  assert.doesNotMatch(view, /renderOfferForm/);
+  assert.match(offerDialog, /title: listing\.asset\?\.title \|\| "Configura offerta"/);
+  assert.match(offerDialog, /Pubblica offerta/);
 });
