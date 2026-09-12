@@ -43,6 +43,7 @@ export function openMessageActionDialog({
       title,
       description,
       size: "compact",
+      kind: "dialog",
       initialFocus: "textarea[name='message']",
       renderBody: () => `${state.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(state.error)}</artaround-callout>` : ""}<form id="${formId}" data-message-action-form><label>${escapeHtml(label)}<textarea name="message" rows="5" maxlength="${Number(maxLength)}" ${required ? "required" : ""} placeholder="${escapeHtml(placeholder)}">${escapeHtml(state.value)}</textarea></label></form>`,
       renderFooter: () => `<button type="button" class="button-secondary" data-modal-dismiss>${escapeHtml(cancelLabel)}</button><button type="submit" form="${formId}">${escapeHtml(confirmLabel)}</button>`,
