@@ -11,6 +11,12 @@ function escapeHtml(value = "") {
 }
 function id(value) { return String(value?._id || value?.id || value || ""); }
 
+function spaceChoice(space, currentSpace) {
+  const stats = space.stats || {};
+  const selected = id(space) === id(currentSpace);
+  return `<button type="button" class="task-resource-choice" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span class="task-resource-choice__mark">${icon("workspace", { size: 18 })}</span><span class="task-resource-choice__copy"><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small><span class="task-resource-choice__meta">${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti</span></span>${selected ? `<span class="task-resource-choice__state">Corrente</span>` : `<span class="task-resource-choice__chevron">${icon("chevron", { size: 15 })}</span>`}</button>`;
+}
+
 export function openSpaceSelectionDialog({
   spaces = [],
   currentSpace = null,
@@ -28,21 +34,28 @@ export function openSpaceSelectionDialog({
     const query = state.query.trim().toLowerCase();
     return spaces.filter((space) => !query || `${space.name || ""} ${space.description || ""}`.toLowerCase().includes(query));
   };
+  const renderResults = () => {
+    const visible = filtered();
+    if (!visible.length) return `<div class="empty-state compact"><h3>Nessuno spazio trovato</h3><p>Prova con un nome o una descrizione diversa.</p></div>`;
+    const current = visible.find((space) => id(space) === id(currentSpace)) || null;
+    const others = visible.filter((space) => id(space) !== id(currentSpace));
+    return `${current ? `<section class="task-selection-group"><div class="task-selection-group__heading"><span class="eyebrow">Spazio corrente</span></div><div class="task-resource-choice-list task-resource-choice-list--single">${spaceChoice(current, currentSpace)}</div></section>` : ""}${others.length ? `<section class="task-selection-group"><div class="task-selection-group__heading"><span class="eyebrow">${current ? "Altri spazi" : "Spazi disponibili"}</span><span class="count">${others.length}</span></div><div class="task-resource-choice-list">${others.map((space) => spaceChoice(space, currentSpace)).join("")}</div></section>` : ""}`;
+  };
   dialog = createTaskDialog({
     eyebrow,
     title,
     description,
     size: "large",
     initialFocus: "input[name='spaceQuery']",
-    renderBody: () => `<div class="task-selection-layout"><label>Cerca spazio<input name="spaceQuery" value="${escapeHtml(state.query)}" placeholder="Nome o descrizione"></label><div class="task-resource-choice-list">${filtered().length ? filtered().map((space) => { const stats = space.stats || {}; const selected = id(space) === id(currentSpace); return `<button type="button" class="task-resource-choice" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span class="resource-mark">${icon("workspace", { size: 18 })}</span><span><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small><span>${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti${selected ? " · corrente" : ""}</span></span>${icon("chevron", { size: 15 })}</button>`; }).join("") : `<div class="empty-state compact"><p>Nessuno spazio corrisponde alla ricerca.</p></div>`}</div></div>`,
-    renderFooter: () => `${canCreate ? `<button type="button" class="button-secondary" data-create-space>${icon("plus", { size: 15 })} Nuovo spazio</button>` : ""}<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button>`,
+    renderBody: () => `<div class="task-selection-layout"><div class="task-selection-toolbar"><label>Cerca spazio<input name="spaceQuery" value="${escapeHtml(state.query)}" placeholder="Nome o descrizione" autocomplete="off"></label><span class="task-selection-summary">${spaces.length} ${spaces.length === 1 ? "spazio" : "spazi"}</span></div><div data-space-selection-results>${renderResults()}</div></div>`,
+    renderFooter: () => `${canCreate ? `<button type="button" class="button-secondary" data-create-space>${icon("plus", { size: 15 })} Nuovo spazio</button><span class="task-modal-footer-spacer" aria-hidden="true"></span>` : ""}<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button>`,
     onDismiss: (reason) => { dialog = null; onDismiss?.(reason); },
     onInput: (event, controller) => {
       const input = event.target instanceof HTMLInputElement ? event.target : null;
       if (input?.name !== "spaceQuery") return;
       state.query = input.value;
-      controller.render();
-      controller.focus("input[name='spaceQuery']");
+      const results = controller.layer.querySelector("[data-space-selection-results]");
+      if (results instanceof HTMLElement) results.innerHTML = renderResults();
     },
     onClick: (event) => {
       const target = event.target instanceof Element ? event.target : null;
