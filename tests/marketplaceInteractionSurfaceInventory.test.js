@@ -27,11 +27,6 @@ function assertNone(pattern, label) {
   assert.deepEqual(found, [], `${label}: surface legacy residue: ${found.join(", ")}`);
 }
 
-function assertAllowlisted(pattern, allowlist, label) {
-  const unexpected = offenders(pattern).filter((file) => !allowlist.has(file));
-  assert.deepEqual(unexpected, [], `${label}: nuove surface legacy non inventariate: ${unexpected.join(", ")}`);
-}
-
 test("Marketplace non usa più inspector laterali come interaction surface", () => {
   assertNone(/context-workspace-inspector-layer|context-workspace-inspector\b/, "Inspector");
 });
@@ -44,10 +39,9 @@ test("Marketplace non usa più confirmation-panel inline", () => {
   assertNone(/confirmation-panel/, "Inline confirmation");
 });
 
-test("i details usati come create surface restano soltanto nel residuo Venue inventariato", () => {
-  assertAllowlisted(
+test("Marketplace non usa details come create surface applicativa", () => {
+  assertNone(
     /<details[^>]*class=["'][^"']*(?:account-create|seller-offer-creator|venue-create)[^"']*["']/,
-    new Set(["venue-editor-targets-mixin.js"]),
     "Create details",
   );
 });
