@@ -18,8 +18,8 @@ export const authoringRepository = {
   createSubject(payload) {
     return apiClient.request("/subjects", { method: "POST", body: JSON.stringify(payload) });
   },
-  createItem({ primarySubjectId, ownerType, ownerId, contentSpaceId }) {
-    return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId, contentSpaceId }) });
+  createItem({ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode = "reuse_first" }) {
+    return apiClient.request("/items", { method: "POST", body: JSON.stringify({ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode }) });
   },
   getSubject(subjectId) {
     return apiClient.request(`/subjects/${encodeURIComponent(subjectId)}`);
@@ -97,7 +97,7 @@ export const authoringRepository = {
     return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}`), { method: "DELETE" });
   },
   setVisitInterVenueTransfer(visitId, fromAnchorId, toAnchorId, payload) {
-    return apiClient.request(visitCommandPath(visitId, `transfers/${encodeURIComponent(fromAnchorId)}/${encodeURIComponent(toAnchorId)}`), {
+    return apiClient.request(visitCommandPath(visitId, `transfers/${encodeURIComponent(fromAnchorId)}/${encodeURIComponent(toAnchorId)}`, {
       method: "PUT",
       ...body(payload),
     });
