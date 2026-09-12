@@ -94,6 +94,7 @@ test("a live SemanticGraph belongs to exactly one Collection at the persistence 
   await withFreshDatabase(async () => {
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
+    await EditorialContext.syncIndexes();
     const base = await baseFixture("one-to-one-graph");
     const first = await createEditorialContextWithGraph({
       contentSpace: base.space,
