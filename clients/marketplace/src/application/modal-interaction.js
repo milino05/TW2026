@@ -57,10 +57,8 @@ function restoreOwnerFocus(owner, state) {
  * resolver form supports vanilla custom elements that rerender their modal DOM.
  * For portalled layers owned by a custom element, the original launcher focus
  * is retained across those rerenders. A release without restoration is treated
- * as an in-place rerender: LayerManager keeps the outgoing visual layer alive
- * through the current turn so the replacement can mount without a backdrop or
- * scroll-lock gap, while focus restoration still happens only when the flow
- * actually ends.
+ * as an in-place rerender only when another modal for the same owner mounts in
+ * the same turn; otherwise the flow has ended and focus is restored.
  */
 export function mountModalInteraction({
   layer,
@@ -152,7 +150,7 @@ export function mountModalInteraction({
       released = true;
       layer.removeEventListener("click", onClick);
       layer.removeEventListener("keydown", onKeyDown);
-      unmountLayer({ visualHandoff: Boolean(owner && !restoreFocus) });
+      unmountLayer();
       if (owner && ownerState) {
         ownerState.active = Math.max(0, ownerState.active - 1);
         if (restoreFocus) {
