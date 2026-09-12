@@ -169,7 +169,7 @@ export const venueActionMixin = {
     const removeConnection = target.closest("[data-remove-connection]");
     if (removeConnection) {
       const label = removeConnection.closest("article")?.querySelector("h3")?.textContent?.trim() || "questo collegamento";
-      await this.requestDestructiveAction({ type: "connection", id: removeConnection.dataset.removeConnection, title: `Rimuovere “${label}”?`, description: "Il collegamento non sarà più disponibile nel grafo della bozza.", confirmLabel: "Rimuovi collegamento", successMessage: "Collegamento rimosso." });
+      await this.requestLayoutRemoval({ type: "connection", id: removeConnection.dataset.removeConnection, label });
       return;
     }
     const removeSlot = target.closest("[data-remove-slot]");
