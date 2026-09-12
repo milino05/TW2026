@@ -2,6 +2,7 @@ import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { openMessageActionDialog } from "./message-action-dialog.js";
+import { createTaskDialog } from "./task-dialog.js";
 import { icon } from "./icons.js";
 
 const SECTIONS = [
@@ -129,6 +130,9 @@ function emptyDefinition(field) {
   return base;
 }
 function definitionName(definition) { return definition.label || definition.key || "Nuova definizione"; }
+function starterPreview() {
+  return `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>`;
+}
 
 export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   id = physicalVocabularyId();
@@ -142,7 +146,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   tutorialOpen = false;
   tutorialStep = 0;
   tutorialReturnSection = "general";
-  starterOpen = false;
+  starterDialog = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -166,6 +170,8 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.removeEventListener("touchmove", this.onTutorialScroll);
     window.removeEventListener("beforeunload", this.onBeforeUnload);
     window.removeEventListener("resize", this.onTutorialViewportChange);
+    this.starterDialog?.close({ restoreFocus: false, notify: false });
+    this.starterDialog = null;
     document.documentElement.classList.remove("physical-overlay-open");
     document.body?.classList.remove("physical-overlay-open");
   }
@@ -194,7 +200,9 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     try { return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "seen"; } catch { return false; }
   }
   startTutorial({ remember = false } = {}) {
-    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.starterOpen = false; this.activeSection = TUTORIAL_STEPS[0].section;
+    this.starterDialog?.close({ notify: false });
+    this.starterDialog = null;
+    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.activeSection = TUTORIAL_STEPS[0].section;
     if (remember) { try { localStorage.setItem(TUTORIAL_STORAGE_KEY, "seen"); } catch { /* non bloccante */ } }
     this.render();
   }
@@ -205,16 +213,16 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.render();
   }
   syncOverlayLock() {
-    const locked = this.tutorialOpen || this.starterOpen;
-    document.documentElement.classList.toggle("physical-overlay-open", Boolean(locked));
-    document.body?.classList.toggle("physical-overlay-open", Boolean(locked));
+    document.documentElement.classList.toggle("physical-overlay-open", Boolean(this.tutorialOpen));
+    document.body?.classList.toggle("physical-overlay-open", Boolean(this.tutorialOpen));
   }
   onTutorialScroll = (event) => { if (this.tutorialOpen) event.preventDefault(); };
   onTutorialViewportChange = () => { if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial()); };
   onKeyDown = (event) => {
-    const modal = this.querySelector('[aria-modal="true"]');
+    if (!this.tutorialOpen) return;
+    const modal = this.querySelector("[data-physical-tutorial-overlay]");
     if (!modal) return;
-    if (event.key === "Escape") { event.preventDefault(); if (this.tutorialOpen) this.closeTutorial(); else { this.starterOpen = false; this.render(); } return; }
+    if (event.key === "Escape") { event.preventDefault(); this.closeTutorial(); return; }
     if (event.key !== "Tab") return;
     const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
     if (!focusable.length) return;
@@ -343,6 +351,37 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.render();
   }
 
+  openStarterDialog() {
+    if (this.starterDialog || !has(this.operations(), "physical_vocabulary.starter.apply")) return;
+    this.tutorialOpen = false;
+    this.activeSection = "general";
+    this.render();
+    this.starterDialog = createTaskDialog({
+      eyebrow: "Configurazione facoltativa",
+      title: "Partire da una base pronta?",
+      description: "Verranno aggiunte soltanto le definizioni mancanti. Le tue label, alias e personalizzazioni non vengono sovrascritte.",
+      size: "compact",
+      initialFocus: "[data-starter-confirm]",
+      renderBody: () => starterPreview(),
+      renderFooter: () => `<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button><button type="button" data-starter-confirm>${icon("check", { size: 16 })} Usa configurazione base</button>`,
+      isBusy: () => this.busy,
+      onDismiss: () => { this.starterDialog = null; },
+      onClick: (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("[data-starter-confirm]")) void this.applyStarter();
+      },
+    });
+  }
+
+  async applyStarter() {
+    if (this.busy) return;
+    this.starterDialog?.close({ notify: false });
+    this.starterDialog = null;
+    this.tutorialOpen = false;
+    this.activeSection = "general";
+    await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti.");
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -357,9 +396,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (target.closest("[data-tutorial-close], [data-tutorial-finish]")) { this.closeTutorial(); return; }
     if (target.closest("[data-tutorial-next]")) { this.setTutorialStep(this.tutorialStep + 1); return; }
     if (target.closest("[data-tutorial-prev]")) { this.setTutorialStep(this.tutorialStep - 1); return; }
-    if (target.closest("[data-starter-open]")) { this.starterOpen = true; this.tutorialOpen = false; this.render(); return; }
-    if (target.closest("[data-starter-close]")) { this.starterOpen = false; this.render(); return; }
-    if (target.closest("[data-starter-apply]")) { this.starterOpen = false; this.tutorialOpen = false; this.activeSection = "general"; await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti."); return; }
+    if (target.closest("[data-starter-open], [data-starter-apply]")) { this.openStarterDialog(); return; }
     if (target.closest("[data-working-ensure]")) { await this.execute(() => managementRepository.ensurePhysicalVocabularyWorking(this.id), "Nuova bozza creata dalla versione pubblicata."); return; }
     const add = target.closest("[data-add-definition]");
     if (add) { this.definitions[add.dataset.addDefinition].push(emptyDefinition(add.dataset.addDefinition)); this.dirty = true; this.render(); return; }
@@ -432,11 +469,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const actions = step.starter
       ? `<div class="physical-tutorial-template"><button type="button" data-starter-apply ${canApplyStarter ? "" : "disabled"}>${icon("plus", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-tutorial-finish>Preferisco partire da zero</button></div>${canApplyStarter ? "" : `<p class="physical-tutorial-note">Per applicare la configurazione, crea prima una bozza modificabile.</p>`}<button type="button" class="button-secondary small" data-tutorial-prev>${icon("arrowLeft", { size: 14 })} Precedente</button>`
       : `<div class="physical-tutorial-navigation"><button type="button" class="button-secondary" data-tutorial-prev ${this.tutorialStep === 0 ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><button type="button" data-tutorial-next>Avanti ${icon("chevron", { size: 14 })}</button></div>`;
-    return `<div class="physical-tutorial-overlay" data-physical-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="physical-tutorial-title"><div class="physical-tutorial-spotlight" data-physical-tutorial-spotlight></div><article class="physical-tutorial-bubble" data-physical-tutorial-bubble><button class="physical-tutorial-close" type="button" data-tutorial-close aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="physical-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.starter ? `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>` : ""}<div class="physical-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
-  }
-  renderStarterDialog() {
-    if (!this.starterOpen) return "";
-    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="physical-starter-title"><article class="physical-dialog"><button class="physical-tutorial-close" type="button" data-starter-close aria-label="Chiudi">×</button><span class="eyebrow">Configurazione facoltativa</span><h2 id="physical-starter-title">Partire da una base pronta?</h2><p>Verranno aggiunti soltanto i tipi, le caratteristiche e i profili mancanti. Le tue definizioni, label, alias e personalizzazioni non vengono sovrascritti.</p><div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div><div class="button-row"><button type="button" data-starter-apply>${icon("check", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-starter-close>Annulla</button></div></article></div>`;
+    return `<div class="physical-tutorial-overlay" data-physical-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="physical-tutorial-title"><div class="physical-tutorial-spotlight" data-physical-tutorial-spotlight></div><article class="physical-tutorial-bubble" data-physical-tutorial-bubble><button class="physical-tutorial-close" type="button" data-tutorial-close aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="physical-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.starter ? starterPreview() : ""}<div class="physical-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
   }
   renderSectionNav() {
     const counts = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, this.definitions[field]?.length || 0]));
@@ -492,7 +525,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.syncOverlayLock();
     if (!this.data) { this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`; return; }
     const vocabulary = this.data.physicalVocabulary;
-    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span><span data-dirty-indicator>${this.dirty ? `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</span></div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}${this.renderStarterDialog()}`;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span><span data-dirty-indicator>${this.dirty ? `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</span></div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}`;
     if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial());
   }
 }
