@@ -17,12 +17,13 @@ test("Collection relations workspace owns and restores Semantic Graph focus acro
   assert.match(studio, /onChildChanged\s*=\s*\(\)\s*=>\s*\{[\s\S]*graph\.focusSubjectId[\s\S]*this\.load\(\)/);
 });
 
-test("Collection relations workspace does not repeat technical graph exposition above the editor", () => {
+test("Collection relations workspace keeps the canvas primary and source management secondary", () => {
   assert.doesNotMatch(studio, /<span class="eyebrow">Semantica<\/span><h2>Collegamenti fra soggetti<\/h2>/);
   assert.doesNotMatch(studio, /Il grafo della Raccolta collega soltanto Subject rappresentati dai suoi contenuti/);
   assert.doesNotMatch(studio, /Questo grafo è locale e indipendente\. Le sorgenti importate sono pinzate/);
+  assert.doesNotMatch(studio, /<h2>Sorgenti<\/h2>|studio-source-grid|studio-source-card/);
   assert.match(studio, /studio-relations-section/);
-  assert.match(studio, /data-add-semantic-source/);
-  assert.match(studio, /data-import-source-id/);
+  assert.match(studio, /data-manage-semantic-sources/);
+  assert.match(studio, /Gestisci sorgenti/);
   assert.match(studio, /<artaround-semantic-graph-editor><\/artaround-semantic-graph-editor>/);
 });
