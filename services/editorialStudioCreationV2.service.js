@@ -47,16 +47,13 @@ async function contentSpaceSubjectInventory(contentSpaceId) {
   return inventory;
 }
 
-async function collectionBoundSemanticGraphIds() {
-  return EditorialContext.distinct("semanticGraphId", { semanticGraphId: { $ne: null } });
-}
-
 async function listReusableSemanticGraphs({
   actorUserId,
   ownerType,
   ownerId,
   namespaceId,
   contentSpaceId = null,
+  excludeSemanticGraphId = null,
   query = "",
   page = 1,
   limit = 30,
@@ -64,6 +61,7 @@ async function listReusableSemanticGraphs({
   if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400, [{ field: "ownerType", code: "INVALID_ENUM" }]);
   assertObjectId(ownerId, "ownerId");
   assertObjectId(namespaceId, "namespaceId");
+  if (excludeSemanticGraphId) assertObjectId(excludeSemanticGraphId, "excludeSemanticGraphId");
 
   await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.view" });
   const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" });
@@ -88,13 +86,12 @@ async function listReusableSemanticGraphs({
   const normalizedPage = Math.max(1, Number(page) || 1);
   const normalizedLimit = Math.max(1, Math.min(60, Number(limit) || 30));
   const normalizedQuery = clean(query).slice(0, 160);
-  const collectionGraphIds = await collectionBoundSemanticGraphIds();
   const match = {
     ownerType,
     ownerId,
     namespaceId: namespace._id,
     lifecycleStatus: "active",
-    ...(collectionGraphIds.length ? { _id: { $nin: collectionGraphIds } } : {}),
+    ...(excludeSemanticGraphId ? { _id: { $ne: excludeSemanticGraphId } } : {}),
     ...(normalizedQuery ? {
       $or: [
         { displayName: new RegExp(escapeRegex(normalizedQuery), "i") },
@@ -225,9 +222,6 @@ async function loadCompatibleGraph({ semanticGraphId, ownerType, ownerId, namesp
   }
   if (!sameId(semanticGraph.namespaceId, namespaceId)) {
     throw new AppError("Il grafo semantico usa regole editoriali diverse", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_MISMATCH" }]);
-  }
-  if (await EditorialContext.exists({ semanticGraphId: semanticGraph._id })) {
-    throw new AppError("Un grafo locale di Raccolta non può essere usato come sorgente riutilizzabile", 409, [{ code: "SEMANTIC_GRAPH_COLLECTION_BOUND" }]);
   }
   if (!semanticGraph.workingRevisionId) {
     throw new AppError("Il grafo semantico non ha una revisione di lavoro", 409, [{ code: "SEMANTIC_GRAPH_WORKING_REVISION_REQUIRED" }]);
