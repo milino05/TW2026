@@ -44,6 +44,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     this.addEventListener("semantic-graph-focus-changed", this.onGraphFocusChanged);
     void this.load();
   }
+
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
@@ -54,11 +55,12 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   }
 
   hasOperation(code) { return (this.data?.availableOperations || []).some((entry) => entry.code === code); }
-  sourceById(sourceId) { return this.graphSources.find((entry) => id(entry.id) === id(sourceId)) || null; }
 
   async load() {
     if (!this.editorialContextId) { this.error = "Raccolta editoriale non specificata"; this.render(); return; }
-    this.busy = true; this.error = null; this.render();
+    this.busy = true;
+    this.error = null;
+    this.render();
     try {
       const [data, sources, restorable] = await Promise.all([
         editorialRepository.studio(this.editorialContextId),
@@ -76,8 +78,12 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
           editorialRepository.releases(this.editorialContextId),
         ]);
       }
-    } catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire la Raccolta editoriale"; }
-    finally { this.busy = false; this.render(); }
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile aprire la Raccolta editoriale";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   }
 
   onChildChanged = () => {
@@ -115,10 +121,10 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     void this.executeStudioAction(code);
   };
 
-  openSourceDialog(config) {
-    if (!this.data?.permissions?.canEditGraph || this.data?.context?.locked) return;
+  openSourceManager() {
+    if (!this.data) return;
     const dialog = document.createElement("artaround-collection-graph-import-dialog");
-    dialog.addEventListener("collection-graph-source-changed", () => void this.load(), { once: true });
+    dialog.addEventListener("collection-graph-source-changed", () => void this.load());
     document.body.append(dialog);
     dialog.configure({
       editorialContextId: this.editorialContextId,
@@ -126,62 +132,9 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       ownerId: this.data.contentSpace.ownerId,
       namespaceId: this.data.namespace.id,
       contentSpaceId: this.data.contentSpace.id,
-      ...config,
+      localSemanticGraphId: id(this.data.semanticGraph?.id),
+      editable: this.data.permissions.canEditGraph && !this.data.context.locked,
     });
-  }
-
-  openAddSourceDialog() {
-    this.openSourceDialog({
-      mode: "add-source",
-      excludeSemanticGraphIds: [
-        id(this.data?.semanticGraph?.id),
-        ...this.graphSources.map((entry) => id(entry.sourceSemanticGraphId)),
-      ].filter(Boolean),
-    });
-  }
-
-  openImportContentsDialog(source) {
-    if (!source) return;
-    this.openSourceDialog({ mode: "import-content", source });
-  }
-
-  async updateSource(source) {
-    if (!source || this.data.context.locked) return;
-    try {
-      const preview = await editorialRepository.graphImportSourceUpdatePreview(this.editorialContextId, id(source.id));
-      if (!preview?.updateAvailable) {
-        this.error = "La sorgente è già pinzata alla revisione più recente.";
-        this.render();
-        return;
-      }
-      const diff = preview.diff || {};
-      const confirmed = await openActionDialog({
-        title: `Aggiornare la sorgente “${preview.sourceName || source.preview?.source?.name || "Grafo"}”?`,
-        message: `La sorgente passerà alla nuova revisione. Novità: ${Number(diff.addedSubjectCount || 0)} soggetti e ${Number(diff.addedRelationCount || 0)} collegamenti. Elementi rimossi nella sorgente: ${Number(diff.removedSubjectCount || 0)} soggetti e ${Number(diff.removedRelationCount || 0)} collegamenti. Nessun contenuto o collegamento locale verrà eliminato automaticamente.`,
-        confirmLabel: "Aggiorna sorgente",
-      });
-      if (confirmed) await this.run(() => editorialRepository.updateGraphImportSource(this.editorialContextId, id(source.id)));
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Non è possibile verificare l'aggiornamento della sorgente";
-      this.render();
-    }
-  }
-
-  async detachSource(source) {
-    if (!source || this.data.context.locked) return;
-    const sourceName = source.preview?.source?.name || "questa sorgente";
-    const confirmed = await openActionDialog({
-      title: `Scollegare “${sourceName}”?`,
-      message: "Il pin verrà rimosso. Contenuti, Subject e collegamenti già presenti nel grafo locale resteranno invariati.",
-      confirmLabel: "Scollega sorgente",
-      tone: "danger",
-    });
-    if (confirmed) await this.run(() => editorialRepository.detachGraphImportSource(this.editorialContextId, id(source.id)));
-  }
-
-  async restoreEdge(suppressionId) {
-    if (!suppressionId || this.data.context.locked) return;
-    await this.run(() => editorialRepository.restoreGraphEdge(this.editorialContextId, suppressionId));
   }
 
   onClick = async (event) => {
@@ -189,15 +142,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const tab = target?.closest("button[data-studio-section]");
     if (tab) { this.setSection(tab.dataset.studioSection); return; }
     if (target?.closest("button[data-back-space]")) { navigate("/workspace"); return; }
-    if (target?.closest("button[data-add-semantic-source]")) { this.openAddSourceDialog(); return; }
-    const importButton = target?.closest("button[data-import-source-id]");
-    if (importButton) { this.openImportContentsDialog(this.sourceById(importButton.dataset.importSourceId)); return; }
-    const updateButton = target?.closest("button[data-update-source-id]");
-    if (updateButton) { await this.updateSource(this.sourceById(updateButton.dataset.updateSourceId)); return; }
-    const detachButton = target?.closest("button[data-detach-source-id]");
-    if (detachButton) { await this.detachSource(this.sourceById(detachButton.dataset.detachSourceId)); return; }
-    const restoreButton = target?.closest("button[data-restore-edge-id]");
-    if (restoreButton) { await this.restoreEdge(restoreButton.dataset.restoreEdgeId); return; }
+    if (target?.closest("button[data-manage-semantic-sources]")) { this.openSourceManager(); return; }
     if (target?.closest("button[data-request-changes-cancel]")) {
       this.requestingChanges = false;
       this.error = null;
@@ -217,7 +162,9 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
       const confirmed = await openActionDialog({ title: "Approvare questa versione in revisione?", message: "L'approvazione riguarda esattamente contenuti, regole e revisione del grafo congelati per questa revisione.", confirmLabel: "Approva versione" });
       if (confirmed) await this.run(() => editorialRepository.approveReview(this.editorialContextId, this.data.review.id));
     } else if (code === "collection.review.request_changes") {
-      this.requestingChanges = true; this.error = null; this.render();
+      this.requestingChanges = true;
+      this.error = null;
+      this.render();
       requestAnimationFrame(() => this.querySelector("[data-request-changes-message]")?.focus());
     } else if (code === "collection.publish") {
       const confirmed = await openActionDialog({ title: "Pubblicare una nuova versione della raccolta?", message: "Verrà pubblicata la versione approvata come nuova versione immutabile della raccolta.", confirmLabel: "Pubblica versione" });
@@ -249,9 +196,17 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   };
 
   async run(operation) {
-    this.busy = true; this.error = null; this.render();
-    try { await operation(); await this.load(); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Operazione non completata"; this.busy = false; this.render(); }
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await operation();
+      await this.load();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Operazione non completata";
+      this.busy = false;
+      this.render();
+    }
   }
 
   async removeCollection() {
@@ -261,10 +216,15 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     const principal = operatingPrincipal(this.context);
     if (!principal) return;
     try {
-      this.busy = true; this.render();
+      this.busy = true;
+      this.render();
       await marketplaceRepository.removeWorkspaceResource(principal, { resourceType: "editorial_context", resourceId: this.editorialContextId });
       navigate("/workspace");
-    } catch (error) { this.error = error instanceof Error ? error.message : "Eliminazione non completata"; this.busy = false; this.render(); }
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Eliminazione non completata";
+      this.busy = false;
+      this.render();
+    }
   }
 
   renderTabs() {
@@ -280,29 +240,17 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
     return `<section class="studio-section"><dl class="stats studio-overview-stats"><div><dt>Contenuti</dt><dd>${stats.entryCount || 0}</dd></div><div><dt>Soggetti della raccolta</dt><dd>${stats.subjectCount || 0}</dd></div><div><dt>Relazioni</dt><dd>${stats.edgeCount || 0}</dd></div><div><dt>Modifiche dopo l'ultima pubblicazione</dt><dd>${stats.changesSincePublished ?? "—"}</dd></div></dl><div class="studio-overview-grid"><article class="panel"><span class="eyebrow">Stato editoriale</span><h2>${review ? statusLabel(review.status) : "Bozza di lavoro"}</h2>${review ? `<p>Versione in revisione v${escapeHtml(review.version)} · richiesta ${escapeHtml(formatDate(review.requestedAt))}</p>${review.message ? `<artaround-callout tone="warning">${escapeHtml(review.message)}</artaround-callout>` : ""}` : `<p>La raccolta è modificabile. Quando contenuti e configurazione sono pronti puoi inviarne una versione in revisione.</p>`}${published ? `<p class="note">Ultima versione pubblicata: v${escapeHtml(published.version)} · ${escapeHtml(formatDate(published.releasedAt))}</p>` : `<p class="note">Nessuna versione ancora pubblicata.</p>`}</article><article class="panel"><span class="eyebrow">Controllo</span><h2>${readiness.ready ? "Pronta per la revisione" : `${readiness.issues?.length || 0} problemi da risolvere`}</h2>${readiness.ready ? `<artaround-callout tone="success">Contenuti, revisione del grafo e regole editoriali sono coerenti per creare una versione in revisione.</artaround-callout>` : `<artaround-issue-panel tone="warning"><ul class="studio-issue-list">${(readiness.issues || []).slice(0, 6).map((issue) => `<li>${escapeHtml(issue.message || issue.code)}</li>`).join("")}</ul></artaround-issue-panel>`}<div class="button-row"><button type="button" class="button-secondary" data-studio-action="collection.check">${icon("check", { size: 16 })} Ricontrolla</button>${this.hasOperation("collection.review.request") ? `<button type="button" data-studio-action="collection.review.request">Invia in revisione</button>` : ""}</div></article></div></section>`;
   }
 
-  renderContent() { return `<section class="studio-section"><artaround-editorial-collection-content-manager></artaround-editorial-collection-content-manager></section>`; }
+  renderContent() {
+    return `<section class="studio-section"><artaround-editorial-collection-content-manager></artaround-editorial-collection-content-manager></section>`;
+  }
 
   renderSourceSummary() {
-    if (!this.graphSources.length) return `<p class="note">Nessuna sorgente pinzata. Il grafo locale è completamente indipendente.</p>`;
+    if (!this.graphSources.length) return `<p class="note">Nessuna sorgente.</p>`;
     return `<div class="studio-graph-sources">${this.graphSources.map((entry) => `<span class="status">${escapeHtml(entry.preview?.source?.name || "Sorgente")} · rev ${escapeHtml(shortId(entry.sourceGraphRevisionId))}</span>`).join("")}</div>`;
   }
 
-  renderSourceCard(source, editable) {
-    const preview = source.preview || {};
-    const summary = preview.summary || {};
-    const sourceName = preview.source?.name || "Grafo sorgente";
-    const available = Number(summary.inCollectionSubjectCount || 0) + Number(summary.directlyImportableSubjectCount || 0) + Number(summary.ambiguousSubjectCount || 0);
-    return `<article class="panel studio-source-card"><div class="section-heading"><div><span class="eyebrow">Sorgente pinzata · rev ${escapeHtml(shortId(source.sourceGraphRevisionId))}</span><h3>${escapeHtml(sourceName)}</h3><p>${escapeHtml(preview.source?.description || "Snapshot semantico read-only")}</p></div>${source.updateAvailable ? `<span class="status warning">Aggiornamento disponibile</span>` : `<span class="status">Read-only</span>`}</div><div class="studio-source-stats"><span><strong>${Number(summary.activeSubjectCount || 0)}</strong> già attivi</span><span><strong>${available}</strong> contenuti utilizzabili</span><span><strong>${Number(summary.sourceRelationCount || 0)}</strong> collegamenti sorgente</span>${Number(summary.classificationConflictCount || 0) ? `<span><strong>${Number(summary.classificationConflictCount)}</strong> classificazioni diverse</span>` : ""}</div>${editable ? `<div class="button-row"><button type="button" data-import-source-id="${escapeHtml(id(source.id))}">Importa contenuti</button>${source.updateAvailable ? `<button type="button" class="button-secondary" data-update-source-id="${escapeHtml(id(source.id))}">Aggiorna sorgente</button>` : ""}<button type="button" class="button-secondary" data-detach-source-id="${escapeHtml(id(source.id))}">Scollega</button></div>` : ""}</article>`;
-  }
-
-  renderRestorableEdges(editable) {
-    if (!this.restorableEdges.length) return "";
-    return `<section class="studio-restorable panel"><div class="section-heading"><div><span class="eyebrow">Disponibili dalle sorgenti</span><h3>Collegamenti esclusi dal grafo locale</h3><p>Hai rimosso questi collegamenti localmente, ma almeno una sorgente pinzata continua a proporli.</p></div></div><div class="studio-restorable-list">${this.restorableEdges.map((entry) => `<article><div><strong>${escapeHtml(entry.sourceSubject?.label || "Subject")} — ${escapeHtml(entry.relation?.label || "collegamento")} → ${escapeHtml(entry.targetSubject?.label || "Subject")}</strong><small>Presente in ${(entry.supportSources || []).map((source) => escapeHtml(source.name || "sorgente")).join(", ")}</small></div>${editable ? `<button type="button" class="button-secondary" data-restore-edge-id="${escapeHtml(id(entry.id))}">Ripristina</button>` : ""}</article>`).join("")}</div></section>`;
-  }
-
   renderRelations() {
-    const editable = this.data.permissions.canEditGraph && !this.data.context.locked;
-    return `<section class="studio-section studio-relations-section"><section class="studio-source-manager"><div class="section-heading"><div><span class="eyebrow">Riuso semantico</span><h2>Sorgenti</h2><p>Le sorgenti sono revisioni pinzate e read-only. Servono per importare contenuti e suggerire collegamenti; solo il grafo locale della Raccolta viene modificato.</p></div>${editable ? `<button type="button" class="button-secondary" data-add-semantic-source>${icon("plus", { size: 15 })} Aggiungi sorgente</button>` : ""}</div>${this.graphSources.length ? `<div class="studio-source-grid">${this.graphSources.map((source) => this.renderSourceCard(source, editable)).join("")}</div>` : `<artaround-empty-state><h3>Nessuna sorgente</h3><p>Puoi costruire il grafo locale manualmente oppure aggiungere grafi compatibili come sorgenti read-only.</p>${editable ? `<button type="button" data-add-semantic-source>Aggiungi sorgente</button>` : ""}</artaround-empty-state>`}</section>${this.renderRestorableEdges(editable)}<section class="studio-local-graph"><div class="section-heading"><div><span class="eyebrow">Grafo locale</span><h2>Collegamenti della Raccolta</h2><p>Questo è l'unico grafo modificabile. Importazioni, modifiche, cancellazioni e ripristini producono nuove revisioni locali.</p></div></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section></section>`;
+    return `<section class="studio-section studio-relations-section"><div class="studio-relations-toolbar"><button type="button" class="button-secondary" data-manage-semantic-sources>${icon("link", { size: 15 })} Gestisci sorgenti</button></div><artaround-semantic-graph-editor></artaround-semantic-graph-editor></section>`;
   }
 
   renderRequestChangesForm() {
@@ -321,7 +269,7 @@ export class ArtAroundEditorialStudioView extends HTMLElement {
   renderSettings() {
     const data = this.data;
     const graph = data.semanticGraph || {};
-    return `<section class="studio-section studio-settings-grid"><form class="panel" data-collection-settings><span class="eyebrow">Identità della raccolta</span><h2>Dettagli</h2><label>Nome<input name="displayName" required value="${escapeHtml(data.context.name)}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione breve<input name="shortDescription" maxlength="240" value="${escapeHtml(data.context.shortDescription || "")}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione<textarea name="description" rows="6" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}>${escapeHtml(data.context.description || "")}</textarea></label><label>Spazio editoriale<input value="${escapeHtml(data.contentSpace.name)}" disabled></label><label>Regole editoriali<input value="${escapeHtml(data.namespace.name)}" disabled></label>${data.permissions.canEdit && !data.context.locked ? `<button type="submit">Salva modifiche</button>` : `<p class="note">La raccolta non è modificabile nello stato corrente.</p>`}</form><article class="panel"><span class="eyebrow">Struttura semantica</span><h2>${escapeHtml(graph.name || "Grafo della Raccolta")}</h2><p>Il grafo è locale, indipendente e l'unico modificabile dalla Raccolta. Le sorgenti sono snapshot read-only gestiti nella sezione Collegamenti.</p>${this.renderSourceSummary()}${data.context.locked ? `<p class="note">Per modificare grafo locale o sorgenti ritira prima la revisione attiva.</p>` : ""}</article><article class="panel studio-danger-zone"><span class="eyebrow">Zona pericolosa</span><h2>Elimina raccolta</h2><p>Gli Item e lo Spazio editoriale non verranno eliminati. Il grafo locale appartiene alla Raccolta; le versioni già acquisite restano valide secondo i relativi diritti.</p>${data.permissions.canRemove ? `<button type="button" class="button-secondary danger" data-studio-action="collection.remove">${icon("trash", { size: 16 })} Elimina raccolta</button>` : `<p class="note">Non disponi del permesso di gestione del ciclo di vita.</p>`}</article></section>`;
+    return `<section class="studio-section studio-settings-grid"><form class="panel" data-collection-settings><span class="eyebrow">Identità della raccolta</span><h2>Dettagli</h2><label>Nome<input name="displayName" required value="${escapeHtml(data.context.name)}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione breve<input name="shortDescription" maxlength="240" value="${escapeHtml(data.context.shortDescription || "")}" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}></label><label>Descrizione<textarea name="description" rows="6" ${data.context.locked || !data.permissions.canEdit ? "disabled" : ""}>${escapeHtml(data.context.description || "")}</textarea></label><label>Spazio editoriale<input value="${escapeHtml(data.contentSpace.name)}" disabled></label><label>Regole editoriali<input value="${escapeHtml(data.namespace.name)}" disabled></label>${data.permissions.canEdit && !data.context.locked ? `<button type="submit">Salva modifiche</button>` : `<p class="note">La raccolta non è modificabile nello stato corrente.</p>`}</form><article class="panel"><span class="eyebrow">Struttura semantica</span><h2>${escapeHtml(graph.name || "Grafo della Raccolta")}</h2>${this.renderSourceSummary()}${data.context.locked ? `<p class="note">Per modificare grafo o sorgenti ritira prima la revisione attiva.</p>` : ""}</article><article class="panel studio-danger-zone"><span class="eyebrow">Zona pericolosa</span><h2>Elimina raccolta</h2><p>Gli Item e lo Spazio editoriale non verranno eliminati. Il grafo locale appartiene alla Raccolta; le versioni già acquisite restano valide secondo i relativi diritti.</p>${data.permissions.canRemove ? `<button type="button" class="button-secondary danger" data-studio-action="collection.remove">${icon("trash", { size: 16 })} Elimina raccolta</button>` : `<p class="note">Non disponi del permesso di gestione del ciclo di vita.</p>`}</article></section>`;
   }
 
   configureChildren() {
