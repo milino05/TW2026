@@ -77,59 +77,44 @@ test("modal staging layers stay invisible until LayerManager portals them", asyn
   expect(state.released).toEqual({ visibility: "hidden", parent: "ARTAROUND-MODAL-STAGING-ACCEPTANCE", kind: null });
 });
 
-test("custom-element modal rerenders hand off the visual layer without a backdrop or scroll-lock gap", async ({ page }) => {
+test("large Item Detail keeps the same panel geometry from loading to loaded content", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
 
-  const state = await page.evaluate(async () => {
-    const { mountModalInteraction } = await import("/marketplace/src/application/modal-interaction.js");
-    const host = document.createElement("artaround-modal-handoff-acceptance");
-    host.innerHTML = `<div class="artaround-modal-layer" data-modal-backdrop="true"><section class="artaround-task-modal artaround-task-modal--large" role="dialog" aria-modal="true" aria-label="Primo render"><div class="artaround-task-modal__body">Primo</div></section></div>`;
-    document.body.append(host);
-
-    const first = host.querySelector(".artaround-modal-layer");
-    const firstController = mountModalInteraction({
-      layer: first,
-      panel: () => first.querySelector(".artaround-task-modal"),
-      lockScroll: true,
+  await page.evaluate(async () => {
+    const { libraryRepository } = await import("/marketplace/src/infrastructure/http/library-repository.js");
+    let resolveDetail;
+    libraryRepository.itemDetail = () => new Promise((resolve) => { resolveDetail = resolve; });
+    window.__resolveItemDetailAcceptance = () => resolveDetail({
+      subject: {
+        id: "subject-acceptance",
+        preferredLabel: "Opera acceptance",
+        description: "Descrizione usata per verificare che il contenuto asincrono non ridimensioni il pannello.",
+      },
+      item: { id: "item-acceptance", recognitionMedia: null },
+      space: { id: "space-acceptance", name: "Spazio acceptance" },
+      editions: [],
+      collections: [],
+      availableOperations: { canCreateEdition: false },
     });
-
-    firstController.release({ restoreFocus: false });
-    const afterRelease = {
-      parent: first.parentElement?.tagName || null,
-      kind: first.dataset.artaroundLayer || null,
-      mountedCount: document.body.querySelectorAll('.artaround-modal-layer[data-artaround-layer="modal"]').length,
-      scrollLocked: document.documentElement.classList.contains("artaround-layer-scroll-lock"),
-    };
-
-    host.innerHTML = `<div class="artaround-modal-layer" data-modal-backdrop="true"><section class="artaround-task-modal artaround-task-modal--large" role="dialog" aria-modal="true" aria-label="Secondo render"><div class="artaround-task-modal__body">Secondo</div></section></div>`;
-    const second = host.querySelector(".artaround-modal-layer");
-    const secondController = mountModalInteraction({
-      layer: second,
-      panel: () => second.querySelector(".artaround-task-modal"),
-      lockScroll: true,
-    });
-
-    const duringHandoff = {
-      firstParent: first.parentElement?.tagName || null,
-      secondParent: second.parentElement?.tagName || null,
-      mountedCount: document.body.querySelectorAll('.artaround-modal-layer[data-artaround-layer="modal"]').length,
-      scrollLocked: document.documentElement.classList.contains("artaround-layer-scroll-lock"),
-    };
-
-    await Promise.resolve();
-    const afterCheckpoint = {
-      firstConnected: first.isConnected,
-      secondParent: second.parentElement?.tagName || null,
-      mountedCount: document.body.querySelectorAll('.artaround-modal-layer[data-artaround-layer="modal"]').length,
-      scrollLocked: document.documentElement.classList.contains("artaround-layer-scroll-lock"),
-    };
-
-    secondController.release({ restoreFocus: true });
-    host.remove();
-    return { afterRelease, duringHandoff, afterCheckpoint };
+    await import("/marketplace/src/ui/item-detail-dialog.js");
+    const dialog = document.createElement("artaround-item-detail-dialog");
+    dialog.setAttribute("content-space-id", "space-acceptance");
+    dialog.setAttribute("item-id", "item-acceptance");
+    document.body.append(dialog);
   });
 
-  expect(state.afterRelease).toEqual({ parent: "BODY", kind: "modal", mountedCount: 1, scrollLocked: true });
-  expect(state.duringHandoff).toEqual({ firstParent: "BODY", secondParent: "BODY", mountedCount: 2, scrollLocked: true });
-  expect(state.afterCheckpoint).toEqual({ firstConnected: false, secondParent: "BODY", mountedCount: 1, scrollLocked: true });
+  const panel = page.locator('.item-detail-modal-layer[data-artaround-layer="modal"] .item-detail-modal');
+  await expect(panel.getByRole("heading", { name: "Dettaglio contenuto" })).toBeVisible();
+  const loadingBox = await panel.boundingBox();
+  expect(loadingBox).not.toBeNull();
+
+  await page.evaluate(() => window.__resolveItemDetailAcceptance());
+  await expect(panel.getByRole("heading", { name: "Opera acceptance" })).toBeVisible();
+  const loadedBox = await panel.boundingBox();
+  expect(loadedBox).not.toBeNull();
+
+  expect(Math.abs(loadingBox.width - loadedBox.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(loadingBox.height - loadedBox.height)).toBeLessThanOrEqual(1);
+  expect(loadedBox.height).toBeGreaterThan(500);
 });
