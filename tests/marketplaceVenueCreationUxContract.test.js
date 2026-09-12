@@ -7,11 +7,13 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const organizationPath = path.join(root, "clients/marketplace/src/ui/organization-view.js");
 const dialogPath = path.join(root, "clients/marketplace/src/ui/venue-create-dialog.js");
+const taskDialogPath = path.join(root, "clients/marketplace/src/ui/task-dialog.js");
 const repositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/venue-creation-repository.js");
 const stylesPath = path.join(root, "clients/marketplace/src/styles/venue-create.css");
 const indexPath = path.join(root, "clients/marketplace/index.html");
 const organization = fs.readFileSync(organizationPath, "utf8");
 const dialog = fs.readFileSync(dialogPath, "utf8");
+const taskDialog = fs.readFileSync(taskDialogPath, "utf8");
 const repository = fs.readFileSync(repositoryPath, "utf8");
 const styles = fs.readFileSync(stylesPath, "utf8");
 const index = fs.readFileSync(indexPath, "utf8");
@@ -23,16 +25,20 @@ test("la sezione Sedi apre un task modal e non usa più il form inline", () => {
   assert.doesNotMatch(organization, /<details class="account-create"><summary>[^<]*.*Nuova sede/);
 });
 
-test("la creazione Sede replica il flusso Raccolta in due passaggi", () => {
-  assert.match(dialog, /context-task-modal-layer venue-create-modal-layer/);
-  assert.match(dialog, /context-task-modal context-task-modal--large venue-create-modal/);
-  assert.match(dialog, /role="dialog" aria-modal="true"/);
+test("la creazione Sede usa la shell condivisa in due passaggi", () => {
+  assert.match(dialog, /createTaskDialog/);
+  assert.match(dialog, /size: "large"/);
+  assert.match(dialog, /renderBody: \(\) => this\.renderBody\(\)/);
+  assert.match(dialog, /renderFooter: \(\) => this\.renderFooter\(\)/);
+  assert.match(dialog, /isDirty: \(\) => this\.dirty/);
+  assert.match(taskDialog, /mountModalInteraction/);
   assert.match(dialog, /Passaggio 1 di 2/);
   assert.match(dialog, /Passaggio 2 di 2/);
   assert.match(dialog, /venue-create-stepper/);
   assert.match(dialog, /name="physicalVocabularyRevisionId"/);
   assert.match(dialog, /Gestisci vocabolari fisici/);
   assert.match(dialog, /data-venue-create-back/);
+  assert.doesNotMatch(dialog, /context-task-modal|data-venue-create-backdrop/);
 });
 
 test("il modal seleziona soltanto vocabolari esistenti e apre poi l'editor della Sede", () => {
@@ -59,7 +65,7 @@ test("gli stili dedicati sono caricati e mantengono il layout a due passaggi", (
 });
 
 test("le view coinvolte passano il syntax gate", () => {
-  for (const sourcePath of [organizationPath, dialogPath, repositoryPath]) {
+  for (const sourcePath of [organizationPath, dialogPath, taskDialogPath, repositoryPath]) {
     const result = spawnSync(process.execPath, ["--check", sourcePath], { encoding: "utf8" });
     assert.equal(result.status, 0, `${sourcePath}: ${result.stderr || result.stdout}`);
   }
