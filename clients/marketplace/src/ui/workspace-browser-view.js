@@ -1,6 +1,5 @@
 import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
-import { registerNavigationLossBlocker } from "../application/navigation-loss-guard.js";
 import {
   clearEditorialSpacePreference,
   resolveEditorialSpacePreference,
@@ -11,6 +10,7 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
+import { openSpaceEditorDialog, openSpaceSelectionDialog } from "./workspace-space-dialogs.js";
 import "./content-space-item-add-dialog.js";
 import "./item-detail-dialog.js";
 
@@ -65,32 +65,15 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   contentBusy = false;
   error = null;
   contentError = null;
-
-  spacePanel = null;
-  spaceSearch = "";
-  spaceDraft = { name: "", description: "" };
-  spaceDirty = false;
-  panelBusy = false;
-  panelError = null;
+  taskDialog = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
     this.addEventListener("keydown", this.onKeyDown);
     this.addEventListener("submit", this.onSubmit);
-    this.addEventListener("input", this.onInput);
     this.addEventListener("library-item-added", this.onLibraryItemAdded);
     this.addEventListener("library-item-open", this.onLibraryItemOpen);
     this.addEventListener("library-item-detail-close", this.onLibraryItemDetailClose);
-    this.unregisterNavigationBlocker = registerNavigationLossBlocker({
-      isBlocking: () => this.spaceDirty,
-      confirm: () => openActionDialog({
-        title: "Scartare le modifiche allo spazio?",
-        message: "Le modifiche non salvate nel pannello dello spazio editoriale andranno perse.",
-        confirmLabel: "Scarta modifiche",
-        tone: "danger",
-      }),
-      discard: () => this.resetSpacePanel(),
-    });
     void this.load();
   }
 
@@ -98,12 +81,11 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("keydown", this.onKeyDown);
     this.removeEventListener("submit", this.onSubmit);
-    this.removeEventListener("input", this.onInput);
     this.removeEventListener("library-item-added", this.onLibraryItemAdded);
     this.removeEventListener("library-item-open", this.onLibraryItemOpen);
     this.removeEventListener("library-item-detail-close", this.onLibraryItemDetailClose);
-    this.unregisterNavigationBlocker?.();
-    this.unregisterNavigationBlocker = null;
+    this.taskDialog?.close({ restoreFocus: false, notify: false });
+    this.taskDialog = null;
   }
 
   principal() { return operatingPrincipal(this.context); }
@@ -186,46 +168,67 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.resourcePage = Math.max(1, Number(this.resources?.page) || this.resourcePage);
   }
 
-  resetSpacePanel() {
-    this.spacePanel = null;
-    this.spaceSearch = "";
-    this.spaceDraft = { name: "", description: "" };
-    this.spaceDirty = false;
-    this.panelBusy = false;
-    this.panelError = null;
-    if (this.isConnected) this.render();
-  }
-
-  async confirmPanelDiscard() {
-    if (!this.spaceDirty) return true;
-    const confirmed = await openActionDialog({
-      title: "Scartare le modifiche allo spazio?",
-      message: "Le modifiche non salvate andranno perse.",
-      confirmLabel: "Scarta modifiche",
-      tone: "danger",
+  openSpaceChooser() {
+    if (this.taskDialog || !this.spaces.length) return;
+    this.taskDialog = openSpaceSelectionDialog({
+      spaces: this.spaces,
+      currentSpace: this.currentSpace,
+      canCreate: this.canManageSpaces(),
+      onDismiss: () => { this.taskDialog = null; },
+      onChoose: (space) => {
+        this.taskDialog = null;
+        void this.chooseSpace(space);
+      },
+      onCreate: () => {
+        this.taskDialog = null;
+        this.openSpaceEditor("create");
+      },
     });
-    if (confirmed) this.spaceDirty = false;
-    return confirmed;
   }
 
-  async openSpacePanel(mode) {
-    if (!(await this.confirmPanelDiscard())) return;
-    this.spacePanel = mode;
-    this.panelError = null;
-    this.spaceSearch = "";
-    if (mode === "settings" && this.currentSpace) {
-      this.spaceDraft = {
-        name: String(this.spaceData?.space?.name || this.currentSpace.name || ""),
-        description: String(this.spaceData?.space?.description || this.currentSpace.description || ""),
-      };
-    } else this.spaceDraft = { name: "", description: "" };
-    this.spaceDirty = false;
+  openSpaceEditor(mode) {
+    if (this.taskDialog || !this.canManageSpaces()) return;
+    const creating = mode === "create";
+    this.taskDialog = openSpaceEditorDialog({
+      mode,
+      initial: creating ? {} : {
+        name: this.spaceData?.space?.name || this.currentSpace?.name || "",
+        description: this.spaceData?.space?.description || this.currentSpace?.description || "",
+      },
+      stats: this.spaceData?.stats || {},
+      canDelete: !creating,
+      onDismiss: () => { this.taskDialog = null; },
+      onSave: async ({ name, description }) => {
+        if (creating) {
+          const created = await editorialRepository.createSpace({
+            name,
+            description,
+            ownerType: this.context.type,
+            ownerId: this.context.id,
+          });
+          setEditorialSpacePreference(this.principal(), id(created));
+        } else if (this.currentSpace) {
+          await editorialRepository.updateSpace(id(this.currentSpace), { name, description });
+        }
+        this.taskDialog = null;
+        await this.load();
+      },
+      onDelete: async () => {
+        const removed = await this.removeCurrentSpace();
+        if (removed) this.taskDialog = null;
+        return removed;
+      },
+    });
+  }
+
+  async chooseSpace(chosen) {
+    setEditorialSpacePreference(this.principal(), id(chosen));
+    this.currentSpace = chosen;
+    this.busy = true;
     this.render();
-  }
-
-  async closeSpacePanel() {
-    if (!(await this.confirmPanelDiscard())) return;
-    this.resetSpacePanel();
+    try { await this.loadEditorialSection(); }
+    catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire lo spazio selezionato"; }
+    finally { this.busy = false; this.render(); }
   }
 
   openItemAddDialog() {
@@ -282,28 +285,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     return `/workspace${query.toString() ? `?${query.toString()}` : ""}`;
   }
 
-  onInput = (event) => {
-    const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
-    if (!target) return;
-    if (target.matches("[data-space-search]")) {
-      this.spaceSearch = target.value;
-      this.render();
-      requestAnimationFrame(() => {
-        const input = this.querySelector("[data-space-search]");
-        if (input instanceof HTMLInputElement) {
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
-      });
-      return;
-    }
-    if (!target.form?.matches("[data-space-form]")) return;
-    if (!Object.prototype.hasOwnProperty.call(this.spaceDraft, target.name)) return;
-    this.spaceDraft[target.name] = target.value;
-    this.spaceDirty = true;
-  };
-
-  onSubmit = async (event) => {
+  onSubmit = (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
     if (form.matches("[data-resource-search]")) {
@@ -326,36 +308,6 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
         contentQ: String(data.get("q") || "").trim(),
         contentPage: 1,
       }));
-      return;
-    }
-    if (!form.matches("[data-space-form]")) return;
-    event.preventDefault();
-    const data = new FormData(form);
-    const name = String(data.get("name") || "").trim();
-    const description = String(data.get("description") || "").trim();
-    if (!name || !this.canManageSpaces()) return;
-    this.panelBusy = true;
-    this.panelError = null;
-    this.render();
-    try {
-      if (this.spacePanel === "create") {
-        const created = await editorialRepository.createSpace({
-          name,
-          description: description || null,
-          ownerType: this.context.type,
-          ownerId: this.context.id,
-        });
-        setEditorialSpacePreference(this.principal(), id(created));
-      } else if (this.spacePanel === "settings" && this.currentSpace) {
-        await editorialRepository.updateSpace(id(this.currentSpace), { name, description: description || null });
-      }
-      this.spaceDirty = false;
-      this.spacePanel = null;
-      await this.load();
-    } catch (error) {
-      this.panelError = error instanceof Error ? error.message : "Operazione sullo spazio non completata";
-      this.panelBusy = false;
-      this.render();
     }
   };
 
@@ -371,27 +323,9 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       else navigate("/workspace");
       return;
     }
-    if (target.closest("[data-change-space]")) { await this.openSpacePanel("choose"); return; }
-    if (target.closest("[data-space-settings]")) { await this.openSpacePanel("settings"); return; }
-    if (target.closest("[data-new-space]")) { await this.openSpacePanel("create"); return; }
-    if (target.closest("[data-close-space-panel]")) { await this.closeSpacePanel(); return; }
-
-    const chooseSpace = target.closest("[data-choose-space]");
-    if (chooseSpace) {
-      const chosen = this.spaces.find((space) => id(space) === String(chooseSpace.dataset.chooseSpace || ""));
-      if (!chosen) return;
-      setEditorialSpacePreference(this.principal(), id(chosen));
-      this.currentSpace = chosen;
-      this.resetSpacePanel();
-      this.busy = true;
-      this.render();
-      try { await this.loadEditorialSection(); }
-      catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire lo spazio selezionato"; }
-      finally { this.busy = false; this.render(); }
-      return;
-    }
-
-    if (target.closest("[data-delete-space]")) { await this.removeCurrentSpace(); return; }
+    if (target.closest("[data-change-space]")) { this.openSpaceChooser(); return; }
+    if (target.closest("[data-space-settings]")) { this.openSpaceEditor("settings"); return; }
+    if (target.closest("[data-new-space]")) { this.openSpaceEditor("create"); return; }
 
     const collection = target.closest("[data-collection-id]");
     if (collection) {
@@ -446,33 +380,26 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   };
 
   async removeCurrentSpace() {
-    if (!this.currentSpace || !this.canManageSpaces()) return;
+    if (!this.currentSpace || !this.canManageSpaces()) return false;
     const collectionCount = Number(this.spaceData?.stats?.collectionCount || 0);
-    if (collectionCount > 0) {
-      this.panelError = `Lo spazio contiene ancora ${collectionCount} ${collectionCount === 1 ? "raccolta attiva" : "raccolte attive"}. Eliminale o spostane il lavoro prima di eliminare lo spazio.`;
-      this.render();
-      return;
-    }
+    if (collectionCount > 0) return false;
     const confirmed = await openActionDialog({
       title: `Eliminare lo spazio “${this.spaceData?.space?.name || this.currentSpace.name || "editoriale"}”?`,
       message: "Lo spazio verrà rimosso. Gli Item non vengono eliminati; l'operazione sarà bloccata se un contenuto posseduto resterebbe senza alcuno spazio editoriale attivo.",
       confirmLabel: "Elimina spazio",
+      cancelLabel: "Annulla",
       tone: "danger",
     });
-    if (!confirmed) return;
-    this.panelBusy = true;
-    this.panelError = null;
-    this.render();
+    if (!confirmed) return false;
     try {
       await editorialRepository.removeSpace(id(this.currentSpace));
       clearEditorialSpacePreference(this.principal(), { silent: true });
-      this.spaceDirty = false;
-      this.spacePanel = null;
       await this.load();
+      return true;
     } catch (error) {
-      this.panelError = error instanceof Error ? error.message : "Eliminazione dello spazio non completata";
-      this.panelBusy = false;
+      this.error = error instanceof Error ? error.message : "Eliminazione dello spazio non completata";
       this.render();
+      return false;
     }
   }
 
@@ -560,19 +487,6 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     return `<section class="panel"><form data-resource-search class="inline-form" role="search"><label>Cerca<input name="q" value="${escapeHtml(this.resourceQuery)}" placeholder="Titolo o descrizione"></label><label>Tipo di risorsa<select name="resourceType">${options}</select></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Mostra i risultati</button></form></section><section class="workspace-section"><div class="section-heading"><div><span class="eyebrow">Risorse condivise</span><h2>Risorse dell'area di lavoro</h2><p>Visite, Regole editoriali, grafi semantici e vocabolari fisici sono riutilizzabili trasversalmente agli spazi editoriali dell'area di lavoro.</p></div><span class="count">${total}</span></div>${results.length ? `<div class="asset-grid">${results.map((asset) => this.renderResourceCard(asset)).join("")}</div>` : `<div class="empty-state"><h3>Nessuna risorsa trovata</h3><p>${this.resourceQuery || this.resourceType ? "Prova a modificare ricerca o tipo di risorsa." : "Le risorse condivise che creerai compariranno qui."}</p><a class="button-link" data-route href="/create">${icon("plus", { size: 15 })} Crea una risorsa</a></div>`}<nav class="pagination" aria-label="Pagine delle risorse"><button type="button" data-resource-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${page}</span><button type="button" data-resource-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva →</button></nav></section>`;
   }
 
-  renderSpacePanel() {
-    if (!this.spacePanel) return "";
-    if (this.spacePanel === "choose") {
-      const query = this.spaceSearch.trim().toLowerCase();
-      const filtered = this.spaces.filter((space) => !query || `${space.name || ""} ${space.description || ""}`.toLowerCase().includes(query));
-      return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="Scegli spazio editoriale"><div class="section-heading"><div><span class="eyebrow">Spazio editoriale</span><h2>Scegli dove lavorare</h2><p>La scelta modifica Raccolte e Contenuti della Libreria.</p></div><button type="button" class="button-secondary small" data-close-space-panel aria-label="Chiudi">×</button></div><label>Cerca spazio<input data-space-search value="${escapeHtml(this.spaceSearch)}" placeholder="Nome o descrizione"></label><div class="asset-grid">${filtered.length ? filtered.map((space) => { const stats = space.stats || {}; const selected = id(space) === id(this.currentSpace); return `<button type="button" class="semantic-inventory-card" data-choose-space="${escapeHtml(id(space))}" aria-current="${selected ? "true" : "false"}"><span><strong>${escapeHtml(space.name)}</strong><small>${escapeHtml(space.description || "Nessuna descrizione")}</small></span><span class="semantic-inventory-meta">${Number(stats.collectionCount || 0)} raccolte · ${Number(stats.itemCount || 0)} contenuti${selected ? " · corrente" : ""}</span></button>`; }).join("") : `<div class="empty-state compact"><p>Nessuno spazio corrisponde alla ricerca.</p></div>`}</div>${this.canManageSpaces() ? `<div class="semantic-inventory-footer"><p>Ti serve un corpus editoriale separato?</p><button type="button" class="button-secondary" data-new-space>${icon("plus", { size: 15 })} Nuovo spazio editoriale</button></div>` : ""}</aside></div>`;
-    }
-
-    const creating = this.spacePanel === "create";
-    const stats = this.spaceData?.stats || {};
-    return `<div class="context-workspace-inspector-layer"><aside class="context-workspace-inspector" aria-label="${creating ? "Crea spazio editoriale" : "Impostazioni spazio editoriale"}"><div class="section-heading"><div><span class="eyebrow">${creating ? "Nuovo spazio" : "Spazio editoriale"}</span><h2>${creating ? "Crea uno spazio editoriale" : "Impostazioni"}</h2></div><button type="button" class="button-secondary small" data-close-space-panel aria-label="Chiudi">×</button></div>${this.panelError ? `<p role="alert">${escapeHtml(this.panelError)}</p>` : ""}<form data-space-form><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(this.spaceDraft.name)}"></label><label>Descrizione<textarea name="description" rows="5">${escapeHtml(this.spaceDraft.description)}</textarea></label><div class="button-row"><button type="submit" ${this.panelBusy ? "disabled" : ""}>${creating ? "Crea spazio" : "Salva modifiche"}</button><button type="button" class="button-secondary" data-close-space-panel ${this.panelBusy ? "disabled" : ""}>Annulla</button></div></form>${!creating ? `<hr><section class="danger-zone"><span class="eyebrow">Zona pericolosa</span><h3>Elimina spazio</h3><p>${Number(stats.collectionCount || 0) ? `Lo spazio contiene ancora ${Number(stats.collectionCount || 0)} raccolte attive e non può essere eliminato.` : "Gli Item non vengono eliminati in cascata. Il backend blocca l'operazione se un contenuto posseduto rimarrebbe senza altri spazi attivi."}</p><button type="button" class="button-secondary danger" data-delete-space ${Number(stats.collectionCount || 0) || this.panelBusy ? "disabled" : ""}>${icon("trash", { size: 15 })} Elimina spazio</button></section>` : ""}</aside></div>`;
-  }
-
   renderRemovedMessage() {
     if (!this.removed) return "";
     const label = {
@@ -595,7 +509,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       return;
     }
     const content = this.section === "resources" ? this.renderResources() : this.renderEditorial();
-    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.contentBusy || this.panelBusy}"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>Libreria</h1><p>Organizza raccolte e contenuti nello spazio editoriale corrente oppure consulta le risorse condivise dell'area di lavoro.</p></div></header>${this.renderLibraryScope()}${this.renderLibraryTabs()}${this.renderRemovedMessage()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${content}</main>${this.renderSpacePanel()}`;
+    this.innerHTML = `<main class="page workspace-page" aria-busy="${this.busy || this.contentBusy}"><header class="page-header"><div><span class="eyebrow">Libreria</span><h1>Libreria</h1><p>Organizza raccolte e contenuti nello spazio editoriale corrente oppure consulta le risorse condivise dell'area di lavoro.</p></div></header>${this.renderLibraryScope()}${this.renderLibraryTabs()}${this.renderRemovedMessage()}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${content}</main>`;
   }
 }
 

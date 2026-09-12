@@ -46,6 +46,7 @@ async function editorialRelationChoices(req, res, next) {
       actorUserId: req.user._id,
       ownerType: req.query?.ownerType || null,
       ownerId: req.query?.ownerId || null,
+      subjectId: req.query?.subjectId || null,
       query: req.query?.q || "",
       page: req.query?.page,
       limit: req.query?.limit,

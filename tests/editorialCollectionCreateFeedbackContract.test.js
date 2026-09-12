@@ -6,9 +6,11 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/editorial-collection-create-view.js");
+const taskDialogPath = path.join(root, "clients/marketplace/src/ui/task-dialog.js");
 const stylesPath = path.join(root, "clients/marketplace/src/styles/editorial-collection-create.css");
 const indexPath = path.join(root, "clients/marketplace/index.html");
 const source = fs.readFileSync(viewPath, "utf8");
+const taskDialog = fs.readFileSync(taskDialogPath, "utf8");
 const styles = fs.readFileSync(stylesPath, "utf8");
 const index = fs.readFileSync(indexPath, "utf8");
 
@@ -17,10 +19,13 @@ test("la creazione Raccolta usa le superfici feedback standard", () => {
   assert.doesNotMatch(source, /<p role="alert">/);
 });
 
-test("la creazione Raccolta è sempre un unico task modal a due passaggi", () => {
-  assert.match(source, /context-task-modal-layer collection-create-modal-layer/);
-  assert.match(source, /context-task-modal context-task-modal--large collection-create-modal/);
-  assert.match(source, /role="dialog" aria-modal="true"/);
+test("la creazione Raccolta è un unico Task Dialog condiviso a due passaggi", () => {
+  assert.match(source, /createTaskDialog/);
+  assert.match(source, /size: "large"/);
+  assert.match(source, /renderBody: \(\) => this\.renderBody\(\)/);
+  assert.match(source, /renderFooter: \(\) => this\.renderFooter\(\)/);
+  assert.match(source, /isDirty: \(\) => this\.dirty/);
+  assert.match(taskDialog, /mountModalInteraction/);
   assert.match(source, /collection-create-stepper/);
   assert.match(source, /Passaggio 1 di 2/);
   assert.match(source, /Passaggio 2 di 2/);
@@ -28,6 +33,7 @@ test("la creazione Raccolta è sempre un unico task modal a due passaggi", () =>
   assert.match(source, /data-back-step/);
   assert.match(source, /collection-create-context-banner/);
   assert.match(source, /contextKindLabel\(this\.context\)/);
+  assert.doesNotMatch(source, /context-task-modal|data-collection-create-backdrop/);
   assert.doesNotMatch(source, /Grafo locale indipendente|creerà automaticamente un nuovo grafo|sorgenti dalla sezione Collegamenti/);
   assert.doesNotMatch(source, /collection-graph-dialog|data-collection-graph-action|semanticGraphId|importItemIds|graphMode/);
 });
@@ -54,6 +60,8 @@ test("gli stili dedicati mantengono il flusso a due passaggi e il dialog sorgent
 });
 
 test("la view di creazione Raccolta passa il syntax gate", () => {
-  const result = spawnSync(process.execPath, ["--check", viewPath], { encoding: "utf8" });
-  assert.equal(result.status, 0, `${viewPath}: ${result.stderr || result.stdout}`);
+  for (const file of [viewPath, taskDialogPath]) {
+    const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${file}: ${result.stderr || result.stdout}`);
+  }
 });

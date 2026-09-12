@@ -1,7 +1,7 @@
 artaround-venue-create-dialog{display:inline-flex;align-items:center}
 .venue-section-actions{display:flex;align-items:center;justify-content:flex-end;gap:.7rem;flex-wrap:wrap}
 .venue-create-modal-layer{align-items:center}
-.venue-create-modal{display:grid;gap:1rem;width:min(72rem,calc(100vw - 2rem));max-height:min(90vh,58rem);overflow:auto}
+.venue-create-modal{width:min(72rem,100%)}
 .venue-create-modal-header p{max-width:46rem;margin:.2rem 0 0;color:var(--sage-600)}
 .venue-create-modal-body{display:grid;gap:1rem;min-height:20rem}
 .venue-create-stepper{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin:0;padding:0;list-style:none}
@@ -23,5 +23,5 @@ artaround-venue-create-dialog{display:inline-flex;align-items:center}
 .venue-create-actions{display:flex;justify-content:flex-end;gap:.65rem;padding-top:1.2rem;border-top:1px solid var(--line)}
 .venue-create-blocker{min-height:18rem}
 .venue-create-blocker .button-row{justify-content:center}
-@media(max-width:52rem){.venue-create-modal{width:min(100%,calc(100vw - 1rem));max-height:94vh}.venue-create-actions{justify-content:flex-start}}
-@media(max-width:36rem){.venue-section-actions{width:100%;justify-content:space-between}.venue-create-stepper{grid-template-columns:1fr}.venue-create-stepper li{padding:.35rem .45rem}.venue-create-modal{gap:.75rem}.venue-create-actions{align-items:stretch;flex-direction:column-reverse}.venue-create-actions button{width:100%}}
+@media(max-width:52rem){.venue-create-actions{justify-content:flex-start}}
+@media(max-width:36rem){.venue-section-actions{width:100%;justify-content:space-between}.venue-create-stepper{grid-template-columns:1fr}.venue-create-stepper li{padding:.35rem .45rem}.venue-create-actions{align-items:stretch;flex-direction:column-reverse}.venue-create-actions button{width:100%}}

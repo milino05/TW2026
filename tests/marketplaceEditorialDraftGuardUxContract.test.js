@@ -7,6 +7,7 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const paths = {
   workspace: "clients/marketplace/src/ui/workspace-browser-view.js",
+  spaceDialogs: "clients/marketplace/src/ui/workspace-space-dialogs.js",
   collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
   sourceDialog: "clients/marketplace/src/ui/collection-graph-import-dialog.js",
   guard: "clients/marketplace/src/ui/form-navigation-loss-guard.js",
@@ -20,42 +21,63 @@ test("le superfici editoriali correnti con draft e il guard superano il syntax c
   }
 });
 
-test("Nuova Raccolta conserva draft e step attraverso i rerender senza configurare sorgenti", () => {
+test("Nuova Raccolta conserva draft e step attraverso i rerender nel Task Dialog condiviso", () => {
   assert.match(source.collection, /draft = \{ displayName: "", shortDescription: "", description: "" \}/);
   assert.match(source.collection, /step = "details"/);
-  assert.match(source.collection, /this\.addEventListener\("input", this\.onInput\)/);
+  assert.match(source.collection, /createTaskDialog/);
+  assert.match(source.collection, /onInput: this\.onDialogInput/);
+  assert.match(source.collection, /isDirty: \(\) => this\.dirty/);
+  assert.match(source.collection, /onDiscard: \(\) => \{ this\.dirty = false; \}/);
   assert.match(source.collection, /this\.captureDraft\(form\)/);
   assert.match(source.collection, /this\.step = "rules"/);
   assert.doesNotMatch(source.collection, /this\.step = "graph"|graphSelection|graphEditorMode/);
   assert.match(source.collection, /value="\$\{escapeHtml\(this\.draft\.displayName\)\}"/);
   assert.match(source.collection, />\$\{escapeHtml\(this\.draft\.description\)\}<\/textarea>/);
   assert.match(source.collection, /hasUnsavedChanges\(\) \{ return this\.dirty; \}/);
-  assert.match(source.collection, /this\.dirty = false;\s*navigate\(`/);
+  assert.match(source.collection, /this\.dirty = false;[\s\S]*navigate\(`/);
 });
 
-test("il source manager mantiene pinning e importazione distinti nello stesso modal", () => {
+test("il source manager mantiene pinning e importazione distinti nello stesso Task Dialog", () => {
   assert.match(source.sourceDialog, /view = "list"/);
   assert.match(source.sourceDialog, /this\.view = "add"/);
   assert.match(source.sourceDialog, /this\.view = "import"/);
   assert.match(source.sourceDialog, /attachGraphImportSource/);
   assert.match(source.sourceDialog, /importGraphSubjects/);
+  assert.match(source.sourceDialog, /createTaskDialog/);
+  assert.match(source.sourceDialog, /title: "Gestisci sorgenti"/);
   assert.match(source.sourceDialog, /Aggiungi sorgente/);
   assert.match(source.sourceDialog, /Importa contenuti/);
-  assert.match(source.sourceDialog, /aria-label="Gestisci sorgenti"/);
-  assert.doesNotMatch(source.sourceDialog, /data-attach-source-only|submitImport\(\[\]\)|config\.mode === "import-content"/);
+  assert.doesNotMatch(source.sourceDialog, /context-task-modal|data-graph-import-backdrop|data-attach-source-only|submitImport\(\[\]\)|config\.mode === "import-content"/);
 });
 
-test("creazione Spazio integrata nella Libreria conserva e protegge il draft", () => {
-  assert.match(source.workspace, /spaceDraft = \{ name: "", description: "" \}/);
-  assert.match(source.workspace, /spaceDirty = false/);
-  assert.match(source.workspace, /registerNavigationLossBlocker\(\{/);
-  assert.match(source.workspace, /isBlocking: \(\) => this\.spaceDirty/);
-  assert.match(source.workspace, /value="\$\{escapeHtml\(this\.spaceDraft\.name\)\}"/);
-  assert.match(source.workspace, />\$\{escapeHtml\(this\.spaceDraft\.description\)\}<\/textarea>/);
-  assert.match(source.workspace, /catch \(error\)[\s\S]*this\.panelBusy = false;\s*this\.render\(\)/);
+test("selezione Spazio usa il resource-selection Task Modal senza rerender totale durante la ricerca", () => {
+  assert.match(source.workspace, /openSpaceSelectionDialog/);
+  assert.match(source.spaceDialogs, /task-selection-layout/);
+  assert.match(source.spaceDialogs, /task-selection-toolbar/);
+  assert.match(source.spaceDialogs, /task-resource-choice-list/);
+  assert.match(source.spaceDialogs, /Spazio corrente/);
+  assert.match(source.spaceDialogs, /Altri spazi|Spazi disponibili/);
+  assert.match(source.spaceDialogs, /data-space-selection-results/);
+  assert.match(source.spaceDialogs, /results\.innerHTML = renderResults\(\)/);
+  assert.doesNotMatch(source.spaceDialogs, /input\?\.name !== "spaceQuery"[\s\S]{0,220}controller\.render\(\)/);
 });
 
-test("il guard riconosce i nuovi editor anche dopo la sostituzione del nodo form", () => {
+test("creazione e modifica Spazio conservano e proteggono il draft nel dialog dedicato", () => {
+  assert.match(source.workspace, /openSpaceEditorDialog/);
+  assert.doesNotMatch(source.workspace, /spaceDraft|spaceDirty/);
+  assert.match(source.spaceDialogs, /const state = \{/);
+  assert.match(source.spaceDialogs, /name: String\(initial\.name \|\| ""\)/);
+  assert.match(source.spaceDialogs, /description: String\(initial\.description \|\| ""\)/);
+  assert.match(source.spaceDialogs, /dirty: false/);
+  assert.match(source.spaceDialogs, /isDirty: \(\) => state\.dirty/);
+  assert.match(source.spaceDialogs, /onDiscard: \(\) => \{ state\.dirty = false; \}/);
+  assert.match(source.spaceDialogs, /if \(field\.name === "name"\) state\.name = field\.value/);
+  assert.match(source.spaceDialogs, /if \(field\.name === "description"\) state\.description = field\.value/);
+  assert.match(source.spaceDialogs, /state\.dirty = true/);
+  assert.match(source.spaceDialogs, /catch \(error\)[\s\S]*state\.busy = false;[\s\S]*dialog\?\.render\(\)/);
+});
+
+test("il guard riconosce gli editor full-page anche dopo la sostituzione del nodo form", () => {
   for (const host of ["artaround-editorial-collection-create-view", "artaround-editorial-studio-view"]) assert.match(source.guard, new RegExp(host));
   assert.match(source.guard, /hostHasDurableDirtyState/);
   assert.match(source.guard, /protectedHosts\(\)\.some\(hostHasDurableDirtyState\)/);

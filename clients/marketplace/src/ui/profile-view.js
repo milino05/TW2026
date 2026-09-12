@@ -2,6 +2,7 @@ import { navigate, pushSameDocumentHistory } from "../application/router.js";
 import { confirmNavigationLoss, hasNavigationLossRisk } from "../application/navigation-loss-guard.js";
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { icon } from "./icons.js";
+import { openResourceCreateDialog } from "./resource-create-dialog.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function number(value, fallback = 0.5) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
@@ -25,9 +26,15 @@ export class ArtAroundProfileView extends HTMLElement {
   error = null;
   message = null;
   activeSection = accountSectionFromHash();
+  resourceDialog = null;
 
   connectedCallback() { this.addEventListener("submit", this.onSubmit); this.addEventListener("click", this.onClick); this.load(); }
-  disconnectedCallback() { this.removeEventListener("submit", this.onSubmit); this.removeEventListener("click", this.onClick); }
+  disconnectedCallback() {
+    this.removeEventListener("submit", this.onSubmit);
+    this.removeEventListener("click", this.onClick);
+    this.resourceDialog?.close({ restoreFocus: false, notify: false });
+    this.resourceDialog = null;
+  }
 
   async load() {
     this.busy = true; this.error = null; this.render();
@@ -61,11 +68,29 @@ export class ArtAroundProfileView extends HTMLElement {
     requestAnimationFrame(() => this.querySelector(".organization-section, .organization-overview")?.focus({ preventScroll: true }));
   }
 
+  openResourceDialog(type) {
+    if (this.resourceDialog || !this.workspace?.account?.id) return;
+    this.resourceDialog = openResourceCreateDialog({
+      type,
+      ownerType: "user",
+      ownerId: this.workspace.account.id,
+      applyStarterByDefault: true,
+      onDismiss: () => { this.resourceDialog = null; },
+      onCreated: ({ id: createdId }) => {
+        this.resourceDialog = null;
+        if (type === "physical") navigate(`/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(createdId)}`);
+        else navigate(`/namespaces/editor?namespaceId=${encodeURIComponent(createdId)}`);
+      },
+    });
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     const section = target?.closest("[data-account-section]");
     if (section) { await this.setSection(section.dataset.accountSection); return; }
     if (target?.closest("[data-context-hub]")) { navigate("/context"); return; }
+    if (target?.closest("[data-create-namespace-open]")) { this.openResourceDialog("namespace"); return; }
+    if (target?.closest("[data-create-physical-open]")) { this.openResourceDialog("physical"); return; }
     const namespace = target?.closest("[data-namespace]");
     if (namespace) { navigate(`/namespaces/editor?namespaceId=${encodeURIComponent(namespace.dataset.namespace)}`); return; }
     const physicalVocabulary = target?.closest("[data-physical-vocabulary]");
@@ -76,21 +101,7 @@ export class ArtAroundProfileView extends HTMLElement {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
     const data = new FormData(form);
-    if (form.matches("[data-create-namespace]")) {
-      event.preventDefault();
-      const created = await this.execute(() => accountRepository.createNamespace({ ownerType: "user", ownerId: this.workspace.account.id, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Regole editoriali personali create.");
-      const createdId = created?.namespace?._id || created?.namespace?.id;
-      if (createdId) navigate(`/namespaces/editor?namespaceId=${encodeURIComponent(createdId)}`);
-    } else if (form.matches("[data-create-physical-vocabulary]")) {
-      event.preventDefault();
-      const created = await this.execute(() => accountRepository.createPhysicalVocabulary({
-        ownerType: "user", ownerId: this.workspace.account.id,
-        name: String(data.get("name") || ""), description: String(data.get("description") || ""),
-        applyStarter: String(data.get("startingPoint") || "starter") !== "blank",
-      }), "Vocabolario fisico personale creato.");
-      const createdId = created?.physicalVocabulary?._id || created?.physicalVocabulary?.id;
-      if (createdId) navigate(`/physical-vocabularies/editor?physicalVocabularyId=${encodeURIComponent(createdId)}`);
-    } else if (form.matches("[data-presentation-preference]")) {
+    if (form.matches("[data-presentation-preference]")) {
       event.preventDefault();
       await this.execute(() => accountRepository.updatePresentationPreference({ depthPreference: number(data.get("depthPreference")), languageComplexityPreference: number(data.get("languageComplexityPreference")) }), "Preferenze di presentazione aggiornate.");
     } else if (form.matches("[data-navigation-preference]")) {
@@ -136,13 +147,13 @@ export class ArtAroundProfileView extends HTMLElement {
 
   renderRules() {
     const cards = this.workspace.personalNamespaces.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("book", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(stateLabel(entry, "Privata"))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Nessuna descrizione disponibile.")}</p><button type="button" data-namespace="${escapeHtml(entry.id)}">Modifica regole editoriali ${icon("chevron", { size: 15 })}</button></article>`).join("");
-    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Namespace personali</h2><p>Definiscono criteri editoriali di tua proprietà e restano separati da quelli delle organizzazioni.</p></div><span class="count">${this.workspace.personalNamespaces.length}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 26 })}<h3>Nessuna regola editoriale personale</h3></div>`}</div><details class="account-create"><summary>${icon("plus", { size: 16 })} Nuove regole editoriali</summary><form data-create-namespace><label>Nome<input name="name" required placeholder="Es. Le mie regole editoriali"></label><label>Descrizione<textarea name="description" placeholder="Scopo e pubblico"></textarea></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details></section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Regole editoriali</span><h2>Namespace personali</h2><p>Definiscono criteri editoriali di tua proprietà e restano separati da quelli delle organizzazioni.</p></div><div class="button-row"><span class="count">${this.workspace.personalNamespaces.length}</span><button type="button" data-create-namespace-open>${icon("plus", { size: 16 })} Nuove regole editoriali</button></div></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("book", { size: 26 })}<h3>Nessuna regola editoriale personale</h3></div>`}</div></section>`;
   }
 
   renderPhysical() {
     const entries = this.workspace.personalPhysicalVocabularies || [];
     const cards = entries.map((entry) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("route", { size: 20 })}</span><div><span class="eyebrow">${escapeHtml(stateLabel(entry))}</span><h3>${escapeHtml(entry.name)}</h3></div></header><p>${escapeHtml(entry.description || "Linguaggio fisico riutilizzabile per sedi e routing.")}</p><button type="button" data-physical-vocabulary="${escapeHtml(entry.id)}">Configura vocabolario fisico ${icon("chevron", { size: 15 })}</button></article>`).join("");
-    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Dominio fisico</span><h2>Vocabolari fisici personali</h2><p>Risorse autonome di tua proprietà. I vocabolari di un'organizzazione si modificano dalla sua area di lavoro.</p></div><span class="count">${entries.length}</span></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("route", { size: 26 })}<h3>Nessun vocabolario fisico personale</h3></div>`}</div><details class="account-create"><summary>${icon("plus", { size: 16 })} Nuovo vocabolario fisico</summary><form data-create-physical-vocabulary><label>Nome<input name="name" required placeholder="Es. Il mio vocabolario fisico"></label><label>Descrizione<textarea name="description" placeholder="Quali esigenze deve coprire?"></textarea></label><label>Punto di partenza<select name="startingPoint"><option value="starter">Configurazione ArtAround di base</option><option value="blank">Parti da zero</option></select></label><button>${icon("plus", { size: 16 })} Crea e configura</button></form></details></section>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Dominio fisico</span><h2>Vocabolari fisici personali</h2><p>Risorse autonome di tua proprietà. I vocabolari di un'organizzazione si modificano dalla sua area di lavoro.</p></div><div class="button-row"><span class="count">${entries.length}</span><button type="button" data-create-physical-open>${icon("plus", { size: 16 })} Nuovo vocabolario fisico</button></div></div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("route", { size: 26 })}<h3>Nessun vocabolario fisico personale</h3></div>`}</div></section>`;
   }
 
   renderCurrentSection() {

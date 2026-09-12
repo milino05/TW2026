@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const editor = read("clients/marketplace/src/ui/semantic-graph-editor.js");
 const graphView = read("clients/marketplace/src/ui/semantic-graph-view.js");
+const modalInteraction = read("clients/marketplace/src/application/modal-interaction.js");
 const subjectBrowser = read("clients/marketplace/src/ui/semantic-subject-source-browser.js");
 const relationViews = read("clients/marketplace/src/ui/semantic-relation-views.js");
 const repository = read("clients/marketplace/src/infrastructure/http/editorial-repository.js");
@@ -113,10 +114,17 @@ test("click modifica, doppio click ricentra e la tastiera offre un percorso equi
   assert.match(editor, /\["Enter", " "\]\.includes\(event\.key\)/);
 });
 
-test("gli editor del grafo usano il modal blurred centrale e non inspector laterali", () => {
-  assert.match(editor, /context-task-modal-layer semantic-graph-modal-layer/);
-  assert.match(editor, /role="dialog" aria-modal="true"/);
-  assert.match(editor, /data-graph-modal-backdrop/);
+test("i task bounded del grafo usano il lifecycle modal condiviso e non inspector laterali", () => {
+  assert.match(editor, /mountModalInteraction/);
+  assert.match(editor, /artaround-modal-layer semantic-graph-modal-layer/);
+  assert.match(editor, /artaround-task-modal/);
+  assert.match(editor, /data-modal-backdrop="true"/);
+  assert.match(editor, /data-modal-dismiss/);
+  assert.match(editor, /subject-selected/);
+  assert.match(editor, /subject-browser-action/);
+  assert.match(modalInteraction, /mountUiLayer/);
+  assert.doesNotMatch(editor, /context-task-modal|data-graph-modal-backdrop|data-close-graph-modal/);
+  assert.doesNotMatch(editor, /event\.key === "Escape"/);
   assert.doesNotMatch(editor, /context-workspace-inspector-layer|semantic-subject-inspector|semantic-relation-inspector/);
 });
 

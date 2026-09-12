@@ -11,8 +11,8 @@ import { ArtAroundVisitAuthoringView } from "./visit-authoring-view.js";
 
 /*
  * Incremental migration for legacy feedback surfaces whose semantics are already
- * unambiguous. Complex workflow dialogs and contextual search/provider panels
- * stay specialized until they can be mapped without losing domain interaction.
+ * unambiguous. Complex contextual search/provider panels stay specialized until
+ * they can be mapped without losing domain interaction.
  */
 function replaceElement(legacy, tagName, tone, { role = null } = {}) {
   if (!legacy || legacy.tagName.toLowerCase() === tagName) return legacy;
@@ -36,12 +36,6 @@ function replaceIssuePanels(root) {
   const physical = [...root.querySelectorAll(".physical-integrity--warning:not(artaround-issue-panel)")]
     .filter((legacy) => legacy.querySelector("ul"));
   for (const legacy of new Set([...standard, ...physical])) replaceElement(legacy, "artaround-issue-panel", "warning");
-}
-
-function replaceNamespaceWorkflowCallout(editor) {
-  if (!editor.pendingWorkflow || editor.leaveConfirmation) return;
-  const legacy = editor.querySelector(".namespace-confirmation");
-  if (legacy) replaceElement(legacy, "artaround-callout", "warning");
 }
 
 function replaceItemBlockerCallout(editor) {
@@ -89,61 +83,6 @@ function installPersistentErrorObserver() {
   else start();
 }
 
-function legacyDialogKey(value) {
-  if (!value) return "";
-  return [value.type, value.field, value.definitionId, value.title].filter(Boolean).join(":");
-}
-
-function showNamespaceLeaveDialog(editor) {
-  const legacy = editor.querySelector(".namespace-confirmation");
-  if (!editor.leaveConfirmation || !legacy || editor.__sharedLeaveDialogOpen) return;
-  legacy.hidden = true;
-  editor.__sharedLeaveDialogOpen = true;
-
-  openActionDialog({
-    tone: "danger",
-    title: "Uscire senza salvare?",
-    message: "Le modifiche non salvate alle regole editoriali andranno perse.",
-    confirmLabel: "Esci senza salvare",
-    cancelLabel: "Resta nell'editor",
-  }).then((confirmed) => {
-    editor.__sharedLeaveDialogOpen = false;
-    if (!editor.isConnected || !editor.leaveConfirmation) return;
-    if (confirmed) editor.dirty = false;
-    const control = editor.querySelector(confirmed ? "[data-confirm-leave]" : "[data-cancel-leave]");
-    control?.click();
-    if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
-  });
-}
-
-function showPhysicalConfirmationDialog(editor) {
-  const confirmation = editor.pendingConfirmation;
-  const legacy = editor.querySelector("[data-confirm-action]")?.closest('[role="dialog"]');
-  if (!confirmation || !legacy) return;
-  const key = legacyDialogKey(confirmation);
-  if (!key || editor.__sharedPhysicalConfirmationKey === key) {
-    if (key) legacy.hidden = true;
-    return;
-  }
-
-  legacy.hidden = true;
-  editor.__sharedPhysicalConfirmationKey = key;
-  openActionDialog({
-    tone: "danger",
-    title: confirmation.title,
-    message: confirmation.detail,
-    confirmLabel: confirmation.confirmLabel,
-    cancelLabel: "Annulla",
-  }).then((confirmed) => {
-    if (editor.__sharedPhysicalConfirmationKey === key) editor.__sharedPhysicalConfirmationKey = null;
-    if (!editor.isConnected || legacyDialogKey(editor.pendingConfirmation) !== key) return;
-    if (confirmed && confirmation.type === "leave") editor.dirty = false;
-    const control = editor.querySelector(confirmed ? "[data-confirm-action]" : "[data-confirm-cancel]");
-    control?.click();
-    if (!confirmed) requestAnimationFrame(() => editor.querySelector("[data-back]")?.focus({ preventScroll: true }));
-  });
-}
-
 /* Custom-element lifecycle callbacks are captured by customElements.define().
  * Namespace/Physical are already defined by the time this adapter imports them,
  * so patching prototype.connectedCallback here would never run in browsers.
@@ -183,8 +122,6 @@ function registerDirtyEditor(editor, definition) {
     discard: () => {
       if (definition.discard) definition.discard(editor);
       else editor.dirty = false;
-      if ("leaveConfirmation" in editor) editor.leaveConfirmation = false;
-      if (editor.pendingConfirmation?.type === "leave") editor.pendingConfirmation = null;
     },
   });
   registeredDirtyEditors.set(editor, unregister);
@@ -259,22 +196,12 @@ function installRenderAdapter(constructor, flag, enhance) {
   Object.defineProperty(prototype, flag, { value: true });
 }
 
-installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", (editor) => {
-  replaceIssuePanels(editor);
-  replaceNamespaceWorkflowCallout(editor);
-  showNamespaceLeaveDialog(editor);
-});
-
-installRenderAdapter(ArtAroundPhysicalVocabularyEditorView, "__sharedFeedbackSurfaces", (editor) => {
-  replaceIssuePanels(editor);
-  showPhysicalConfirmationDialog(editor);
-});
-
+installRenderAdapter(ArtAroundNamespaceEditorView, "__sharedFeedbackSurfaces", replaceIssuePanels);
+installRenderAdapter(ArtAroundPhysicalVocabularyEditorView, "__sharedFeedbackSurfaces", replaceIssuePanels);
 installRenderAdapter(ItemAuthoringView, "__sharedFeedbackSurfaces", (editor) => {
   replaceIssuePanels(editor);
   replaceItemBlockerCallout(editor);
 });
-
 installRenderAdapter(ArtAroundVisitAuthoringView, "__sharedFeedbackSurfaces", replaceIssuePanels);
 installDirtyNavigationGuardObserver();
 installPersistentErrorObserver();

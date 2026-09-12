@@ -1,6 +1,7 @@
 import { navigate } from "../application/router.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
+import { openRichActionDialog } from "./rich-action-dialog.js";
 import { icon } from "./icons.js";
 import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
 
@@ -22,7 +23,13 @@ function params() { const values = new URLSearchParams(window.location.search); 
 function rightLabel(use) { return RIGHT_LABELS[use?.capability] || use?.label || "Diritto di utilizzo"; }
 
 export class ArtAroundListingDetailView extends HTMLElement {
-  context = readOperatingContext(); detail = null; busy = false; error = null; message = null; pendingOfferId = null; acquisitionResult = null;
+  context = readOperatingContext();
+  detail = null;
+  busy = false;
+  error = null;
+  message = null;
+  acquisitionResult = null;
+
   connectedCallback() { this.addEventListener("click", this.onClick); this.load(); }
   disconnectedCallback() { this.removeEventListener("click", this.onClick); }
   beneficiary() { const principal = operatingPrincipal(this.context); return principal ? { type: principal.principalType, id: principal.principalId, name: this.context?.type === "organization" ? this.context.name : "Area personale" } : null; }
@@ -41,18 +48,37 @@ export class ArtAroundListingDetailView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("button[data-back-catalog]")) { navigate(params().returnTo); return; }
     const start = target?.closest("button[data-start-acquisition]");
-    if (start) { this.pendingOfferId = start.dataset.startAcquisition; this.message = null; this.acquisitionResult = null; this.render(); return; }
-    if (target?.closest("button[data-cancel-acquisition]")) { this.pendingOfferId = null; this.render(); return; }
-    if (target?.closest("button[data-confirm-acquisition]")) await this.acquirePendingOffer();
+    if (start) await this.confirmAcquisition(start.dataset.startAcquisition);
   };
 
-  async acquirePendingOffer() {
-    const offer = (this.detail?.offers || []).find((entry) => String(entry.id) === String(this.pendingOfferId));
-    const beneficiary = this.beneficiary(); if (!offer || !beneficiary) return;
-    this.busy = true; this.error = null; this.render();
+  async confirmAcquisition(offerId) {
+    const offer = (this.detail?.offers || []).find((entry) => String(entry.id) === String(offerId));
+    const beneficiary = this.beneficiary();
+    if (!offer || !beneficiary || this.busy) return;
+    const paid = offer.pricing?.type === "paid";
+    const rights = `<ul class="rights-list">${(offer.uses || []).map((use) => `<li>${use.available ? icon("check", { size: 16 }) : icon("plus", { size: 16 })}<span><strong>${escapeHtml(rightLabel(use))}</strong>${use.available ? `<small>Già disponibile in questa area</small>` : ""}</span></li>`).join("")}</ul>`;
+    const confirmed = await openRichActionDialog({
+      eyebrow: "Licenza Marketplace",
+      title: paid ? "Acquista questa licenza" : "Aggiungi questa licenza",
+      description: "Controlla destinatario, prezzo, aggiornamenti e diritti prima di continuare.",
+      size: "large",
+      body: `<dl class="definition-list"><div><dt>Area</dt><dd>${escapeHtml(beneficiary.name)}</dd></div><div><dt>Prezzo</dt><dd>${escapeHtml(formatPrice(offer.pricing))}</dd></div><div><dt>Aggiornamenti</dt><dd>${escapeHtml(offer.versionBehaviour?.label || "Non specificato")}</dd></div></dl><section><strong>Cosa otterrai</strong>${rights}</section><p class="note">${paid ? "Pagamento simulato per la demo del corso: non viene effettuata una transazione reale." : "Questa offerta è gratuita."}</p>`,
+      confirmLabel: paid ? "Conferma acquisto" : "Conferma aggiunta",
+      cancelLabel: "Annulla",
+    });
+    if (!confirmed) return;
+    await this.acquireOffer(offer);
+  }
+
+  async acquireOffer(offer) {
+    const beneficiary = this.beneficiary();
+    if (!offer || !beneficiary) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
     try {
       const result = await marketplaceRepository.acquire(offer.id, { beneficiaryType: beneficiary.type, beneficiaryId: beneficiary.id });
-      this.acquisitionResult = result; this.pendingOfferId = null;
+      this.acquisitionResult = result;
       this.message = result?.acquisition?.alreadyAcquired ? "Questa licenza era già disponibile in questa area." : "Licenza aggiunta alla libreria di questa area.";
       await this.load();
     } catch (error) { this.error = error instanceof Error ? error.message : "Acquisizione non riuscita"; }
@@ -63,16 +89,10 @@ export class ArtAroundListingDetailView extends HTMLElement {
   renderRights(offer) { return `<ul class="rights-list">${(offer.uses || []).map((use) => `<li>${use.available ? icon("check", { size: 16 }) : icon("plus", { size: 16 })}<span><strong>${escapeHtml(rightLabel(use))}</strong>${use.available ? `<small>Già disponibile in questa area</small>` : ""}</span></li>`).join("")}</ul>`; }
   renderTechnicalOfferDetails(offer) { return `<details class="technical-details"><summary>Dettagli tecnici della licenza</summary><dl class="definition-list">${(offer.uses || []).map((use) => `<div><dt>${escapeHtml(rightLabel(use))}</dt><dd><code>${escapeHtml(use.capability)}</code> · <code>${escapeHtml(use.resourceType)}</code></dd></div>`).join("")}<div><dt>Aggiornamenti</dt><dd>${escapeHtml(offer.versionBehaviour?.label || "Non specificato")}</dd></div></dl></details>`; }
 
-  renderConfirmation(offer) {
-    if (String(this.pendingOfferId) !== String(offer.id)) return "";
-    const paid = offer.pricing?.type === "paid";
-    return `<div class="acquisition-confirmation" role="region" aria-label="Conferma licenza"><span class="eyebrow">Conferma</span><h3>${paid ? "Acquista questa licenza" : "Aggiungi questa licenza"}</h3><dl class="definition-list"><div><dt>Area</dt><dd>${escapeHtml(this.beneficiary()?.name || "Area corrente")}</dd></div><div><dt>Prezzo</dt><dd>${escapeHtml(formatPrice(offer.pricing))}</dd></div><div><dt>Aggiornamenti</dt><dd>${escapeHtml(offer.versionBehaviour?.label || "Non specificato")}</dd></div></dl><div><strong>Cosa otterrai</strong>${this.renderRights(offer)}</div>${paid ? `<p class="note">Pagamento simulato per la demo del corso: non viene effettuata una transazione reale.</p>` : `<p class="note">Questa offerta è gratuita.</p>`}<div class="button-row"><button type="button" data-confirm-acquisition ${this.busy ? "disabled" : ""}>${paid ? "Conferma acquisto" : "Conferma aggiunta"}</button><button class="button-secondary" type="button" data-cancel-acquisition ${this.busy ? "disabled" : ""}>Annulla</button></div></div>`;
-  }
-
   renderOffer(offer) {
     const paid = offer.pricing?.type === "paid";
     const actionLabel = paid ? "Acquista licenza" : "Aggiungi alla libreria";
-    return `<article class="consumer-offer-card"><header><div><span class="eyebrow">${escapeHtml(offer.label || "Offerta")}</span><h3>${escapeHtml(formatPrice(offer.pricing))}</h3></div>${offer.fullyAvailable ? `<span class="chip" data-tone="success">${icon("check", { size: 14 })} Già disponibile</span>` : ""}</header><div><strong>Cosa puoi fare</strong>${this.renderRights(offer)}</div><p class="consumer-version-note">${escapeHtml(offer.versionBehaviour?.label || "Condizioni di aggiornamento non specificate")}</p>${this.renderTechnicalOfferDetails(offer)}${offer.fullyAvailable ? `<p class="note">Questa offerta è già disponibile nella libreria dell'area corrente.</p>` : `<button type="button" data-start-acquisition="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${actionLabel}</button>`}${this.renderConfirmation(offer)}</article>`;
+    return `<article class="consumer-offer-card"><header><div><span class="eyebrow">${escapeHtml(offer.label || "Offerta")}</span><h3>${escapeHtml(formatPrice(offer.pricing))}</h3></div>${offer.fullyAvailable ? `<span class="chip" data-tone="success">${icon("check", { size: 14 })} Già disponibile</span>` : ""}</header><div><strong>Cosa puoi fare</strong>${this.renderRights(offer)}</div><p class="consumer-version-note">${escapeHtml(offer.versionBehaviour?.label || "Condizioni di aggiornamento non specificate")}</p>${this.renderTechnicalOfferDetails(offer)}${offer.fullyAvailable ? `<p class="note">Questa offerta è già disponibile nella libreria dell'area corrente.</p>` : `<button type="button" data-start-acquisition="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${actionLabel}</button>`}</article>`;
   }
 
   renderSuccess() {

@@ -1,4 +1,5 @@
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { mountModalInteraction } from "../application/modal-interaction.js";
 import { icon } from "./icons.js";
 import "./content-space-item-add-dialog.js";
 
@@ -20,6 +21,8 @@ export class ArtAroundCollectionItemAddDialog extends HTMLElement {
   busy = false;
   error = null;
   notice = null;
+  _dialogInteraction = null;
+  _dialogLayer = null;
 
   connectedCallback() {
     this.editorialContextId = this.getAttribute("editorial-context-id") || null;
@@ -28,21 +31,49 @@ export class ArtAroundCollectionItemAddDialog extends HTMLElement {
     this.spaceName = this.getAttribute("space-name") || "Spazio editoriale";
     this.ownerType = this.getAttribute("owner-type") || "user";
     this.ownerId = this.getAttribute("owner-id") || null;
-    this.addEventListener("click", this.onClick);
-    this.addEventListener("submit", this.onSubmit);
     this.addEventListener("library-item-added", this.onSpaceItemReady);
     this.addEventListener("library-item-open", this.onSpaceItemReady);
     void this.load();
   }
 
   disconnectedCallback() {
-    this.removeEventListener("click", this.onClick);
-    this.removeEventListener("submit", this.onSubmit);
     this.removeEventListener("library-item-added", this.onSpaceItemReady);
     this.removeEventListener("library-item-open", this.onSpaceItemReady);
+    this.releaseDialogInteraction({ restoreFocus: false });
+  }
+
+  releaseDialogInteraction({ restoreFocus = false } = {}) {
+    if (this._dialogLayer) {
+      this._dialogLayer.removeEventListener("click", this.onClick);
+      this._dialogLayer.removeEventListener("submit", this.onSubmit);
+    }
+    this._dialogInteraction?.release?.({ restoreFocus });
+    this._dialogInteraction = null;
+    this._dialogLayer = null;
+  }
+
+  syncDialogInteraction() {
+    const layer = this.querySelector(".collection-item-add-modal-layer");
+    if (!(layer instanceof HTMLElement)) return;
+    this._dialogLayer = layer;
+    layer.addEventListener("click", this.onClick);
+    layer.addEventListener("submit", this.onSubmit);
+    this._dialogInteraction = mountModalInteraction({
+      layer,
+      panel: () => layer.querySelector(".collection-item-add-modal"),
+      kind: "modal",
+      initialFocus: '[name="q"]',
+      canDismiss: () => !this.busy,
+      onRequestDismiss: () => {
+        this.close();
+        return true;
+      },
+      lockScroll: true,
+    });
   }
 
   close() {
+    this.releaseDialogInteraction({ restoreFocus: true });
     this.dispatchEvent(new CustomEvent("collection-item-add-close", { bubbles: true }));
     this.remove();
   }
@@ -123,7 +154,6 @@ export class ArtAroundCollectionItemAddDialog extends HTMLElement {
   onClick = (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    if (target.closest("[data-close-collection-item-add]")) { this.close(); return; }
     if (target.closest("[data-add-content-to-space]")) { this.openSpaceItemFlow(); return; }
     const add = target.closest("button[data-add-collection-item]");
     if (add) { void this.addItem(add.dataset.addCollectionItem); return; }
@@ -154,9 +184,12 @@ export class ArtAroundCollectionItemAddDialog extends HTMLElement {
   }
 
   render() {
+    this.releaseDialogInteraction({ restoreFocus: false });
     const results = this.data?.results || [];
     const total = Number(this.data?.pagination?.total || 0);
-    this.innerHTML = `<div class="context-task-modal-layer collection-item-add-modal-layer" role="presentation"><section class="context-task-modal context-task-modal--large collection-item-add-modal" role="dialog" aria-modal="true" aria-label="Aggiungi contenuti alla raccolta"><header class="task-modal-header"><div><span class="eyebrow">${escapeHtml(this.collectionName)}</span><h1>Aggiungi contenuti alla raccolta</h1><p>Spazio editoriale: <strong>${escapeHtml(this.spaceName)}</strong></p></div><button type="button" class="button-secondary small" data-close-collection-item-add aria-label="Chiudi">×</button></header>${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}${this.notice ? `<artaround-callout tone="success" role="status">${escapeHtml(this.notice)}</artaround-callout>` : ""}<form class="inline-form" data-collection-item-search role="search"><label>Cerca nello spazio<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo o soggetto"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="section-heading"><div><span class="eyebrow">Contenuti disponibili</span><h2>${total} Item da aggiungere</h2><p>Sono mostrati soltanto i contenuti dello spazio che non fanno già parte della raccolta.</p></div></div>${this.busy && !this.data ? `<div class="empty-state compact"><p>Caricamento…</p></div>` : results.length ? `<div class="asset-grid">${results.map((row) => this.renderCandidate(row)).join("")}</div>` : `<div class="empty-state compact"><h3>Nessun contenuto disponibile</h3><p>${this.query ? "Prova una ricerca diversa oppure aggiungi un contenuto allo spazio." : "Tutti i contenuti disponibili nello spazio sono già nella raccolta, oppure lo spazio è ancora vuoto."}</p></div>`}${this.renderPagination()}<footer class="task-secondary-action collection-item-add-escalation"><div><strong>Non è ancora nello spazio?</strong><p>Cerca prima un contenuto riutilizzabile; la creazione di un contenuto indipendente richiede una scelta esplicita.</p></div><button type="button" class="button-secondary" data-add-content-to-space ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} Trova o crea contenuto</button></footer></section></div>`;
+    const body = `${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}${this.notice ? `<artaround-callout tone="success" role="status">${escapeHtml(this.notice)}</artaround-callout>` : ""}<form class="inline-form" data-collection-item-search role="search"><label>Cerca nello spazio<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo o soggetto"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form><div class="section-heading"><div><span class="eyebrow">Contenuti disponibili</span><h2>${total} Item da aggiungere</h2><p>Sono mostrati soltanto i contenuti dello spazio che non fanno già parte della raccolta.</p></div></div>${this.busy && !this.data ? `<div class="empty-state compact"><p>Caricamento…</p></div>` : results.length ? `<div class="asset-grid">${results.map((row) => this.renderCandidate(row)).join("")}</div>` : `<div class="empty-state compact"><h3>Nessun contenuto disponibile</h3><p>${this.query ? "Prova una ricerca diversa oppure aggiungi un contenuto allo spazio." : "Tutti i contenuti disponibili nello spazio sono già nella raccolta, oppure lo spazio è ancora vuoto."}</p></div>`}${this.renderPagination()}`;
+    this.innerHTML = `<div class="artaround-modal-layer collection-item-add-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal artaround-task-modal--large collection-item-add-modal" role="dialog" aria-modal="true" aria-label="Aggiungi contenuti alla raccolta" aria-busy="${this.busy}"><header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">${escapeHtml(this.collectionName)}</span><h1>Aggiungi contenuti alla raccolta</h1><p>Spazio editoriale: <strong>${escapeHtml(this.spaceName)}</strong></p></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header><div class="artaround-task-modal__body">${body}</div><footer class="artaround-task-modal__footer task-secondary-action collection-item-add-escalation"><div><strong>Non è ancora nello spazio?</strong><p>Cerca prima un contenuto riutilizzabile; la creazione di un contenuto indipendente richiede una scelta esplicita.</p></div><div class="button-row"><button type="button" class="button-secondary" data-add-content-to-space ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} Trova o crea contenuto</button><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Chiudi</button></div></footer></section></div>`;
+    this.syncDialogInteraction();
   }
 }
 

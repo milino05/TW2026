@@ -17,6 +17,7 @@ import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.j
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 import { venueSlotInventoryMixin } from "./venue-editor-slot-inventory-mixin.js";
 import { venueInventoryProposalsMixin } from "./venue-editor-inventory-proposals-mixin.js";
+import { venueModalLifecycleMixin } from "./venue-modal-lifecycle-mixin.js";
 
 const SECTIONS = ["overview", "inventory", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -32,17 +33,12 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   onboarding = null;
   lifecycleImpact = null;
   canManageLifecycle = false;
-  pendingVenueRemoval = false;
-  pendingTargetRemovalId = null;
-  pendingDestructiveAction = null;
   busy = false;
   error = null;
   message = null;
   selectedSubject = null;
   id = venueId();
   managementRepository = managementRepository;
-  pendingWorkflow = null;
-  workflowMessage = "";
   activeSection = initialVenueSection();
   selectedFloorId = null;
   selectedMapPlaceId = null;
@@ -100,10 +96,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
-    if (this._venueGlobalEscapeHandler) {
-      window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
-      this._venueGlobalEscapeHandler = null;
-    }
+    this.releaseInventoryDialog?.({ restoreFocus: false });
+    this.releaseVenueModalLayers?.({ restoreFocus: false });
+    this._targetCreateDialog?.close?.({ restoreFocus: false, notify: false });
+    this._targetCreateDialog = null;
   }
 
   onInventoryProposalClick = (event) => {
@@ -140,9 +136,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     const targetIds = new Set((this.data?.targets || []).map((target) => id(target.id)));
     if (this.selectedVenueTargetId && !targetIds.has(id(this.selectedVenueTargetId))) this.selectedVenueTargetId = null;
     if (this.inventoryDetailTargetId && !targetIds.has(id(this.inventoryDetailTargetId))) this.inventoryDetailTargetId = null;
-    if (this.inventoryBrowser?.selectedTargetId && !targetIds.has(id(this.inventoryBrowser.selectedTargetId))) {
-      this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: null };
-    }
+    if (this.inventoryBrowser?.selectedTargetId && !targetIds.has(id(this.inventoryBrowser.selectedTargetId))) this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: null };
     if (this.inventoryBrowser?.exhibitSlotId) {
       const slotExists = (this.data?.layout?.exhibitSlots || []).some((slot) => id(slot.exhibitSlotId) === id(this.inventoryBrowser.exhibitSlotId));
       if (!slotExists) this.inventoryBrowser = null;
@@ -181,10 +175,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     try {
       await callback();
       await this.refreshServerState();
-      this.pendingWorkflow = null;
-      this.workflowMessage = "";
-      this.pendingTargetRemovalId = null;
-      this.pendingDestructiveAction = null;
       this.message = message;
       return true;
     } catch (error) {
@@ -194,24 +184,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
-    if (event.key === "Escape" && this.mapCreationDialog) {
-      event.preventDefault();
-      this.closeMapCreationDialog?.();
-      this.render();
-      return;
-    }
-    if (event.key === "Escape" && this.floorDialog) {
-      event.preventDefault();
-      this.floorDialog = null;
-      this.render();
-      return;
-    }
-    if (event.key === "Escape" && this.spatialEditor) {
-      event.preventDefault();
-      this.closeSpatialEditor?.();
-      return;
-    }
-    if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) {
+    if (event.key === "Escape" && !this._venueModalLayers?.length && (this.pendingMapAction || this.draggingPlace)) {
       event.preventDefault();
       this.cancelMapAction();
       return;
@@ -227,14 +200,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     tabs[next].focus();
   };
 
-  onInput = (event) => {
-    if (this.handleInventoryProposalInput?.(event)) return;
-    const target = event.target instanceof HTMLTextAreaElement ? event.target : null;
-    if (!target?.matches("[data-workflow-message]")) return;
-    this.workflowMessage = target.value;
-    const button = this.querySelector("[data-confirm-workflow]");
-    if (button) button.disabled = !this.workflowMessage.trim();
-  };
+  onInput = (event) => { this.handleInventoryProposalInput?.(event); };
 }
 
 Object.assign(
@@ -256,5 +222,17 @@ Object.assign(
   venueMapRefinementMixin,
   venueSlotInventoryMixin,
   venueInventoryProposalsMixin,
+  venueModalLifecycleMixin,
 );
+
+const renderVenueEditor = ArtAroundVenueEditorView.prototype.render;
+ArtAroundVenueEditorView.prototype.render = function renderWithSharedDialogLifecycles(...args) {
+  this.releaseInventoryDialog?.({ restoreFocus: false });
+  this.releaseVenueModalLayers?.({ restoreFocus: false });
+  const result = renderVenueEditor.apply(this, args);
+  this.syncInventoryDialog?.();
+  this.syncVenueModalLayers?.();
+  return result;
+};
+
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);

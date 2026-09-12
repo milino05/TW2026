@@ -14,7 +14,7 @@ function topEscapableLayer() {
 }
 
 function onDocumentKeyDown(event) {
-  if (event.key !== "Escape") return;
+  if (event.key !== "Escape" || event.defaultPrevented) return;
   const entry = topEscapableLayer();
   if (!entry) return;
   event.preventDefault();
@@ -37,7 +37,7 @@ export function mountUiLayer(element, { kind = "floating", onEscape = null, lock
   const returnParent = element.parentNode;
   const returnNextSibling = element.nextSibling;
   element.dataset.artaroundLayer = kind;
-  document.body.append(element);
+  if (element.parentNode !== document.body) document.body.append(element);
   const entry = { element, kind, onEscape, lockScroll };
   mountedLayers.push(entry);
   syncScrollLock();
@@ -46,8 +46,9 @@ export function mountUiLayer(element, { kind = "floating", onEscape = null, lock
     const index = mountedLayers.indexOf(entry);
     if (index >= 0) mountedLayers.splice(index, 1);
     delete element.dataset.artaroundLayer;
-    if (returnParent?.isConnected) returnParent.insertBefore(element, returnNextSibling?.isConnected ? returnNextSibling : null);
-    else element.remove();
+    if (returnParent?.isConnected && element.parentNode !== returnParent) {
+      returnParent.insertBefore(element, returnNextSibling?.isConnected ? returnNextSibling : null);
+    } else if (!returnParent?.isConnected) element.remove();
     syncScrollLock();
   };
 }

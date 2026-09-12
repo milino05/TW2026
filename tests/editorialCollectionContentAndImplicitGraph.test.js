@@ -134,3 +134,55 @@ test("a collection Item subject can focus the graph with zero relations without 
     );
   });
 });
+
+test("relation launcher filters Collections by Subject coverage before pagination", { skip: !mongoUri }, async () => {
+  await withFreshDatabase(async () => {
+    const { addEditorialContextEntry } = require("../services/editorialContextEntry.service");
+    const { listEditorialRelationChoices } = require("../services/editorialRelationLauncherV2.service");
+    const data = await fixture();
+    const other = await createEditorialContextWithGraph({
+      contentSpace: data.space,
+      namespaceId: data.namespace._id,
+      displayName: "Altra raccolta",
+      createdBy: data.user._id,
+    });
+
+    await addEditorialContextEntry({ editorialContextId: data.context._id, itemId: data.items[0]._id, actorUserId: data.user._id });
+    await addEditorialContextEntry({ editorialContextId: other.context._id, itemId: data.items[1]._id, actorUserId: data.user._id });
+
+    const leonardoChoices = await listEditorialRelationChoices({
+      actorUserId: data.user._id,
+      ownerType: "user",
+      ownerId: data.user._id,
+      subjectId: data.subjects[0]._id,
+      page: 1,
+      limit: 1,
+    });
+    assert.equal(leonardoChoices.pagination.total, 1);
+    assert.equal(leonardoChoices.pagination.totalPages, 1);
+    assert.equal(leonardoChoices.results.length, 1);
+    assert.equal(String(leonardoChoices.results[0].id), String(data.context._id));
+
+    const raffaelloChoices = await listEditorialRelationChoices({
+      actorUserId: data.user._id,
+      ownerType: "user",
+      ownerId: data.user._id,
+      subjectId: data.subjects[1]._id,
+      page: 1,
+      limit: 1,
+    });
+    assert.equal(raffaelloChoices.pagination.total, 1);
+    assert.equal(String(raffaelloChoices.results[0].id), String(other.context._id));
+
+    const caravaggioChoices = await listEditorialRelationChoices({
+      actorUserId: data.user._id,
+      ownerType: "user",
+      ownerId: data.user._id,
+      subjectId: data.subjects[2]._id,
+      page: 1,
+      limit: 1,
+    });
+    assert.equal(caravaggioChoices.pagination.total, 0);
+    assert.deepEqual(caravaggioChoices.results, []);
+  });
+});

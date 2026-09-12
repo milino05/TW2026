@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const paths = {
   createView: "clients/marketplace/src/ui/editorial-collection-create-view.js",
   importDialog: "clients/marketplace/src/ui/collection-graph-import-dialog.js",
+  taskDialog: "clients/marketplace/src/ui/task-dialog.js",
   studio: "clients/marketplace/src/ui/editorial-studio-view.js",
   repository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
   marketplaceRoute: "routes/marketplaceV2.routes.js",
@@ -56,7 +57,17 @@ test("relations workspace keeps semantic source management behind one modal entr
   assert.match(source.studio, /<artaround-semantic-graph-editor><\/artaround-semantic-graph-editor>/);
 });
 
-test("source manager reuses clickable cards plus an add card and navigates inside one modal", () => {
+test("source manager delegates modal mechanics to the shared Task Dialog", () => {
+  assert.match(source.importDialog, /createTaskDialog/);
+  assert.match(source.importDialog, /size: "large"/);
+  assert.match(source.importDialog, /renderBody: \(\) => this\.renderBody\(\)/);
+  assert.match(source.importDialog, /isBusy: \(\) => this\.busy/);
+  assert.doesNotMatch(source.importDialog, /context-task-modal|data-graph-import-backdrop|onKeyDown|returnFocus/);
+  assert.match(source.taskDialog, /mountModalInteraction/);
+  assert.match(source.taskDialog, /aria-modal="true"/);
+});
+
+test("source manager reuses clickable cards plus an add card and navigates inside one task", () => {
   assert.match(source.importDialog, /view = "list"/);
   assert.match(source.importDialog, /source-manager-grid/);
   assert.match(source.importDialog, /data-source-manager-source-id/);
@@ -67,8 +78,6 @@ test("source manager reuses clickable cards plus an add card and navigates insid
   assert.match(source.importDialog, /this\.view === "add"/);
   assert.match(source.importDialog, /this\.view === "import"/);
   assert.match(source.importDialog, /this\.view === "restorable"/);
-  assert.match(source.importDialog, /role="dialog" aria-modal="true" aria-label="Gestisci sorgenti"/);
-  assert.doesNotMatch(source.importDialog, /openActionDialog/);
   assert.match(styles, /\.source-manager-card/);
   assert.match(styles, /\.source-manager-card--add/);
 });
@@ -91,9 +100,11 @@ test("source pins are unique by graph, explicitly updatable and non-destructive 
   assert.match(source.editorialRoutes, /import-sources\/:sourceId\/update/);
   assert.match(source.repository, /graphImportSourceUpdatePreview/);
   assert.match(source.repository, /detachGraphImportSource/);
-  assert.match(source.importDialog, /I contenuti e i collegamenti già presenti nella Raccolta resteranno invariati/);
-  assert.match(source.importDialog, /data-source-manager-confirm-update/);
-  assert.match(source.importDialog, /data-source-manager-confirm-detach/);
+  assert.match(source.importDialog, /openActionDialog/);
+  assert.match(source.importDialog, /Aggiorna sorgente/);
+  assert.match(source.importDialog, /I contenuti e i collegamenti già presenti nella Raccolta restano invariati/);
+  assert.match(source.importDialog, /Scollega sorgente/);
+  assert.doesNotMatch(source.importDialog, /source-manager-inline-confirm|data-source-manager-confirm-update|data-source-manager-confirm-detach/);
 });
 
 test("multi-source import materializes union knowledge without overwriting local classifications", () => {

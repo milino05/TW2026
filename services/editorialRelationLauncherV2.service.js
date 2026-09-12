@@ -1,12 +1,16 @@
+const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
 const CollectionItemMembership = require("../models/collectionItemMembership.model");
+const ItemV2 = require("../models/itemV2.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const Namespace = require("../models/namespace.model");
 const { listContentSpaces, assertCanManageContentSpace } = require("./contentSpace.service");
+const AppError = require("../utils/AppError");
 
 function id(value) { return String(value?._id || value || ""); }
 function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function emptyResult(page, limit) { return { results: [], pagination: { page, limit, total: 0, totalPages: 0 } }; }
 
 async function editableSpaces({ actorUserId, ownerType = null, ownerId = null }) {
   const spaces = await listContentSpaces({ actorUserId, ownerType, ownerId });
@@ -22,10 +26,24 @@ async function editableSpaces({ actorUserId, ownerType = null, ownerId = null })
   return editable;
 }
 
+async function collectionIdsRepresentingSubject(subjectId) {
+  if (!subjectId) return null;
+  if (!mongoose.isValidObjectId(subjectId)) {
+    throw new AppError("subjectId non valido", 400, [{ field: "subjectId", code: "INVALID_OBJECT_ID" }]);
+  }
+  const itemIds = await ItemV2.find({
+    primarySubjectId: subjectId,
+    lifecycleStatus: "active",
+  }).distinct("_id");
+  if (!itemIds.length) return [];
+  return CollectionItemMembership.distinct("editorialContextId", { itemId: { $in: itemIds } });
+}
+
 async function listEditorialRelationChoices({
   actorUserId,
   ownerType = null,
   ownerId = null,
+  subjectId = null,
   query = "",
   page = 1,
   limit = 12,
@@ -34,12 +52,19 @@ async function listEditorialRelationChoices({
   const normalizedLimit = Math.max(1, Math.min(48, Number(limit) || 12));
   const normalizedQuery = String(query || "").trim();
   const spaces = await editableSpaces({ actorUserId, ownerType, ownerId });
-  if (!spaces.length) {
-    return { results: [], pagination: { page: normalizedPage, limit: normalizedLimit, total: 0, totalPages: 0 } };
-  }
+  if (!spaces.length) return emptyResult(normalizedPage, normalizedLimit);
+
+  // Relations are authored at Subject level. When the launcher originates from
+  // an Item, expose only Collections that already contain at least one active
+  // Item representing that Subject. This makes Collection containment a
+  // backend-authoritative eligibility rule and keeps the UI from materializing
+  // graph bindings merely to open a workspace.
+  const eligibleContextIds = await collectionIdsRepresentingSubject(subjectId);
+  if (Array.isArray(eligibleContextIds) && !eligibleContextIds.length) return emptyResult(normalizedPage, normalizedLimit);
 
   const spaceIds = spaces.map((space) => space._id);
   const filter = { contentSpaceId: { $in: spaceIds }, lifecycleStatus: "active" };
+  if (Array.isArray(eligibleContextIds)) filter._id = { $in: eligibleContextIds };
   if (normalizedQuery) {
     const regex = new RegExp(escapeRegex(normalizedQuery), "i");
     filter.$or = [{ displayName: regex }, { shortDescription: regex }, { description: regex }];

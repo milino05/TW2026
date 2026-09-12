@@ -233,14 +233,17 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
   }, { contextId });
 
   const editor = page.locator("#acceptance-semantic-graph");
+  const modal = page.locator(".semantic-graph-modal-layer");
   await expect(editor.getByText("Nessun soggetto di contesto")).toBeVisible();
   await expect(editor.getByText("Scegli il Subject di un contenuto della Raccolta", { exact: false })).toBeVisible();
 
   await editor.getByRole("button", { name: "Scegli soggetto" }).click();
-  await expect(editor.getByRole("heading", { name: "Scegli il soggetto di contesto" })).toBeVisible();
-  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(1);
+  await expect(modal).toHaveAttribute("data-artaround-layer", "modal");
+  await expect(modal.getByRole("heading", { name: "Scegli il soggetto di contesto" })).toBeVisible();
+  await expect(modal.locator("[data-use-inventory-subject]")).toHaveCount(1);
   expect(candidateScopes.at(-1)).toBe("collection");
-  await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
+  await modal.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
+  await expect(modal).toHaveCount(0);
 
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
   await expect(editor.getByText("1 di 2 soggetti collegati mostrati")).toBeVisible();
@@ -253,19 +256,19 @@ test("Semantic Graph Workspace navigates Collection focus and graph targets in a
   await expect(editor.locator('[data-graph-subject]')).toHaveCount(2);
 
   await editor.getByRole("button", { name: "Aggiungi collegamento" }).click();
-  await expect(editor.getByRole("heading", { name: "Scegli il collegamento" })).toBeVisible();
-  await editor.locator('[data-relation-view="related"]').click();
-  await expect(editor.getByRole("heading", { name: "Scegli il soggetto da collegare" })).toBeVisible();
-  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(1);
+  await expect(modal.getByRole("heading", { name: "Scegli il collegamento" })).toBeVisible();
+  await modal.locator('[data-relation-view="related"]').click();
+  await expect(modal.getByRole("heading", { name: "Scegli il soggetto da collegare" })).toBeVisible();
+  await expect(modal.locator("[data-use-inventory-subject]")).toHaveCount(1);
   expect(candidateScopes.at(-1)).toBe("collection");
 
-  await editor.getByRole("tab", { name: "Nello spazio editoriale" }).click();
-  await expect(editor.locator("[data-use-inventory-subject]")).toHaveCount(2);
+  await modal.getByRole("tab", { name: "Nello spazio editoriale" }).click();
+  await expect(modal.locator("[data-use-inventory-subject]")).toHaveCount(2);
   expect(candidateScopes.at(-1)).toBe("space");
-  await editor.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
-  await expect(editor.getByRole("heading", { name: "Beta · Collega · Alpha" })).toBeVisible();
-  await expect(editor.locator(".semantic-relation-summary-label")).toHaveText("Collega");
-  await expect(editor.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveCount(0);
+  await modal.locator(`[data-use-inventory-subject="${alphaId}"]`).click();
+  await expect(modal.getByRole("heading", { name: "Beta · Collega · Alpha" })).toBeVisible();
+  await expect(modal.locator(".semantic-relation-summary-label")).toHaveText("Collega");
+  await expect(modal.locator('[data-relation-composer] select[name="relationTypeDefinitionId"]')).toHaveCount(0);
 });
 test("Navigator toast stack is FIFO, stable and globally layered in a real browser", async ({ page }) => {
   await page.goto(`${BASE_URL}/navigator/`, { waitUntil: "domcontentloaded" });

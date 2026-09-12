@@ -15,4 +15,4 @@ import "./ui/authoring-stepper-adapter.js";
 import "./ui/visit-reorder-adapter.js";
 import "./ui/guided-tour-adapter.js";
 import "./ui/app-shell.js";
-import "./ui/item-semantic-sidecar.js";
+import "./ui/item-semantic-relations-launcher.js";

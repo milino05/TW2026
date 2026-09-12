@@ -1,4 +1,5 @@
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { mountModalInteraction } from "../application/modal-interaction.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 import {
@@ -43,6 +44,9 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   subjectClickTimer = null;
   busy = false;
   error = null;
+  modalInteraction = null;
+  modalLayer = null;
+  modalListeners = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -58,6 +62,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
 
   disconnectedCallback() {
     this.clearSubjectClickTimer();
+    this.releaseModalInteraction({ restoreFocus: false });
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("dblclick", this.onDoubleClick);
     this.removeEventListener("submit", this.onSubmit);
@@ -440,7 +445,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.render();
   }
 
-  closeModal() {
+  closeModal({ restoreFocus = true } = {}) {
     this.selected = null;
     this.pickerMode = null;
     this.inventoryData = null;
@@ -450,7 +455,63 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     this.relationFlow = null;
     this.relationQuery = "";
     this.classificationPromptSubjectId = null;
+    this.releaseModalInteraction({ restoreFocus });
     this.render();
+  }
+
+  releaseModalInteraction({ restoreFocus = false } = {}) {
+    const layer = this.modalLayer;
+    const listeners = this.modalListeners;
+    if (layer && listeners) {
+      layer.removeEventListener("click", listeners.click);
+      layer.removeEventListener("dblclick", listeners.dblclick);
+      layer.removeEventListener("submit", listeners.submit);
+      layer.removeEventListener("input", listeners.input);
+      layer.removeEventListener("change", listeners.change);
+      layer.removeEventListener("keydown", listeners.keydown);
+      layer.removeEventListener("subject-selected", listeners.subjectSelected);
+      layer.removeEventListener("subject-browser-action", listeners.subjectBrowserAction);
+    }
+    this.modalInteraction?.release({ restoreFocus });
+    this.modalInteraction = null;
+    this.modalLayer = null;
+    this.modalListeners = null;
+  }
+
+  syncModalInteraction() {
+    const layer = this.querySelector(".semantic-graph-modal-layer");
+    if (!(layer instanceof HTMLElement)) return;
+    const listeners = {
+      click: (event) => { void this.onClick(event); },
+      dblclick: (event) => this.onDoubleClick(event),
+      submit: (event) => { void this.onSubmit(event); },
+      input: (event) => this.onInput(event),
+      change: (event) => this.onChange(event),
+      keydown: (event) => this.onKeyDown(event),
+      subjectSelected: (event) => { void this.onSubjectSelected(event); },
+      subjectBrowserAction: (event) => { void this.onSubjectBrowserAction(event); },
+    };
+    layer.addEventListener("click", listeners.click);
+    layer.addEventListener("dblclick", listeners.dblclick);
+    layer.addEventListener("submit", listeners.submit);
+    layer.addEventListener("input", listeners.input);
+    layer.addEventListener("change", listeners.change);
+    layer.addEventListener("keydown", listeners.keydown);
+    layer.addEventListener("subject-selected", listeners.subjectSelected);
+    layer.addEventListener("subject-browser-action", listeners.subjectBrowserAction);
+    this.modalLayer = layer;
+    this.modalListeners = listeners;
+    this.modalInteraction = mountModalInteraction({
+      layer,
+      panel: () => layer.querySelector(".artaround-task-modal"),
+      initialFocus: "[autofocus], input:not([type=hidden]), select, textarea, button:not([data-modal-dismiss])",
+      canDismiss: () => !this.busy && !this.inventoryBusy,
+      onRequestDismiss: () => {
+        this.closeModal({ restoreFocus: true });
+        return true;
+      },
+      lockScroll: true,
+    });
   }
 
   onInput = (event) => {
@@ -493,11 +554,6 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
     if (edge && ["Enter", " "].includes(event.key)) {
       event.preventDefault();
       this.openEdgeEditor(edge.dataset.graphEdge);
-      return;
-    }
-    if (event.key === "Escape" && (this.selected || this.pickerMode || this.browserMode || this.relationFlow || this.classificationPromptSubjectId)) {
-      event.preventDefault();
-      this.closeModal();
     }
   };
 
@@ -512,7 +568,6 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    if (target.matches("[data-graph-modal-backdrop]") || target.closest("[data-close-graph-modal]")) { this.closeModal(); return; }
     if (target.closest("[data-choose-focus]")) { this.openInventory("focus"); return; }
     if (target.closest("[data-browse-subjects]")) { this.openSubjectBrowser("browse", { source: "collection" }); return; }
     if (target.closest("[data-start-relation]")) { this.startRelationFirst(); return; }
@@ -911,7 +966,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   }
 
   modal(title, body, { eyebrow = "Grafo semantico", large = false } = {}) {
-    return `<div class="context-task-modal-layer semantic-graph-modal-layer" data-graph-modal-backdrop role="presentation"><section class="context-task-modal${large ? " context-task-modal--large" : ""} semantic-graph-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><header class="task-modal-header"><div><span class="eyebrow">${escapeHtml(eyebrow)}</span><h2>${escapeHtml(title)}</h2></div><button type="button" class="button-secondary small" data-close-graph-modal aria-label="Chiudi">×</button></header>${body}</section></div>`;
+    return `<div class="artaround-modal-layer semantic-graph-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal${large ? " artaround-task-modal--large" : ""} semantic-graph-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">${escapeHtml(eyebrow)}</span><h2>${escapeHtml(title)}</h2></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header><div class="artaround-task-modal__body">${body}</div><footer class="artaround-task-modal__footer"><button type="button" class="button-secondary" data-modal-dismiss>Chiudi</button></footer></section></div>`;
   }
 
   renderStandaloneInventoryPicker() {
@@ -1052,7 +1107,7 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   }
 
   configureBrowser() {
-    const browser = this.querySelector("artaround-semantic-subject-source-browser");
+    const browser = this.modalLayer?.querySelector("artaround-semantic-subject-source-browser") || this.querySelector("artaround-semantic-subject-source-browser");
     if (!browser || !this.collectionMode() || !this.browserMode) return;
     const focus = this.subject(this.focusSubjectId);
     let requiredClassIds = [];
@@ -1083,8 +1138,10 @@ export class ArtAroundSemanticGraphEditor extends HTMLElement {
   }
 
   render() {
+    this.releaseModalInteraction({ restoreFocus: false });
     if (!this.hasResource()) { this.innerHTML = `<div class="empty-state"><p>Preparazione del grafo…</p></div>`; return; }
     this.innerHTML = `<div class="semantic-graph-workspace" aria-busy="${this.busy}">${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderToolbar()}${this.renderCanvas()}${this.renderModal()}</div>`;
+    this.syncModalInteraction();
     queueMicrotask(() => {
       this.configureBrowser();
       this.centerFocusIfNeeded();

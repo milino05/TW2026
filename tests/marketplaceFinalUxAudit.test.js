@@ -23,6 +23,7 @@ const createHub = read("clients/marketplace/src/ui/create-hub-view.js");
 const itemEditor = read("clients/marketplace/src/ui/item-authoring-view.js");
 const visitEditor = read("clients/marketplace/src/ui/visit-authoring-view.js");
 const commerce = read("clients/marketplace/src/ui/commerce-management-view.js");
+const offerDialog = read("clients/marketplace/src/ui/offer-create-dialog.js");
 const acquisition = read("clients/marketplace/src/ui/acquisition-history-view.js");
 const organization = read("clients/marketplace/src/ui/organization-view.js");
 
@@ -36,7 +37,7 @@ test("tutto il client Marketplace passa il syntax gate JavaScript", () => {
 test("il client non usa dialoghi nativi bloccanti", () => {
   for (const target of collectJs(marketRoot)) {
     const source = fs.readFileSync(target, "utf8");
-    assert.doesNotMatch(source, /window\.(?:prompt|confirm)\s*\(/, path.relative(root, target));
+    assert.doesNotMatch(source, /(?:window\.)?(?:prompt|confirm|alert)\s*\(/, path.relative(root, target));
   }
 });
 
@@ -74,7 +75,8 @@ test("le aree operative non reintroducono selector di principal", () => {
 test("authoring e commerce mantengono feature parity strutturale", () => {
   for (const term of ["Di cosa parla", "Controllo finale", "data-new-edition", "data-content-space-id", "data-add-text", "data-remove-text"]) assert.match(itemEditor, new RegExp(term));
   for (const term of ["Informazioni principali", "Contenuti", "Tappe", "Impostazioni", "Percorso", "Riepilogo e pubblicazione", "data-add-content", "data-add-stop"]) assert.match(visitEditor, new RegExp(term));
-  for (const term of ["Schede nel catalogo", "Nuova offerta", "data-pricing-type", "withdrawOffer", "withdrawListing"]) assert.match(commerce, new RegExp(term));
+  for (const term of ["Schede nel catalogo", "Nuova offerta", "withdrawOffer", "withdrawListing", "openOfferCreateDialog"]) assert.match(commerce, new RegExp(term));
+  for (const term of ["pricingType", "priceInMinorUnits", "currency", "capability", "versionPolicy", "createOffer", "Pubblica offerta"]) assert.match(offerDialog, new RegExp(term));
 });
 
 test("management Organization resta separato dal profilo pubblico", () => {

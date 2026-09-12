@@ -92,9 +92,11 @@ test("anche i metadati modificabili del Physical Vocabulary attivano subito il g
   assert.match(physical, /markDirty\(\) \{/);
 });
 
-test("una conferma locale di uscita non provoca un secondo dialog centrale", () => {
-  assert.match(adapter, /if \(confirmed\) editor\.dirty = false/);
-  assert.match(adapter, /confirmed && confirmation\.type === "leave"/);
+test("gli editor full-page non mantengono un secondo adapter di conferma locale", () => {
+  assert.match(namespace, /openActionDialog\(\{/);
+  assert.match(physical, /openActionDialog\(\{/);
+  assert.doesNotMatch(adapter, /showNamespaceLeaveDialog|showPhysicalConfirmationDialog/);
+  assert.doesNotMatch(adapter, /leaveConfirmation|pendingConfirmation/);
 });
 
 test("il guard non blocca cambi di sezione interni che non distruggono il draft", () => {

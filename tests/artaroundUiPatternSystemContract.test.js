@@ -64,7 +64,7 @@ test("destructive flow usa Action Dialog globale e lo stesso command lifecycle",
   assert.match(source, /openActionDialog/);
   assert.match(source, /tone: "danger"/);
   assert.match(source, /runUiCommand/);
-  assert.match(source, /typeof confirm === "function"/);
+  assert.match(source, /typeof requestConfirmation === "function"/);
 });
 
 test("AsyncBoundary conserva la stessa tassonomia loading error empty ready", () => {

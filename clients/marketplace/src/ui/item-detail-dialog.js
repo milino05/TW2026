@@ -1,6 +1,7 @@
 import { navigate } from "../application/router.js";
 import { libraryRepository } from "../infrastructure/http/library-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { mountModalInteraction } from "../application/modal-interaction.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
 
@@ -27,6 +28,8 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   focusedCollectionId = null;
   busy = false;
   error = null;
+  _dialogInteraction = null;
+  _dialogLayer = null;
 
   connectedCallback() {
     this.contentSpaceId = this.getAttribute("content-space-id") || null;
@@ -37,10 +40,37 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
       this.view = "collection-detail";
       this.focusedCollectionId = this.initialCollectionId;
     }
-    this.addEventListener("click", this.onClick);
     void this.load();
   }
-  disconnectedCallback() { this.removeEventListener("click", this.onClick); }
+
+  disconnectedCallback() {
+    this.releaseDialogInteraction({ restoreFocus: false });
+  }
+
+  releaseDialogInteraction({ restoreFocus = false } = {}) {
+    if (this._dialogLayer) this._dialogLayer.removeEventListener("click", this.onClick);
+    this._dialogInteraction?.release?.({ restoreFocus });
+    this._dialogInteraction = null;
+    this._dialogLayer = null;
+  }
+
+  syncDialogInteraction() {
+    const layer = this.querySelector(".item-detail-modal-layer");
+    if (!(layer instanceof HTMLElement)) return;
+    this._dialogLayer = layer;
+    layer.addEventListener("click", this.onClick);
+    this._dialogInteraction = mountModalInteraction({
+      layer,
+      panel: () => layer.querySelector(".item-detail-modal"),
+      kind: "modal",
+      canDismiss: () => !this.busy,
+      onRequestDismiss: () => {
+        this.close();
+        return true;
+      },
+      lockScroll: true,
+    });
+  }
 
   async load() {
     if (!this.contentSpaceId || !this.itemId) return;
@@ -49,19 +79,24 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     catch (error) { this.error = error instanceof Error ? error.message : "Non è possibile aprire il contenuto"; }
     finally { this.busy = false; this.render(); }
   }
+
   close() {
+    this.releaseDialogInteraction({ restoreFocus: true });
     this.dispatchEvent(new CustomEvent("library-item-detail-close", { bubbles: true }));
     this.remove();
   }
+
   collection(collectionId = this.focusedCollectionId) {
     return (this.data?.collections || []).find((entry) => id(entry.id) === id(collectionId)) || null;
   }
+
   authoringHref(namespaceId = null, { newEdition = false } = {}) {
     const query = new URLSearchParams({ itemId: this.itemId, contentSpaceId: this.contentSpaceId });
     if (namespaceId) query.set("namespaceId", namespaceId);
     if (newEdition) query.set("newEdition", "1");
     return `/workspace/item-authoring?${query.toString()}`;
   }
+
   notifyChanged(detail = {}) {
     this.dispatchEvent(new CustomEvent("library-item-detail-changed", { bubbles: true, detail: { itemId: this.itemId, ...detail } }));
   }
@@ -89,7 +124,6 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    if (target.closest("[data-close-item-detail]")) { this.close(); return; }
     const tab = target.closest("[data-item-detail-tab]");
     if (tab) { this.tab = tab.dataset.itemDetailTab; this.view = "tabs"; this.focusedCollectionId = null; this.render(); return; }
     if (target.closest("[data-back-collections]")) { this.tab = "collections"; this.view = "tabs"; this.focusedCollectionId = null; this.render(); return; }
@@ -151,7 +185,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const subject = this.data.subject || {};
     const media = this.data.item?.recognitionMedia || null;
     const wikidata = wikidataIdentity(subject);
-    return `<header class="item-detail-header"><div class="item-detail-identity">${media?.url ? `<figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || subject.preferredLabel || "")}"></figure>` : `<div class="item-detail-media-placeholder">${icon("image", { size: 28 })}</div>`}<div><span class="eyebrow">Item</span><h1>${escapeHtml(subject.preferredLabel || "Contenuto")}</h1><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile")}</p><small>${wikidata?.id ? `Wikidata · ${escapeHtml(wikidata.id)}` : "Identità ArtAround"} · Spazio: ${escapeHtml(this.data.space?.name || "-")}</small></div></div><button type="button" class="button-secondary small" data-close-item-detail aria-label="Chiudi">×</button></header>`;
+    return `<header class="artaround-task-modal__header item-detail-header"><div class="item-detail-identity">${media?.url ? `<figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || subject.preferredLabel || "")}"></figure>` : `<div class="item-detail-media-placeholder">${icon("image", { size: 28 })}</div>`}<div><span class="eyebrow">Item</span><h1>${escapeHtml(subject.preferredLabel || "Contenuto")}</h1><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile")}</p><small>${wikidata?.id ? `Wikidata · ${escapeHtml(wikidata.id)}` : "Identità ArtAround"} · Spazio: ${escapeHtml(this.data.space?.name || "-")}</small></div></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header>`;
   }
 
   renderEditions() {
@@ -209,13 +243,19 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (this.view === "collection-detail") return this.renderCollectionDetail();
     return `${this.renderTabs()}${this.tab === "collections" ? this.renderCollections() : this.renderEditions()}`;
   }
+
   renderTabs() {
     return `<nav class="context-workspace-tabs item-detail-tabs" aria-label="Dettaglio Item"><button type="button" data-item-detail-tab="editions" aria-current="${this.tab === "editions" ? "page" : "false"}">Edizioni</button><button type="button" data-item-detail-tab="collections" aria-current="${this.tab === "collections" ? "page" : "false"}">Raccolte</button></nav>`;
   }
 
   render() {
-    const header = this.data ? this.renderHeader() : `<header class="task-modal-header"><div><span class="eyebrow">Item</span><h1>Dettaglio contenuto</h1></div><button type="button" class="button-secondary small" data-close-item-detail aria-label="Chiudi">×</button></header>`;
-    this.innerHTML = `<div class="context-task-modal-layer" role="presentation"><section class="context-task-modal context-task-modal--large item-detail-modal" role="dialog" aria-modal="true" aria-label="Dettaglio Item">${header}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.data ? `<div class="empty-state"><p>Caricamento del contenuto…</p></div>` : this.data ? this.renderBody() : ""}</section></div>`;
+    this.releaseDialogInteraction({ restoreFocus: false });
+    const header = this.data
+      ? this.renderHeader()
+      : `<header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">Item</span><h1>Dettaglio contenuto</h1></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header>`;
+    const body = `${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.data ? `<div class="empty-state"><p>Caricamento del contenuto…</p></div>` : this.data ? this.renderBody() : ""}`;
+    this.innerHTML = `<div class="artaround-modal-layer item-detail-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal artaround-task-modal--large item-detail-modal" role="dialog" aria-modal="true" aria-label="Dettaglio Item" aria-busy="${this.busy}">${header}<div class="artaround-task-modal__body">${body}</div><footer class="artaround-task-modal__footer"><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Chiudi</button></footer></section></div>`;
+    this.syncDialogInteraction();
   }
 }
 

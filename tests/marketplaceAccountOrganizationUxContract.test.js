@@ -10,12 +10,16 @@ const files = {
   organization: "clients/marketplace/src/ui/organization-view.js",
   publicOrganization: "clients/marketplace/src/ui/public-organization-view.js",
   contextHub: "clients/marketplace/src/ui/context-hub-view.js",
+  resourceCreate: "clients/marketplace/src/ui/resource-create-dialog.js",
+  organizationDialogs: "clients/marketplace/src/ui/organization-management-dialogs.js",
 };
 function read(key) { return fs.readFileSync(path.join(root, files[key]), "utf8"); }
 const profile = read("profile");
 const organization = read("organization");
 const publicOrganization = read("publicOrganization");
 const contextHub = read("contextHub");
+const resourceCreate = read("resourceCreate");
+const organizationDialogs = read("organizationDialogs");
 
 test("Account, Organization management e profilo pubblico passano il syntax gate", () => {
   for (const file of Object.values(files)) {
@@ -86,10 +90,14 @@ test("ruoli e membership restano backend-authoritative", () => {
   assert.doesNotMatch(organization, /actorRole|organizationCreatedBy|isManager\s*=/);
 });
 
-test("operazioni sensibili usano conferma inline e non dialoghi nativi", () => {
-  assert.match(organization, /confirmation/);
-  assert.match(organization, /data-confirm-action/);
-  assert.match(organization, /data-confirm-cancel/);
+test("operazioni sensibili Organization usano Action Dialog globale e non conferme inline o native", () => {
+  assert.match(organization, /openActionDialog/);
+  assert.match(organization, /confirmSensitiveAction/);
+  assert.match(organization, /member\.remove/);
+  assert.match(organization, /owner\.grant/);
+  assert.match(organization, /owner\.revoke/);
+  assert.match(organization, /role\.remove/);
+  assert.doesNotMatch(organization, /confirmation-panel|data-confirm-action|data-confirm-cancel/);
   assert.doesNotMatch(organization, /window\.confirm|window\.prompt/);
 });
 
@@ -98,22 +106,28 @@ test("Sedi e Regole editoriali restano domini distinti e usano gli editor esiste
   assert.match(organization, /\/namespaces\/editor\?namespaceId=/);
   assert.match(organization, /artaround-venue-create-dialog/);
   assert.doesNotMatch(organization, /data-create-venue/);
-  assert.match(organization, /data-create-namespace/);
+  assert.match(organization, /data-create-namespace-open/);
 });
 
-test("dopo la creazione delle regole si entra subito nell'editor guidato", () => {
+test("Namespace e Physical Vocabulary usano il creator condiviso e aprono subito l'editor della risorsa creata", () => {
   for (const source of [profile, organization]) {
-    assert.match(source, /const created = await this\.execute/);
-    assert.match(source, /created\?\.namespace\?\._id/);
+    assert.match(source, /openResourceCreateDialog/);
+    assert.match(source, /onCreated:\s*\(\{ id: createdId \}\)\s*=>/);
     assert.match(source, /\/namespaces\/editor\?namespaceId=/);
-    assert.match(source, /Crea e configura/);
+    assert.match(source, /\/physical-vocabularies\/editor\?physicalVocabularyId=/);
   }
+  assert.match(resourceCreate, /Crea e configura/);
+  assert.match(resourceCreate, /accountRepository\.createNamespace/);
+  assert.match(resourceCreate, /accountRepository\.createPhysicalVocabulary/);
+  assert.match(resourceCreate, /onCreated\?\.\(\{ id: resourceId, resource, response: created \}\)/);
 });
 
 test("la UI distingue ruoli multipli, Owner e permission builder", () => {
   assert.match(organization, /roleNames/);
   assert.match(organization, /owner-badge/);
   assert.match(organization, /permissionCodes/);
-  assert.match(organization, /Impatto elevato/);
+  assert.match(organizationDialogs, /permissionCatalog/);
+  assert.match(organizationDialogs, /Impatto elevato/);
+  assert.match(organizationDialogs, /openOrganizationRoleDialog/);
   assert.doesNotMatch(organization, /operator|actorRole|isManager/);
 });

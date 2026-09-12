@@ -11,6 +11,7 @@ const files = {
   commercial: path.join(root, "services/marketplaceCommercialV2.service.js"),
   workspace: path.join(root, "clients/marketplace/src/ui/workspace-view.js"),
   commerce: path.join(root, "clients/marketplace/src/ui/commerce-management-view.js"),
+  offerDialog: path.join(root, "clients/marketplace/src/ui/offer-create-dialog.js"),
 };
 const source = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, fs.readFileSync(file, "utf8")]));
 
@@ -36,14 +37,19 @@ test("catalogo e dettaglio richiedono sempre almeno un'offerta attiva", () => {
   assert.match(source.catalog, /ACTIVE_OFFER_REQUIRED/);
 });
 
-test("la UI guida direttamente alla formulazione dell'offerta", () => {
+test("la UI guida direttamente alla formulazione dell'offerta nel Task Dialog condiviso", () => {
   assert.match(source.workspace, /Configura offerta e pubblica/);
   assert.match(source.workspace, /\/workspace\/commerce\?listingId=/);
   assert.match(source.commerce, /Una risorsa appare nel Catalogo solo dopo la pubblicazione di almeno un’offerta/);
   assert.match(source.commerce, /Contenuto privato/);
   assert.match(source.commerce, /Nuova offerta/);
-  assert.match(source.commerce, /canCreateOffer \? this\.renderOfferForm\(listing\) : ""/);
-  assert.doesNotMatch(source.commerce, /open: !hasActiveOffer/);
-  assert.match(source.commerce, /Pubblica offerta/);
+  assert.match(source.commerce, /openOfferCreateDialog/);
+  assert.match(source.commerce, /data-create-offer-dialog/);
+  assert.match(source.offerDialog, /createTaskDialog/);
+  assert.match(source.offerDialog, /data-offer-conditions/);
+  assert.match(source.offerDialog, /data-offer-rights/);
+  assert.match(source.offerDialog, /Pubblica offerta/);
+  assert.match(source.offerDialog, /marketplaceRepository\.createOffer/);
+  assert.doesNotMatch(source.commerce, /renderOfferForm|open: !hasActiveOffer/);
   assert.match(source.commercial, /\["draft", "published", "withdrawn"\]\.includes\(listing\.status\)/);
 });

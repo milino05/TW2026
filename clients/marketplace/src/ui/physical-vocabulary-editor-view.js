@@ -1,5 +1,8 @@
 import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
+import { openMessageActionDialog } from "./message-action-dialog.js";
+import { createTaskDialog } from "./task-dialog.js";
 import { icon } from "./icons.js";
 
 const SECTIONS = [
@@ -101,9 +104,7 @@ function optionsText(options = []) { return options.map((entry) => `${entry.valu
 function parseOptions(value) {
   return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     const separator = line.indexOf("=");
-    return separator < 0
-      ? { value: line, label: line }
-      : { value: line.slice(0, separator).trim(), label: line.slice(separator + 1).trim() };
+    return separator < 0 ? { value: line, label: line } : { value: line.slice(0, separator).trim(), label: line.slice(separator + 1).trim() };
   }).filter((entry) => entry.value && entry.label);
 }
 function valueForInput(value) { return Array.isArray(value) ? value.join(", ") : value === undefined || value === null ? "" : String(value); }
@@ -111,7 +112,7 @@ function parseRequirementValue(raw, attribute, operator) {
   const value = String(raw ?? "").trim();
   if (operator === "in") return value.split(",").map((entry) => entry.trim()).filter(Boolean);
   if (attribute?.dataType === "boolean") return value === "true";
-  if (attribute?.dataType === "number") { const number = Number(value); return Number.isFinite(number) ? number : value; }
+  if (attribute?.dataType === "number") { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : value; }
   return value;
 }
 function defaultRequirementValue(attribute) {
@@ -129,6 +130,9 @@ function emptyDefinition(field) {
   return base;
 }
 function definitionName(definition) { return definition.label || definition.key || "Nuova definizione"; }
+function starterPreview() {
+  return `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>`;
+}
 
 export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   id = physicalVocabularyId();
@@ -142,10 +146,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   tutorialOpen = false;
   tutorialStep = 0;
   tutorialReturnSection = "general";
-  starterOpen = false;
-  pendingWorkflow = null;
-  workflowMessage = "";
-  pendingConfirmation = null;
+  starterDialog = null;
 
   connectedCallback() {
     this.addEventListener("click", this.onClick);
@@ -169,6 +170,8 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.removeEventListener("touchmove", this.onTutorialScroll);
     window.removeEventListener("beforeunload", this.onBeforeUnload);
     window.removeEventListener("resize", this.onTutorialViewportChange);
+    this.starterDialog?.close({ restoreFocus: false, notify: false });
+    this.starterDialog = null;
     document.documentElement.classList.remove("physical-overlay-open");
     document.body?.classList.remove("physical-overlay-open");
   }
@@ -197,7 +200,9 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     try { return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "seen"; } catch { return false; }
   }
   startTutorial({ remember = false } = {}) {
-    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.starterOpen = false; this.activeSection = TUTORIAL_STEPS[0].section;
+    this.starterDialog?.close({ notify: false });
+    this.starterDialog = null;
+    this.tutorialReturnSection = this.activeSection; this.tutorialStep = 0; this.tutorialOpen = true; this.activeSection = TUTORIAL_STEPS[0].section;
     if (remember) { try { localStorage.setItem(TUTORIAL_STORAGE_KEY, "seen"); } catch { /* non bloccante */ } }
     this.render();
   }
@@ -208,16 +213,16 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     this.render();
   }
   syncOverlayLock() {
-    const locked = this.tutorialOpen || this.starterOpen || this.pendingWorkflow || this.pendingConfirmation;
-    document.documentElement.classList.toggle("physical-overlay-open", Boolean(locked));
-    document.body?.classList.toggle("physical-overlay-open", Boolean(locked));
+    document.documentElement.classList.toggle("physical-overlay-open", Boolean(this.tutorialOpen));
+    document.body?.classList.toggle("physical-overlay-open", Boolean(this.tutorialOpen));
   }
   onTutorialScroll = (event) => { if (this.tutorialOpen) event.preventDefault(); };
   onTutorialViewportChange = () => { if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial()); };
   onKeyDown = (event) => {
-    const modal = this.querySelector('[aria-modal="true"]');
+    if (!this.tutorialOpen) return;
+    const modal = this.querySelector("[data-physical-tutorial-overlay]");
     if (!modal) return;
-    if (event.key === "Escape") { event.preventDefault(); this.tutorialOpen ? this.closeTutorial() : (this.starterOpen = false, this.pendingWorkflow = null, this.pendingConfirmation = null, this.render()); return; }
+    if (event.key === "Escape") { event.preventDefault(); this.closeTutorial(); return; }
     if (event.key !== "Tab") return;
     const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
     if (!focusable.length) return;
@@ -274,7 +279,6 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
   onInput = (event) => {
     const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement ? event.target : null;
     if (!input) return;
-    if (input.matches("[data-workflow-message-input]")) { this.workflowMessage = input.value; return; }
     if (input.closest("[data-metadata-form]")) { this.markDirty(); return; }
     if (!input.dataset.collection) return;
     const definition = this.definition(input.dataset.collection, input.dataset.index);
@@ -313,40 +317,78 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (indicator) indicator.innerHTML = `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>`;
   }
 
+  async confirmLeaveWithoutSaving() {
+    const confirmed = await openActionDialog({
+      title: "Uscire senza salvare?",
+      message: "Le modifiche non ancora salvate in questa bozza andranno perse.",
+      confirmLabel: "Esci senza salvare",
+      cancelLabel: "Continua a modificare",
+      tone: "danger",
+    });
+    if (confirmed) navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner));
+  }
+
+  async removeDefinition(field, index) {
+    const definition = this.definitions[field]?.[index];
+    if (!definition) return;
+    const confirmed = await openActionDialog({
+      title: `Rimuovere “${definitionName(definition)}”?`,
+      message: field === "physicalAttributes"
+        ? "La definizione verrà rimossa dalla bozza insieme ai riferimenti presenti nei profili di percorso. La modifica diventerà effettiva soltanto al salvataggio."
+        : "La definizione verrà rimossa dalla bozza. La modifica diventerà effettiva soltanto al salvataggio.",
+      confirmLabel: "Rimuovi dalla bozza",
+      cancelLabel: "Annulla",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    this.definitions[field].splice(index, 1);
+    if (field === "physicalAttributes") {
+      this.definitions.routingProfiles.forEach((profile) => {
+        profile.requirements = (profile.requirements || []).filter((entry) => entry.physicalAttributeDefinitionId !== definition.definitionId);
+      });
+    }
+    this.dirty = true;
+    this.render();
+  }
+
+  openStarterDialog() {
+    if (this.starterDialog || !has(this.operations(), "physical_vocabulary.starter.apply")) return;
+    this.tutorialOpen = false;
+    this.activeSection = "general";
+    this.render();
+    this.starterDialog = createTaskDialog({
+      eyebrow: "Configurazione facoltativa",
+      title: "Partire da una base pronta?",
+      description: "Verranno aggiunte soltanto le definizioni mancanti. Le tue label, alias e personalizzazioni non vengono sovrascritte.",
+      size: "compact",
+      initialFocus: "[data-starter-confirm]",
+      renderBody: () => starterPreview(),
+      renderFooter: () => `<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button><button type="button" data-starter-confirm>${icon("check", { size: 16 })} Usa configurazione base</button>`,
+      isBusy: () => this.busy,
+      onDismiss: () => { this.starterDialog = null; },
+      onClick: (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("[data-starter-confirm]")) void this.applyStarter();
+      },
+    });
+  }
+
+  async applyStarter() {
+    if (this.busy) return;
+    this.starterDialog?.close({ notify: false });
+    this.starterDialog = null;
+    this.tutorialOpen = false;
+    this.activeSection = "general";
+    await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti.");
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("[data-back]")) {
-      if (this.dirty) {
-        this.pendingConfirmation = {
-          type: "leave",
-          title: "Uscire senza salvare?",
-          detail: "Le modifiche non ancora salvate in questa bozza andranno perse.",
-          confirmLabel: "Esci senza salvare",
-        };
-        this.render();
-        return;
-      }
-      navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner)); return;
-    }
-    if (target.closest("[data-confirm-cancel]")) { this.pendingConfirmation = null; this.render(); return; }
-    if (target.closest("[data-confirm-action]") && this.pendingConfirmation) {
-      const confirmation = this.pendingConfirmation;
-      this.pendingConfirmation = null;
-      if (confirmation.type === "leave") { navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner)); return; }
-      if (confirmation.type === "remove-definition") {
-        const definition = this.definition(confirmation.field, confirmation.index);
-        if (!definition || definition.definitionId !== confirmation.definitionId) { this.render(); return; }
-        this.definitions[confirmation.field].splice(confirmation.index, 1);
-        if (confirmation.field === "physicalAttributes") {
-          this.definitions.routingProfiles.forEach((profile) => {
-            profile.requirements = (profile.requirements || []).filter((entry) => entry.physicalAttributeDefinitionId !== confirmation.definitionId);
-          });
-        }
-        this.dirty = true;
-        this.render();
-        return;
-      }
+      if (this.dirty) await this.confirmLeaveWithoutSaving();
+      else navigate(physicalVocabularyBackUrl(this.data?.physicalVocabulary?.owner));
+      return;
     }
     const sectionButton = target.closest("[data-section]");
     if (sectionButton) { this.goToSection(sectionButton.dataset.section); return; }
@@ -354,30 +396,12 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (target.closest("[data-tutorial-close], [data-tutorial-finish]")) { this.closeTutorial(); return; }
     if (target.closest("[data-tutorial-next]")) { this.setTutorialStep(this.tutorialStep + 1); return; }
     if (target.closest("[data-tutorial-prev]")) { this.setTutorialStep(this.tutorialStep - 1); return; }
-    if (target.closest("[data-starter-open]")) { this.starterOpen = true; this.tutorialOpen = false; this.render(); return; }
-    if (target.closest("[data-starter-close]")) { this.starterOpen = false; this.render(); return; }
-    if (target.closest("[data-starter-apply]")) { this.starterOpen = false; this.tutorialOpen = false; this.activeSection = "general"; await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti."); return; }
+    if (target.closest("[data-starter-open], [data-starter-apply]")) { this.openStarterDialog(); return; }
     if (target.closest("[data-working-ensure]")) { await this.execute(() => managementRepository.ensurePhysicalVocabularyWorking(this.id), "Nuova bozza creata dalla versione pubblicata."); return; }
     const add = target.closest("[data-add-definition]");
     if (add) { this.definitions[add.dataset.addDefinition].push(emptyDefinition(add.dataset.addDefinition)); this.dirty = true; this.render(); return; }
     const remove = target.closest("[data-remove-definition]");
-    if (remove) {
-      const field = remove.dataset.removeDefinition; const index = Number(remove.dataset.index); const definition = this.definitions[field][index];
-      if (!definition) return;
-      this.pendingConfirmation = {
-        type: "remove-definition",
-        field,
-        index,
-        definitionId: definition.definitionId,
-        title: `Rimuovere “${definitionName(definition)}”?`,
-        detail: field === "physicalAttributes"
-          ? "La definizione verrà rimossa dalla bozza insieme ai riferimenti presenti nei profili di percorso."
-          : "La definizione verrà rimossa dalla bozza. La modifica diventerà effettiva soltanto al salvataggio.",
-        confirmLabel: "Rimuovi dalla bozza",
-      };
-      this.render();
-      return;
-    }
+    if (remove) { await this.removeDefinition(remove.dataset.removeDefinition, Number(remove.dataset.index)); return; }
     const addRequirement = target.closest("[data-add-requirement]");
     if (addRequirement) {
       const profile = this.definition("routingProfiles", addRequirement.dataset.index); const attribute = this.definitions.physicalAttributes[0];
@@ -394,11 +418,20 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const workflow = target.closest("[data-workflow]");
     if (workflow) {
       const operation = workflow.dataset.workflow;
-      if (operation === "physical_vocabulary.revision.request_changes") { this.pendingWorkflow = operation; this.workflowMessage = ""; this.render(); return; }
+      if (operation === "physical_vocabulary.revision.request_changes") {
+        if (this.dirty) { this.error = "Salva le modifiche prima di cambiare stato della revisione."; this.render(); return; }
+        const message = await openMessageActionDialog({
+          title: "Richiedi modifiche",
+          description: "La motivazione verrà registrata nel workflow della revisione del vocabolario fisico.",
+          label: "Che cosa deve essere rivisto?",
+          placeholder: "Descrivi in modo sintetico le modifiche necessarie",
+          confirmLabel: "Invia richiesta",
+        });
+        if (message !== null) await this.runWorkflow(operation, { message });
+        return;
+      }
       await this.runWorkflow(operation); return;
     }
-    if (target.closest("[data-workflow-cancel]")) { this.pendingWorkflow = null; this.workflowMessage = ""; this.render(); return; }
-    if (target.closest("[data-workflow-confirm]")) { if (!this.workflowMessage.trim()) { this.error = "Inserisci il motivo delle modifiche richieste."; this.render(); return; } await this.runWorkflow(this.pendingWorkflow, { message: this.workflowMessage.trim() }); }
   };
 
   onSubmit = async (event) => {
@@ -414,16 +447,15 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     }
     if (form.matches("[data-add-mapping]")) {
       const field = String(formData.get("collection") || ""); const index = Number(formData.get("index")); const definition = this.definition(field, index);
-      const scheme = String(formData.get("scheme") || "").trim().toLowerCase(); const id = String(formData.get("id") || "").trim(); const matchType = String(formData.get("matchType") || "exact");
-      if (!definition || !scheme || !id) return;
-      definition.semanticRefs ||= []; definition.semanticRefs.push({ scheme, id, matchType }); this.dirty = true; this.render();
+      const scheme = String(formData.get("scheme") || "").trim().toLowerCase(); const mappingId = String(formData.get("id") || "").trim(); const matchType = String(formData.get("matchType") || "exact");
+      if (!definition || !scheme || !mappingId) return;
+      definition.semanticRefs ||= []; definition.semanticRefs.push({ scheme, id: mappingId, matchType }); this.dirty = true; this.render();
     }
   };
 
   async runWorkflow(operation, payload = {}) {
     if (!operation || !WORKFLOW_ACTION[operation]) return;
     if (this.dirty) { this.error = "Salva le modifiche prima di cambiare stato della revisione."; this.render(); return; }
-    this.pendingWorkflow = null; this.workflowMessage = "";
     await this.execute(() => managementRepository.physicalVocabularyWorkflow(this.id, WORKFLOW_ACTION[operation], payload), `${WORKFLOW_LABEL[operation] || "Operazione"}: completata.`);
   }
   operations() { return this.data?.availableOperations || []; }
@@ -437,11 +469,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const actions = step.starter
       ? `<div class="physical-tutorial-template"><button type="button" data-starter-apply ${canApplyStarter ? "" : "disabled"}>${icon("plus", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-tutorial-finish>Preferisco partire da zero</button></div>${canApplyStarter ? "" : `<p class="physical-tutorial-note">Per applicare la configurazione, crea prima una bozza modificabile.</p>`}<button type="button" class="button-secondary small" data-tutorial-prev>${icon("arrowLeft", { size: 14 })} Precedente</button>`
       : `<div class="physical-tutorial-navigation"><button type="button" class="button-secondary" data-tutorial-prev ${this.tutorialStep === 0 ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><button type="button" data-tutorial-next>Avanti ${icon("chevron", { size: 14 })}</button></div>`;
-    return `<div class="physical-tutorial-overlay" data-physical-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="physical-tutorial-title"><div class="physical-tutorial-spotlight" data-physical-tutorial-spotlight></div><article class="physical-tutorial-bubble" data-physical-tutorial-bubble><button class="physical-tutorial-close" type="button" data-tutorial-close aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="physical-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.starter ? `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>` : ""}<div class="physical-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
-  }
-  renderStarterDialog() {
-    if (!this.starterOpen) return "";
-    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="physical-starter-title"><article class="physical-dialog"><button class="physical-tutorial-close" type="button" data-starter-close aria-label="Chiudi">×</button><span class="eyebrow">Configurazione facoltativa</span><h2 id="physical-starter-title">Partire da una base pronta?</h2><p>Verranno aggiunti soltanto i tipi, le caratteristiche e i profili mancanti. Le tue definizioni, label, alias e personalizzazioni non vengono sovrascritti.</p><div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div><div class="button-row"><button type="button" data-starter-apply>${icon("check", { size: 16 })} Usa configurazione base</button><button type="button" class="button-secondary" data-starter-close>Annulla</button></div></article></div>`;
+    return `<div class="physical-tutorial-overlay" data-physical-tutorial-overlay role="dialog" aria-modal="true" aria-labelledby="physical-tutorial-title"><div class="physical-tutorial-spotlight" data-physical-tutorial-spotlight></div><article class="physical-tutorial-bubble" data-physical-tutorial-bubble><button class="physical-tutorial-close" type="button" data-tutorial-close aria-label="Chiudi tutorial">×</button><span class="eyebrow">Guida · ${this.tutorialStep + 1} di ${TUTORIAL_STEPS.length}</span><h2 id="physical-tutorial-title">${escapeHtml(step.title)}</h2><p>${escapeHtml(step.body)}</p>${step.starter ? starterPreview() : ""}<div class="physical-tutorial-progress" aria-hidden="true">${progress}</div>${actions}</article></div>`;
   }
   renderSectionNav() {
     const counts = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, this.definitions[field]?.length || 0]));
@@ -492,20 +520,12 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const editable = this.canEdit(); const entries = this.allDefinitions();
     return `<section class="physical-editor-section" id="physical-mappings"><header class="physical-section-intro"><div><span class="eyebrow">Mapping esterni</span><h2>Collega le definizioni senza renderle globali</h2><p>I riferimenti semantici permettono di riconoscere concetti equivalenti tra vocabolari diversi. Restano separati dagli alias e non cambiano l'identità locale della definizione.</p></div><span class="count">${entries.reduce((sum, entry) => sum + (entry.definition.semanticRefs?.length || 0), 0)}</span></header><div class="physical-mapping-list">${entries.map(({ field, definition, index }) => `<article class="physical-mapping-card"><header><div><small>${escapeHtml(META[field].title)}</small><strong>${escapeHtml(definitionName(definition))}</strong></div></header><div class="semantic-ref-list">${(definition.semanticRefs || []).map((mapping, mappingIndex) => `<span class="semantic-ref-chip"><span>${escapeHtml(mapping.scheme)} · ${escapeHtml(mapping.id)} · ${escapeHtml(MATCH_LABEL[mapping.matchType] || mapping.matchType)}</span>${editable ? `<button type="button" data-remove-mapping data-collection="${field}" data-index="${index}" data-mapping-index="${mappingIndex}" aria-label="Rimuovi mapping">×</button>` : ""}</span>`).join("") || `<span class="muted">Nessun mapping</span>`}</div>${editable ? `<form data-add-mapping class="physical-mapping-add"><input type="hidden" name="collection" value="${field}"><input type="hidden" name="index" value="${index}"><label>Schema<input name="scheme" required placeholder="Es. openstreetmap-tag"></label><label>Identificatore<input name="id" required placeholder="Es. amenity=toilets"></label><label>Relazione<select name="matchType"><option value="exact">Equivalente</option><option value="close">Molto vicino</option><option value="broader">Più generale</option><option value="narrower">Più specifico</option></select></label><button type="submit" class="button-secondary">Aggiungi mapping</button></form>` : ""}</article>`).join("") || `<div class="empty-state"><h3>Nessuna definizione da mappare</h3></div>`}</div>${editable ? `<div class="physical-sticky-actions"><span>Alias e mapping restano separati; salva quando hai finito le associazioni.</span><button type="button" data-save-mappings>${icon("check", { size: 16 })} Salva mapping</button></div>` : ""}</section>`;
   }
-  renderPendingWorkflowMessage() {
-    if (!this.pendingWorkflow) return "";
-    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-label="Richiedi modifiche"><article class="physical-dialog"><span class="eyebrow">Richiedi modifiche</span><h2>Che cosa deve essere rivisto?</h2><label>Messaggio<textarea rows="4" data-workflow-message-input>${escapeHtml(this.workflowMessage)}</textarea></label><div class="button-row"><button type="button" data-workflow-confirm>Invia richiesta</button><button type="button" class="button-secondary" data-workflow-cancel>Annulla</button></div></article></div>`;
-  }
-  renderPendingConfirmation() {
-    if (!this.pendingConfirmation) return "";
-    return `<div class="physical-modal-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHtml(this.pendingConfirmation.title)}"><article class="physical-dialog"><span class="eyebrow">Conferma richiesta</span><h2>${escapeHtml(this.pendingConfirmation.title)}</h2><p>${escapeHtml(this.pendingConfirmation.detail)}</p><div class="button-row"><button type="button" class="danger" data-confirm-action>${escapeHtml(this.pendingConfirmation.confirmLabel)}</button><button type="button" class="button-secondary" data-confirm-cancel>Annulla</button></div></article></div>`;
-  }
   renderCurrentSection() { if (this.activeSection === "general") return this.renderGeneral(); if (this.activeSection === "mappings") return this.renderMappings(); return this.renderDefinitionSection(this.activeSection); }
   render() {
     this.syncOverlayLock();
     if (!this.data) { this.innerHTML = `<main class="page physical-editor-page"><p role="${this.error ? "alert" : "status"}">${escapeHtml(this.error || "Caricamento vocabolario fisico…")}</p></main>`; return; }
     const vocabulary = this.data.physicalVocabulary;
-    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span><span data-dirty-indicator>${this.dirty ? `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</span></div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}${this.renderStarterDialog()}${this.renderPendingWorkflowMessage()}${this.renderPendingConfirmation()}`;
+    this.innerHTML = `<main class="page physical-editor-page" aria-busy="${this.busy}"><nav class="breadcrumb" aria-label="Percorso"><button type="button" data-back>${icon("arrowLeft", { size: 16 })} Indietro</button><span>/</span><span>Vocabolario fisico</span><span>/</span><span>${escapeHtml(vocabulary.name)}</span></nav><header class="physical-editor-header" data-physical-tutorial-anchor="overview"><div><span class="eyebrow">Physical Vocabulary</span><h1>${escapeHtml(vocabulary.name)}</h1><p>${escapeHtml(vocabulary.description || "Definisci il linguaggio fisico riutilizzato dalle sedi.")}</p></div><div class="physical-editor-state"><strong>${escapeHtml(statusLabel(this.data.revision?.status))}</strong><span>${escapeHtml(sourceLabel(vocabulary.source))}${this.data.revision ? ` · v${this.data.revision.version}` : ""}</span><span data-dirty-indicator>${this.dirty ? `<em>${icon("warning", { size: 14 })} Modifiche non salvate</em>` : `<small>${icon("check", { size: 14 })} Allineato al server</small>`}</span></div></header>${this.renderSectionNav()}${this.busy ? `<p role="status">Aggiornamento…</p>` : ""}${this.message ? `<p class="feedback-success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.renderCurrentSection()}</main>${this.renderTutorial()}`;
     if (this.tutorialOpen) requestAnimationFrame(() => this.positionTutorial());
   }
 }
