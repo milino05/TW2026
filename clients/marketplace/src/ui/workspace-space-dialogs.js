@@ -121,7 +121,6 @@ export function openSpaceEditorDialog({ mode = "create", initial = {}, stats = {
     onClick: async (event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target?.closest("[data-delete-space]") || state.busy) return;
-      state.dirty = false;
       const deleted = await onDelete?.();
       if (deleted !== false) {
         dialog?.close({ notify: false });
