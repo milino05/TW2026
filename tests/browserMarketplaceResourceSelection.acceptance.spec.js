@@ -77,6 +77,42 @@ test("modal staging layers stay invisible until LayerManager portals them", asyn
   expect(state.released).toEqual({ visibility: "hidden", parent: "ARTAROUND-MODAL-STAGING-ACCEPTANCE", kind: null });
 });
 
+test("transient Task Modal loading feedback stays hidden for fast requests and reveals for slow ones", async ({ page }) => {
+  await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
+
+  const state = await page.evaluate(async () => {
+    const { mountModalInteraction } = await import("/marketplace/src/application/modal-interaction.js");
+    const host = document.createElement("artaround-delayed-loading-acceptance");
+    host.innerHTML = `<div class="artaround-modal-layer" data-modal-backdrop="true"><section class="artaround-task-modal artaround-task-modal--large" role="dialog" aria-modal="true" aria-label="Delayed loading acceptance" aria-busy="true"><div class="artaround-task-modal__body"><div class="empty-state" data-delayed-loading-acceptance><p>Caricamento…</p></div></div></section></div>`;
+    document.body.append(host);
+    const layer = host.querySelector(".artaround-modal-layer");
+    const loading = host.querySelector("[data-delayed-loading-acceptance]");
+    const controller = mountModalInteraction({
+      layer,
+      panel: () => layer.querySelector(".artaround-task-modal"),
+    });
+    const animation = loading.getAnimations()[0] || null;
+    const immediate = {
+      visibility: getComputedStyle(loading).visibility,
+      opacity: getComputedStyle(loading).opacity,
+      delay: getComputedStyle(loading).animationDelay,
+      duration: getComputedStyle(loading).animationDuration,
+    };
+    animation?.finish();
+    const revealed = {
+      visibility: getComputedStyle(loading).visibility,
+      opacity: getComputedStyle(loading).opacity,
+    };
+    controller.release({ restoreFocus: true });
+    host.remove();
+    return { immediate, revealed, hasAnimation: Boolean(animation) };
+  });
+
+  expect(state.hasAnimation).toBe(true);
+  expect(state.immediate).toEqual({ visibility: "hidden", opacity: "0", delay: "0.18s", duration: "0.001s" });
+  expect(state.revealed).toEqual({ visibility: "visible", opacity: "1" });
+});
+
 test("large Item Detail keeps the same panel geometry from loading to loaded content", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
