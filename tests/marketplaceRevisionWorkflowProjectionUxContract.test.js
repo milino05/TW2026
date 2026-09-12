@@ -67,16 +67,18 @@ test("Namespace proietta soltanto le azioni workflow realmente presenti", () => 
   assert.match(namespaceEditor, /data-operation="\$\{escapeHtml\(entry\.code\)\}"/);
 });
 
-test("Physical proietta le azioni ma conserva request_changes e il suo messaggio specializzato", () => {
+test("Physical proietta le azioni ma usa Message Action Dialog per request_changes", () => {
   assert.match(adapter, /ArtAroundPhysicalVocabularyEditorView/);
   assert.match(adapter, /rowSelector: "\.physical-workflow > \.button-row"/);
   assert.match(adapter, /buttonSelector: "button\[data-workflow\]"/);
   assert.match(adapter, /operationAttribute: "workflow"/);
   assert.match(adapter, /availableOperations: editor\.operations\?\.\(\) \|\| \[\]/);
   assert.match(physicalEditor, /physical_vocabulary\.revision\.request_changes/);
-  assert.match(physicalEditor, /this\.pendingWorkflow = operation/);
-  assert.match(physicalEditor, /data-workflow-message-input/);
-  assert.match(physicalEditor, /Inserisci il motivo delle modifiche richieste/);
+  assert.match(physicalEditor, /openMessageActionDialog/);
+  assert.match(physicalEditor, /title: "Richiedi modifiche"/);
+  assert.match(physicalEditor, /placeholder: "Descrivi in modo sintetico le modifiche necessarie"/);
+  assert.match(physicalEditor, /runWorkflow\(operation, \{ message \}\)/);
+  assert.doesNotMatch(physicalEditor, /pendingWorkflow|data-workflow-message-input/);
 });
 
 test("la projection delega al vecchio handler invece di duplicare la logica di dominio", () => {
