@@ -42,6 +42,11 @@ test("Marketplace non usa details come create surface applicativa", () => {
   assertNone(/<details[^>]*class=["'][^"']*(?:account-create|seller-offer-creator|venue-create)[^"']*["']/, "Create details");
 });
 
+test("Marketplace non usa più la shell context-task-modal legacy", () => {
+  assertNone(/context-task-modal(?:-|\b)/, "Legacy task modal JS");
+  assertNone(/context-task-modal(?:-|\b)/, "Legacy task modal CSS", styleRoot, ".css");
+});
+
 test("gli stili legacy inspector e sidecar sono stati rimossi", () => {
   assertNone(/context-workspace-inspector|workspace-sidecar/, "Legacy interaction CSS", styleRoot, ".css");
 });
