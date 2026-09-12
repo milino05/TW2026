@@ -10,16 +10,22 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 function id(value) { return String(value?._id || value?.id || value || ""); }
+function shortId(value) { const valueId = id(value); return valueId ? valueId.slice(-8) : "—"; }
 
 export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   config = null;
-  mode = "add-source";
+  view = "list";
+  sources = [];
+  restorableEdges = [];
+  currentSourceId = null;
   query = "";
   page = 1;
   choices = null;
   selectedGraph = null;
   preview = null;
   selectedItems = new Map();
+  updatePreview = null;
+  confirmDetach = false;
   busy = false;
   error = null;
   returnFocus = null;
@@ -31,6 +37,7 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     this.addEventListener("change", this.onChange);
     this.addEventListener("keydown", this.onKeyDown);
   }
+
   disconnectedCallback() {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("submit", this.onSubmit);
@@ -40,17 +47,28 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
 
   configure(config = {}) {
     this.config = config;
-    this.mode = config.mode === "import-content" ? "import-content" : "add-source";
+    this.view = "list";
+    this.sources = [];
+    this.restorableEdges = [];
+    this.currentSourceId = null;
+    this.resetTransientState();
+    this.render();
+    void this.loadManager();
+  }
+
+  editable() { return this.config?.editable !== false; }
+  currentSource() { return this.sources.find((entry) => id(entry.id) === id(this.currentSourceId)) || null; }
+
+  resetTransientState() {
     this.query = "";
     this.page = 1;
     this.choices = null;
     this.selectedGraph = null;
-    this.preview = this.mode === "import-content" ? config.source?.preview || null : null;
+    this.preview = null;
     this.selectedItems.clear();
+    this.updatePreview = null;
+    this.confirmDetach = false;
     this.error = null;
-    this.render();
-    if (this.mode === "add-source") void this.loadChoices();
-    else this.focusFirst();
   }
 
   close() {
@@ -58,13 +76,85 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     this.returnFocus?.focus?.({ preventScroll: true });
   }
 
-  complete(detail = {}) {
+  notify(detail = {}) {
     this.dispatchEvent(new CustomEvent("collection-graph-source-changed", { bubbles: true, detail }));
-    this.close();
   }
 
   focusFirst() {
     requestAnimationFrame(() => this.querySelector("button, input, select")?.focus({ preventScroll: true }));
+  }
+
+  async loadManager({ preserveView = true } = {}) {
+    if (!this.config?.editorialContextId) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      const [sources, restorable] = await Promise.all([
+        editorialRepository.graphImportSources(this.config.editorialContextId),
+        editorialRepository.restorableGraphEdges(this.config.editorialContextId),
+      ]);
+      this.sources = sources?.results || [];
+      this.restorableEdges = restorable?.results || [];
+      if (this.currentSourceId && !this.currentSource()) {
+        this.currentSourceId = null;
+        this.view = "list";
+      }
+      if (!preserveView) this.view = "list";
+      if (this.view === "restorable" && !this.restorableEdges.length) this.view = "list";
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile caricare le sorgenti";
+    } finally {
+      this.busy = false;
+      this.render();
+      this.focusFirst();
+    }
+  }
+
+  goList() {
+    this.view = "list";
+    this.currentSourceId = null;
+    this.resetTransientState();
+    this.render();
+    this.focusFirst();
+  }
+
+  openDetail(sourceId) {
+    const source = this.sources.find((entry) => id(entry.id) === id(sourceId));
+    if (!source) return;
+    this.currentSourceId = id(source.id);
+    this.view = "detail";
+    this.resetTransientState();
+    this.render();
+    this.focusFirst();
+  }
+
+  openAdd() {
+    if (!this.editable()) return;
+    this.view = "add";
+    this.resetTransientState();
+    this.render();
+    void this.loadChoices();
+  }
+
+  openImport() {
+    const source = this.currentSource();
+    if (!source || !this.editable()) return;
+    this.view = "import";
+    this.preview = source.preview || null;
+    this.selectedItems.clear();
+    this.error = null;
+    this.render();
+    this.focusFirst();
+  }
+
+  openRestorable() {
+    if (!this.restorableEdges.length) return;
+    this.view = "restorable";
+    this.currentSourceId = null;
+    this.resetTransientState();
+    this.render();
+    this.focusFirst();
   }
 
   async loadChoices() {
@@ -78,7 +168,10 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
         ownerId: this.config.ownerId,
         namespaceId: this.config.namespaceId,
         contentSpaceId: this.config.contentSpaceId,
-        excludeSemanticGraphIds: this.config.excludeSemanticGraphIds || [],
+        excludeSemanticGraphIds: [
+          this.config.localSemanticGraphId,
+          ...this.sources.map((entry) => id(entry.sourceSemanticGraphId)),
+        ].filter(Boolean),
         q: this.query,
         page: this.page,
         limit: 12,
@@ -126,6 +219,30 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.matches("[data-graph-import-backdrop]") || target.closest("[data-close-graph-import]")) { this.close(); return; }
+    if (target.closest("[data-source-manager-back]")) {
+      if (this.view === "import") {
+        this.view = "detail";
+        this.preview = null;
+        this.selectedItems.clear();
+        this.error = null;
+        this.render();
+        this.focusFirst();
+      } else this.goList();
+      return;
+    }
+    const sourceCard = target.closest("[data-source-manager-source-id]");
+    if (sourceCard) { this.openDetail(sourceCard.dataset.sourceManagerSourceId); return; }
+    if (target.closest("[data-source-manager-add]")) { this.openAdd(); return; }
+    if (target.closest("[data-source-manager-restorable]")) { this.openRestorable(); return; }
+    if (target.closest("[data-source-manager-import]")) { this.openImport(); return; }
+    if (target.closest("[data-source-manager-check-update]")) { void this.loadUpdatePreview(); return; }
+    if (target.closest("[data-source-manager-confirm-update]")) { void this.confirmUpdate(); return; }
+    if (target.closest("[data-source-manager-cancel-update]")) { this.updatePreview = null; this.render(); return; }
+    if (target.closest("[data-source-manager-detach]")) { this.confirmDetach = true; this.render(); return; }
+    if (target.closest("[data-source-manager-cancel-detach]")) { this.confirmDetach = false; this.render(); return; }
+    if (target.closest("[data-source-manager-confirm-detach]")) { void this.detachSource(); return; }
+    const restoreButton = target.closest("[data-source-manager-restore-edge]");
+    if (restoreButton) { void this.restoreEdge(restoreButton.dataset.sourceManagerRestoreEdge); return; }
 
     const choice = target.closest("[data-graph-source-choice]");
     if (choice) {
@@ -185,13 +302,17 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   };
 
   async attachSource() {
-    if (!this.selectedGraph || this.busy) return;
+    if (!this.selectedGraph || this.busy || !this.editable()) return;
     this.busy = true;
     this.error = null;
     this.render();
     try {
       const result = await editorialRepository.attachGraphImportSource(this.config.editorialContextId, id(this.selectedGraph));
-      this.complete({ action: "source-added", source: result?.source || null });
+      this.notify({ action: "source-added", source: result?.source || null });
+      this.view = "list";
+      this.selectedGraph = null;
+      this.choices = null;
+      await this.loadManager();
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Sorgente non aggiunta";
       this.busy = false;
@@ -200,16 +321,90 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   }
 
   async importContents(itemIds) {
-    const sourceId = id(this.config?.source?.id);
-    if (!sourceId || this.busy) return;
+    const sourceId = id(this.currentSourceId);
+    if (!sourceId || this.busy || !this.editable()) return;
     this.busy = true;
     this.error = null;
     this.render();
     try {
       const imported = await editorialRepository.importGraphSubjects(this.config.editorialContextId, sourceId, itemIds);
-      this.complete({ action: "contents-imported", sourceId, imported });
+      this.notify({ action: "contents-imported", sourceId, imported });
+      this.view = "detail";
+      this.preview = null;
+      this.selectedItems.clear();
+      await this.loadManager();
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Importazione non completata";
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async loadUpdatePreview() {
+    const source = this.currentSource();
+    if (!source || !this.editable() || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      this.updatePreview = await editorialRepository.graphImportSourceUpdatePreview(this.config.editorialContextId, id(source.id));
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è possibile verificare l'aggiornamento";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async confirmUpdate() {
+    const source = this.currentSource();
+    if (!source || !this.updatePreview?.updateAvailable || !this.editable() || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await editorialRepository.updateGraphImportSource(this.config.editorialContextId, id(source.id));
+      this.notify({ action: "source-updated", sourceId: id(source.id) });
+      this.updatePreview = null;
+      await this.loadManager();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Sorgente non aggiornata";
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async detachSource() {
+    const source = this.currentSource();
+    if (!source || !this.editable() || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await editorialRepository.detachGraphImportSource(this.config.editorialContextId, id(source.id));
+      this.notify({ action: "source-detached", sourceId: id(source.id) });
+      this.view = "list";
+      this.currentSourceId = null;
+      this.confirmDetach = false;
+      await this.loadManager();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Sorgente non scollegata";
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async restoreEdge(suppressionId) {
+    if (!suppressionId || !this.editable() || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      await editorialRepository.restoreGraphEdge(this.config.editorialContextId, suppressionId);
+      this.notify({ action: "edge-restored", suppressionId });
+      await this.loadManager();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Collegamento non ripristinato";
       this.busy = false;
       this.render();
     }
@@ -226,14 +421,43 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  renderHeader(title, description) {
-    return `<header class="task-modal-header"><div><span class="eyebrow">Sorgenti semantiche</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div><button type="button" class="button-secondary small" data-close-graph-import aria-label="Chiudi">×</button></header>`;
+  renderHeader(title, { back = false } = {}) {
+    return `<header class="task-modal-header source-manager-header"><div>${back ? `<button type="button" class="source-manager-back" data-source-manager-back>← Sorgenti</button>` : `<span class="eyebrow">Sorgenti</span>`}<h1>${escapeHtml(title)}</h1></div><button type="button" class="button-secondary small" data-close-graph-import aria-label="Chiudi">×</button></header>`;
+  }
+
+  renderSourceCard(source) {
+    const preview = source.preview || {};
+    const summary = preview.summary || {};
+    const available = Number(summary.inCollectionSubjectCount || 0) + Number(summary.directlyImportableSubjectCount || 0) + Number(summary.ambiguousSubjectCount || 0);
+    return `<button type="button" class="source-manager-card" data-source-manager-source-id="${escapeHtml(id(source.id))}"><span class="source-manager-card-icon">${icon("link", { size: 20 })}</span><span class="source-manager-card-body"><span class="source-manager-card-top"><strong>${escapeHtml(preview.source?.name || "Sorgente")}</strong>${source.updateAvailable ? `<span class="status warning">Aggiornamento</span>` : ""}</span><small>rev ${escapeHtml(shortId(source.sourceGraphRevisionId))}</small><span>${Number(summary.activeSubjectCount || 0)} attivi · ${available} disponibili · ${Number(summary.sourceRelationCount || 0)} collegamenti</span></span><span class="source-manager-card-arrow">${icon("chevron", { size: 16 })}</span></button>`;
+  }
+
+  renderList() {
+    return `${this.renderHeader("Gestisci sorgenti")}
+      ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
+      ${this.busy && !this.sources.length ? `<artaround-progress-state>Caricamento…</artaround-progress-state>` : `<div class="source-manager-grid">${this.sources.map((source) => this.renderSourceCard(source)).join("")}${this.editable() ? `<button type="button" class="source-manager-card source-manager-card--add" data-source-manager-add><span class="source-manager-card-plus">${icon("plus", { size: 28 })}</span><strong>Aggiungi sorgente</strong></button>` : ""}</div>`}
+      ${this.restorableEdges.length ? `<button type="button" class="source-manager-restorable-entry" data-source-manager-restorable><span>${icon("undo", { size: 17 })}</span><strong>Collegamenti ripristinabili</strong><span class="count">${this.restorableEdges.length}</span><span>${icon("chevron", { size: 15 })}</span></button>` : ""}`;
+  }
+
+  renderDetail() {
+    const source = this.currentSource();
+    if (!source) return this.renderList();
+    const preview = source.preview || {};
+    const summary = preview.summary || {};
+    const available = Number(summary.inCollectionSubjectCount || 0) + Number(summary.directlyImportableSubjectCount || 0) + Number(summary.ambiguousSubjectCount || 0);
+    const diff = this.updatePreview?.diff || {};
+    return `${this.renderHeader(preview.source?.name || "Sorgente", { back: true })}
+      ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
+      <div class="source-manager-detail-stats"><span><small>Revisione</small><strong>${escapeHtml(shortId(source.sourceGraphRevisionId))}</strong></span><span><small>Subject attivi</small><strong>${Number(summary.activeSubjectCount || 0)}</strong></span><span><small>Contenuti disponibili</small><strong>${available}</strong></span><span><small>Collegamenti</small><strong>${Number(summary.sourceRelationCount || 0)}</strong></span></div>
+      ${this.editable() ? `<div class="source-manager-detail-actions"><button type="button" data-source-manager-import>Importa contenuti</button>${source.updateAvailable && !this.updatePreview ? `<button type="button" class="button-secondary" data-source-manager-check-update>Aggiorna sorgente</button>` : ""}<button type="button" class="button-secondary danger" data-source-manager-detach>Scollega sorgente</button></div>` : ""}
+      ${this.updatePreview ? `<section class="source-manager-inline-confirm"><h2>Aggiornamento disponibile</h2><div class="source-manager-diff"><span>+${Number(diff.addedSubjectCount || 0)} soggetti</span><span>+${Number(diff.addedRelationCount || 0)} collegamenti</span><span>−${Number(diff.removedSubjectCount || 0)} soggetti nella sorgente</span><span>−${Number(diff.removedRelationCount || 0)} collegamenti nella sorgente</span></div><div class="button-row"><button type="button" data-source-manager-confirm-update ${this.busy ? "disabled" : ""}>Aggiorna sorgente</button><button type="button" class="button-secondary" data-source-manager-cancel-update>Annulla</button></div></section>` : ""}
+      ${this.confirmDetach ? `<section class="source-manager-inline-confirm danger"><h2>Scollegare la sorgente?</h2><p>I contenuti e i collegamenti già presenti nella Raccolta resteranno invariati.</p><div class="button-row"><button type="button" class="danger" data-source-manager-confirm-detach ${this.busy ? "disabled" : ""}>Scollega sorgente</button><button type="button" class="button-secondary" data-source-manager-cancel-detach>Annulla</button></div></section>` : ""}`;
   }
 
   renderSources() {
     const results = this.choices?.results || [];
     const pagination = this.choices?.pagination || { page: this.page, totalPages: 0 };
-    return `${this.renderHeader("Aggiungi sorgente", "Scegli un grafo compatibile. Verrà pinzata la revisione corrente come sorgente read-only; il grafo locale della Raccolta rimane l'unico modificabile.")}
+    return `${this.renderHeader("Aggiungi sorgente", { back: true })}
       <form data-graph-source-search role="search" class="collection-graph-search"><label>Cerca<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>
       ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
       <div class="collection-graph-choice-list">${results.map((graph) => {
@@ -242,7 +466,7 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
         return `<button type="button" class="collection-graph-choice-card" data-graph-source-choice="${escapeHtml(id(graph))}" aria-pressed="${selected}" ${this.busy ? "disabled" : ""}><span class="collection-graph-choice-icon">${icon("link", { size: 18 })}</span><span class="collection-graph-choice-copy"><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><small>${escapeHtml(graph.description || "")}</small><span>${Number(graph.subjectCount || 0)} soggetti · ${Number(graph.relationCount || 0)} relazioni</span><span>${Number(coverage.coveredSubjectCount || 0)}/${Number(coverage.totalSubjectCount || 0)} con contenuti nello Spazio</span></span></button>`;
       }).join("") || `<artaround-empty-state><p>${this.busy ? "Caricamento…" : "Nessuna nuova sorgente compatibile disponibile."}</p></artaround-empty-state>`}</div>
       ${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine"><button type="button" data-graph-source-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-graph-source-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}
-      <div class="operations"><button type="button" class="button-secondary" data-close-graph-import>Annulla</button><button type="button" data-attach-source ${!this.selectedGraph || this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : "Aggiungi sorgente"}</button></div>`;
+      <div class="operations"><button type="button" data-attach-source ${!this.selectedGraph || this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : "Aggiungi sorgente"}</button></div>`;
   }
 
   renderRow(row) {
@@ -250,33 +474,41 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     const selectable = this.rowSelectable(row);
     const candidates = row.itemCandidates || [];
     const checked = this.selectedItems.has(subjectId);
-    const statusLabel = row.status === "active" ? "Già attivo nel grafo locale"
+    const statusLabel = row.status === "active" ? "Già attivo"
       : row.status === "in_collection" ? "Già nella Raccolta"
-        : row.status === "addable" ? "Disponibile nello Spazio"
+        : row.status === "addable" ? "Disponibile"
           : row.status === "ambiguous" ? `${candidates.length} contenuti possibili`
-            : "Nessun contenuto disponibile";
+            : "Non disponibile";
     const conflict = row.classificationConflict
-      ? `<small class="collection-graph-import-warning">Classificazione sorgente diversa da quella locale: verrà mantenuta quella della Raccolta.</small>`
+      ? `<small class="collection-graph-import-warning">La classificazione locale verrà mantenuta.</small>`
       : "";
     const selector = row.status === "ambiguous"
       ? `<select data-import-subject-item="${escapeHtml(subjectId)}" aria-label="Contenuto per ${escapeHtml(row.subject?.label || "Subject")}"><option value="">Scegli il contenuto…</option>${candidates.map((candidate) => `<option value="${escapeHtml(id(candidate.itemId))}" ${this.selectedItems.get(subjectId) === id(candidate.itemId) ? "selected" : ""}>${escapeHtml(candidate.label || `Contenuto ${id(candidate.itemId).slice(-6)}`)}</option>`).join("")}</select>`
       : candidates.length ? `<small>${escapeHtml(candidates[0].label || "Contenuto disponibile")}</small>` : "";
-    return `<article class="collection-graph-import-row ${selectable ? "" : "is-disabled"}"><label><input type="checkbox" data-import-subject-toggle="${escapeHtml(subjectId)}" ${selectable ? "" : "disabled"} ${checked ? "checked" : ""}><span><strong>${escapeHtml(row.subject?.label || "Subject")}</strong><small>${escapeHtml(statusLabel)} · ${Number(row.sourceRelationCount || 0)} collegamenti nella sorgente</small>${conflict}</span></label>${selector}</article>`;
+    return `<article class="collection-graph-import-row ${selectable ? "" : "is-disabled"}"><label><input type="checkbox" data-import-subject-toggle="${escapeHtml(subjectId)}" ${selectable ? "" : "disabled"} ${checked ? "checked" : ""}><span><strong>${escapeHtml(row.subject?.label || "Subject")}</strong><small>${escapeHtml(statusLabel)} · ${Number(row.sourceRelationCount || 0)} collegamenti</small>${conflict}</span></label>${selector}</article>`;
   }
 
   renderImport() {
-    const source = this.config?.source || {};
     const summary = this.preview?.summary || {};
-    return `${this.renderHeader(`Importa contenuti da “${this.preview?.source?.name || "Sorgente"}”`, "Scegli i contenuti da portare nella Raccolta. I Subject verranno attivati nel grafo locale; i collegamenti compatibili verranno ricavati dall'insieme di tutte le sorgenti pinzate.")}
+    return `${this.renderHeader("Importa contenuti", { back: true })}
       ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
       <div class="collection-graph-import-summary"><span><strong>${Number(summary.activeSubjectCount || 0)}</strong> già attivi</span><span><strong>${Number(summary.inCollectionSubjectCount || 0)}</strong> già nella Raccolta</span><span><strong>${Number(summary.directlyImportableSubjectCount || 0)}</strong> importabili</span><span><strong>${Number(summary.ambiguousSubjectCount || 0)}</strong> da scegliere</span><span><strong>${Number(summary.unavailableSubjectCount || 0)}</strong> non disponibili</span>${Number(summary.classificationConflictCount || 0) ? `<span><strong>${Number(summary.classificationConflictCount)}</strong> classificazioni diverse</span>` : ""}</div>
-      <form data-graph-import-form class="collection-graph-import-form"><div class="collection-graph-import-toolbar"><button type="button" class="button-secondary" data-select-direct-imports>Seleziona tutti i disponibili</button><span>${this.selectedItems.size} selezionati</span></div><div class="collection-graph-import-list">${(this.preview?.results || []).map((row) => this.renderRow(row)).join("")}</div><div class="operations"><button type="button" class="button-secondary" data-close-graph-import>Annulla</button><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Importazione…" : "Importa contenuti"}</button></div></form>
-      <p class="note">La sorgente resta pinzata alla revisione ${escapeHtml(id(source.sourceGraphRevisionId).slice(-8) || "corrente")}; importare non modifica mai il grafo sorgente.</p>`;
+      <form data-graph-import-form class="collection-graph-import-form"><div class="collection-graph-import-toolbar"><button type="button" class="button-secondary" data-select-direct-imports>Seleziona tutti i disponibili</button><span>${this.selectedItems.size} selezionati</span></div><div class="collection-graph-import-list">${(this.preview?.results || []).map((row) => this.renderRow(row)).join("")}</div><div class="operations"><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Importazione…" : "Importa contenuti"}</button></div></form>`;
+  }
+
+  renderRestorable() {
+    return `${this.renderHeader("Collegamenti ripristinabili", { back: true })}
+      ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
+      <div class="source-manager-restorable-list">${this.restorableEdges.map((entry) => `<article><div><strong>${escapeHtml(entry.sourceSubject?.label || "Subject")} — ${escapeHtml(entry.relation?.label || "collegamento")} → ${escapeHtml(entry.targetSubject?.label || "Subject")}</strong><small>${(entry.supportSources || []).map((source) => escapeHtml(source.name || "Sorgente")).join(" · ")}</small></div>${this.editable() ? `<button type="button" class="button-secondary" data-source-manager-restore-edge="${escapeHtml(id(entry.id))}">Ripristina</button>` : ""}</article>`).join("")}</div>`;
   }
 
   render() {
-    const body = this.mode === "import-content" ? this.renderImport() : this.renderSources();
-    this.innerHTML = `<div class="context-task-modal-layer collection-graph-dialog-layer" data-graph-import-backdrop role="presentation"><section class="context-task-modal context-task-modal--large collection-graph-dialog" role="dialog" aria-modal="true" aria-label="Gestisci sorgente semantica">${body}</section></div>`;
+    const body = this.view === "detail" ? this.renderDetail()
+      : this.view === "add" ? this.renderSources()
+        : this.view === "import" ? this.renderImport()
+          : this.view === "restorable" ? this.renderRestorable()
+            : this.renderList();
+    this.innerHTML = `<div class="context-task-modal-layer collection-graph-dialog-layer" data-graph-import-backdrop role="presentation"><section class="context-task-modal context-task-modal--large collection-graph-dialog source-manager-dialog" role="dialog" aria-modal="true" aria-label="Gestisci sorgenti">${body}</section></div>`;
   }
 }
 
