@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "venueId": "5449f5d3430d508f11f0577a",
+  "branding": {
+    "productTitle": "ArtAround",
+    "museumTitle": "MAMbo — Museo d'Arte Moderna di Bologna",
+    "subtitle": "Demo TW2026",
+    "logo": { "src": "/navigator-assets/mambo-mark-demo.svg", "alt": "Marchio dimostrativo MAMbo" },
+    "heroImage": { "src": "/navigator-assets/mambo-hero-demo.svg", "alt": "Illustrazione dimostrativa MAMbo" },
+    "theme": { "primary": "#30343B", "accent": "#A63D40", "surface": "#F4F1EA" }
+  }
+}
