@@ -51,6 +51,9 @@ jobs:
       - name: Run unit and standalone MongoDB compatibility tests
         run: npm test
 
+      - name: Seed and verify canonical exam dataset
+        run: npm run seed:demo && npm run verify:demo
+
       - name: Audit production backend dependencies
         run: npm audit --omit=dev --audit-level=high
 
