@@ -65,6 +65,7 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
         ownerId: this.config.ownerId,
         namespaceId: this.config.namespaceId,
         contentSpaceId: this.config.contentSpaceId,
+        excludeSemanticGraphId: this.config.excludeSemanticGraphId,
         q: this.query,
         page: this.page,
         limit: 12,
