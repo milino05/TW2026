@@ -10,7 +10,7 @@ const FOCUSABLE_SELECTOR = [
   "video[controls]",
   "audio[controls]",
 ].join(", ");
-const modalReturnFocusByOwner = new WeakMap();
+const modalOwnerState = new WeakMap();
 
 function focusableElements(root) {
   if (!(root instanceof HTMLElement)) return [];
@@ -39,6 +39,12 @@ function customElementOwner(layer) {
   return null;
 }
 
+function restoreOwnerFocus(owner, state) {
+  if (modalOwnerState.get(owner) !== state) return;
+  modalOwnerState.delete(owner);
+  if (owner.isConnected && state.returnFocus?.isConnected) state.returnFocus.focus?.({ preventScroll: true });
+}
+
 /**
  * Shared lifecycle for application-owned modal surfaces.
  *
@@ -50,7 +56,9 @@ function customElementOwner(layer) {
  * `panel` can be an HTMLElement or a resolver returning the current panel. The
  * resolver form supports vanilla custom elements that rerender their modal DOM.
  * For portalled layers owned by a custom element, the original launcher focus
- * is retained across those rerenders until the modal flow actually closes.
+ * is retained across those rerenders. A release without restoration is treated
+ * as an in-place rerender only when another modal for the same owner mounts in
+ * the same turn; otherwise the flow has ended and focus is restored.
  */
 export function mountModalInteraction({
   layer,
@@ -72,10 +80,13 @@ export function mountModalInteraction({
 
   const owner = customElementOwner(layer);
   const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  if (owner && !modalReturnFocusByOwner.has(owner) && activeElement && !layer.contains(activeElement)) {
-    modalReturnFocusByOwner.set(owner, activeElement);
+  let ownerState = owner ? modalOwnerState.get(owner) : null;
+  if (owner && !ownerState) {
+    ownerState = { returnFocus: activeElement && !layer.contains(activeElement) ? activeElement : null, active: 0 };
+    modalOwnerState.set(owner, ownerState);
   }
-  const returnFocus = owner ? modalReturnFocusByOwner.get(owner) || activeElement : activeElement;
+  if (ownerState) ownerState.active += 1;
+  const returnFocus = ownerState?.returnFocus || activeElement;
   let released = false;
   let dismissPending = false;
 
@@ -140,9 +151,18 @@ export function mountModalInteraction({
       layer.removeEventListener("click", onClick);
       layer.removeEventListener("keydown", onKeyDown);
       unmountLayer();
-      if (!restoreFocus) return;
-      if (owner) modalReturnFocusByOwner.delete(owner);
-      if (returnFocus?.isConnected) returnFocus.focus?.({ preventScroll: true });
+      if (owner && ownerState) {
+        ownerState.active = Math.max(0, ownerState.active - 1);
+        if (restoreFocus) {
+          restoreOwnerFocus(owner, ownerState);
+        } else {
+          queueMicrotask(() => {
+            if (ownerState.active === 0) restoreOwnerFocus(owner, ownerState);
+          });
+        }
+        return;
+      }
+      if (restoreFocus && returnFocus?.isConnected) returnFocus.focus?.({ preventScroll: true });
     },
   };
 }
