@@ -1,5 +1,6 @@
 const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
+const { validateCreateItemPayload } = require("./validation/itemV2.validation");
 const instantiation = require("./itemInstantiationV2.service");
 const {
   findOwnedItemReuseCandidates,
@@ -21,6 +22,8 @@ async function createItem({ payload, actorUserId }) {
 
   const cleanPayload = { ...source };
   delete cleanPayload.creationMode;
+  const issues = validateCreateItemPayload(cleanPayload);
+  if (issues.length) throw new AppError("Payload non valido", 400, issues);
 
   await assertCanActForOwner({
     actorUserId,
@@ -29,7 +32,7 @@ async function createItem({ payload, actorUserId }) {
     permissionCode: "item.create",
   });
 
-  if (creationMode === "reuse_first" && cleanPayload.primarySubjectId) {
+  if (creationMode === "reuse_first") {
     const { candidates } = await findOwnedItemReuseCandidates({
       ownerType: cleanPayload.ownerType,
       ownerId: cleanPayload.ownerId,
