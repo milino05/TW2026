@@ -80,6 +80,26 @@
   padding: .4rem;
 }
 
+/*
+ * Migration guard for task modals that still use the pre-foundation classes.
+ * Domain styles historically made both layer and panel scrollable, which can
+ * produce two competing scrollbars at short viewport heights. Until each
+ * consumer is moved to the shell above, the backdrop is never a scroll owner
+ * and the legacy panel is the only application-level vertical scroller.
+ */
+.context-task-modal-layer {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+.context-task-modal {
+  max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 @media (max-width: 52rem) {
   .artaround-modal-layer {
     padding:
@@ -94,6 +114,10 @@
   .artaround-task-modal--large {
     width: 100%;
     max-height: calc(100dvh - 1.1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  .context-task-modal {
+    max-height: calc(100dvh - 1.1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
   }
 }
 
@@ -128,4 +152,12 @@
   }
 
   .artaround-task-modal__footer > * { flex: 1 1 10rem; }
+
+  .context-task-modal {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+  }
 }
