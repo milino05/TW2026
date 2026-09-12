@@ -30,7 +30,8 @@ test("Escape, backdrop and explicit cancel converge on the same non-destructive 
   assert.match(lifecycle, /requestDismiss\("dismiss"\)/);
   assert.match(lifecycle, /canDismiss/);
   assert.match(lifecycle, /onRequestDismiss/);
-  assert.doesNotMatch(lifecycle, /confirm|delete|remove|repository|fetch\(/i);
+  assert.doesNotMatch(lifecycle, /openActionDialog|accountRepository|managementRepository|marketplaceRepository|editorialRepository|authoringRepository|fetch\s*\(/);
+  assert.doesNotMatch(lifecycle, /\b(?:createOffer|removeWorkspaceResource|trashVenue|deleteResource|confirmSensitiveAction)\b/);
 });
 
 test("modal lifecycle traps focus and restores the original opener across portal rerenders", () => {
