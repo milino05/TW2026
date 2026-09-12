@@ -77,6 +77,60 @@ async function installTaskModal(page, { dirty = false } = {}) {
   }, { dirty });
 }
 
+async function installPortalledRerenderFixture(page) {
+  await page.evaluate(async () => {
+    const { mountModalInteraction } = await import("/marketplace/src/application/modal-interaction.js");
+    document.querySelector("artaround-acceptance-modal-host")?.remove();
+
+    const host = document.createElement("artaround-acceptance-modal-host");
+    host.innerHTML = `<button id="portal-modal-origin" type="button">Apri modal portalled</button>`;
+    document.body.append(host);
+    const origin = host.querySelector("#portal-modal-origin");
+    origin.focus();
+
+    let version = 0;
+    let controller = null;
+    const markup = () => {
+      version += 1;
+      return `<div class="artaround-modal-layer" data-portal-layer data-modal-backdrop="true" role="presentation">
+        <section class="artaround-task-modal" role="dialog" aria-modal="true" aria-label="Portalled rerender ${version}">
+          <header class="artaround-task-modal__header"><h2>Passaggio ${version}</h2></header>
+          <div class="artaround-task-modal__body"><label>Campo <input id="portal-modal-input-${version}" value="${version}"></label></div>
+          <footer class="artaround-task-modal__footer"><button type="button" data-modal-dismiss>Chiudi</button></footer>
+        </section>
+      </div>`;
+    };
+    const mountCurrent = () => {
+      const layer = host.querySelector("[data-portal-layer]");
+      controller = mountModalInteraction({
+        layer,
+        panel: () => layer.querySelector(".artaround-task-modal"),
+        initialFocus: `#portal-modal-input-${version}`,
+        onRequestDismiss: () => {
+          controller.release();
+          layer.remove();
+          return true;
+        },
+      });
+    };
+
+    host.insertAdjacentHTML("beforeend", markup());
+    mountCurrent();
+    window.__portalModalAcceptance = {
+      rerender() {
+        controller.release({ restoreFocus: false });
+        host.querySelector("[data-portal-layer]")?.remove();
+        host.insertAdjacentHTML("beforeend", markup());
+        mountCurrent();
+      },
+      closeProgrammatically() {
+        controller.release({ restoreFocus: false });
+        host.querySelector("[data-portal-layer]")?.remove();
+      },
+    };
+  });
+}
+
 async function geometry(page) {
   return page.evaluate(() => {
     const layer = document.querySelector("#acceptance-task-modal");
@@ -171,4 +225,19 @@ test("backdrop and explicit cancel use the same dismiss contract", async ({ page
   await page.locator("#acceptance-task-modal").click({ position: { x: 3, y: 3 } });
   expect(await page.evaluate(() => window.__acceptanceModal.dismissReason)).toBe("backdrop");
   await expect(page.locator("#acceptance-task-modal")).toHaveCount(0);
+});
+
+test("portalled custom-element modals retain the original launcher across rerenders and restore it after final close", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
+  await installPortalledRerenderFixture(page);
+
+  await expect(page.locator("#portal-modal-input-1")).toBeFocused();
+  await page.evaluate(() => window.__portalModalAcceptance.rerender());
+  await expect(page.locator("#portal-modal-input-2")).toBeFocused();
+  await expect(page.locator("#portal-modal-origin")).not.toBeFocused();
+
+  await page.evaluate(() => window.__portalModalAcceptance.closeProgrammatically());
+  await expect(page.locator("[data-portal-layer]")).toHaveCount(0);
+  await expect(page.locator("#portal-modal-origin")).toBeFocused();
 });
