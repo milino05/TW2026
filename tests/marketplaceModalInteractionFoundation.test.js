@@ -33,10 +33,15 @@ test("Escape, backdrop and explicit cancel converge on the same non-destructive 
   assert.doesNotMatch(lifecycle, /confirm|delete|remove|repository|fetch\(/i);
 });
 
-test("modal lifecycle traps focus and restores it to the opener", () => {
+test("modal lifecycle traps focus and restores the original opener across portal rerenders", () => {
   assert.match(lifecycle, /event\.key !== "Tab"/);
   assert.match(lifecycle, /document\.activeElement instanceof HTMLElement/);
-  assert.match(lifecycle, /returnFocus\.focus/);
+  assert.match(lifecycle, /modalOwnerState = new WeakMap/);
+  assert.match(lifecycle, /customElementOwner/);
+  assert.match(lifecycle, /ownerState\.active \+= 1/);
+  assert.match(lifecycle, /queueMicrotask/);
+  assert.match(lifecycle, /restoreOwnerFocus/);
+  assert.match(lifecycle, /returnFocus\.focus|state\.returnFocus.*focus/);
   assert.match(lifecycle, /initialFocus/);
 });
 
@@ -51,6 +56,7 @@ test("Task Modal shell has one application-level vertical scroll owner", () => {
   assert.match(bodyRule, /min-height:\s*0/);
   assert.doesNotMatch(layerRule, /overflow(?:-y)?:\s*(auto|scroll)/);
   assert.doesNotMatch(panelRule, /overflow(?:-y)?:\s*(auto|scroll)/);
+  assert.doesNotMatch(styles, /context-task-modal/);
   assert.match(styles, /100dvh/);
   assert.match(styles, /safe-area-inset-top/);
 });
