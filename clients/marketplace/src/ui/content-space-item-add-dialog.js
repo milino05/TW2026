@@ -2,6 +2,7 @@ import { libraryRepository } from "../infrastructure/http/library-repository.js"
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { semanticRepository } from "../infrastructure/http/semantic-repository.js";
 import { suggestRecognitionMedia } from "../application/subject-recognition-media.js";
+import { mountModalInteraction } from "../application/modal-interaction.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
 
@@ -35,6 +36,8 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
   distinctReturnStep = "existing";
   busy = false;
   error = null;
+  _dialogInteraction = null;
+  _dialogLayer = null;
 
   connectedCallback() {
     this.contentSpaceId = this.getAttribute("content-space-id") || null;
@@ -42,19 +45,48 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
     this.ownerId = this.getAttribute("owner-id") || null;
     this.spaceName = this.getAttribute("space-name") || "Spazio editoriale";
     this.origin = this.getAttribute("origin") || null;
-    this.addEventListener("click", this.onClick);
-    this.addEventListener("subject-selected", this.onSubjectSelected);
     this.render();
   }
+
   disconnectedCallback() {
-    this.removeEventListener("click", this.onClick);
-    this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this.releaseDialogInteraction({ restoreFocus: false });
+  }
+
+  releaseDialogInteraction({ restoreFocus = false } = {}) {
+    if (this._dialogLayer) {
+      this._dialogLayer.removeEventListener("click", this.onClick);
+      this._dialogLayer.removeEventListener("subject-selected", this.onSubjectSelected);
+    }
+    this._dialogInteraction?.release?.({ restoreFocus });
+    this._dialogInteraction = null;
+    this._dialogLayer = null;
+  }
+
+  syncDialogInteraction() {
+    const layer = this.querySelector(".content-space-item-add-modal-layer");
+    if (!(layer instanceof HTMLElement)) return;
+    this._dialogLayer = layer;
+    layer.addEventListener("click", this.onClick);
+    layer.addEventListener("subject-selected", this.onSubjectSelected);
+    this._dialogInteraction = mountModalInteraction({
+      layer,
+      panel: () => layer.querySelector(".content-space-item-add-modal"),
+      kind: "modal",
+      canDismiss: () => !this.busy,
+      onRequestDismiss: () => {
+        this.close();
+        return true;
+      },
+      lockScroll: true,
+    });
   }
 
   close() {
+    this.releaseDialogInteraction({ restoreFocus: true });
     this.dispatchEvent(new CustomEvent("library-item-add-close", { bubbles: true }));
     this.remove();
   }
+
   async selectSubject(subject) {
     if (!subject || !this.contentSpaceId) return;
     this.subject = subject;
@@ -79,6 +111,7 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
       this.render();
     }
   }
+
   async prepareNewItem() {
     this.step = "preview";
     this.recognitionMedia = null;
@@ -103,7 +136,6 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    if (target.closest("[data-close-item-add]")) { this.close(); return; }
     if (target.closest("[data-back-subject]")) {
       this.step = "subject";
       this.subject = null;
@@ -250,6 +282,7 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
   }
 
   render() {
+    this.releaseDialogInteraction({ restoreFocus: false });
     const body = this.step === "existing"
       ? this.renderExistingStep()
       : this.step === "marketplace"
@@ -259,7 +292,8 @@ export class ArtAroundContentSpaceItemAddDialog extends HTMLElement {
           : this.step === "preview"
             ? this.renderPreviewStep()
             : this.renderSubjectStep();
-    this.innerHTML = `<div class="context-task-modal-layer" role="presentation"><section class="context-task-modal content-space-item-add-modal" role="dialog" aria-modal="true" aria-label="Aggiungi contenuto"><header class="task-modal-header"><div><span class="eyebrow">${escapeHtml(this.spaceName)}</span><h1>Aggiungi contenuto</h1></div><button type="button" class="button-secondary small" data-close-item-add aria-label="Chiudi">×</button></header>${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && this.step === "subject" ? `<p>Preparazione…</p>` : body}</section></div>`;
+    this.innerHTML = `<div class="artaround-modal-layer content-space-item-add-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal artaround-task-modal--large content-space-item-add-modal" role="dialog" aria-modal="true" aria-label="Aggiungi contenuto" aria-busy="${this.busy}"><header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">${escapeHtml(this.spaceName)}</span><h1>Aggiungi contenuto</h1></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header><div class="artaround-task-modal__body">${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && this.step === "subject" ? `<p role="status">Preparazione…</p>` : body}</div><footer class="artaround-task-modal__footer"><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Annulla</button></footer></section></div>`;
+    this.syncDialogInteraction();
   }
 }
 
