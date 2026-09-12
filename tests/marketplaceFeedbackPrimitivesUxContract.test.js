@@ -11,6 +11,8 @@ const application = read("clients/marketplace/src/application/ui-feedback.js");
 const primitives = read("clients/marketplace/src/ui/feedback-primitives.js");
 const adapter = read("clients/marketplace/src/ui/transient-feedback-adapter.js");
 const surfaceAdapter = read("clients/marketplace/src/ui/legacy-feedback-surface-adapter.js");
+const namespaceEditor = read("clients/marketplace/src/ui/namespace-editor-view.js");
+const physicalEditor = read("clients/marketplace/src/ui/physical-vocabulary-editor-view.js");
 const styles = read("clients/marketplace/src/styles/feedback-primitives.css");
 const main = read("clients/marketplace/src/main.js");
 const index = read("clients/marketplace/index.html");
@@ -71,18 +73,16 @@ test("l'action dialog implementa il comportamento modale riusabile", () => {
   assert.match(primitives, /export function openActionDialog/);
 });
 
-test("le conferme semplici già classificate usano l'action dialog condiviso", () => {
-  assert.match(surfaceAdapter, /showNamespaceLeaveDialog/);
-  assert.match(surfaceAdapter, /showPhysicalConfirmationDialog/);
-  assert.match(surfaceAdapter, /openActionDialog\(\{/);
-  assert.match(surfaceAdapter, /tone: "danger"/);
-  assert.match(surfaceAdapter, /data-confirm-leave/);
-  assert.match(surfaceAdapter, /data-confirm-action/);
+test("Namespace e Physical invocano direttamente l'Action Dialog senza adapter di conferma legacy", () => {
+  assert.match(namespaceEditor, /openActionDialog/);
+  assert.match(namespaceEditor, /title: "Uscire senza salvare\?"/);
+  assert.match(physicalEditor, /openActionDialog/);
+  assert.match(physicalEditor, /confirmLeaveWithoutSaving/);
+  assert.doesNotMatch(surfaceAdapter, /showNamespaceLeaveDialog|showPhysicalConfirmationDialog|data-confirm-leave|data-confirm-action|pendingConfirmation/);
 });
 
 test("issue panel e callout inequivocabili vengono migrati alle primitive condivise", () => {
   assert.match(surfaceAdapter, /replaceElement\(legacy, "artaround-issue-panel", "warning"\)/);
-  assert.match(surfaceAdapter, /replaceElement\(legacy, "artaround-callout", "warning"\)/);
   assert.match(surfaceAdapter, /\.namespace-workflow \.issues/);
   assert.match(surfaceAdapter, /physical-integrity--warning/);
   assert.match(surfaceAdapter, /blocker-panel/);
