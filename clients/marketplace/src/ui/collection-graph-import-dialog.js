@@ -13,7 +13,7 @@ function id(value) { return String(value?._id || value?.id || value || ""); }
 
 export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   config = null;
-  view = "sources";
+  mode = "add-source";
   query = "";
   page = 1;
   choices = null;
@@ -40,8 +40,17 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
 
   configure(config = {}) {
     this.config = config;
+    this.mode = config.mode === "import-content" ? "import-content" : "add-source";
+    this.query = "";
+    this.page = 1;
+    this.choices = null;
+    this.selectedGraph = null;
+    this.preview = this.mode === "import-content" ? config.source?.preview || null : null;
+    this.selectedItems.clear();
+    this.error = null;
     this.render();
-    void this.loadChoices();
+    if (this.mode === "add-source") void this.loadChoices();
+    else this.focusFirst();
   }
 
   close() {
@@ -50,17 +59,12 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   }
 
   complete(detail = {}) {
-    this.dispatchEvent(new CustomEvent("collection-graph-imported", { bubbles: true, detail }));
+    this.dispatchEvent(new CustomEvent("collection-graph-source-changed", { bubbles: true, detail }));
     this.close();
   }
 
-  async excludedGraphId() {
-    if (this.config?.excludeSemanticGraphId) return id(this.config.excludeSemanticGraphId);
-    if (!this.config?.editorialContextId) return null;
-    const studio = await editorialRepository.studio(this.config.editorialContextId);
-    const semanticGraphId = id(studio?.semanticGraph?.id) || null;
-    if (semanticGraphId) this.config = { ...this.config, excludeSemanticGraphId: semanticGraphId };
-    return semanticGraphId;
+  focusFirst() {
+    requestAnimationFrame(() => this.querySelector("button, input, select")?.focus({ preventScroll: true }));
   }
 
   async loadChoices() {
@@ -69,13 +73,12 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     this.error = null;
     this.render();
     try {
-      const excludeSemanticGraphId = await this.excludedGraphId();
       this.choices = await editorialRepository.reusableSemanticGraphs({
         ownerType: this.config.ownerType,
         ownerId: this.config.ownerId,
         namespaceId: this.config.namespaceId,
         contentSpaceId: this.config.contentSpaceId,
-        excludeSemanticGraphId,
+        excludeSemanticGraphIds: this.config.excludeSemanticGraphIds || [],
         q: this.query,
         page: this.page,
         limit: 12,
@@ -88,33 +91,13 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     }
   }
 
-  async openPreview(graph) {
-    this.selectedGraph = graph;
-    this.preview = null;
-    this.selectedItems.clear();
-    this.busy = true;
-    this.error = null;
-    this.render();
-    try {
-      this.preview = await editorialRepository.collectionGraphImportPreview(this.config.editorialContextId, id(graph));
-      this.view = "preview";
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Non è possibile preparare l'importazione";
-    } finally {
-      this.busy = false;
-      this.render();
-      requestAnimationFrame(() => this.querySelector("input, button, select")?.focus({ preventScroll: true }));
-    }
-  }
-
   rowSelectable(row) {
     return ["in_collection", "addable", "ambiguous"].includes(row?.status);
   }
 
   preferredItem(row) {
     const candidates = row?.itemCandidates || [];
-    if (!candidates.length) return "";
-    return id(candidates[0].itemId);
+    return candidates.length ? id(candidates[0].itemId) : "";
   }
 
   onChange = (event) => {
@@ -143,10 +126,12 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.matches("[data-graph-import-backdrop]") || target.closest("[data-close-graph-import]")) { this.close(); return; }
+
     const choice = target.closest("[data-graph-source-choice]");
     if (choice) {
-      const graph = (this.choices?.results || []).find((entry) => id(entry) === choice.dataset.graphSourceChoice);
-      if (graph) void this.openPreview(graph);
+      this.selectedGraph = (this.choices?.results || []).find((entry) => id(entry) === choice.dataset.graphSourceChoice) || null;
+      this.error = null;
+      this.render();
       return;
     }
     const pageButton = target.closest("[data-graph-source-page]");
@@ -155,15 +140,7 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
       void this.loadChoices();
       return;
     }
-    if (target.closest("[data-back-source-list]")) {
-      this.view = "sources";
-      this.preview = null;
-      this.selectedGraph = null;
-      this.selectedItems.clear();
-      this.error = null;
-      this.render();
-      return;
-    }
+    if (target.closest("[data-attach-source]")) { void this.attachSource(); return; }
     if (target.closest("[data-select-direct-imports]")) {
       for (const row of this.preview?.results || []) {
         if (!["in_collection", "addable"].includes(row.status)) continue;
@@ -171,9 +148,7 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
         if (itemId) this.selectedItems.set(id(row.subject?.id), itemId);
       }
       this.render();
-      return;
     }
-    if (target.closest("[data-attach-source-only]")) void this.submitImport([]);
   };
 
   onSubmit = (event) => {
@@ -201,23 +176,38 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
       }
       itemIds.push(itemId);
     }
-    void this.submitImport([...new Set(itemIds)]);
+    if (!itemIds.length) {
+      this.error = "Seleziona almeno un contenuto da importare.";
+      this.render();
+      return;
+    }
+    void this.importContents([...new Set(itemIds)]);
   };
 
-  async submitImport(itemIds) {
+  async attachSource() {
     if (!this.selectedGraph || this.busy) return;
     this.busy = true;
     this.error = null;
     this.render();
     try {
-      const attached = await editorialRepository.attachGraphImportSource(this.config.editorialContextId, id(this.selectedGraph));
-      const sourceId = id(attached?.source);
-      let imported = null;
-      if (itemIds.length) {
-        if (!sourceId) throw new Error("Sorgente semantica creata senza identificatore");
-        imported = await editorialRepository.importGraphSubjects(this.config.editorialContextId, sourceId, itemIds);
-      }
-      this.complete({ source: attached?.source || null, imported });
+      const result = await editorialRepository.attachGraphImportSource(this.config.editorialContextId, id(this.selectedGraph));
+      this.complete({ action: "source-added", source: result?.source || null });
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Sorgente non aggiunta";
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  async importContents(itemIds) {
+    const sourceId = id(this.config?.source?.id);
+    if (!sourceId || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.render();
+    try {
+      const imported = await editorialRepository.importGraphSubjects(this.config.editorialContextId, sourceId, itemIds);
+      this.complete({ action: "contents-imported", sourceId, imported });
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Importazione non completata";
       this.busy = false;
@@ -237,17 +227,22 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
   };
 
   renderHeader(title, description) {
-    return `<header class="task-modal-header"><div><span class="eyebrow">Sorgente semantica</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div><button type="button" class="button-secondary small" data-close-graph-import aria-label="Chiudi">×</button></header>`;
+    return `<header class="task-modal-header"><div><span class="eyebrow">Sorgenti semantiche</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div><button type="button" class="button-secondary small" data-close-graph-import aria-label="Chiudi">×</button></header>`;
   }
 
   renderSources() {
     const results = this.choices?.results || [];
     const pagination = this.choices?.pagination || { page: this.page, totalPages: 0 };
-    return `${this.renderHeader("Importa da un grafo", "Scegli un grafo compatibile. La Raccolta manterrà il proprio grafo locale: la sorgente viene pinzata a una revisione precisa.")}
+    return `${this.renderHeader("Aggiungi sorgente", "Scegli un grafo compatibile. Verrà pinzata la revisione corrente come sorgente read-only; il grafo locale della Raccolta rimane l'unico modificabile.")}
       <form data-graph-source-search role="search" class="collection-graph-search"><label>Cerca<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>
       ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
-      <div class="collection-graph-choice-list">${results.map((graph) => { const coverage = graph.currentSpaceCoverage || {}; return `<button type="button" class="collection-graph-choice-card" data-graph-source-choice="${escapeHtml(id(graph))}" ${this.busy ? "disabled" : ""}><span class="collection-graph-choice-icon">${icon("link", { size: 18 })}</span><span class="collection-graph-choice-copy"><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><small>${escapeHtml(graph.description || "")}</small><span>${Number(graph.subjectCount || 0)} soggetti · ${Number(graph.relationCount || 0)} relazioni</span><span>${Number(coverage.coveredSubjectCount || 0)}/${Number(coverage.totalSubjectCount || 0)} con contenuti nello Spazio</span></span></button>`; }).join("") || `<artaround-empty-state><p>${this.busy ? "Caricamento…" : "Nessun grafo compatibile trovato."}</p></artaround-empty-state>`}</div>
-      ${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine"><button type="button" data-graph-source-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-graph-source-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}`;
+      <div class="collection-graph-choice-list">${results.map((graph) => {
+        const coverage = graph.currentSpaceCoverage || {};
+        const selected = id(graph) === id(this.selectedGraph);
+        return `<button type="button" class="collection-graph-choice-card" data-graph-source-choice="${escapeHtml(id(graph))}" aria-pressed="${selected}" ${this.busy ? "disabled" : ""}><span class="collection-graph-choice-icon">${icon("link", { size: 18 })}</span><span class="collection-graph-choice-copy"><strong>${escapeHtml(graph.name || "Grafo semantico")}</strong><small>${escapeHtml(graph.description || "")}</small><span>${Number(graph.subjectCount || 0)} soggetti · ${Number(graph.relationCount || 0)} relazioni</span><span>${Number(coverage.coveredSubjectCount || 0)}/${Number(coverage.totalSubjectCount || 0)} con contenuti nello Spazio</span></span></button>`;
+      }).join("") || `<artaround-empty-state><p>${this.busy ? "Caricamento…" : "Nessuna nuova sorgente compatibile disponibile."}</p></artaround-empty-state>`}</div>
+      ${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine"><button type="button" data-graph-source-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-graph-source-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}
+      <div class="operations"><button type="button" class="button-secondary" data-close-graph-import>Annulla</button><button type="button" data-attach-source ${!this.selectedGraph || this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : "Aggiungi sorgente"}</button></div>`;
   }
 
   renderRow(row) {
@@ -255,28 +250,33 @@ export class ArtAroundCollectionGraphImportDialog extends HTMLElement {
     const selectable = this.rowSelectable(row);
     const candidates = row.itemCandidates || [];
     const checked = this.selectedItems.has(subjectId);
-    const statusLabel = row.status === "active" ? "Già attivo nel grafo"
+    const statusLabel = row.status === "active" ? "Già attivo nel grafo locale"
       : row.status === "in_collection" ? "Già nella Raccolta"
-        : row.status === "addable" ? "Aggiungibile dalla Libreria"
+        : row.status === "addable" ? "Disponibile nello Spazio"
           : row.status === "ambiguous" ? `${candidates.length} contenuti possibili`
             : "Nessun contenuto disponibile";
+    const conflict = row.classificationConflict
+      ? `<small class="collection-graph-import-warning">Classificazione sorgente diversa da quella locale: verrà mantenuta quella della Raccolta.</small>`
+      : "";
     const selector = row.status === "ambiguous"
       ? `<select data-import-subject-item="${escapeHtml(subjectId)}" aria-label="Contenuto per ${escapeHtml(row.subject?.label || "Subject")}"><option value="">Scegli il contenuto…</option>${candidates.map((candidate) => `<option value="${escapeHtml(id(candidate.itemId))}" ${this.selectedItems.get(subjectId) === id(candidate.itemId) ? "selected" : ""}>${escapeHtml(candidate.label || `Contenuto ${id(candidate.itemId).slice(-6)}`)}</option>`).join("")}</select>`
       : candidates.length ? `<small>${escapeHtml(candidates[0].label || "Contenuto disponibile")}</small>` : "";
-    return `<article class="collection-graph-import-row ${selectable ? "" : "is-disabled"}"><label><input type="checkbox" data-import-subject-toggle="${escapeHtml(subjectId)}" ${selectable ? "" : "disabled"} ${checked ? "checked" : ""}><span><strong>${escapeHtml(row.subject?.label || "Subject")}</strong><small>${escapeHtml(statusLabel)} · ${Number(row.sourceRelationCount || 0)} relazioni nella sorgente</small></span></label>${selector}</article>`;
+    return `<article class="collection-graph-import-row ${selectable ? "" : "is-disabled"}"><label><input type="checkbox" data-import-subject-toggle="${escapeHtml(subjectId)}" ${selectable ? "" : "disabled"} ${checked ? "checked" : ""}><span><strong>${escapeHtml(row.subject?.label || "Subject")}</strong><small>${escapeHtml(statusLabel)} · ${Number(row.sourceRelationCount || 0)} collegamenti nella sorgente</small>${conflict}</span></label>${selector}</article>`;
   }
 
-  renderPreview() {
+  renderImport() {
+    const source = this.config?.source || {};
     const summary = this.preview?.summary || {};
-    return `${this.renderHeader(`Importa da “${this.preview?.source?.name || this.selectedGraph?.name || "Grafo"}”`, "Attiva solo i Subject che vuoi usare. Quando un nuovo nodo rende utilizzabile una relazione della sorgente, quella relazione viene importata automaticamente.")}
+    return `${this.renderHeader(`Importa contenuti da “${this.preview?.source?.name || "Sorgente"}”`, "Scegli i contenuti da portare nella Raccolta. I Subject verranno attivati nel grafo locale; i collegamenti compatibili verranno ricavati dall'insieme di tutte le sorgenti pinzate.")}
       ${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}
-      <div class="collection-graph-import-summary"><span><strong>${Number(summary.activeSubjectCount || 0)}</strong> già attivi</span><span><strong>${Number(summary.inCollectionSubjectCount || 0)}</strong> già nella Raccolta</span><span><strong>${Number(summary.directlyImportableSubjectCount || 0)}</strong> aggiungibili</span><span><strong>${Number(summary.ambiguousSubjectCount || 0)}</strong> da scegliere</span><span><strong>${Number(summary.unavailableSubjectCount || 0)}</strong> non disponibili</span></div>
-      <form data-graph-import-form class="collection-graph-import-form"><div class="collection-graph-import-toolbar"><button type="button" class="button-secondary" data-select-direct-imports>Seleziona tutti i disponibili</button><span>${this.selectedItems.size} selezionati</span></div><div class="collection-graph-import-list">${(this.preview?.results || []).map((row) => this.renderRow(row)).join("")}</div><div class="operations"><button type="button" class="button-secondary" data-back-source-list>← Cambia sorgente</button><button type="button" class="button-secondary" data-attach-source-only ${this.busy ? "disabled" : ""}>Aggiungi solo la sorgente</button><button type="submit" ${this.busy ? "disabled" : ""}>Importa selezionati</button></div></form>`;
+      <div class="collection-graph-import-summary"><span><strong>${Number(summary.activeSubjectCount || 0)}</strong> già attivi</span><span><strong>${Number(summary.inCollectionSubjectCount || 0)}</strong> già nella Raccolta</span><span><strong>${Number(summary.directlyImportableSubjectCount || 0)}</strong> importabili</span><span><strong>${Number(summary.ambiguousSubjectCount || 0)}</strong> da scegliere</span><span><strong>${Number(summary.unavailableSubjectCount || 0)}</strong> non disponibili</span>${Number(summary.classificationConflictCount || 0) ? `<span><strong>${Number(summary.classificationConflictCount)}</strong> classificazioni diverse</span>` : ""}</div>
+      <form data-graph-import-form class="collection-graph-import-form"><div class="collection-graph-import-toolbar"><button type="button" class="button-secondary" data-select-direct-imports>Seleziona tutti i disponibili</button><span>${this.selectedItems.size} selezionati</span></div><div class="collection-graph-import-list">${(this.preview?.results || []).map((row) => this.renderRow(row)).join("")}</div><div class="operations"><button type="button" class="button-secondary" data-close-graph-import>Annulla</button><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Importazione…" : "Importa contenuti"}</button></div></form>
+      <p class="note">La sorgente resta pinzata alla revisione ${escapeHtml(id(source.sourceGraphRevisionId).slice(-8) || "corrente")}; importare non modifica mai il grafo sorgente.</p>`;
   }
 
   render() {
-    const body = this.view === "preview" ? this.renderPreview() : this.renderSources();
-    this.innerHTML = `<div class="context-task-modal-layer collection-graph-dialog-layer" data-graph-import-backdrop role="presentation"><section class="context-task-modal context-task-modal--large collection-graph-dialog" role="dialog" aria-modal="true" aria-label="Importa semantica nella Raccolta">${body}</section></div>`;
+    const body = this.mode === "import-content" ? this.renderImport() : this.renderSources();
+    this.innerHTML = `<div class="context-task-modal-layer collection-graph-dialog-layer" data-graph-import-backdrop role="presentation"><section class="context-task-modal context-task-modal--large collection-graph-dialog" role="dialog" aria-modal="true" aria-label="Gestisci sorgente semantica">${body}</section></div>`;
   }
 }
 
