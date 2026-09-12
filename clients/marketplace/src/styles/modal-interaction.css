@@ -88,6 +88,22 @@ html { scrollbar-gutter: stable; }
   padding: 1.1rem 1.2rem;
 }
 
+/* Short asynchronous loads should not flash a transient status into an already
+ * stable modal. The placeholder still occupies its layout slot immediately,
+ * but becomes visible only when the task remains busy beyond the perceptual
+ * threshold. Long-running action labels (Salvataggio…, Pubblicazione…, etc.)
+ * are intentionally outside this rule and remain immediate. */
+@keyframes artaround-delayed-loading-reveal {
+  from { visibility: hidden; opacity: 0; }
+  to { visibility: visible; opacity: 1; }
+}
+
+.artaround-task-modal[aria-busy="true"] .artaround-task-modal__body > artaround-progress-state,
+.artaround-task-modal[aria-busy="true"] .artaround-task-modal__body > .empty-state,
+.artaround-task-modal[aria-busy="true"] .artaround-task-modal__body > p[role="status"] {
+  animation: artaround-delayed-loading-reveal 1ms step-end 180ms both;
+}
+
 .artaround-task-modal__footer {
   display: flex;
   justify-content: flex-end;
