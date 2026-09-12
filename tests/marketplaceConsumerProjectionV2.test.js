@@ -16,8 +16,8 @@ async function withFreshDatabase(callback) {
   }
 }
 
-async function createPublishedVisit({ VisitV2, VisitRevisionV2, seller, title }) {
-  const visit = await VisitV2.create({ ownerType: "user", ownerId: seller._id, createdBy: seller._id });
+async function createPublishedVisit({ VisitV2, VisitRevisionV2, seller, title, ownerType = "user", ownerId = seller._id }) {
+  const visit = await VisitV2.create({ ownerType, ownerId, createdBy: seller._id });
   const revision = await VisitRevisionV2.create({
     visitId: visit._id,
     version: 1,
@@ -87,6 +87,52 @@ test("consumer projection separa beneficiario personale e organizzazione e manti
       beneficiaryType: "organization",
       beneficiaryId: organization._id,
     });
+
+    const organizationVisit = await createPublishedVisit({
+      VisitV2,
+      VisitRevisionV2,
+      seller: buyer,
+      title: "Visita creata dall'organizzazione",
+      ownerType: "organization",
+      ownerId: organization._id,
+    });
+    const organizationListing = await marketplace.createListing({
+      resourceType: "visit",
+      resourceId: organizationVisit._id,
+      sellerType: "organization",
+      sellerId: organization._id,
+      actorUserId: buyer._id,
+    });
+    await marketplace.createOffer({
+      listingId: organizationListing._id,
+      actorUserId: buyer._id,
+      payload: {
+        label: "Esecuzione visita organizzativa",
+        pricing: { type: "free" },
+        grants: [{
+          resourceType: "visit",
+          resourceId: organizationVisit._id,
+          capability: "visit.execute",
+          versionPolicy: "follow_current",
+        }],
+      },
+    });
+
+    const personalCatalog = await catalog.listCatalog({
+      actorUserId: buyer._id,
+      beneficiaryType: "user",
+      beneficiaryId: buyer._id,
+    });
+    assert.equal(personalCatalog.results.find((entry) => String(entry.listingId) === String(listing._id)).viewerState.alreadyUsable, false, "organization entitlement must not leak into the personal catalog");
+    assert.equal(personalCatalog.results.find((entry) => String(entry.listingId) === String(organizationListing._id)).viewerState.alreadyUsable, false, "organization ownership must not leak into the personal catalog");
+
+    const organizationalCatalog = await catalog.listCatalog({
+      actorUserId: buyer._id,
+      beneficiaryType: "organization",
+      beneficiaryId: organization._id,
+    });
+    assert.equal(organizationalCatalog.results.find((entry) => String(entry.listingId) === String(listing._id)).viewerState.alreadyUsable, true);
+    assert.equal(organizationalCatalog.results.find((entry) => String(entry.listingId) === String(organizationListing._id)).viewerState.alreadyUsable, true);
 
     const personal = await catalog.getListingDetail({
       listingId: listing._id,

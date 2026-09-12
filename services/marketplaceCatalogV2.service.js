@@ -52,6 +52,8 @@ async function listCatalog({
   sellerType = null,
   sellerId = null,
   selectedVenueIds = [],
+  beneficiaryType = null,
+  beneficiaryId = null,
 }) {
   const safeLimit = clampLimit(limit);
   const safePage = Math.max(1, Number(page) || 1);
@@ -81,7 +83,12 @@ async function listCatalog({
 
   const results = [];
   for (const listing of listings) {
-    const projected = await marketplace.projectCatalogListing({ listing, actorUserId });
+    const projected = await marketplace.projectCatalogListing({
+      listing,
+      actorUserId,
+      principalType: beneficiaryType,
+      principalId: beneficiaryId,
+    });
     if (!projected) continue;
     results.push(await augmentVenueProjection({ projected, listing, venueFilter }));
   }

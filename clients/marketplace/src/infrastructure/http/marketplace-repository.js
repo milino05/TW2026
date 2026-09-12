@@ -16,10 +16,14 @@ export const marketplaceRepository = {
   venueSelector() {
     return apiClient.request("/v2/marketplace/venue-selector");
   },
-  catalog({ selectedVenueIds = [], page = 1, limit = 20, q = "", resourceTypes = null } = {}) {
+  catalog({ selectedVenueIds = [], page = 1, limit = 20, q = "", resourceTypes = null, beneficiaryType = null, beneficiaryId = null } = {}) {
     const params = venueParams(new URLSearchParams({ page: String(page), limit: String(limit) }), selectedVenueIds);
     if (q) params.set("q", q);
     if (Array.isArray(resourceTypes) && resourceTypes.length) params.set("resourceTypes", resourceTypes.join(","));
+    if (beneficiaryType && beneficiaryId) {
+      params.set("beneficiaryType", beneficiaryType);
+      params.set("beneficiaryId", beneficiaryId);
+    }
     return apiClient.request(`/v2/marketplace/catalog?${params.toString()}`);
   },
   detail(listingId, { selectedVenueIds = [], beneficiaryType = null, beneficiaryId = null } = {}) {
