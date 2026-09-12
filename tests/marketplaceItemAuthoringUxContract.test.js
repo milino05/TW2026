@@ -45,7 +45,8 @@ test("l'Item viene creato dal Subject e dal principal operativo senza side effec
   assert.match(source, /primarySubjectId: id\(this\.selectedSubject\)/);
   assert.match(source, /ownerType: this\.principal\.type/);
   assert.match(source, /ownerId: this\.principal\.id/);
-  assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId \}\)/);
+  assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode = "reuse_first" \}\)/);
+  assert.match(authoringRepositorySource, /JSON\.stringify\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode \}\)/);
   assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
   assert.doesNotMatch(authoringRepositorySource, /createItemWithPhysicalIntent|venueTargetContext|venueTargets\(/);
 });
