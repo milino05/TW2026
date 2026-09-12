@@ -234,6 +234,10 @@ ArtAroundVenueEditorView.prototype.render = function renderWithSharedDialogLifec
   this.releaseInventoryDialog?.({ restoreFocus: false });
   this.releaseVenueModalLayers?.({ restoreFocus: false });
   const result = renderVenueEditor.apply(this, args);
+  if (this._venueGlobalEscapeHandler) {
+    window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
+    this._venueGlobalEscapeHandler = null;
+  }
   this.syncInventoryDialog?.();
   this.syncVenueModalLayers?.();
   return result;
