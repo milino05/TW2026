@@ -90,12 +90,11 @@ test("removing a Collection trashes its local SemanticGraph but preserves immuta
   });
 });
 
-test("legacy live graph sharing blocks Collection removal instead of orphaning or trashing another Collection graph", { skip: !mongoUri }, async () => {
+test("a live SemanticGraph belongs to exactly one Collection at the persistence boundary", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
-    const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
-    const base = await baseFixture("legacy-shared-removal");
+    const base = await baseFixture("one-to-one-graph");
     const first = await createEditorialContextWithGraph({
       contentSpace: base.space,
       namespaceId: base.namespace._id,
@@ -103,20 +102,20 @@ test("legacy live graph sharing blocks Collection removal instead of orphaning o
       displayName: "Raccolta A",
       createdBy: base.owner._id,
     });
-    const second = await EditorialContext.create({
-      contentSpaceId: base.space._id,
-      namespaceId: base.namespace._id,
-      semanticGraphId: first.semanticGraph._id,
-      displayName: "Raccolta B legacy",
-      createdBy: base.owner._id,
-    });
 
     await assert.rejects(
-      () => removeOwnedWorkspaceResource({ actorUserId: base.owner._id, resourceType: "editorial_context", resourceId: first.context._id }),
-      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "COLLECTION_GRAPH_NOT_LOCAL"),
+      () => EditorialContext.create({
+        contentSpaceId: base.space._id,
+        namespaceId: base.namespace._id,
+        semanticGraphId: first.semanticGraph._id,
+        displayName: "Raccolta B non valida",
+        createdBy: base.owner._id,
+      }),
+      (error) => error?.code === 11000 && error?.keyPattern?.semanticGraphId === 1,
     );
+
+    assert.equal(await EditorialContext.countDocuments({ semanticGraphId: first.semanticGraph._id }), 1);
     assert.equal((await EditorialContext.findById(first.context._id).lean()).lifecycleStatus, "active");
-    assert.equal((await EditorialContext.findById(second._id).lean()).lifecycleStatus, "active");
     assert.equal((await SemanticGraph.findById(first.semanticGraph._id).lean()).lifecycleStatus, "active");
   });
 });
