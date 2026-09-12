@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const workspaceCss = read("clients/marketplace/src/styles/context-workspace.css");
 const inventoryCss = read("clients/marketplace/src/styles/venue-inventory-search.css");
+const slotInventoryCss = read("clients/marketplace/src/styles/venue-slot-inventory-browser.css");
+const spatialDetailCss = read("clients/marketplace/src/styles/venue-spatial-detail.css");
 const venueSection = read("clients/marketplace/src/ui/venue-editor-section-mixin.js");
 const studio = read("clients/marketplace/src/ui/editorial-studio-view.js");
 const spatial = read("clients/marketplace/src/ui/venue-editor-contextual-workspace-mixin.js");
@@ -42,6 +44,29 @@ test("i task autonomi usano modal applicativi e non inspector contestuali", () =
   assert.doesNotMatch(contentManager, /data-content-mode=['"]external['"]/);
   assert.doesNotMatch(workspaceCss, /context-workspace-inspector|context-task-modal|workspace-sidecar/);
   assert.doesNotMatch(inventoryCss, /\.venue-inventory-inspector\{position:fixed/);
+});
+
+test("Venue normalizza i task bounded sulla Task Modal condivisa e inoltra gli eventi dei picker portalled", () => {
+  assert.match(venueModalLifecycle, /taskPanel\.classList\.add\("artaround-task-modal"\)/);
+  assert.match(venueModalLifecycle, /artaround-task-modal__body venue-modal-card__body/);
+  assert.match(venueModalLifecycle, /artaround-task-modal__footer/);
+  assert.match(venueModalLifecycle, /data-close-inventory-browser/);
+  assert.match(venueModalLifecycle, /data-close-inventory-subject-picker/);
+  assert.match(venueModalLifecycle, /layer\.addEventListener\("subject-selected", subjectSelected\)/);
+  assert.match(venueModalLifecycle, /this\.onSubjectSelected\?\.\(event\)/);
+  assert.match(venueModalLifecycle, /canDismiss: \(\) => !this\.busy/);
+});
+
+test("Venue mantiene un solo scroll owner verticale per ogni superficie applicativa", () => {
+  assert.doesNotMatch(slotInventoryCss, /\.venue-inventory-browser-grid\{[^}]*max-height/);
+  assert.doesNotMatch(slotInventoryCss, /\.venue-inventory-browser-grid\{[^}]*overflow(?:-y)?:\s*(?:auto|scroll)/);
+  for (const selector of ["venue-inventory-browser-dialog", "venue-inventory-detail-dialog", "venue-inventory-subject-dialog"]) {
+    assert.doesNotMatch(slotInventoryCss, new RegExp(`\\.${selector}\\{[^}]*overflow(?:-y)?:\\s*(?:auto|scroll)`));
+    assert.doesNotMatch(slotInventoryCss, new RegExp(`\\.${selector}\\{[^}]*max-height`));
+  }
+  assert.match(spatialDetailCss, /\.venue-spatial-dialog-frame\{[^}]*100dvh[^}]*overflow-x:hidden[^}]*overflow-y:auto/);
+  assert.match(spatialDetailCss, /safe-area-inset-top/);
+  assert.match(spatialDetailCss, /safe-area-inset-bottom/);
 });
 
 test("il grafo mantiene il workspace pieno e usa modal condivisi soltanto per task bounded", () => {
