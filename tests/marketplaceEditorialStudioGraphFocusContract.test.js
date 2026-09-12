@@ -22,6 +22,7 @@ test("Collection relations workspace does not repeat technical graph exposition 
   assert.doesNotMatch(studio, /Il grafo della Raccolta collega soltanto Subject rappresentati dai suoi contenuti/);
   assert.doesNotMatch(studio, /Questo grafo è locale e indipendente\. Le sorgenti importate sono pinzate/);
   assert.match(studio, /studio-relations-section/);
-  assert.match(studio, /data-import-semantic-source/);
+  assert.match(studio, /data-add-semantic-source/);
+  assert.match(studio, /data-import-source-id/);
   assert.match(studio, /<artaround-semantic-graph-editor><\/artaround-semantic-graph-editor>/);
 });
