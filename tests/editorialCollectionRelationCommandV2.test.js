@@ -97,8 +97,6 @@ async function fixture() {
       ownerId: owner._id,
       contentSpaceId: contentSpace._id,
       namespaceId: namespace._id,
-      graphMode: "new",
-      graphDisplayName: "Relazioni locali",
       displayName: "Raccolta relazioni",
     },
   });
