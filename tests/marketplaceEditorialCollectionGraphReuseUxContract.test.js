@@ -7,69 +7,88 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const paths = {
   createView: "clients/marketplace/src/ui/editorial-collection-create-view.js",
-  graphDialog: "clients/marketplace/src/ui/collection-graph-dialog.js",
   importDialog: "clients/marketplace/src/ui/collection-graph-import-dialog.js",
+  studio: "clients/marketplace/src/ui/editorial-studio-view.js",
   repository: "clients/marketplace/src/infrastructure/http/editorial-repository.js",
-  route: "routes/marketplaceV2.routes.js",
+  marketplaceRoute: "routes/marketplaceV2.routes.js",
+  editorialRoutes: "routes/editorialContexts.routes.js",
   controller: "controllers/marketplaceAuthoringV2.controller.js",
   service: "services/editorialStudioCreationV2.service.js",
   importService: "services/editorialGraphImport.service.js",
+  suppressionModel: "models/editorialGraphEdgeSuppression.model.js",
+  sourceModel: "models/editorialGraphImportSource.model.js",
 };
 const source = Object.fromEntries(Object.entries(paths).map(([key, relative]) => [key, fs.readFileSync(path.join(root, relative), "utf8")]));
 
-test("semantic graph import authoring files pass the syntax gate", () => {
+test("semantic source authoring files pass the syntax gate", () => {
   for (const relative of Object.values(paths)) {
     const result = spawnSync(process.execPath, ["--check", path.join(root, relative)], { encoding: "utf8" });
     assert.equal(result.status, 0, `${relative}: ${result.stderr || result.stdout}`);
   }
 });
 
-test("collection creation exposes only a new local graph or an imported source projection", () => {
-  assert.match(source.createView, /Crea un nuovo grafo/);
-  assert.match(source.createView, /Importa da un grafo esistente/);
-  assert.match(source.createView, /data-collection-graph-action="new"/);
-  assert.match(source.createView, /data-collection-graph-action="existing"/);
-  assert.match(source.createView, /graphSelection/);
-  assert.match(source.createView, /semanticGraphId/);
-  assert.match(source.createView, /importItemIds/);
-  assert.doesNotMatch(source.createView, /semanticSource|reuseMode|type="radio"/);
-
-  assert.match(source.graphDialog, /graphMode: "new"/);
-  assert.match(source.graphDialog, /graphMode: "import"/);
-  assert.match(source.graphDialog, /semanticGraphImportPreview/);
-  assert.match(source.graphDialog, /data-use-source-only/);
-  assert.match(source.graphDialog, /data-import-all-direct/);
-  assert.match(source.graphDialog, /data-import-subject-toggle/);
-  assert.doesNotMatch(source.graphDialog, /graphMode: "shared"|graphMode: "fork"|data-use-shared-graph|data-start-graph-fork/);
+test("collection creation always creates a local graph and never chooses a source", () => {
+  assert.match(source.createView, /Grafo locale indipendente/);
+  assert.match(source.createView, /Crea Raccolta/);
+  assert.doesNotMatch(source.createView, /Importa da un grafo esistente|data-collection-graph-action|graphSelection|semanticGraphId|importItemIds|graphMode/);
+  assert.match(source.service, /assertCreationPayloadIsLocalOnly/);
+  assert.match(source.service, /displayName: `\$\{displayName\} · grafo`/);
+  assert.match(source.service, /localToCollection: true/);
+  assert.doesNotMatch(source.service, /projectSourceSnapshot/);
 });
 
-test("reusable graph choices are backend-authoritative, scoped and expose import coverage", () => {
-  assert.match(source.graphDialog, /editorialRepository\.reusableSemanticGraphs/);
-  assert.match(source.graphDialog, /ownerType: this\.config\.ownerType/);
-  assert.match(source.graphDialog, /ownerId: this\.config\.ownerId/);
-  assert.match(source.graphDialog, /namespaceId: this\.config\.namespaceId/);
-  assert.match(source.graphDialog, /contentSpaceId: this\.config\.contentSpaceId/);
-  assert.match(source.graphDialog, /page: this\.page/);
-  assert.match(source.repository, /reusableSemanticGraphs/);
-  assert.match(source.repository, /semanticGraphImportPreview/);
-  assert.match(source.repository, /graphImportSources/);
-  assert.match(source.repository, /importGraphSubjects/);
-  assert.match(source.route, /\/v2\/marketplace\/semantic-graphs/);
-  assert.match(source.controller, /listReusableSemanticGraphs/);
-  assert.match(source.service, /allowedValues: \["new", "import"\]/);
-  assert.match(source.service, /EditorialGraphImportSource/);
-  assert.match(source.service, /ambiguousSubjectCount/);
-  assert.match(source.importService, /status = "ambiguous"/);
-  assert.match(source.importService, /sourceGraphRevisionId/);
+test("semantic source picker is backend-authoritative and excludes local/already pinned graphs before pagination", () => {
+  assert.match(source.importDialog, /mode = "add-source"/);
+  assert.match(source.importDialog, /excludeSemanticGraphIds: this\.config\.excludeSemanticGraphIds/);
+  assert.match(source.repository, /excludeSemanticGraphIds/);
+  assert.match(source.controller, /excludeSemanticGraphIds: commaSeparatedValues/);
+  assert.match(source.service, /excludeSemanticGraphIds = \[\]/);
+  assert.match(source.service, /\$nin: excludedIds/);
+  assert.match(source.marketplaceRoute, /\/v2\/marketplace\/semantic-graphs/);
 });
 
-test("studio import dialog treats source-only, selected and bulk selection as explicit operations", () => {
-  assert.match(source.importDialog, /context-task-modal-layer/);
-  assert.match(source.importDialog, /collectionGraphImportPreview/);
+test("studio makes source pinning and content import distinct operations", () => {
+  assert.match(source.studio, /Aggiungi sorgente/);
+  assert.match(source.studio, /Importa contenuti/);
+  assert.match(source.studio, /openAddSourceDialog/);
+  assert.match(source.studio, /openImportContentsDialog/);
   assert.match(source.importDialog, /attachGraphImportSource/);
   assert.match(source.importDialog, /importGraphSubjects/);
-  assert.match(source.importDialog, /data-select-direct-imports/);
-  assert.match(source.importDialog, /data-attach-source-only/);
-  assert.match(source.importDialog, /Importa selezionati/);
-  assert.doesNotMatch(source.importDialog, /changeCollectionGraph|graphMode:\s*"shared"|graphMode:\s*"fork"/);
+  assert.doesNotMatch(source.importDialog, /Aggiungi solo la sorgente|submitImport\(\[\]\)/);
+});
+
+test("source pins are unique by graph, explicitly updatable and non-destructive on detach", () => {
+  assert.match(source.sourceModel, /editorialContextId: 1, sourceSemanticGraphId: 1/);
+  assert.doesNotMatch(source.sourceModel, /suppressedEdgeKeys/);
+  assert.match(source.importService, /updateEditorialGraphImportSource/);
+  assert.match(source.importService, /previewEditorialGraphImportSourceUpdate/);
+  assert.match(source.importService, /detachEditorialGraphImportSource/);
+  assert.match(source.editorialRoutes, /update-preview/);
+  assert.match(source.editorialRoutes, /import-sources\/:sourceId\/update/);
+  assert.match(source.repository, /graphImportSourceUpdatePreview/);
+  assert.match(source.repository, /detachGraphImportSource/);
+  assert.match(source.studio, /Nessun contenuto o collegamento locale verrà eliminato automaticamente/);
+});
+
+test("multi-source import materializes union knowledge without overwriting local classifications", () => {
+  assert.match(source.importService, /materializeEligiblePinnedEdges/);
+  assert.match(source.importService, /pinnedSources \|\| await loadPinnedSources/);
+  assert.match(source.importService, /canonicalEdgeKey/);
+  assert.match(source.importService, /classificationConflict/);
+  assert.match(source.importService, /if \(currentSubjectIds\.has\(subjectId\)\) continue/);
+  assert.match(source.importDialog, /Classificazione sorgente diversa da quella locale/);
+  assert.match(source.importDialog, /insieme di tutte le sorgenti pinzate/);
+});
+
+test("removed source-supported edges become local suppressions and remain restorable", () => {
+  assert.match(source.suppressionModel, /editorial_graph_edge_suppressions/);
+  assert.match(source.suppressionModel, /editorialContextId: 1, edgeKey: 1/);
+  assert.match(source.importService, /upsertLocalEdgeSuppression/);
+  assert.match(source.importService, /listRestorableEditorialGraphEdges/);
+  assert.match(source.importService, /restoreEditorialGraphEdge/);
+  assert.match(source.editorialRoutes, /restorable-edges/);
+  assert.match(source.repository, /restorableGraphEdges/);
+  assert.match(source.repository, /restoreGraphEdge/);
+  assert.match(source.studio, /Collegamenti esclusi dal grafo locale/);
+  assert.match(source.studio, />Ripristina</);
 });
