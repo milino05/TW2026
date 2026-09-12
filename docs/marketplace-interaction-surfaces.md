@@ -129,3 +129,5 @@ I contract test devono impedire il ritorno delle vecchie surface invece di mante
 Il browser acceptance verifica la shell condivisa, il contratto Escape, il dirty-discard, il focus trap, il restore-focus, il single-scroll e il comportamento responsive. I test statici verificano inoltre l'assenza delle surface legacy e i boundary specializzati del Semantic Graph e della Venue.
 
 Durante l'hardening CI, una failure di contract va classificata prima di intervenire: se il test descrive una surface legacy ormai rimossa, il contract deve essere riallineato al boundary canonico corrente; se invece rivela un consumer legacy reale, va corretto il consumer. Non reintrodurre markup o stato obsoleto per soddisfare una regex di test.
+
+Il primo hardening round della migrazione ha applicato esattamente questa regola: i contract rimasti ancorati alle vecchie surface sono stati spostati sui nuovi boundary condivisi, mentre il residuo reale del Namespace è stato corretto nel consumer eliminando conferme inline e stato parallelo.
