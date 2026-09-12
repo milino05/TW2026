@@ -95,6 +95,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this.releaseInventoryDialog?.({ restoreFocus: false });
     if (this._venueGlobalEscapeHandler) {
       window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
       this._venueGlobalEscapeHandler = null;
@@ -221,4 +222,13 @@ Object.assign(
   venueSlotInventoryMixin,
   venueInventoryProposalsMixin,
 );
+
+const renderVenueEditor = ArtAroundVenueEditorView.prototype.render;
+ArtAroundVenueEditorView.prototype.render = function renderWithInventoryDialogLifecycle(...args) {
+  this.releaseInventoryDialog?.({ restoreFocus: false });
+  const result = renderVenueEditor.apply(this, args);
+  this.syncInventoryDialog?.();
+  return result;
+};
+
 customElements.define("artaround-venue-editor-view", ArtAroundVenueEditorView);
