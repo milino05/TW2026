@@ -27,7 +27,7 @@ npm run verify:demo
 
 ArtAround supporta il MongoDB standalone fornito dall'ambiente di dipartimento. I servizi runtime non richiedono transazioni multi-documento o un replica set: per i lifecycle composti il documento live della risorsa è l'autorità di disponibilità e il cleanup delle proiezioni/distribuzioni derivate è idempotente. Il `docker-compose.yml` locale può continuare a usare un replica set per lo sviluppo, ma questa non è una dipendenza del deploy.
 
-`seed:demo` è idempotente rispetto al dataset dimostrativo con ID deterministici. Non cancella genericamente il database: sostituisce soltanto le entità appartenenti al dataset ArtAround d'esame.
+`seed:demo` è idempotente rispetto al dataset dimostrativo V3 con ID deterministici. Non cancella genericamente il database: sostituisce soltanto le entità appartenenti al dataset ArtAround d'esame.
 
 Dopo la build, lo stesso processo Express serve:
 
@@ -38,8 +38,7 @@ Dopo la build, lo stesso processo Express serve:
 - configurazioni musei: `/navigator-configs/:venueId/navigator.config.json`;
 - map asset Navigator: `/maps/...`.
 
-Titoli, immagini e palette del museo possono essere sostituiti senza ricompilare il client
-tramite `NAVIGATOR_CONFIG_DIR`. La procedura completa è in [Configurare Navigator per un museo](navigator-branding.md).
+Titoli, immagini e palette del museo possono essere sostituiti senza ricompilare il client tramite `NAVIGATOR_CONFIG_DIR`. La procedura completa è in [Configurare Navigator per un museo](navigator-branding.md).
 
 ## Docker locale
 
@@ -128,7 +127,7 @@ npm run seed:demo
 npm run verify:demo
 ```
 
-La verifica deve terminare con `"ok": true`.
+La verifica deve terminare con `"status": "ok"` e `"dataset": "v3"`.
 
 ### 4. Avviare Node
 
@@ -159,25 +158,27 @@ https://site2526XX.tw.cs.unibo.it/marketplace/
 Verificare poi:
 
 1. login con `visitatore1 / 12345678`;
-2. selettore Navigator con i soli musei per cui l’utente possiede visite;
-3. selezione della Pinacoteca e Library filtrata, senza barra di navigazione inferiore;
-4. Marketplace filtrabile sulla Pinacoteca Nazionale di Bologna;
+2. selettore Navigator e filtraggio delle visite possedute per museo;
+3. configurazioni Navigator della Pinacoteca, del MAMbo e del Museo Civico Archeologico;
+4. Marketplace con le sei visite demo e offerte attive;
 5. acquisizione di almeno una Visit demo e sua comparsa nella Library;
-6. generazione e preparation/start della Visit nel contesto della Pinacoteca;
-7. mappa schematica, servizi, TTS e bottoni equivalenti ai comandi vocali;
-8. login autore e Creator Workspace/Editor funzionanti.
+6. generation/preparation/start di una visita nel contesto della Venue corretta;
+7. mappe schematiche, servizi, TTS e bottoni equivalenti ai comandi vocali;
+8. una visita sincronizzata con join alias e quiz;
+9. login di `autore1` e `autore2` e corretta separazione delle tre Organization.
 
 ## Dataset della demo
 
-Il dataset minimo verificato automaticamente contiene:
+Il dataset V3 verificato automaticamente contiene:
 
 - i quattro account obbligatori;
-- una Organization dimostrativa e la Venue reale `Pinacoteca Nazionale di Bologna`;
-- una `VenueRelease` pubblicata con layout schematico, routing e facility;
-- dodici VenueTarget/opere del corpus demo;
-- Namespace, ContentSpace, EditorialContext, SemanticGraphRevision ed EditorialRelease;
-- dodici Item con più livelli/Representation;
-- tre Visit pubblicate, ciascuna con almeno dieci opere e interamente sulla stessa Venue;
-- tre Listing con Offer attive, comprese offerte gratuite e una vendita simulata.
+- tre Organization: due di `autore1` e una di `autore2`;
+- tre Venue reali di Bologna: Pinacoteca Nazionale, MAMbo e Museo Civico Archeologico;
+- per ciascuna Venue una `VenueRelease` pubblicata con 12 VenueTarget, 12 ExhibitSlot, layout schematico, routing e servizi;
+- regole editoriali d'arte con matrice 3×3 e regole archeologiche con matrice 2×2;
+- un Item pubblicato per ogni Subject del grafo e almeno due collegamenti semantici per Subject;
+- sei Visit pubblicate da almeno dieci tappe, di cui tre sulla Pinacoteca;
+- due Visit sincronizzate con quiz finale;
+- Listing con Offer attive, comprese offerte gratuite e vendite simulate.
 
-La mappa è dichiaratamente un asset didattico schematico e non va presentata come planimetria ufficiale o informazione operativa corrente della Pinacoteca.
+Le mappe sono asset didattici schematici originali e non vanno presentate come planimetrie ufficiali o informazioni operative correnti. La struttura completa del dataset è descritta in `docs/demo-dataset-v3.md`.
