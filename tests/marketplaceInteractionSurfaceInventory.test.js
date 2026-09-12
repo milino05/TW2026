@@ -5,25 +5,24 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const uiRoot = path.join(root, "clients/marketplace/src/ui");
+const styleRoot = path.join(root, "clients/marketplace/src/styles");
 
-function javascriptFiles(directory) {
+function files(directory, extension) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const absolute = path.join(directory, entry.name);
-    if (entry.isDirectory()) return javascriptFiles(absolute);
-    return entry.isFile() && entry.name.endsWith(".js") ? [absolute] : [];
+    if (entry.isDirectory()) return files(absolute, extension);
+    return entry.isFile() && entry.name.endsWith(extension) ? [absolute] : [];
   });
 }
-
-function relative(file) { return path.relative(uiRoot, file).replaceAll("\\", "/"); }
-function offenders(pattern) {
-  return javascriptFiles(uiRoot)
+function relative(file, base) { return path.relative(base, file).replaceAll("\\", "/"); }
+function offenders(pattern, directory = uiRoot, extension = ".js") {
+  return files(directory, extension)
     .filter((file) => pattern.test(fs.readFileSync(file, "utf8")))
-    .map(relative)
+    .map((file) => relative(file, directory))
     .sort();
 }
-
-function assertNone(pattern, label) {
-  const found = offenders(pattern);
+function assertNone(pattern, label, directory = uiRoot, extension = ".js") {
+  const found = offenders(pattern, directory, extension);
   assert.deepEqual(found, [], `${label}: surface legacy residue: ${found.join(", ")}`);
 }
 
@@ -40,8 +39,9 @@ test("Marketplace non usa più confirmation-panel inline", () => {
 });
 
 test("Marketplace non usa details come create surface applicativa", () => {
-  assertNone(
-    /<details[^>]*class=["'][^"']*(?:account-create|seller-offer-creator|venue-create)[^"']*["']/,
-    "Create details",
-  );
+  assertNone(/<details[^>]*class=["'][^"']*(?:account-create|seller-offer-creator|venue-create)[^"']*["']/, "Create details");
+});
+
+test("gli stili legacy inspector e sidecar sono stati rimossi", () => {
+  assertNone(/context-workspace-inspector|workspace-sidecar/, "Legacy interaction CSS", styleRoot, ".css");
 });
