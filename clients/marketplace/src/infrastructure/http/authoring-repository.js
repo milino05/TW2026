@@ -97,7 +97,7 @@ export const authoringRepository = {
     return apiClient.request(visitCommandPath(visitId, `content/${encodeURIComponent(contentEntryId)}`), { method: "DELETE" });
   },
   setVisitInterVenueTransfer(visitId, fromAnchorId, toAnchorId, payload) {
-    return apiClient.request(visitCommandPath(visitId, `transfers/${encodeURIComponent(fromAnchorId)}/${encodeURIComponent(toAnchorId)}`, {
+    return apiClient.request(visitCommandPath(visitId, `transfers/${encodeURIComponent(fromAnchorId)}/${encodeURIComponent(toAnchorId)}`), {
       method: "PUT",
       ...body(payload),
     });
