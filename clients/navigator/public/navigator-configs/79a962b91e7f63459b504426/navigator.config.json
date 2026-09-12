@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "venueId": "79a962b91e7f63459b504426",
+  "branding": {
+    "productTitle": "ArtAround",
+    "museumTitle": "Museo Civico Archeologico di Bologna",
+    "subtitle": "Demo TW2026",
+    "logo": { "src": "/navigator-assets/archeologico-mark-demo.svg", "alt": "Marchio dimostrativo Museo Civico Archeologico" },
+    "heroImage": { "src": "/navigator-assets/archeologico-hero-demo.svg", "alt": "Illustrazione dimostrativa Museo Civico Archeologico" },
+    "theme": { "primary": "#5C4033", "accent": "#B6874F", "surface": "#F5F0E7" }
+  }
+}

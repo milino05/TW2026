@@ -15,7 +15,7 @@ Dopo `npm run build:clients`, il processo Express serve le due applicazioni sull
 - `/marketplace/` — Marketplace/Editor;
 - `/api/...` — API condivise.
 
-Il Navigator è configurato tramite `clients/navigator/public/navigator.config.json`; la configurazione corrente usa la Venue demo della Pinacoteca Nazionale di Bologna. Il Marketplace resta unico e generico rispetto alla Venue.
+Il Navigator supporta una configurazione di piattaforma e configurazioni specifiche per Venue sotto `clients/navigator/public/navigator-configs/:venueId`. Il Marketplace resta unico e generico rispetto alla Venue.
 
 Dopo il login il Marketplace apre un **Context Hub**: l'utente sceglie se operare nella propria area personale oppure per una Organization a cui ha accesso. Il contesto è una preferenza di sessione e non sostituisce authorization, ownership, Entitlement o selezione della Venue; il backend continua a essere autorevole sui principal e sulle capability. La navigazione principale è **Home · Esplora · Libreria · Crea · Marketplace · Account**, mentre **Esplora** comprende Catalogo, Organizzazioni e Sedi.
 
@@ -44,22 +44,25 @@ npm run seed:demo
 npm run verify:demo
 ```
 
-Il seed è deterministico/idempotente per le entità demo e prepara:
+Il seed canonico è il **dataset V3 multi-museo** e prepara:
 
 - `autore1`, `autore2`, `visitatore1`, `visitatore2`, password `12345678`;
-- `autore1` Administrator e Owner, `autore2` Contributor della Organization dimostrativa;
-- Venue reale: **Pinacoteca Nazionale di Bologna**;
-- VenueRelease/LayoutRevision con mappa schematica, routing e facility;
-- 12 VenueTarget/opere;
-- Namespace completo con durata, complessità linguistica, aspetti, selection signal, Subject class e relation type;
-- 12 Item con più PresentationVariant/Representation;
-- ContentSpace, EditorialContext, SemanticGraphRevision ed EditorialRelease;
-- 3 Visit pubblicate, ciascuna con almeno 10 opere e interamente sulla stessa Venue;
-- 3 Listing/Offer Marketplace, comprese offerte gratuite e una vendita simulata.
+- 3 Organization: due di proprietà di `autore1`, una di `autore2`;
+- 3 Venue reali di Bologna: **Pinacoteca Nazionale di Bologna**, **MAMbo — Museo d'Arte Moderna di Bologna** e **Museo Civico Archeologico di Bologna**;
+- 12 VenueTarget e 12 ExhibitSlot per ciascuna Venue, con LayoutRevision, routing, servizi e mappa schematica dall'alto;
+- per Pinacoteca e MAMbo, regole editoriali coerenti con il modello culturale starter corrente di ArtAround: 3 durate × 3 livelli di linguaggio e 3 relation type;
+- per il Museo Civico Archeologico, regole dedicate con 2 durate × 2 livelli e 3 relation type;
+- un Item pubblicato per ogni Subject del grafo e almeno due collegamenti semantici incidenti per ogni Subject;
+- una matrice completa durata × livello di linguaggio in ogni Item: 9 Representation per Item artistico, 4 per Item archeologico;
+- 6 Visit pubblicate, tutte con almeno 10 tappe; le prime 3 sono sulla Pinacoteca per preservare il requisito minimo di tre visite sullo stesso museo;
+- 2 Visit sincronizzate con alias semplice e quiz finale: **Classe alla Pinacoteca** e **Bologna antica: laboratorio di archeologia**;
+- Listing/Offer Marketplace per tutte le visite, con offerte gratuite e a pagamento simulato.
 
-`npm run verify:demo` controlla automaticamente account/password, Venue/config Navigator, target/placement/map, corpus editoriale, Representation, tre Visit e Marketplace. Il seed richiama inoltre i consistency checker reali di Namespace, Item/Presentation, EditorialRelease, VenueRelease, Visit e Offer.
+`npm run verify:demo` controlla account/password, ownership delle Organization, Namespace, matrici complete di Representation, copertura Item/Subject, grado minimo del grafo, target/slot/mappe, integrità delle VenueRelease, sei Visit, due visite sincronizzate e Marketplace.
 
-La mappa `pinacoteca-bologna-demo.svg` è intenzionalmente didattica e schematica: non rappresenta la planimetria ufficiale o lo stato operativo corrente del museo.
+Le mappe V3 sono illustrazioni schematiche originali per la demo: **non rappresentano planimetrie ufficiali né lo stato operativo corrente dei musei**. Dettagli, struttura e fonti usate per il dataset sono in `docs/demo-dataset-v3.md`.
+
+I file `examDatasetV2.js`, `auroraDatasetV2.js` ed `examPresentationMatrix.js` restano nel repository come fixture/strumenti legacy usati da test esistenti, ma non fanno più parte del comando canonico `seed:demo`.
 
 `npm run seed:users` resta disponibile quando servono soltanto i quattro account obbligatori.
 
@@ -116,8 +119,9 @@ I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'
 - `docs/client-v2-implementation-status.md` — stato operativo;
 - `docs/revision-workflow.md` — workflow editoriale v2;
 - `docs/deployment.md` — build, seed e deploy gocker;
+- `docs/demo-dataset-v3.md` — struttura e invarianti del dataset demo multi-museo;
 - `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly;
-- `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring.
+- `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring;
 - `docs/organization-rbac.md` — ruoli Organization personalizzati, permission registry, Owner, transazioni, audit e migrazione legacy.
 
 ## Principi correnti
