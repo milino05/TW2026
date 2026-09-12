@@ -111,7 +111,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:8000/ping > /dev/null
 
       - name: Run browser acceptance tests
-        run: npx playwright test tests/browserFeedback.acceptance.spec.js --reporter=line --workers=1
+        run: npx playwright test tests/browserFeedback.acceptance.spec.js tests/browserMarketplaceInteraction.acceptance.spec.js --reporter=line --workers=1
 
       - name: Print server log on browser failure
         if: failure()
