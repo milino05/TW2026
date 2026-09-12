@@ -24,11 +24,13 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
   error = null;
   selectedGraph = null;
   returnFocus = null;
+  embedded = false;
   newDraft = { name: "", description: "" };
   selectedItems = new Map();
 
   connectedCallback() {
-    this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.embedded = this.hasAttribute("embedded");
+    if (!this.embedded) this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
     this.addEventListener("change", this.onChange);
@@ -44,8 +46,16 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
 
   configure(options = {}) {
     this.config = options;
+    this.embedded = options.embedded === true || this.hasAttribute("embedded");
     this.mode = options.mode === "existing" ? "existing" : "new";
     this.view = this.mode;
+    this.query = "";
+    this.page = 1;
+    this.choices = null;
+    this.preview = null;
+    this.error = null;
+    this.selectedGraph = null;
+    this.selectedItems.clear();
     const current = options.currentSelection || null;
     if (this.mode === "new" && current?.graphMode === "new") {
       this.newDraft = {
@@ -68,6 +78,7 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
 
   close() {
     this.dispatchEvent(new CustomEvent("collection-graph-dialog-close", { bubbles: true }));
+    if (this.embedded) return;
     this.remove();
     this.returnFocus?.focus?.({ preventScroll: true });
   }
@@ -77,6 +88,7 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
       bubbles: true,
       detail: { selection },
     }));
+    if (this.embedded) return;
     this.remove();
     this.returnFocus?.focus?.({ preventScroll: true });
   }
@@ -142,9 +154,7 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
       }
       const row = this.preview?.results?.find((entry) => id(entry.subject?.id) === subjectId);
       const select = this.querySelector(`[data-import-subject-item="${CSS.escape(subjectId)}"]`);
-      const itemId = select instanceof HTMLSelectElement
-        ? select.value
-        : id(row?.itemCandidates?.[0]?.itemId);
+      const itemId = select instanceof HTMLSelectElement ? select.value : id(row?.itemCandidates?.[0]?.itemId);
       if (itemId) this.selectedItems.set(subjectId, itemId);
       return;
     }
@@ -279,7 +289,7 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
       this.close();
       return;
     }
-    if (event.key !== "Tab") return;
+    if (this.embedded || event.key !== "Tab") return;
     const focusable = [...this.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')];
     if (!focusable.length) return;
     const first = focusable[0];
@@ -289,7 +299,9 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
   };
 
   renderHeader(title, description) {
-    return `<header class="task-modal-header collection-graph-dialog-header"><div><span class="eyebrow">Struttura semantica</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div><button type="button" class="button-secondary small" data-close-collection-graph-dialog aria-label="Chiudi">×</button></header>`;
+    const heading = this.embedded ? "h2" : "h1";
+    const closeLabel = this.embedded ? `← Torna alla scelta` : "×";
+    return `<header class="task-modal-header collection-graph-dialog-header"><div><span class="eyebrow">Struttura semantica</span><${heading}>${escapeHtml(title)}</${heading}><p>${escapeHtml(description)}</p></div><button type="button" class="button-secondary small" data-close-collection-graph-dialog aria-label="${this.embedded ? "Torna alla scelta del grafo" : "Chiudi"}">${closeLabel}</button></header>`;
   }
 
   renderNew() {
@@ -359,6 +371,10 @@ export class ArtAroundCollectionGraphDialog extends HTMLElement {
 
   render() {
     const body = this.view === "import" ? this.renderImport() : this.view === "existing" ? this.renderExisting() : this.renderNew();
+    if (this.embedded) {
+      this.innerHTML = `<section class="collection-graph-dialog collection-graph-dialog--embedded" aria-label="Configura grafo della Raccolta">${body}</section>`;
+      return;
+    }
     this.innerHTML = `<div class="context-task-modal-layer collection-graph-dialog-layer" data-collection-graph-backdrop role="presentation"><section class="context-task-modal context-task-modal--large collection-graph-dialog" role="dialog" aria-modal="true" aria-label="Configura grafo della Raccolta">${body}</section></div>`;
   }
 }
