@@ -104,7 +104,11 @@ test("dirty state impedisce perdita silenziosa e salva metadata più definizioni
   assert.match(source, /saveAll/);
   assert.match(source, /updateNamespace\(this\.id, metadata\)/);
   assert.match(source, /updateNamespaceRevision\(this\.id, definitions\)/);
-  assert.match(source, /data-confirm-leave/);
+  assert.match(source, /openActionDialog/);
+  assert.match(source, /title: "Uscire senza salvare\?"/);
+  assert.match(source, /title: "Salvare le modifiche e continuare\?"/);
+  assert.match(source, /saveAll\(\{ continueWorkflow: code \}\)/);
+  assert.doesNotMatch(source, /confirmation-panel|data-confirm-leave|pendingWorkflow|workflowMessage/);
   assert.match(source, /if \(add\)[\s\S]*?snapshotDraft\(\)/);
   assert.match(source, /if \(remove\)[\s\S]*?snapshotDraft\(\)/);
 });
