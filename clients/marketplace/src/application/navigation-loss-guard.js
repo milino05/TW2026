@@ -13,12 +13,12 @@ export function hasNavigationLossRisk() {
   return blockingEntries().length > 0;
 }
 
-export function registerNavigationLossBlocker({ isBlocking, confirm, discard } = {}) {
-  if (typeof isBlocking !== "function" || typeof confirm !== "function") {
-    throw new TypeError("A navigation-loss blocker requires isBlocking() and confirm().");
+export function registerNavigationLossBlocker({ isBlocking, requestConfirmation, discard } = {}) {
+  if (typeof isBlocking !== "function" || typeof requestConfirmation !== "function") {
+    throw new TypeError("A navigation-loss blocker requires isBlocking() and requestConfirmation().");
   }
   const id = nextBlockerId++;
-  blockers.set(id, { isBlocking, confirm, discard });
+  blockers.set(id, { isBlocking, requestConfirmation, discard });
   return () => blockers.delete(id);
 }
 
@@ -30,7 +30,7 @@ export function confirmNavigationLoss(context = {}) {
   confirmationInFlight = (async () => {
     for (const entry of entries) {
       if (!entry.isBlocking?.()) continue;
-      const confirmed = await entry.confirm(context);
+      const confirmed = await entry.requestConfirmation(context);
       if (!confirmed) return false;
       entry.discard?.(context);
     }
