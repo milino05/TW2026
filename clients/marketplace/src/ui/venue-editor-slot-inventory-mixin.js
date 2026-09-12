@@ -30,40 +30,7 @@ function inventoryCard(target, selectedTargetId) {
 }
 
 export const venueSlotInventoryMixin = {
-  ensureGlobalEscapeHandler() {
-    if (this._venueGlobalEscapeHandler) return;
-    this._venueGlobalEscapeHandler = (event) => {
-      if (!this.isConnected) {
-        window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
-        this._venueGlobalEscapeHandler = null;
-        return;
-      }
-      if (event.key !== "Escape" || this.busy) return;
-      let handled = true;
-      if (this.inventorySubjectPickerOpen) {
-        this.inventorySubjectPickerOpen = false; this.inventoryPendingSubject = null; this.render();
-      } else if (this.inventoryDetailTargetId) {
-        this.inventoryDetailTargetId = null; this.render();
-      } else if (this.inventoryBrowser) {
-        this.inventoryBrowser = null; this.render();
-      } else if (this.calibrationOverwritePrompt) {
-        this.calibrationOverwritePrompt = null; this.render();
-      } else if (this.mapCreationDialog) {
-        this.closeMapCreationDialog?.(); this.render();
-      } else if (this.floorDialog) {
-        this.floorDialog = null; this.render();
-      } else if (this.spatialEditor) {
-        this.closeSpatialEditor?.();
-      } else if (this.pendingMapAction || this.draggingPlace) {
-        this.cancelMapAction?.();
-      } else handled = false;
-      if (handled) { event.preventDefault(); event.stopImmediatePropagation(); }
-    };
-    window.addEventListener("keydown", this._venueGlobalEscapeHandler, true);
-  },
-
   render() {
-    this.ensureGlobalEscapeHandler();
     venueSectionMixin.render.call(this);
     if (!this.data || this.onboarding?.required) return;
     this.decorateMapRefinements?.();
