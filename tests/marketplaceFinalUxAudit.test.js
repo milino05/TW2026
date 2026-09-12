@@ -37,7 +37,7 @@ test("tutto il client Marketplace passa il syntax gate JavaScript", () => {
 test("il client non usa dialoghi nativi bloccanti", () => {
   for (const target of collectJs(marketRoot)) {
     const source = fs.readFileSync(target, "utf8");
-    assert.doesNotMatch(source, /window\.(?:prompt|confirm)\s*\(/, path.relative(root, target));
+    assert.doesNotMatch(source, /(?:window\.)?(?:prompt|confirm|alert)\s*\(/, path.relative(root, target));
   }
 });
 
