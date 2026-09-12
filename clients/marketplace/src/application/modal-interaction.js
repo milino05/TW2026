@@ -12,6 +12,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(", ");
 
 function focusableElements(root) {
+  if (!(root instanceof HTMLElement)) return [];
   return [...root.querySelectorAll(FOCUSABLE_SELECTOR)]
     .filter((element) => element instanceof HTMLElement && !element.hidden && element.getAttribute("aria-hidden") !== "true");
 }
@@ -32,6 +33,10 @@ function resolveInitialFocus(layer, initialFocus, panel) {
  * Escape routing, backdrop/explicit dismiss requests, focus trap, scroll lock
  * and focus restoration. Dirty-state policy, validation and domain operations
  * remain with the consumer through onRequestDismiss/canDismiss.
+ *
+ * `panel` can be an HTMLElement or a resolver returning the current panel. The
+ * resolver form supports vanilla custom elements that rerender their modal DOM
+ * while preserving a single lifecycle and opener focus reference.
  */
 export function mountModalInteraction({
   layer,
@@ -45,7 +50,11 @@ export function mountModalInteraction({
   lockScroll = true,
 } = {}) {
   if (!(layer instanceof HTMLElement)) throw new TypeError("mountModalInteraction requires a layer HTMLElement.");
-  if (!(panel instanceof HTMLElement) || !layer.contains(panel)) throw new TypeError("mountModalInteraction requires a panel contained by the layer.");
+  const resolvePanel = () => typeof panel === "function" ? panel() : panel;
+  const initialPanel = resolvePanel();
+  if (!(initialPanel instanceof HTMLElement) || !layer.contains(initialPanel)) {
+    throw new TypeError("mountModalInteraction requires a panel contained by the layer.");
+  }
 
   const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   let released = false;
@@ -76,10 +85,11 @@ export function mountModalInteraction({
 
   const onKeyDown = (event) => {
     if (event.key !== "Tab") return;
-    const items = focusableElements(panel);
+    const currentPanel = resolvePanel();
+    const items = focusableElements(currentPanel);
     if (!items.length) {
       event.preventDefault();
-      panel.focus?.({ preventScroll: true });
+      currentPanel?.focus?.({ preventScroll: true });
       return;
     }
     const first = items[0];
@@ -101,7 +111,7 @@ export function mountModalInteraction({
     onEscape: () => void requestDismiss("escape"),
   });
 
-  requestAnimationFrame(() => resolveInitialFocus(layer, initialFocus, panel)?.focus?.({ preventScroll: true }));
+  requestAnimationFrame(() => resolveInitialFocus(layer, initialFocus, resolvePanel())?.focus?.({ preventScroll: true }));
 
   return {
     requestDismiss,
