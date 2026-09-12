@@ -36,7 +36,7 @@ Usare per authoring lungo, iterativo, grafi, mappe o attività in cui il confron
 
 Inspector laterali e sidecar sovrapposti **non fanno parte del Marketplace**. Non introdurre nuovi `context-workspace-inspector*`, `workspace-sidecar*` o equivalenti con altro nome.
 
-Il Semantic Graph non viene incorporato in un sidecar dell'Item: l'Item naviga al workspace canonico del grafo, preservando il proprio draft e il ritorno al contesto. Dentro il graph workspace, soltanto i task bounded — scelta soggetto, classificazione, scelta/modifica relazione — usano Task Modal.
+Il Semantic Graph non viene incorporato in un sidecar dell'Item: l'Item naviga al workspace canonico del grafo, preservando il proprio draft e il ritorno al contesto. Il chooser mostra soltanto Collection modificabili che contengono almeno un Item attivo per lo stesso Subject; l'eleggibilità è filtrata dal backend prima della paginazione. Il workspace usa il virtual focus della Collection quando il Subject non ha ancora un binding esplicito: aprire i collegamenti non deve creare una nuova revisione del grafo. Dentro il graph workspace, soltanto i task bounded — scelta soggetto, classificazione, scelta/modifica relazione — usano Task Modal.
 
 I contract test richiedono zero consumer di:
 
@@ -117,10 +117,10 @@ La migrazione è stata applicata in modo coerente ai principali flussi Marketpla
 - Physical Vocabulary starter → Task Modal, mentre il tutorial resta una guided overlay specializzata;
 - Source Manager della Collection → Task Modal; update/detach sorgente → Action Dialog;
 - Semantic Graph → workspace full-page con Task Modal soltanto per task bounded;
-- Item Semantic Sidecar → rimosso in favore della navigazione al graph workspace con focus del Subject e ritorno sicuro all'Item.
+- Item Semantic Sidecar → rimosso in favore di Collection eleggibili per Subject, virtual focus non mutante, navigazione al graph workspace con focus del Subject e ritorno sicuro all'Item.
 
 ## 7. Gate di regressione
 
 I contract test devono impedire il ritorno delle vecchie surface invece di mantenere allowlist permanenti. Una nuova eccezione non va aggiunta per comodità: richiede una decisione architetturale esplicita.
 
-Il browser acceptance verifica la shell condivisa, il contratto Escape, il dirty-discard, il focus trap, il restore-focus, il single-scroll e il comportamento responsive. I test statici verificano inoltre l'assenza delle surface legacy e i boundary specializzati del Semantic Graph e della Venue.
+Il browser acceptance verifica la shell condivisa, il contratto Escape, il dirty-discard, il focus trap, il restore-focus, il single-scroll e il comportamento responsive. I test statici verificano inoltre l'assenza delle surface legacy e i boundary specializzati del Semantic Graph e della Venue. I test Mongo verificano anche che il virtual focus della Collection non materializzi binding e che le Collection proposte dal launcher siano filtrate per copertura del Subject prima della paginazione.
