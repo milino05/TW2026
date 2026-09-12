@@ -22,50 +22,32 @@ function offenders(pattern) {
     .sort();
 }
 
+function assertNone(pattern, label) {
+  const found = offenders(pattern);
+  assert.deepEqual(found, [], `${label}: surface legacy residue: ${found.join(", ")}`);
+}
+
 function assertAllowlisted(pattern, allowlist, label) {
   const unexpected = offenders(pattern).filter((file) => !allowlist.has(file));
   assert.deepEqual(unexpected, [], `${label}: nuove surface legacy non inventariate: ${unexpected.join(", ")}`);
 }
 
-test("non vengono introdotti nuovi inspector laterali durante la migrazione", () => {
-  assertAllowlisted(
-    /context-workspace-inspector-layer|context-workspace-inspector\b/,
-    new Set(["workspace-browser-view.js", "workspace-view.js"]),
-    "Inspector",
-  );
+test("Marketplace non usa più inspector laterali come interaction surface", () => {
+  assertNone(/context-workspace-inspector-layer|context-workspace-inspector\b/, "Inspector");
 });
 
-test("non vengono introdotti nuovi sidecar sovrapposti", () => {
-  assertAllowlisted(
-    /workspace-sidecar(?:-|\b)/,
-    new Set(["item-semantic-sidecar.js"]),
-    "Sidecar",
-  );
+test("Marketplace non usa più sidecar sovrapposti", () => {
+  assertNone(/workspace-sidecar(?:-|\b)/, "Sidecar");
 });
 
-test("le confirmation-panel inline restano confinate ai consumer legacy già pianificati", () => {
-  assertAllowlisted(
-    /confirmation-panel/,
-    new Set([
-      "commerce-management-view.js",
-      "organization-view.js",
-      "physical-vocabulary-editor-view.js",
-      "venue-editor-targets-mixin.js",
-      "workspace-view.js",
-    ]),
-    "Inline confirmation",
-  );
+test("Marketplace non usa più confirmation-panel inline", () => {
+  assertNone(/confirmation-panel/, "Inline confirmation");
 });
 
-test("i details usati come create surface restano confinati ai consumer legacy da migrare", () => {
+test("i details usati come create surface restano soltanto nel residuo Venue inventariato", () => {
   assertAllowlisted(
     /<details[^>]*class=["'][^"']*(?:account-create|seller-offer-creator|venue-create)[^"']*["']/,
-    new Set([
-      "commerce-management-view.js",
-      "organization-view.js",
-      "profile-view.js",
-      "venue-editor-targets-mixin.js",
-    ]),
+    new Set(["venue-editor-targets-mixin.js"]),
     "Create details",
   );
 });
