@@ -11,6 +11,10 @@ const layerManager = read("clients/marketplace/src/application/layer-manager.js"
 const styles = read("clients/marketplace/src/styles/modal-interaction.css");
 const index = read("clients/marketplace/index.html");
 
+function cssRule(selector) {
+  return styles.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))?.[1] || "";
+}
+
 test("Task Modal foundation delegates global layering and Escape to LayerManager", () => {
   assert.match(index, /modal-interaction\.css/);
   assert.match(lifecycle, /mountUiLayer/);
@@ -37,21 +41,23 @@ test("modal lifecycle traps focus and restores it to the opener", () => {
 });
 
 test("Task Modal shell has one application-level vertical scroll owner", () => {
-  const layerRule = styles.match(/\.artaround-modal-layer\s*\{([\s\S]*?)\}/)?.[1] || "";
-  const panelRule = styles.match(/\.artaround-task-modal\s*\{([\s\S]*?)\}/)?.[1] || "";
-  const bodyRule = styles.match(/\.artaround-task-modal__body\s*\{([\s\S]*?)\}/)?.[1] || "";
+  const layerRule = cssRule("\\.artaround-modal-layer");
+  const panelRule = cssRule("\\.artaround-task-modal");
+  const bodyRule = cssRule("\\.artaround-task-modal__body");
   assert.match(layerRule, /overflow:\s*hidden/);
   assert.match(panelRule, /overflow:\s*hidden/);
   assert.match(panelRule, /grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/);
   assert.match(bodyRule, /overflow-y:\s*auto/);
   assert.match(bodyRule, /min-height:\s*0/);
+  assert.doesNotMatch(layerRule, /overflow(?:-y)?:\s*(auto|scroll)/);
+  assert.doesNotMatch(panelRule, /overflow(?:-y)?:\s*(auto|scroll)/);
   assert.match(styles, /100dvh/);
   assert.match(styles, /safe-area-inset-top/);
 });
 
-test("narrow viewports use a full-height modal without introducing a second scrollbar", () => {
+test("narrow viewports use a full-height modal without changing the scroll ownership contract", () => {
   assert.match(styles, /@media\s*\(max-width:\s*36rem\)/);
   assert.match(styles, /height:\s*100dvh/);
   assert.match(styles, /border-radius:\s*0/);
-  assert.doesNotMatch(styles, /\.artaround-modal-layer[\s\S]*?overflow:\s*(auto|scroll)/);
+  assert.match(cssRule("\\.artaround-task-modal__body"), /overflow-y:\s*auto/);
 });
