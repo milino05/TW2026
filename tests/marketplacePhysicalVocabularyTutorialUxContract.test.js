@@ -8,14 +8,16 @@ const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/physical-vocabulary-editor-view.js");
 const stylePath = path.join(root, "clients/marketplace/src/styles/physical-vocabulary-editor.css");
 const taskDialogPath = path.join(root, "clients/marketplace/src/ui/task-dialog.js");
+const resourceCreatePath = path.join(root, "clients/marketplace/src/ui/resource-create-dialog.js");
 const organizationPath = path.join(root, "clients/marketplace/src/ui/organization-view.js");
 const source = fs.readFileSync(viewPath, "utf8");
 const styles = fs.readFileSync(stylePath, "utf8");
 const taskDialog = fs.readFileSync(taskDialogPath, "utf8");
+const resourceCreate = fs.readFileSync(resourceCreatePath, "utf8");
 const organizationSource = fs.readFileSync(organizationPath, "utf8");
 
 test("il tutorial del vocabolario fisico passa il syntax gate", () => {
-  for (const file of [viewPath, taskDialogPath]) {
+  for (const file of [viewPath, taskDialogPath, resourceCreatePath]) {
     const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
     assert.equal(result.status, 0, `${file}: ${result.stderr || result.stdout}`);
   }
@@ -71,8 +73,12 @@ test("la configurazione base è proposta alla fine e resta disponibile nella pag
   for (const summary of ["13 tipi di luogo", "8 collegamenti", "9 caratteristiche", "4 profili"]) assert.match(source, new RegExp(summary));
 });
 
-test("la creazione nell'organizzazione parte vuota e rimanda la configurazione base alla guida", () => {
-  assert.match(organizationSource, /applyStarter: false/);
-  assert.doesNotMatch(organizationSource, /name="startingPoint"/);
-  assert.match(organizationSource, /Alla fine potrai scegliere una configurazione base già pronta oppure partire da zero/);
+test("la creazione Organization usa il creator condiviso con partenza vuota come default, senza nascondere la scelta starter", () => {
+  assert.match(organizationSource, /openResourceCreateDialog/);
+  assert.match(organizationSource, /applyStarterByDefault: false/);
+  assert.match(resourceCreate, /startingPoint: applyStarterByDefault \? "starter" : "blank"/);
+  assert.match(resourceCreate, /name="startingPoint"/);
+  assert.match(resourceCreate, /value="blank"/);
+  assert.match(resourceCreate, /value="starter"/);
+  assert.match(resourceCreate, /applyStarter: state\.startingPoint !== "blank"/);
 });
