@@ -1,5 +1,6 @@
 import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
 import { mountModalInteraction } from "../application/modal-interaction.js";
+import { openVenueTargetCreateDialog } from "./venue-target-create-dialog.js";
 
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function normalized(value) {
@@ -96,6 +97,37 @@ export const venueInventorySearchMixin = {
     });
   },
 
+  openInventoryTargetCreateDialog() {
+    if (this._targetCreateDialog) return;
+    this._targetCreateDialog = openVenueTargetCreateDialog({
+      venueId: this.id,
+      onDismiss: () => { this._targetCreateDialog = null; },
+      onExisting: (targetId) => {
+        this._targetCreateDialog = null;
+        this.selectedVenueTargetId = targetId;
+        this.inventoryFilter = "all";
+        this.message = "Questa identità è già presente nell’inventario della sede.";
+        this.render();
+      },
+      onCreated: async () => {
+        this._targetCreateDialog = null;
+        this.busy = true;
+        this.error = null;
+        this.message = null;
+        this.render();
+        try {
+          await this.refreshServerState();
+          this.message = "Entità aggiunta all’inventario della sede.";
+        } catch (error) {
+          this.error = error instanceof Error ? error.message : "Inventario non aggiornabile";
+        } finally {
+          this.busy = false;
+          this.render();
+        }
+      },
+    });
+  },
+
   async handleTargetMediaSubmit(form, data) {
     if (form.matches("[data-inventory-search-form]")) {
       this.inventorySearchQuery = String(data.get("inventoryQuery") || "").trim();
@@ -109,6 +141,11 @@ export const venueInventorySearchMixin = {
   async handleTargetMediaClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
+
+    if (target.closest("[data-open-target-create-dialog]")) {
+      this.openInventoryTargetCreateDialog();
+      return true;
+    }
 
     if (target.closest("[data-clear-inventory-search]")) {
       this.inventorySearchQuery = "";
