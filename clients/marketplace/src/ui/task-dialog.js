@@ -17,18 +17,20 @@ function sizeClass(size) {
 }
 
 /**
- * Programmatic shell for bounded Marketplace create/edit/select tasks.
+ * Programmatic shell for bounded Marketplace task and action surfaces.
  *
  * Domain state and repository calls remain outside this controller. The shell
  * owns only interaction mechanics and visual structure: body-level mounting,
  * focus, Escape/backdrop/cancel dismissal, optional dirty confirmation and the
- * single-scroll modal layout.
+ * single-scroll modal layout. `kind` controls only layer ordering; it never
+ * changes domain semantics.
  */
 export function createTaskDialog({
   eyebrow = "",
   title = "",
   description = "",
   size = "default",
+  kind = "modal",
   ariaLabel = null,
   initialFocus = null,
   renderBody = () => "",
@@ -124,7 +126,7 @@ export function createTaskDialog({
   interaction = mountModalInteraction({
     layer,
     panel: () => controller.panel,
-    kind: "modal",
+    kind,
     initialFocus,
     canDismiss: () => !isBusy(),
     onRequestDismiss: requestClose,
