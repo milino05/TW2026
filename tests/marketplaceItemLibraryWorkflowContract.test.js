@@ -48,7 +48,9 @@ test("un Item di altro proprietario passa dal Marketplace: acquisizione e fork p
   assert.match(quickAdd, /operationCode:\s*"content\.fork"/);
   assert.match(quickAdd, /sourceRef:\s*\{\s*resourceType:\s*"item_edition"/);
   assert.match(quickAdd, /data-acquire-marketplace-item/);
-  assert.match(quickAdd, /Crea comunque un Item distinto/);
+  assert.match(quickAdd, /Acquisire una proposta creerà un nuovo contenuto indipendente/);
+  assert.match(quickAdd, /Crea copia indipendente e aggiungi/);
+  assert.match(quickAdd, /Crea contenuto indipendente da zero/);
 });
 
 test("recognitionMedia appartiene all'Item mentre illustrativeMedia resta nella ItemRevision", () => {
