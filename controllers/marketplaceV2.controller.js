@@ -43,6 +43,8 @@ async function catalog(req, res, next) {
       sellerType: req.query?.sellerType || null,
       sellerId: req.query?.sellerId || null,
       selectedVenueIds: selectedVenueIds(req),
+      beneficiaryType: req.query?.beneficiaryType || null,
+      beneficiaryId: req.query?.beneficiaryId || null,
     }));
   } catch (error) { next(error); }
 }

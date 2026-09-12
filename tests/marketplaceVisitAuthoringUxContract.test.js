@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const viewPath = path.join(root, "clients/marketplace/src/ui/visit-authoring-view.js");
+const authoringRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/authoring-repository.js");
 const shellPath = path.join(root, "clients/marketplace/src/ui/app-shell.js");
 const servicePath = path.join(root, "services/visitAuthoringV2.service.js");
 const commandPath = path.join(root, "services/visitAuthoringCommandV2.service.js");
@@ -16,6 +18,7 @@ const sessionPlanPath = path.join(root, "services/sessionPlanV2.service.js");
 const routesPath = path.join(root, "routes/visitsV2.routes.js");
 const controllerPath = path.join(root, "controllers/visitsV2.controller.js");
 const view = fs.readFileSync(viewPath, "utf8");
+const authoringRepository = fs.readFileSync(authoringRepositoryPath, "utf8");
 const shell = fs.readFileSync(shellPath, "utf8");
 const service = fs.readFileSync(servicePath, "utf8");
 const commands = fs.readFileSync(commandPath, "utf8");
@@ -27,7 +30,7 @@ const routes = fs.readFileSync(routesPath, "utf8");
 const controller = fs.readFileSync(controllerPath, "utf8");
 
 test("visit authoring boundary passa il syntax gate", () => {
-  for (const target of [viewPath, shellPath, servicePath, commandPath, sequenceDomainPath, sequenceCommandPath, sequenceRepositoryPath, sessionPlanPath, routesPath, controllerPath]) {
+  for (const target of [viewPath, authoringRepositoryPath, shellPath, servicePath, commandPath, sequenceDomainPath, sequenceCommandPath, sequenceRepositoryPath, sessionPlanPath, routesPath, controllerPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
@@ -133,6 +136,35 @@ test("aggiunta manuale delle tappe è sempre visibile nel composer", () => {
   assert.doesNotMatch(view, /manual-stops/);
   assert.match(view, /data-add-stop/);
   assert.match(view, /data-remove-stop/);
+  assert.match(view, /authoringRepository\.venueTargets\(this\.selectedVenueId\)/);
+  assert.match(authoringRepository, /venueTargets\(venueId\)/);
+  assert.match(authoringRepository, /\/v2\/marketplace\/discovery\/venues\/\$\{encodeURIComponent\(venueId\)\}/);
+});
+
+test("il repository carica la projection pubblicata usata dalle card delle tappe", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = null;
+  globalThis.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        venue: { id: "venue/1", name: "Sede test" },
+        targets: [{ id: "target-1", label: "Opera esposta", description: "Sala A" }],
+      }),
+    };
+  };
+  try {
+    const repositoryUrl = `${pathToFileURL(authoringRepositoryPath).href}?visit-targets-contract`;
+    const { authoringRepository: repository } = await import(repositoryUrl);
+    const projection = await repository.venueTargets("venue/1");
+    assert.equal(requestedUrl, "/api/v2/marketplace/discovery/venues/venue%2F1");
+    assert.deepEqual(projection.targets, [{ id: "target-1", label: "Opera esposta", description: "Sala A" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("logistica e pubblicazione restano domini separati", () => {

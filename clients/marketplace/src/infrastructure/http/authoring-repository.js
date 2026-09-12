@@ -55,6 +55,9 @@ export const authoringRepository = {
     const query = queryString({ principalType, principalId });
     return apiClient.request(`/v2/marketplace/visit-authoring/new${query ? `?${query}` : ""}`);
   },
+  venueTargets(venueId) {
+    return apiClient.request(`/v2/marketplace/discovery/venues/${encodeURIComponent(venueId)}`);
+  },
   searchVisitContent({ editorialReleaseId, principalType = "user", principalId = null, q = "", page = 1, limit = 30 }) {
     const query = queryString({ principalType, principalId, q, page, limit });
     return apiClient.request(`/v2/marketplace/visit-authoring/releases/${encodeURIComponent(editorialReleaseId)}/content?${query}`);

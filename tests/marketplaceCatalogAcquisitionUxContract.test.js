@@ -60,6 +60,10 @@ test("il selettore delle sedi resta nascosto finché non si cerca ed è usabile 
 });
 
 test("beneficiary commerciale deriva dal Context Hub e non da un selector locale", () => {
+  assert.match(catalog, /readOperatingContext/);
+  assert.match(catalog, /operatingPrincipal/);
+  assert.match(catalog, /beneficiaryType: principal\.principalType/);
+  assert.match(catalog, /beneficiaryId: principal\.principalId/);
   assert.match(detail, /readOperatingContext/);
   assert.match(detail, /operatingPrincipal/);
   assert.match(detail, /beneficiary\(\)/);
@@ -69,6 +73,9 @@ test("beneficiary commerciale deriva dal Context Hub e non da un selector locale
 });
 
 test("il boundary HTTP continua a trasmettere il beneficiary esplicito al backend", () => {
+  assert.match(repository, /catalog\(\{ selectedVenueIds = \[\], page = 1, limit = 20, q = "", resourceTypes = null, beneficiaryType = null, beneficiaryId = null \}/);
+  assert.match(repository, /params\.set\("beneficiaryType", beneficiaryType\)/);
+  assert.match(repository, /params\.set\("beneficiaryId", beneficiaryId\)/);
   assert.match(repository, /detail\(listingId, \{ selectedVenueIds = \[\], beneficiaryType = null, beneficiaryId = null \}/);
   assert.match(repository, /acquire\(offerId, \{ beneficiaryType = "user", beneficiaryId = null \}/);
   assert.match(repository, /JSON\.stringify\(\{ beneficiaryType, beneficiaryId \}\)/);

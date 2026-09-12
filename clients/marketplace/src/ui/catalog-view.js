@@ -1,5 +1,6 @@
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
+import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { replaceCurrentHistoryUrl } from "../application/router.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
@@ -72,12 +73,16 @@ export class ArtAroundCatalogView extends HTMLElement {
   browser = new ResourceBrowserController({
     queryState: this.state,
     load: async ({ query, filters, page }) => {
+      const principal = operatingPrincipal(readOperatingContext());
+      if (!principal) throw new Error("Area di lavoro non selezionata");
       if (!this.venueSelector) this.venueSelector = await marketplaceRepository.venueSelector();
       const catalog = await marketplaceRepository.catalog({
         selectedVenueIds: Array.isArray(filters.selectedVenueIds) ? filters.selectedVenueIds : [],
         page,
         q: query,
         resourceTypes: TYPE_FILTERS[Object.hasOwn(TYPE_FILTERS, filters.type) ? filters.type : "all"],
+        beneficiaryType: principal.principalType,
+        beneficiaryId: principal.principalId,
       });
       return { ...catalog, items: Array.isArray(catalog?.results) ? catalog.results : [] };
     },

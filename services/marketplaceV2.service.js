@@ -10,7 +10,7 @@ const {
   capabilitySupportsResource,
 } = require("../config/marketplaceCapabilities");
 const { assertCanActForPrincipal, resolveActorPrincipals } = require("./principalResolution.service");
-const { resolveCapabilityAccess, nowWithin } = require("./capabilityAuthorization.service");
+const { resolveCapabilityAccess, nowWithin, scopePrincipals } = require("./capabilityAuthorization.service");
 const {
   resolveMarketableResource,
   LIVE_RESOURCE_TYPES,
@@ -366,10 +366,11 @@ function versionBehaviour(versionPolicy) {
   return { code: "pinned", label: "Versione fissa" };
 }
 
-async function viewerCapabilities({ actorUserId, offers }) {
+async function viewerCapabilities({ actorUserId, offers, principalType = null, principalId = null }) {
   const capabilities = new Set();
   const offerIds = (offers || []).map((offer) => offer._id);
-  const { principals } = await resolveActorPrincipals(actorUserId);
+  const resolved = await resolveActorPrincipals(actorUserId);
+  const principals = scopePrincipals(resolved.principals, principalType, principalId);
   const principalClauses = principals.map((principal) => ({ buyerType: principal.type, buyerId: principal.id }));
   if (offerIds.length && principalClauses.length) {
     const acquisitions = await MarketplaceAcquisition.find({ offerId: { $in: offerIds }, $or: principalClauses }).select("_id").lean();
@@ -386,6 +387,8 @@ async function viewerCapabilities({ actorUserId, offers }) {
         capability: grant.capability,
         resourceType: grant.resourceType,
         resourceId: grant.resourceId,
+        principalType,
+        principalId,
       });
       if (access.allowed) capabilities.add(grant.capability);
     }
@@ -393,7 +396,7 @@ async function viewerCapabilities({ actorUserId, offers }) {
   return [...capabilities];
 }
 
-async function projectCatalogListing({ listing, actorUserId }) {
+async function projectCatalogListing({ listing, actorUserId, principalType = null, principalId = null }) {
   let marketable;
   try {
     marketable = await resolveMarketableResource({ resourceType: listing.resourceType, resourceId: listing.resourceId });
@@ -406,7 +409,7 @@ async function projectCatalogListing({ listing, actorUserId }) {
     sellerSummary(listing),
   ]);
   if (!offers.length) return null;
-  const availableCapabilities = await viewerCapabilities({ actorUserId, offers });
+  const availableCapabilities = await viewerCapabilities({ actorUserId, offers, principalType, principalId });
   return {
     listingId: listing._id,
     asset: {

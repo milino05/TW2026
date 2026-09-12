@@ -48,7 +48,8 @@ test("l'Item viene creato dal Subject e dal principal operativo senza side effec
   assert.match(authoringRepositorySource, /createItem\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode = "reuse_first" \}\)/);
   assert.match(authoringRepositorySource, /JSON\.stringify\(\{ primarySubjectId, ownerType, ownerId, contentSpaceId, creationMode \}\)/);
   assert.match(source, /contentSpaceId: this\.contextContentSpaceId/);
-  assert.doesNotMatch(authoringRepositorySource, /createItemWithPhysicalIntent|venueTargetContext|venueTargets\(/);
+  assert.doesNotMatch(authoringRepositorySource, /createItemWithPhysicalIntent|venueTargetContext/);
+  assert.doesNotMatch(source, /authoringRepository\.venueTargets\(/);
 });
 
 test("titolo, licenza e immagine sono informazioni generali prima della versione editoriale", () => {

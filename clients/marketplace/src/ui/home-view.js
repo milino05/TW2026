@@ -133,7 +133,13 @@ export class ArtAroundHomeView extends HTMLElement {
         ? (organization?.venues?.results || []).map((venue) => venue.id)
         : [];
       try {
-        this.catalog = await marketplaceRepository.catalog({ selectedVenueIds, page: 1, limit: 3 });
+        this.catalog = await marketplaceRepository.catalog({
+          selectedVenueIds,
+          page: 1,
+          limit: 3,
+          beneficiaryType: principal.principalType,
+          beneficiaryId: principal.principalId,
+        });
       } catch {
         this.catalog = null;
       }
