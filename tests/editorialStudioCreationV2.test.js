@@ -170,7 +170,7 @@ test("importing a standalone graph creates an independent local graph and pins t
   });
 });
 
-test("reusable graph choices expose standalone sources only and reject collection-local graph IDs", { skip: !mongoUri }, async () => {
+test("reusable graph choices include collection-local same-namespace sources and support target exclusion", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Namespace = require("../models/namespace.model");
@@ -179,6 +179,7 @@ test("reusable graph choices expose standalone sources only and reject collectio
     const EditorialContext = require("../models/editorialContext.model");
     const SemanticGraph = require("../models/semanticGraph.model");
     const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+    const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
     const { createEditorialStudioCollection, listReusableSemanticGraphs, loadCompatibleGraph } = require("../services/editorialStudioCreationV2.service");
 
     const owner = await User.create({ username: "studio-graph-choice-owner", passwordHash: "hash" });
@@ -230,21 +231,54 @@ test("reusable graph choices expose standalone sources only and reject collectio
       limit: 10,
     });
 
-    assert.equal(choices.pagination.total, 1);
-    assert.equal(choices.results.length, 1);
-    assert.equal(String(choices.results[0].id), String(standaloneGraph._id));
-    assert.equal(choices.results[0].collectionUsageCount, 0);
-    assert.equal(choices.results[0].subjectCount, 0);
-    assert.equal(choices.results[0].relationCount, 0);
+    assert.equal(choices.pagination.total, 2);
+    assert.equal(choices.results.length, 2);
+    const resultIds = new Set(choices.results.map((entry) => String(entry.id)));
+    assert.equal(resultIds.has(String(localContext.semanticGraphId)), true);
+    assert.equal(resultIds.has(String(standaloneGraph._id)), true);
+    const localChoice = choices.results.find((entry) => String(entry.id) === String(localContext.semanticGraphId));
+    assert.equal(localChoice.collectionUsageCount, 1);
+    assert.equal(localChoice.usedInCurrentSpace, true);
 
-    await assert.rejects(
-      loadCompatibleGraph({
-        semanticGraphId: localContext.semanticGraphId,
+    const compatibleLocal = await loadCompatibleGraph({
+      semanticGraphId: localContext.semanticGraphId,
+      ownerType: "user",
+      ownerId: owner._id,
+      namespaceId: namespace._id,
+    });
+    assert.equal(String(compatibleLocal._id), String(localContext.semanticGraphId));
+
+    const excludedChoices = await listReusableSemanticGraphs({
+      actorUserId: owner._id,
+      ownerType: "user",
+      ownerId: owner._id,
+      namespaceId: namespace._id,
+      contentSpaceId: contentSpace._id,
+      excludeSemanticGraphId: localContext.semanticGraphId,
+      query: "Rinascimento",
+      page: 1,
+      limit: 10,
+    });
+    assert.equal(excludedChoices.pagination.total, 1);
+    assert.equal(String(excludedChoices.results[0].id), String(standaloneGraph._id));
+
+    const clonedCollection = await createEditorialStudioCollection({
+      actorUserId: owner._id,
+      payload: {
         ownerType: "user",
         ownerId: owner._id,
+        contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
-      }),
-      (error) => error?.details?.some((detail) => detail.code === "SEMANTIC_GRAPH_COLLECTION_BOUND"),
-    );
+        graphMode: "import",
+        semanticGraphId: localContext.semanticGraphId,
+        importItemIds: [],
+        displayName: "Rinascimento derivato",
+      },
+    });
+    const clonedContext = await EditorialContext.findById(clonedCollection.editorialContext.id).lean();
+    const pinnedSource = await EditorialGraphImportSource.findOne({ editorialContextId: clonedContext._id }).lean();
+    assert.notEqual(String(clonedContext.semanticGraphId), String(localContext.semanticGraphId));
+    assert.equal(String(pinnedSource.sourceSemanticGraphId), String(localContext.semanticGraphId));
+    assert.equal(String(pinnedSource.sourceGraphRevisionId), String(compatibleLocal.workingRevisionId));
   });
 });
