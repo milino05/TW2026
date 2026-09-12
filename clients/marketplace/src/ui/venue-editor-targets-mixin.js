@@ -6,7 +6,6 @@ function selected(value, current) { return String(value || "") === String(curren
 function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function stateLabel(value) { return { exposed: "Esposto", unplaced: "Non collocato", unavailable: "Non disponibile" }[value] || "Inventario"; }
-function sourceLabel(value) { return { venue_exposed: "Esposto in questa sede", venue_inventory: "Inventario della sede", organization_content: "Contenuto del museo", artaround: "ArtAround" }[value] || "ArtAround"; }
 function fileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -53,11 +52,6 @@ function renderRecognitionMedia(target, editable) {
 function renderTargetRemoval(target) {
   if (!has(target.availableOperations, "venue.target.trash")) return "";
   return `<button class="danger small" type="button" data-request-target-removal="${escapeHtml(target.id)}">Rimuovi dall’inventario</button>`;
-}
-
-function candidateList(entries, title) {
-  if (!entries?.length) return "";
-  return `<section class="venue-subject-results"><strong>${escapeHtml(title)}</strong>${entries.map((entry) => `<button class="venue-subject-result" type="button" data-use-venue-subject="${escapeHtml(entry.id)}"><span><b>${escapeHtml(entry.preferredLabel)}</b><small>${escapeHtml(entry.description || "Senza descrizione")}</small></span><span class="chip">${escapeHtml(sourceLabel(entry.source))}</span></button>`).join("")}</section>`;
 }
 
 function targetSummaryCard(entry, selectedTargetId) {
@@ -108,12 +102,8 @@ export const venueTargetsMixin = {
     const filtered = allTargets.filter((entry) => this.inventoryFilter === "all" || entry.configuration?.state === this.inventoryFilter);
     const cards = filtered.map((entry) => targetSummaryCard(entry, this.selectedVenueTargetId)).join("");
     const selectedTarget = filtered.find((entry) => id(entry.id) === id(this.selectedVenueTargetId)) || null;
-    const exact = candidateList(this.venueSubjectCandidates?.exact, "Corrispondenze esatte");
-    const suggestions = candidateList(this.venueSubjectCandidates?.suggestions, "Possibili corrispondenze — verifica prima di scegliere");
-    const selectedSubject = this.selectedSubject ? `<article class="selected-subject"><span class="eyebrow">Subject selezionato</span><strong>${escapeHtml(this.selectedSubject.preferredLabel)}</strong><small>${escapeHtml(this.selectedSubject.description || "Senza descrizione")}</small><form data-create-target><input type="hidden" name="subjectId" value="${escapeHtml(id(this.selectedSubject))}"><label>Etichetta locale facoltativa<input name="displayLabelOverride" placeholder="Usa il nome condiviso"></label><label>Nota d’inventario<textarea name="inventoryNote"></textarea></label><button>Aggiungi all’inventario</button></form></article>` : "";
-    const resolverFallback = this.venueSubjectCandidates && !this.venueSubjectCandidates.exact?.length ? `<details class="venue-semantic-fallback" open><summary>Ricerca estesa e creazione manuale</summary><p>Nessuna corrispondenza esatta nell’inventario: ArtAround continua automaticamente su Wikidata. Le corrispondenze approssimative non vengono selezionate automaticamente.</p><artaround-semantic-entity-picker mode="subject" entity-kind="item" initial-query="${escapeHtml(this.venueSubjectQuery)}" auto-search></artaround-semantic-entity-picker></details>` : "";
     const filters = [["all", "Tutte"], ["exposed", "Esposte"], ["unplaced", "Non collocate"], ["unavailable", "Non disponibili"]].map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-filter="${value}" aria-pressed="${this.inventoryFilter === value}">${label}</button>`).join("");
-    const create = editable ? `<details class="venue-create"><summary>${icon("plus", { size: 16 })} Aggiungi entità all’inventario</summary><form data-venue-subject-search class="venue-subject-search"><label>Cerca un’opera, una persona o un luogo<input name="query" minlength="2" value="${escapeHtml(this.venueSubjectQuery)}" required></label><button>Cerca</button></form>${exact}${suggestions}${resolverFallback}${selectedSubject}</details>` : "";
+    const create = editable ? `<button class="button-secondary" type="button" data-open-target-create-dialog>${icon("plus", { size: 16 })} Aggiungi entità all’inventario</button>` : "";
     return `<section class="venue-arrangement-panel"><div class="venue-inventory-toolbar"><div><h3>Inventario della sede</h3><p>Entità fisiche della Venue, distinte dagli Item e dagli slot dell’allestimento.</p></div><div class="venue-filter-group" role="group" aria-label="Filtra inventario">${filters}</div></div><div class="venue-inventory-workspace"><div class="venue-target-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità in questo filtro</h4></div>`}</div>${targetDetailDialog(selectedTarget, { editable, canCreateContent: Boolean(this.data.authoringPermissions?.canCreateContent) })}</div>${create}</section>`;
   },
 
