@@ -185,8 +185,8 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
       <section class="venue-create-section">
         <header class="section-heading"><div><span class="eyebrow">Passaggio 1 di 2</span><h2>Dettagli della sede</h2><p>Definisci l'identità della sede. Potrai modificare nome e descrizione anche in seguito.</p></div></header>
         <div class="venue-create-fields">
-          <label>Nome della sede<input name="name" required maxlength="160" placeholder="Pinacoteca Nazionale di Bologna" value="${escapeHtml(this.draft.name)}"></label>
-          <label>Descrizione<textarea name="description" rows="3" maxlength="1000" placeholder="Descrivi brevemente il museo, edificio o spazio espositivo">${escapeHtml(this.draft.description)}</textarea></label>
+          <label>Nome della sede<input name="name" required placeholder="Pinacoteca Nazionale di Bologna" value="${escapeHtml(this.draft.name)}"></label>
+          <label>Descrizione<textarea name="description" rows="3" placeholder="Descrivi brevemente il museo, edificio o spazio espositivo">${escapeHtml(this.draft.description)}</textarea></label>
         </div>
       </section>
       <footer class="venue-create-actions"><button type="button" class="button-secondary" data-cancel-venue-create>Annulla</button><button type="submit">Continua ${icon("chevron", { size: 15 })}</button></footer>
@@ -215,7 +215,9 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
 
   renderBlocker() {
     const blocker = this.preflight?.blockers?.[0];
-    const manageAction = this.preflight?.canManagePhysicalVocabularies
+    const canManageMissingVocabulary = blocker?.code === "PHYSICAL_VOCABULARY_REQUIRED"
+      && this.preflight?.canManagePhysicalVocabularies;
+    const manageAction = canManageMissingVocabulary
       ? `<button type="button" data-manage-physical-vocabularies>Gestisci vocabolari fisici</button>`
       : "";
     return `<div class="empty-state venue-create-blocker"><span>${icon("warning", { size: 28 })}</span><h2>La sede non può ancora essere creata</h2><p>${escapeHtml(blocker?.message || "Manca un vocabolario fisico utilizzabile.")}</p><div class="button-row">${manageAction}<button type="button" class="button-secondary" data-cancel-venue-create>Chiudi</button></div></div>`;
