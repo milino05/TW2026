@@ -1,5 +1,6 @@
 import { ArtAroundNamespaceEditorView } from "./namespace-editor-view.js";
 import { ArtAroundPhysicalVocabularyEditorView } from "./physical-vocabulary-editor-view.js";
+import { openMessageActionDialog } from "./message-action-dialog.js";
 import "./revision-workflow-controls.js";
 
 function normalizedText(element) {
@@ -30,10 +31,25 @@ function projectWorkflow(editor, {
     { label: normalizedText(button) },
   ]).filter(([code]) => code));
   controls.availableOperations = operations;
-  controls.addEventListener("artaround:revision-workflow-operation", (event) => {
-    const code = String(event.detail?.operation?.code || "");
+  controls.addEventListener("artaround:revision-workflow-operation", async (event) => {
+    const operation = event.detail?.operation;
+    const code = String(operation?.code || "");
     const legacy = legacyByCode.get(code);
     if (!legacy || legacy.disabled || !editor.isConnected) return;
+
+    if (operation?.presentation?.requiresMessage && typeof editor.runWorkflow === "function") {
+      const message = await openMessageActionDialog({
+        title: operation.presentation.label || "Richiedi modifiche",
+        description: "Il messaggio verrà registrato nel workflow editoriale della revisione corrente.",
+        label: "Motivazione",
+        placeholder: "Descrivi cosa deve essere corretto",
+        confirmLabel: operation.presentation.label || "Continua",
+      });
+      if (message === null || !editor.isConnected) return;
+      await editor.runWorkflow(code, { message });
+      return;
+    }
+
     legacy.click();
   });
 
