@@ -13,12 +13,13 @@ export function hasNavigationLossRisk() {
   return blockingEntries().length > 0;
 }
 
-export function registerNavigationLossBlocker({ isBlocking, requestConfirmation, discard } = {}) {
-  if (typeof isBlocking !== "function" || typeof requestConfirmation !== "function") {
-    throw new TypeError("A navigation-loss blocker requires isBlocking() and requestConfirmation().");
+export function registerNavigationLossBlocker({ isBlocking, requestConfirmation = null, confirm: legacyConfirmation = null, discard } = {}) {
+  const confirmation = requestConfirmation || legacyConfirmation;
+  if (typeof isBlocking !== "function" || typeof confirmation !== "function") {
+    throw new TypeError("A navigation-loss blocker requires isBlocking() and a confirmation callback.");
   }
   const id = nextBlockerId++;
-  blockers.set(id, { isBlocking, requestConfirmation, discard });
+  blockers.set(id, { isBlocking, requestConfirmation: confirmation, discard });
   return () => blockers.delete(id);
 }
 
