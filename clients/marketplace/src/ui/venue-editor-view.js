@@ -32,17 +32,12 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   onboarding = null;
   lifecycleImpact = null;
   canManageLifecycle = false;
-  pendingVenueRemoval = false;
-  pendingTargetRemovalId = null;
-  pendingDestructiveAction = null;
   busy = false;
   error = null;
   message = null;
   selectedSubject = null;
   id = venueId();
   managementRepository = managementRepository;
-  pendingWorkflow = null;
-  workflowMessage = "";
   activeSection = initialVenueSection();
   selectedFloorId = null;
   selectedMapPlaceId = null;
@@ -140,9 +135,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     const targetIds = new Set((this.data?.targets || []).map((target) => id(target.id)));
     if (this.selectedVenueTargetId && !targetIds.has(id(this.selectedVenueTargetId))) this.selectedVenueTargetId = null;
     if (this.inventoryDetailTargetId && !targetIds.has(id(this.inventoryDetailTargetId))) this.inventoryDetailTargetId = null;
-    if (this.inventoryBrowser?.selectedTargetId && !targetIds.has(id(this.inventoryBrowser.selectedTargetId))) {
-      this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: null };
-    }
+    if (this.inventoryBrowser?.selectedTargetId && !targetIds.has(id(this.inventoryBrowser.selectedTargetId))) this.inventoryBrowser = { ...this.inventoryBrowser, selectedTargetId: null };
     if (this.inventoryBrowser?.exhibitSlotId) {
       const slotExists = (this.data?.layout?.exhibitSlots || []).some((slot) => id(slot.exhibitSlotId) === id(this.inventoryBrowser.exhibitSlotId));
       if (!slotExists) this.inventoryBrowser = null;
@@ -181,10 +174,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     try {
       await callback();
       await this.refreshServerState();
-      this.pendingWorkflow = null;
-      this.workflowMessage = "";
-      this.pendingTargetRemovalId = null;
-      this.pendingDestructiveAction = null;
       this.message = message;
       return true;
     } catch (error) {
@@ -194,28 +183,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
-    if (event.key === "Escape" && this.mapCreationDialog) {
-      event.preventDefault();
-      this.closeMapCreationDialog?.();
-      this.render();
-      return;
-    }
-    if (event.key === "Escape" && this.floorDialog) {
-      event.preventDefault();
-      this.floorDialog = null;
-      this.render();
-      return;
-    }
-    if (event.key === "Escape" && this.spatialEditor) {
-      event.preventDefault();
-      this.closeSpatialEditor?.();
-      return;
-    }
-    if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) {
-      event.preventDefault();
-      this.cancelMapAction();
-      return;
-    }
+    if (event.key === "Escape" && this.mapCreationDialog) { event.preventDefault(); this.closeMapCreationDialog?.(); this.render(); return; }
+    if (event.key === "Escape" && this.floorDialog) { event.preventDefault(); this.floorDialog = null; this.render(); return; }
+    if (event.key === "Escape" && this.spatialEditor) { event.preventDefault(); this.closeSpatialEditor?.(); return; }
+    if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) { event.preventDefault(); this.cancelMapAction(); return; }
     if (this.onboarding?.required) return;
     const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
@@ -227,14 +198,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     tabs[next].focus();
   };
 
-  onInput = (event) => {
-    if (this.handleInventoryProposalInput?.(event)) return;
-    const target = event.target instanceof HTMLTextAreaElement ? event.target : null;
-    if (!target?.matches("[data-workflow-message]")) return;
-    this.workflowMessage = target.value;
-    const button = this.querySelector("[data-confirm-workflow]");
-    if (button) button.disabled = !this.workflowMessage.trim();
-  };
+  onInput = (event) => { this.handleInventoryProposalInput?.(event); };
 }
 
 Object.assign(
