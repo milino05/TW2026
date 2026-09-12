@@ -3,8 +3,8 @@ import { openActionDialog } from "../ui/feedback-primitives.js";
 
 /**
  * Standard destructive interaction. Domain-specific impact text and repository work
- * remain caller-owned. Complex confirmations can override confirm() while still using
- * the same command lifecycle.
+ * remain caller-owned. Complex confirmations can override requestConfirmation while
+ * still using the same command lifecycle.
  */
 export async function runDestructiveAction({
   key,
@@ -12,7 +12,7 @@ export async function runDestructiveAction({
   message = "Questa operazione può modificare o rimuovere dati.",
   confirmLabel = "Conferma",
   cancelLabel = "Annulla",
-  confirm = null,
+  requestConfirmation = null,
   execute,
   refresh = null,
   lifecycle = {},
@@ -23,8 +23,8 @@ export async function runDestructiveAction({
   errorFallback = "Operazione non riuscita",
 } = {}) {
   if (typeof execute !== "function") throw new TypeError("runDestructiveAction requires execute().");
-  const accepted = typeof confirm === "function"
-    ? await confirm()
+  const accepted = typeof requestConfirmation === "function"
+    ? await requestConfirmation()
     : await openActionDialog({ title, message, confirmLabel, cancelLabel, tone: "danger" });
   if (!accepted) return { status: UI_COMMAND_STATUS.CANCELLED, key: String(key || "destructive-action") };
 
