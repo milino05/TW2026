@@ -20,12 +20,15 @@ test("le superfici editoriali correnti con draft e il guard superano il syntax c
   }
 });
 
-test("Nuova Raccolta conserva il draft testuale e la configurazione del grafo attraverso i rerender", () => {
+test("Nuova Raccolta conserva draft, step e configurazione grafo attraverso i rerender", () => {
   assert.match(source.collection, /draft = \{[\s\S]*displayName: ""[\s\S]*shortDescription: ""[\s\S]*description: ""[\s\S]*\}/);
   assert.match(source.collection, /graphSelection = null/);
+  assert.match(source.collection, /graphEditorMode = null/);
+  assert.match(source.collection, /step = "details"/);
   assert.match(source.collection, /this\.addEventListener\("input", this\.onInput\)/);
-  assert.match(source.collection, /captureDraft\(target\.form\)/);
-  assert.match(source.collection, /this\.captureDraft\(\);[\s\S]*openGraphDialog/);
+  assert.match(source.collection, /this\.captureDraft\(form\)/);
+  assert.match(source.collection, /this\.step = "rules"/);
+  assert.match(source.collection, /this\.step = "graph"/);
   assert.match(source.collection, /currentSelection: this\.graphSelection/);
   assert.match(source.collection, /this\.graphSelection = event\.detail\?\.selection \|\| null/);
   assert.match(source.collection, /value="\$\{escapeHtml\(this\.draft\.displayName\)\}"/);
@@ -38,6 +41,7 @@ test("Nuova Raccolta conserva il draft testuale e la configurazione del grafo at
   assert.match(source.graphDialog, /current\?\.graphMode === "new"/);
   assert.match(source.graphDialog, /current\?\.graphMode === "import"/);
   assert.match(source.graphDialog, /importItemIds/);
+  assert.match(source.graphDialog, /this\.embedded/);
   assert.doesNotMatch(source.graphDialog, /forkDraft|graphMode === "fork"|graphMode: "fork"/);
 });
 
