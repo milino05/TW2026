@@ -33,14 +33,16 @@ test("Nuova Raccolta conserva draft e step attraverso i rerender senza configura
   assert.match(source.collection, /this\.dirty = false;\s*navigate\(`/);
 });
 
-test("il dialog sorgenti mantiene separati pinning e importazione contenuti", () => {
-  assert.match(source.sourceDialog, /mode = "add-source"/);
-  assert.match(source.sourceDialog, /config\.mode === "import-content"/);
+test("il source manager mantiene pinning e importazione distinti nello stesso modal", () => {
+  assert.match(source.sourceDialog, /view = "list"/);
+  assert.match(source.sourceDialog, /this\.view = "add"/);
+  assert.match(source.sourceDialog, /this\.view = "import"/);
   assert.match(source.sourceDialog, /attachGraphImportSource/);
   assert.match(source.sourceDialog, /importGraphSubjects/);
   assert.match(source.sourceDialog, /Aggiungi sorgente/);
   assert.match(source.sourceDialog, /Importa contenuti/);
-  assert.doesNotMatch(source.sourceDialog, /data-attach-source-only|submitImport\(\[\]\)/);
+  assert.match(source.sourceDialog, /aria-label="Gestisci sorgenti"/);
+  assert.doesNotMatch(source.sourceDialog, /data-attach-source-only|submitImport\(\[\]\)|config\.mode === "import-content"/);
 });
 
 test("creazione Spazio integrata nella Libreria conserva e protegge il draft", () => {
