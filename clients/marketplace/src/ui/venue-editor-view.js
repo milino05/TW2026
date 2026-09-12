@@ -17,6 +17,7 @@ import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.j
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 import { venueSlotInventoryMixin } from "./venue-editor-slot-inventory-mixin.js";
 import { venueInventoryProposalsMixin } from "./venue-editor-inventory-proposals-mixin.js";
+import { venueModalLifecycleMixin } from "./venue-modal-lifecycle-mixin.js";
 
 const SECTIONS = ["overview", "inventory", "map", "visitors", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
@@ -96,6 +97,9 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
     this.releaseInventoryDialog?.({ restoreFocus: false });
+    this.releaseVenueModalLayers?.({ restoreFocus: false });
+    this._targetCreateDialog?.close?.({ restoreFocus: false, notify: false });
+    this._targetCreateDialog = null;
     if (this._venueGlobalEscapeHandler) {
       window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
       this._venueGlobalEscapeHandler = null;
@@ -184,10 +188,11 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
-    if (event.key === "Escape" && this.mapCreationDialog) { event.preventDefault(); this.closeMapCreationDialog?.(); this.render(); return; }
-    if (event.key === "Escape" && this.floorDialog) { event.preventDefault(); this.floorDialog = null; this.render(); return; }
-    if (event.key === "Escape" && this.spatialEditor) { event.preventDefault(); this.closeSpatialEditor?.(); return; }
-    if (event.key === "Escape" && (this.pendingMapAction || this.draggingPlace)) { event.preventDefault(); this.cancelMapAction(); return; }
+    if (event.key === "Escape" && !this._venueModalLayers?.length && (this.pendingMapAction || this.draggingPlace)) {
+      event.preventDefault();
+      this.cancelMapAction();
+      return;
+    }
     if (this.onboarding?.required) return;
     const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
@@ -221,13 +226,16 @@ Object.assign(
   venueMapRefinementMixin,
   venueSlotInventoryMixin,
   venueInventoryProposalsMixin,
+  venueModalLifecycleMixin,
 );
 
 const renderVenueEditor = ArtAroundVenueEditorView.prototype.render;
-ArtAroundVenueEditorView.prototype.render = function renderWithInventoryDialogLifecycle(...args) {
+ArtAroundVenueEditorView.prototype.render = function renderWithSharedDialogLifecycles(...args) {
   this.releaseInventoryDialog?.({ restoreFocus: false });
+  this.releaseVenueModalLayers?.({ restoreFocus: false });
   const result = renderVenueEditor.apply(this, args);
   this.syncInventoryDialog?.();
+  this.syncVenueModalLayers?.();
   return result;
 };
 
