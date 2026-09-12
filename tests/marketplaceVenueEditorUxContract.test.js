@@ -14,6 +14,7 @@ const files = [
   "clients/marketplace/src/ui/venue-editor-live-connection-preview-mixin.js",
   "clients/marketplace/src/ui/venue-editor-map-creation-dialog-mixin.js",
   "clients/marketplace/src/ui/venue-editor-targets-mixin.js",
+  "clients/marketplace/src/ui/venue-target-create-dialog.js",
   "clients/marketplace/src/ui/venue-editor-spatial-mixin.js",
   "clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js",
   "clients/marketplace/src/ui/venue-editor-map-refinement-mixin.js",
@@ -118,9 +119,10 @@ test("Allestimento usa la terminologia user-facing e preserva istruzioni multipl
 });
 
 test("il picker Venue-aware estende automaticamente la ricerca quando manca un exact match", () => {
-  const targetSource = sources["clients/marketplace/src/ui/venue-editor-targets-mixin.js"];
-  assert.match(targetSource, /auto-search/);
-  assert.match(targetSource, /continua automaticamente su Wikidata/);
+  const targetCreateSource = sources["clients/marketplace/src/ui/venue-target-create-dialog.js"];
+  assert.match(targetCreateSource, /auto-search/);
+  assert.match(targetCreateSource, /continuare su Wikidata/);
+  assert.match(targetCreateSource, /le corrispondenze approssimative non vengono selezionate automaticamente/);
 });
 
 test("la creazione dell'inventario non assegna implicitamente uno slot", () => {
@@ -168,8 +170,9 @@ test("la macchina a stati della mappa usa soltanto i sette modi canonici", () =>
 test("workflow e comandi distruttivi restano backend-authoritative e senza dialoghi nativi", () => {
   for (const operation of ["venue.release.check", "venue.release.request_review", "venue.release.withdraw_review", "venue.release.request_changes", "venue.release.publish"]) assert.match(source, new RegExp(operation.replaceAll(".", "\\.")));
   assert.match(source, /availableOperations/);
+  assert.match(source, /openActionDialog/);
+  assert.match(source, /openMessageActionDialog/);
   assert.doesNotMatch(source, /window\.confirm|window\.prompt/);
-  assert.match(source, /data-workflow-message/);
 });
 
 test("autosave salva ogni azione discreta sul server senza mega snapshot frontend", () => {
@@ -180,15 +183,19 @@ test("autosave salva ogni azione discreta sul server senza mega snapshot fronten
   assert.doesNotMatch(source, /beforeunload|snapshotDraft|captureDraft|applyDraft|preserveDraft|updateVenueRelease/);
 });
 
-test("azioni distruttive e request changes usano conferme inline", () => {
-  assert.match(source, /data-confirm-venue-removal/);
-  assert.match(source, /data-cancel-venue-removal/);
-  assert.match(source, /data-confirm-target-removal/);
-  assert.match(source, /data-cancel-target-removal/);
-  assert.match(source, /pendingWorkflow/);
-  assert.match(source, /data-confirm-workflow/);
-  assert.match(source, /\["slot", "exhibit-slot"\]\.includes\(action\.type\)/);
-  assert.match(source, /removeExhibitSlot/);
+test("azioni distruttive e request changes convergono sui dialoghi globali", () => {
+  const actionSource = sources["clients/marketplace/src/ui/venue-editor-action-mixin.js"];
+  assert.match(actionSource, /requestDestructiveAction/);
+  assert.match(actionSource, /openActionDialog/);
+  assert.match(actionSource, /requestLayoutRemoval/);
+  assert.match(actionSource, /venueLayoutRemovalImpact/);
+  assert.match(actionSource, /requestVenueRemoval/);
+  assert.match(actionSource, /requestTargetRemoval/);
+  assert.match(actionSource, /\["slot", "exhibit-slot"\]\.includes\(action\.type\)/);
+  assert.match(actionSource, /removeExhibitSlot/);
+  assert.match(actionSource, /openMessageActionDialog/);
+  assert.match(actionSource, /runWorkflowRequest\(code, \{ message \}\)/);
+  assert.doesNotMatch(actionSource, /data-confirm-venue-removal|data-cancel-venue-removal|data-confirm-target-removal|data-cancel-target-removal|pendingWorkflow|data-confirm-workflow/);
 });
 
 test("ritorno alla Organization riapre direttamente la sezione Sedi", () => {
