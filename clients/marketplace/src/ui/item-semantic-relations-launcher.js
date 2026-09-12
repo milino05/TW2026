@@ -19,6 +19,11 @@ function safeReturnTo() {
   const value = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   return value.startsWith("/") && !value.startsWith("//") ? value : "/workspace";
 }
+function isMissingGraphSubject(error) {
+  return error?.status === 404
+    && (error?.code === "GRAPH_SUBJECT_NOT_FOUND"
+      || error?.details?.some?.((entry) => entry?.code === "GRAPH_SUBJECT_NOT_FOUND"));
+}
 
 export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
   context = readOperatingContext();
@@ -133,6 +138,8 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
   async loadChoices({ autoPrepareSingle = false } = {}) {
     const principal = operatingPrincipal(this.context);
     if (!principal) throw new Error("Area di lavoro non selezionata");
+    const subjectId = id(this.subject);
+    if (!subjectId) throw new Error("Il Subject del contenuto non è disponibile");
     this.busy = true;
     this.error = null;
     this.state = "choose";
@@ -141,6 +148,7 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
       this.choices = await editorialRepository.relationChoices({
         ownerType: this.context.type,
         ownerId: this.context.id,
+        subjectId,
         q: this.query,
         page: this.page,
         limit: 8,
@@ -167,7 +175,9 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
         limit: 1,
       });
     } catch (error) {
-      if (error?.status === 404 && error?.code === "GRAPH_SUBJECT_NOT_FOUND") return null;
+      if (isMissingGraphSubject(error)) {
+        throw new Error("Questa Raccolta non contiene un contenuto che rappresenta il Subject dell’Item.");
+      }
       throw error;
     }
   }
@@ -185,34 +195,15 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
       ]);
       if (!studio?.permissions?.canEditGraph) throw new Error("Il tuo ruolo non consente di modificare i collegamenti di questa Raccolta.");
       if (!id(studio?.semanticGraph)) throw new Error("La Raccolta non dispone di un grafo semantico modificabile.");
-      this.studio = studio;
-      if (projection) {
-        this.openGraphWorkspace();
-        return;
+      if (!projection?.subjects?.some((entry) => id(entry?.subject) === id(this.subject))) {
+        throw new Error("Il Subject dell’Item non è disponibile nel contesto semantico della Raccolta.");
       }
-      this.state = "membership";
+      this.studio = studio;
+      this.openGraphWorkspace();
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile aprire il grafo semantico";
       this.state = "error";
     } finally {
-      this.busy = false;
-      this.dialog?.render();
-    }
-  }
-
-  async addSubjectAndContinue() {
-    if (!this.editorialContextId || !id(this.subject) || this.busy) return;
-    this.busy = true;
-    this.error = null;
-    this.dialog?.render();
-    try {
-      await editorialRepository.addGraphSubject(this.editorialContextId, id(this.subject));
-      const projection = await this.focusedGraphProjection(this.editorialContextId);
-      if (!projection) throw new Error("Il Subject non risulta ancora presente nel grafo");
-      this.openGraphWorkspace();
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere il Subject al grafo";
-      this.state = "membership";
       this.busy = false;
       this.dialog?.render();
     }
@@ -256,22 +247,6 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
     if (page) {
       this.page = Math.max(1, Number(page.dataset.relationPage) || 1);
       void this.loadChoices();
-      return;
-    }
-    if (target.closest("[data-add-relation-subject]")) { void this.addSubjectAndContinue(); return; }
-    if (target.closest("[data-open-relation-collection-content]")) {
-      if (!this.editorialContextId) return;
-      this.persistItemDraft();
-      this.dialog?.close({ restoreFocus: false, notify: false });
-      this.dialog = null;
-      navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(this.editorialContextId)}&section=content`);
-      return;
-    }
-    if (target.closest("[data-change-relation-context]")) {
-      this.query = "";
-      this.page = 1;
-      this.choices = null;
-      void this.loadChoices();
     }
   };
 
@@ -282,23 +257,19 @@ export class ArtAroundItemSemanticRelationsLauncher extends HTMLElement {
   renderChooser() {
     const results = this.choices?.results || [];
     const pagination = this.choices?.pagination || { page: this.page, total: 0, totalPages: 0 };
-    return `<div class="task-selection-layout"><div><span class="eyebrow">Grafo della Raccolta</span><h3>Scegli dove lavorare</h3><p>La Raccolta determina sia i contenuti utilizzabili sia il grafo locale da modificare per <strong>${escapeHtml(this.subject?.preferredLabel || "il Subject del contenuto")}</strong>.</p></div><form class="inline-form" data-relation-collection-search role="search"><label>Cerca raccolta<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}${results.length ? `<div class="task-resource-choice-list">${results.map((choice) => this.renderChoice(choice)).join("")}</div>` : this.busy ? `<artaround-progress-state>Ricerca delle Raccolte…</artaround-progress-state>` : `<div class="empty-state compact"><h3>Nessuna Raccolta modificabile</h3><p>${this.query ? "Nessuna Raccolta corrisponde alla ricerca." : "Per aggiungere collegamenti serve una Raccolta il cui grafo locale sia modificabile nella tua area di lavoro."}</p></div>`}${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine delle Raccolte"><button type="button" data-relation-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-relation-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}</div>`;
-  }
-
-  renderMembershipPrompt() {
-    const graph = this.studio?.semanticGraph || {};
-    return `${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}<div class="task-context-summary"><span class="eyebrow">${escapeHtml(this.studio?.context?.name || "Raccolta")}</span><h3>${escapeHtml(this.subject?.preferredLabel || "Subject")}</h3><p>Questo Subject non è ancora presente nel grafo locale <strong>${escapeHtml(graph.name || "della Raccolta")}</strong>.</p><p class="note">Puoi aggiungerlo soltanto se almeno un contenuto che lo rappresenta appartiene già alla Raccolta. Se non è così, apri prima i contenuti della Raccolta.</p></div>`;
+    const emptyCopy = this.query
+      ? "Nessuna Raccolta eleggibile corrisponde alla ricerca."
+      : `Nessuna Raccolta modificabile contiene un contenuto che rappresenta ${this.subject?.preferredLabel || "questo Subject"}.`;
+    return `<div class="task-selection-layout"><div><span class="eyebrow">Grafo della Raccolta</span><h3>Scegli dove lavorare</h3><p>Sono mostrate soltanto le Raccolte modificabili che contengono almeno un contenuto per <strong>${escapeHtml(this.subject?.preferredLabel || "il Subject del contenuto")}</strong>.</p></div><form class="inline-form" data-relation-collection-search role="search"><label>Cerca raccolta<input name="q" value="${escapeHtml(this.query)}" placeholder="Nome o descrizione"></label><button type="submit" class="button-secondary" ${this.busy ? "disabled" : ""}>${icon("search", { size: 15 })} Cerca</button></form>${this.error ? `<artaround-callout tone="danger" role="alert">${escapeHtml(this.error)}</artaround-callout>` : ""}${results.length ? `<div class="task-resource-choice-list">${results.map((choice) => this.renderChoice(choice)).join("")}</div>` : this.busy ? `<artaround-progress-state>Ricerca delle Raccolte…</artaround-progress-state>` : `<div class="empty-state compact"><h3>Nessuna Raccolta disponibile</h3><p>${escapeHtml(emptyCopy)}</p></div>`}${Number(pagination.totalPages || 0) > 1 ? `<nav class="pagination" aria-label="Pagine delle Raccolte"><button type="button" data-relation-page="${Number(pagination.page || 1) - 1}" ${Number(pagination.page || 1) <= 1 || this.busy ? "disabled" : ""}>← Precedente</button><span>Pagina ${Number(pagination.page || 1)} di ${Number(pagination.totalPages || 1)}</span><button type="button" data-relation-page="${Number(pagination.page || 1) + 1}" ${Number(pagination.page || 1) >= Number(pagination.totalPages || 0) || this.busy ? "disabled" : ""}>Successiva →</button></nav>` : ""}</div>`;
   }
 
   renderDialogBody() {
-    if (this.state === "membership") return this.renderMembershipPrompt();
     if (this.state === "error") return `<div class="empty-state"><span>${icon("warning", { size: 28 })}</span><h3>Collegamenti non disponibili</h3><p>${escapeHtml(this.error || "Non è possibile continuare.")}</p></div>`;
     if (this.state === "preparing" || (this.busy && !this.subject)) return `<artaround-progress-state>Preparazione del contesto semantico…</artaround-progress-state>`;
     return this.renderChooser();
   }
 
   renderDialogFooter() {
-    if (this.state === "membership") return `<button type="button" class="button-secondary" data-change-relation-context ${this.contextualCollectionId() ? "hidden" : ""}>Scegli un'altra Raccolta</button><button type="button" class="button-secondary" data-open-relation-collection-content>Apri contenuti Raccolta</button><button type="button" data-add-relation-subject ${this.busy ? "disabled" : ""}>${icon("plus", { size: 15 })} ${this.busy ? "Aggiunta…" : "Aggiungi al grafo e continua"}</button>`;
     return `<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button>`;
   }
 
