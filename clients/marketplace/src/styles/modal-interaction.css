@@ -2,6 +2,16 @@
  * The layer and panel never scroll. The body is the single application-level
  * vertical scroll owner so nested double scrollbars cannot emerge.
  */
+html { scrollbar-gutter: stable; }
+
+/* A modal rendered inside its owner is only a staging node. It becomes visible
+ * once LayerManager portals it under document.body and assigns layer ownership.
+ * This prevents backdrop/blur flashes during initial mount and rerenders. */
+.artaround-modal-layer:not([data-artaround-layer]) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .artaround-modal-layer {
   position: fixed;
   inset: 0;
@@ -32,7 +42,10 @@
 }
 
 .artaround-task-modal--compact { width: min(36rem, 100%); }
-.artaround-task-modal--large { width: min(68rem, 100%); }
+.artaround-task-modal--large {
+  width: min(62rem, 100%);
+  max-height: min(48rem, calc(100dvh - 3rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+}
 
 /* Venue bounded dialogs are normalized at runtime by venue-modal-lifecycle. */
 .artaround-task-modal.venue-modal-card {
@@ -89,6 +102,132 @@
   padding: .4rem;
 }
 
+/* Shared resource-selection grammar. The same structure is used by editorial
+ * spaces and other bounded resource choosers instead of consumer-specific CSS. */
+.task-selection-layout {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.task-selection-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .8rem;
+  align-items: end;
+}
+.task-selection-toolbar > label {
+  display: grid;
+  gap: .38rem;
+}
+.task-selection-summary {
+  align-self: center;
+  color: var(--sage-600);
+  font-size: .8rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.task-selection-group {
+  display: grid;
+  gap: .55rem;
+}
+.task-selection-group + .task-selection-group {
+  padding-top: .2rem;
+}
+.task-selection-group__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.task-resource-choice-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  min-width: 0;
+}
+.task-resource-choice-list--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.task-resource-choice {
+  width: 100%;
+  min-width: 0;
+  min-height: 6.4rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+  padding: .85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink-950);
+  text-align: left;
+  box-shadow: none;
+}
+.task-resource-choice:hover,
+.task-resource-choice:focus-visible {
+  border-color: var(--sage-400);
+  background: var(--sage-50);
+  color: var(--ink-950);
+  transform: none;
+}
+.task-resource-choice[aria-current="true"] {
+  border-color: var(--sage-500);
+  background: var(--sage-50);
+  box-shadow: inset 0 0 0 1px var(--sage-400);
+}
+.task-resource-choice__mark {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: .75rem;
+  background: var(--sage-100);
+  color: var(--ink-800);
+}
+.task-resource-choice__copy {
+  display: grid;
+  gap: .18rem;
+  min-width: 0;
+}
+.task-resource-choice__copy strong,
+.task-resource-choice__copy small,
+.task-resource-choice__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-resource-choice__copy strong { white-space: nowrap; }
+.task-resource-choice__copy small {
+  display: -webkit-box;
+  color: var(--sage-600);
+  font-size: .8rem;
+  font-weight: 550;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.task-resource-choice__meta {
+  color: var(--sage-600);
+  font-size: .74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.task-resource-choice__state {
+  border-radius: 999px;
+  padding: .3rem .55rem;
+  background: var(--sage-100);
+  color: var(--ink-800);
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.task-resource-choice__chevron {
+  display: grid;
+  place-items: center;
+  color: var(--sage-600);
+}
+.task-modal-footer-spacer { flex: 1 1 auto; }
+
 @media (max-width: 52rem) {
   .artaround-modal-layer {
     padding:
@@ -104,6 +243,8 @@
     width: 100%;
     max-height: calc(100dvh - 1.1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
+
+  .task-resource-choice-list { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 36rem) {
@@ -137,4 +278,7 @@
   }
 
   .artaround-task-modal__footer > * { flex: 1 1 10rem; }
+  .task-modal-footer-spacer { display: none; }
+  .task-selection-toolbar { grid-template-columns: 1fr; }
+  .task-selection-summary { justify-self: start; }
 }
