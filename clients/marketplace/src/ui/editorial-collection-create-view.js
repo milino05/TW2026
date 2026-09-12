@@ -226,7 +226,6 @@ export class ArtAroundEditorialCollectionCreateView extends HTMLElement {
     return `<form class="collection-create-form collection-create-form--modal" data-collection-rules>
       <section class="collection-create-section"><header class="section-heading"><div><span class="eyebrow">Passaggio 2 di 2</span><h2>Regole editoriali</h2><p>Determinano classificazioni, relazioni e modalità di presentazione disponibili nella Raccolta.</p></div></header><div class="collection-create-fields collection-create-fields--compact">
         <label>Regole editoriali<select name="namespaceId" required>${namespaceOptions}</select></label>
-        <artaround-callout tone="info"><strong>Grafo locale indipendente</strong><p>ArtAround creerà automaticamente un nuovo grafo vuoto per questa Raccolta. Dopo la creazione potrai aggiungere una o più sorgenti dalla sezione Collegamenti e importarne progressivamente i contenuti.</p></artaround-callout>
       </div></section>
       <footer class="collection-create-actions"><button type="button" class="button-secondary" data-back-step>← Indietro</button><button type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Creazione…" : "Crea Raccolta"}</button></footer>
     </form>`;
