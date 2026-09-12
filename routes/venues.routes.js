@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAuth } = require("../middlewares/auth");
 const { validateObjectIdParam } = require("../middlewares/validateObjectIdParam");
 const controller = require("../controllers/venues.controller");
+const venueCreationController = require("../controllers/venueCreation.controller");
 const lifecycleController = require("../controllers/venueLifecycle.controller");
 const inventoryProposalController = require("../controllers/venueInventoryProposals.controller");
 
@@ -18,7 +19,9 @@ const resourceId = validateObjectIdParam("resourceId");
 
 router.get("/physical-locations/:publicCode", controller.resolvePublishedPublicLocation);
 router.get("/venues", controller.list);
+router.get("/venues/creation-preflight", requireAuth, venueCreationController.preflight);
 router.post("/venues", requireAuth, controller.create);
+router.post("/venues/configured", requireAuth, venueCreationController.create);
 router.get("/venues/:venueId", venueId, controller.get);
 router.patch("/venues/:venueId", requireAuth, venueId, controller.update);
 router.get("/venues/:venueId/subject-candidates", requireAuth, venueId, controller.searchSubjectCandidates);

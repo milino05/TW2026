@@ -3,6 +3,7 @@ import { confirmNavigationLoss, hasNavigationLossRisk } from "../application/nav
 import { accountRepository } from "../infrastructure/http/account-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { icon } from "./icons.js";
+import "./venue-create-dialog.js";
 
 const SECTIONS = new Set(["overview", "people", "roles", "venues", "rules", "physical", "settings"]);
 const PAGE_STATE_KEYS = Object.freeze({ member: "memberPage", venue: "venuePage", namespace: "namespacePage", physicalVocabulary: "physicalVocabularyPage" });
@@ -193,8 +194,6 @@ export class ArtAroundOrganizationView extends HTMLElement {
         ? accountRepository.updateOrganizationRole(this.state.organizationId, roleId, payload)
         : accountRepository.createOrganizationRole(this.state.organizationId, payload), roleId ? "Ruolo aggiornato." : "Ruolo creato.");
       if (result) this.roleEditor = null;
-    } else if (form.matches("[data-create-venue]")) {
-      await this.execute(() => accountRepository.createVenue({ ownerOrganizationId: this.state.organizationId, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Sede creata.");
     } else if (form.matches("[data-create-namespace]")) {
       const created = await this.execute(() => accountRepository.createNamespace({ ownerType: "organization", ownerId: this.state.organizationId, name: String(data.get("name") || ""), description: String(data.get("description") || "") }), "Regole editoriali create.");
       const createdId = created?.namespace?._id || created?.namespace?.id;
@@ -258,11 +257,11 @@ export class ArtAroundOrganizationView extends HTMLElement {
   }
 
   renderVenues() {
-    const { organization, venues, physicalVocabularies } = this.data;
+    const { organization, venues } = this.data;
+    const canCreate = has(organization.availableOperations, "venue.create");
     const cards = venues.results.map((venue) => `<article class="account-resource-card"><header><span class="resource-mark">${icon("building", { size: 19 })}</span><div><span class="eyebrow">${escapeHtml(venueStateLabel(venue.physicalState))}</span><h3>${escapeHtml(venue.name)}</h3></div></header><p>${escapeHtml(venue.description || "Nessuna descrizione disponibile.")}</p>${venue.availableOperations.length ? `<button type="button" data-venue="${escapeHtml(venue.id)}">${has(venue.availableOperations, "venue.edit") ? "Gestisci sede e spazi fisici" : "Modifica profilo sede"} ${icon("chevron", { size: 15 })}</button>` : ""}</article>`).join("");
-    const physicalHint = this.availableSectionCodes().has("physical") && physicalVocabularies.total === 0
-      ? `<div class="empty-state compact"><h3>Prima sede fisica?</h3><p>Per configurare mappa e routing serve un vocabolario fisico. Puoi prepararlo prima oppure seguire l'onboarding quando inizi la configurazione della sede.</p><button type="button" class="button-secondary" data-organization-section="physical">Prepara vocabolario fisico</button></div>` : "";
-    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Sedi</span><h2>Sedi e spazi fisici</h2><p>Profilo pubblico e configurazione fisica sono capability indipendenti.</p></div><span class="count">${venues.total}</span></div>${physicalHint}<div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("building", { size: 25 })}<h3>Nessuna sede</h3></div>`}</div>${pagination("venue", venues)}${has(organization.availableOperations, "venue.create") ? `<details class="account-create"><summary>${icon("plus", { size: 16 })} Nuova sede</summary><form data-create-venue><label>Nome<input name="name" required placeholder="Nome della sede"></label><label>Descrizione<textarea name="description" placeholder="Caratteristiche e funzione della sede"></textarea></label><button>${icon("plus", { size: 16 })} Crea sede</button></form></details>` : ""}</section>`;
+    const actions = `<div class="venue-section-actions"><span class="count">${venues.total}</span>${canCreate ? `<artaround-venue-create-dialog organization-id="${escapeHtml(this.state.organizationId)}"></artaround-venue-create-dialog>` : ""}</div>`;
+    return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Sedi</span><h2>Sedi e spazi fisici</h2><p>Profilo pubblico e configurazione fisica sono capability indipendenti.</p></div>${actions}</div><div class="account-resource-grid">${cards || `<div class="empty-state account-empty">${icon("building", { size: 25 })}<h3>Nessuna sede</h3><p>Aggiungi una sede e scegli il vocabolario fisico con cui iniziare a configurarne gli spazi.</p></div>`}</div>${pagination("venue", venues)}</section>`;
   }
   renderRules() {
     const { organization, namespaces } = this.data;

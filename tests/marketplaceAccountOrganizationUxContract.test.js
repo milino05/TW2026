@@ -96,7 +96,8 @@ test("operazioni sensibili usano conferma inline e non dialoghi nativi", () => {
 test("Sedi e Regole editoriali restano domini distinti e usano gli editor esistenti", () => {
   assert.match(organization, /\/venues\/editor\?venueId=/);
   assert.match(organization, /\/namespaces\/editor\?namespaceId=/);
-  assert.match(organization, /data-create-venue/);
+  assert.match(organization, /artaround-venue-create-dialog/);
+  assert.doesNotMatch(organization, /data-create-venue/);
   assert.match(organization, /data-create-namespace/);
 });
 
