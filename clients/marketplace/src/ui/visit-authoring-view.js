@@ -5,6 +5,7 @@ import { visitSequenceRepository } from "../infrastructure/http/visit-sequence-r
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { icon } from "./icons.js";
+import { openMessageActionDialog } from "./message-action-dialog.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -283,6 +284,29 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     }
   }
 
+  async performWorkflow(operation) {
+    const operationCode = String(operation?.code || "");
+    if (!operationCode.startsWith("workflow.") || !this.availableOperation(operationCode) || this.busy) return;
+    let workflowMessage = null;
+    if (operation.requiresMessage) {
+      workflowMessage = await openMessageActionDialog({
+        title: workflowLabel(operation),
+        description: "La motivazione verrà registrata nel workflow editoriale della visita.",
+        label: "Motivazione",
+        placeholder: "Descrivi cosa deve essere corretto",
+        confirmLabel: "Invia richiesta",
+      });
+      if (workflowMessage === null) return;
+    }
+    await this.execute(() => marketplaceRepository.executeWorkspaceOperation({
+      operationCode,
+      sourceRef: { resourceType: "visit", resourceId: this.visitId },
+      targetPrincipal: { type: this.principal.type, id: this.principal.id },
+      payload: workflowMessage ? { message: workflowMessage } : {},
+    }), workflowNotice(operationCode));
+    this.activeStep = 5;
+  }
+
   async addSelectedContent(result, venueTargetId = null) {
     this.busy = true;
     this.error = null;
@@ -416,21 +440,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
         estimatedTransferSeconds: Math.round(transferMinutes * 60),
         instructionOverride: String(data.get("instructionOverride") || "").trim() || null,
       }), "Trasferimento tra sedi aggiornato");
-      return;
-    }
-    if (form.matches("[data-workflow-form]")) {
-      const operationCode = String(data.get("operationCode") || "");
-      const operation = this.availableOperation(operationCode);
-      if (!operation || !String(operationCode).startsWith("workflow.")) return;
-      const text = operation.requiresMessage ? String(data.get("message") || "").trim() : "";
-      if (operation.requiresMessage && !text) { this.error = "Scrivi la motivazione delle modifiche richieste"; this.render(); return; }
-      await this.execute(async () => marketplaceRepository.executeWorkspaceOperation({
-        operationCode,
-        sourceRef: { resourceType: "visit", resourceId: this.visitId },
-        targetPrincipal: { type: this.principal.type, id: this.principal.id },
-        payload: text ? { message: text } : {},
-      }), workflowNotice(operationCode));
-      this.activeStep = 5;
     }
   };
 
@@ -488,6 +497,12 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("button[data-back]")) { navigate("/workspace"); return; }
+    const workflowButton = target.closest("button[data-workflow-operation]");
+    if (workflowButton) {
+      const operation = this.availableOperation(workflowButton.dataset.workflowOperation);
+      if (operation) await this.performWorkflow(operation);
+      return;
+    }
     const stepButton = target.closest("button[data-step]");
     if (stepButton) {
       if (this.activeStep === 3) this.captureQuizDraft();
@@ -759,8 +774,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     return `<div class="review-grid"><article><span>Contenuti</span><strong>${entries.length}</strong><small>${roles.core} essenziali · ${roles.recommended} consigliati · ${roles.optional} facoltativi</small></article><article><span>Tappe</span><strong>${stops.length}</strong></article><article><span>Sedi</span><strong>${venues.length}</strong><small>${escapeHtml(venues.join(", ") || "Nessuna")}</small></article><article><span>Modalità</span><strong>${this.revision?.deliveryMode === "synchronized" ? "Sincronizzata" : "Autonoma"}</strong></article><article><span>Percorso</span><strong>${escapeHtml(this.revision?.routeReview?.status === "ready" ? "Verificabile" : "Da controllare")}</strong></article><article><span>Stato</span><strong>${escapeHtml(this.revision?.status || "draft")}</strong></article></div>`;
   }
   renderWorkflowOperation(operation) {
-    if (operation.requiresMessage) return `<form data-workflow-form class="workflow-message-form"><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><label>Motivazione<textarea name="message" rows="3" required></textarea></label><button class="button-secondary" type="submit" ${this.busy ? "disabled" : ""}>${escapeHtml(workflowLabel(operation))}</button></form>`;
-    return `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit" ${this.busy ? "disabled" : ""}>${escapeHtml(workflowLabel(operation))}</button></form>`;
+    return `<button class="${operation.requiresMessage ? "button-secondary" : ""}" type="button" data-workflow-operation="${escapeHtml(operation.code)}" ${this.busy ? "disabled" : ""}>${escapeHtml(workflowLabel(operation))}</button>`;
   }
   renderStepFive() {
     if (this.activeStep !== 5) return "";
