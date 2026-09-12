@@ -1,13 +1,10 @@
 const mongoose = require("mongoose");
 const EditorialContext = require("../models/editorialContext.model");
-const EditorialGraphImportSource = require("../models/editorialGraphImportSource.model");
-const CollectionItemMembership = require("../models/collectionItemMembership.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership.model");
-const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemV2 = require("../models/itemV2.model");
 const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
@@ -15,10 +12,8 @@ const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
-const { assertCanReferenceItemInEditorialSpace } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { projectEditorialContext } = require("./editorialContextProjection.service");
-const { loadSemanticGraphRevision, validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
 
 function clean(value) { return String(value || "").trim(); }
 function sameId(left, right) { return String(left || "") === String(right || ""); }
@@ -53,7 +48,7 @@ async function listReusableSemanticGraphs({
   ownerId,
   namespaceId,
   contentSpaceId = null,
-  excludeSemanticGraphId = null,
+  excludeSemanticGraphIds = [],
   query = "",
   page = 1,
   limit = 30,
@@ -61,7 +56,9 @@ async function listReusableSemanticGraphs({
   if (!["user", "organization"].includes(ownerType)) throw new AppError("ownerType non valido", 400, [{ field: "ownerType", code: "INVALID_ENUM" }]);
   assertObjectId(ownerId, "ownerId");
   assertObjectId(namespaceId, "namespaceId");
-  if (excludeSemanticGraphId) assertObjectId(excludeSemanticGraphId, "excludeSemanticGraphId");
+  if (!Array.isArray(excludeSemanticGraphIds)) throw new AppError("excludeSemanticGraphIds deve essere un array", 400, [{ field: "excludeSemanticGraphIds", code: "INVALID_TYPE" }]);
+  const excludedIds = [...new Set(excludeSemanticGraphIds.map((entry) => String(entry || "").trim()).filter(Boolean))];
+  excludedIds.forEach((entry, index) => assertObjectId(entry, `excludeSemanticGraphIds[${index}]`));
 
   await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.view" });
   const namespace = await Namespace.findOne({ _id: namespaceId, lifecycleStatus: "active" });
@@ -91,7 +88,7 @@ async function listReusableSemanticGraphs({
     ownerId,
     namespaceId: namespace._id,
     lifecycleStatus: "active",
-    ...(excludeSemanticGraphId ? { _id: { $ne: excludeSemanticGraphId } } : {}),
+    ...(excludedIds.length ? { _id: { $nin: excludedIds } } : {}),
     ...(normalizedQuery ? {
       $or: [
         { displayName: new RegExp(escapeRegex(normalizedQuery), "i") },
@@ -229,78 +226,15 @@ async function loadCompatibleGraph({ semanticGraphId, ownerType, ownerId, namesp
   return semanticGraph;
 }
 
-function normalizeImportItemIds(value) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new AppError("importItemIds deve essere un array", 400, [{ field: "importItemIds", code: "INVALID_TYPE" }]);
-  const values = [...new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean))];
-  values.forEach((entry, index) => assertObjectId(entry, `importItemIds[${index}]`));
-  return values;
-}
-
-async function resolveImportItems({ contentSpace, sourceSnapshot, importItemIds, actorUserId }) {
-  if (!importItemIds.length) return [];
-  const objectIds = importItemIds.map((value) => new mongoose.Types.ObjectId(value));
-  const [memberships, items] = await Promise.all([
-    ContentSpaceItemMembership.find({ contentSpaceId: contentSpace._id, itemId: { $in: objectIds } }).select("itemId").lean(),
-    ItemV2.find({ _id: { $in: objectIds }, lifecycleStatus: "active" }).select("_id primarySubjectId").lean(),
-  ]);
-  const membershipIds = new Set(memberships.map((entry) => id(entry.itemId)));
-  const itemById = new Map(items.map((entry) => [id(entry), entry]));
-  const sourceSubjectIds = new Set([...sourceSnapshot.nodes.values()]
-    .filter((node) => node.binding)
-    .map((node) => id(node.subject)));
-  const resolved = [];
-  for (const itemId of importItemIds) {
-    if (!membershipIds.has(itemId)) {
-      throw new AppError("Il contenuto selezionato deve appartenere allo spazio editoriale", 409, [{
-        field: "importItemIds",
-        code: "ITEM_NOT_IN_CONTENT_SPACE",
-        context: { itemId },
+function assertCreationPayloadIsLocalOnly(payload) {
+  for (const field of ["graphMode", "semanticGraphId", "importItemIds", "graphDisplayName", "graphDescription"]) {
+    if (payload?.[field] !== undefined) {
+      throw new AppError("La Raccolta crea sempre un nuovo grafo locale; le sorgenti si aggiungono dalla sezione Collegamenti", 400, [{
+        field,
+        code: "UNEXPECTED",
       }]);
     }
-    const item = itemById.get(itemId);
-    if (!item) throw new AppError("Contenuto non disponibile", 409, [{ code: "ITEM_NOT_ACTIVE", context: { itemId } }]);
-    if (!sourceSubjectIds.has(id(item.primarySubjectId))) {
-      throw new AppError("Il contenuto selezionato non rappresenta un Subject del grafo sorgente", 409, [{
-        field: "importItemIds",
-        code: "IMPORT_ITEM_SUBJECT_NOT_IN_SOURCE_GRAPH",
-        context: { itemId, subjectId: item.primarySubjectId },
-      }]);
-    }
-    await assertCanReferenceItemInEditorialSpace({
-      itemId: item._id,
-      actorUserId,
-      principalType: contentSpace.ownerType,
-      principalId: contentSpace.ownerId,
-    });
-    resolved.push(item);
   }
-  return resolved;
-}
-
-function projectSourceSnapshot(sourceSnapshot, importedSubjectIds) {
-  const active = new Set(importedSubjectIds.map(id));
-  const subjectBindings = [...sourceSnapshot.nodes.values()]
-    .filter((node) => node.binding && active.has(id(node.subject)))
-    .map((node) => ({
-      subjectId: node.subject._id,
-      subjectClassDefinitionIds: [...(node.binding.subjectClassDefinitionIds || [])],
-    }));
-  const edges = sourceSnapshot.authoritativeEdges
-    .filter((edge) => active.has(id(edge.sourceSubjectId)) && active.has(id(edge.targetSubjectId)))
-    .map((edge) => ({
-      sourceSubjectId: edge.sourceSubjectId,
-      targetSubjectId: edge.targetSubjectId,
-      relationTypeDefinitionId: edge.relationTypeDefinitionId,
-      weight: edge.weight,
-      metadata: edge.metadata ?? null,
-      provenance: {
-        origin: "imported",
-        sourceGraphRevisionId: sourceSnapshot.revision._id,
-        metadata: edge.provenance ? { sourceProvenance: edge.provenance } : null,
-      },
-    }));
-  return { subjectBindings, edges };
 }
 
 async function createEditorialStudioCollection({ payload, actorUserId }) {
@@ -308,11 +242,6 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
   const ownerId = payload?.ownerId;
   const contentSpaceId = payload?.contentSpaceId;
   const namespaceId = payload?.namespaceId;
-  const graphMode = clean(payload?.graphMode || "new").toLowerCase();
-  const requestedSemanticGraphId = payload?.semanticGraphId || null;
-  const graphDisplayName = clean(payload?.graphDisplayName);
-  const graphDescription = clean(payload?.graphDescription) || null;
-  const importItemIds = normalizeImportItemIds(payload?.importItemIds);
   const displayName = clean(payload?.displayName);
   const shortDescription = clean(payload?.shortDescription) || null;
   const description = clean(payload?.description) || null;
@@ -321,12 +250,8 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
   assertObjectId(ownerId, "ownerId");
   assertObjectId(contentSpaceId, "contentSpaceId");
   assertObjectId(namespaceId, "namespaceId");
-  if (!["new", "import"].includes(graphMode)) throw new AppError("graphMode non valido", 400, [{ field: "graphMode", code: "INVALID_ENUM", allowedValues: ["new", "import"] }]);
+  assertCreationPayloadIsLocalOnly(payload);
   if (!displayName) throw new AppError("Nome della raccolta obbligatorio", 400, [{ field: "displayName", code: "REQUIRED" }]);
-  if (graphMode === "new" && requestedSemanticGraphId) throw new AppError("Un nuovo grafo non deve indicare semanticGraphId", 400, [{ field: "semanticGraphId", code: "UNEXPECTED" }]);
-  if (graphMode === "import" && !requestedSemanticGraphId) throw new AppError("Scegli il grafo semantico sorgente", 400, [{ field: "semanticGraphId", code: "REQUIRED" }]);
-  if (graphMode === "new" && !graphDisplayName) throw new AppError("Nome del nuovo grafo obbligatorio", 400, [{ field: "graphDisplayName", code: "REQUIRED" }]);
-  if (graphMode === "new" && importItemIds.length) throw new AppError("Un nuovo grafo non può importare contenuti da una sorgente", 400, [{ field: "importItemIds", code: "UNEXPECTED" }]);
 
   await assertCanActForOwner({ actorUserId, ownerType, ownerId, permissionCode: "editorial_context.create" });
   const [contentSpace, namespace] = await Promise.all([
@@ -357,41 +282,14 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
     throw new AppError("La revisione delle regole editoriali non è disponibile", 409, [{ code: "NAMESPACE_REVISION_NOT_AVAILABLE" }]);
   }
 
-  let sourceGraph = null;
-  let sourceSnapshot = null;
-  let importItems = [];
-  let projected = { subjectBindings: [], edges: [] };
-  if (graphMode === "import") {
-    sourceGraph = await loadCompatibleGraph({
-      semanticGraphId: requestedSemanticGraphId,
-      ownerType,
-      ownerId,
-      namespaceId: namespace._id,
-    });
-    sourceSnapshot = await loadSemanticGraphRevision(sourceGraph.workingRevisionId);
-    importItems = await resolveImportItems({ contentSpace, sourceSnapshot, importItemIds, actorUserId });
-    projected = projectSourceSnapshot(sourceSnapshot, [...new Set(importItems.map((item) => id(item.primarySubjectId)))]);
-    const issues = validateGraphSnapshotAgainstNamespace(projected, namespaceRevision);
-    if (issues.length) throw new AppError("La porzione selezionata del grafo sorgente non è compatibile con le Regole editoriali della Raccolta", 409, issues);
-  }
-
-  const localGraphName = graphDisplayName || `${displayName} · grafo`;
   let semanticGraph = null;
   let editorialContext = null;
   try {
     await mongoose.connection.transaction(async (session) => {
-      if (sourceGraph && sourceSnapshot) {
-        const sourceStillExists = await SemanticGraphRevision.exists({
-          _id: sourceSnapshot.revision._id,
-          semanticGraphId: sourceGraph._id,
-        }).session(session);
-        if (!sourceStillExists) throw new AppError("La revisione del grafo sorgente non è più disponibile", 409, [{ code: "SEMANTIC_GRAPH_IMPORT_SOURCE_REVISION_MISSING" }]);
-      }
-
       [semanticGraph] = await SemanticGraph.create([{
         namespaceId: namespace._id,
-        displayName: localGraphName,
-        description: graphDescription || (sourceGraph ? `Importato da ${sourceGraph.displayName}` : null),
+        displayName: `${displayName} · grafo`,
+        description: null,
         ownerType,
         ownerId,
         createdBy: actorUserId,
@@ -403,25 +301,6 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
         authoredAgainstNamespaceRevisionId: namespaceRevision._id,
         createdBy: actorUserId,
       }], { session });
-
-      if (projected.subjectBindings.length) {
-        await GraphSubjectBinding.insertMany(projected.subjectBindings.map((binding) => ({
-          graphRevisionId: initialRevision._id,
-          subjectId: binding.subjectId,
-          subjectClassDefinitionIds: binding.subjectClassDefinitionIds || [],
-        })), { session, ordered: true });
-      }
-      if (projected.edges.length) {
-        await SemanticEdgeV2.insertMany(projected.edges.map((edge) => ({
-          graphRevisionId: initialRevision._id,
-          sourceSubjectId: edge.sourceSubjectId,
-          targetSubjectId: edge.targetSubjectId,
-          relationTypeDefinitionId: edge.relationTypeDefinitionId,
-          weight: edge.weight,
-          metadata: edge.metadata ?? null,
-          provenance: edge.provenance,
-        })), { session, ordered: true });
-      }
 
       semanticGraph.workingRevisionId = initialRevision._id;
       semanticGraph.workingVersion = 1;
@@ -436,35 +315,6 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
         description,
         createdBy: actorUserId,
       }], { session });
-
-      if (sourceGraph && sourceSnapshot) {
-        await EditorialGraphImportSource.create([{
-          editorialContextId: editorialContext._id,
-          targetSemanticGraphId: semanticGraph._id,
-          sourceSemanticGraphId: sourceGraph._id,
-          sourceGraphRevisionId: sourceSnapshot.revision._id,
-          createdBy: actorUserId,
-        }], { session });
-      }
-
-      if (importItems.length) {
-        await CollectionItemMembership.insertMany(importItems.map((item) => ({
-          editorialContextId: editorialContext._id,
-          itemId: item._id,
-          curationSignals: [],
-          addedBy: actorUserId,
-          updatedBy: actorUserId,
-        })), { session, ordered: true });
-        for (const subjectId of [...new Set(importItems.map((item) => id(item.primarySubjectId)))]) {
-          await ContentSpaceSubjectMembership.findOneAndUpdate(
-            { contentSpaceId: contentSpace._id, subjectId },
-            { $setOnInsert: { contentSpaceId: contentSpace._id, subjectId, addedBy: actorUserId } },
-            { upsert: true, new: true, session },
-          );
-        }
-        editorialContext.workingVersion = 1;
-        await editorialContext.save({ session });
-      }
     });
 
     const adoption = await recordAdoptionFromAccess({
@@ -481,30 +331,16 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
         id: semanticGraph._id,
         name: semanticGraph.displayName,
         description: semanticGraph.description || "",
-        mode: graphMode,
         created: true,
-        sourceSemanticGraphId: sourceGraph?._id || null,
-        sourceGraphRevisionId: sourceSnapshot?.revision?._id || null,
-        importedSubjectCount: projected.subjectBindings.length,
-        importedRelationCount: projected.edges.length,
+        localToCollection: true,
       },
       editorialContext: await projectEditorialContext({ editorialContext, contentSpace, namespace }),
       adoptionId: adoption?._id || null,
     };
   } catch (error) {
-    if (editorialContext?._id) {
-      await Promise.allSettled([
-        EditorialGraphImportSource.deleteMany({ editorialContextId: editorialContext._id }),
-        CollectionItemMembership.deleteMany({ editorialContextId: editorialContext._id }),
-        EditorialContext.deleteOne({ _id: editorialContext._id }),
-      ]);
-    }
+    if (editorialContext?._id) await EditorialContext.deleteOne({ _id: editorialContext._id }).catch(() => {});
     if (semanticGraph?._id) {
-      const revisions = await SemanticGraphRevision.find({ semanticGraphId: semanticGraph._id }).select("_id").lean().catch(() => []);
-      const revisionIds = revisions.map((revision) => revision._id);
       await Promise.allSettled([
-        GraphSubjectBinding.deleteMany({ graphRevisionId: { $in: revisionIds } }),
-        SemanticEdgeV2.deleteMany({ graphRevisionId: { $in: revisionIds } }),
         SemanticGraphRevision.deleteMany({ semanticGraphId: semanticGraph._id }),
         SemanticGraph.deleteOne({ _id: semanticGraph._id }),
       ]);
@@ -517,5 +353,4 @@ module.exports = {
   createEditorialStudioCollection,
   listReusableSemanticGraphs,
   loadCompatibleGraph,
-  projectSourceSnapshot,
 };
