@@ -50,6 +50,18 @@ test("il source manager mantiene pinning e importazione distinti nello stesso Ta
   assert.doesNotMatch(source.sourceDialog, /context-task-modal|data-graph-import-backdrop|data-attach-source-only|submitImport\(\[\]\)|config\.mode === "import-content"/);
 });
 
+test("selezione Spazio usa il resource-selection Task Modal senza rerender totale durante la ricerca", () => {
+  assert.match(source.workspace, /openSpaceSelectionDialog/);
+  assert.match(source.spaceDialogs, /task-selection-layout/);
+  assert.match(source.spaceDialogs, /task-selection-toolbar/);
+  assert.match(source.spaceDialogs, /task-resource-choice-list/);
+  assert.match(source.spaceDialogs, /Spazio corrente/);
+  assert.match(source.spaceDialogs, /Altri spazi|Spazi disponibili/);
+  assert.match(source.spaceDialogs, /data-space-selection-results/);
+  assert.match(source.spaceDialogs, /results\.innerHTML = renderResults\(\)/);
+  assert.doesNotMatch(source.spaceDialogs, /input\?\.name !== "spaceQuery"[\s\S]{0,220}controller\.render\(\)/);
+});
+
 test("creazione e modifica Spazio conservano e proteggono il draft nel dialog dedicato", () => {
   assert.match(source.workspace, /openSpaceEditorDialog/);
   assert.doesNotMatch(source.workspace, /spaceDraft|spaceDirty/);
