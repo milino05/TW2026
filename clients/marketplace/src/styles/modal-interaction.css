@@ -34,6 +34,15 @@
 .artaround-task-modal--compact { width: min(36rem, 100%); }
 .artaround-task-modal--large { width: min(68rem, 100%); }
 
+/* Venue bounded dialogs are normalized at runtime by venue-modal-lifecycle. */
+.artaround-task-modal.venue-modal-card {
+  gap: 0;
+  padding: 0;
+}
+.artaround-task-modal.venue-modal-card--headerless {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .artaround-task-modal__header,
 .artaround-task-modal__footer {
   position: relative;
