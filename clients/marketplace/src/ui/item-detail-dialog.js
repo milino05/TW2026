@@ -1,5 +1,5 @@
 import { navigate } from "../application/router.js";
-import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
+import { readOperatingContext } from "../application/operating-context.js";
 import { libraryRepository } from "../infrastructure/http/library-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { mountModalInteraction } from "../application/modal-interaction.js";
@@ -40,7 +40,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     this.itemId = this.getAttribute("item-id") || null;
     this.initialCollectionId = this.getAttribute("initial-collection-id") || null;
     this.context = readOperatingContext();
-    this.principal = operatingPrincipal(this.context);
+    this.principal = this.context ? { type: this.context.type, id: this.context.id } : null;
     if (this.initialCollectionId) {
       this.tab = "collections";
       this.view = "collection-detail";
