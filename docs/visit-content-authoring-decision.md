@@ -31,11 +31,24 @@ Per ogni contenuto selezionato:
 
 L'inference fisica è quindi informazione di lettura/suggerimento e non decisione editoriale.
 
-La creazione di **nuove** tappe fisiche avviene esclusivamente come conseguenza di una scelta `physical` effettuata su un contenuto nel selettore. `Costruisci la visita` non espone un secondo browser di `VenueTarget` né un'azione autonoma "Aggiungi tappa". Le tappe già presenti restano visibili, riordinabili e rimovibili perché rappresentano la struttura fisica risultante dalle scelte editoriali sui contenuti.
+La collocazione non è una decisione irreversibile presa al momento dell'aggiunta. Dopo l'inserimento, ogni card della `ContentEntry` espone il controllo **Collocazione**, alimentato dalle occurrence fisiche pubblicate del suo `primarySubject`. L'autore può quindi passare in qualsiasi momento da `contextual` a `physical`, da `physical` a `contextual` oppure da una occurrence fisica a un'altra senza eliminare e ricreare il contenuto.
+
+Il cambio di collocazione modifica soltanto il delivery della `ContentEntry`:
+
+- `contextual` imposta `deliveryAnchorId = null`;
+- `physical` crea o riusa il `VisitAnchor` relativo al `VenueTarget` scelto;
+- se una `ContentEntry` lascia un anchor che non è più usato da nessun altro contenuto, quell'anchor viene rimosso insieme ai `routeHints` che lo referenziano;
+- se altri contenuti usano ancora lo stesso anchor, la tappa resta nella visita.
+
+Di conseguenza una sequenza come `Gioconda: tappa → contestuale → tappa` conserva la stessa `ContentEntry`; cambiano soltanto `deliveryAnchorId` e, quando necessario, il `VisitAnchor` associato.
+
+`Costruisci la visita` non espone un browser autonomo di `VenueTarget` né un'azione separata "Aggiungi tappa". Le tappe sono la proiezione fisica delle scelte di collocazione dei contenuti. Una tappa già presente resta visibile e riordinabile; l'azione di rimozione della tappa rende contestuali i contenuti che vi erano associati, che possono essere nuovamente resi fisici dalle rispettive card.
 
 ## Read model
 
 `searchVisitAuthoringCandidates` proietta per ciascun candidato `placementOptions.occurrences[]`. Le occurrence vengono risolte backend-side in batch sui Subject presenti nella pagina corrente e includono soltanto informazioni user-facing sulla Venue e sulla posizione pubblicata.
+
+La projection della Visit applica lo stesso resolver batch ai `primarySubjectId` delle `ContentEntry` già presenti, così il controllo **Collocazione** può mostrare le alternative fisiche correnti senza un browser parallelo o query N+1.
 
 Il client non ricostruisce autonomamente relazioni `Subject -> VenueTarget -> VenueRelease -> LayoutRevision`.
 
@@ -46,9 +59,9 @@ Il client non ricostruisce autonomamente relazioni `Subject -> VenueTarget -> Ve
 - `placement: { mode: "contextual" }`
 - `placement: { mode: "physical", venueTargetId }`
 
-Il comando rivalida authorization del contenuto e validità corrente del target fisico. Il read model non viene trattato come autorizzazione e una Venue/Release cambiata fra lettura e conferma può causare il rifiuto autorevole del comando.
+Dopo l'aggiunta, `PUT /v2/visits/:visitId/commands/content/:contentEntryId/placement` applica la stessa scelta discriminata a una `ContentEntry` esistente. Il comando rivalida la validità corrente del target fisico, crea/riusa l'anchor necessario e ripulisce un eventuale anchor precedente diventato orfano nello stesso aggiornamento della working `VisitRevision`.
 
-Il comando applica il batch con un solo aggiornamento della working `VisitRevision`. Non usa errori di mutazione per scoprire occurrence, non auto-seleziona la singola occurrence e non restituisce stati di `inference`.
+Il read model non viene trattato come autorizzazione e una Venue/Release cambiata fra lettura e conferma può causare il rifiuto autorevole del comando. Nessun comando usa errori di mutazione per scoprire occurrence, auto-seleziona la singola occurrence o restituisce stati di `inference`.
 
 ## Compatibilità futura
 
