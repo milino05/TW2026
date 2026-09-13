@@ -17,13 +17,34 @@ test("realtime sincronizzato notifica soltanto invalidazione e presence, mantene
   assert.match(server, /sessionId:\s*String\(synchronizedSessionId\)/);
   assert.match(server, /runtimeVersion:\s*Number\(runtimeVersion\)\s*\|\|\s*null/);
   assert.match(server, /"synchronized:presence"/);
+  assert.match(server, /"synchronized:activity"/);
+  assert.match(server, /presenceSnapshot/);
+  assert.match(server, /aggregateConnectionActivity/);
   assert.match(server, /notifySynchronizedVisitChangedForVisitSession/);
   assert.doesNotMatch(server, /SynchronizedVisitMembership\.(?:update|findOneAndUpdate)/);
   assert.match(client, /socket\.on\("connect", subscribe\)/);
+  assert.match(client, /setParticipantActivity/);
+  assert.match(client, /latestActivity/);
   assert.match(view, /onInvalidated:\s*\(\)\s*=>\s*refresh\(\{ quiet: true \}\)/);
   assert.match(view, /window\.setInterval\(\(\)\s*=>\s*refresh\(\{ quiet: true \}\),\s*15000\)/);
   assert.match(controller, /recordContentEntryExperience/);
   assert.match(controller, /notifySynchronizedVisitChangedForVisitSession/);
+});
+
+test("foreground, audio e inattività alimentano la stessa presence effimera della visita", () => {
+  const client = source("clients/navigator/src/infrastructure/realtime/synchronizedVisitRealtime.ts");
+  const view = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
+
+  assert.match(client, /socket\.emit\("synchronized:activity"/);
+  assert.match(view, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(view, /PARTICIPANT_INACTIVE_GRACE_MS = 3000/);
+  assert.match(view, /ttsState\.value === "speaking"/);
+  assert.match(view, /mode: "audio"/);
+  assert.match(view, /mode: "reading"/);
+  assert.match(view, /return "Non attivo"/);
+  assert.match(view, /`Sta seguendo · \$\{mode\}/);
+  assert.match(view, /Richiesta: \$\{request\.label\}/);
+  assert.match(view, /Ultima attività/);
 });
 
 test("il join temporaneo non crea diritti Marketplace permanenti", () => {
