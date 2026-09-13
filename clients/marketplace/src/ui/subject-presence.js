@@ -50,6 +50,7 @@ export class ArtAroundSubjectPresence extends HTMLElement {
   connectedCallback() {
     this.addEventListener("click", this.onClick);
     this.addEventListener("submit", this.onSubmit);
+    this.readAttributeConfiguration();
     if (this.subjectId && this.principal) void this.load();
     else this.render();
   }
@@ -58,21 +59,33 @@ export class ArtAroundSubjectPresence extends HTMLElement {
     this.removeEventListener("submit", this.onSubmit);
   }
 
+  readAttributeConfiguration() {
+    const subjectId = this.getAttribute("subject-id");
+    const sourceItemId = this.getAttribute("source-item-id");
+    const principalType = this.getAttribute("principal-type");
+    const principalId = this.getAttribute("principal-id");
+    if (!this.subjectId && subjectId) this.subjectId = subjectId;
+    if (!this.sourceItemId && sourceItemId) this.sourceItemId = sourceItemId;
+    if (!this.principal && principalType && principalId) this.principal = { type: principalType, id: principalId };
+  }
+
   configure({ subjectId, sourceItemId = null, sourcePreviewMedia = null, principal = null } = {}) {
-    const changed = id(this.subjectId) !== id(subjectId)
+    const identityChanged = id(this.subjectId) !== id(subjectId)
       || id(this.sourceItemId) !== id(sourceItemId)
-      || mediaKey(this.sourcePreviewMedia) !== mediaKey(sourcePreviewMedia)
       || id(this.principal?.id) !== id(principal?.id)
       || String(this.principal?.type || "") !== String(principal?.type || "");
+    const mediaChanged = mediaKey(this.sourcePreviewMedia) !== mediaKey(sourcePreviewMedia);
     this.subjectId = subjectId || null;
     this.sourceItemId = sourceItemId || null;
     this.sourcePreviewMedia = sourcePreviewMedia || null;
     this.principal = principal;
-    if (changed) {
+    if (identityChanged) {
       this.data = null;
       this.pendingProposalVenueId = null;
+      if (this.isConnected) void this.load();
+      return;
     }
-    if (this.isConnected) void this.load();
+    if (mediaChanged && this.isConnected) this.render();
   }
 
   async load() {
@@ -197,10 +210,23 @@ export class ArtAroundSubjectPresence extends HTMLElement {
     return `<article class="subject-venue-card" data-state="${escapeHtml(row.relationshipState || "absent")}"><div class="subject-venue-card-main"><div><h4>${escapeHtml(row.venue.name)}</h4><p>${escapeHtml(detail)}</p></div><span class="chip" data-tone="${stateTone(row)}">${escapeHtml(stateLabel(row))}</span></div>${actions.length ? `<div class="button-row">${actions.join("")}</div>` : ""}${this.renderProposalForm(row)}</article>`;
   }
 
+  renderPublicVenue(row) {
+    const inventory = row.inventory || {};
+    const place = inventory.place;
+    const detail = inventory.status === "exposed" && place
+      ? `${place.floorLabel || "Piano"} · ${place.label || "Posizione"}`
+      : row.venue?.description || "Esposto pubblicamente";
+    const focusTargetId = row.mapTargetId || inventory.venueTargetId || "";
+    return `<article class="subject-venue-card" data-state="external-public"><div class="subject-venue-card-main"><div><h4>${escapeHtml(row.venue?.name || "Sede")}</h4><p>${escapeHtml(detail)}</p></div><span class="chip" data-tone="success">Esposto</span></div><div class="button-row"><button class="button-secondary" type="button" data-map-venue="${escapeHtml(id(row.venue?.id))}" data-focus-target="${escapeHtml(focusTargetId)}">${icon("map", { size: 15 })} Mostra sulla mappa</button></div></article>`;
+  }
+
   render() {
     if (!this.subjectId || !this.principal) { this.innerHTML = ""; return; }
     const organizationRows = [...(this.data?.organization?.venues || [])].sort((left, right) => venuePriority(left) - venuePriority(right)
       || String(left.venue?.name || "").localeCompare(String(right.venue?.name || ""), "it"));
+    const publicRows = [...(this.data?.publicPlacements || [])]
+      .filter((row) => this.data?.principal?.type !== "organization" || id(row.venue?.ownerOrganizationId) !== id(this.data?.principal?.id))
+      .sort((left, right) => String(left.venue?.name || "").localeCompare(String(right.venue?.name || ""), "it"));
     const usage = this.data?.organization?.usage || {};
     const usageFacts = [
       countLabel(usage.availableCount, "contenuto disponibile", "contenuti disponibili"),
@@ -210,9 +236,16 @@ export class ArtAroundSubjectPresence extends HTMLElement {
     ].join(" · ");
     const media = this.sourcePreviewMedia?.url ? this.sourcePreviewMedia : usage.previewMedia;
     const header = this.data ? `<header class="subject-venue-heading">${media?.url ? `<figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || this.data.subject?.preferredLabel || "")}"></figure>` : ""}<div><span class="eyebrow">Presenza nelle sedi</span><h3>${escapeHtml(this.data.subject?.preferredLabel || "Subject")}</h3><p>${escapeHtml(this.data.subject?.description || "")}</p>${this.data.organization ? `<small>${escapeHtml(usageFacts)}</small>` : ""}</div></header>` : "";
+    const organizationSection = this.data?.organization
+      ? `<section class="subject-venue-section"><h4>Sedi della tua organizzazione</h4>${organizationRows.length ? `<div class="subject-venue-list">${organizationRows.map((row) => this.renderOrganizationVenue(row)).join("")}</div>` : `<div class="empty-state compact"><p>L'organizzazione non ha sedi attive.</p></div>`}</section>`
+      : "";
+    const publicSection = publicRows.length
+      ? `<section class="subject-venue-section"><h4>Altre sedi pubbliche</h4><div class="subject-venue-list">${publicRows.map((row) => this.renderPublicVenue(row)).join("")}</div></section>`
+      : "";
+    const empty = !this.data?.organization && !publicRows.length ? `<div class="empty-state compact"><p>Questo Subject non risulta esposto in sedi pubbliche.</p></div>` : "";
     this.innerHTML = `<style>
       artaround-subject-presence{display:block}.subject-venue-surface{display:grid;gap:1rem}.subject-venue-heading{display:grid;grid-template-columns:auto 1fr;gap:.9rem;align-items:start}.subject-venue-heading figure{width:5.5rem;height:5.5rem;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.subject-venue-heading img{width:100%;height:100%;object-fit:cover}.subject-venue-heading h3,.subject-venue-heading p{margin:.15rem 0}.subject-venue-heading small{color:var(--sage-600)}.subject-venue-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.7rem}.subject-venue-card{display:grid;gap:.75rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.subject-venue-card-main{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem}.subject-venue-card h4,.subject-venue-card p{margin:.1rem 0}.subject-venue-card p{color:var(--sage-700)}.subject-venue-proposal-form{display:grid;gap:.6rem;padding-top:.7rem;border-top:1px solid var(--line)}.subject-venue-proposal-form label{display:grid;gap:.35rem}.subject-venue-proposal-form p{margin:0;font-size:.85rem}.subject-venue-section{display:grid;gap:.55rem}.subject-venue-section>h4{margin:0}.subject-venue-loading{padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md)}@media(max-width:38rem){.subject-venue-heading{grid-template-columns:1fr}.subject-venue-card-main{flex-direction:column}.subject-venue-card .button-row>*{width:100%}}
-    </style>${this.busy && !this.data ? `<div class="subject-venue-loading"><p>Verifica della presenza nelle sedi…</p></div>` : this.error && !this.data ? `<p role="alert">${escapeHtml(this.error)}</p>` : this.data ? `<section class="subject-venue-surface" aria-busy="${this.busy}">${header}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.data.organization ? `<section class="subject-venue-section"><h4>Sedi della tua organizzazione</h4>${organizationRows.length ? `<div class="subject-venue-list">${organizationRows.map((row) => this.renderOrganizationVenue(row)).join("")}</div>` : `<div class="empty-state compact"><p>L'organizzazione non ha sedi attive.</p></div>`}</section>` : ""}</section>` : ""}`;
+    </style>${this.busy && !this.data ? `<div class="subject-venue-loading"><p>Verifica della presenza nelle sedi…</p></div>` : this.error && !this.data ? `<p role="alert">${escapeHtml(this.error)}</p>` : this.data ? `<section class="subject-venue-surface" aria-busy="${this.busy}">${header}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${organizationSection}${publicSection}${empty}</section>` : ""}`;
   }
 }
 

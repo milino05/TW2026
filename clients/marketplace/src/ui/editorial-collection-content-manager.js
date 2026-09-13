@@ -1,6 +1,5 @@
 import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
-import { readOperatingContext } from "../application/operating-context.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
@@ -12,7 +11,6 @@ function id(value) { return String(value?._id || value?.id || value || ""); }
 function statusLabel(value) { return ({ draft: "Bozza", in_review: "In revisione", published: "Pubblicata", superseded: "Superata" })[value] || value || "Da completare"; }
 
 export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
-  context = readOperatingContext();
   editorialContextId = null;
   contentSpaceId = null;
   namespaceId = null;
@@ -85,14 +83,13 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     await this.entriesBrowser.refresh();
   }
 
-  openItemDetail(itemId, { initialTab = null } = {}) {
+  openItemDetail(itemId) {
     if (!itemId || !this.contentSpaceId) return;
     this.querySelector("artaround-item-detail-dialog")?.remove();
     const dialog = document.createElement("artaround-item-detail-dialog");
     dialog.setAttribute("content-space-id", this.contentSpaceId);
     dialog.setAttribute("item-id", itemId);
-    if (initialTab === "venues" && this.context?.type === "organization") dialog.tab = initialTab;
-    else dialog.setAttribute("initial-collection-id", this.editorialContextId);
+    dialog.setAttribute("initial-collection-id", this.editorialContextId);
     this.append(dialog);
   }
 
@@ -166,8 +163,6 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("button[data-add-collection-content]")) { void this.openAddDialog(); return; }
-    const venue = target.closest("button[data-inspect-content-venues]");
-    if (venue) { this.openItemDetail(venue.dataset.inspectContentVenues, { initialTab: "venues" }); return; }
     const inspect = target.closest("button[data-inspect-content]");
     if (inspect) { this.openItemDetail(inspect.dataset.inspectContent); return; }
     const entryPage = target.closest("button[data-entry-page]");
@@ -205,10 +200,7 @@ export class ArtAroundEditorialCollectionContentManager extends HTMLElement {
     const subject = row?.subject || {};
     const item = row?.item || {};
     const presentationState = revision.status ? statusLabel(revision.status) : "Da completare";
-    const venueAction = this.context?.type === "organization"
-      ? `<button type="button" class="button-secondary" data-inspect-content-venues="${escapeHtml(id(item))}">Sedi</button>`
-      : "";
-    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le Regole editoriali della Raccolta. Puoi mantenerlo nella selezione e completarlo prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button>${venueAction}${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
+    return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">Contenuto</p><h3>${escapeHtml(revision.label || subject.preferredLabel || "Contenuto")}</h3></div><span class="status">${escapeHtml(presentationState)}</span></header><div class="asset-copy"><p class="muted">Soggetto: ${escapeHtml(subject.preferredLabel || "Non disponibile")}</p>${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : ""}${!row.edition ? `<p class="note">Non esiste ancora una versione compatibile con le Regole editoriali della Raccolta. Puoi mantenerlo nella selezione e completarlo prima della revisione.</p>` : ""}</div><footer class="operations"><button type="button" class="button-secondary" data-inspect-content="${escapeHtml(id(item))}">Dettagli</button>${this.editable && !this.locked ? `<button type="button" class="button-secondary danger" data-remove-entry="${escapeHtml(id(entry))}">${icon("trash", { size: 15 })} Rimuovi</button>` : ""}</footer></article>`;
   }
 
   renderPagination(pagination = {}) {

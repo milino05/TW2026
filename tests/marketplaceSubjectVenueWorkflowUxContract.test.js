@@ -10,6 +10,8 @@ const presence = read("clients/marketplace/src/ui/subject-presence.js");
 const presenceRepository = read("clients/marketplace/src/infrastructure/http/subject-presence-repository.js");
 const itemDetail = read("clients/marketplace/src/ui/item-detail-dialog.js");
 const itemAuthoring = read("clients/marketplace/src/ui/item-authoring-view.js");
+const workspace = read("clients/marketplace/src/ui/workspace-browser-view.js");
+const collectionContent = read("clients/marketplace/src/ui/editorial-collection-content-manager.js");
 const targetDialog = read("clients/marketplace/src/ui/venue-target-create-dialog.js");
 const resolver = read("services/venueSubjectResolver.service.js");
 const usage = read("services/organizationSubjectUsage.service.js");
@@ -31,14 +33,29 @@ test("Subject→Venue usa un'unica surface con stati e CTA backend-authoritative
   assert.match(presence, /venue\.inventory\.open/);
   assert.match(presence, /venue\.map\.show/);
   assert.match(presence, /venuePriority/);
+  assert.match(presence, /publicPlacements/);
+  assert.match(presence, /Altre sedi pubbliche/);
   assert.match(operations, /relationshipState/);
   assert.match(operations, /availableOperations/);
 });
 
-test("Item detail integra nativamente Sedi e Item authoring la espone solo nel controllo finale", () => {
+test("Item detail usa la tab Sedi come unico entry-point dagli Item e monta una surface auto-configurata", () => {
   assert.match(itemDetail, /data-item-detail-tab="venues"/);
   assert.match(itemDetail, /artaround-subject-presence/);
+  assert.match(itemDetail, /subject-id=/);
+  assert.match(itemDetail, /source-item-id=/);
+  assert.match(itemDetail, /principal-type=/);
+  assert.match(itemDetail, /principal-id=/);
   assert.match(itemDetail, /sourcePreviewMedia: this\.data\?\.item\?\.recognitionMedia/);
+  assert.doesNotMatch(itemDetail, /Inventario fisico e contenuto editoriale restano separati/);
+  assert.match(presence, /readAttributeConfiguration\(\)/);
+  assert.match(presence, /this\.getAttribute\("subject-id"\)/);
+  assert.match(presence, /this\.getAttribute\("principal-type"\)/);
+  assert.doesNotMatch(workspace, /data-open-item-venues/);
+  assert.doesNotMatch(collectionContent, /data-inspect-content-venues/);
+});
+
+test("Item authoring espone Subject→Venue solo nel controllo finale", () => {
   assert.match(itemAuthoring, /openSubjectVenueDialog/);
   assert.match(itemAuthoring, /data-open-subject-venues/);
   assert.match(itemAuthoring, /sourcePreviewMedia: this\.projection\?\.lineage\?\.recognitionMedia/);
@@ -105,6 +122,8 @@ test("i moduli Subject/Venue passano il syntax gate", () => {
     "clients/marketplace/src/ui/subject-venue-dialog.js",
     "clients/marketplace/src/ui/item-detail-dialog.js",
     "clients/marketplace/src/ui/item-authoring-view.js",
+    "clients/marketplace/src/ui/workspace-browser-view.js",
+    "clients/marketplace/src/ui/editorial-collection-content-manager.js",
     "clients/marketplace/src/ui/venue-target-create-dialog.js",
     "clients/marketplace/src/ui/venue-editor-subject-inventory-mixin.js",
   ]) {

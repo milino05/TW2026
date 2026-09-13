@@ -248,7 +248,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (this.principal?.type !== "organization") {
       return `<section class="item-detail-section"><div class="empty-state compact"><p>Seleziona un'area di lavoro organizzazione per gestire la presenza del Subject nelle sedi.</p></div></section>`;
     }
-    return `<section class="item-detail-section"><div class="section-heading"><div><span class="eyebrow">Sedi</span><h2>Presenza del Subject nelle sedi</h2><p>Inventario fisico e contenuto editoriale restano separati: qui puoi aggiungere il Subject, proporlo o consultarne la collocazione.</p></div></div><artaround-subject-presence data-item-detail-subject-presence></artaround-subject-presence></section>`;
+    return `<section class="item-detail-section"><artaround-subject-presence data-item-detail-subject-presence subject-id="${escapeHtml(id(this.data?.subject))}" source-item-id="${escapeHtml(this.itemId)}" principal-type="${escapeHtml(this.principal.type)}" principal-id="${escapeHtml(this.principal.id)}"></artaround-subject-presence></section>`;
   }
 
   configureSubjectVenueSurface() {

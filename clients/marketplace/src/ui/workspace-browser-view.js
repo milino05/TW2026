@@ -241,13 +241,12 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     this.append(dialog);
   }
 
-  openItemDetail(itemId, { initialTab = null } = {}) {
+  openItemDetail(itemId) {
     if (!this.currentSpace || !itemId) return;
     this.querySelector("artaround-item-detail-dialog")?.remove();
     const dialog = document.createElement("artaround-item-detail-dialog");
     dialog.setAttribute("content-space-id", id(this.currentSpace));
     dialog.setAttribute("item-id", id(itemId));
-    if (initialTab === "venues" && this.selectedPrincipal()?.type === "organization") dialog.tab = initialTab;
     this.append(dialog);
   }
 
@@ -265,7 +264,6 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
   onKeyDown = (event) => {
     if (!["Enter", " "].includes(event.key)) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button, a, input, select, textarea")) return;
     const item = target?.closest('[data-open-item][role="button"]');
     if (!item) return;
     event.preventDefault();
@@ -340,11 +338,6 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
     }
     if (target.closest("[data-new-content]") && this.currentSpace) {
       this.openItemAddDialog();
-      return;
-    }
-    const itemVenues = target.closest("[data-open-item-venues]");
-    if (itemVenues) {
-      this.openItemDetail(itemVenues.dataset.openItemVenues, { initialTab: "venues" });
       return;
     }
     const item = target.closest("[data-open-item]");
@@ -457,10 +450,7 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   renderContentCard(row) {
     const subject = row.subject || {};
-    const venueAction = this.selectedPrincipal()?.type === "organization"
-      ? `<button type="button" class="button-secondary" data-open-item-venues="${escapeHtml(id(row.itemId))}">Sedi</button>`
-      : "";
-    return `<article class="asset owned content-item-card" data-open-item="${escapeHtml(id(row.itemId))}" role="button" tabindex="0"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Item</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "edizione" : "edizioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations">${venueAction}<span class="button-link">Dettagli ${icon("chevron", { size: 14 })}</span></footer></article>`;
+    return `<article class="asset owned content-item-card" data-open-item="${escapeHtml(id(row.itemId))}" role="button" tabindex="0"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Item</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "edizione" : "edizioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations"><span class="button-link">Dettagli ${icon("chevron", { size: 14 })}</span></footer></article>`;
   }
 
   renderContents() {
