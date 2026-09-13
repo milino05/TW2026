@@ -31,6 +31,14 @@ function currentParams() {
 function roleLabel(role) {
   return ({ core: "Essenziale", recommended: "Consigliato", optional: "Facoltativo" })[role] || "Consigliato";
 }
+function occurrenceLabel(occurrence) {
+  return [
+    occurrence?.venue?.name,
+    occurrence?.location?.floorLabel,
+    occurrence?.location?.placeLabel,
+    occurrence?.location?.exhibitSlotLabel,
+  ].filter(Boolean).join(" · ") || occurrence?.label || "Tappa fisica";
+}
 function workflowLabel(operation) {
   const labels = {
     "workflow.check": "Controlla se è tutto pronto",
@@ -367,15 +375,25 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       await this.execute(() => authoringRepository.setVisitContentRole(this.visitId, target.dataset.entryRole, target.value), "Importanza del contenuto aggiornata");
       return;
     }
-    if (target.matches("[data-entry-stop]")) {
-      const entryId = target.dataset.entryStop;
-      const nextAnchorId = target.value || null;
+    if (target.matches("[data-entry-placement]")) {
+      const entryId = target.dataset.entryPlacement;
       const entry = (this.revision?.entries || []).find((candidate) => id(candidate.id) === id(entryId));
-      if (!entry || id(entry.deliveryAnchorId) === id(nextAnchorId)) return;
-      if (nextAnchorId) {
-        await this.execute(() => authoringRepository.attachVisitContentToStop(this.visitId, entryId, nextAnchorId), "Collocazione del contenuto aggiornata");
-      } else {
-        await this.execute(() => authoringRepository.detachVisitContentFromStop(this.visitId, entryId), "Il contenuto resta contestuale nella visita");
+      if (!entry) return;
+      const currentValue = entry.deliveryTarget?.id ? `physical:${id(entry.deliveryTarget.id)}` : "contextual";
+      if (target.value === currentValue) return;
+      if (target.value === "contextual") {
+        await this.execute(
+          () => authoringRepository.setVisitContentPlacement(this.visitId, entryId, { mode: "contextual" }),
+          "Il contenuto resta nella visita come contesto generale",
+        );
+        return;
+      }
+      if (target.value.startsWith("physical:")) {
+        const venueTargetId = target.value.slice("physical:".length);
+        await this.execute(
+          () => authoringRepository.setVisitContentPlacement(this.visitId, entryId, { mode: "physical", venueTargetId }),
+          "Tappa fisica aggiornata",
+        );
       }
     }
   };
@@ -542,8 +560,20 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   }
 
   renderEntryCard(entry, index, anchorKey, total) {
-    const stops = this.revision?.stops || [];
-    return `<article class="sequence-entry" draggable="${this.editable && !this.busy}" data-drag-kind="content" data-content-id="${escapeHtml(entry.id)}" data-content-index="${index}" data-anchor-key="${escapeHtml(anchorKey)}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><div class="entry-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml((entry.authorCredits || []).join(", ") || entry.source?.name || "Contenuto")}</small></div>${this.editable ? `<div class="entry-controls"><label>Importanza<select data-entry-role="${escapeHtml(entry.id)}"><option value="core" ${entry.role === "core" ? "selected" : ""}>Essenziale</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Consigliato</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Facoltativo</option></select></label><label>Presenta in<select data-entry-stop="${escapeHtml(entry.id)}"><option value="" ${!entry.deliveryAnchorId ? "selected" : ""}>Contesto generale</option>${stops.map((stop) => `<option value="${escapeHtml(stop.id)}" ${id(stop.id) === id(entry.deliveryAnchorId) ? "selected" : ""}>${escapeHtml(stop.label)} · ${escapeHtml(stop.venue?.name || "Sede")}</option>`).join("")}</select></label><div class="compact-actions"><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="-1" aria-label="Sposta contenuto prima" ${index === 0 || this.busy ? "disabled" : ""}>↑</button><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="1" aria-label="Sposta contenuto dopo" ${index === total - 1 || this.busy ? "disabled" : ""}>↓</button><button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}">Rimuovi</button></div></div>` : `<span class="chip">${escapeHtml(roleLabel(entry.role))}</span>`}</article>`;
+    const occurrences = entry.placementOptions?.occurrences || [];
+    const currentTargetId = id(entry.deliveryTarget?.id);
+    const currentOccurrence = occurrences.find((occurrence) => id(occurrence.venueTargetId) === currentTargetId);
+    const physicalOptions = occurrences.map((occurrence) => {
+      const targetId = id(occurrence.venueTargetId);
+      return `<option value="physical:${escapeHtml(targetId)}" ${targetId === currentTargetId ? "selected" : ""}>Tappa · ${escapeHtml(occurrenceLabel(occurrence))}</option>`;
+    }).join("");
+    const unavailableCurrent = currentTargetId && !currentOccurrence
+      ? `<option value="physical:${escapeHtml(currentTargetId)}" selected disabled>Tappa attuale · ${escapeHtml(entry.deliveryTarget?.venue?.name || entry.deliveryTarget?.label || "collocazione non più disponibile")}</option>`
+      : "";
+    const noPhysical = !occurrences.length && !currentTargetId
+      ? `<option disabled>Nessuna tappa fisica disponibile</option>`
+      : "";
+    return `<article class="sequence-entry" draggable="${this.editable && !this.busy}" data-drag-kind="content" data-content-id="${escapeHtml(entry.id)}" data-content-index="${index}" data-anchor-key="${escapeHtml(anchorKey)}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><div class="entry-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml((entry.authorCredits || []).join(", ") || entry.source?.name || "Contenuto")}</small></div>${this.editable ? `<div class="entry-controls"><label>Importanza<select data-entry-role="${escapeHtml(entry.id)}"><option value="core" ${entry.role === "core" ? "selected" : ""}>Essenziale</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Consigliato</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Facoltativo</option></select></label><label>Collocazione<select data-entry-placement="${escapeHtml(entry.id)}"><option value="contextual" ${!currentTargetId ? "selected" : ""}>Contesto generale</option>${physicalOptions}${unavailableCurrent}${noPhysical}</select></label><div class="compact-actions"><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="-1" aria-label="Sposta contenuto prima" ${index === 0 || this.busy ? "disabled" : ""}>↑</button><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="1" aria-label="Sposta contenuto dopo" ${index === total - 1 || this.busy ? "disabled" : ""}>↓</button><button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}">Rimuovi</button></div></div>` : `<span class="chip">${escapeHtml(roleLabel(entry.role))}</span>`}</article>`;
   }
 
   renderStopGroup(stop, stopIndex, stopTotal) {
@@ -555,7 +585,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const stops = this.revision?.stops || [];
     const contextual = this.contextualEntries();
     if (!(this.revision?.entries || []).length && !stops.length) return `<div class="empty-state compact"><h3>La visita è ancora vuota</h3><p>Usa “Aggiungi contenuti” per iniziare.</p></div>`;
-    const missingStop = !stops.length ? `<div class="missing-stop-notice" role="status"><strong>Manca ancora una tappa fisica</strong><p>I contenuti generali possono accompagnare la visita, ma per completarla serve almeno un luogo in cui fermarsi. Aggiungi un contenuto associato a un oggetto esposto e scegli “Tappa fisica” nel selettore.</p></div>` : "";
+    const missingStop = !stops.length ? `<div class="missing-stop-notice" role="status"><strong>Manca ancora una tappa fisica</strong><p>Per rendere un contenuto una tappa, usa il controllo “Collocazione” sulla sua card e scegli una delle posizioni fisiche disponibili.</p></div>` : "";
     return `<div class="visit-sequence">${missingStop}${stops.map((stop, index) => this.renderStopGroup(stop, index, stops.length)).join("")}${contextual.length ? `<section class="sequence-group contextual-group"><header><div><strong>Contesto generale</strong><small>Contenuti senza una tappa fisica specifica</small></div></header><div class="sequence-entry-list">${contextual.map((entry, index) => this.renderEntryCard(entry, index, "contextual", contextual.length)).join("")}</div></section>` : ""}</div>`;
   }
 
@@ -563,7 +593,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     if (this.activeStep !== 2) return "";
     const count = (this.revision?.entries || []).length;
     const stops = (this.revision?.stops || []).length;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Costruisci la visita</span><h2>Organizza contenuti e tappe</h2><p>Aggiungi i contenuti disponibili per questa area di lavoro. Quando un soggetto è esposto, decidi esplicitamente se deve diventare una tappa fisica.</p></div><span class="count">${count}</span></header><div class="visit-build-toolbar"><div><strong>${count} ${count === 1 ? "contenuto" : "contenuti"} · ${stops} ${stops === 1 ? "tappa" : "tappe"}</strong><p class="note">Trascina tappe e contenuti della stessa tappa per cambiare la sequenza.</p></div>${this.editable ? `<button type="button" data-open-visit-content>${icon("plus", { size: 15 })} Aggiungi contenuti</button>` : ""}</div><section class="visit-selection-pane" aria-label="Sequenza della visita">${this.renderVisitSequence()}</section><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Costruisci la visita</span><h2>Organizza contenuti e tappe</h2><p>Aggiungi i contenuti disponibili per questa area di lavoro. La collocazione di ogni contenuto può essere cambiata in qualsiasi momento senza rimuoverlo dalla visita.</p></div><span class="count">${count}</span></header><div class="visit-build-toolbar"><div><strong>${count} ${count === 1 ? "contenuto" : "contenuti"} · ${stops} ${stops === 1 ? "tappa" : "tappe"}</strong><p class="note">Trascina tappe e contenuti della stessa tappa per cambiare la sequenza.</p></div>${this.editable ? `<button type="button" data-open-visit-content>${icon("plus", { size: 15 })} Aggiungi contenuti</button>` : ""}</div><section class="visit-selection-pane" aria-label="Sequenza della visita">${this.renderVisitSequence()}</section><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
   }
 
   renderQuizEditor() {
