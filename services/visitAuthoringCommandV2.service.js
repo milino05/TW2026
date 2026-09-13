@@ -5,11 +5,7 @@ const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
 const { getVisitV2, updateVisitV2 } = require("./visitV2.service");
 const { assertCanUseItemRevisionInVisit } = require("./visitEditorialUsageAuthorization.service");
-const {
-  publishedOccurrenceCandidates,
-  assertPublishedTargetForSubject,
-  assertPublishedTargetUsable,
-} = require("./visitPlacementOptionsV2.service");
+const { assertPublishedTargetForSubject } = require("./visitPlacementOptionsV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function newId() { return new mongoose.Types.ObjectId(); }
@@ -138,6 +134,32 @@ function validatePlacement(placement, index) {
   }
 }
 
+function validatePlacementUpdate(placement) {
+  if (!placement || !["contextual", "physical"].includes(placement.mode)) {
+    throw new AppError("Scegli come usare il contenuto nella visita", 400, [{
+      field: "placement.mode",
+      code: "VISIT_CONTENT_PLACEMENT_REQUIRED",
+    }]);
+  }
+  if (placement.mode === "physical" && !mongoose.isValidObjectId(placement.venueTargetId)) {
+    throw new AppError("Scegli una collocazione fisica valida", 400, [{
+      field: "placement.venueTargetId",
+      code: "VISIT_CONTENT_TARGET_REQUIRED",
+    }]);
+  }
+}
+
+function cleanupOrphanAnchor(anchors, entries, nextLogistics, anchorId) {
+  if (!anchorId || entries.some((entry) => id(entry.deliveryAnchorId) === id(anchorId))) return false;
+  const index = anchors.findIndex((anchor) => id(anchor._id) === id(anchorId));
+  if (index < 0) return false;
+  anchors.splice(index, 1);
+  nextLogistics.routeHints = nextLogistics.routeHints.filter((hint) => (
+    id(hint.fromAnchorId) !== id(anchorId) && id(hint.toAnchorId) !== id(anchorId)
+  ));
+  return true;
+}
+
 async function addContentToVisit({ visitId, actorUserId, payload = {} }) {
   const requestedEntries = Array.isArray(payload.entries) ? payload.entries : [];
   if (!requestedEntries.length) {
@@ -206,63 +228,45 @@ async function addContentToVisit({ visitId, actorUserId, payload = {} }) {
   return { ...result, command: { added } };
 }
 
-async function addContentToStop({ visitId, anchorId, actorUserId, payload = {} }) {
-  const { visit, revision } = await loadEditableVisit({ visitId, actorUserId });
-  const anchors = visitAnchors(revision);
-  const anchor = anchors.find((entry) => id(entry._id) === id(anchorId));
-  if (!anchor) throw new AppError("VisitAnchor non appartiene alla visita", 404, [{ field: "anchorId", code: "VISIT_ANCHOR_NOT_FOUND" }]);
-
-  const selection = await resolveSelectedContent({
-    payload,
-    actorUserId,
-    principalType: visit.ownerType,
-    principalId: visit.ownerId,
-  });
-  const sources = contentSources(revision);
-  const source = ensureContentSource(sources, selection.source);
+async function setContentPlacement({ visitId, contentEntryId, actorUserId, placement }) {
+  validatePlacementUpdate(placement);
+  const { revision } = await loadEditableVisit({ visitId, actorUserId });
   const entries = contentEntries(revision);
-  const entry = {
-    _id: newId(),
-    contentSourceId: source.sourceId,
-    editorialSourceId: null,
-    itemId: selection.item._id,
-    itemEditionId: selection.edition._id,
-    itemRevisionId: selection.binding?.itemRevisionId || selection.revision._id,
-    deliveryAnchorId: anchorId,
-    role: payload.role || "recommended",
-  };
-  entries.push(entry);
+  const anchors = visitAnchors(revision);
+  const nextLogistics = logistics(revision);
+  const entry = entries.find((candidate) => id(candidate._id) === id(contentEntryId));
+  if (!entry) throw new AppError("ContentEntry non trovata", 404);
+
+  const previousAnchorId = entry.deliveryAnchorId || null;
+  let placementResult = { mode: "contextual", anchorRemoved: false };
+
+  if (placement.mode === "contextual") {
+    entry.deliveryAnchorId = null;
+  } else {
+    const item = await ItemV2.findOne({ _id: entry.itemId, lifecycleStatus: "active" }).select("_id primarySubjectId").lean();
+    if (!item) throw new AppError("Item non disponibile", 409, [{ field: "contentEntryId", code: "ITEM_NOT_ACTIVE" }]);
+    const occurrence = await assertPublishedTargetForSubject(item.primarySubjectId, placement.venueTargetId);
+    const anchor = ensureAnchorForTarget(anchors, occurrence.venueTargetId);
+    entry.deliveryAnchorId = anchor.anchorId;
+    placementResult = {
+      mode: "physical",
+      venueTargetId: occurrence.venueTargetId,
+      deliveryAnchorId: anchor.anchorId,
+      anchorCreated: anchor.added,
+      anchorRemoved: false,
+    };
+  }
+
+  if (previousAnchorId && id(previousAnchorId) !== id(entry.deliveryAnchorId)) {
+    placementResult.anchorRemoved = cleanupOrphanAnchor(anchors, entries, nextLogistics, previousAnchorId);
+  }
+
   const result = await updateVisitV2({
     visitId,
     actorUserId,
-    payload: { contentEntries: entries, contentSources: sources },
+    payload: { contentEntries: entries, visitAnchors: anchors, logistics: nextLogistics },
   });
-  return {
-    ...result,
-    command: {
-      added: [{ contentEntryId: entry._id, placement: { mode: "physical", venueTargetId: anchor.venueTargetId, deliveryAnchorId: anchorId, anchorCreated: false } }],
-    },
-  };
-}
-
-async function attachContentToStop({ visitId, contentEntryId, anchorId, actorUserId }) {
-  const { revision } = await loadEditableVisit({ visitId, actorUserId });
-  const anchors = visitAnchors(revision);
-  if (!anchors.some((anchor) => id(anchor._id) === id(anchorId))) throw new AppError("VisitAnchor non trovato", 404);
-  const entries = contentEntries(revision);
-  const entry = entries.find((candidate) => id(candidate._id) === id(contentEntryId));
-  if (!entry) throw new AppError("ContentEntry non trovata", 404);
-  entry.deliveryAnchorId = anchorId;
-  return updateVisitV2({ visitId, payload: { contentEntries: entries }, actorUserId });
-}
-
-async function detachContentFromStop({ visitId, contentEntryId, actorUserId }) {
-  const { revision } = await loadEditableVisit({ visitId, actorUserId });
-  const entries = contentEntries(revision);
-  const entry = entries.find((candidate) => id(candidate._id) === id(contentEntryId));
-  if (!entry) throw new AppError("ContentEntry non trovata", 404);
-  entry.deliveryAnchorId = null;
-  return updateVisitV2({ visitId, payload: { contentEntries: entries }, actorUserId });
+  return { ...result, command: { contentEntryId: entry._id, placement: placementResult } };
 }
 
 async function setContentRole({ visitId, contentEntryId, actorUserId, role }) {
@@ -279,18 +283,15 @@ async function removeContentFromVisit({ visitId, contentEntryId, actorUserId }) 
   const entries = contentEntries(revision);
   const index = entries.findIndex((candidate) => id(candidate._id) === id(contentEntryId));
   if (index < 0) throw new AppError("ContentEntry non trovata", 404);
-  entries.splice(index, 1);
-  return updateVisitV2({ visitId, payload: { contentEntries: entries }, actorUserId });
-}
-
-async function addVisitStop({ visitId, actorUserId, venueTargetId }) {
-  await assertPublishedTargetUsable(venueTargetId);
-  const { revision } = await loadEditableVisit({ visitId, actorUserId });
+  const [removed] = entries.splice(index, 1);
   const anchors = visitAnchors(revision);
-  const ensured = ensureAnchorForTarget(anchors, venueTargetId);
-  if (!ensured.added) return { visit: null, revision, command: { anchorId: ensured.anchorId, reused: true } };
-  const result = await updateVisitV2({ visitId, payload: { visitAnchors: anchors }, actorUserId });
-  return { ...result, command: { anchorId: ensured.anchorId, reused: false } };
+  const nextLogistics = logistics(revision);
+  cleanupOrphanAnchor(anchors, entries, nextLogistics, removed.deliveryAnchorId);
+  return updateVisitV2({
+    visitId,
+    payload: { contentEntries: entries, visitAnchors: anchors, logistics: nextLogistics },
+    actorUserId,
+  });
 }
 
 async function removeVisitStop({ visitId, anchorId, actorUserId }) {
@@ -324,14 +325,10 @@ async function reorderVisitStop({ visitId, anchorId, actorUserId, toIndex }) {
 }
 
 module.exports = {
-  publishedOccurrenceCandidates,
   addContentToVisit,
-  addContentToStop,
-  attachContentToStop,
-  detachContentFromStop,
+  setContentPlacement,
   setContentRole,
   removeContentFromVisit,
-  addVisitStop,
   removeVisitStop,
   reorderVisitStop,
 };
