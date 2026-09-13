@@ -21,13 +21,10 @@ router.route("/v2/visits/:visitId")
   .patch(controller.update);
 
 router.post("/v2/visits/:visitId/commands/content", visitId, controller.addContentToVisit);
-router.post("/v2/visits/:visitId/commands/stops", visitId, controller.addVisitStop);
-router.post("/v2/visits/:visitId/commands/stops/:anchorId/content", visitId, anchorId, controller.addContentToStop);
 router.post("/v2/visits/:visitId/commands/stops/:anchorId/reorder", visitId, anchorId, controller.reorderVisitStop);
 router.delete("/v2/visits/:visitId/commands/stops/:anchorId", visitId, anchorId, controller.removeVisitStop);
 router.post("/v2/visits/:visitId/commands/content/:contentEntryId/reorder", visitId, contentEntryId, controller.reorderVisitContent);
-router.put("/v2/visits/:visitId/commands/content/:contentEntryId/stop/:anchorId", visitId, contentEntryId, anchorId, controller.attachContentToStop);
-router.delete("/v2/visits/:visitId/commands/content/:contentEntryId/stop", visitId, contentEntryId, controller.detachContentFromStop);
+router.put("/v2/visits/:visitId/commands/content/:contentEntryId/placement", visitId, contentEntryId, controller.setContentPlacement);
 router.put("/v2/visits/:visitId/commands/content/:contentEntryId/role", visitId, contentEntryId, controller.setContentRole);
 router.delete("/v2/visits/:visitId/commands/content/:contentEntryId", visitId, contentEntryId, controller.removeContentFromVisit);
 router.put(
