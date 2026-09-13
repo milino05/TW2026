@@ -26,16 +26,6 @@ async function addContentToVisit(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-async function addContentToStop(req, res, next) {
-  try {
-    res.status(200).json(await authoringCommandService.addContentToStop({
-      visitId: req.params.visitId,
-      anchorId: req.params.anchorId,
-      actorUserId: req.user._id,
-      payload: req.body || {},
-    }));
-  } catch (error) { next(error); }
-}
 async function reorderVisitContent(req, res, next) {
   try {
     res.status(200).json(await authoringSequenceCommandService.reorderVisitContent({
@@ -46,22 +36,13 @@ async function reorderVisitContent(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
-async function attachContentToStop(req, res, next) {
+async function setContentPlacement(req, res, next) {
   try {
-    res.status(200).json(await authoringCommandService.attachContentToStop({
-      visitId: req.params.visitId,
-      contentEntryId: req.params.contentEntryId,
-      anchorId: req.params.anchorId,
-      actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-async function detachContentFromStop(req, res, next) {
-  try {
-    res.status(200).json(await authoringCommandService.detachContentFromStop({
+    res.status(200).json(await authoringCommandService.setContentPlacement({
       visitId: req.params.visitId,
       contentEntryId: req.params.contentEntryId,
       actorUserId: req.user._id,
+      placement: req.body?.placement,
     }));
   } catch (error) { next(error); }
 }
@@ -81,15 +62,6 @@ async function removeContentFromVisit(req, res, next) {
       visitId: req.params.visitId,
       contentEntryId: req.params.contentEntryId,
       actorUserId: req.user._id,
-    }));
-  } catch (error) { next(error); }
-}
-async function addVisitStop(req, res, next) {
-  try {
-    res.status(200).json(await authoringCommandService.addVisitStop({
-      visitId: req.params.visitId,
-      actorUserId: req.user._id,
-      venueTargetId: req.body?.venueTargetId,
     }));
   } catch (error) { next(error); }
 }
@@ -139,13 +111,10 @@ module.exports = {
   requestChanges,
   publish,
   addContentToVisit,
-  addContentToStop,
   reorderVisitContent,
-  attachContentToStop,
-  detachContentFromStop,
+  setContentPlacement,
   setContentRole,
   removeContentFromVisit,
-  addVisitStop,
   removeVisitStop,
   reorderVisitStop,
   setInterVenueTransfer,
