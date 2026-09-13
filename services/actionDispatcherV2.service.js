@@ -174,7 +174,7 @@ async function executeDescriptor({ sessionId, userId, descriptor, input = null }
     case "CHECK_ROUTE_OBSTACLES":
       return {
         type: "obstacle_check",
-        obstacleCheck: await projectNextRouteObstacles({ sessionId, userId, routeResult: null }),
+        obstacleCheck: await projectNextRouteObstacles({ sessionId, userId }),
       };
     default:
       throw new AppError("Action non supportata dal dispatcher", 409, [{ code: "ACTION_NOT_SUPPORTED" }]);
