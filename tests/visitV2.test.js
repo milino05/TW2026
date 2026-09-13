@@ -6,12 +6,14 @@ const { cloneDetachedVisitRevision } = require("../services/visitV2Copy.service"
 
 function oid() { return new mongoose.Types.ObjectId(); }
 
-test("Visit v2 validation rejects legacy coupling fields", () => {
+test("Visit v2 validation rejects legacy coupling and execution-mode fields", () => {
   const raw = {
     ownerType: "user",
     ownerId: oid(),
     title: "Visita",
     museumIds: [oid()],
+    deliveryMode: "synchronized",
+    synchronization: { joinAlias: "Fenice rossa" },
     contentEntries: [{
       editorialSourceId: oid(), itemId: oid(), itemEditionId: oid(), itemRevisionId: oid(), role: "core", spatialMode: "target",
     }],
@@ -19,16 +21,17 @@ test("Visit v2 validation rejects legacy coupling fields", () => {
   const normalized = normalizeVisitV2Payload(raw);
   const issues = validateVisitV2Payload({ payload: normalized, rawPayload: raw, creating: true });
   assert.ok(issues.some((entry) => entry.field === "museumIds" && entry.code === "UNKNOWN_FIELD"));
+  assert.ok(issues.some((entry) => entry.field === "deliveryMode" && entry.code === "UNKNOWN_FIELD"));
+  assert.ok(issues.some((entry) => entry.field === "synchronization" && entry.code === "UNKNOWN_FIELD"));
   assert.ok(issues.some((entry) => entry.field === "contentEntries[0].spatialMode" && entry.code === "UNKNOWN_FIELD"));
 });
 
-test("Visit v2 normalizza la configurazione editoriale sincronizzata", () => {
+test("Visit v2 normalizza default di gruppo e quiz editoriali senza classificare la visita", () => {
   const raw = {
     ownerType: "user",
     ownerId: oid(),
     title: "Visita di classe",
-    deliveryMode: "synchronized",
-    synchronization: { joinAlias: "  Fenice   rossa  " },
+    groupSessionDefaults: { preferredJoinAlias: "  Fenice   rossa  " },
     quiz: {
       questions: [{
         question: "  Chi ha realizzato l'opera?  ",
@@ -41,14 +44,15 @@ test("Visit v2 normalizza la configurazione editoriale sincronizzata", () => {
   const normalized = normalizeVisitV2Payload(raw);
   const issues = validateVisitV2Payload({ payload: normalized, rawPayload: raw, creating: true });
   assert.equal(issues.length, 0);
-  assert.equal(normalized.deliveryMode, "synchronized");
-  assert.equal(normalized.synchronization.joinAlias, "Fenice rossa");
+  assert.equal(normalized.groupSessionDefaults.preferredJoinAlias, "Fenice rossa");
   assert.deepEqual(normalized.quiz.questions[0], {
     question: "Chi ha realizzato l'opera?",
     options: ["Leonardo", "Raffaello"],
     correctOptionIndex: 0,
     points: 2,
   });
+  assert.equal(Object.hasOwn(normalized, "deliveryMode"), false);
+  assert.equal(Object.hasOwn(normalized, "synchronization"), false);
 });
 
 test("detached Visit copy remaps local structure and preserves immutable external pins", () => {
@@ -63,8 +67,7 @@ test("detached Visit copy remaps local structure and preserves immutable externa
   const sourceRevision = {
     title: "Originale",
     description: "Descrizione",
-    deliveryMode: "synchronized",
-    synchronization: { joinAlias: "Fenice rossa" },
+    groupSessionDefaults: { preferredJoinAlias: "Fenice rossa" },
     quiz: { questions: [{ _id: quizQuestionId, question: "Domanda?", options: ["A", "B"], correctOptionIndex: 1, points: 3 }] },
     editorialSources: [{ _id: sourceId, editorialReleaseId: releaseId }],
     visitAnchors: [{ _id: anchorId, venueTargetId: targetId }],
@@ -83,8 +86,9 @@ test("detached Visit copy remaps local structure and preserves immutable externa
   assert.equal(String(copy.contentEntries[0].itemRevisionId), String(revisionId));
   assert.equal(String(copy.contentEntries[0].editorialSourceId), String(copy.editorialSources[0]._id));
   assert.equal(String(copy.contentEntries[0].deliveryAnchorId), String(copy.visitAnchors[0]._id));
-  assert.equal(copy.deliveryMode, "synchronized");
-  assert.equal(copy.synchronization.joinAlias, "Fenice rossa");
+  assert.equal(copy.groupSessionDefaults.preferredJoinAlias, "Fenice rossa");
+  assert.equal(Object.hasOwn(copy, "deliveryMode"), false);
+  assert.equal(Object.hasOwn(copy, "synchronization"), false);
   assert.equal(copy.quiz.questions[0].question, "Domanda?");
   assert.notEqual(String(copy.quiz.questions[0]._id), String(quizQuestionId));
 });
