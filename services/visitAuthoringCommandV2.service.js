@@ -149,6 +149,25 @@ function validatePlacementUpdate(placement) {
   }
 }
 
+function selectedRevisionId(selection) {
+  return id(selection.binding?.itemRevisionId || selection.revision?._id);
+}
+
+function assertNoDuplicateContentRevisions(revision, selections) {
+  const seen = new Set((revision.contentEntries || []).map((entry) => id(entry.itemRevisionId)).filter(Boolean));
+  selections.forEach((selection, index) => {
+    const revisionId = selectedRevisionId(selection);
+    if (seen.has(revisionId)) {
+      throw new AppError("Questo contenuto è già presente nella visita", 409, [{
+        field: `entries.${index}.itemRevisionId`,
+        code: "VISIT_CONTENT_ALREADY_INCLUDED",
+        context: { itemRevisionId: revisionId },
+      }]);
+    }
+    seen.add(revisionId);
+  });
+}
+
 function cleanupOrphanAnchor(anchors, entries, nextLogistics, anchorId) {
   if (!anchorId || entries.some((entry) => id(entry.deliveryAnchorId) === id(anchorId))) return false;
   const index = anchors.findIndex((anchor) => id(anchor._id) === id(anchorId));
@@ -177,6 +196,7 @@ async function addContentToVisit({ visitId, actorUserId, payload = {} }) {
       principalId: visit.ownerId,
     }));
   }
+  assertNoDuplicateContentRevisions(revision, selections);
 
   const sources = contentSources(revision);
   const entries = contentEntries(revision);
