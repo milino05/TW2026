@@ -12,11 +12,19 @@ const RoutingProfileSelectionSchema = new Schema({
   routingProfileDefinitionId: { type: String, trim: true, required: true },
 }, { _id: false });
 
+const ExpectedParticipantSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  username: { type: String, required: true, trim: true, lowercase: true, maxlength: 120 },
+}, { _id: false });
+
 const SynchronizedVisitSessionSchema = new Schema({
   visitId: { type: Schema.Types.ObjectId, ref: "VisitV2", required: true, index: true, immutable: true },
   visitRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", required: true, index: true, immutable: true },
   hostUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true, immutable: true },
   joinAlias: { type: String, required: true, trim: true, maxlength: 80 },
+  // Roster facoltativo della singola esecuzione: non crea classi persistenti né
+  // limita il join, serve soltanto alla guida per distinguere entrati/non entrati.
+  expectedParticipants: { type: [ExpectedParticipantSchema], default: [] },
   // Valorizzata soltanto durante lobby/active/quiz. L'indice univoco rende
   // l'alias riutilizzabile dopo la chiusura senza perdere quello mostrato nello storico.
   joinLookupKey: { type: String, trim: true, lowercase: true, default: null },
@@ -52,6 +60,15 @@ SynchronizedVisitSessionSchema.pre("validate", function validateRuntime(next) {
   }
   if (!joinable && this.joinLookupKey != null) {
     this.invalidate("joinLookupKey", "Una sessione conclusa non deve restare raggiungibile tramite alias");
+  }
+  const expectedUserIds = new Set();
+  for (const participant of this.expectedParticipants || []) {
+    const userId = String(participant.userId || "");
+    if (expectedUserIds.has(userId)) {
+      this.invalidate("expectedParticipants", "Uno studente atteso può comparire una sola volta");
+      break;
+    }
+    expectedUserIds.add(userId);
   }
   const venueIds = new Set();
   for (const pin of this.venuePins || []) {
