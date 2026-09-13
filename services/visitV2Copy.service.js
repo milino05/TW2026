@@ -60,9 +60,8 @@ function cloneDetachedVisitRevision(sourceRevision, { title = null } = {}) {
     editorialSources,
     contentEntries,
     visitAnchors,
-    deliveryMode: source.deliveryMode || "self_guided",
-    synchronization: {
-      joinAlias: source.synchronization?.joinAlias || null,
+    groupSessionDefaults: {
+      preferredJoinAlias: source.groupSessionDefaults?.preferredJoinAlias || null,
     },
     quiz: {
       questions: (source.quiz?.questions || []).map((question) => ({
