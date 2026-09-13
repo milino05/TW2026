@@ -37,6 +37,8 @@ const FIELD_LABELS = Object.freeze({
   ownerType: "Tipo di proprietario",
   ownerId: "Proprietario",
   message: "Motivazione",
+  layout: "Configurazione degli spazi",
+  authoredAgainstPhysicalVocabularyRevisionId: "Vocabolario fisico",
 });
 
 const CODE_MESSAGES = Object.freeze({
@@ -75,6 +77,7 @@ const CODE_MESSAGES = Object.freeze({
   QUIZ_OPTIONS_REQUIRED: "Aggiungi almeno due risposte complete.",
   QUIZ_CORRECT_OPTION_REQUIRED: "Seleziona la risposta corretta.",
   QUIZ_POINTS_INVALID: "Inserisci zero o un numero positivo di punti.",
+  PHYSICAL_VOCABULARY_REVISION_NOT_PUBLISHABLE: "Il vocabolario fisico in uso non è ancora pubblicato e valido. Apri “Spazi e mappa” → “Gestisci vocabolario”, completa controllo, revisione e pubblicazione, poi torna qui e riprova.",
 });
 
 function sentence(value) {
@@ -108,6 +111,8 @@ export function replaceTechnicalTerms(message = "") {
     .replaceAll("LanguageLevel", "livello di linguaggio")
     .replaceAll("SubjectClassDefinition", "tipo di soggetto")
     .replaceAll("Subject", "soggetto")
+    .replaceAll("PhysicalVocabularyRevision", "versione del vocabolario fisico")
+    .replaceAll("PhysicalVocabulary", "vocabolario fisico")
     .replaceAll("VenueRelease", "versione della sede")
     .replaceAll("VenueTarget", "entità della sede")
     .replaceAll("LayoutRevision", "configurazione degli spazi")
@@ -147,14 +152,18 @@ export function userFacingIssueMessage(issue = {}) {
 }
 
 export function userFacingErrorMessage(message, { status = null, details = [] } = {}) {
-  const issues = [...new Set((Array.isArray(details) ? details : [])
+  const sourceDetails = Array.isArray(details) ? details : [];
+  const issues = [...new Set(sourceDetails
     .filter((issue) => CODE_MESSAGES[issue?.code] || issue?.message || issue?.field)
     .map(userFacingIssueMessage)
     .filter(Boolean))];
   if (issues.length) {
-    const summary = String(message || "").includes("Namespace")
-      ? "Non è stato possibile salvare le regole editoriali."
-      : "Controlla i dati inseriti.";
+    const hasPhysicalVocabularyBlocker = sourceDetails.some((issue) => issue?.code === "PHYSICAL_VOCABULARY_REVISION_NOT_PUBLISHABLE");
+    const summary = hasPhysicalVocabularyBlocker
+      ? "La sede non è ancora pronta per la pubblicazione."
+      : String(message || "").includes("Namespace")
+        ? "Non è stato possibile salvare le regole editoriali."
+        : "Controlla i dati inseriti.";
     const visible = issues.slice(0, 4).join(" ");
     const remaining = issues.length > 4 ? ` Ci sono altri ${issues.length - 4} campi da correggere.` : "";
     return `${summary} ${visible}${remaining}`.trim();
