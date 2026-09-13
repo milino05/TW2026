@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { Server } = require("socket.io");
+const VisitSessionV2 = require("../models/visitSessionV2.model");
 const authService = require("./auth.service");
 const { getSessionToken } = require("../middlewares/auth");
 const { configuredOrigins } = require("../middlewares/originGuard");
@@ -36,6 +37,18 @@ function notifySynchronizedVisitChanged({ synchronizedSessionId, runtimeVersion 
     sessionId: String(synchronizedSessionId),
     runtimeVersion: Number(runtimeVersion) || null,
   });
+}
+
+async function notifySynchronizedVisitChangedForVisitSession({ visitSessionId, userId }) {
+  const session = await VisitSessionV2.findOne({ _id: visitSessionId, userId })
+    .select("synchronizedSessionId")
+    .lean();
+  if (!session?.synchronizedSessionId) return false;
+  notifySynchronizedVisitChanged({
+    synchronizedSessionId: session.synchronizedSessionId,
+    runtimeVersion: null,
+  });
+  return true;
 }
 
 function initializeSynchronizedVisitRealtime(httpServer) {
@@ -88,6 +101,7 @@ function initializeSynchronizedVisitRealtime(httpServer) {
 module.exports = {
   initializeSynchronizedVisitRealtime,
   notifySynchronizedVisitChanged,
+  notifySynchronizedVisitChangedForVisitSession,
   onlineUserIds,
   roomName,
 };
