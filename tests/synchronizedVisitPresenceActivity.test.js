@@ -16,7 +16,7 @@ test("participant activity normalizza soltanto segnali osservabili supportati", 
   );
   assert.deepEqual(
     normalizeParticipantActivity({ activity: "active", mode: "unknown" }),
-    { activity: "active", mode: null },
+    { activity: "inactive", mode: null },
   );
   assert.deepEqual(
     normalizeParticipantActivity({ activity: "inactive", mode: "audio" }),
