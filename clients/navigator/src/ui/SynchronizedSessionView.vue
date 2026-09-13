@@ -14,10 +14,15 @@ import {
 import { sessionRepository, type AvailableAction, type SessionProjection } from "../infrastructure/http/sessionRepository";
 import {
   synchronizedVisitRepository,
+  type SynchronizedParticipant,
   type SynchronizedQuizProjection,
   type SynchronizedVisitProjection,
 } from "../infrastructure/http/synchronizedVisitRepository";
-import { subscribeToSynchronizedVisit, type SynchronizedRealtimeSubscription } from "../infrastructure/realtime/synchronizedVisitRealtime";
+import {
+  subscribeToSynchronizedVisit,
+  type SynchronizedParticipantPresence,
+  type SynchronizedRealtimeSubscription,
+} from "../infrastructure/realtime/synchronizedVisitRealtime";
 import FeedbackActionDialog from "./FeedbackActionDialog.vue";
 import FeedbackCallout from "./FeedbackCallout.vue";
 import FeedbackProgressState from "./FeedbackProgressState.vue";
@@ -25,6 +30,7 @@ import SessionActionSheet from "./SessionActionSheet.vue";
 
 type InteractionChannel = "button" | "controlled_voice";
 
+const PARTICIPANT_INACTIVE_GRACE_MS = 3000;
 const route = useRoute();
 const group = ref<SynchronizedVisitProjection | null>(null);
 const runtime = ref<SessionProjection | null>(null);
@@ -45,13 +51,14 @@ const groupPanel = ref<HTMLElement | null>(null);
 const groupPanelClose = ref<HTMLButtonElement | null>(null);
 const voicePanel = ref<HTMLElement | null>(null);
 const voiceCancel = ref<HTMLButtonElement | null>(null);
+const participantPresenceByUser = ref(new Map<string, SynchronizedParticipantPresence>());
 let refreshTimer: number | null = null;
+let participantInactiveTimer: number | null = null;
 let realtimeSubscription: SynchronizedRealtimeSubscription | null = null;
 let unsubscribeTts: (() => void) | null = null;
 let voiceSequence = 0;
 let groupReturnFocus: HTMLElement | null = null;
 let voiceReturnFocus: HTMLElement | null = null;
-const onlineUserIds = ref(new Set<string>());
 
 function modalFocusables(root: HTMLElement | null) {
   if (!root) return [] as HTMLElement[];
@@ -127,6 +134,11 @@ function onVoicePanelKeydown(event: KeyboardEvent) {
 
 const synchronizedSessionId = computed(() => String(route.params.synchronizedSessionId || ""));
 const isHost = computed(() => group.value?.membership.role === "host");
+const onlineUserIds = computed(() => new Set(
+  [...participantPresenceByUser.value.values()]
+    .filter((presence) => presence.online)
+    .map((presence) => String(presence.userId)),
+));
 const groupActions = computed(() => (runtime.value?.availableActions || []).filter((action) =>
   action.runtimeScope === "synchronized_visit_session" || action.family === "progress" || action.family === "synchronization"
 ));
@@ -209,6 +221,86 @@ const participantPlaybackVoiceAction = computed<AvailableAction | null>(() => {
   };
 });
 
+function applyPresenceSnapshot(values: SynchronizedParticipantPresence[]) {
+  participantPresenceByUser.value = new Map(values.map((value) => [String(value.userId), value]));
+}
+
+function applyPresence(value: SynchronizedParticipantPresence) {
+  const next = new Map(participantPresenceByUser.value);
+  next.set(String(value.userId), value);
+  participantPresenceByUser.value = next;
+}
+
+function desiredParticipantActivity() {
+  if (isHost.value || group.value?.synchronizedSession.status !== "active") {
+    return { activity: "inactive", mode: null } as const;
+  }
+  if (ttsState.value === "speaking") {
+    return { activity: "active", mode: "audio" } as const;
+  }
+  if (document.visibilityState === "visible") {
+    return { activity: "active", mode: "reading" } as const;
+  }
+  return { activity: "inactive", mode: null } as const;
+}
+
+function publishParticipantActivity({ deferInactive = true } = {}) {
+  if (!realtimeSubscription || isHost.value) return;
+  if (participantInactiveTimer != null) {
+    window.clearTimeout(participantInactiveTimer);
+    participantInactiveTimer = null;
+  }
+  const activity = desiredParticipantActivity();
+  if (activity.activity === "inactive" && deferInactive) {
+    participantInactiveTimer = window.setTimeout(() => {
+      participantInactiveTimer = null;
+      realtimeSubscription?.setParticipantActivity(activity);
+    }, PARTICIPANT_INACTIVE_GRACE_MS);
+    return;
+  }
+  realtimeSubscription.setParticipantActivity(activity);
+}
+
+function handleVisibilityChange() {
+  publishParticipantActivity();
+}
+
+function currentParticipantRequest(participant: SynchronizedParticipant) {
+  const contentEntryId = runtime.value?.current?.contentEntryId || null;
+  return participant.requests?.find((request) => !contentEntryId
+    || String(request.contentEntryId || "") === String(contentEntryId)) || null;
+}
+
+function participantStatusLabel(participant: SynchronizedParticipant) {
+  const presence = participantPresenceByUser.value.get(String(participant.userId));
+  if (!presence?.online) return "Offline";
+  if (presence.activity !== "active") return "Non attivo";
+  const mode = presence.mode === "audio" ? "Audio" : "Lettura";
+  const request = currentParticipantRequest(participant);
+  return `Sta seguendo · ${mode}${request ? ` · Richiesta: ${request.label}` : ""}`;
+}
+
+function formatActivityTime(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function participantDetailLabel(participant: SynchronizedParticipant) {
+  const parts: string[] = [];
+  if (participant.experience?.status === "completed") parts.push("Contenuto completato");
+  else if (participant.experience?.status === "in_progress") parts.push("Contenuto in corso");
+  else parts.push("Contenuto non iniziato");
+  if (participant.experience?.personalAdaptationActive) parts.push("Adattamento personale");
+  const presence = participantPresenceByUser.value.get(String(participant.userId));
+  if (!presence?.online || presence.activity !== "active") {
+    const lastActivity = formatActivityTime(participant.experience?.lastActivityAt);
+    if (lastActivity) parts.push(`Ultima attività ${lastActivity}`);
+  }
+  return parts.join(" · ");
+}
+
 let appliedPlaybackSignature = "";
 watch(() => [
   group.value?.synchronizedSession.playback.commandVersion || 0,
@@ -225,6 +317,7 @@ async function refresh({ quiet = false } = {}) {
     const current = await sessionRepository.current(projection.membership.visitSessionId);
     group.value = projection;
     runtime.value = current;
+    publishParticipantActivity({ deferInactive: false });
     if (["quiz", "completed"].includes(projection.synchronizedSession.status)) {
       quiz.value = await synchronizedVisitRepository.quiz(synchronizedSessionId.value);
     }
@@ -411,19 +504,20 @@ async function cancelSession() {
 }
 
 onMounted(async () => {
-  unsubscribeTts = browserTts.subscribe((state) => { ttsState.value = state; });
+  unsubscribeTts = browserTts.subscribe((state) => {
+    ttsState.value = state;
+    publishParticipantActivity();
+  });
   window.addEventListener("keydown", handleKeydown);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   await refresh();
   realtimeSubscription = subscribeToSynchronizedVisit({
     sessionId: synchronizedSessionId.value,
     onInvalidated: () => refresh({ quiet: true }),
-    onPresenceSnapshot: (values) => { onlineUserIds.value = new Set(values); },
-    onPresence: ({ userId, online }) => {
-      const next = new Set(onlineUserIds.value);
-      if (online) next.add(String(userId)); else next.delete(String(userId));
-      onlineUserIds.value = next;
-    },
+    onPresenceSnapshot: applyPresenceSnapshot,
+    onPresence: applyPresence,
   });
+  publishParticipantActivity({ deferInactive: false });
   // Fallback lento: dopo reconnect o notifiche perse si rilegge comunque la
   // projection REST, che resta l'unica source of truth applicativa.
   refreshTimer = window.setInterval(() => refresh({ quiet: true }), 15000);
@@ -434,6 +528,8 @@ onUnmounted(() => {
   browserTts.stop();
   browserControlledVoice.stop();
   window.removeEventListener("keydown", handleKeydown);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (participantInactiveTimer != null) window.clearTimeout(participantInactiveTimer);
   if (refreshTimer != null) window.clearInterval(refreshTimer);
   realtimeSubscription?.close();
   document.documentElement.classList.remove("artaround-layer-open");
@@ -631,8 +727,9 @@ onUnmounted(() => {
               <li v-for="participant in group.participants?.filter((entry) => entry.role === 'participant')" :key="participant.userId">
                 <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
                 <strong>{{ participant.username }}</strong>
-                <small>{{ onlineUserIds.has(String(participant.userId)) ? 'Online' : 'Offline' }} · {{ participant.experience?.status === 'completed' ? 'Completato' : participant.experience?.status === 'in_progress' ? 'Sta seguendo' : 'Non iniziato' }}<template v-if="participant.experience?.personalAdaptationActive"> · Adattamento personale</template></small>
-                <small v-if="participant.requests?.length">Richieste: {{ participant.requests.map((request) => request.label).join(' · ') }}</small>
+                <small class="participant-presence-status">{{ participantStatusLabel(participant) }}</small>
+                <small>{{ participantDetailLabel(participant) }}</small>
+                <small v-if="participant.requests?.length">Storico richieste: {{ participant.requests.slice(0, 3).map((request) => request.label).join(' · ') }}</small>
               </li>
             </ul>
             <p v-if="!group.synchronizedSession.participantCount" class="empty-participants">Nessun partecipante è ancora collegato.</p>
@@ -686,6 +783,6 @@ onUnmounted(() => {
 .session-progress{flex:0 0 auto;padding:.25rem 1.25rem .7rem}.session-progress>div:first-child{display:flex;justify-content:space-between;gap:1rem;color:var(--navigator-muted);font-size:.72rem;font-weight:740}.progress-track{height:4px;margin-top:.45rem;overflow:hidden;border-radius:999px;background:var(--navigator-border)}.progress-track span{display:block;height:100%;border-radius:inherit;background:var(--navigator-brand-primary);transition:width .25s ease}
 .session-experience>.inline-feedback{margin:.15rem 1.25rem .5rem}.active-session-body{min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden}.session-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:.35rem 1.25rem 1.25rem;scrollbar-width:thin}.content-panel{width:min(100%,44rem);margin:0 auto}.physical-context{display:flex;align-items:center;gap:.45rem;margin:.2rem 0;color:var(--navigator-muted);font-size:.75rem;font-weight:720}.physical-context span{width:.45rem;height:.45rem;border-radius:50%;background:var(--navigator-accent)}.content-panel h1{margin:.55rem 0 .25rem;font-family:Georgia,"Times New Roman",serif;font-size:clamp(2rem,8vw,3.3rem);font-weight:500;line-height:1.04;letter-spacing:-.025em}.content-media{overflow:hidden;margin:1rem 0 0;border:1px solid var(--navigator-border);border-radius:1.1rem;background:color-mix(in srgb,var(--navigator-text) 5%,var(--navigator-surface-raised))}.content-media img{display:block;width:100%;height:auto;max-height:35vh;object-fit:contain}.presentation-copy{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:clamp(1.12rem,4.5vw,1.35rem);line-height:1.65}.quick-title{margin:1.45rem 0 .55rem;color:var(--navigator-muted);font-family:inherit;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase}.quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.quick-actions button{min-height:50px;padding:.65rem;text-align:left;border:1px solid var(--navigator-border);border-radius:.75rem;background:var(--navigator-surface-raised);color:var(--navigator-text);font:inherit;font-size:.84rem;font-weight:720}.all-actions{width:100%;min-height:46px;margin-top:.6rem;border:0;border-radius:.75rem;color:var(--navigator-brand-primary);background:color-mix(in srgb,var(--navigator-brand-primary) 9%,var(--navigator-surface-raised));font:inherit;font-weight:770}.participant-note{margin:1rem 0 0;padding:.8rem;border-radius:.8rem;background:color-mix(in srgb,var(--navigator-brand-primary) 8%,var(--navigator-surface-raised));text-align:center}
 .session-bottom{position:relative;z-index:10;flex:0 0 auto;min-height:84px;display:grid;grid-template-columns:minmax(0,1fr) 72px minmax(0,1fr);align-items:center;gap:.65rem;padding:.7rem 1.1rem max(.9rem,env(safe-area-inset-bottom));border-top:1px solid var(--navigator-border);background:color-mix(in srgb,var(--navigator-surface-raised) 94%,transparent);backdrop-filter:blur(16px)}.progress-action{min-height:50px;padding:.65rem;border:1px solid var(--navigator-border);border-radius:.75rem;color:var(--navigator-text);background:var(--navigator-surface-raised);font:inherit;font-size:.82rem;font-weight:760}.next-action{border-color:var(--navigator-brand-primary);color:var(--navigator-on-primary);background:var(--navigator-brand-primary)}.session-bottom .voice-action{width:66px;height:66px;min-height:0;justify-self:center;display:grid;place-items:center;margin:0;padding:0;border:5px solid var(--navigator-surface);border-radius:50%;color:var(--navigator-on-primary);background:var(--navigator-brand-primary);box-shadow:0 7px 20px var(--navigator-shadow)}
-.group-overlay{align-items:center;padding:1rem}.group-sheet{width:min(100%,42rem);max-height:min(88dvh,48rem);display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden;border:1px solid var(--navigator-border);border-radius:1.4rem;color:var(--navigator-text);background:var(--navigator-surface-raised);box-shadow:0 24px 70px rgba(0,0,0,.34)}.group-sheet>header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1rem .75rem;border-bottom:1px solid var(--navigator-border)}.group-sheet h2,.group-sheet p{margin:.15rem 0}.group-sheet>header>button{width:42px;height:42px;padding:0;border:0;border-radius:50%;color:var(--navigator-text);background:var(--navigator-surface);font-size:1.6rem}.group-sheet-scroll{min-height:0;overflow-y:auto;padding:.75rem 1rem}.group-sheet .participant-list{width:100%;max-width:none}.group-sheet .participant-list li{grid-template-columns:auto minmax(0,1fr);align-items:start}.group-sheet .participant-list small{grid-column:2;white-space:normal}.empty-participants{padding:2rem;text-align:center;color:var(--navigator-muted)}.group-sheet-actions{padding:.75rem 1rem;border-top:1px solid var(--navigator-border)}.group-danger{padding:.75rem 1rem;border-top:1px solid color-mix(in srgb,#a33 25%,var(--navigator-border));background:color-mix(in srgb,#a33 4%,transparent)}.group-danger>button,.group-danger div button{min-height:2.6rem;padding:.55rem .8rem;border:1px solid var(--navigator-border);border-radius:.7rem;background:var(--navigator-surface);color:var(--navigator-text);font:inherit;font-weight:750}.group-danger div{display:flex;justify-content:flex-end;gap:.5rem}.group-danger .danger{border-color:#a33;background:#a33;color:#fff}
+.group-overlay{align-items:center;padding:1rem}.group-sheet{width:min(100%,42rem);max-height:min(88dvh,48rem);display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden;border:1px solid var(--navigator-border);border-radius:1.4rem;color:var(--navigator-text);background:var(--navigator-surface-raised);box-shadow:0 24px 70px rgba(0,0,0,.34)}.group-sheet>header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1rem .75rem;border-bottom:1px solid var(--navigator-border)}.group-sheet h2,.group-sheet p{margin:.15rem 0}.group-sheet>header>button{width:42px;height:42px;padding:0;border:0;border-radius:50%;color:var(--navigator-text);background:var(--navigator-surface);font-size:1.6rem}.group-sheet-scroll{min-height:0;overflow-y:auto;padding:.75rem 1rem}.group-sheet .participant-list{width:100%;max-width:none}.group-sheet .participant-list li{grid-template-columns:auto minmax(0,1fr);align-items:start}.group-sheet .participant-list small{grid-column:2;white-space:normal}.group-sheet .participant-presence-status{color:var(--navigator-text);font-weight:800}.empty-participants{padding:2rem;text-align:center;color:var(--navigator-muted)}.group-sheet-actions{padding:.75rem 1rem;border-top:1px solid var(--navigator-border)}.group-danger{padding:.75rem 1rem;border-top:1px solid color-mix(in srgb,#a33 25%,var(--navigator-border));background:color-mix(in srgb,#a33 4%,transparent)}.group-danger>button,.group-danger div button{min-height:2.6rem;padding:.55rem .8rem;border:1px solid var(--navigator-border);border-radius:.7rem;background:var(--navigator-surface);color:var(--navigator-text);font:inherit;font-weight:750}.group-danger div{display:flex;justify-content:flex-end;gap:.5rem}.group-danger .danger{border-color:#a33;background:#a33;color:#fff}
 @media(max-width:40rem){.session-header{grid-template-columns:48px minmax(0,1fr) 64px;padding-inline:.65rem}.group-control-button em{display:none}.session-scroll{padding-inline:1rem}.group-overlay{align-items:end;padding:0}.group-sheet{max-height:92dvh;border-radius:1.4rem 1.4rem 0 0}.quick-actions{grid-template-columns:1fr}}
 </style>
