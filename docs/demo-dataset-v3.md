@@ -60,24 +60,24 @@ Questa struttura mantiene separati:
 
 ## Visite
 
-Sono pubblicate sei visite, tutte con almeno dieci tappe fisiche:
+Sono pubblicate sei Visit, tutte con almeno dieci tappe fisiche. Nessuna `VisitRevision` è classificata come self-guided o synchronized: la modalità viene scelta nel Navigator tramite `ExecutionPreparation.executionMode`.
 
 ### Pinacoteca
 
-1. **Capolavori della Pinacoteca** — self-guided.
-2. **Dai Carracci al Seicento** — self-guided.
-3. **Classe alla Pinacoteca** — sincronizzata, alias `FENICE ROSSA`, quiz finale.
+1. **Capolavori della Pinacoteca** — Visit senza configurazione di gruppo predefinita.
+2. **Dai Carracci al Seicento** — Visit senza configurazione di gruppo predefinita.
+3. **Classe alla Pinacoteca** — predisposta anche per uso di gruppo, nome suggerito `FENICE ROSSA`, quiz finale di cinque domande.
 
 ### MAMbo
 
-4. **Dal secondo Novecento al contemporaneo** — self-guided.
-5. **Materia, gesto e politica** — self-guided.
+4. **Dal secondo Novecento al contemporaneo** — Visit senza configurazione di gruppo predefinita.
+5. **Materia, gesto e politica** — Visit senza configurazione di gruppo predefinita.
 
 ### Museo Civico Archeologico
 
-6. **Bologna antica: laboratorio di archeologia** — sincronizzata, alias `ATENA BLU`, quiz finale.
+6. **Bologna antica: laboratorio di archeologia** — predisposta anche per uso di gruppo, nome suggerito `ATENA BLU`, quiz finale di cinque domande.
 
-Le tre visite della Pinacoteca preservano il requisito minimo di tre visite da almeno dieci opere sullo stesso museo. Le due visite sincronizzate contengono cinque domande ciascuna.
+Le tre Visit della Pinacoteca preservano il requisito minimo di tre visite da almeno dieci opere sullo stesso museo. Le due Visit predisposte per l'uso di gruppo **restano avviabili anche personalmente**: alias e quiz sono configurazioni editoriali opzionali, non una modalità della Visit.
 
 ## Verifica
 
@@ -97,7 +97,8 @@ Il verifier controlla almeno:
 - 12 VenueTarget e 12 ExhibitSlot per Venue;
 - map asset e integrità VenueRelease;
 - sei Visit pubblicate, tutte con almeno dieci contenuti distinti;
-- esattamente due Visit sincronizzate con alias e quiz;
+- esattamente due Visit demo predisposte per uso di gruppo con nome suggerito e quiz;
+- assenza di `deliveryMode`/`synchronization` dalle VisitRevision;
 - tre visite della Pinacoteca;
 - Listing e Offer attive per tutte le visite.
 

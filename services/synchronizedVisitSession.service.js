@@ -5,12 +5,14 @@ const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const SynchronizedVisitSession = require("../models/synchronizedVisitSession.model");
 const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
 const AppError = require("../utils/AppError");
+const { ACTION_DEFINITIONS } = require("../config/runtimeActions");
 const {
   createInitialSynchronizedSessionPlan,
   buildPersonalPresentationOverrides,
 } = require("./sessionPlanV2.service");
 
 const JOINABLE_STATUSES = ["lobby", "active", "quiz"];
+const OBSERVABLE_REQUEST_FAMILIES = new Set(["presentation", "semantic"]);
 
 function normalizeJoinAlias(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -26,6 +28,13 @@ function aliasCandidate(baseAlias, suffix) {
 }
 
 function duplicateKey(error) { return Number(error?.code) === 11000; }
+
+async function synchronizedQuizAvailable(groupOrRevisionId) {
+  const revisionId = groupOrRevisionId?.visitRevisionId || groupOrRevisionId;
+  if (!revisionId) return false;
+  const revision = await VisitRevisionV2.findById(revisionId).select("quiz.questions._id").lean();
+  return Boolean(revision?.quiz?.questions?.length);
+}
 
 async function activateReadableAlias(group, preferredAlias) {
   const baseAlias = normalizeJoinAlias(preferredAlias) || "Visita insieme";
@@ -197,6 +206,31 @@ async function joinSynchronizedVisitSession({ userId, alias }) {
   }
 }
 
+function participantRequestLabel(event) {
+  const recorded = String(event?.metadata?.actionLabel || "").trim();
+  if (recorded) return recorded;
+  const definition = ACTION_DEFINITIONS[event?.actionType];
+  if (definition?.label) return definition.label;
+  return event?.actionFamily === "semantic" ? "Approfondimento collegato" : "Adattamento personale";
+}
+
+function participantRequests(personal) {
+  return (personal?.interactionEvents || [])
+    .filter((event) => event.category === "action"
+      && event.result?.status === "applied"
+      && OBSERVABLE_REQUEST_FAMILIES.has(event.actionFamily)
+      && event.actionType !== "SEMANTIC_RETURN")
+    .map((event) => ({
+      actionType: event.actionType || null,
+      family: event.actionFamily,
+      label: participantRequestLabel(event),
+      contentEntryId: event.context?.contentEntryId || null,
+      interactionChannel: event.interactionChannel || null,
+      at: event.at || null,
+    }))
+    .sort((left, right) => new Date(right.at || 0) - new Date(left.at || 0));
+}
+
 async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }) {
   const { group, membership, visitSession } = await loadMembershipRuntime({ synchronizedSessionId, userId });
   const [revision, sharedPlan] = await Promise.all([
@@ -221,34 +255,37 @@ async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }
     const userById = new Map(users.map((entry) => [String(entry._id), entry]));
     const sessionById = new Map(personalSessions.map((entry) => [String(entry._id), entry]));
     const currentContentEntryId = sharedPlan.contentEntries?.[group.currentEntryIndex]?._id || null;
-    participants = memberships.map((entry) => ({
-      userId: entry.userId,
-      username: userById.get(String(entry.userId))?.username || "Partecipante",
-      role: entry.role,
-      status: entry.status,
-      joinedAt: entry.joinedAt,
-      visitSessionId: entry.visitSessionId,
-      experience: (() => {
-        const personal = sessionById.get(String(entry.visitSessionId));
-        const experiences = currentContentEntryId
-          ? (personal?.contentEntryExperiences || []).filter((value) => String(value.contentEntryId) === String(currentContentEntryId))
-          : [];
-        const latestExperience = experiences.at(-1) || null;
-        const currentEvents = currentContentEntryId
-          ? (personal?.interactionEvents || []).filter((value) => String(value.context?.contentEntryId || "") === String(currentContentEntryId))
-          : [];
-        const semanticActive = Boolean(currentContentEntryId)
-          && String(personal?.semanticPresentation?.sourceContentEntryId || "") === String(currentContentEntryId);
-        const completionRatio = latestExperience?.completionRatio ?? 0;
-        const lastActivityAt = [latestExperience?.createdAt, ...currentEvents.map((value) => value.at)].filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || null;
-        return {
-          status: completionRatio >= 0.95 ? "completed" : (latestExperience || currentEvents.length || semanticActive) ? "in_progress" : "not_started",
-          completionRatio,
-          personalAdaptationActive: semanticActive || (personal?.presentationOverrides || []).some((value) => String(value.contentEntryId) === String(currentContentEntryId)),
-          lastActivityAt,
-        };
-      })(),
-    }));
+    participants = memberships.map((entry) => {
+      const personal = sessionById.get(String(entry.visitSessionId));
+      return {
+        userId: entry.userId,
+        username: userById.get(String(entry.userId))?.username || "Partecipante",
+        role: entry.role,
+        status: entry.status,
+        joinedAt: entry.joinedAt,
+        visitSessionId: entry.visitSessionId,
+        requests: participantRequests(personal),
+        experience: (() => {
+          const experiences = currentContentEntryId
+            ? (personal?.contentEntryExperiences || []).filter((value) => String(value.contentEntryId) === String(currentContentEntryId))
+            : [];
+          const latestExperience = experiences.at(-1) || null;
+          const currentEvents = currentContentEntryId
+            ? (personal?.interactionEvents || []).filter((value) => String(value.context?.contentEntryId || "") === String(currentContentEntryId))
+            : [];
+          const semanticActive = Boolean(currentContentEntryId)
+            && String(personal?.semanticPresentation?.sourceContentEntryId || "") === String(currentContentEntryId);
+          const completionRatio = latestExperience?.completionRatio ?? 0;
+          const lastActivityAt = [latestExperience?.createdAt, ...currentEvents.map((value) => value.at)].filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || null;
+          return {
+            status: completionRatio >= 0.95 ? "completed" : (latestExperience || currentEvents.length || semanticActive) ? "in_progress" : "not_started",
+            completionRatio,
+            personalAdaptationActive: semanticActive || (personal?.presentationOverrides || []).some((value) => String(value.contentEntryId) === String(currentContentEntryId)),
+            lastActivityAt,
+          };
+        })(),
+      };
+    });
   }
   return {
     synchronizedSession: {
@@ -342,8 +379,7 @@ async function startSynchronizedVisit({ synchronizedSessionId, userId }) {
 
 async function startSynchronizedQuiz({ synchronizedSessionId, userId }) {
   const group = await requireHostRuntime({ synchronizedSessionId, userId, status: "active" });
-  const revision = await VisitRevisionV2.findById(group.visitRevisionId).select("quiz.questions").lean();
-  if (!revision?.quiz?.questions?.length) throw new AppError("Questa visita non contiene un quiz", 409, [{ code: "SYNCHRONIZED_QUIZ_UNAVAILABLE" }]);
+  if (!(await synchronizedQuizAvailable(group))) throw new AppError("Questa visita non contiene un quiz", 409, [{ code: "SYNCHRONIZED_QUIZ_UNAVAILABLE" }]);
   group.status = "quiz";
   resetSynchronizedPlayback(group, { changedBy: userId });
   group.quizStartedAt = new Date();
@@ -352,7 +388,14 @@ async function startSynchronizedQuiz({ synchronizedSessionId, userId }) {
 }
 
 async function completeSynchronizedVisit({ synchronizedSessionId, userId }) {
-  const group = await requireHostRuntime({ synchronizedSessionId, userId, status: "quiz" });
+  const group = await requireHostRuntime({ synchronizedSessionId, userId });
+  if (group.status === "active") {
+    if (await synchronizedQuizAvailable(group)) {
+      throw new AppError("Avvia il quiz prima di completare questa visita", 409, [{ code: "SYNCHRONIZED_QUIZ_REQUIRED_BEFORE_COMPLETE" }]);
+    }
+  } else if (group.status !== "quiz") {
+    throw new AppError("Operazione non disponibile nello stato corrente", 409, [{ code: "SYNCHRONIZED_STATUS_CONFLICT", context: { currentStatus: group.status } }]);
+  }
   const completedAt = new Date();
   group.status = "completed";
   group.joinLookupKey = null;
@@ -402,6 +445,7 @@ module.exports = {
   JOINABLE_STATUSES,
   normalizeJoinAlias,
   joinLookupKey,
+  synchronizedQuizAvailable,
   createSynchronizedVisitRuntime,
   joinSynchronizedVisitSession,
   loadMembershipRuntime,

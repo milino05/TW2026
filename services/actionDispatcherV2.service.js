@@ -30,6 +30,7 @@ const { notifySynchronizedVisitChanged } = require("./synchronizedVisitRealtime.
 const { submitSynchronizedQuiz } = require("./synchronizedVisitQuiz.service");
 
 const INTERACTION_CHANNELS = new Set(["button", "controlled_voice", "natural_language", "system"]);
+const OBSERVABLE_SYNCHRONIZED_REQUEST_FAMILIES = new Set(["presentation", "semantic"]);
 
 function normalizeExpectedRuntimeVersion(value) {
   const version = Number(value);
@@ -71,7 +72,7 @@ function interactionEvent({ userId, descriptor, actionId, interactionChannel, st
     interactionChannel,
     context: descriptor?.context || {},
     result: { status, code },
-    metadata: null,
+    metadata: descriptor?.label ? { actionLabel: descriptor.label } : null,
     at: new Date(),
   };
 }
@@ -244,6 +245,18 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     { _id: sessionId, userId },
     { $push: { interactionEvents: interactionEvent({ userId, descriptor, interactionChannel, status: "applied" }) } },
   );
+
+  const personalSynchronizedRequest = derived.synchronizedSession
+    && descriptor.runtimeScope !== "synchronized_visit_session"
+    && OBSERVABLE_SYNCHRONIZED_REQUEST_FAMILIES.has(descriptor.family)
+    && descriptor.type !== "SEMANTIC_RETURN";
+  if (personalSynchronizedRequest) {
+    notifySynchronizedVisitChanged({
+      synchronizedSessionId: derived.synchronizedSession._id,
+      runtimeVersion: derived.synchronizedSession.runtimeVersion,
+    });
+  }
+
   const runtime = appendSemanticChoices(await currentSessionProjection({ sessionId, userId }), effect);
   return {
     action: { actionId: descriptor.actionId, type: descriptor.type, family: descriptor.family },

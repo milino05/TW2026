@@ -49,15 +49,18 @@ test("visit authoring espone cinque passaggi con composer della sequenza", () =>
   assert.match(view, /aria-label="Passaggi di creazione della visita"/);
 });
 
-test("la modalità sincronizzata estende i cinque step senza creare un altro wizard", () => {
-  assert.match(view, /Visita sincronizzata/);
-  assert.match(view, /deliveryMode:\s*synchronized \? "synchronized" : "self_guided"/);
-  assert.match(view, /name="joinAlias"/);
+test("l'authoring prepara opzionalmente gruppo e quiz senza classificare la Visit", () => {
+  assert.match(view, /Uso di gruppo opzionale/);
+  assert.match(view, /groupSessionDefaults/);
+  assert.match(view, /preferredJoinAlias/);
   assert.match(view, /data-add-quiz-question/);
   assert.match(view, /data-quiz-question/);
   assert.match(view, /data-quiz-option/);
   assert.match(view, /data-quiz-correct/);
-  assert.match(view, /synchronized \? this\.renderQuizEditor\(\) : ""/);
+  assert.match(view, /Nessuna domanda configurata: la visita resta comunque eseguibile anche in gruppo/);
+  assert.doesNotMatch(view, /deliveryMode/);
+  assert.doesNotMatch(view, /name="synchronized"/);
+  assert.doesNotMatch(view, /name="joinAlias"/);
   assert.doesNotMatch(view, /\[6,\s*"/);
 });
 

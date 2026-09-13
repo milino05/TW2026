@@ -5,6 +5,7 @@ import "./ui/interaction-layers.css";
 import App from "./ui/App.vue";
 import { router } from "./application/router";
 import { useAuthStore, useConfiguredVenueStore } from "./application/stores";
+import { installSynchronizedContentExperienceTelemetry } from "./application/synchronizedContentExperienceTelemetry";
 import { loadNavigatorPlatformConfig } from "./domain/navigatorStaticConfig";
 import { authRepository } from "./infrastructure/http/authRepository";
 
@@ -19,6 +20,7 @@ async function bootstrap() {
       .catch(() => useAuthStore().clear()),
   ]);
   useConfiguredVenueStore().bootstrapPlatform(config);
+  installSynchronizedContentExperienceTelemetry(router);
 
   createApp(App)
     .use(pinia)

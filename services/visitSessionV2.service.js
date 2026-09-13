@@ -17,7 +17,7 @@ const {
   deriveSemanticExplorationActions,
   materializeSemanticPresentation,
 } = require("./runtimeSemanticExplorationV2.service");
-const { resetSynchronizedPlayback } = require("./synchronizedVisitSession.service");
+const { resetSynchronizedPlayback, synchronizedQuizAvailable } = require("./synchronizedVisitSession.service");
 
 function effectivePresentation(session, entry) {
   const override = (session.presentationOverrides || []).find((value) => id(value.contentEntryId) === id(entry._id));
@@ -256,7 +256,11 @@ async function deriveRuntimeActions({ sessionId, userId }) {
         }
         if (index > 0) actions.push(groupAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
         if (index < entries.length - 1) actions.push(groupAction(ACTION_DEFINITIONS.PROGRESS_NEXT, { context }));
-        actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_START_QUIZ, { context }));
+        if (await synchronizedQuizAvailable(synchronizedSession)) {
+          actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_START_QUIZ, { context }));
+        } else {
+          actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_COMPLETE, { context }));
+        }
       }
     } else {
       if (index > 0) actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
@@ -301,7 +305,7 @@ async function currentSessionProjection({ sessionId, userId }) {
       sourceType: session.sourceType,
       currentEntryIndex: index,
       runtimeVersion: session.runtimeVersion,
-      deliveryMode: synchronizedSession ? "synchronized" : "self_guided",
+      executionMode: synchronizedSession ? "synchronized" : "self_guided",
     },
     synchronization: synchronizedSession ? {
       id: synchronizedSession._id,

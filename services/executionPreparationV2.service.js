@@ -32,6 +32,7 @@ const { projectExecutionNavigationOptions } = require("./executionNavigationOpti
 const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service");
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
+const EXECUTION_MODES = new Set(["self_guided", "synchronized"]);
 
 function id(value) { return String(value?._id || value || ""); }
 function validUnit(value) { return Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1; }
@@ -46,6 +47,57 @@ function assertNotExpired(preparation, now = new Date()) {
   if (preparation.expiresAt && new Date(preparation.expiresAt) <= now) {
     throw new AppError("ExecutionPreparation scaduta", 409, [{ code: "PREPARATION_EXPIRED" }]);
   }
+}
+function normalizeExecutionMode(value, fallback = "self_guided") {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  if (!EXECUTION_MODES.has(normalized)) {
+    throw new AppError("executionMode non valido", 400, [{
+      field: "executionMode",
+      code: "INVALID_ENUM",
+      context: { allowedValues: [...EXECUTION_MODES] },
+    }]);
+  }
+  return normalized;
+}
+function assertExecutionModeSupported(sourceType, executionMode) {
+  if (sourceType === "generated_plan" && executionMode === "synchronized") {
+    throw new AppError("Il piano generato non supporta ancora l'esecuzione sincronizzata", 409, [{
+      field: "executionMode",
+      code: "EXECUTION_MODE_NOT_SUPPORTED",
+      context: { sourceType, executionMode },
+    }]);
+  }
+}
+function normalizeJoinAlias(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  if (normalized.length > 80) {
+    throw new AppError("Il nome di ingresso non può superare 80 caratteri", 400, [{
+      field: "groupSessionSetup.requestedJoinAlias",
+      code: "OUT_OF_RANGE",
+    }]);
+  }
+  return normalized;
+}
+function preferredJoinAlias(sourceSnapshot) {
+  return normalizeJoinAlias(
+    sourceSnapshot.groupSessionDefaults?.preferredJoinAlias
+      || sourceSnapshot.title
+      || "Visita insieme",
+  );
+}
+function resolveGroupSessionSetup({ payload = {}, current = null, executionMode, sourceSnapshot }) {
+  if (executionMode !== "synchronized") return { requestedJoinAlias: null };
+  const setup = payload.groupSessionSetup;
+  if (setup !== undefined && (setup == null || typeof setup !== "object" || Array.isArray(setup))) {
+    throw new AppError("groupSessionSetup deve essere un oggetto", 400, [{ field: "groupSessionSetup", code: "INVALID_TYPE" }]);
+  }
+  const explicitlyProvided = setup && Object.prototype.hasOwnProperty.call(setup, "requestedJoinAlias");
+  const requestedJoinAlias = explicitlyProvided
+    ? normalizeJoinAlias(setup.requestedJoinAlias)
+    : normalizeJoinAlias(current?.requestedJoinAlias) || preferredJoinAlias(sourceSnapshot);
+  return { requestedJoinAlias: requestedJoinAlias || preferredJoinAlias(sourceSnapshot) };
 }
 function normalizePresentationPreference(stored = null, override = null) {
   const result = {
@@ -101,6 +153,15 @@ function mergeDraft(current = {}, patch = {}) {
   }
   return next;
 }
+function withVisitExecutionDefaults(snapshot, revision) {
+  return {
+    ...snapshot,
+    title: revision.title,
+    groupSessionDefaults: {
+      preferredJoinAlias: revision.groupSessionDefaults?.preferredJoinAlias || null,
+    },
+  };
+}
 
 async function resolveExactSource({ userId, payload = {} }) {
   const hasVisit = Boolean(payload.visitId);
@@ -119,9 +180,8 @@ async function resolveExactSource({ userId, payload = {} }) {
         visitRevisionId: revision._id,
         generatedVisitPlanId: null,
         versionPolicy: access.entitlement?.versionPolicy === "pinned" ? "pinned" : "follow_current",
-        deliveryMode: revision.deliveryMode || "self_guided",
       },
-      sourceSnapshot: visitRevisionSourceSnapshotV2({ visit, revision }),
+      sourceSnapshot: withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision),
     };
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: payload.generatedVisitPlanId, userId }).lean();
@@ -134,7 +194,6 @@ async function resolveExactSource({ userId, payload = {} }) {
       visitRevisionId: null,
       generatedVisitPlanId: plan._id,
       versionPolicy: "fixed_generated_plan",
-      deliveryMode: "self_guided",
     },
     sourceSnapshot: generatedPlanSourceSnapshotV2(plan),
   };
@@ -159,7 +218,7 @@ async function loadExactSourceForPreparation(preparation, { revalidateAuthorizat
       status: { $in: ["published", "superseded"] },
     }).lean();
     if (!revision) throw new AppError("VisitRevision pinzata dalla preparation non disponibile", 409, [{ code: "PREPARATION_SOURCE_UNAVAILABLE" }]);
-    return visitRevisionSourceSnapshotV2({ visit, revision });
+    return withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision);
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: source.generatedVisitPlanId, userId: preparation.userId }).lean();
   if (!plan || plan.status !== "accepted") {
@@ -271,15 +330,15 @@ async function fallbackPhysicalProjection(sourceSnapshot) {
   }
 }
 
-async function calculatePreparationState({ sourceSnapshot, navigation, presentation }) {
+async function calculatePreparationState({ sourceSnapshot, navigation, presentation, executionMode }) {
   try {
     const prepared = await prepareInitialSessionPlan({
       source: sourceSnapshot,
       navigation,
       userPreference: null,
-      // Il piano di gruppo conserva la baseline editoriale comune. Le preferenze
-      // dell'host vengono applicate soltanto alla sua VisitSession personale.
-      explicitPreference: sourceSnapshot.deliveryMode === "synchronized" ? null : presentation,
+      // Il piano strutturale condiviso conserva la baseline editoriale comune.
+      // Le preferenze dell'host vengono applicate soltanto alla sua VisitSession personale.
+      explicitPreference: executionMode === "synchronized" ? null : presentation,
     });
     return {
       venuePins: prepared.venuePins,
@@ -316,7 +375,13 @@ function publicProjection(preparation) {
       visitRevisionId: preparation.source.visitRevisionId || null,
       generatedVisitPlanId: preparation.source.generatedVisitPlanId || null,
       versionPolicy: preparation.source.versionPolicy,
-      deliveryMode: preparation.source.deliveryMode || "self_guided",
+    },
+    executionMode: preparation.executionMode || "self_guided",
+    availableExecutionModes: preparation.source.sourceType === "visit"
+      ? ["self_guided", "synchronized"]
+      : ["self_guided"],
+    groupSessionSetup: {
+      requestedJoinAlias: preparation.groupSessionSetup?.requestedJoinAlias || null,
     },
     effectivePresentationPreference: preparation.effectivePresentationPreference || null,
     navigation: {
@@ -337,14 +402,23 @@ async function createExecutionPreparation({ userId, payload = {} }) {
   const user = await User.findOne({ _id: userId, status: "active" }).lean();
   if (!user) throw new AppError("Utente non disponibile", 404);
   const resolved = await resolveExactSource({ userId, payload });
+  const executionMode = normalizeExecutionMode(payload.executionMode, "self_guided");
+  assertExecutionModeSupported(resolved.identity.sourceType, executionMode);
+  const groupSessionSetup = resolveGroupSessionSetup({
+    payload,
+    executionMode,
+    sourceSnapshot: resolved.sourceSnapshot,
+  });
   const draft = normalizedDraft(payload);
   const presentation = normalizePresentationPreference(user.defaultPresentationPreference, draft.presentationPreference);
   const navigationBaseline = resolved.sourceSnapshot.navigationBaseline || user.defaultNavigationPreference;
   const navigation = normalizeNavigation(navigationBaseline, draft);
-  const state = await calculatePreparationState({ sourceSnapshot: resolved.sourceSnapshot, navigation, presentation });
+  const state = await calculatePreparationState({ sourceSnapshot: resolved.sourceSnapshot, navigation, presentation, executionMode });
   const preparation = await ExecutionPreparation.create({
     userId,
     source: resolved.identity,
+    executionMode,
+    groupSessionSetup,
     version: 1,
     status: "active",
     preparationDraft: draft,
@@ -373,17 +447,27 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
   if (preparation.version !== Number(expectedVersion)) {
     throw new AppError("ExecutionPreparation modificata", 409, [{ code: "PREPARATION_VERSION_CONFLICT", context: { currentVersion: preparation.version } }]);
   }
+  const sourceSnapshot = await loadExactSourceForPreparation(preparation);
+  const executionMode = normalizeExecutionMode(payload.executionMode, preparation.executionMode || "self_guided");
+  assertExecutionModeSupported(preparation.source.sourceType, executionMode);
+  const groupSessionSetup = resolveGroupSessionSetup({
+    payload,
+    current: preparation.groupSessionSetup,
+    executionMode,
+    sourceSnapshot,
+  });
   const patch = normalizedDraft(payload);
   const draft = mergeDraft(preparation.preparationDraft || {}, patch);
   const presentation = normalizePresentationPreference(preparation.effectivePresentationPreference, patch.presentationPreference);
   const navigation = normalizeNavigation(preparation.navigationSnapshot, draft);
-  const sourceSnapshot = await loadExactSourceForPreparation(preparation);
-  const state = await calculatePreparationState({ sourceSnapshot, navigation, presentation });
+  const state = await calculatePreparationState({ sourceSnapshot, navigation, presentation, executionMode });
   const nextVersion = preparation.version + 1;
   const updated = await ExecutionPreparation.findOneAndUpdate(
     { _id: preparation._id, userId, status: "active", version: preparation.version },
     { $set: {
       version: nextVersion,
+      executionMode,
+      groupSessionSetup,
       preparationDraft: draft,
       effectivePresentationPreference: presentation,
       navigationSnapshot: navigation,
@@ -448,6 +532,7 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
   if (preparation.readiness?.status !== "ready" || !preparation.preparedPlanCandidate) {
     throw new AppError("ExecutionPreparation non pronta per lo start", 409, [{ code: "PREPARATION_NOT_READY" }]);
   }
+  assertExecutionModeSupported(preparation.source.sourceType, preparation.executionMode || "self_guided");
 
   const claim = await ExecutionPreparation.updateOne(
     { _id: preparation._id, userId, status: "active", version: preparation.version },
@@ -465,13 +550,15 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
     const claimed = await ExecutionPreparation.findById(preparation._id).lean();
     const sourceSnapshot = await loadExactSourceForPreparation(claimed, { revalidateAuthorization: true });
     await assertPhysicalSnapshotCurrent(claimed);
-    if (sourceSnapshot.deliveryMode === "synchronized") {
-      if (claimed.source.sourceType !== "visit") throw new AppError("Solo una Visit può avviare una sessione sincronizzata", 409);
+    if (claimed.executionMode === "synchronized") {
+      if (claimed.source.sourceType !== "visit") {
+        throw new AppError("Solo una Visit può avviare una sessione sincronizzata", 409, [{ code: "EXECUTION_MODE_NOT_SUPPORTED" }]);
+      }
       const runtime = await createSynchronizedVisitRuntime({
         hostUserId: userId,
         visitId: claimed.source.visitId,
         visitRevisionId: claimed.source.visitRevisionId,
-        preferredAlias: sourceSnapshot.synchronization?.joinAlias,
+        preferredAlias: claimed.groupSessionSetup?.requestedJoinAlias || preferredJoinAlias(sourceSnapshot),
         plan: claimed.preparedPlanCandidate,
         venuePins: claimed.venuePins || [],
         navigationSnapshot: claimed.navigationSnapshot,

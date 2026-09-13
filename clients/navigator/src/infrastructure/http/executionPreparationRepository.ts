@@ -2,6 +2,8 @@ import { apiClient } from "./apiClient";
 import type { SessionProjection } from "./sessionRepository";
 import type { SynchronizedVisitProjection } from "./synchronizedVisitRepository";
 
+export type ExecutionMode = "self_guided" | "synchronized";
+
 export type RoutingProfileSelection = {
   venueId: string;
   routingProfileDefinitionId: string;
@@ -17,7 +19,11 @@ export interface ExecutionPreparationProjection {
     visitRevisionId: string | null;
     generatedVisitPlanId: string | null;
     versionPolicy: "follow_current" | "pinned" | "fixed_generated_plan";
-    deliveryMode: "self_guided" | "synchronized";
+  };
+  executionMode: ExecutionMode;
+  availableExecutionModes: ExecutionMode[];
+  groupSessionSetup: {
+    requestedJoinAlias: string | null;
   };
   effectivePresentationPreference: null | {
     depthPreference: number | null;
@@ -85,6 +91,10 @@ export interface PreparationUpdate {
   };
   movementPacePreference?: number;
   routingProfileSelections?: RoutingProfileSelection[];
+  executionMode?: ExecutionMode;
+  groupSessionSetup?: {
+    requestedJoinAlias?: string | null;
+  };
 }
 
 interface StartPreparationResponse {
@@ -95,7 +105,7 @@ interface StartPreparationResponse {
   synchronized?: SynchronizedVisitProjection;
 }
 
-async function createPreparation(payload: { visitId?: string; generatedVisitPlanId?: string }) {
+async function createPreparation(payload: { visitId?: string; generatedVisitPlanId?: string; executionMode?: ExecutionMode }) {
   const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>("/v2/execution-preparations", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -104,11 +114,11 @@ async function createPreparation(payload: { visitId?: string; generatedVisitPlan
 }
 
 export const executionPreparationRepository = {
-  createForVisit(visitId: string) {
-    return createPreparation({ visitId });
+  createForVisit(visitId: string, executionMode: ExecutionMode = "self_guided") {
+    return createPreparation({ visitId, executionMode });
   },
   createForGeneratedPlan(generatedVisitPlanId: string) {
-    return createPreparation({ generatedVisitPlanId });
+    return createPreparation({ generatedVisitPlanId, executionMode: "self_guided" });
   },
   async get(preparationId: string) {
     const response = await apiClient.request<{ preparation: ExecutionPreparationProjection }>(`/v2/execution-preparations/${encodeURIComponent(preparationId)}`);

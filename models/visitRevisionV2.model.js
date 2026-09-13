@@ -40,8 +40,8 @@ const PresentationBaselineSchema = new Schema({
   locale: { type: String, trim: true, default: null },
 }, { _id: false });
 
-const SynchronizationSchema = new Schema({
-  joinAlias: { type: String, trim: true, default: null },
+const GroupSessionDefaultsSchema = new Schema({
+  preferredJoinAlias: { type: String, trim: true, maxlength: 80, default: null },
 }, { _id: false });
 
 const QuizQuestionSchema = new Schema({
@@ -90,8 +90,7 @@ const VisitRevisionV2Schema = new Schema({
   editorialSources: { type: [EditorialSourceSchema], default: [] },
   contentEntries: { type: [ContentEntrySchema], default: [] },
   visitAnchors: { type: [VisitAnchorSchema], default: [] },
-  deliveryMode: { type: String, enum: ["self_guided", "synchronized"], default: "self_guided" },
-  synchronization: { type: SynchronizationSchema, default: () => ({}) },
+  groupSessionDefaults: { type: GroupSessionDefaultsSchema, default: () => ({}) },
   quiz: { type: QuizSchema, default: () => ({}) },
   presentationBaseline: { type: PresentationBaselineSchema, default: null },
   logistics: {

@@ -29,6 +29,13 @@ export interface LocationCapability {
 }
 
 export type TextToSpeechState = "idle" | "speaking" | "paused";
+export type TextToSpeechLifecycleType = "started" | "paused" | "resumed" | "completed" | "stopped" | "error";
+
+export interface TextToSpeechLifecycleEvent {
+  type: TextToSpeechLifecycleType;
+  activeSeconds: number;
+  utteranceText: string;
+}
 
 export interface TextToSpeechCapability {
   readonly supported: boolean;
@@ -38,6 +45,7 @@ export interface TextToSpeechCapability {
   resume(): boolean;
   stop(): void;
   subscribe(listener: (state: TextToSpeechState) => void): () => void;
+  subscribeLifecycle(listener: (event: TextToSpeechLifecycleEvent) => void): () => void;
 }
 
 export interface ControlledVoiceCapability {

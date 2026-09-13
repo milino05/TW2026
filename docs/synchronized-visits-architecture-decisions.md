@@ -4,266 +4,257 @@ Questo documento raccoglie le decisioni **approvate** relative alle visite sincr
 
 È un registro feature-specifico. Le decisioni generali già fissate in `docs/client-architecture-decisions.md`, `docs/domain-model-v2.md` e negli altri documenti architetturali restano valide; questo documento le specializza per il sottosistema di sincronizzazione. In caso di conflitto valgono, nell'ordine, specifiche ufficiali, decisioni più recenti esplicitamente approvate e stato implementato verificato su `main`.
 
-Le proposte non ancora approvate non devono essere registrate qui come decisioni definitive. Ogni nuova decisione sulla sincronizzazione approvata durante la progettazione deve aggiornare questo file.
+La revisione del 13 settembre 2026 sostituisce esplicitamente la precedente scelta che modellava `deliveryMode` nella `VisitRevision`. La motivazione è separare in modo coerente l'identità editoriale della visita dalla modalità con cui una singola esecuzione viene avviata nel Navigator.
 
-## Stato iniziale verificato su `main`
+# Principio di dominio
 
-Alla data del 31 agosto 2026:
+ArtAround separa quattro responsabilità:
 
-- `VisitV2` rappresenta l'identità editoriale della visita e non contiene stato runtime;
-- `VisitRevisionV2` contiene struttura editoriale, contenuti, anchor, baseline di presentazione e logistica;
-- `VisitSessionV2` rappresenta l'esecuzione runtime di un singolo utente e contiene già progressione, override di presentazione, esplorazione semantica, interaction events e dati di esperienza;
-- il Navigator deriva le interazioni disponibili da `AvailableAction[]` backend-authoritative;
-- il runtime supporta già adattamenti individuali della presentazione senza modificare il contenuto editoriale della Visit;
-- `SessionPlanRevisionV2` è attualmente owned da una singola `VisitSessionV2` tramite `sessionId` e dovrà essere generalizzato per supportare il piano condiviso del gruppo;
-- il backend corrente è Node/Express/Mongoose e non dispone ancora di un trasporto realtime WebSocket/Socket.IO.
+```text
+Visit / VisitRevision        = che cosa viene visitato
+Presentation                = come il contenuto viene presentato
+Navigation / physical plan  = dove e come ci si sposta
+Execution runtime           = con chi e con quale autorità si esegue la visita
+```
 
-Queste caratteristiche vengono riusate: la sincronizzazione non introduce un secondo modello di Visit, un secondo Navigator o una pipeline di presentation parallela.
+Una Visit non è quindi "autonoma" o "sincronizzata". La stessa revisione pubblicata può essere eseguita personalmente oppure, quando supportato, come sessione di gruppo senza essere modificata o ripubblicata.
 
 # Decisioni approvate
 
-## SV-01 — Una Visit, modalità di fruizione esplicita
+## SV-01 — La modalità appartiene all'esecuzione, non alla VisitRevision
 
-La visita continua a essere un unico dominio editoriale. Una `VisitRevision` dichiara la propria modalità di fruizione tramite un valore tipizzato, concettualmente `deliveryMode = self_guided | synchronized`. La UI può presentare questa scelta come un semplice toggle **Visita sincronizzata**, ma il dominio non usa flag runtime sparsi. La modalità sincronizzata è una proprietà della revisione editoriale; l'esecuzione di gruppo appartiene a un runtime separato.
+`VisitV2` resta l'identità editoriale e `VisitRevisionV2` contiene struttura, contenuti, tappe, baseline di presentazione, logistica e configurazioni editoriali opzionali. Non contiene `deliveryMode` né un flag equivalente.
 
-## SV-02 — Il workflow di authoring esistente viene preservato
+La modalità viene scelta nel Navigator e pinzata in `ExecutionPreparation.executionMode`:
 
-Il workflow canonico resta **Informazioni principali → Costruisci la visita → Impostazioni → Percorso → Pubblicazione**. L'opzione **Visita sincronizzata** viene proposta nel primo step. Quando è attiva, impostazioni di sincronizzazione e quiz compaiono tramite progressive disclosure nel workflow esistente. Non viene introdotto un wizard separato per docenti o classi.
+```text
+self_guided | synchronized
+```
 
-## SV-03 — Alias mnemonico distinto dal titolo editoriale
+La preparation è il boundary corretto perché la modalità influenza già la costruzione del piano iniziale: un'esecuzione personale può materializzare le preferenze esplicite dell'utente nel proprio piano, mentre una sessione di gruppo deve costruire un piano strutturale condiviso preservando la baseline editoriale comune.
 
-Il nome usato dagli studenti per entrare non coincide obbligatoriamente con `VisitRevision.title`. La configurazione sincronizzata contiene un alias mnemonico user-facing, concettualmente `synchronization.joinAlias = "Fenice rossa"`, facile da leggere, ricordare e digitare anche da bambini. Può essere generato automaticamente e modificato dalla docente. Mongo ID, UUID o codici tecnici non sono l'interfaccia primaria di ingresso.
+## SV-02 — Un solo workflow di authoring, senza classificazione della visita
 
-## SV-04 — Predisposizione editoriale e attivazione runtime sono concetti diversi
+Il workflow canonico resta **Informazioni principali → Costruisci la visita → Impostazioni → Percorso → Pubblicazione**.
 
-Marcare una visita come sincronizzata non crea una sessione attiva e non pubblica i contenuti inclusi. La docente avvia esplicitamente una sessione di gruppo dal Navigator. La sessione rende temporaneamente fruibili ai partecipanti i contenuti della revisione pinzata, compresi quelli privati autorizzati; la guida controlla la tappa attiva, mentre ogni partecipante può personalizzare soltanto la propria presentazione nei limiti delle azioni disponibili.
+Il Marketplace non presenta più un toggle "Visita sincronizzata" e non crea un wizard separato. L'autore può predisporre facoltativamente:
+
+- un nome mnemonico suggerito per future sessioni di gruppo;
+- un quiz finale.
+
+Queste feature non cambiano il tipo della Visit e non sono prerequisiti per eseguirla in gruppo.
+
+## SV-03 — Alias editoriale suggerito, alias richiesto e alias runtime sono distinti
+
+L'alias mnemonico continua a essere l'interfaccia primaria con cui i partecipanti entrano. Vengono però distinti tre livelli:
+
+```text
+VisitRevision.groupSessionDefaults.preferredJoinAlias
+    default editoriale facoltativo
+
+ExecutionPreparation.groupSessionSetup.requestedJoinAlias
+    nome richiesto dalla guida per quella esecuzione
+
+SynchronizedVisitSession.joinAlias
+    nome effettivamente assegnato al runtime
+```
+
+Se la guida non fornisce un nome, la preparation usa nell'ordine il default editoriale, il titolo della visita e un fallback leggibile. Mongo ID, UUID e codici tecnici non sono l'interfaccia primaria di ingresso.
+
+## SV-04 — La guida sceglie la modalità nel Navigator prima dello start
+
+L'apertura della pagina di preparazione crea una `ExecutionPreparation`. Il Navigator permette alla guida di scegliere **Personale** oppure **Di gruppo**. Il cambio di modalità aggiorna la stessa preparation e ricalcola piano, readiness e logistica; non crea ancora alcuna sessione.
+
+Solo `POST /v2/execution-preparations/:id/start` consuma la preparation e crea il runtime appropriato.
 
 ## SV-05 — Aggregate runtime di gruppo separato dalle VisitSession personali
 
-La sincronizzazione introduce un aggregate runtime superiore, concettualmente `SynchronizedVisitSession`, con almeno `visitId`, `visitRevisionId`, `hostUserId`, `joinAlias`, `status`, `currentEntryIndex`, `runtimeVersion`, riferimenti al piano condiviso, stato quiz e timestamps. Questo aggregate rappresenta lo stato condiviso e non sostituisce `VisitSessionV2`. Ogni partecipante continua ad avere una propria `VisitSessionV2` collegata alla sessione sincronizzata.
+La sincronizzazione usa `SynchronizedVisitSession` come aggregate runtime superiore, con almeno `visitId`, `visitRevisionId`, `hostUserId`, `joinAlias`, `status`, `currentEntryIndex`, `runtimeVersion`, piano condiviso, stato playback e timestamp.
 
-## SV-06 — Si sincronizza il punto della visita, non necessariamente la Representation
+`SynchronizedVisitSession` non sostituisce `VisitSessionV2`: host e partecipanti continuano ad avere una propria sessione personale collegata al gruppo.
 
-La sessione di gruppo determina **dove** si trova il gruppo nella visita: il `ContentEntry` attivo è deciso dalla docente. La singola `VisitSessionV2` determina invece **come** quel contenuto viene presentato al partecipante. Studenti sulla stessa tappa possono quindi ricevere Representation differenti per profondità o complessità linguistica e usare approfondimenti personali senza spostare il gruppo. Questa separazione prepara direttamente la fascia 18–33.
+## SV-06 — Si sincronizza il punto della visita, non la Representation
 
-## SV-07 — La docente controlla la progressione globale
+Il gruppo condivide il `ContentEntry` corrente e il piano strutturale. La singola `VisitSessionV2` determina invece come quel contenuto viene presentato al partecipante. Due utenti sulla stessa tappa possono quindi ricevere Representation differenti per profondità, complessità o lingua senza spostare il gruppo.
 
-Durante una sessione sincronizzata la docente/host è l'autorità sulla progressione del gruppo. Gli studenti non possono avanzare o tornare indietro autonomamente. La restrizione è backend-authoritative: una sessione participant non riceve `PROGRESS_NEXT`/`PROGRESS_PREVIOUS`, mentre l'host riceve le azioni consentite. Il client non implementa la policy limitandosi a nascondere pulsanti.
+## SV-07 — La guida controlla la progressione globale
 
-## SV-08 — Gli adattamenti individuali restano disponibili
+L'host è l'autorità sulla progressione comune. I participant non ricevono azioni di avanzamento globale. La policy resta backend-authoritative tramite `AvailableAction[]`; il client non implementa la sicurezza limitandosi a nascondere pulsanti.
 
-Gli studenti possono utilizzare le azioni di presentation e semantic exploration consentite, come maggiore/minore approfondimento, linguaggio più semplice/più complesso e approfondimenti semantici. Tali azioni modificano soltanto la loro `VisitSessionV2`; non cambiano `SynchronizedVisitSession.currentEntryIndex` e non alterano l'esperienza degli altri partecipanti.
+## SV-08 — Gli adattamenti individuali restano personali
+
+Azioni di presentazione e approfondimento semantico modificano soltanto la `VisitSessionV2` del singolo utente e non alterano `SynchronizedVisitSession.currentEntryIndex`, il piano condiviso o l'esperienza degli altri partecipanti.
 
 ## SV-09 — Lobby semplice e controllo dei partecipanti
 
-L'avvio della visita sincronizzata crea una lobby. La docente vede almeno alias, numero di partecipanti entrati, elenco/stato dei partecipanti e azione esplicita per iniziare. Lo studente entra usando l'alias e, prima dell'inizio, vede una schermata minimale di attesa. La UX non espone configurazioni tecniche, ID, session management o concetti Marketplace.
+Lo start in modalità `synchronized` crea una lobby. La guida vede alias effettivo, partecipanti entrati e azioni per iniziare o annullare. Il participant entra con il solo alias mnemonico e vede uno stato di attesa semplice fino all'avvio.
 
 ## SV-10 — Il Navigator resta unico
 
-Non viene creata una seconda applicazione Navigator per docenti o studenti. Il Navigator esistente usa projection e `AvailableAction[]` differenti in funzione dell'authority runtime: l'host vede controlli di sessione, progressione, partecipanti, richieste e quiz; il participant vede contenuto corrente, adattamenti personali consentiti e stato di attesa/sincronizzazione. Il backend resta autorevole sulle capability.
+Non esistono Navigator separati per guida e partecipante. Lo stesso client riceve projection e azioni differenti in base a ruolo, membership e stato runtime.
 
 ## SV-11 — Telemetria osservabile, non riconoscimento dell'attenzione
 
-Il requisito di controllare se e come gli studenti stanno seguendo viene implementato con segnali applicativi osservabili, non con webcam, eye tracking o inferenze biometriche. La dashboard può mostrare contenuto non avviato, riproduzione/ascolto, pausa, completamento, `completionRatio` ed azioni/richieste effettuate. `InteractionEvent` e `ContentEntryExperience` sono le primitive da riusare/estendere.
+Lo stato di fruizione viene derivato esclusivamente da eventi applicativi osservabili: visibilità della pagina, playback TTS realmente avviato, pausa, completamento, `completionRatio`, richieste e interazioni. Non vengono introdotti webcam, eye tracking o inferenze biometriche.
 
-## SV-12 — Accesso temporaneo ai contenuti privati tramite partecipazione alla sessione
+La dashboard host distingue inoltre tre dimensioni che non devono essere confuse:
 
-Una visita sincronizzata può includere contenuti privati/non pubblici che la docente è autorizzata a usare. Lo studente non deve acquisirli individualmente né ricevere un Entitlement Marketplace permanente. La partecipazione valida costituisce authority runtime temporanea limitata alla VisitRevision pinzata, ai contenuti/snapshot necessari, alla durata/stato della sessione e alle operazioni participant. Non pubblica il contenuto, non trasferisce ownership, non crea Acquisition e non permette riuso fuori sessione.
+```text
+connessione: online | offline
+attività:    active | inactive
+modalità:    reading | audio | null
+```
 
-## SV-13 — Snapshot stabile della VisitRevision durante l'esecuzione
+`reading` significa che la pagina della visita è in foreground; `audio` significa che il browser segnala la lettura TTS in corso. Il passaggio in background senza audio produce `inactive` dopo una breve tolleranza anti-flicker. Questi segnali descrivono soltanto l'uso osservabile dell'applicazione e non dimostrano attenzione cognitiva.
 
-Una `SynchronizedVisitSession` pinna una specifica `VisitRevision` all'avvio. Modifiche o nuove publication della Visit non cambiano una classe già in corso. Le `VisitSessionV2` dei partecipanti devono riferirsi alla stessa source editoriale e allo stesso piano strutturale coerente con il gruppo. Le regole già approvate su snapshot fisici e preparation continuano ad applicarsi.
+## SV-12 — Accesso temporaneo ai contenuti privati tramite membership
 
-## SV-14 — Realtime come notifica di invalidazione, projection come fonte autorevole
+Una membership valida alla sessione sincronizzata concede l'autorità runtime minima necessaria a fruire la revisione pinzata e i relativi snapshot. Non pubblica contenuti, non trasferisce ownership, non crea Acquisition e non concede riuso permanente fuori dalla sessione.
 
-Per la sincronizzazione interattiva viene introdotto un trasporto realtime, preferibilmente Socket.IO/WebSocket, integrato nello stesso backend Node/Express. Una room corrisponde alla `SynchronizedVisitSession`. Gli eventi realtime notificano cambiamenti di stato; non diventano la fonte primaria dei contenuti o della business logic. Il pattern è `command → aggiornamento backend/versione → notifica realtime → refresh/applicazione projection autorevole`.
+## SV-13 — Snapshot stabile della VisitRevision
 
-## SV-15 — Versione runtime e concorrenza
+La `SynchronizedVisitSession` pinna una specifica `VisitRevisionV2` all'avvio. Nuove revisioni o pubblicazioni non modificano una sessione già iniziata. Tutte le sessioni personali collegate usano lo stesso piano strutturale condiviso.
 
-Lo stato condiviso è versionato tramite `runtimeVersion` o equivalente. I comandi che modificano lo stato globale vengono validati rispetto alla versione corrente per impedire doppio avanzamento, retry non idempotenti o aggiornamenti fuori ordine. Un client che perde eventi recupera la projection corrente dal backend invece di ricostruire lo stato localmente.
+## SV-14 — Realtime come invalidazione, projection come fonte autorevole
 
-## SV-16 — Quiz definito editorialmente, tentativi runtime separati
+Il realtime notifica cambiamenti del runtime ma non diventa fonte primaria della business logic. Il pattern resta:
 
-Le domande del quiz appartengono alla configurazione/versione della visita sincronizzata e quindi alla `VisitRevision`. Il modello minimo contiene domande multiple choice, opzioni, risposta corretta ed eventuali punti. Risposte, tentativi, stato e risultato di ogni studente appartengono invece al runtime e non vengono scritti nella `VisitRevision`. La docente avvia esplicitamente il quiz.
+```text
+command → aggiornamento backend/versione → evento realtime → refresh projection autorevole
+```
 
-## SV-17 — Quiz e valutazione restano semplici per il 18–27
+La presence è l'eccezione intenzionale perché rappresenta stato di connessione e attività effimero: non modifica membership o dominio persistente e non viene usata per autorizzare comandi.
 
-Il primo incremento non introduce LMS, classi permanenti, registri scolastici o rubriche complesse. Sono sufficienti domande multiple choice, risposta per partecipante, correzione deterministica, score riepilogativo e possibilità per la docente di vedere i risultati e confermare/assegnare la valutazione richiesta dalla specifica.
+## SV-15 — Runtime versionato e concorrenza esplicita
 
-## SV-18 — UX participant minimalista
+I comandi che mutano lo stato condiviso vengono validati rispetto a `runtimeVersion` o equivalente. Retry e doppie azioni non devono produrre avanzamenti multipli; un client desincronizzato recupera la projection corrente dal backend.
 
-Il flusso participant è progettato anche per utenti molto giovani: ingresso tramite alias semplice, stato di attesa evidente, una sola tappa corrente, nessun controllo di progressione globale, azioni personali con linguaggio semplice, feedback immediato al cambio tappa, quiz con scelte grandi e comprensibili, nessun dettaglio tecnico esposto.
+## SV-16 — Quiz editoriale opzionale, tentativi runtime separati
+
+Le domande del quiz appartengono alla `VisitRevisionV2`, perché sono contenuto preparato dall'autore. Sono però **opzionali** e indipendenti da `executionMode`.
+
+Una Visit senza quiz può essere avviata sia personalmente sia in gruppo. In una sessione sincronizzata l'azione `SYNCHRONIZED_START_QUIZ` viene esposta soltanto quando la revisione pinzata contiene domande valide.
+
+Risposte, tentativi, stato e risultati dei partecipanti restano runtime e non vengono scritti nella revisione editoriale.
+
+## SV-17 — Valutazione minima per 18–27
+
+Il primo incremento mantiene un quiz semplice: multiple choice, correzione deterministica, score e riepilogo per la guida. Non vengono introdotti LMS, registri, classi permanenti o rubriche non richieste.
+
+## SV-18 — UX participant minimalista e invariata nel refactoring
+
+Il participant continua a seguire il flusso dedicato già esistente:
+
+```text
+Navigator → Entra in una visita → alias → lobby/sessione
+```
+
+Non sceglie `executionMode`, non seleziona la Visit da eseguire e non vede concetti Marketplace o identificatori tecnici. Join, rejoin, attesa, contenuto corrente, adattamenti personali e quiz restano nello stesso flusso.
 
 ## SV-19 — UX host orientata al controllo del gruppo
 
-La vista docente privilegia tappa corrente, progressione, partecipanti collegati/disconnessi, stato di fruizione osservabile, richieste/adattamenti, azione primaria per presentare/avanzare, passaggio al quiz e chiusura della sessione. Non richiede di amministrare direttamente VisitSession individuali o messaggi WebSocket.
+La guida sceglie nel pre-visit del Navigator se avviare personalmente o in gruppo. In modalità di gruppo può confermare/modificare il nome di ingresso prima di creare la lobby. Durante la sessione vede progressione, partecipanti, stato di fruizione osservabile, playback, eventuale quiz e chiusura.
 
-## SV-20 — Incrementi di implementazione
+Lo stato principale del partecipante combina presence e modalità di fruizione, ad esempio `Sta seguendo · Lettura`, `Sta seguendo · Audio`, `Non attivo` oppure `Offline`. La richiesta personale più recente sul contenuto corrente può essere mostrata nello stesso riepilogo, mentre lo storico resta disponibile separatamente.
 
-L'implementazione procede per vertical slice, preservando la normale modalità 18–24:
+## SV-20 — Ordine del refactoring e vertical slice
 
-1. **Authoring/editorial slice**: `deliveryMode`, configurazione sincronizzata, alias, quiz, validation/projection/copy/revision workflow e UI Marketplace;
-2. **Group runtime slice**: `SynchronizedVisitSession`, membership/lobby, join e collegamento alle `VisitSessionV2`;
-3. **Synchronization slice**: controllo host, progressione comune, realtime e policy `AvailableAction[]` host/participant;
-4. **Observation + quiz slice**: telemetria aggregata docente, richieste studenti, quiz attempts, risultati e chiusura.
+La migrazione al nuovo modello procede in modo coordinato, senza compatibility layer permanente:
 
-Il realtime non viene introdotto prima di avere un modello runtime autorevole e testabile via API.
+1. **Dominio editoriale**: rimozione di `VisitRevision.deliveryMode` e della vecchia configurazione `synchronization`; introduzione di `groupSessionDefaults` e quiz opzionale.
+2. **Preparation boundary**: `ExecutionPreparation.executionMode`, setup di gruppo e start runtime basato sulla preparation.
+3. **Navigator**: scelta Personale/Di gruppo nella vista pre-visit, riuso degli endpoint e del runtime esistenti.
+4. **Runtime alignment**: projection `executionMode`, quiz action condizionale, nessuna modifica al modello di membership/join/realtime salvo quanto necessario ai nuovi contratti.
+5. **Dataset e test**: le stesse Visit demo predisposte per il gruppo devono poter essere eseguite anche personalmente; seed e verifiche non classificano più le Visit per modalità.
 
 ## SV-21 — I partecipanti sono normali User autenticati
 
-Per la prima implementazione 18–27 gli studenti entrano nella visita come normali `User` ArtAround autenticati. Non vengono introdotti guest account, utenti fittizi o identità temporanee. L'autenticazione avviene prima del join; nel flusso di partecipazione il bambino deve soltanto inserire l'alias della visita. L'identità stabile del `User` consente alla docente di riconoscere chi si è collegato e mantiene coerenti runtime, learning history e authorization.
+Gli studenti entrano come `User` ArtAround autenticati. Non vengono introdotti guest account o identità temporanee nella prima implementazione 18–27.
 
 ## SV-22 — Membership separata dal group aggregate
 
-La relazione fra utente e sessione sincronizzata è modellata tramite un'entità/documento separato, concettualmente `SynchronizedVisitMembership`, invece di un grande array `participants[]` continuamente mutato dentro `SynchronizedVisitSession`.
-
-Il modello minimo contiene:
+`SynchronizedVisitMembership` resta un documento separato con almeno:
 
 ```text
-SynchronizedVisitMembership
-- synchronizedSessionId
-- userId
-- role: host | participant
-- visitSessionId
-- status: active | removed | completed
-- joinedAt
-- completedAt
+synchronizedSessionId
+userId
+role: host | participant
+visitSessionId
+status
+joinedAt
+completedAt
 ```
 
-La coppia `(synchronizedSessionId, userId)` è unica. `SV-22` specializza `SV-05`: l'aggregate di gruppo non incorpora le membership come source of truth.
+La coppia `(synchronizedSessionId, userId)` è unica.
 
-## SV-23 — Membership e presenza realtime sono concetti distinti
+## SV-23 — Membership, connessione e attività realtime sono concetti distinti
 
-Essere membro della visita e avere in quel momento una connessione realtime aperta sono stati differenti. Una perdita temporanea di rete non rimuove lo studente dalla visita. La membership resta persistente/attiva secondo il lifecycle applicativo; la presenza `online/offline` viene derivata dal layer realtime e può cambiare senza modificare la membership.
+La perdita temporanea di rete non rimuove la membership. La presence realtime mantiene per ogni utente le connessioni Socket.IO effettivamente attive e aggrega l'attività di eventuali tab/dispositivi multipli: se almeno una connessione sta fruendo il partecipante resta `active`, con priorità ad `audio` rispetto a `reading`.
 
-## SV-24 — Lifecycle del group runtime minimale
+Un utente può quindi essere `online` ma `inactive` quando la visita è ancora connessa e nessuna connessione sta leggendo in foreground o riproducendo audio. Quando tutte le connessioni cadono diventa `offline`. ArtAround non tenta di dedurre la causa della disconnessione: telefono spento, perdita di rete e browser terminato sono indistinguibili e vengono rappresentati semplicemente come `offline`.
 
-Il lifecycle iniziale di `SynchronizedVisitSession` è:
+Membership e autorizzazione persistono secondo il lifecycle della sessione; presence e attività restano effimere e non vengono scritte in `SynchronizedVisitMembership`.
+
+## SV-24 — Lifecycle minimale del group runtime
+
+Il lifecycle resta:
 
 ```text
-lobby -> active -> quiz -> completed
+lobby → active → quiz → completed
 ```
 
-con `cancelled` come stato terminale alternativo. Non vengono introdotti preventivamente stati come `scheduled`, `grading`, `archived` o altri workflow non richiesti. Una disconnessione di uno o più partecipanti non cambia automaticamente lo stato della sessione.
+con `cancelled` come stato terminale alternativo. Se la revisione non contiene quiz, l'host conclude la sessione senza transitare per `quiz`.
 
 ## SV-25 — Join e rejoin idempotenti
 
-Il join tramite alias è idempotente rispetto alla coppia sessione/utente. Se uno studente già membro perde la rete, chiude il browser o ripete il join, il backend non crea una seconda membership: recupera quella esistente e restituisce la projection corrente. Se nel frattempo il gruppo è avanzato, lo studente rientra direttamente nello stato/tappa corrente del gruppo. Non sono previsti codici di recupero manuali per il normale reconnect.
+Il join è idempotente per `(synchronizedSessionId, userId)`. Un utente già membro che rientra tramite alias recupera membership, VisitSession personale e projection corrente senza creare duplicati.
 
-## SV-26 — Alias runtime normalizzato e univoco solo fra sessioni joinable
+## SV-26 — Alias runtime univoco soltanto tra sessioni joinable
 
-`VisitRevision.synchronization.joinAlias` rappresenta l'alias preferito/editoriale. All'attivazione, `SynchronizedVisitSession.joinAlias` memorizza l'alias effettivamente assegnato al runtime.
+`ExecutionPreparation.groupSessionSetup.requestedJoinAlias` viene normalizzato e passato al runtime. `SynchronizedVisitSession.joinAlias` conserva il valore effettivamente assegnato.
 
-La risoluzione dell'alias è normalizzata rispetto almeno a maiuscole/minuscole e whitespace, così forme equivalenti come `Fenice rossa`, `FENICE ROSSA` e spazi ridondanti individuano la stessa sessione. L'unicità non è globale e permanente: deve valere soltanto fra sessioni contemporaneamente joinable. In caso di collisione il backend assegna una variante ancora leggibile, ad esempio `Fenice rossa 2`, invece di sostituire l'esperienza principale con codici tecnici casuali.
+L'unicità vale soltanto tra sessioni contemporaneamente joinable (`lobby`, `active`, `quiz`). In caso di collisione il backend assegna una variante ancora leggibile, ad esempio `Fenice rossa 2`. Dopo la chiusura l'alias può essere riutilizzato.
 
 ## SV-27 — Un solo piano strutturale condiviso dal gruppo
 
-Una visita sincronizzata non duplica lo stesso `SessionPlanRevisionV2` per ogni partecipante. Esiste un unico piano strutturale condiviso dal gruppo, che fissa la stessa VisitRevision, sequenza di ContentEntry, VisitAnchor, snapshot editoriali/fisici e percorso comune.
+Una sessione sincronizzata possiede un solo `SessionPlanRevisionV2` strutturale. Le `VisitSessionV2` personali non duplicano quel piano; conservano invece stato e override personali. La preparation sincronizzata materializza il piano comune senza incorporare le preferenze personali dell'host, che vengono applicate soltanto alla sua sessione individuale.
 
-L'attuale ownership `SessionPlanRevisionV2.sessionId -> VisitSessionV2` viene quindi generalizzata concettualmente in un owner tipizzato, ad esempio:
+# Contratto di avvio approvato
 
-```text
-planOwnerType = visit_session | synchronized_visit_session
-planOwnerId
-```
-
-Le visite normali continuano ad avere un piano owned dalla singola `VisitSessionV2`; le visite sincronizzate hanno un piano owned dalla `SynchronizedVisitSession` e riusato dalle sessioni personali dei membri. Questo refactoring evita N copie potenzialmente divergenti dello stesso piano.
-
-## SV-28 — `currentEntryIndex` condiviso ha una sola source of truth
-
-Nelle visite sincronizzate `SynchronizedVisitSession.currentEntryIndex` è l'unica fonte autorevole della progressione globale. Le `VisitSessionV2` collegate non mantengono una copia indipendentemente mutabile dello stesso indice.
-
-Concettualmente:
+Gli endpoint restano quelli già esistenti:
 
 ```text
-VisitSession standalone     -> session.currentEntryIndex
-VisitSession synchronized   -> synchronizedSession.currentEntryIndex
+POST   /v2/execution-preparations
+GET    /v2/execution-preparations/:preparationId
+PATCH  /v2/execution-preparations/:preparationId
+POST   /v2/execution-preparations/:preparationId/start
 ```
 
-Le projection delle sessioni participant derivano la tappa corrente dallo stato del gruppo. Un avanzamento host modifica un solo aggregate e incrementa la versione del group runtime; non richiede N update coordinati sulle sessioni personali.
+Esempio personale:
 
-## SV-29 — Piano comune, personalizzazione personale
-
-Il piano condiviso contiene la baseline comune derivata dagli Item e da `VisitRevision.presentationBaseline`. Le preferenze personali e gli adattamenti runtime appartengono alla singola `VisitSessionV2`.
-
-Le preferenze della docente non diventano baseline della classe. Ogni partecipante può applicare le proprie preferenze/default e i propri `presentationOverrides` o `semanticPresentation` sopra lo stesso contenuto/tappa comune. La separazione è quindi:
-
-```text
-shared structural plan + shared progress
-                |
-                +--> participant VisitSession: presentation/adaptation state
+```json
+{
+  "visitId": "...",
+  "executionMode": "self_guided"
+}
 ```
 
-## SV-30 — I comandi host riusano l'Action Protocol
+Esempio gruppo:
 
-I controlli della docente non introducono una business API parallela basata su endpoint ad hoc per ogni pulsante. Le operazioni runtime del gruppo vengono esposte tramite lo stesso Action Protocol backend-authoritative già approvato, con `AvailableAction` differenti per host e participant.
-
-L'host può ricevere azioni quali avvio visita, progressione, avvio quiz e completamento; il participant riceve soltanto le azioni personali consentite. Le action vengono rivalidate server-side rispetto a membership/role, stato del gruppo e `runtimeVersion` corrente.
-
-# Invarianti da preservare
-
-- La Visit non diventa un array di testi.
-- Gli Item restano contenuti; logistica e stato di sincronizzazione non diventano Item.
-- `VisitRevision` resta editoriale/versionata; lo stato live non viene scritto dentro la revision.
-- `VisitSessionV2` continua a rappresentare l'esperienza individuale.
-- Lo stato condiviso viene modellato una sola volta nel group runtime.
-- Membership persistente e presence realtime restano separate.
-- Il piano strutturale della visita sincronizzata è condiviso, non duplicato per partecipante.
-- `currentEntryIndex` del gruppo ha una sola source of truth.
-- Authorization e azioni disponibili restano backend-authoritative.
-- Presentation individuale e progressione condivisa restano separate.
-- I contenuti privati non vengono resi pubblici o acquisiti permanentemente per effetto del join.
-- Navigator e Marketplace mantengono le responsabilità già stabilite.
-- La soluzione deve poter evolvere verso le capability 18–33 senza richiedere un secondo modello di sessione o presentation.
-
-# Contratti implementativi definiti per i vertical slice 18–27
-
-La richiesta di implementazione 18–27 del 31 agosto 2026 ha chiuso le precedenti questioni aperte con i contratti seguenti.
-
-## SV-31 — Anche l'host possiede una VisitSession personale
-
-L'host ha una `VisitSessionV2` personale, come ogni participant. Serve per presentation override, esplorazione semantica, telemetria e navigazione personale della guida; non possiede piano o indice strutturale. Piano e progressione restano esclusivamente nella `SynchronizedVisitSession`.
-
-## SV-32 — Ownership tipizzata del SessionPlan
-
-`SessionPlanRevisionV2` usa `planOwnerType = visit_session | synchronized_visit_session` e `planOwnerId`. Una sessione autonoma conserva un piano proprio; una sessione sincronizzata possiede un solo piano di gruppo. Le `VisitSessionV2` collegate mantengono `currentPlanRevisionId = null` e `currentEntryIndex = null` e le projection risolvono entrambi dal runtime di gruppo.
-
-## SV-33 — Wire API e Action Protocol
-
-Il boundary autenticato del runtime di gruppo espone:
-
-```text
-POST  /api/v2/synchronized-visit-sessions/join
-GET   /api/v2/synchronized-visit-sessions/:sessionId
-GET   /api/v2/synchronized-visit-sessions/:sessionId/quiz
-PATCH /api/v2/synchronized-visit-sessions/:sessionId/quiz-results/:participantUserId/evaluation
+```json
+{
+  "visitId": "...",
+  "executionMode": "synchronized",
+  "groupSessionSetup": {
+    "requestedJoinAlias": "Fenice rossa"
+  }
+}
 ```
 
-Avvio, progressione, avvio quiz, invio quiz, completamento e annullamento passano dall'Action Protocol esistente e usano la versione del runtime corretto. Le projection participant non contengono azioni di progressione globale.
+Lo start riceve soltanto la versione attesa della preparation; non può cambiare implicitamente modalità all'ultimo momento.
 
-## SV-34 — Realtime minimale e recuperabile
+# Predisposizione 18–33
 
-Socket.IO usa una room per `SynchronizedVisitSession`. Gli unici eventi applicativi sono:
+Il modello mantiene `executionMode` separato dalla source. Per il livello attuale una Visit supporta `self_guided` e `synchronized`, mentre un `GeneratedVisitPlanV2` supporta soltanto `self_guided`. Il backend espone questa differenza come capability della preparation e rifiuta una modalità non supportata con un errore esplicito.
 
-```text
-synchronized:invalidated { sessionId, runtimeVersion }
-synchronized:presence    { sessionId, userId, online }
-```
-
-Alla connessione o riconnessione il client ripete una subscribe autenticata, riceve uno snapshot degli user ID online e rilegge sempre le projection REST dopo un'invalidazione. Un polling lento resta soltanto recupero per notifiche perse. La presence è una mappa in memoria di connessioni attive e non modifica `SynchronizedVisitMembership`.
-
-## SV-35 — Dashboard derivata dalla telemetria esistente
-
-La projection host aggrega `ContentEntryExperience`, `InteractionEvent`, presentation override ed esplorazione semantica delle VisitSession personali rispetto al `ContentEntry` corrente. Espone stato osservabile, completion ratio, adattamento personale e ultima attività senza introdurre documenti di attenzione, webcam o una seconda pipeline di telemetria.
-
-## SV-36 — Tentativo quiz runtime separato
-
-`SynchronizedVisitQuizAttempt` conserva una sola submission iniziale per sessione/utente con risposte, correttezza, punti, score e conferma/valutazione host. Le domande e le risposte corrette restano esclusivamente nella `VisitRevision`; la projection participant non riceve la risposta corretta prima della submission.
-
-## SV-37 — Chiusura e annullamento
-
-Il completamento del gruppo porta le membership attive a `completed` e le VisitSession personali a `completed`. L'annullamento rimuove immediatamente l'alias dalla ricerca, porta le membership allo stato terminale `completed` e le VisitSession personali a `abandoned`. In entrambi i casi la cronologia runtime resta disponibile ai membri autorizzati, ma non è più possibile un nuovo join tramite alias.
-
-## SV-38 — Authority temporanea tramite membership
-
-Il join richiede un normale User autenticato e una sessione joinable. Una membership attiva autorizza esclusivamente la lettura/esecuzione della VisitRevision e del SessionPlan pinzati attraverso la relativa VisitSession personale. I service non creano `MarketplaceAcquisition` o `Entitlement`, non pubblicano Item privati e non espongono quei contenuti fuori dal runtime di gruppo.
+Questa è una limitazione di incremento, non un vincolo del dominio: in futuro un piano generato potrà supportare l'esecuzione sincronizzata senza introdurre `deliveryMode` nel GeneratedPlan o un secondo runtime parallelo.

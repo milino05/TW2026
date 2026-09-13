@@ -19,7 +19,7 @@ Il Navigator supporta una configurazione di piattaforma e configurazioni specifi
 
 Dopo il login il Marketplace apre un **Context Hub**: l'utente sceglie se operare nella propria area personale oppure per una Organization a cui ha accesso. Il contesto è una preferenza di sessione e non sostituisce authorization, ownership, Entitlement o selezione della Venue; il backend continua a essere autorevole sui principal e sulle capability. La navigazione principale è **Home · Esplora · Libreria · Crea · Marketplace · Account**, mentre **Esplora** comprende Catalogo, Organizzazioni e Sedi.
 
-Il Marketplace include Catalog, Creator Workspace/Libreria, Item authoring, EditorialRelease composition e Visit authoring. Il Visit editor crea o modifica le `VisitV2`, ricerca i contenuti delle EditorialRelease con paginazione server-side, permette aggiunta/rimozione/riordino e ruoli `core | recommended | optional`, collega i contenuti ai VenueTarget quando il Subject è presente nella Venue e usa il workflow editoriale proiettato dal backend. Le indicazioni logistiche della Visit sono gestite separatamente dai contenuti e non vengono modellate come Item.
+Il Marketplace include Catalog, Creator Workspace/Libreria, Item authoring, EditorialRelease composition e Visit authoring. Il Visit editor crea o modifica le `VisitV2`, ricerca i contenuti delle EditorialRelease con paginazione server-side, permette aggiunta/rimozione/riordino e ruoli `core | recommended | optional`, collega i contenuti ai VenueTarget quando il Subject è presente nella Venue e usa il workflow editoriale proiettato dal backend. Le indicazioni logistiche della Visit sono gestite separatamente dai contenuti e non vengono modellate come Item. L'editor può inoltre preparare un nome di ingresso e un quiz opzionali per l'uso di gruppo, senza classificare la Visit come autonoma o sincronizzata.
 
 ## Installazione e verifica
 
@@ -55,10 +55,10 @@ Il seed canonico è il **dataset V3 multi-museo** e prepara:
 - un Item pubblicato per ogni Subject del grafo e almeno due collegamenti semantici incidenti per ogni Subject;
 - una matrice completa durata × livello di linguaggio in ogni Item: 9 Representation per Item artistico, 4 per Item archeologico;
 - 6 Visit pubblicate, tutte con almeno 10 tappe; le prime 3 sono sulla Pinacoteca per preservare il requisito minimo di tre visite sullo stesso museo;
-- 2 Visit sincronizzate con alias semplice e quiz finale: **Classe alla Pinacoteca** e **Bologna antica: laboratorio di archeologia**;
+- 2 Visit predisposte anche per uso di gruppo con nome mnemonico e quiz finale: **Classe alla Pinacoteca** e **Bologna antica: laboratorio di archeologia**; entrambe restano avviabili anche personalmente;
 - Listing/Offer Marketplace per tutte le visite, con offerte gratuite e a pagamento simulato.
 
-`npm run verify:demo` controlla account/password, ownership delle Organization, Namespace, matrici complete di Representation, copertura Item/Subject, grado minimo del grafo, target/slot/mappe, integrità delle VenueRelease, sei Visit, due visite sincronizzate e Marketplace.
+`npm run verify:demo` controlla account/password, ownership delle Organization, Namespace, matrici complete di Representation, copertura Item/Subject, grado minimo del grafo, target/slot/mappe, integrità delle VenueRelease, sei Visit, due Visit predisposte per l'uso di gruppo e Marketplace. Verifica inoltre che la modalità di esecuzione non sia memorizzata nella `VisitRevision`.
 
 Le mappe V3 sono illustrazioni schematiche originali per la demo: **non rappresentano planimetrie ufficiali né lo stato operativo corrente dei musei**. Dettagli, struttura e fonti usate per il dataset sono in `docs/demo-dataset-v3.md`.
 
@@ -120,12 +120,13 @@ I checker Slice 6–9 proteggono i boundary architetturali introdotti durante l'
 - `docs/revision-workflow.md` — workflow editoriale v2;
 - `docs/deployment.md` — build, seed e deploy gocker;
 - `docs/demo-dataset-v3.md` — struttura e invarianti del dataset demo multi-museo;
+- `docs/synchronized-visits-architecture-decisions.md` — decisioni feature-specifiche su execution mode e runtime sincronizzato;
 - `docs/authentication-design.md` — autenticazione a sessione e cookie HttpOnly;
 - `docs/semantic-resolver-v2.md` — resolver provider-neutral, identity binding e integrazioni authoring;
 - `docs/organization-rbac.md` — ruoli Organization personalizzati, permission registry, Owner, transazioni, audit e migrazione legacy.
 
 ## Principi correnti
 
-Le Visit pinzano snapshot editoriali immutabili; stato fisico, routing, timing e Representation concreta vengono risolti durante `ExecutionPreparation`/Session. VenueTarget e Layout appartengono al Physical Domain; Subject/Item/ContentSpace/EditorialContext al dominio editoriale. Marketplace e Navigator condividono lo stesso backend ma hanno responsabilità client differenti.
+Le Visit pinzano snapshot editoriali immutabili; stato fisico, routing, timing, Representation concreta e modalità di esecuzione vengono risolti durante `ExecutionPreparation`/Session. La stessa Visit può essere avviata personalmente oppure, quando la source lo supporta, tramite `SynchronizedVisitSession`. VenueTarget e Layout appartengono al Physical Domain; Subject/Item/ContentSpace/EditorialContext al dominio editoriale. Marketplace e Navigator condividono lo stesso backend ma hanno responsabilità client differenti.
 
 Il progetto non contiene dati produttivi da preservare: i refactoring possono aggiornare in modo coordinato schema, servizi, API, client e seed quando migliorano il Domain Model v2.

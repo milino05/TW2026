@@ -138,8 +138,7 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
         ownerType: "user",
         ownerId: user._id,
         title: "Visita originale",
-        deliveryMode: "synchronized",
-        synchronization: { joinAlias: "Fenice rossa" },
+        groupSessionDefaults: { preferredJoinAlias: "Fenice rossa" },
         quiz: { questions: [{ question: "Chi è l'autore?", options: ["Autore", "Altro"], correctOptionIndex: 0, points: 2 }] },
         editorialSources: [{ _id: editorialSourceId, editorialReleaseId: editorialRelease._id }],
         visitAnchors: [{ _id: anchorId, venueTargetId: target._id }],
@@ -167,10 +166,11 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     assert.equal(String(copied.revision.visitAnchors[0].venueTargetId), String(target._id));
     assert.notEqual(String(copied.revision.editorialSources[0]._id), String(published.revision.editorialSources[0]._id));
     assert.notEqual(String(copied.revision.visitAnchors[0]._id), String(published.revision.visitAnchors[0]._id));
-    assert.equal(copied.revision.deliveryMode, "synchronized");
-    assert.equal(copied.revision.synchronization.joinAlias, "Fenice rossa");
+    assert.equal(copied.revision.groupSessionDefaults.preferredJoinAlias, "Fenice rossa");
     assert.equal(copied.revision.quiz.questions[0].question, "Chi è l'autore?");
     assert.notEqual(String(copied.revision.quiz.questions[0]._id), String(published.revision.quiz.questions[0]._id));
+    assert.equal(copied.revision.deliveryMode, undefined);
+    assert.equal(copied.revision.synchronization, undefined);
 
     await updateVisitV2({ visitId: created.visit._id, payload: { title: "Originale modificata dopo la copia" }, actorUserId: user._id });
     const refreshedCopy = await VisitRevisionV2.findById(copied.visit.workingRevisionId).lean();
@@ -196,20 +196,19 @@ test("Visit v2 pins editorial content, references VenueTarget and copies detache
     const sourcePublishedAfterAudit = await VisitRevisionV2.findById(published.revision._id).lean();
     assert.equal(sourcePublishedAfterAudit.status, "published");
 
-    const incompleteSynchronized = await createVisitV2({
+    const noGroupDefaultsOrQuiz = await createVisitV2({
       actorUserId: user._id,
       payload: {
         ownerType: "user",
         ownerId: user._id,
-        title: "Sincronizzata incompleta",
-        deliveryMode: "synchronized",
-        synchronization: { joinAlias: "" },
-        quiz: { questions: [] },
+        title: "Visita senza impostazioni di gruppo",
       },
     });
-    const incompleteCheck = await evaluateVisitV2Consistency({ visitId: incompleteSynchronized.visit._id, actorUserId: user._id });
+    const incompleteCheck = await evaluateVisitV2Consistency({ visitId: noGroupDefaultsOrQuiz.visit._id, actorUserId: user._id });
     const issueCodes = incompleteCheck.revision.integrity.issues.map((issue) => issue.code);
-    assert.ok(issueCodes.includes("SYNCHRONIZED_JOIN_ALIAS_REQUIRED"));
-    assert.ok(issueCodes.includes("SYNCHRONIZED_QUIZ_REQUIRED"));
+    assert.equal(issueCodes.includes("SYNCHRONIZED_JOIN_ALIAS_REQUIRED"), false);
+    assert.equal(issueCodes.includes("SYNCHRONIZED_QUIZ_REQUIRED"), false);
+    assert.ok(issueCodes.includes("EMPTY_VISIT_CONTENT"));
+    assert.ok(issueCodes.includes("EMPTY_PHYSICAL_ITINERARY"));
   });
 });

@@ -1,5 +1,14 @@
 import { apiClient } from "./apiClient";
 
+export interface SynchronizedParticipantRequest {
+  actionType: string | null;
+  family: "presentation" | "semantic";
+  label: string;
+  contentEntryId: string | null;
+  interactionChannel: "button" | "controlled_voice" | "natural_language" | "system" | null;
+  at: string | null;
+}
+
 export interface SynchronizedParticipant {
   userId: string;
   username: string;
@@ -7,6 +16,7 @@ export interface SynchronizedParticipant {
   status: "active" | "removed" | "completed";
   joinedAt: string;
   visitSessionId: string;
+  requests: SynchronizedParticipantRequest[];
   experience?: {
     status: "not_started" | "in_progress" | "completed";
     completionRatio: number;

@@ -21,7 +21,7 @@ export interface SessionProjection {
     sourceType?: string;
     currentEntryIndex: number;
     runtimeVersion: number;
-    deliveryMode?: "self_guided" | "synchronized";
+    executionMode?: "self_guided" | "synchronized";
   };
   synchronization: null | {
     id: string;
@@ -91,6 +91,27 @@ export interface ActionResult {
   };
 }
 
+export interface ContentExperienceInput {
+  contentEntryId: string;
+  experiencedSeconds: number;
+  completionRatio: number;
+  contentSeconds?: number;
+}
+
+export interface ContentExperienceResult {
+  experience: {
+    contentEntryId: string;
+    itemEditionId: string;
+    itemRevisionId: string;
+    variantId: string;
+    representationId: string;
+    contentSeconds: number;
+    experiencedSeconds: number;
+    completionRatio: number;
+    reliability: number;
+  };
+}
+
 export const sessionRepository = {
   current(sessionId: string) {
     return apiClient.request<SessionProjection>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/current`);
@@ -105,6 +126,12 @@ export const sessionRepository = {
     return apiClient.request<ActionResult>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/actions`, {
       method: "POST",
       body: JSON.stringify({ actionId, expectedRuntimeVersion, interactionChannel, input }),
+    });
+  },
+  recordContentExperience(sessionId: string, input: ContentExperienceInput) {
+    return apiClient.request<ContentExperienceResult>(`/v2/visit-sessions/${encodeURIComponent(sessionId)}/content-entries/experience`, {
+      method: "POST",
+      body: JSON.stringify(input),
     });
   },
 };

@@ -2,6 +2,7 @@ const service = require("../services/visitSessionV2.service");
 const actions = require("../services/actionDispatcherV2.service");
 const navigation = require("../services/navigationProjectionV2.service");
 const publicLocation = require("../services/sessionPublicLocationV2.service");
+const realtime = require("../services/synchronizedVisitRealtime.service");
 
 async function current(req, res, next) {
   try {
@@ -37,7 +38,16 @@ async function resolvePublicLocation(req, res, next) {
 
 async function contentExperience(req, res, next) {
   try {
-    res.json(await service.recordContentEntryExperience({ sessionId: req.params.sessionId, userId: req.user._id, payload: req.body || {} }));
+    const result = await service.recordContentEntryExperience({
+      sessionId: req.params.sessionId,
+      userId: req.user._id,
+      payload: req.body || {},
+    });
+    await realtime.notifySynchronizedVisitChangedForVisitSession({
+      visitSessionId: req.params.sessionId,
+      userId: req.user._id,
+    });
+    res.json(result);
   } catch (error) { next(error); }
 }
 

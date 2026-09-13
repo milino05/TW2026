@@ -198,9 +198,8 @@ test("runtime sincronizzato usa un solo piano, join idempotente e policy host ba
     const quizRevision = await VisitRevisionV2.create({
       visitId: quizVisitId,
       version: 1,
-      title: "Visita sincronizzata con quiz",
-      deliveryMode: "synchronized",
-      synchronization: { joinAlias: "Giglio blu" },
+      title: "Visita con quiz editoriale",
+      groupSessionDefaults: { preferredJoinAlias: "Giglio blu" },
       quiz: {
         questions: [
           { question: "Chi ha dipinto la Gioconda?", options: ["Leonardo", "Raffaello"], correctOptionIndex: 0, points: 2 },
@@ -210,11 +209,13 @@ test("runtime sincronizzato usa un solo piano, join idempotente e policy host ba
       createdBy: host._id,
       updatedBy: host._id,
     });
+    assert.equal(quizRevision.deliveryMode, undefined);
+    assert.equal(quizRevision.synchronization, undefined);
     const quizGroup = await createSynchronizedVisitRuntime({
       hostUserId: host._id,
       visitId: quizVisitId,
       visitRevisionId: quizRevision._id,
-      preferredAlias: "Giglio blu",
+      preferredAlias: quizRevision.groupSessionDefaults.preferredJoinAlias,
       plan: emptySharedPlan(quizRevision._id),
       venuePins: [],
       navigationSnapshot: { movementPacePreference: 0.5, routingProfileSelections: [], requirements: [] },

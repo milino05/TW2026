@@ -4,8 +4,7 @@ const { pushError, hasOwn, trimIfString, isPlainObject } = require("./validation
 const OWNER_TYPES = ["user", "organization"];
 const CONTENT_ENTRY_ROLES = ["core", "recommended", "optional"];
 const ROUTE_HINT_TYPES = ["indoor", "inter_venue"];
-const DELIVERY_MODES = ["self_guided", "synchronized"];
-const TOP_LEVEL_FIELDS = new Set(["ownerType", "ownerId", "title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "deliveryMode", "synchronization", "quiz", "presentationBaseline", "logistics"]);
+const TOP_LEVEL_FIELDS = new Set(["ownerType", "ownerId", "title", "description", "contentSources", "editorialSources", "contentEntries", "visitAnchors", "groupSessionDefaults", "quiz", "presentationBaseline", "logistics"]);
 
 function normalizeIdObject(value, fields) {
   if (!isPlainObject(value)) return value;
@@ -18,7 +17,6 @@ function normalizeIdObject(value, fields) {
 function normalizeVisitV2Payload(payload = {}) {
   const normalized = {};
   for (const field of ["ownerType", "title", "description"]) if (hasOwn(payload, field)) normalized[field] = trimIfString(payload[field]);
-  if (hasOwn(payload, "deliveryMode")) normalized.deliveryMode = trimIfString(payload.deliveryMode)?.toLowerCase();
   if (hasOwn(payload, "ownerId")) normalized.ownerId = payload.ownerId;
   if (hasOwn(payload, "editorialSources")) normalized.editorialSources = Array.isArray(payload.editorialSources)
     ? payload.editorialSources.map((entry) => normalizeIdObject(entry, ["editorialReleaseId"]))
@@ -45,11 +43,11 @@ function normalizeVisitV2Payload(payload = {}) {
     ...(hasOwn(payload.presentationBaseline, "languageComplexityPreference") ? { languageComplexityPreference: payload.presentationBaseline.languageComplexityPreference == null ? null : Number(payload.presentationBaseline.languageComplexityPreference) } : {}),
     ...(hasOwn(payload.presentationBaseline, "locale") ? { locale: trimIfString(payload.presentationBaseline.locale) || null } : {}),
   } : payload.presentationBaseline;
-  if (hasOwn(payload, "synchronization")) normalized.synchronization = isPlainObject(payload.synchronization) ? {
-    ...(hasOwn(payload.synchronization, "joinAlias") ? {
-      joinAlias: trimIfString(payload.synchronization.joinAlias)?.replace(/\s+/g, " ") || null,
+  if (hasOwn(payload, "groupSessionDefaults")) normalized.groupSessionDefaults = isPlainObject(payload.groupSessionDefaults) ? {
+    ...(hasOwn(payload.groupSessionDefaults, "preferredJoinAlias") ? {
+      preferredJoinAlias: trimIfString(payload.groupSessionDefaults.preferredJoinAlias)?.replace(/\s+/g, " ") || null,
     } : {}),
-  } : payload.synchronization;
+  } : payload.groupSessionDefaults;
   if (hasOwn(payload, "quiz")) normalized.quiz = isPlainObject(payload.quiz) ? {
     questions: Array.isArray(payload.quiz.questions) ? payload.quiz.questions.map((question) => {
       if (!isPlainObject(question)) return question;
@@ -94,13 +92,13 @@ function validatePresentationBaseline(value, errors) {
   if (hasOwn(value, "locale") && value.locale != null && typeof value.locale !== "string") pushError(errors, "presentationBaseline.locale", "INVALID_TYPE", "locale deve essere una stringa");
 }
 
-function validateSynchronization(value, errors) {
+function validateGroupSessionDefaults(value, errors) {
   if (value == null) return;
-  if (!isPlainObject(value)) return pushError(errors, "synchronization", "INVALID_TYPE", "synchronization deve essere un oggetto");
-  rejectUnknownFields(value, errors, new Set(["joinAlias"]), "synchronization");
-  if (hasOwn(value, "joinAlias") && value.joinAlias != null) {
-    if (typeof value.joinAlias !== "string") pushError(errors, "synchronization.joinAlias", "INVALID_TYPE", "L'alias di ingresso deve essere un testo");
-    else if (value.joinAlias.length > 80) pushError(errors, "synchronization.joinAlias", "OUT_OF_RANGE", "L'alias di ingresso non può superare 80 caratteri");
+  if (!isPlainObject(value)) return pushError(errors, "groupSessionDefaults", "INVALID_TYPE", "groupSessionDefaults deve essere un oggetto");
+  rejectUnknownFields(value, errors, new Set(["preferredJoinAlias"]), "groupSessionDefaults");
+  if (hasOwn(value, "preferredJoinAlias") && value.preferredJoinAlias != null) {
+    if (typeof value.preferredJoinAlias !== "string") pushError(errors, "groupSessionDefaults.preferredJoinAlias", "INVALID_TYPE", "Il nome suggerito deve essere un testo");
+    else if (value.preferredJoinAlias.length > 80) pushError(errors, "groupSessionDefaults.preferredJoinAlias", "OUT_OF_RANGE", "Il nome suggerito non può superare 80 caratteri");
   }
 }
 
@@ -138,8 +136,6 @@ function validateVisitV2Payload({ payload, rawPayload = payload, creating = fals
     if (hasOwn(rawPayload, "ownerType") || hasOwn(rawPayload, "ownerId")) pushError(errors, "owner", "IMMUTABLE_FIELD", "L'owner della Visit non si modifica tramite la revisione");
     if (hasOwn(rawPayload, "title") && (!payload.title || typeof payload.title !== "string")) pushError(errors, "title", "REQUIRED", "title non puo essere vuoto");
   }
-
-  if (hasOwn(rawPayload, "deliveryMode") && !DELIVERY_MODES.includes(payload.deliveryMode)) pushError(errors, "deliveryMode", "INVALID_ENUM", "deliveryMode deve essere self_guided oppure synchronized", { allowedValues: DELIVERY_MODES });
 
   if (hasOwn(rawPayload, "editorialSources")) {
     if (!Array.isArray(payload.editorialSources)) pushError(errors, "editorialSources", "INVALID_TYPE", "editorialSources deve essere un array");
@@ -187,7 +183,7 @@ function validateVisitV2Payload({ payload, rawPayload = payload, creating = fals
   }
 
   validatePresentationBaseline(payload.presentationBaseline, errors);
-  if (hasOwn(rawPayload, "synchronization")) validateSynchronization(payload.synchronization, errors);
+  if (hasOwn(rawPayload, "groupSessionDefaults")) validateGroupSessionDefaults(payload.groupSessionDefaults, errors);
   if (hasOwn(rawPayload, "quiz")) validateQuiz(payload.quiz, rawPayload.quiz, errors);
 
   if (hasOwn(rawPayload, "logistics")) {
@@ -211,4 +207,4 @@ function validateVisitV2Payload({ payload, rawPayload = payload, creating = fals
   return errors;
 }
 
-module.exports = { OWNER_TYPES, CONTENT_ENTRY_ROLES, ROUTE_HINT_TYPES, DELIVERY_MODES, normalizeVisitV2Payload, validateVisitV2Payload };
+module.exports = { OWNER_TYPES, CONTENT_ENTRY_ROLES, ROUTE_HINT_TYPES, normalizeVisitV2Payload, validateVisitV2Payload };
