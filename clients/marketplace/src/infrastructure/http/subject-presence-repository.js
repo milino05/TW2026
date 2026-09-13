@@ -20,10 +20,25 @@ export const subjectPresenceRepository = {
       ...jsonBody({ subjectId, sourceItemId, message }),
     });
   },
-  addToInventory(venueId, { subjectId }) {
+  addToInventory(venueId, { subjectId, sourceItemId = null, displayLabelOverride = null, inventoryNote = null }) {
+    const provenance = sourceItemId
+      ? { origin: "item_authoring", sourceId: sourceItemId, metadata: { sourceItemId } }
+      : { origin: "human" };
     return apiClient.request(`/venues/${encodeURIComponent(venueId)}/targets`, {
       method: "POST",
-      ...jsonBody({ subjectId, provenance: { origin: "human" } }),
+      ...jsonBody({ subjectId, displayLabelOverride, inventoryNote, provenance }),
+    });
+  },
+  acceptProposal(venueId, proposalId, { message = null } = {}) {
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/inventory-proposals/${encodeURIComponent(proposalId)}/accept`, {
+      method: "POST",
+      ...jsonBody({ message }),
+    });
+  },
+  withdrawProposal(venueId, proposalId, { message = null } = {}) {
+    return apiClient.request(`/venues/${encodeURIComponent(venueId)}/inventory-proposals/${encodeURIComponent(proposalId)}/withdraw`, {
+      method: "POST",
+      ...jsonBody({ message }),
     });
   },
 };

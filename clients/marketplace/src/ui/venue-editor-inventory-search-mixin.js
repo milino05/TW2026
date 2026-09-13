@@ -32,8 +32,8 @@ function escapeHtml(value = "") {
 export const venueInventorySearchMixin = {
   restoreInventoryLauncherFocus(targetId) {
     requestAnimationFrame(() => {
-      const launcher = [...this.querySelectorAll("[data-select-venue-target]")]
-        .find((button) => id(button.dataset.selectVenueTarget) === id(targetId));
+      const launcher = [...this.querySelectorAll("[data-select-venue-target], [data-inventory-browser-target]")]
+        .find((button) => id(button.dataset.selectVenueTarget || button.dataset.inventoryBrowserTarget) === id(targetId));
       launcher?.focus?.({ preventScroll: true });
     });
   },
@@ -42,28 +42,32 @@ export const venueInventorySearchMixin = {
     if (this._targetCreateDialog) return;
     this._targetCreateDialog = openVenueTargetCreateDialog({
       venueId: this.id,
-      onDismiss: () => { this._targetCreateDialog = null; },
-      onExisting: (targetId) => {
+      onDismiss: () => {
         this._targetCreateDialog = null;
+        this.render();
+      },
+      onExisting: (targetId) => {
         this.selectedVenueTargetId = targetId;
         this.inventoryFilter = "all";
         this.message = "Questa identità è già presente nell’inventario della sede.";
-        this.render();
       },
-      onCreated: async () => {
-        this._targetCreateDialog = null;
-        this.busy = true;
+      onChanged: async ({ action, subjectId }) => {
         this.error = null;
-        this.message = null;
         try {
-          this.render();
           await this.refreshServerState();
-          this.message = "Entità aggiunta all’inventario della sede.";
+          const target = (this.data?.targets || []).find((entry) => id(entry.subject?.id || entry.subjectId) === id(subjectId));
+          if (target) this.selectedVenueTargetId = id(target.id);
+          this.inventoryFilter = "all";
+          this.inventoryWorkspaceTab = "entities";
+          this.message = action === "proposed"
+            ? "Proposta inviata ai responsabili dell’inventario."
+            : action === "accepted"
+              ? "Proposta accettata: il Subject è ora nell’inventario."
+              : action === "withdrawn"
+                ? "Proposta ritirata."
+                : "Entità aggiunta all’inventario della sede.";
         } catch (error) {
           this.error = error instanceof Error ? error.message : "Inventario non aggiornabile";
-        } finally {
-          this.busy = false;
-          this.render();
         }
       },
     });
@@ -83,7 +87,7 @@ export const venueInventorySearchMixin = {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
 
-    if (target.closest("[data-open-target-create-dialog]")) {
+    if (target.closest("[data-open-target-create-dialog],[data-open-inventory-subject-picker]")) {
       this.openInventoryTargetCreateDialog();
       return true;
     }

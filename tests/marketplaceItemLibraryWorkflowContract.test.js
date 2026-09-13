@@ -7,9 +7,9 @@ const root = path.resolve(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const library = read("clients/marketplace/src/ui/workspace-browser-view.js");
 const quickAdd = read("clients/marketplace/src/ui/content-space-item-add-dialog.js");
-const itemDetail = read("clients/marketplace/src/ui/item-detail-dialog.js");
+const itemDetail = `${read("clients/marketplace/src/ui/item-detail-dialog.js")}\n${read("clients/marketplace/src/ui/item-detail-subject-venues.js")}`;
 const collectionContent = read("clients/marketplace/src/ui/editorial-collection-content-manager.js");
-const itemAuthoring = read("clients/marketplace/src/ui/item-authoring-view.js");
+const itemAuthoring = `${read("clients/marketplace/src/ui/item-authoring-view.js")}\n${read("clients/marketplace/src/ui/item-authoring-subject-venues.js")}`;
 const itemModel = read("models/itemV2.model.js");
 const revisionModel = read("models/itemRevisionV2.model.js");
 const addContextService = read("services/contentSpaceItemAddContext.service.js");
@@ -65,9 +65,11 @@ test("le card dello Space restano leggere e l'immagine viene caricata nel dettag
   assert.match(itemDetail, /<figure><img/);
 });
 
-test("il dettaglio Item ha due tab Edizioni e Raccolte e usa un drill-down interno per la raccolta", () => {
+test("il dettaglio Item ha Edizioni, Raccolte e Sedi e mantiene il drill-down interno della raccolta", () => {
   assert.match(itemDetail, /data-item-detail-tab="editions"[^>]*>Edizioni<\/button>/);
   assert.match(itemDetail, /data-item-detail-tab="collections"[^>]*>Raccolte<\/button>/);
+  assert.match(itemDetail, /data-item-detail-tab="venues"/);
+  assert.match(itemDetail, /artaround-subject-presence/);
   assert.match(itemDetail, /data-add-collection-mode/);
   assert.match(itemDetail, /Aggiungi a una raccolta/);
   assert.match(itemDetail, /view = "collection-detail"/);
@@ -76,7 +78,7 @@ test("il dettaglio Item ha due tab Edizioni e Raccolte e usa un drill-down inter
   assert.match(itemDetail, /data-open-collection-graph/);
 });
 
-test("lo Studio della Raccolta riusa lo stesso dettaglio Item e lo apre già contestualizzato", () => {
+test("lo Studio della Raccolta riusa lo stesso dettaglio Item e quindi eredita anche la tab Sedi", () => {
   assert.match(collectionContent, /import "\.\/item-detail-dialog\.js"/);
   assert.match(collectionContent, /document\.createElement\("artaround-item-detail-dialog"\)/);
   assert.match(collectionContent, /initial-collection-id/);

@@ -91,6 +91,7 @@ const GROUPS = Object.freeze([
       ["venue.create", "Creare sedi"],
       ["venue.profile.manage", "Modificare il profilo delle sedi"],
       ["venue.primary_context.manage", "Gestire il contesto primario"],
+      ["venue.inventory.propose", "Proporre entità per l'inventario della sede"],
       ["venue.inventory.manage", "Gestire l'inventario della sede", true],
       ["venue.physical.edit", "Modificare la configurazione fisica"],
       ["venue.physical.review", "Revisionare la configurazione fisica", true],
@@ -145,7 +146,8 @@ const DEPENDENCIES = Object.freeze({
   "venue.create": ["venue.view"],
   "venue.profile.manage": ["venue.view"],
   "venue.primary_context.manage": ["venue.view"],
-  "venue.inventory.manage": ["venue.view"],
+  "venue.inventory.propose": ["venue.view"],
+  "venue.inventory.manage": ["venue.inventory.propose"],
   "venue.physical.edit": ["venue.view"],
   "venue.physical.review": ["venue.view"],
   "venue.physical.publish": ["venue.view"],
@@ -210,7 +212,7 @@ const STARTER_ROLES = Object.freeze([
     description: "Creazione e modifica di contenuti e visite senza pubblicazione.",
     permissionCodes: [
       "editorial_space.view", "item.view", "item.create", "item.edit", "namespace.view", "physical_vocabulary.view",
-      "editorial_context.view", "visit.view", "visit.create", "visit.edit",
+      "editorial_context.view", "visit.view", "visit.create", "visit.edit", "venue.inventory.propose",
     ],
   },
   {

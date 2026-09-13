@@ -13,7 +13,11 @@ const paths = {
   appShell: "clients/marketplace/src/ui/app-shell.js",
   createHub: "clients/marketplace/src/ui/create-hub-view.js",
   item: "clients/marketplace/src/ui/item-authoring-view.js",
+  itemVenueIntegration: "clients/marketplace/src/ui/item-authoring-subject-venues.js",
+  itemDetail: "clients/marketplace/src/ui/item-detail-dialog.js",
+  itemDetailVenueIntegration: "clients/marketplace/src/ui/item-detail-subject-venues.js",
   subjectPresence: "clients/marketplace/src/ui/subject-presence.js",
+  subjectVenueDialog: "clients/marketplace/src/ui/subject-venue-dialog.js",
   organization: "clients/marketplace/src/ui/organization-view.js",
   venueEditorTargets: "clients/marketplace/src/ui/venue-editor-targets-mixin.js",
   venueEditorSlots: "clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js",
@@ -23,12 +27,18 @@ const paths = {
   policy: "clients/marketplace/src/application/management-context-policy.js",
   managementRepository: "clients/marketplace/src/infrastructure/http/management-repository.js",
   managementService: "services/marketplaceManagementV2.service.js",
+  permissionRegistry: "services/organizationPermissionRegistry.service.js",
+  proposalService: "services/venueInventoryProposal.service.js",
+  inventoryCommand: "services/venueInventoryCommand.service.js",
   marketplaceRoutes: "routes/marketplaceV2.routes.js",
   discovery: "services/marketplaceDiscoveryV2.service.js",
   venueTargetModel: "models/venueTarget.model.js",
 };
 const read = (key) => fs.readFileSync(path.join(root, paths[key]), "utf8");
 const source = Object.fromEntries(Object.keys(paths).map((key) => [key, read(key)]));
+source.item = `${source.item}\n${source.itemVenueIntegration}`;
+source.itemDetail = `${source.itemDetail}\n${source.itemDetailVenueIntegration}`;
+source.venueEditorSlots = `${source.venueEditorSlots}`;
 
 test("i moduli del boundary passano il syntax gate", () => {
   for (const relative of Object.values(paths).filter((value) => value.endsWith(".js"))) {
@@ -72,14 +82,16 @@ test("Create Hub avvia l'Item dal Subject e non da una Venue o da un VenueTarget
   assert.doesNotMatch(source.createHub, /Sede di riferimento|Nessuna sede specifica|organizationVenues\(|venueTargetId|physicalIntent/);
 });
 
-test("Item Authoring usa il Subject come identità editoriale e mostra la presenza fisica come contesto separato", () => {
+test("Item Authoring resta editoriale mentre il dettaglio Item espone la capability Subject-Venue condivisa", () => {
   assert.match(source.item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
-  assert.match(source.item, /import "\.\/subject-presence\.js"/);
-  assert.match(source.item, /artaround-subject-presence/);
-  assert.doesNotMatch(source.item, /venueTargetId|physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
-  assert.match(source.subjectPresence, /La presenza fisica è informativa e resta separata dal contenuto editoriale/);
-  assert.match(source.subjectPresence, /Proponi alla sede/);
+  assert.match(source.itemVenueIntegration, /renderSubjectPresenceOutsideAuthoringFlow\(\) \{ return ""; \}/);
+  assert.match(source.itemVenueIntegration, /data-open-subject-venues/);
+  assert.match(source.itemVenueIntegration, /openSubjectVenueDialog/);
+  assert.match(source.itemDetailVenueIntegration, /data-item-detail-tab="venues"/);
+  assert.match(source.itemDetailVenueIntegration, /artaround-subject-presence/);
+  assert.match(source.subjectPresence, /data-presence-action="propose"/);
   assert.match(source.subjectPresence, /Mostra sulla mappa/);
+  assert.doesNotMatch(source.item, /physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
 });
 
 test("Venue management proietta direttamente l'inventario senza il vecchio authoring-targets", () => {
@@ -89,17 +101,24 @@ test("Venue management proietta direttamente l'inventario senza il vecchio autho
   assert.doesNotMatch(source.marketplaceRoutes, /authoring-targets/);
 });
 
-test("creazione contenuti e gestione inventario sono capability indipendenti nella projection Venue", () => {
+test("proporre e gestire l'inventario sono capability distinte da item.create", () => {
+  assert.match(source.permissionRegistry, /"venue\.inventory\.propose"/);
+  assert.match(source.permissionRegistry, /"venue\.inventory\.manage": \["venue\.inventory\.propose"\]/);
+  assert.match(source.permissionRegistry, /"venue\.inventory\.propose": \["venue\.view"\]/);
+  assert.match(source.proposalService, /permissionCode: "venue\.inventory\.propose"/);
+  assert.doesNotMatch(source.proposalService, /permissionCode: "item\.create"/);
   assert.match(source.managementService, /canCreateContent: permissions\.has\("item\.create"\)/);
   assert.match(source.managementService, /canEditInventory: permissions\.has\("venue\.inventory\.manage"\)/);
-  assert.doesNotMatch(source.managementRepository, /authoringPermissions: authoring\.permissions/);
   assert.match(source.venueEditorTargets, /canCreateContent = false/);
-  assert.match(source.venueEditorTargets, /const createContent = canCreateContent/);
-  assert.match(source.venueEditorTargets, /const subjectId = id\(entry\.subject\?\.id\)/);
-  assert.match(source.venueEditorTargets, /subjectId=\$\{encodeURIComponent\(subjectId\)\}/);
   assert.match(source.venueEditorSlots, /this\.data\.authoringPermissions\?\.canCreateContent/);
-  assert.match(source.venueEditorSlots, /const physicalActions = editable/);
-  assert.match(source.venueEditorSlots, /const contentAction = canCreateContent/);
+});
+
+test("una proposal pendente non può essere bypassata da una aggiunta diretta", () => {
+  assert.match(source.inventoryCommand, /VenueInventoryProposal\.findOne/);
+  assert.match(source.inventoryCommand, /PENDING_INVENTORY_PROPOSAL_REQUIRES_DECISION/);
+  assert.match(source.inventoryCommand, /ensureVenueEntity/);
+  assert.match(source.subjectPresence, /venue\.inventory\.accept_proposal/);
+  assert.match(source.subjectPresence, /Accetta nell'inventario/);
 });
 
 test("l'inbox Venue decide l'appartenenza all'inventario senza collocazione automatica", () => {

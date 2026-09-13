@@ -5,6 +5,7 @@ const controller = require("../controllers/marketplaceV2.controller");
 const authoringController = require("../controllers/marketplaceAuthoringV2.controller");
 const preflightController = require("../controllers/marketplaceAuthoringPreflightV2.controller");
 const discoveryController = require("../controllers/marketplaceDiscoveryV2.controller");
+const venueManagementController = require("../controllers/marketplaceVenueManagement.controller");
 
 const router = express.Router();
 const listingId = validateObjectIdParam("listingId");
@@ -51,7 +52,7 @@ router.get("/v2/marketplace/account-workspace", controller.marketplaceAccountWor
 router.get("/v2/marketplace/management/organizations/:organizationId", organizationId, controller.marketplaceOrganizationDetail);
 router.get("/v2/marketplace/management/namespaces/:namespaceId", namespaceId, controller.marketplaceNamespaceManagement);
 router.get("/v2/marketplace/management/physical-vocabularies/:physicalVocabularyId", physicalVocabularyId, controller.marketplacePhysicalVocabularyManagement);
-router.get("/v2/marketplace/management/venues/:venueId", venueId, controller.marketplaceVenueManagement);
+router.get("/v2/marketplace/management/venues/:venueId", venueId, venueManagementController.marketplaceVenueManagement);
 router.get("/v2/marketplace/workspace/context", controller.creatorWorkspaceContext);
 router.get("/v2/marketplace/workspace/resources", controller.creatorWorkspaceResources);
 router.get("/v2/marketplace/workspace/resources/:resourceType/:resourceId", resourceId, controller.creatorWorkspaceResourceDetail);

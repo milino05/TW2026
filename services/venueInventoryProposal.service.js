@@ -26,7 +26,7 @@ async function validateProposalSource({ venue, subjectId, sourceItemId, actorUse
   await assertOrganizationPermission({
     userId: actorUserId,
     organizationId: venue.ownerOrganizationId,
-    permissionCode: "item.create",
+    permissionCode: "venue.inventory.propose",
   });
   assertObjectId(subjectId, "subjectId");
   const subject = await Subject.findById(subjectId).select("_id preferredLabel description").lean();

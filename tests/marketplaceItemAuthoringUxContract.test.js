@@ -6,16 +6,21 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const itemPath = path.join(root, "clients/marketplace/src/ui/item-authoring-view.js");
+const itemVenuePath = path.join(root, "clients/marketplace/src/ui/item-authoring-subject-venues.js");
+const subjectVenueDialogPath = path.join(root, "clients/marketplace/src/ui/subject-venue-dialog.js");
 const pickerPath = path.join(root, "clients/marketplace/src/ui/semantic-entity-picker.js");
 const presencePath = path.join(root, "clients/marketplace/src/ui/subject-presence.js");
 const authoringRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/authoring-repository.js");
-const source = fs.readFileSync(itemPath, "utf8");
+const itemFacadeSource = fs.readFileSync(itemPath, "utf8");
+const itemVenueSource = fs.readFileSync(itemVenuePath, "utf8");
+const subjectVenueDialogSource = fs.readFileSync(subjectVenueDialogPath, "utf8");
+const source = `${itemFacadeSource}\n${itemVenueSource}`;
 const pickerSource = fs.readFileSync(pickerPath, "utf8");
 const presenceSource = fs.readFileSync(presencePath, "utf8");
 const authoringRepositorySource = fs.readFileSync(authoringRepositoryPath, "utf8");
 
-test("item authoring, picker, presence e repository passano il syntax gate", () => {
-  for (const target of [itemPath, pickerPath, presencePath, authoringRepositoryPath]) {
+test("item authoring e integrazione Subject/Venue passano il syntax gate", () => {
+  for (const target of [itemPath, itemVenuePath, subjectVenueDialogPath, pickerPath, presencePath, authoringRepositoryPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
@@ -29,15 +34,17 @@ test("l'Item Editor espone quattro passaggi e non contiene uno step relazioni", 
   assert.doesNotMatch(source, /data-add-connection|data-connection-search|createItemConnection|removeItemConnection/);
 });
 
-test("la creazione parte dal Subject e la presenza fisica resta informativa", () => {
+test("la creazione parte dal Subject e la presenza nelle sedi esce dallo step uno", () => {
   assert.match(source, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
   assert.match(source, /authoringRepository\.getSubject\(this\.preselectedSubjectId\)/);
   assert.match(source, /<artaround-semantic-entity-picker mode="subject" entity-kind="item"><\/artaround-semantic-entity-picker>/);
   assert.match(source, /Crea Item e continua/);
-  assert.match(source, /this\.renderSubjectPresence\(\)/);
-  assert.match(source, /L'identità semantica è separata sia dalla versione editoriale sia dalla presenza fisica nelle Venue/);
-  assert.match(presenceSource, /La presenza fisica è informativa e resta separata dal contenuto editoriale/);
-  assert.doesNotMatch(source, /venueTargetId|physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
+  assert.match(itemVenueSource, /prototype\.renderSubjectPresence = function renderSubjectPresenceOutsideAuthoringFlow\(\) \{ return ""; \}/);
+  assert.match(itemVenueSource, /data-open-subject-venues/);
+  assert.match(itemVenueSource, /openSubjectVenueDialog/);
+  assert.match(subjectVenueDialogSource, /artaround-subject-presence/);
+  assert.match(presenceSource, /Inventario fisico|Presenza nelle sedi|subject-venue-surface/);
+  assert.doesNotMatch(source, /physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
 });
 
 test("l'Item viene creato dal Subject e dal principal operativo senza side effect fisici", () => {
@@ -112,13 +119,16 @@ test("la bozza degli step di editing sopravvive al refresh senza introdurre un s
   assert.match(source, /this\.clearWorkingDraft\(\)/);
 });
 
-test("il controllo finale è backend-authoritative e rimanda la semantica allo Studio", () => {
+test("il controllo finale è backend-authoritative e può aprire la presenza nelle sedi come azione secondaria", () => {
   assert.match(source, /this\.workflowOperations\(\)/);
   assert.match(source, /operation\.code === "workflow\.check"/);
   assert.match(source, /operationCode !== "workflow\.check"/);
   assert.match(source, /Controlla se è tutto pronto/);
   assert.match(source, /Il grafo semantico non si modifica qui/);
   assert.match(source, /apri la sezione Relazioni dello Studio/);
+  assert.match(itemVenueSource, /Presenza nelle sedi/);
+  assert.match(itemVenueSource, /renderStepFourWithSubjectVenue/);
+  assert.match(itemVenueSource, /renderPrivateSuccessWithSubjectVenue/);
   assert.doesNotMatch(source, /workflow\.publish/);
 });
 

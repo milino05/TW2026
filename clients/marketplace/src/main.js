@@ -14,5 +14,8 @@ import "./ui/revision-workflow-adapter.js";
 import "./ui/authoring-stepper-adapter.js";
 import "./ui/visit-reorder-adapter.js";
 import "./ui/guided-tour-adapter.js";
+import "./ui/item-authoring-subject-venues.js";
+import "./ui/item-detail-subject-venues.js";
+import "./ui/venue-editor-subject-inventory-integration.js";
 import "./ui/app-shell.js";
 import "./ui/item-semantic-relations-launcher.js";

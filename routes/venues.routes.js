@@ -5,6 +5,8 @@ const controller = require("../controllers/venues.controller");
 const venueCreationController = require("../controllers/venueCreation.controller");
 const lifecycleController = require("../controllers/venueLifecycle.controller");
 const inventoryProposalController = require("../controllers/venueInventoryProposals.controller");
+const inventoryCommandController = require("../controllers/venueInventoryCommand.controller");
+const subjectCandidatesController = require("../controllers/venueSubjectCandidates.controller");
 
 const router = express.Router();
 const venueId = validateObjectIdParam("venueId");
@@ -24,13 +26,13 @@ router.post("/venues", requireAuth, controller.create);
 router.post("/venues/configured", requireAuth, venueCreationController.create);
 router.get("/venues/:venueId", venueId, controller.get);
 router.patch("/venues/:venueId", requireAuth, venueId, controller.update);
-router.get("/venues/:venueId/subject-candidates", requireAuth, venueId, controller.searchSubjectCandidates);
+router.get("/venues/:venueId/subject-candidates", requireAuth, venueId, subjectCandidatesController.searchSubjectCandidates);
 router.get("/venues/:venueId/lifecycle-impact", requireAuth, venueId, lifecycleController.impact);
 router.post("/venues/:venueId/lifecycle/trash", requireAuth, venueId, lifecycleController.trash);
 router.post("/venues/:venueId/lifecycle/restore", requireAuth, venueId, lifecycleController.restore);
 
 router.get("/venues/:venueId/targets", venueId, controller.listTargets);
-router.post("/venues/:venueId/targets", requireAuth, venueId, controller.createTarget);
+router.post("/venues/:venueId/targets", requireAuth, venueId, inventoryCommandController.createTarget);
 router.patch("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.updateTarget);
 router.delete("/venues/:venueId/targets/:venueTargetId", requireAuth, venueId, venueTargetId, controller.trashTarget);
 
