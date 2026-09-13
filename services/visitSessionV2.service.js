@@ -1,4 +1,5 @@
 const User = require("../models/user");
+const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const SynchronizedVisitQuizAttempt = require("../models/synchronizedVisitQuizAttempt.model");
@@ -174,6 +175,12 @@ async function semanticActions({ session, plan, entry, anchor, semanticPresentat
   }));
 }
 
+async function synchronizedQuizAvailable(synchronizedSession) {
+  if (!synchronizedSession?.visitRevisionId) return false;
+  const revision = await VisitRevisionV2.findById(synchronizedSession.visitRevisionId).select("quiz.questions._id").lean();
+  return Boolean(revision?.quiz?.questions?.length);
+}
+
 async function deriveRuntimeActions({ sessionId, userId }) {
   const state = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
   const { session, plan, synchronizedSession, membership, effectiveStatus, physicalSession } = state;
@@ -256,7 +263,9 @@ async function deriveRuntimeActions({ sessionId, userId }) {
         }
         if (index > 0) actions.push(groupAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
         if (index < entries.length - 1) actions.push(groupAction(ACTION_DEFINITIONS.PROGRESS_NEXT, { context }));
-        actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_START_QUIZ, { context }));
+        if (await synchronizedQuizAvailable(synchronizedSession)) {
+          actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_START_QUIZ, { context }));
+        }
       }
     } else {
       if (index > 0) actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
@@ -301,7 +310,7 @@ async function currentSessionProjection({ sessionId, userId }) {
       sourceType: session.sourceType,
       currentEntryIndex: index,
       runtimeVersion: session.runtimeVersion,
-      deliveryMode: synchronizedSession ? "synchronized" : "self_guided",
+      executionMode: synchronizedSession ? "synchronized" : "self_guided",
     },
     synchronization: synchronizedSession ? {
       id: synchronizedSession._id,
