@@ -71,7 +71,6 @@ async function projectLibraryCard({ visit, userId }) {
     owner: resolved.owner,
     physicalScope: resolved.physicalScope.venues,
     stopCount: resolved.physicalScope.stopCount,
-    deliveryMode: resolved.revision.deliveryMode || "self_guided",
   };
 }
 
@@ -118,7 +117,7 @@ async function getNavigatorVisitDetail({ userId, visitId, configuredVenueId = nu
       physicalScope: resolved.physicalScope.venues,
       stopCount: resolved.physicalScope.stopCount,
       contentCount: (resolved.revision.contentEntries || []).length,
-      deliveryMode: resolved.revision.deliveryMode || "self_guided",
+      quizQuestionCount: (resolved.revision.quiz?.questions || []).length,
     },
     preparation: { available: true },
   };
