@@ -102,7 +102,9 @@ requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /executeWor
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /window\.prompt\(/, "Native prompt in Visit workflow");
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /role:\s*["']logistics["']|itemType:\s*["']logistics["']/, "Logistics encoded as Visit content");
 requirePattern("tests/visitAuthoringV2.test.js", /published[\s\S]*visit\.edit[\s\S]*in_review[\s\S]*workflow\.withdraw_review/, "Visit editor workflow regression test");
-requirePattern("tests/visitAuthoringV2.test.js", /VISIT_CONTENT_ALREADY_INCLUDED[\s\S]*contenuto alternativo[\s\S]*riusano una sola tappa/, "Unique Visit content and shared-anchor regression tests");
+requirePattern("tests/visitAuthoringV2.test.js", /VISIT_CONTENT_ALREADY_INCLUDED/, "Visit duplicate revision rejection regression test");
+requirePattern("tests/visitAuthoringV2.test.js", /contenuto alternativo/, "Distinct same-subject Visit content fixture");
+requirePattern("tests/visitAuthoringV2.test.js", /due contenuti distinti sullo stesso target riusano una sola tappa/, "Shared VisitAnchor regression test with distinct content");
 requirePattern("tests/visitAuthoringV2.test.js", /setContentPlacement[\s\S]*mode:\s*["']physical["'][\s\S]*mode:\s*["']contextual["'][\s\S]*anchorRemoved/, "Reversible Visit placement regression tests");
 requirePattern("tests/visitAuthoringSequenceV2.test.js", /canonicalizzazione[\s\S]*stessa tappa[\s\S]*contestuali[\s\S]*OUT_OF_RANGE/, "Visit content sequence regression tests");
 
