@@ -1,6 +1,7 @@
 import { mountModalInteraction } from "../application/modal-interaction.js";
 
 const DISMISS_SELECTOR = [
+  "[data-modal-dismiss]",
   "[data-close-floor-dialog]",
   "[data-close-map-creation-dialog]",
   "[data-close-spatial-editor]",
@@ -10,6 +11,8 @@ const DISMISS_SELECTOR = [
 ].join(", ");
 
 function prepareVenueModalPanel(layer) {
+  const sharedPanel = layer.querySelector(".artaround-task-modal");
+  if (sharedPanel instanceof HTMLElement) return sharedPanel;
   const taskPanel = layer.querySelector(".venue-modal-card");
   if (!(taskPanel instanceof HTMLElement)) return layer.querySelector(".venue-spatial-dialog-frame");
   layer.classList.add("artaround-modal-layer");
@@ -42,7 +45,21 @@ function prepareVenueModalPanel(layer) {
   return taskPanel;
 }
 
+function enableVenueDismissControls(layer) {
+  for (const control of layer.querySelectorAll(DISMISS_SELECTOR)) {
+    if (control instanceof HTMLButtonElement) control.disabled = false;
+  }
+}
+
 function dismissVenueModal(editor, layer) {
+  if (layer.matches(".venue-inventory-modal-layer")) {
+    const targetId = editor.selectedVenueTargetId || editor.inventoryDetailTargetId;
+    editor.selectedVenueTargetId = null;
+    editor.inventoryDetailTargetId = null;
+    editor.render();
+    editor.restoreInventoryLauncherFocus?.(targetId);
+    return;
+  }
   if (layer.matches(".venue-inventory-subject-backdrop")) {
     editor.inventorySubjectPickerOpen = false;
     editor.inventoryPendingSubject = null;
@@ -79,6 +96,23 @@ function dismissVenueModal(editor, layer) {
   }
 }
 
+function reportForwardingError(editor, error) {
+  console.error("Venue modal interaction failed", error);
+  editor.busy = false;
+  editor.error = error instanceof Error ? error.message : "Interazione del pannello non riuscita";
+  try { editor.render(); }
+  catch (renderError) { console.error("Venue modal recovery render failed", renderError); }
+}
+
+function forwardVenueEvent(editor, callback, ...args) {
+  try {
+    const result = callback?.apply(editor, args);
+    if (result && typeof result.catch === "function") result.catch((error) => reportForwardingError(editor, error));
+  } catch (error) {
+    reportForwardingError(editor, error);
+  }
+}
+
 /**
  * Venue keeps domain-specific map/floor renderers, while this mixin owns the
  * application-modal mechanics. Bounded Venue cards are normalized onto the
@@ -88,7 +122,7 @@ function dismissVenueModal(editor, layer) {
  */
 export const venueModalLifecycleMixin = {
   releaseVenueModalLayers({ restoreFocus = false } = {}) {
-    for (const record of this._venueModalLayers || []) {
+    for (const record of [...(this._venueModalLayers || [])].reverse()) {
       const { layer, click, submit, change, input, subjectSelected, interaction } = record;
       layer.removeEventListener("click", click);
       layer.removeEventListener("submit", submit);
@@ -102,21 +136,22 @@ export const venueModalLifecycleMixin = {
 
   syncVenueModalLayers() {
     this.releaseVenueModalLayers({ restoreFocus: false });
-    const layers = [...this.querySelectorAll(".venue-modal-backdrop")]
+    const layers = [...this.querySelectorAll(".venue-modal-backdrop, .venue-inventory-modal-layer")]
       .filter((layer) => layer instanceof HTMLElement);
     this._venueModalLayers = layers.map((layer) => {
       const panel = prepareVenueModalPanel(layer);
       if (!(panel instanceof HTMLElement)) return null;
+      enableVenueDismissControls(layer);
       layer.dataset.modalBackdrop = "true";
       const click = (event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (!target || target === layer || target.closest(DISMISS_SELECTOR)) return;
-        void this.onClick(event);
+        forwardVenueEvent(this, this.onClick, event);
       };
-      const submit = (event) => { void this.onSubmit(event); };
-      const change = (event) => { this.onChange?.(event); };
-      const input = (event) => { this.onInput?.(event); };
-      const subjectSelected = (event) => { this.onSubjectSelected?.(event); };
+      const submit = (event) => { forwardVenueEvent(this, this.onSubmit, event); };
+      const change = (event) => { forwardVenueEvent(this, this.onChange, event); };
+      const input = (event) => { forwardVenueEvent(this, this.onInput, event); };
+      const subjectSelected = (event) => { forwardVenueEvent(this, this.onSubjectSelected, event); };
       layer.addEventListener("click", click);
       layer.addEventListener("submit", submit);
       layer.addEventListener("change", change);
@@ -129,7 +164,7 @@ export const venueModalLifecycleMixin = {
         initialFocus: "[autofocus], input:not([type=hidden]), select, textarea, button",
         dismissSelector: DISMISS_SELECTOR,
         backdropSelector: "[data-modal-backdrop]",
-        canDismiss: () => !this.busy,
+        canDismiss: () => true,
         onRequestDismiss: () => {
           dismissVenueModal(this, layer);
           return true;

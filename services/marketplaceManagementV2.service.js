@@ -39,6 +39,7 @@ function namespaceOperations({ namespace, revision, permissions }) {
     operations.push(operation("namespace.revision.check", "Controlla integrità"));
   }
   if (status === "in_review" && can("namespace.edit")) operations.push(operation("namespace.revision.check", "Controlla integrità"));
+  if (can("namespace.lifecycle.manage")) operations.push(operation("namespace.trash", "Sposta nel cestino"));
   return operations;
 }
 

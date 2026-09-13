@@ -45,6 +45,7 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
     const VenueTarget = require("../models/venueTarget.model");
     const ExhibitSlot = require("../models/exhibitSlot.model");
     const VenueInventoryProposal = require("../models/venueInventoryProposal.model");
+    const { addVenueSubjectToInventory } = require("../services/venueInventoryCommand.service");
     const {
       submitVenueInventoryProposal,
       listVenueInventoryProposals,
@@ -52,9 +53,10 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
       rejectVenueInventoryProposal,
     } = require("../services/venueInventoryProposal.service");
 
-    const [owner, contributor, inventoryManager] = await User.create([
+    const [owner, contributor, contentAuthor, inventoryManager] = await User.create([
       { username: "proposal-owner", passwordHash: "hash" },
       { username: "proposal-contributor", passwordHash: "hash" },
+      { username: "proposal-content-author", passwordHash: "hash" },
       { username: "proposal-inventory-manager", passwordHash: "hash" },
     ]);
     const organization = await Organization.create({ name: "Museo proposte", createdBy: owner._id });
@@ -65,7 +67,16 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
       userId: contributor._id,
       assignedBy: owner._id,
       name: "Contributor proposte",
-      permissionCodes: ["venue.view", "item.create"],
+      permissionCodes: ["venue.inventory.propose"],
+    });
+    await addMembership({
+      OrganizationRole,
+      OrganizationMembership,
+      organizationId: organization._id,
+      userId: contentAuthor._id,
+      assignedBy: owner._id,
+      name: "Autore contenuti senza proposte",
+      permissionCodes: ["item.create"],
     });
     await addMembership({
       OrganizationRole,
@@ -74,13 +85,14 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
       userId: inventoryManager._id,
       assignedBy: owner._id,
       name: "Inventory manager proposte",
-      permissionCodes: ["venue.view", "venue.inventory.manage"],
+      permissionCodes: ["venue.inventory.manage"],
     });
 
     const venue = await Venue.create({ name: "Sede proposte", ownerOrganizationId: organization._id, createdBy: owner._id });
-    const [acceptedSubject, rejectedSubject] = await Subject.create([
+    const [acceptedSubject, rejectedSubject, inventoryOnlySubject] = await Subject.create([
       { preferredLabel: "Opera proposta", description: "Opera da valutare", createdBy: owner._id },
       { preferredLabel: "Tema non fisico", description: "Tema editoriale", createdBy: owner._id },
+      { preferredLabel: "Opera solo inventario", description: "Nessun Item editoriale", createdBy: owner._id },
     ]);
     const acceptedItem = await ItemV2.create({
       primarySubjectId: acceptedSubject._id,
@@ -88,6 +100,17 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
       ownerId: organization._id,
       createdBy: contributor._id,
     });
+
+    await assert.rejects(
+      () => submitVenueInventoryProposal({
+        venueId: venue._id,
+        subjectId: acceptedSubject._id,
+        sourceItemId: acceptedItem._id,
+        actorUserId: contentAuthor._id,
+      }),
+      (error) => error?.status === 403,
+      "item.create da solo non deve più autorizzare una proposta di inventario",
+    );
 
     const first = await submitVenueInventoryProposal({
       venueId: venue._id,
@@ -119,8 +142,29 @@ test("Venue inventory proposals keep editorial suggestion and physical placement
     await assert.rejects(
       () => listVenueInventoryProposals({ venueId: venue._id, actorUserId: contributor._id }),
       (error) => error?.status === 403,
-      "item.create non deve implicare venue.inventory.manage",
+      "venue.inventory.propose non deve implicare venue.inventory.manage",
     );
+
+    await assert.rejects(
+      () => addVenueSubjectToInventory({
+        venueId: venue._id,
+        payload: { subjectId: acceptedSubject._id, provenance: { origin: "human" } },
+        actorUserId: inventoryManager._id,
+      }),
+      (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "PENDING_INVENTORY_PROPOSAL_REQUIRES_DECISION"),
+      "un manager deve decidere una proposal pending invece di bypassarla con un'aggiunta diretta",
+    );
+
+    const inventoryOnly = await addVenueSubjectToInventory({
+      venueId: venue._id,
+      payload: { subjectId: inventoryOnlySubject._id, provenance: { origin: "human" } },
+      actorUserId: inventoryManager._id,
+    });
+    assert.equal(inventoryOnly.created, true);
+    const { projectOrganizationSubjectUsage } = require("../services/organizationSubjectUsage.service");
+    const usage = await projectOrganizationSubjectUsage({ organizationId: organization._id, subjectIds: [inventoryOnlySubject._id] });
+    assert.equal(usage.get(String(inventoryOnlySubject._id)).itemCount, 0);
+    assert.equal(usage.get(String(inventoryOnlySubject._id)).venueCount, 1, "la presenza fisica deve essere conteggiata anche senza Item editoriali");
 
     const pending = await listVenueInventoryProposals({ venueId: venue._id, actorUserId: inventoryManager._id });
     assert.equal(pending.results.length, 2);

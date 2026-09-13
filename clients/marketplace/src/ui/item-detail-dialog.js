@@ -1,9 +1,11 @@
 import { navigate } from "../application/router.js";
+import { readOperatingContext } from "../application/operating-context.js";
 import { libraryRepository } from "../infrastructure/http/library-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
 import { mountModalInteraction } from "../application/modal-interaction.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
+import "./subject-presence.js";
 
 function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -22,6 +24,8 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   contentSpaceId = null;
   itemId = null;
   initialCollectionId = null;
+  context = null;
+  principal = null;
   data = null;
   tab = "editions";
   view = "tabs";
@@ -35,6 +39,8 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     this.contentSpaceId = this.getAttribute("content-space-id") || null;
     this.itemId = this.getAttribute("item-id") || null;
     this.initialCollectionId = this.getAttribute("initial-collection-id") || null;
+    this.context = readOperatingContext();
+    this.principal = this.context ? { type: this.context.type, id: this.context.id } : null;
     if (this.initialCollectionId) {
       this.tab = "collections";
       this.view = "collection-detail";
@@ -192,7 +198,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const editions = this.data?.editions || [];
     return `<section class="item-detail-section"><div class="section-heading"><div><span class="eyebrow">Edizioni</span><h2>Versioni editoriali</h2><p>Ogni Edition combina questo Item con un insieme di Regole editoriali.</p></div>${this.data?.availableOperations?.canCreateEdition ? `<button type="button" class="button-secondary" data-create-item-edition>${icon("plus", { size: 15 })} Crea edizione</button>` : ""}</div>${editions.length ? `<div class="asset-grid">${editions.map((edition) => {
       const revision = edition.revision;
-      return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">${escapeHtml(edition.namespace?.name || "Regole editoriali")}</p><h3>${escapeHtml(revision?.label || "Edizione da completare")}</h3></div><span class="status">${escapeHtml(statusLabel(revision?.status))}</span></header><div class="asset-copy"><p>${revision ? `v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Nessuna revisione disponibile"}</p>${revision?.locales?.length ? `<p class="muted">Lingue: ${escapeHtml(revision.locales.join(", "))}</p>` : ""}</div><footer class="operations">${edition.availableOperations?.canOpen ? `<button type="button" data-open-item-edition="${escapeHtml(id(edition.namespace?.id))}">Apri edizione ${icon("chevron", { size: 14 })}</button>` : ""}</footer></article>`;
+      return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">${escapeHtml(edition.namespace?.name || "Regole editoriali")}</p><h3>${escapeHtml(revision?.label || "Edizione da completare")}</h3></div><span class="status">${escapeHtml(statusLabel(revision?.status))}</span></header><div class="asset-copy"><p>${revision ? `v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${revision?.locales?.length ? `<p class="muted">Lingue: ${escapeHtml(revision.locales.join(", "))}</p>` : ""}</div><footer class="operations">${edition.availableOperations?.canOpen ? `<button type="button" data-open-item-edition="${escapeHtml(id(edition.namespace?.id))}">Apri edizione ${icon("chevron", { size: 14 })}</button>` : ""}</footer></article>`;
     }).join("")}</div>` : `<div class="empty-state compact"><h3>Nessuna edizione</h3><p>L'Item esiste nello spazio ma non ha ancora una versione editoriale.</p>${this.data?.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition>${icon("plus", { size: 15 })} Crea la prima edizione</button>` : ""}</div>`}</section>`;
   }
 
@@ -238,14 +244,34 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     return `<section class="item-detail-section collection-item-detail"><div class="section-heading"><div><span class="eyebrow">Item nella raccolta</span><h2>${escapeHtml(collection.name)}</h2><p>${escapeHtml(collection.namespace?.name || "Regole editoriali")}</p></div><button type="button" class="button-secondary" data-back-collections>← Raccolte</button></div><div class="detail-block-grid"><article class="panel"><span class="eyebrow">Versione editoriale</span>${edition ? `<h3>${escapeHtml(revision?.label || "Edizione compatibile")}</h3><p>${revision ? `${escapeHtml(statusLabel(revision.status))} · v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${collection.availableOperations?.canOpenEdition ? `<button type="button" class="button-secondary" data-open-item-edition="${escapeHtml(id(collection.namespace?.id))}">Apri versione</button>` : ""}` : `<h3>Versione mancante</h3><p>La raccolta usa queste Regole editoriali, ma l'Item non ha ancora una Edition compatibile. Può restare nella raccolta, ma la revisione verrà bloccata finché non la completi.</p>${collection.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition="${escapeHtml(id(collection.namespace?.id))}">Crea versione</button>` : ""}`}</article><article class="panel"><span class="eyebrow">Semantica</span><h3>${escapeHtml(collection.semanticGraph?.name || "Grafo non disponibile")}</h3><p>${escapeHtml(semanticCopy)}</p>${collection.availableOperations?.canOpenGraph && collection.semanticGraph?.id ? `<button type="button" class="button-secondary" data-open-collection-graph="${escapeHtml(id(collection.semanticGraph))}">Apri nel grafo</button>` : ""}</article></div><div class="operations"><button type="button" class="button-secondary" data-open-collection="${escapeHtml(id(collection))}">Apri raccolta</button>${collection.availableOperations?.canRemove ? `<button type="button" class="button-secondary danger" data-remove-from-collection="${escapeHtml(id(collection))}">Rimuovi dalla raccolta</button>` : ""}</div></section>`;
   }
 
+  renderVenues() {
+    if (this.principal?.type !== "organization") {
+      return `<section class="item-detail-section"><div class="empty-state compact"><p>Seleziona un'area di lavoro organizzazione per gestire la presenza del Subject nelle sedi.</p></div></section>`;
+    }
+    return `<section class="item-detail-section"><artaround-subject-presence data-item-detail-subject-presence subject-id="${escapeHtml(id(this.data?.subject))}" source-item-id="${escapeHtml(this.itemId)}" principal-type="${escapeHtml(this.principal.type)}" principal-id="${escapeHtml(this.principal.id)}"></artaround-subject-presence></section>`;
+  }
+
+  configureSubjectVenueSurface() {
+    const surface = this.querySelector("artaround-subject-presence[data-item-detail-subject-presence]");
+    if (!surface || !this.data?.subject || this.principal?.type !== "organization") return;
+    surface.configure({
+      subjectId: id(this.data.subject),
+      sourceItemId: this.itemId,
+      sourcePreviewMedia: this.data?.item?.recognitionMedia || null,
+      principal: this.principal,
+    });
+  }
+
   renderBody() {
-    if (this.view === "collection-picker") return this.renderCollectionPicker();
-    if (this.view === "collection-detail") return this.renderCollectionDetail();
-    return `${this.renderTabs()}${this.tab === "collections" ? this.renderCollections() : this.renderEditions()}`;
+    const tabs = this.renderTabs();
+    if (this.tab === "venues" && this.principal?.type === "organization") return `${tabs}${this.renderVenues()}`;
+    if (this.view === "collection-picker") return `${tabs}${this.renderCollectionPicker()}`;
+    if (this.view === "collection-detail") return `${tabs}${this.renderCollectionDetail()}`;
+    return `${tabs}${this.tab === "collections" ? this.renderCollections() : this.renderEditions()}`;
   }
 
   renderTabs() {
-    return `<nav class="context-workspace-tabs item-detail-tabs" aria-label="Dettaglio Item"><button type="button" data-item-detail-tab="editions" aria-current="${this.tab === "editions" ? "page" : "false"}">Edizioni</button><button type="button" data-item-detail-tab="collections" aria-current="${this.tab === "collections" ? "page" : "false"}">Raccolte</button></nav>`;
+    return `<nav class="context-workspace-tabs item-detail-tabs" aria-label="Dettaglio Item"><button type="button" data-item-detail-tab="editions" aria-current="${this.tab === "editions" ? "page" : "false"}">Edizioni</button><button type="button" data-item-detail-tab="collections" aria-current="${this.tab === "collections" ? "page" : "false"}">Raccolte</button>${this.principal?.type === "organization" ? `<button type="button" data-item-detail-tab="venues" aria-current="${this.tab === "venues" ? "page" : "false"}">Sedi</button>` : ""}</nav>`;
   }
 
   render() {
@@ -256,6 +282,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const body = `${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.data ? `<div class="empty-state"><p>Caricamento del contenuto…</p></div>` : this.data ? this.renderBody() : ""}`;
     this.innerHTML = `<div class="artaround-modal-layer item-detail-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal artaround-task-modal--large item-detail-modal" role="dialog" aria-modal="true" aria-label="Dettaglio Item" aria-busy="${this.busy}">${header}<div class="artaround-task-modal__body">${body}</div><footer class="artaround-task-modal__footer"><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Chiudi</button></footer></section></div>`;
     this.syncDialogInteraction();
+    queueMicrotask(() => this.configureSubjectVenueSurface());
   }
 }
 

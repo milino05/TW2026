@@ -2,10 +2,8 @@ const Venue = require("../models/venue.model");
 const VenueTarget = require("../models/venueTarget.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
-const ItemV2 = require("../models/itemV2.model");
-const ItemEdition = require("../models/itemEdition.model");
-const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const AppError = require("../utils/AppError");
+const { projectOrganizationSubjectUsage } = require("./organizationSubjectUsage.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) {
@@ -90,51 +88,7 @@ function projectInventory(target, lookups) {
   };
 }
 
-async function projectMuseumContent({ ownerOrganizationId, subjectIds }) {
-  const result = new Map(subjectIds.map((subjectId) => [id(subjectId), { availableCount: 0, draftCount: 0 }]));
-  if (!subjectIds.length) return result;
-  const items = await ItemV2.find({
-    ownerType: "organization",
-    ownerId: ownerOrganizationId,
-    lifecycleStatus: "active",
-    primarySubjectId: { $in: subjectIds },
-  }).select("_id primarySubjectId").lean();
-  if (!items.length) return result;
-
-  const editions = await ItemEdition.find({ itemId: { $in: items.map((item) => item._id) } })
-    .select("itemId publishedRevisionId workingRevisionId")
-    .lean();
-  const publishedRevisionIds = uniqueIds(editions.map((edition) => edition.publishedRevisionId));
-  const workingRevisionIds = uniqueIds(editions.map((edition) => edition.workingRevisionId));
-  const [publishedRevisions, workingRevisions] = await Promise.all([
-    publishedRevisionIds.length
-      ? ItemRevisionV2.find({ _id: { $in: publishedRevisionIds }, status: { $in: ["published", "superseded"] } }).select("_id").lean()
-      : [],
-    workingRevisionIds.length
-      ? ItemRevisionV2.find({ _id: { $in: workingRevisionIds }, status: { $in: ["draft", "in_review", "changes_requested"] } }).select("_id").lean()
-      : [],
-  ]);
-  const usablePublishedIds = new Set(publishedRevisions.map((revision) => id(revision._id)));
-  const liveWorkingIds = new Set(workingRevisions.map((revision) => id(revision._id)));
-  const editionFlagsByItemId = new Map();
-  for (const edition of editions) {
-    const itemId = id(edition.itemId);
-    const flags = editionFlagsByItemId.get(itemId) || { available: false, draft: false };
-    if (edition.publishedRevisionId && usablePublishedIds.has(id(edition.publishedRevisionId))) flags.available = true;
-    if (edition.workingRevisionId && liveWorkingIds.has(id(edition.workingRevisionId))) flags.draft = true;
-    editionFlagsByItemId.set(itemId, flags);
-  }
-  for (const item of items) {
-    const counts = result.get(id(item.primarySubjectId));
-    const flags = editionFlagsByItemId.get(id(item._id));
-    if (!counts || !flags) continue;
-    if (flags.available) counts.availableCount += 1;
-    if (flags.draft) counts.draftCount += 1;
-  }
-  return result;
-}
-
-async function projectVenueSubjectContext({ venueId, subjectIds = [], view = "effective" }) {
+async function projectVenueSubjectContext({ venueId, subjectIds = [], view = "effective", organizationUsageBySubjectId = null }) {
   const requestedView = normalizeView(view);
   const uniqueSubjectIds = uniqueIds(subjectIds);
   const venue = await Venue.findOne({ _id: venueId, lifecycleStatus: "active" })
@@ -142,14 +96,14 @@ async function projectVenueSubjectContext({ venueId, subjectIds = [], view = "ef
     .lean();
   if (!venue) throw new AppError("Venue non disponibile", 404);
 
-  const [targets, physicalState, museumContentBySubjectId] = await Promise.all([
+  const [targets, physicalState, usageBySubjectId] = await Promise.all([
     uniqueSubjectIds.length
       ? VenueTarget.find({ venueId: venue._id, lifecycleStatus: "active", subjectId: { $in: uniqueSubjectIds } })
         .select("_id subjectId")
         .lean()
       : [],
     loadPhysicalProjectionState({ venue, view: requestedView }),
-    projectMuseumContent({ ownerOrganizationId: venue.ownerOrganizationId, subjectIds: uniqueSubjectIds }),
+    organizationUsageBySubjectId || projectOrganizationSubjectUsage({ organizationId: venue.ownerOrganizationId, subjectIds: uniqueSubjectIds }),
   ]);
   const targetBySubjectId = new Map(targets.map((target) => [id(target.subjectId), target]));
   const lookups = buildPhysicalLookups(physicalState);
@@ -157,11 +111,15 @@ async function projectVenueSubjectContext({ venueId, subjectIds = [], view = "ef
     venue: { id: venue._id, name: venue.name },
     view: physicalState.resolvedView,
     releaseId: physicalState.release?._id || null,
-    subjects: uniqueSubjectIds.map((subjectId) => ({
-      subjectId,
-      inventory: projectInventory(targetBySubjectId.get(id(subjectId)) || null, lookups),
-      museumContent: museumContentBySubjectId.get(id(subjectId)) || { availableCount: 0, draftCount: 0 },
-    })),
+    subjects: uniqueSubjectIds.map((subjectId) => {
+      const usage = usageBySubjectId.get(id(subjectId)) || { itemCount: 0, availableCount: 0, draftCount: 0, collectionCount: 0, previewMedia: null };
+      return {
+        subjectId,
+        inventory: projectInventory(targetBySubjectId.get(id(subjectId)) || null, lookups),
+        museumContent: { availableCount: usage.availableCount, draftCount: usage.draftCount },
+        organizationUsage: usage,
+      };
+    }),
   };
 }
 

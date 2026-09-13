@@ -131,6 +131,7 @@ export const venueActionMixin = {
       if (candidate?.inventory?.venueTargetId) {
         this.selectedVenueTargetId = String(candidate.inventory.venueTargetId);
         this.inventoryFilter = "all";
+        this.inventoryWorkspaceTab = "entities";
         this.message = "Questa identità è già presente nell’inventario della sede.";
       } else if (candidate) this.selectedSubject = candidate;
       this.render();
@@ -228,7 +229,14 @@ export const venueActionMixin = {
       const success = await this.execute(async () => {
         await managementRepository.createVenueTarget(this.id, { subjectId: String(data.get("subjectId") || ""), displayLabelOverride: String(data.get("displayLabelOverride") || "").trim() || null, inventoryNote: String(data.get("inventoryNote") || "").trim() || null, provenance: { origin: "human" } });
       }, "Entità aggiunta all’inventario della sede.");
-      if (success) { this.selectedSubject = null; this.venueSubjectCandidates = null; this.activeSpatialTab = "inventory"; this.render(); }
+      if (success) {
+        this.selectedSubject = null;
+        this.venueSubjectCandidates = null;
+        this.activeSection = "inventory";
+        this.inventoryWorkspaceTab = "entities";
+        this.inventoryFilter = "all";
+        this.render();
+      }
       return;
     }
 

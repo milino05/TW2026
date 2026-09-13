@@ -35,7 +35,10 @@ export function mountUiLayer(element, { kind = "floating", onEscape = null, lock
   if (!UI_LAYER_ORDER.includes(kind)) throw new TypeError(`Unknown ArtAround layer kind: ${kind}`);
   ensureEscapeHandler();
   const returnParent = element.parentNode;
-  const returnNextSibling = element.nextSibling;
+  const returnAnchor = returnParent && returnParent !== document.body
+    ? document.createComment("artaround-ui-layer-anchor")
+    : null;
+  if (returnAnchor && returnParent) returnParent.insertBefore(returnAnchor, element);
   element.dataset.artaroundLayer = kind;
   if (element.parentNode !== document.body) document.body.append(element);
   const entry = { element, kind, onEscape, lockScroll };
@@ -46,8 +49,10 @@ export function mountUiLayer(element, { kind = "floating", onEscape = null, lock
     const index = mountedLayers.indexOf(entry);
     if (index >= 0) mountedLayers.splice(index, 1);
     delete element.dataset.artaroundLayer;
-    if (returnParent?.isConnected && element.parentNode !== returnParent) {
-      returnParent.insertBefore(element, returnNextSibling?.isConnected ? returnNextSibling : null);
+    if (returnParent?.isConnected && returnAnchor?.parentNode === returnParent) {
+      returnAnchor.replaceWith(element);
+    } else if (returnParent?.isConnected && returnParent !== document.body && element.parentNode !== returnParent) {
+      returnParent.append(element);
     } else if (!returnParent?.isConnected) element.remove();
     syncScrollLock();
   };

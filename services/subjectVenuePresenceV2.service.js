@@ -5,14 +5,20 @@ const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { resolveSelectedPrincipal } = require("./marketplaceWorkspaceV2.service");
 const { projectVenueSubjectContext } = require("./venueSubjectContextProjection.service");
+const { projectOrganizationSubjectUsage } = require("./organizationSubjectUsage.service");
+const { projectVenueInventoryOperations } = require("./venueInventoryOperations.service");
 const { resolveOrganizationAuthority } = require("./organizationAuthorization.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function permissionSet(authority) { return new Set(authority?.effectivePermissions || []); }
 
-async function projectVenuePresence({ venue, subjectId, view }) {
-  const projection = await projectVenueSubjectContext({ venueId: venue._id, subjectIds: [subjectId], view });
-  const subject = projection.subjects?.[0] || { inventory: null, museumContent: { availableCount: 0, draftCount: 0 } };
+async function projectVenuePresence({ venue, subjectId, view, organizationUsageBySubjectId = null }) {
+  const projection = await projectVenueSubjectContext({ venueId: venue._id, subjectIds: [subjectId], view, organizationUsageBySubjectId });
+  const subject = projection.subjects?.[0] || {
+    inventory: null,
+    museumContent: { availableCount: 0, draftCount: 0 },
+    organizationUsage: { itemCount: 0, availableCount: 0, draftCount: 0, collectionCount: 0, venueCount: 0, previewMedia: null },
+  };
   return {
     venue: {
       id: venue._id,
@@ -23,6 +29,7 @@ async function projectVenuePresence({ venue, subjectId, view }) {
     view: projection.view,
     inventory: subject.inventory,
     museumContent: subject.museumContent,
+    organizationUsage: subject.organizationUsage,
   };
 }
 
@@ -35,7 +42,7 @@ async function publicPlacements(subjectId) {
     .lean();
   const result = [];
   for (const venue of venues) {
-    const projected = await projectVenuePresence({ venue, subjectId, view: "published" });
+    const projected = await projectVenuePresence({ venue, subjectId, view: "published", organizationUsageBySubjectId: new Map() });
     if (projected.inventory?.status !== "exposed") continue;
     result.push({
       ...projected,
@@ -52,38 +59,54 @@ async function organizationPresence({ organizationId, subjectId, actorUserId }) 
     .select("name description ownerOrganizationId workingReleaseId publishedReleaseId")
     .sort({ name: 1 })
     .lean();
-  if (!venues.length) return { venues: [], permissions: { canCreateContent: permissions.has("item.create"), canManageInventory: permissions.has("venue.inventory.manage") } };
+  const organizationUsageBySubjectId = await projectOrganizationSubjectUsage({ organizationId, subjectIds: [subjectId] });
+  const organizationUsage = organizationUsageBySubjectId.get(id(subjectId)) || {
+    itemCount: 0,
+    availableCount: 0,
+    draftCount: 0,
+    collectionCount: 0,
+    venueCount: 0,
+    previewMedia: null,
+  };
+  if (!venues.length) {
+    return {
+      venues: [],
+      usage: organizationUsage,
+      permissions: {
+        canCreateContent: permissions.has("item.create"),
+        canProposeInventory: permissions.has("venue.inventory.propose"),
+        canManageInventory: permissions.has("venue.inventory.manage"),
+      },
+    };
+  }
   const pending = await VenueInventoryProposal.find({
     venueId: { $in: venues.map((venue) => venue._id) },
     subjectId,
     status: "pending",
-  }).select("_id venueId proposedByUserId createdAt message").lean();
+  }).select("_id venueId proposedByUserId createdAt message sourceItemId status").lean();
   const pendingByVenueId = new Map(pending.map((proposal) => [id(proposal.venueId), proposal]));
   const projected = [];
   for (const venue of venues) {
-    const presence = await projectVenuePresence({ venue, subjectId, view: "effective" });
-    const proposal = pendingByVenueId.get(id(venue._id)) || null;
-    const alreadyInventoried = Boolean(presence.inventory?.venueTargetId);
+    const presence = await projectVenuePresence({ venue, subjectId, view: "effective", organizationUsageBySubjectId });
+    const relationship = projectVenueInventoryOperations({
+      inventory: presence.inventory,
+      proposal: pendingByVenueId.get(id(venue._id)) || null,
+      effectivePermissions: permissions,
+      actorUserId,
+    });
     projected.push({
       ...presence,
-      proposal: proposal ? {
-        id: proposal._id,
-        status: "pending",
-        proposedByUserId: proposal.proposedByUserId,
-        createdAt: proposal.createdAt,
-        message: proposal.message || null,
-      } : null,
-      availableOperations: [
-        ...(!alreadyInventoried && !proposal && permissions.has("item.create") ? [{ code: "venue.inventory.propose", label: "Proponi alla sede" }] : []),
-        ...(!alreadyInventoried && permissions.has("venue.inventory.manage") ? [{ code: "venue.inventory.add", label: "Aggiungi all'inventario" }] : []),
-        ...(presence.inventory?.status === "exposed" ? [{ code: "venue.map.show", label: "Mostra sulla mappa" }] : []),
-      ],
+      proposal: relationship.proposal,
+      relationshipState: relationship.relationshipState,
+      availableOperations: relationship.availableOperations,
     });
   }
   return {
     venues: projected,
+    usage: organizationUsage,
     permissions: {
       canCreateContent: permissions.has("item.create"),
+      canProposeInventory: permissions.has("venue.inventory.propose"),
       canManageInventory: permissions.has("venue.inventory.manage"),
     },
   };

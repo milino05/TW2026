@@ -12,6 +12,7 @@ const controller = fs.readFileSync(path.join(root, "controllers/marketplaceV2.co
 const routes = fs.readFileSync(path.join(root, "routes/marketplaceV2.routes.js"), "utf8");
 const removal = fs.readFileSync(path.join(root, "services/marketplaceResourceRemovalV2.service.js"), "utf8");
 const view = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/workspace-view.js"), "utf8");
+const removalUi = fs.readFileSync(path.join(root, "clients/marketplace/src/ui/owned-resource-removal.js"), "utf8");
 
 test("workspace detail usa projector condiviso e lookup puntuale", () => {
   assert.match(service, /getCreatorWorkspaceResourceDetail/);
@@ -37,18 +38,22 @@ test("dettagli e azioni espone una rimozione tramite Action Dialog che preserva 
   assert.doesNotMatch(removal, /MarketplaceAcquisition\.(?:delete|update)/);
   assert.doesNotMatch(removal, /Entitlement\.(?:delete|update)/);
   assert.doesNotMatch(removal, /Adoption\.(?:delete|update)/);
-  assert.match(view, /data-request-removal/);
+  assert.match(view, /data-owned-resource-removal/);
   assert.match(view, /requestRemoval\(\)/);
-  assert.match(view, /openActionDialog/);
-  assert.match(view, /Acquisizioni e diritti già concessi restano validi/);
+  assert.match(view, /requestOwnedResourceRemoval/);
+  assert.match(view, /removalImpact:\s*asset\.removalImpact/);
+  assert.match(removalUi, /openActionDialog/);
+  assert.match(removalUi, /marketplaceRepository\.removeWorkspaceResource/);
+  assert.match(removalUi, /Acquisizioni e diritti già concessi restano validi/);
   assert.match(removal, /"editorial_context"/);
   assert.match(removal, /"visit"/);
-  assert.match(view, /Anche il grafo locale verrà ritirato/);
-  assert.match(view, /revisioni immutabili e le release già pubblicate restano conservate/);
-  assert.match(view, /semanticGraphRelationCount/);
+  assert.match(removalUi, /Anche il grafo locale verrà ritirato/);
+  assert.match(removalUi, /revisioni immutabili e le release già pubblicate restano conservate/);
+  assert.match(removalUi, /semanticGraphRelationCount/);
   assert.match(removal, /semanticGraphCollectionCount/);
   assert.match(removal, /COLLECTION_GRAPH_NOT_LOCAL/);
-  assert.doesNotMatch(view, /Potrà essere riutilizzato da un'altra raccolta in futuro/);
+  assert.doesNotMatch(view, /marketplaceRepository\.removeWorkspaceResource/);
+  assert.doesNotMatch(`${view}\n${removalUi}`, /Potrà essere riutilizzato da un'altra raccolta in futuro/);
   assert.doesNotMatch(view, /data-confirm-removal|data-cancel-removal|data-removal-ack|confirmation-panel/);
 });
 

@@ -53,8 +53,8 @@ test("Venue normalizza i task bounded sulla Task Modal condivisa e inoltra gli e
   assert.match(venueModalLifecycle, /data-close-inventory-browser/);
   assert.match(venueModalLifecycle, /data-close-inventory-subject-picker/);
   assert.match(venueModalLifecycle, /layer\.addEventListener\("subject-selected", subjectSelected\)/);
-  assert.match(venueModalLifecycle, /this\.onSubjectSelected\?\.\(event\)/);
-  assert.match(venueModalLifecycle, /canDismiss: \(\) => !this\.busy/);
+  assert.match(venueModalLifecycle, /forwardVenueEvent\(this, this\.onSubjectSelected, event\)/);
+  assert.match(venueModalLifecycle, /canDismiss: \(\) => true/);
 });
 
 test("Venue mantiene un solo scroll owner verticale per ogni superficie applicativa", () => {

@@ -1,5 +1,6 @@
 import { icon } from "./icons.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
+import { openActionDialog } from "./feedback-primitives.js";
 import { venueActionMixin } from "./venue-editor-action-mixin.js";
 import { venueInventorySearchMixin } from "./venue-editor-inventory-search-mixin.js";
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
@@ -15,9 +16,9 @@ function searchableTargetText(target) { return normalized([target?.label, target
 function targetSubjectId(target) { return id(target?.subject?.id || target?.subject?._id || target?.subjectId); }
 function assignedTargetForSlot(targets, slotId) { return (targets || []).find((target) => id(target.exhibitSlot?.id || target.exhibitSlot?._id) === id(slotId)); }
 function inventoryStatus(target) {
-  if (target?.exhibitSlot || target?.configuration?.state === "exposed") return { label: "Già esposto", tone: "success" };
+  if (target?.exhibitSlot || target?.configuration?.state === "exposed") return { label: "Esposta", tone: "success" };
   if (target?.configuration?.state === "unavailable") return { label: "Non disponibile", tone: "warning" };
-  return { label: "Non esposto", tone: "neutral" };
+  return { label: "Da collocare", tone: "neutral" };
 }
 function detailTabs(entries, activeTab) { return `<nav class="venue-spatial-detail-tabs" role="tablist">${entries.map(([key, label, count]) => `<button type="button" role="tab" data-spatial-editor-tab="${escapeHtml(key)}" aria-selected="${activeTab === key}">${escapeHtml(label)}${Number.isFinite(count) ? ` <span class="count">${count}</span>` : ""}</button>`).join("")}</nav>`; }
 function detailShell({ eyebrow, title, subtitle, tabs, activeTab, panel, danger = "", breadcrumb = "" }) { return `<section class="venue-spatial-detail"><div class="venue-spatial-detail-topbar"><button class="button-secondary" type="button" data-close-spatial-editor>← Torna alla mappa</button>${breadcrumb}</div><header class="venue-spatial-detail-header"><div><span class="eyebrow">${escapeHtml(eyebrow)}</span><h2>${escapeHtml(title)}</h2><p>${subtitle}</p></div></header>${detailTabs(tabs, activeTab)}<div class="venue-spatial-detail-panel">${panel}</div>${danger}</section>`; }
@@ -34,6 +35,73 @@ export const venueSlotInventoryMixin = {
     venueSectionMixin.render.call(this);
     if (!this.data || this.onboarding?.required) return;
     this.decorateMapRefinements?.();
+  },
+
+  placementTarget() {
+    const targetId = id(this.placementContext?.targetId);
+    if (!targetId) return null;
+    const target = (this.data?.targets || []).find((entry) => id(entry.id) === targetId) || null;
+    if (!target) this.placementContext = null;
+    return target;
+  },
+
+  startTargetPlacement(targetId) {
+    const target = (this.data?.targets || []).find((entry) => id(entry.id) === id(targetId));
+    if (!target || target.configuration?.state === "unavailable") return false;
+    this.placementContext = { targetId: id(target.id) };
+    this.selectedVenueTargetId = id(target.id);
+    this.inventoryDetailTargetId = null;
+    this.inventoryBrowser = null;
+    this.spatialEditor = null;
+    this.activeSpatialTab = "map";
+    this.showSection?.("map");
+    this.render();
+    requestAnimationFrame(() => this.querySelector("[data-map-surface], [data-map-place]")?.focus?.());
+    return true;
+  },
+
+  cancelTargetPlacement({ render = true } = {}) {
+    this.placementContext = null;
+    if (render) this.render();
+  },
+
+  async completeTargetPlacement(exhibitSlotId) {
+    const target = this.placementTarget();
+    const slot = (this.data?.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(exhibitSlotId));
+    if (!target || !slot) return false;
+    const occupied = assignedTargetForSlot(this.data.targets || [], exhibitSlotId);
+    if (occupied && id(occupied.id) === id(target.id)) {
+      this.placementContext = null;
+      this.openSpatialEditor?.("slot", exhibitSlotId);
+      return true;
+    }
+    if (occupied) {
+      const confirmed = await openActionDialog({
+        title: `Collocare “${target.label}” in “${slot.label}”?`,
+        message: `Lo slot è attualmente occupato da “${occupied.label}”. L’entità sostituita resterà nell’inventario della sede ma non sarà più collocata.`,
+        confirmLabel: "Sostituisci e colloca",
+        cancelLabel: "Annulla",
+        tone: "warning",
+      });
+      if (!confirmed) return true;
+    }
+    const relocating = Boolean(target.exhibitSlot);
+    const success = await this.execute(
+      () => managementRepository.assignVenueTargetToExhibitSlot(this.id, exhibitSlotId, target.id),
+      occupied ? "Entità collocata; lo slot precedente è stato liberato." : relocating ? "Entità ricollocata nello slot selezionato." : "Entità collocata nello slot selezionato.",
+    );
+    if (success) {
+      this.placementContext = null;
+      this.selectedVenueTargetId = id(target.id);
+      this.openSpatialEditor?.("slot", exhibitSlotId);
+    }
+    return true;
+  },
+
+  renderTargetPlacementBanner() {
+    const target = this.placementTarget();
+    if (!target) return "";
+    return `<aside class="venue-target-placement-banner" role="status"><div><span class="eyebrow">Modalità collocazione</span><strong>Stai collocando: ${escapeHtml(target.label || "Entità")}</strong><p>Scegli un piano, apri il luogo sulla mappa e seleziona uno slot. Puoi anche creare un nuovo slot nel luogo scelto.</p></div><button class="button-secondary" type="button" data-cancel-target-placement>Annulla collocazione</button></aside>`;
   },
 
   openInventoryBrowserForSlot(exhibitSlotId) {
@@ -88,6 +156,7 @@ export const venueSlotInventoryMixin = {
       this.setBrowserSelection(target.id);
       this.inventorySubjectPickerOpen = false;
       this.inventoryPendingSubject = null;
+      this.inventoryWorkspaceTab = "entities";
       this.message = "Entità aggiunta all’inventario della sede.";
       return true;
     } catch (error) { this.error = error instanceof Error ? error.message : "Non è stato possibile aggiungere l’entità all’inventario."; return false; }
@@ -97,6 +166,22 @@ export const venueSlotInventoryMixin = {
   async handleTargetMediaClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
+
+    const inventoryWorkspaceTab = target.closest("[data-inventory-workspace-tab]");
+    if (inventoryWorkspaceTab) {
+      this.inventoryWorkspaceTab = inventoryWorkspaceTab.dataset.inventoryWorkspaceTab === "proposals" ? "proposals" : "entities";
+      this.inventoryDetailTargetId = null;
+      this.render();
+      return true;
+    }
+
+    const sectionTab = target.closest("[data-venue-section]");
+    if (sectionTab && this.placementContext && sectionTab.dataset.venueSection !== "map") this.placementContext = null;
+
+    const startPlacement = target.closest("[data-start-target-placement]");
+    if (startPlacement) return this.startTargetPlacement(startPlacement.dataset.startTargetPlacement) || true;
+    if (target.closest("[data-cancel-target-placement]")) { this.cancelTargetPlacement(); return true; }
+
     const openFromSlot = target.closest("[data-open-inventory-browser]");
     if (openFromSlot) return this.openInventoryBrowserForSlot(openFromSlot.dataset.openInventoryBrowser) || true;
     if (target.matches("[data-inventory-browser-backdrop]") || target.closest("[data-close-inventory-browser]")) { this.inventoryBrowser = null; this.render(); return true; }
@@ -111,7 +196,15 @@ export const venueSlotInventoryMixin = {
     if (target.closest("[data-open-selected-inventory-detail]")) { const selectedTargetId = this.browserState().selectedTargetId; if (selectedTargetId) { this.inventoryDetailTargetId = id(selectedTargetId); this.render(); } return true; }
     if (this.inventoryDetailTargetId && target.closest("[data-close-inventory-dialog]")) { this.inventoryDetailTargetId = null; this.render(); return true; }
     const locate = target.closest("[data-locate-slot]");
-    if (this.inventoryDetailTargetId && locate) { this.inventoryDetailTargetId = null; this.inventoryBrowser = null; this.locateExhibitSlot?.(locate.dataset.locateSlot); return true; }
+    if (locate) {
+      this.inventoryDetailTargetId = null;
+      this.inventoryBrowser = null;
+      this.placementContext = null;
+      this.activeSpatialTab = "map";
+      this.showSection?.("map");
+      this.locateExhibitSlot?.(locate.dataset.locateSlot);
+      return true;
+    }
     if (target.closest("[data-assign-selected-inventory-target]")) {
       const browser = this.inventoryBrowser;
       if (!browser?.exhibitSlotId || !browser.selectedTargetId) return true;
@@ -137,6 +230,21 @@ export const venueSlotInventoryMixin = {
   async handleMapAuthoringClick(event) {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return false;
+    if (target.closest("[data-cancel-target-placement]")) { this.cancelTargetPlacement(); return true; }
+
+    if (this.placementContext) {
+      const placeNode = target.closest("[data-map-place]");
+      if (placeNode) {
+        this.openSpatialEditor?.("place", placeNode.dataset.mapPlace, { tab: "slots" });
+        return true;
+      }
+      const chosenSlot = target.closest("[data-open-spatial-slot]");
+      if (chosenSlot) {
+        await this.completeTargetPlacement(chosenSlot.dataset.openSpatialSlot);
+        return true;
+      }
+    }
+
     const createSlot = target.closest("[data-start-slot]");
     if (createSlot) { this.mapCreationDialog = { type: "slot", placeId: id(createSlot.dataset.placeId || createSlot.dataset.startSlotPlace || "") }; this.error = null; this.render(); requestAnimationFrame(() => this.querySelector("[data-map-slot-dialog] input[name=label]")?.focus()); return true; }
     return venueMapRefinementMixin.handleMapAuthoringClick.call(this, event);
@@ -149,6 +257,24 @@ export const venueSlotInventoryMixin = {
       const orderText = String(data.get("order") || "").trim();
       if (!placeId || !label) return true;
       const before = new Set((this.data.layout?.exhibitSlots || []).map((slot) => id(slot.exhibitSlotId)));
+      const placementTarget = this.placementTarget();
+      if (placementTarget) {
+        let createdSlotId = null;
+        const success = await this.execute(async () => {
+          const created = await managementRepository.createExhibitSlot(this.id, { placeId, label, order: orderText ? Number(orderText) : null });
+          createdSlotId = id(created?.result?.exhibitSlotId || created?.exhibitSlotId);
+          if (!createdSlotId) throw new Error("Lo slot è stato creato senza un identificatore utilizzabile.");
+          await managementRepository.assignVenueTargetToExhibitSlot(this.id, createdSlotId, placementTarget.id);
+        }, "Nuovo slot creato ed entità collocata.");
+        if (success) {
+          this.mapCreationDialog = null;
+          this.placementContext = null;
+          this.selectedVenueTargetId = id(placementTarget.id);
+          if (createdSlotId) this.openSpatialEditor?.("slot", createdSlotId);
+          else this.render();
+        }
+        return true;
+      }
       const success = await this.execute(() => managementRepository.createExhibitSlot(this.id, { placeId, label, order: orderText ? Number(orderText) : null }), "Slot espositivo creato.");
       if (success) { const created = (this.data.layout?.exhibitSlots || []).find((slot) => !before.has(id(slot.exhibitSlotId))); this.mapCreationDialog = null; this.activeSpatialTab = "slots"; if (created) this.openSpatialEditor?.("slot", created.exhibitSlotId); else this.render(); }
       return true;
@@ -177,11 +303,18 @@ export const venueSlotInventoryMixin = {
     const floor = (layout.floors || []).find((entry) => id(entry._id) === id(place.floorId));
     const type = definitions.placeTypes.find((entry) => id(entry.definitionId) === id(place.placeTypeDefinitionId));
     const slots = (layout.exhibitSlots || []).filter((entry) => id(entry.placeId) === id(place._id));
-    const cards = slots.map((slot) => { const assigned = assignedTargetForSlot(this.data.targets || [], slot.exhibitSlotId); return `<button class="venue-slot-grid-card" type="button" data-open-spatial-slot="${escapeHtml(id(slot.exhibitSlotId))}"><span class="venue-slot-grid-status" data-tone="${assigned ? "success" : "neutral"}">${assigned ? "Assegnato" : "Libero"}</span><strong>${escapeHtml(slot.label)}</strong><span>${escapeHtml(assigned?.label || "Nessuna entità")}</span><small>${escapeHtml(slot.approachGuidance?.defaultInstruction || "Nessuna indicazione predefinita")}</small></button>`; }).join("");
-    const add = editable ? `<button class="venue-slot-grid-card venue-slot-grid-card--add" type="button" data-start-slot data-place-id="${escapeHtml(id(place._id))}"><span class="venue-slot-grid-plus">${icon("plus", { size: 28 })}</span><strong>Nuovo slot</strong><small>${escapeHtml(place.label || "Questo luogo")}</small></button>` : "";
-    const panel = `<div class="venue-slot-grid venue-slot-grid--detail">${cards}${add}</div>`;
-    const danger = editable ? `<section class="venue-detail-danger"><div><strong>Rimuovi luogo</strong><p>L’impatto su collegamenti e slot verrà mostrato prima della conferma.</p></div><button class="danger" type="button" data-remove-place="${escapeHtml(id(place._id))}" data-label="${escapeHtml(place.label || "questo luogo")}">Rimuovi luogo</button></section>` : "";
-    return detailShell({ eyebrow: "Luogo", title: place.label || "Luogo senza nome", subtitle: `${escapeHtml(floor?.label || "Piano")} · ${escapeHtml(type?.label || "Tipo non disponibile")}`, tabs: [["general", "Generale"], ["attributes", "Caratteristiche"], ["slots", "Slot espositivi", slots.length]], activeTab: "slots", panel, danger });
+    const placementTarget = this.placementTarget();
+    const cards = slots.map((slot) => {
+      const assigned = assignedTargetForSlot(this.data.targets || [], slot.exhibitSlotId);
+      const status = placementTarget && assigned ? "Occupato · seleziona per sostituire" : assigned ? "Assegnato" : placementTarget ? "Libero · colloca qui" : "Libero";
+      return `<button class="venue-slot-grid-card" type="button" data-open-spatial-slot="${escapeHtml(id(slot.exhibitSlotId))}"><span class="venue-slot-grid-status" data-tone="${assigned ? "success" : "neutral"}">${escapeHtml(status)}</span><strong>${escapeHtml(slot.label)}</strong><span>${escapeHtml(assigned?.label || "Nessuna entità")}</span><small>${escapeHtml(slot.approachGuidance?.defaultInstruction || "Nessuna indicazione predefinita")}</small></button>`;
+    }).join("");
+    const addLabel = placementTarget ? "Nuovo slot e colloca qui" : "Nuovo slot";
+    const add = editable ? `<button class="venue-slot-grid-card venue-slot-grid-card--add" type="button" data-start-slot data-place-id="${escapeHtml(id(place._id))}"><span class="venue-slot-grid-plus">${icon("plus", { size: 28 })}</span><strong>${escapeHtml(addLabel)}</strong><small>${escapeHtml(place.label || "Questo luogo")}</small></button>` : "";
+    const placementHint = placementTarget ? `<div class="venue-target-placement-context"><strong>Scegli dove collocare “${escapeHtml(placementTarget.label)}”</strong><p>Seleziona uno slot libero, sostituisci esplicitamente un’occupazione esistente oppure crea un nuovo slot in questo luogo.</p></div>` : "";
+    const panel = `${placementHint}<div class="venue-slot-grid venue-slot-grid--detail">${cards}${add}</div>`;
+    const danger = editable && !placementTarget ? `<section class="venue-detail-danger"><div><strong>Rimuovi luogo</strong><p>L’impatto su collegamenti e slot verrà mostrato prima della conferma.</p></div><button class="danger" type="button" data-remove-place="${escapeHtml(id(place._id))}" data-label="${escapeHtml(place.label || "questo luogo")}">Rimuovi luogo</button></section>` : "";
+    return detailShell({ eyebrow: placementTarget ? "Colloca sulla mappa" : "Luogo", title: place.label || "Luogo senza nome", subtitle: `${escapeHtml(floor?.label || "Piano")} · ${escapeHtml(type?.label || "Tipo non disponibile")}`, tabs: [["general", "Generale"], ["attributes", "Caratteristiche"], ["slots", "Slot espositivi", slots.length]], activeTab: "slots", panel, danger });
   },
 
   renderSlotSpatialEditor(editable, editor) {
@@ -192,9 +325,9 @@ export const venueSlotInventoryMixin = {
     if (!slot || !place) return venueSpatialDetailMixin.renderSlotSpatialEditor.call(this, editable, editor);
     const floor = (layout.floors || []).find((entry) => id(entry._id) === id(place.floorId));
     const assigned = assignedTargetForSlot(this.data.targets || [], slot.exhibitSlotId);
-    const current = assigned ? `<article class="venue-slot-current-entity"><span class="venue-inventory-browser-card-status" data-tone="success">Già esposto</span><h3>${escapeHtml(assigned.label || "Entità")}</h3><p>${escapeHtml(assigned.subject?.preferredLabel || assigned.subject?.description || "Entità dell’inventario")}</p><small>Collocazione: ${escapeHtml(assigned.exhibitSlot?.label || slot.label)}</small></article>` : `<div class="empty-state compact venue-slot-empty-entity"><h3>Slot libero</h3><p>Nessuna entità dell’inventario è assegnata a questa posizione.</p></div>`;
+    const current = assigned ? `<article class="venue-slot-current-entity"><span class="venue-inventory-browser-card-status" data-tone="success">Esposta</span><h3>${escapeHtml(assigned.label || "Entità")}</h3><p>${escapeHtml(assigned.subject?.preferredLabel || assigned.subject?.description || "Entità dell’inventario")}</p><small>Collocazione: ${escapeHtml(assigned.exhibitSlot?.label || slot.label)}</small></article>` : `<div class="empty-state compact venue-slot-empty-entity"><h3>Slot libero</h3><p>Nessuna entità dell’inventario è assegnata a questa posizione.</p></div>`;
     const canCreateContent = Boolean(assigned && this.data.authoringPermissions?.canCreateContent);
-    const physicalActions = editable ? `<button type="button" data-open-inventory-browser="${escapeHtml(id(slot.exhibitSlotId))}">${assigned ? "Cambia entità" : "Apri inventario"}</button>${assigned ? `<button class="button-secondary" type="button" data-unassign-slot-current="${escapeHtml(id(assigned.id))}">Libera slot</button>` : ""}` : "";
+    const physicalActions = editable ? `<button type="button" data-open-inventory-browser="${escapeHtml(id(slot.exhibitSlotId))}">${assigned ? "Cambia entità" : "Scegli dall’inventario"}</button>${assigned ? `<button class="button-secondary" type="button" data-unassign-slot-current="${escapeHtml(id(assigned.id))}">Libera slot</button>` : ""}` : "";
     const contentAction = canCreateContent ? `<a class="button-link secondary" data-route href="/workspace/item-authoring?venueTargetId=${encodeURIComponent(id(assigned.id))}">Crea contenuto</a>` : "";
     const actions = physicalActions || contentAction ? `<div class="button-row venue-slot-entity-actions">${physicalActions}${contentAction}</div>` : "";
     const panel = `<div class="venue-slot-entity-panel">${current}${actions}<p class="note">Aggiungere un’entità all’inventario non la colloca automaticamente: l’assegnazione a questo slot resta un gesto esplicito.</p></div>`;
@@ -213,7 +346,7 @@ export const venueSlotInventoryMixin = {
       return true;
     });
     const selectedTarget = (this.data.targets || []).find((entry) => id(entry.id) === id(browser.selectedTargetId));
-    const filters = [["all", "Tutte"], ["exposed", "Già esposte"], ["unplaced", "Non esposte"], ["unavailable", "Non disponibili"]].map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-browser-filter="${value}" aria-pressed="${browser.filter === value}">${label}</button>`).join("");
+    const filters = [["all", "Tutte"], ["exposed", "Esposte"], ["unplaced", "Da collocare"], ["unavailable", "Non disponibili"]].map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-browser-filter="${value}" aria-pressed="${browser.filter === value}">${label}</button>`).join("");
     let contextAction;
     if (browser.purpose === "assign_to_slot") {
       const slot = (this.data.layout?.exhibitSlots || []).find((entry) => id(entry.exhibitSlotId) === id(browser.exhibitSlotId));
@@ -222,10 +355,16 @@ export const venueSlotInventoryMixin = {
       const label = alreadyHere ? "Già in questo slot" : relocating ? "Ricolloca in questo slot" : "Aggiungi allo slot";
       contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Assegnazione allo slot</span><strong>${escapeHtml(slot?.label || "Slot selezionato")}</strong>${relocating ? `<small>L’entità è già esposta in “${escapeHtml(selectedTarget.exhibitSlot.label || "un altro slot")}” e verrà ricollocata.</small>` : ""}</div><button type="button" data-assign-selected-inventory-target ${!selectedTarget || alreadyHere ? "disabled" : ""}>${escapeHtml(label)}</button></footer>`;
     } else {
-      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Inventario standalone</span><strong>${selectedTarget ? escapeHtml(selectedTarget.label) : "Seleziona un’entità"}</strong><small>La collocazione parte sempre dall’editor di uno slot; qui gestisci l’inventario in modo indipendente.</small></div><button type="button" data-open-selected-inventory-detail ${selectedTarget ? "" : "disabled"}>Apri dettagli</button></footer>`;
+      const unavailable = selectedTarget?.configuration?.state === "unavailable";
+      const placementAction = selectedTarget?.exhibitSlot
+        ? `<button type="button" data-locate-slot="${escapeHtml(id(selectedTarget.exhibitSlot.id || selectedTarget.exhibitSlot._id))}">Localizza sulla mappa</button>`
+        : selectedTarget && editable && !unavailable
+          ? `<button type="button" data-start-target-placement="${escapeHtml(id(selectedTarget.id))}">Colloca sulla mappa</button>`
+          : "";
+      contextAction = `<footer class="venue-inventory-browser-footer"><div><span class="eyebrow">Inventario della sede</span><strong>${selectedTarget ? escapeHtml(selectedTarget.label) : "Seleziona un’entità"}</strong><small>${selectedTarget ? unavailable ? "L’entità è temporaneamente non disponibile." : selectedTarget.exhibitSlot ? "Apri la collocazione corrente oppure gestisci i dettagli dell’entità." : "L’entità appartiene alla sede ma non è ancora collocata nell’allestimento." : "Seleziona un’entità per gestirne dettagli e collocazione."}</small></div><div class="button-row"><button class="button-secondary" type="button" data-open-selected-inventory-detail ${selectedTarget ? "" : "disabled"}>Apri dettagli</button>${placementAction}</div></footer>`;
     }
     const cards = filtered.map((target) => inventoryCard(target, browser.selectedTargetId)).join("");
-    return `<div class="venue-inventory-browser"><header class="venue-inventory-browser-heading"><div><span class="eyebrow">Inventario della sede</span><h3>${browser.purpose === "assign_to_slot" ? "Scegli l’entità da esporre" : "Entità della Venue"}</h3></div><span class="count">${filtered.length}</span></header><form class="venue-inventory-browser-search" data-inventory-browser-search role="search"><label><span class="sr-only">Cerca nell’inventario</span><input name="inventoryQuery" value="${escapeHtml(browser.query || "")}" placeholder="Cerca nell’inventario"></label><button class="button-secondary" type="submit">Cerca</button>${editable ? `<button class="venue-inventory-add-button" type="button" data-open-inventory-subject-picker aria-label="Aggiungi entità all’inventario" title="Aggiungi entità all’inventario">${icon("plus", { size: 18 })}</button>` : ""}</form><div class="venue-inventory-browser-filters" role="group" aria-label="Filtra inventario">${filters}</div><div class="venue-inventory-browser-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità trovata</h4><p>Modifica la ricerca oppure aggiungi una nuova entità all’inventario.</p></div>`}</div>${contextAction}</div>`;
+    return `<div class="venue-inventory-browser"><header class="venue-inventory-browser-heading"><div><span class="eyebrow">Inventario della sede</span><h3>${browser.purpose === "assign_to_slot" ? "Scegli l’entità da esporre" : "Entità della sede"}</h3></div><span class="count">${filtered.length}</span></header><form class="venue-inventory-browser-search" data-inventory-browser-search role="search"><label><span class="sr-only">Cerca nell’inventario</span><input name="inventoryQuery" value="${escapeHtml(browser.query || "")}" placeholder="Cerca nell’inventario"></label><button class="button-secondary" type="submit">Cerca</button>${editable ? `<button class="venue-inventory-add-button" type="button" data-open-inventory-subject-picker aria-label="Aggiungi entità all’inventario" title="Aggiungi entità all’inventario">${icon("plus", { size: 18 })}</button>` : ""}</form><div class="venue-inventory-browser-filters" role="group" aria-label="Filtra inventario">${filters}</div><div class="venue-inventory-browser-grid">${cards || `<div class="empty-state compact"><h4>Nessuna entità trovata</h4><p>Modifica la ricerca oppure aggiungi una nuova entità all’inventario.</p></div>`}</div>${contextAction}</div>`;
   },
 
   renderTargets(editable) { return this.renderInventoryBrowserSurface(editable, this.browserState()); },
@@ -255,7 +394,11 @@ export const venueSlotInventoryMixin = {
       const places = this.data.layout?.places || [];
       const preferredPlaceId = id(this.mapCreationDialog.placeId);
       const options = places.map((place) => `<option value="${escapeHtml(id(place._id))}" ${selected(place._id, preferredPlaceId)}>${escapeHtml(place.label || "Luogo")}</option>`).join("");
-      base = `<div class="venue-modal-backdrop venue-slot-create-backdrop" role="presentation"><section class="venue-modal-card venue-slot-create-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-slot-create-title"><header><div><span class="eyebrow">Nuovo slot espositivo</span><h3 id="venue-slot-create-title">Crea una posizione espositiva</h3></div><button class="button-secondary small" type="button" data-close-map-creation-dialog aria-label="Chiudi">×</button></header><p>Uno slot è una posizione stabile dentro un luogo. Non richiede un punto geometrico separato sulla planimetria.</p><form data-map-slot-dialog class="venue-inline-form"><label>Etichetta<input name="label" required placeholder="Es. Parete destra · posizione 2"></label><label>Luogo<select name="placeId" required>${options}</select></label><label>Ordine facoltativo<input name="order" type="number" min="0"></label><div class="button-row"><button type="submit" ${places.length ? "" : "disabled"}>Crea slot</button><button class="button-secondary" type="button" data-close-map-creation-dialog>Annulla</button></div></form></section></div>`;
+      const placementTarget = this.placementTarget();
+      const title = placementTarget ? `Crea uno slot per ${placementTarget.label}` : "Crea una posizione espositiva";
+      const submitLabel = placementTarget ? "Crea slot e colloca qui" : "Crea slot";
+      const explanation = placementTarget ? `Il nuovo slot verrà creato nel luogo selezionato e “${placementTarget.label}” sarà assegnata immediatamente.` : "Uno slot è una posizione stabile dentro un luogo. Non richiede un punto geometrico separato sulla planimetria.";
+      base = `<div class="venue-modal-backdrop venue-slot-create-backdrop" role="presentation"><section class="venue-modal-card venue-slot-create-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-slot-create-title"><header><div><span class="eyebrow">Nuovo slot espositivo</span><h3 id="venue-slot-create-title">${escapeHtml(title)}</h3></div><button class="button-secondary small" type="button" data-close-map-creation-dialog aria-label="Chiudi">×</button></header><p>${escapeHtml(explanation)}</p><form data-map-slot-dialog class="venue-inline-form"><label>Etichetta<input name="label" required placeholder="Es. Parete destra · posizione 2"></label><label>Luogo<select name="placeId" required>${options}</select></label><label>Ordine facoltativo<input name="order" type="number" min="0"></label><div class="button-row"><button type="submit" ${places.length ? "" : "disabled"}>${escapeHtml(submitLabel)}</button><button class="button-secondary" type="button" data-close-map-creation-dialog>Annulla</button></div></form></section></div>`;
     } else base = venueMapRefinementMixin.renderMapCreationDialog.call(this, editable);
     return `${base || ""}${this.renderInventoryBrowserOverlay(editable)}${this.renderInventoryDetailOverlay(editable)}${this.renderInventorySubjectPickerOverlay(editable)}`;
   },

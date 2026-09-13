@@ -8,7 +8,7 @@ import { userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
-import "./subject-presence.js";
+import { openSubjectVenueDialog } from "./subject-venue-dialog.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -176,6 +176,7 @@ export class ItemAuthoringView extends HTMLElement {
   error = null;
   notice = null;
   privateSuccessOpen = false;
+  _subjectVenueDialog = null;
 
   connectedCallback() {
     this.addEventListener("submit", this.onSubmit);
@@ -193,6 +194,8 @@ export class ItemAuthoringView extends HTMLElement {
     this.removeEventListener("change", this.onChange);
     this.removeEventListener("invalid", this.onInvalid, true);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this._subjectVenueDialog?.close?.({ restoreFocus: false, notify: false });
+    this._subjectVenueDialog = null;
   }
 
   availableOperation(code) { return (this.projection?.availableOperations || []).find((operation) => operation.code === code) || null; }
@@ -210,6 +213,17 @@ export class ItemAuthoringView extends HTMLElement {
   currentMedia() { return this.draft.illustrativeMedia?.[0] || null; }
   inCollectionContext() { return Boolean(this.contextContentSpaceId && this.contextEditorialContextId && this.contextNamespaceId); }
   collectionReturnHref() { return this.contextEditorialContextId ? `/workspace/editorial-studio?editorialContextId=${encodeURIComponent(this.contextEditorialContextId)}&section=content` : "/workspace"; }
+  openSubjectVenueSurface() {
+    if (this.principal?.type !== "organization" || !this.selectedSubject || !this.itemId || this._subjectVenueDialog) return;
+    this._subjectVenueDialog = openSubjectVenueDialog({
+      subject: this.selectedSubject,
+      subjectId: id(this.selectedSubject),
+      sourceItemId: this.itemId,
+      sourcePreviewMedia: this.projection?.lineage?.recognitionMedia || null,
+      principal: this.principal,
+      onDismiss: () => { this._subjectVenueDialog = null; },
+    });
+  }
 
   workingDraftStorageKey() {
     const principalType = String(this.principal?.type || "");
@@ -685,6 +699,11 @@ export class ItemAuthoringView extends HTMLElement {
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
+    if (target.closest("[data-open-subject-venues]")) {
+      if (this.privateSuccessOpen) { this.privateSuccessOpen = false; this.render(); }
+      this.openSubjectVenueSurface();
+      return;
+    }
     const closePrivateSuccess = target.closest("button[data-close-private-success]");
     if (closePrivateSuccess) { this.privateSuccessOpen = false; this.render(); return; }
     const changeMediaButton = target.closest("button[data-change-media]");
@@ -787,15 +806,6 @@ export class ItemAuthoringView extends HTMLElement {
     const identities = (this.selectedSubject.externalIdentities || []).map((identity) => `${identity.scheme}: ${identity.id}`).join(" · ");
     return `<article class="subject-summary"><span class="eyebrow">Subject</span><h3>${escapeHtml(this.selectedSubject.preferredLabel)}</h3><p>${escapeHtml(this.selectedSubject.description || "Nessuna descrizione disponibile")}</p>${identities ? `<details><summary>Identità tecnica</summary><p>${escapeHtml(identities)}</p></details>` : ""}</article>`;
   }
-  renderSubjectPresence() {
-    if (!this.selectedSubject || !this.principal) return "";
-    return `<artaround-subject-presence></artaround-subject-presence>`;
-  }
-  configureSubjectPresence() {
-    const component = this.querySelector("artaround-subject-presence");
-    if (component && this.selectedSubject && this.principal) component.configure({ subjectId: id(this.selectedSubject), sourceItemId: this.itemId, principal: this.principal });
-  }
-
   mediaSourceLabel(media) {
     return ({ wikimedia_commons: "Proposta da Wikidata · Wikimedia Commons", author_upload: "Caricata dal dispositivo", author_url: "Aggiunta tramite indirizzo web" })[media?.source?.provider] || "Immagine del contenuto";
   }
@@ -813,9 +823,9 @@ export class ItemAuthoringView extends HTMLElement {
 
   renderStepOne() {
     if (this.activeStep !== 1) return "";
-    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Subject confermato</h2><p>L'identità semantica è separata sia dalla versione editoriale sia dalla presenza fisica nelle Venue.</p></div></header>${this.renderSubjectSummary()}${this.renderSubjectPresence()}<div class="step-actions"><button type="button" data-step="2">Continua ${icon("chevron", { size: 15 })}</button></div></section>`;
+    if (this.itemId) return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Subject confermato</h2><p>L'identità semantica del contenuto resta separata dalla sua eventuale presenza fisica nelle sedi.</p></div></header>${this.renderSubjectSummary()}<div class="step-actions"><button type="button" data-step="2">Continua ${icon("chevron", { size: 15 })}</button></div></section>`;
     const picker = this.selectedSubject
-      ? `<form data-create-item>${this.renderSubjectSummary()}${this.renderSubjectPresence()}<div class="step-actions"><button type="submit">${icon("check", { size: 15 })} Crea Item e continua ${icon("chevron", { size: 15 })}</button></div></form>`
+      ? `<form data-create-item>${this.renderSubjectSummary()}<div class="step-actions"><button type="submit">${icon("check", { size: 15 })} Crea Item e continua ${icon("chevron", { size: 15 })}</button></div></form>`
       : `<artaround-semantic-entity-picker mode="subject" entity-kind="item"></artaround-semantic-entity-picker>`;
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Di cosa parla</span><h2>Trova l'opera, la persona o il concetto</h2><p>ArtAround riusa la stessa identità Subject in tutti i musei e in tutte le raccolte.</p></div></header>${this.inCollectionContext() ? `<aside class="context-note"><strong>Creazione dalla raccolta</strong><p>Il nuovo Item verrà aggiunto allo spazio editoriale e la versione per il Namespace corrente verrà inserita nella raccolta dopo il salvataggio.</p></aside>` : `<aside class="context-note"><strong>Spazio editoriale</strong><p>Il nuovo Item verrà inserito nello spazio editoriale corrente della Libreria.</p></aside>`}${picker}</section>`;
   }
@@ -873,27 +883,25 @@ export class ItemAuthoringView extends HTMLElement {
     const revision = this.selectedRevision();
     const issues = revision.integrity?.issues || [];
     const operations = this.workflowOperations();
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica il contenuto</h2><p>Il grafo semantico non si modifica qui: se il contenuto appartiene a una raccolta, apri la sezione Relazioni dello Studio.</p></div></header>${this.reviewSummary()}${this.renderReviewTexts()}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${operations.length ? `<div class="workflow-panel"><h3>Controllo</h3>${operations.map((operation) => `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit">${icon("check", { size: 15 })} Controlla se è tutto pronto</button></form>`).join("")}</div>` : `<div class="readiness success"><strong>${revision.status === "published" ? "Contenuto privato e corretto" : "Nessun controllo disponibile nello stato corrente"}</strong></div>`}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="3">Indietro</button>${this.availableOperation("item.edit") ? `<button class="button-secondary" type="button" data-edit-content>Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>Aggiungi versione editoriale</button>` : ""}${this.inCollectionContext() ? `<button type="button" data-return-collection>Torna alla raccolta</button>` : ""}</div></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">4</span><div><span class="eyebrow">Controllo finale</span><h2>Verifica il contenuto</h2><p>Il grafo semantico non si modifica qui: se il contenuto appartiene a una raccolta, apri la sezione Relazioni dello Studio.</p></div></header>${this.reviewSummary()}${this.renderReviewTexts()}${issues.length ? `<div class="issue-panel"><ul>${issues.map((issue) => `<li>${escapeHtml(userFacingIssueMessage(issue))}</li>`).join("")}</ul></div>` : ""}${operations.length ? `<div class="workflow-panel"><h3>Controllo</h3>${operations.map((operation) => `<form data-workflow-form><input type="hidden" name="operationCode" value="${escapeHtml(operation.code)}"><button type="submit">${icon("check", { size: 15 })} Controlla se è tutto pronto</button></form>`).join("")}</div>` : `<div class="readiness success"><strong>${revision.status === "published" ? "Contenuto privato e corretto" : "Nessun controllo disponibile nello stato corrente"}</strong></div>`}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="3">Indietro</button>${this.availableOperation("item.edit") ? `<button class="button-secondary" type="button" data-edit-content>Modifica contenuto</button>` : ""}${this.availableOperation("item.create_edition") && this.usableNamespaceChoices({ excludeUsed: true }).length ? `<button class="button-secondary" type="button" data-new-edition>Aggiungi versione editoriale</button>` : ""}${this.principal?.type === "organization" && this.itemId && this.selectedSubject ? `<button class="button-secondary" type="button" data-open-subject-venues>Presenza nelle sedi</button>` : ""}${this.inCollectionContext() ? `<button type="button" data-return-collection>Torna alla raccolta</button>` : ""}</div></section>`;
   }
   renderPrivateSuccessDialog() {
     if (!this.privateSuccessOpen) return "";
     const editionId = id(this.selectedEdition()?.id);
     const marketplaceHref = `/workspace/resource?ownership=owned&resourceType=item_edition&resourceId=${encodeURIComponent(editionId)}`;
-    return `<div class="private-success-overlay"><section class="private-success-dialog" role="dialog" aria-modal="true" tabindex="-1"><span class="private-success-icon">${icon("check", { size: 28 })}</span><div><span class="eyebrow">Controlli superati</span><h2>Il contenuto è corretto e resta privato</h2><p>Puoi configurarne la distribuzione nel Marketplace oppure mantenerlo nella Libreria.</p></div><div class="button-row"><a class="button-link" data-route href="${escapeHtml(marketplaceHref)}">Configura distribuzione</a><button class="button-secondary" type="button" data-close-private-success>Mantieni privato</button></div></section></div>`;
+    return `<div class="private-success-overlay"><section class="private-success-dialog" role="dialog" aria-modal="true" tabindex="-1"><span class="private-success-icon">${icon("check", { size: 28 })}</span><div><span class="eyebrow">Controlli superati</span><h2>Il contenuto è corretto e resta privato</h2><p>Puoi configurarne la distribuzione nel Marketplace oppure mantenerlo nella Libreria.</p></div><div class="button-row"><a class="button-link" data-route href="${escapeHtml(marketplaceHref)}">Configura distribuzione</a>${this.principal?.type === "organization" && this.itemId && this.selectedSubject ? `<button class="button-secondary" type="button" data-open-subject-venues>Presenza nelle sedi</button>` : ""}<button class="button-secondary" type="button" data-close-private-success>Mantieni privato</button></div></section></div>`;
   }
   renderEditions() {
     const editions = this.projection?.editions || [];
     if (editions.length <= 1 && !this.newEditionMode) return "";
     return `<nav class="edition-tabs">${editions.map((edition) => `<button type="button" data-edition-id="${escapeHtml(id(edition.id))}" aria-pressed="${!this.newEditionMode && id(this.selectedEdition()?.id) === id(edition.id)}">${escapeHtml(edition.namespace?.name || "Versione")}</button>`).join("")}${this.newEditionMode ? `<span class="status-pill">Nuova bozza</span>` : ""}</nav>`;
   }
-  configureChildren() { queueMicrotask(() => this.configureSubjectPresence()); }
 
   render() {
     const blocked = !this.itemId && this.preflight?.content?.allowed === false;
     const returnHref = this.inCollectionContext() ? this.collectionReturnHref() : this.itemId ? "/workspace" : "/create";
     const returnLabel = this.inCollectionContext() ? "Raccolta" : this.itemId ? "Libreria" : "Crea";
     this.innerHTML = `${this.styles()}<main class="page authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><a data-route href="${escapeHtml(returnHref)}">${icon("arrowLeft", { size: 15 })} ${escapeHtml(returnLabel)}</a><span>/</span><span>Contenuto</span></nav><header class="authoring-header"><span class="eyebrow">Contenuto</span><h1>${this.itemId ? "Modifica contenuto" : "Nuovo contenuto"}</h1><p>Quattro passaggi: Subject, informazioni, versione editoriale e controllo. Presenza fisica e semantica della raccolta restano domini separati.</p></header>${!blocked ? this.renderProgress() : ""}${this.busy ? `<p role="status">Aggiornamento in corso…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.notice ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.notice)}</p>` : ""}${this.renderPrerequisiteBlocker()}${this.renderEditions()}${blocked ? "" : `${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}`}</main>${this.renderPrivateSuccessDialog()}`;
-    this.configureChildren();
   }
 
   styles() {

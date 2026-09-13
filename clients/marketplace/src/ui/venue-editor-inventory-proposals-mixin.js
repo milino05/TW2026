@@ -10,6 +10,8 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 function id(value) { return String(value?._id || value?.id || value || ""); }
+function has(operations, code) { return (operations || []).some((entry) => entry.code === code); }
+function targetSubjectId(target) { return id(target?.subject?.id || target?.subject?._id || target?.subjectId); }
 function statusLabel(value) {
   return {
     pending: "In attesa",
@@ -17,9 +19,6 @@ function statusLabel(value) {
     rejected: "Rifiutata",
     withdrawn: "Ritirata",
   }[value] || value || "Proposta";
-}
-function inventoryStateLabel(value) {
-  return { exposed: "Esposta", unplaced: "Da collocare", unavailable: "Non disponibile" }[value] || "Inventario";
 }
 function toneForStatus(value) {
   return value === "accepted" ? "success" : value === "rejected" ? "warning" : "neutral";
@@ -32,20 +31,21 @@ function dateLabel(value) {
 }
 function styles() {
   return `<style>
-    .venue-editor-page .venue-proposal-inbox,.venue-editor-page .venue-inventory-summary{display:grid;gap:1rem;margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
+    .venue-editor-page .venue-inventory-workspace-tabs{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--line)}
+    .venue-editor-page .venue-inventory-workspace-tabs button[aria-selected="true"]{border-color:var(--sage-700);background:var(--sage-100);color:var(--sage-950)}
+    .venue-editor-page .venue-inventory-overview,.venue-editor-page .venue-proposal-inbox{display:grid;gap:1rem;margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
+    .venue-editor-page .venue-inventory-overview+.venue-inventory-browser{margin-top:1rem}
     .venue-editor-page .venue-proposal-filters{display:flex;gap:.45rem;flex-wrap:wrap}
-    .venue-editor-page .venue-proposal-list,.venue-editor-page .venue-inventory-summary-list{display:grid;gap:.7rem}
+    .venue-editor-page .venue-proposal-list{display:grid;gap:.7rem}
     .venue-editor-page .venue-proposal-card{display:grid;gap:.7rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}
-    .venue-editor-page .venue-proposal-card>header,.venue-editor-page .venue-inventory-summary-card{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem}
+    .venue-editor-page .venue-proposal-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem}
     .venue-editor-page .venue-proposal-card h3,.venue-editor-page .venue-proposal-card p,.venue-editor-page .venue-proposal-card blockquote{margin:0}
     .venue-editor-page .venue-proposal-card blockquote{display:grid;gap:.25rem;padding:.7rem .8rem;border-left:3px solid var(--sage-400);border-radius:.2rem var(--radius-sm) var(--radius-sm) .2rem;background:var(--surface)}
     .venue-editor-page .venue-proposal-meta{display:flex;gap:.8rem;flex-wrap:wrap;color:var(--sage-600);font-size:.78rem}
     .venue-editor-page .venue-proposal-meta span{display:inline-flex;align-items:center;gap:.3rem}
     .venue-editor-page .venue-proposal-decision{display:grid;gap:.7rem;padding:.9rem;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface)}
     .venue-editor-page .venue-proposal-decision label{display:grid;gap:.35rem}.venue-editor-page .venue-proposal-decision p{margin:.2rem 0 0;color:var(--sage-600)}
-    .venue-editor-page .venue-inventory-summary-card{padding:.7rem .8rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--sage-50)}
-    .venue-editor-page .venue-inventory-summary-card>div{display:grid;gap:.1rem}.venue-editor-page .venue-inventory-summary-card small{color:var(--sage-600)}
-    @media(max-width:42rem){.venue-editor-page .venue-proposal-card>header,.venue-editor-page .venue-inventory-summary-card{align-items:stretch;flex-direction:column}.venue-editor-page .venue-proposal-card .button-row>*{width:100%}}
+    @media(max-width:42rem){.venue-editor-page .venue-proposal-card>header{align-items:stretch;flex-direction:column}.venue-editor-page .venue-proposal-card .button-row>*{width:100%}}
   </style>`;
 }
 
@@ -119,6 +119,8 @@ export const venueInventoryProposalsMixin = {
       this.render();
       return true;
     }
+    const proposal = (this.inventoryProposals?.results || []).find((entry) => id(entry._id) === id(proposalId));
+    const subjectId = id(proposal?.subject?._id || proposal?.subject?.id || proposal?.subjectId);
     const success = await this.execute(
       () => action === "accept"
         ? managementRepository.acceptVenueInventoryProposal(this.id, proposalId, { message })
@@ -131,6 +133,13 @@ export const venueInventoryProposalsMixin = {
       this.pendingProposalDecision = null;
       this.proposalDecisionMessage = "";
       this.activeSection = "inventory";
+      if (action === "accept") {
+        this.inventoryWorkspaceTab = "entities";
+        this.inventoryFilter = "all";
+        const acceptedTarget = (this.data?.targets || []).find((entry) => subjectId && targetSubjectId(entry) === subjectId);
+        if (acceptedTarget) this.selectedVenueTargetId = id(acceptedTarget.id);
+      }
+      this.render();
     }
     return true;
   },
@@ -153,15 +162,14 @@ export const venueInventoryProposalsMixin = {
     return `<article class="venue-proposal-card" data-status="${escapeHtml(status)}"><header><div><span class="eyebrow">Subject proposto</span><h3>${escapeHtml(subject.preferredLabel || "Identità non disponibile")}</h3></div><span class="chip" data-tone="${toneForStatus(status)}">${escapeHtml(statusLabel(status))}</span></header><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile.")}</p>${proposal.message ? `<blockquote><strong>Motivazione della proposta</strong><p>${escapeHtml(proposal.message)}</p></blockquote>` : ""}<div class="venue-proposal-meta">${source}${proposal.createdAt ? `<span>${icon("history", { size: 14 })} ${escapeHtml(dateLabel(proposal.createdAt))}</span>` : ""}</div>${pending ? `<div class="button-row"><button type="button" data-inventory-proposal-action="accept" data-proposal-id="${escapeHtml(id(proposal._id))}">${icon("check", { size: 15 })} Accetta</button><button class="button-secondary" type="button" data-inventory-proposal-action="reject" data-proposal-id="${escapeHtml(id(proposal._id))}">Rifiuta</button></div>` : decision}${this.renderInventoryProposalDecision(proposal)}</article>`;
   },
 
-  renderInventorySummary() {
+  renderInventoryOverview() {
     const targets = this.data?.targets || [];
     const counts = { exposed: 0, unplaced: 0, unavailable: 0 };
     for (const target of targets) {
-      const state = target.configuration?.state || "unplaced";
+      const state = target.exhibitSlot ? "exposed" : target.configuration?.state || "unplaced";
       if (Object.prototype.hasOwnProperty.call(counts, state)) counts[state] += 1;
     }
-    const sample = targets.slice(0, 8).map((target) => `<article class="venue-inventory-summary-card"><div><strong>${escapeHtml(target.label || target.subject?.label || "Entità")}</strong><small>${escapeHtml(target.subject?.label || "Subject")}</small></div><span class="chip" data-tone="${target.configuration?.state === "exposed" ? "success" : target.configuration?.state === "unavailable" ? "warning" : "neutral"}">${escapeHtml(inventoryStateLabel(target.configuration?.state))}</span></article>`).join("");
-    return `<section class="venue-inventory-summary"><div class="section-heading"><div><span class="eyebrow">Inventario corrente</span><h3>${targets.length} entità nella sede</h3><p>L’inventario stabilisce quali Subject appartengono alla sede. La collocazione fisica resta nella sezione Spazi e mappa.</p></div><button class="button-secondary" type="button" data-venue-section="map">Apri Spazi e mappa ${icon("chevron", { size: 14 })}</button></div><dl class="venue-summary"><div><dt>Esposte</dt><dd>${counts.exposed}</dd></div><div><dt>Da collocare</dt><dd>${counts.unplaced}</dd></div><div><dt>Non disponibili</dt><dd>${counts.unavailable}</dd></div></dl>${sample ? `<div class="venue-inventory-summary-list">${sample}</div>` : `<div class="empty-state compact"><p>L’inventario è ancora vuoto.</p></div>`}${targets.length > sample.length ? `<p class="note">Sono mostrate le prime ${sample.length} entità. La gestione puntuale della collocazione resta nella mappa.</p>` : ""}</section>`;
+    return `<section class="venue-inventory-overview"><div class="section-heading compact"><div><span class="eyebrow">Inventario corrente</span><h3>${targets.length} entità nella sede</h3><p>Qui gestisci appartenenza, disponibilità e collocazione delle entità fisiche della Venue.</p></div></div><dl class="venue-summary"><div><dt>Esposte</dt><dd>${counts.exposed}</dd></div><div><dt>Da collocare</dt><dd>${counts.unplaced}</dd></div><div><dt>Non disponibili</dt><dd>${counts.unavailable}</dd></div></dl></section>`;
   },
 
   renderInventoryProposals() {
@@ -177,10 +185,18 @@ export const venueInventoryProposalsMixin = {
       ["all", "Tutte"],
     ].map(([value, label]) => `<button class="button-secondary small" type="button" data-inventory-proposal-status="${value}" aria-pressed="${(this.inventoryProposalStatus || "pending") === value}">${label}</button>`).join("");
     const cards = results.map((proposal) => this.renderInventoryProposalCard(proposal)).join("");
-    return `<section class="venue-proposal-inbox"><div class="section-heading"><div><span class="eyebrow">Proposte di inventario</span><h3>Inbox della sede</h3><p>Qui arrivano i Subject proposti durante il lavoro editoriale. Accettare significa aggiungerli all’inventario, non collocarli sulla mappa.</p></div><span class="count">${results.length}</span></div><div class="venue-proposal-filters" role="group" aria-label="Filtra proposte">${filters}</div>${cards ? `<div class="venue-proposal-list">${cards}</div>` : `<div class="empty-state compact"><span>${icon("check", { size: 24 })}</span><h3>Nessuna proposta in questa vista</h3><p>${(this.inventoryProposalStatus || "pending") === "pending" ? "Non ci sono decisioni in attesa." : "Cambia filtro per consultare lo storico."}</p></div>`}</section>`;
+    return `<section class="venue-proposal-inbox"><div class="section-heading"><div><span class="eyebrow">Proposte di inventario</span><h3>Inbox della sede</h3><p>Qui decidi quali Subject possono entrare nell’inventario. Accettare non li colloca automaticamente sulla mappa.</p></div><span class="count">${results.length}</span></div><div class="venue-proposal-filters" role="group" aria-label="Filtra proposte">${filters}</div>${cards ? `<div class="venue-proposal-list">${cards}</div>` : `<div class="empty-state compact"><span>${icon("check", { size: 24 })}</span><h3>Nessuna proposta in questa vista</h3><p>${(this.inventoryProposalStatus || "pending") === "pending" ? "Non ci sono decisioni in attesa." : "Cambia filtro per consultare lo storico."}</p></div>`}</section>`;
   },
 
   renderInventorySection() {
-    return `${styles()}<section class="venue-section" id="venue-inventory"><div class="section-heading"><div><span class="eyebrow">Inventario</span><h2>Entità della sede e proposte</h2><p>Decidi quali Subject appartengono alla sede senza confondere questa scelta con slot, planimetrie o percorsi.</p></div></div>${this.renderInventoryProposals()}${this.renderInventorySummary()}</section>`;
+    const tab = this.inventoryWorkspaceTab === "proposals" ? "proposals" : "entities";
+    this.inventoryWorkspaceTab = tab;
+    const editable = has(this.data?.availableOperations, "venue.release.update");
+    const pendingCount = (this.inventoryProposalStatus || "pending") === "pending" ? (this.inventoryProposals?.results || []).length : null;
+    const tabs = `<nav class="venue-inventory-workspace-tabs" role="tablist" aria-label="Sezioni inventario"><button class="button-secondary" type="button" role="tab" data-inventory-workspace-tab="entities" aria-selected="${tab === "entities"}">Entità</button><button class="button-secondary" type="button" role="tab" data-inventory-workspace-tab="proposals" aria-selected="${tab === "proposals"}">Proposte${Number.isFinite(pendingCount) && pendingCount ? ` (${pendingCount})` : ""}</button></nav>`;
+    const content = tab === "proposals"
+      ? this.renderInventoryProposals()
+      : `${this.renderInventoryOverview()}${this.renderInventoryBrowserSurface?.(editable, this.browserState?.() || { purpose: "standalone", query: "", filter: "all", selectedTargetId: null }) || ""}`;
+    return `${styles()}<section class="venue-section" id="venue-inventory"><div class="section-heading"><div><span class="eyebrow">Inventario</span><h2>Inventario della sede</h2><p>Gestisci le entità che appartengono fisicamente alla sede. La collocazione resta esplicita e avviene sulla mappa attraverso gli slot espositivi.</p></div></div>${tabs}${content}</section>`;
   },
 };

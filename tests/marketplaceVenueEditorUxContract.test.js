@@ -118,11 +118,14 @@ test("Allestimento usa la terminologia user-facing e preserva istruzioni multipl
   assert.doesNotMatch(source, /current[\s\S]{0,160}unassignVenueTargetFromExhibitSlot[\s\S]{0,160}assignVenueTargetToExhibitSlot/);
 });
 
-test("il picker Venue-aware estende automaticamente la ricerca quando manca un exact match", () => {
+test("il picker Venue-aware mantiene Wikidata come fallback esplicito", () => {
   const targetCreateSource = sources["clients/marketplace/src/ui/venue-target-create-dialog.js"];
+  assert.match(targetCreateSource, /data-open-external-subject-search/);
+  assert.match(targetCreateSource, /Cerca anche in Wikidata/);
+  assert.match(targetCreateSource, /data-close-external-subject-search/);
+  assert.match(targetCreateSource, /artaround-semantic-entity-picker mode="subject" entity-kind="item"/);
   assert.match(targetCreateSource, /auto-search/);
-  assert.match(targetCreateSource, /continuare su Wikidata/);
-  assert.match(targetCreateSource, /le corrispondenze approssimative non vengono selezionate automaticamente/);
+  assert.doesNotMatch(targetCreateSource, /continuare su Wikidata/);
 });
 
 test("la creazione dell'inventario non assegna implicitamente uno slot", () => {
