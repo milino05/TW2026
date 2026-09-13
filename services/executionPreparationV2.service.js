@@ -83,7 +83,6 @@ function normalizeJoinAlias(value) {
 function preferredJoinAlias(sourceSnapshot) {
   return normalizeJoinAlias(
     sourceSnapshot.groupSessionDefaults?.preferredJoinAlias
-      || sourceSnapshot.synchronization?.joinAlias
       || sourceSnapshot.title
       || "Visita insieme",
   );
@@ -154,17 +153,6 @@ function mergeDraft(current = {}, patch = {}) {
   }
   return next;
 }
-function withVisitExecutionDefaults(snapshot, revision) {
-  return {
-    ...snapshot,
-    title: revision.title,
-    groupSessionDefaults: {
-      preferredJoinAlias: revision.groupSessionDefaults?.preferredJoinAlias
-        || revision.synchronization?.joinAlias
-        || null,
-    },
-  };
-}
 
 async function resolveExactSource({ userId, payload = {} }) {
   const hasVisit = Boolean(payload.visitId);
@@ -184,7 +172,7 @@ async function resolveExactSource({ userId, payload = {} }) {
         generatedVisitPlanId: null,
         versionPolicy: access.entitlement?.versionPolicy === "pinned" ? "pinned" : "follow_current",
       },
-      sourceSnapshot: withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision),
+      sourceSnapshot: visitRevisionSourceSnapshotV2({ visit, revision }),
     };
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: payload.generatedVisitPlanId, userId }).lean();
@@ -221,7 +209,7 @@ async function loadExactSourceForPreparation(preparation, { revalidateAuthorizat
       status: { $in: ["published", "superseded"] },
     }).lean();
     if (!revision) throw new AppError("VisitRevision pinzata dalla preparation non disponibile", 409, [{ code: "PREPARATION_SOURCE_UNAVAILABLE" }]);
-    return withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision);
+    return visitRevisionSourceSnapshotV2({ visit, revision });
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: source.generatedVisitPlanId, userId: preparation.userId }).lean();
   if (!plan || plan.status !== "accepted") {
