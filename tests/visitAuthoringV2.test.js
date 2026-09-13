@@ -31,7 +31,7 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     const { IDS, seedExamDataset } = require("../scripts/examDatasetV2");
     const visitService = require("../services/visitV2.service");
     const { getVisitAuthoringProjection, searchVisitAuthoringContent, searchVisitAuthoringCandidates } = require("../services/visitAuthoringV2.service");
-    const { addContentToVisit } = require("../services/visitAuthoringCommandV2.service");
+    const { addContentToVisit, setContentPlacement } = require("../services/visitAuthoringCommandV2.service");
     const { visitRevisionSourceSnapshotV2, materializeContentEntries } = require("../services/sessionPlanV2.service");
     const publication = require("../services/visitV2Publication.service");
 
@@ -108,6 +108,49 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(contextualAdded.revision.contentEntries[0].deliveryAnchorId, null);
     assert.equal(contextualAdded.command.added[0].placement.mode, "contextual");
 
+    const contextualEntryId = contextualAdded.revision.contentEntries[0]._id;
+    const contextualProjection = await getVisitAuthoringProjection({ actorUserId: manager._id, visitId: contextualVisit.visit._id });
+    const projectedContextualEntry = contextualProjection.visit.revision.entries.find((entry) => String(entry.id) === String(contextualEntryId));
+    assert.ok(projectedContextualEntry);
+    assert.equal(Array.isArray(projectedContextualEntry.placementOptions?.occurrences), true);
+    assert.equal(projectedContextualEntry.placementOptions.occurrences.some((entry) => String(entry.venueTargetId) === String(directOccurrence.venueTargetId)), true, "la card di un contenuto già presente può ricreare la tappa");
+
+    const promoted = await setContentPlacement({
+      actorUserId: manager._id,
+      visitId: contextualVisit.visit._id,
+      contentEntryId: contextualEntryId,
+      placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+    });
+    assert.equal(promoted.revision.contentEntries.length, 1);
+    assert.equal(String(promoted.revision.contentEntries[0]._id), String(contextualEntryId), "rendere fisico il contenuto non ricrea la ContentEntry");
+    assert.equal(promoted.revision.visitAnchors.length, 1);
+    assert.ok(promoted.revision.contentEntries[0].deliveryAnchorId);
+    assert.equal(promoted.command.placement.mode, "physical");
+    assert.equal(promoted.command.placement.anchorCreated, true);
+
+    const demoted = await setContentPlacement({
+      actorUserId: manager._id,
+      visitId: contextualVisit.visit._id,
+      contentEntryId: contextualEntryId,
+      placement: { mode: "contextual" },
+    });
+    assert.equal(demoted.revision.contentEntries.length, 1);
+    assert.equal(String(demoted.revision.contentEntries[0]._id), String(contextualEntryId), "rendere contestuale il contenuto non lo rimuove dalla visita");
+    assert.equal(demoted.revision.contentEntries[0].deliveryAnchorId, null);
+    assert.equal(demoted.revision.visitAnchors.length, 0, "l'anchor non più usato viene rimosso");
+    assert.equal(demoted.command.placement.mode, "contextual");
+    assert.equal(demoted.command.placement.anchorRemoved, true);
+
+    const restoredPhysical = await setContentPlacement({
+      actorUserId: manager._id,
+      visitId: contextualVisit.visit._id,
+      contentEntryId: contextualEntryId,
+      placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+    });
+    assert.equal(restoredPhysical.revision.contentEntries.length, 1);
+    assert.equal(String(restoredPhysical.revision.contentEntries[0]._id), String(contextualEntryId), "contestuale -> tappa riusa la stessa ContentEntry");
+    assert.equal(restoredPhysical.revision.visitAnchors.length, 1);
+
     const added = await addContentToVisit({
       actorUserId: manager._id,
       visitId: directVisit.visit._id,
@@ -159,6 +202,24 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(batched.command.added.length, 2);
     assert.equal(batched.command.added[0].placement.anchorCreated, true);
     assert.equal(batched.command.added[1].placement.anchorCreated, false);
+
+    const sharedFirstContextual = await setContentPlacement({
+      actorUserId: manager._id,
+      visitId: batchVisit.visit._id,
+      contentEntryId: batched.revision.contentEntries[0]._id,
+      placement: { mode: "contextual" },
+    });
+    assert.equal(sharedFirstContextual.revision.visitAnchors.length, 1, "una tappa condivisa resta se un altro contenuto la usa");
+    assert.equal(sharedFirstContextual.command.placement.anchorRemoved, false);
+
+    const sharedSecondContextual = await setContentPlacement({
+      actorUserId: manager._id,
+      visitId: batchVisit.visit._id,
+      contentEntryId: batched.revision.contentEntries[1]._id,
+      placement: { mode: "contextual" },
+    });
+    assert.equal(sharedSecondContextual.revision.visitAnchors.length, 0, "la tappa condivisa sparisce quando anche l'ultimo contenuto diventa contestuale");
+    assert.equal(sharedSecondContextual.command.placement.anchorRemoved, true);
 
     const licensedAuthor = await User.create({ username: "visit-direct-license", passwordHash: "test-hash" });
     await Entitlement.create({
