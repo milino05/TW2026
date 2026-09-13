@@ -2,19 +2,17 @@ const mongoose = require("mongoose");
 const EditorialRelease = require("../models/editorialRelease.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
-const Venue = require("../models/venue.model");
-const VenueRelease = require("../models/venueRelease.model");
-const VenueTarget = require("../models/venueTarget.model");
-const LayoutRevision = require("../models/layoutRevision.model");
-const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
-const { resolveVenueTargetExhibit } = require("./venueExhibitResolution.service");
 const { getVisitV2, updateVisitV2 } = require("./visitV2.service");
 const { assertCanUseItemRevisionInVisit } = require("./visitEditorialUsageAuthorization.service");
+const {
+  publishedOccurrenceCandidates,
+  assertPublishedTargetForSubject,
+  assertPublishedTargetUsable,
+} = require("./visitPlacementOptionsV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function newId() { return new mongoose.Types.ObjectId(); }
-function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object || {}, key); }
 
 function contentSources(revision) {
   return (revision.contentSources || []).map((source) => ({
@@ -84,7 +82,7 @@ async function resolveReleasedContent({ editorialReleaseId, itemEditionId, itemR
   return { release, binding, edition, item };
 }
 
-async function resolveSelectedContent({ revision, payload, actorUserId, principalType, principalId }) {
+async function resolveSelectedContent({ payload, actorUserId, principalType, principalId }) {
   const requested = payload.contentSource || {};
   const sourceType = requested.sourceType || (payload.editorialReleaseId ? "editorial_release" : "item_revision");
   if (sourceType === "editorial_release") {
@@ -105,149 +103,124 @@ async function resolveSelectedContent({ revision, payload, actorUserId, principa
   throw new AppError("Fonte del contenuto non valida", 400, [{ field: "contentSource.sourceType", code: "INVALID_ENUM" }]);
 }
 
-async function publishedOccurrenceCandidates(subjectId) {
-  const targets = await VenueTarget.find({ subjectId, lifecycleStatus: "active" })
-    .select("_id venueId subjectId displayLabelOverride inventoryNote")
-    .lean();
-  if (!targets.length) return [];
-  const subject = await Subject.findById(subjectId).select("preferredLabel description").lean();
-  const venueIds = [...new Set(targets.map((target) => id(target.venueId)))];
-  const venues = await Venue.find({
-    _id: { $in: venueIds },
-    lifecycleStatus: "active",
-    publishedReleaseId: { $ne: null },
-  }).select("_id name publishedReleaseId").lean();
-  const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
-  const releases = venues.length
-    ? await VenueRelease.find({
-        _id: { $in: venues.map((venue) => venue.publishedReleaseId) },
-        status: "published",
-      }).select("_id venueId layoutRevisionId targetBindings").lean()
-    : [];
-  const releaseById = new Map(releases.map((release) => [id(release._id), release]));
-  const layouts = releases.length
-    ? await LayoutRevision.find({
-        _id: { $in: releases.map((release) => release.layoutRevisionId) },
-        status: { $in: ["published", "superseded"] },
-      }).select("_id venueId places exhibitSlots").lean()
-    : [];
-  const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
-  const result = [];
-  for (const target of targets) {
-    const venue = venueById.get(id(target.venueId));
-    if (!venue) continue;
-    const release = releaseById.get(id(venue.publishedReleaseId));
-    if (!release || id(release.venueId) !== id(venue._id)) continue;
-    const layout = layoutById.get(id(release.layoutRevisionId));
-    if (!layout || id(layout.venueId) !== id(venue._id)) continue;
-    let physical;
-    try { physical = resolveVenueTargetExhibit({ venueRelease: release, layoutRevision: layout, venueTargetId: target._id }); }
-    catch { continue; }
-    result.push({
-      venueTargetId: target._id,
-      exhibitSlotId: physical.exhibitSlot.exhibitSlotId,
-      label: target.displayLabelOverride || subject?.preferredLabel || "Entità della sede",
-      description: target.inventoryNote || subject?.description || "",
-      subjectId: target.subjectId,
-      venue: { id: venue._id, name: venue.name },
-      venueReleaseId: release._id,
-      layoutRevisionId: layout._id,
-      placeId: physical.place._id,
-    });
-  }
-  return result.sort((left, right) => (
-    String(left.venue.name || "").localeCompare(String(right.venue.name || ""), "it")
-    || String(left.label || "").localeCompare(String(right.label || ""), "it")
-  ));
-}
-
-async function assertPublishedTargetUsable(venueTargetId) {
-  if (!mongoose.isValidObjectId(venueTargetId)) throw new AppError("VenueTarget non valido", 400, [{ field: "venueTargetId", code: "INVALID_OBJECT_ID" }]);
-  const target = await VenueTarget.findOne({ _id: venueTargetId, lifecycleStatus: "active" }).select("subjectId").lean();
-  if (!target) throw new AppError("VenueTarget non disponibile", 404);
-  const candidates = await publishedOccurrenceCandidates(target.subjectId);
-  const candidate = candidates.find((entry) => id(entry.venueTargetId) === id(venueTargetId));
-  if (!candidate) {
-    throw new AppError("VenueTarget non utilizzabile nella configurazione pubblicata", 409, [{
-      field: "venueTargetId",
-      code: "VENUE_TARGET_NOT_USABLE_FOR_VISIT",
-      context: { venueTargetId },
-    }]);
-  }
-  return candidate;
-}
-
-function ensureContentSource(revision, requested) {
-  const sources = contentSources(revision);
+function ensureContentSource(sources, requested) {
   const existing = sources.find((source) => source.sourceType === requested.sourceType && (
     requested.sourceType === "editorial_release"
       ? id(source.editorialReleaseId) === id(requested.editorialReleaseId)
       : id(source.itemRevisionId) === id(requested.itemRevisionId)
   ));
-  if (existing) return { sources, sourceId: existing._id, added: false };
+  if (existing) return { sourceId: existing._id, added: false };
   const source = { _id: newId(), ...requested };
   sources.push(source);
-  return { sources, sourceId: source._id, added: true };
+  return { sourceId: source._id, added: true };
 }
 
 function ensureAnchorForTarget(anchors, venueTargetId) {
   const existing = anchors.find((anchor) => id(anchor.venueTargetId) === id(venueTargetId));
-  if (existing) return { anchors, anchorId: existing._id, added: false };
+  if (existing) return { anchorId: existing._id, added: false };
   const anchor = { _id: newId(), venueTargetId };
   anchors.push(anchor);
-  return { anchors, anchorId: anchor._id, added: true };
+  return { anchorId: anchor._id, added: true };
 }
 
-async function addContentEntry({ visitId, actorUserId, payload = {}, explicitAnchorId = null }) {
+function validatePlacement(placement, index) {
+  if (!placement || !["contextual", "physical"].includes(placement.mode)) {
+    throw new AppError("Scegli come usare ogni contenuto nella visita", 400, [{
+      field: `entries.${index}.placement.mode`,
+      code: "VISIT_CONTENT_PLACEMENT_REQUIRED",
+    }]);
+  }
+  if (placement.mode === "physical" && !mongoose.isValidObjectId(placement.venueTargetId)) {
+    throw new AppError("Scegli una collocazione fisica valida", 400, [{
+      field: `entries.${index}.placement.venueTargetId`,
+      code: "VISIT_CONTENT_TARGET_REQUIRED",
+    }]);
+  }
+}
+
+async function addContentToVisit({ visitId, actorUserId, payload = {} }) {
+  const requestedEntries = Array.isArray(payload.entries) ? payload.entries : [];
+  if (!requestedEntries.length) {
+    throw new AppError("Seleziona almeno un contenuto da aggiungere", 400, [{ field: "entries", code: "REQUIRED" }]);
+  }
+  requestedEntries.forEach((entry, index) => validatePlacement(entry?.placement, index));
+
   const { visit, revision } = await loadEditableVisit({ visitId, actorUserId });
+  const selections = [];
+  for (const requested of requestedEntries) {
+    selections.push(await resolveSelectedContent({
+      payload: requested,
+      actorUserId,
+      principalType: visit.ownerType,
+      principalId: visit.ownerId,
+    }));
+  }
+
+  const sources = contentSources(revision);
+  const entries = contentEntries(revision);
+  const anchors = visitAnchors(revision);
+  const added = [];
+
+  for (let index = 0; index < requestedEntries.length; index += 1) {
+    const requested = requestedEntries[index];
+    const selection = selections[index];
+    const source = ensureContentSource(sources, selection.source);
+    let deliveryAnchorId = null;
+    let placementResult = { mode: "contextual" };
+
+    if (requested.placement.mode === "physical") {
+      const occurrence = await assertPublishedTargetForSubject(selection.item.primarySubjectId, requested.placement.venueTargetId);
+      const anchor = ensureAnchorForTarget(anchors, occurrence.venueTargetId);
+      deliveryAnchorId = anchor.anchorId;
+      placementResult = {
+        mode: "physical",
+        venueTargetId: occurrence.venueTargetId,
+        deliveryAnchorId,
+        anchorCreated: anchor.added,
+      };
+    }
+
+    const entry = {
+      _id: newId(),
+      contentSourceId: source.sourceId,
+      editorialSourceId: null,
+      itemId: selection.item._id,
+      itemEditionId: selection.edition._id,
+      itemRevisionId: selection.binding?.itemRevisionId || selection.revision._id,
+      deliveryAnchorId,
+      role: requested.role || "recommended",
+    };
+    entries.push(entry);
+    added.push({ contentEntryId: entry._id, placement: placementResult });
+  }
+
+  const result = await updateVisitV2({
+    visitId,
+    actorUserId,
+    payload: {
+      contentEntries: entries,
+      contentSources: sources,
+      visitAnchors: anchors,
+    },
+  });
+  return { ...result, command: { added } };
+}
+
+async function addContentToStop({ visitId, anchorId, actorUserId, payload = {} }) {
+  const { visit, revision } = await loadEditableVisit({ visitId, actorUserId });
+  const anchors = visitAnchors(revision);
+  const anchor = anchors.find((entry) => id(entry._id) === id(anchorId));
+  if (!anchor) throw new AppError("VisitAnchor non appartiene alla visita", 404, [{ field: "anchorId", code: "VISIT_ANCHOR_NOT_FOUND" }]);
+
   const selection = await resolveSelectedContent({
-    revision,
     payload,
     actorUserId,
     principalType: visit.ownerType,
     principalId: visit.ownerId,
   });
-  const source = ensureContentSource(revision, selection.source);
+  const sources = contentSources(revision);
+  const source = ensureContentSource(sources, selection.source);
   const entries = contentEntries(revision);
-  const anchors = visitAnchors(revision);
-  let deliveryAnchorId = explicitAnchorId || null;
-  let inference = { status: explicitAnchorId ? "explicit_stop" : "contextual", candidates: [] };
-
-  if (explicitAnchorId) {
-    const anchor = anchors.find((entry) => id(entry._id) === id(explicitAnchorId));
-    if (!anchor) throw new AppError("VisitAnchor non appartiene alla visita", 404, [{ field: "anchorId", code: "VISIT_ANCHOR_NOT_FOUND" }]);
-  } else {
-    const candidates = await publishedOccurrenceCandidates(selection.item.primarySubjectId);
-    const selectedTargetId = payload.venueTargetId || null;
-    if (selectedTargetId) {
-      const selected = candidates.find((candidate) => id(candidate.venueTargetId) === id(selectedTargetId));
-      if (!selected) {
-        throw new AppError("L'occorrenza scelta non corrisponde al contenuto o non è utilizzabile", 409, [{
-          field: "venueTargetId",
-          code: "VISIT_CONTENT_OCCURRENCE_INVALID",
-          context: { venueTargetId: selectedTargetId, primarySubjectId: selection.item.primarySubjectId },
-        }]);
-      }
-      const anchor = ensureAnchorForTarget(anchors, selected.venueTargetId);
-      deliveryAnchorId = anchor.anchorId;
-      inference = { status: "selected_occurrence", candidates: [selected] };
-    } else if (candidates.length === 1) {
-      const anchor = ensureAnchorForTarget(anchors, candidates[0].venueTargetId);
-      deliveryAnchorId = anchor.anchorId;
-      inference = { status: "inferred", candidates };
-    } else if (candidates.length > 1) {
-      throw new AppError("Il contenuto corrisponde a più occorrenze fisiche: scegli in quale inserirlo", 409, [{
-        field: "venueTargetId",
-        code: "VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED",
-        message: "Scegli l'occorrenza fisica in cui presentare il contenuto.",
-        context: {
-          primarySubjectId: selection.item.primarySubjectId,
-          candidates,
-        },
-      }]);
-    }
-  }
-
   const entry = {
     _id: newId(),
     contentSourceId: source.sourceId,
@@ -255,32 +228,21 @@ async function addContentEntry({ visitId, actorUserId, payload = {}, explicitAnc
     itemId: selection.item._id,
     itemEditionId: selection.edition._id,
     itemRevisionId: selection.binding?.itemRevisionId || selection.revision._id,
-    deliveryAnchorId,
+    deliveryAnchorId: anchorId,
     role: payload.role || "recommended",
   };
   entries.push(entry);
-  const updatePayload = {
-    contentEntries: entries,
-    visitAnchors: anchors,
-    ...(source.added ? { contentSources: source.sources } : {}),
-  };
-  const result = await updateVisitV2({ visitId, payload: updatePayload, actorUserId });
+  const result = await updateVisitV2({
+    visitId,
+    actorUserId,
+    payload: { contentEntries: entries, contentSources: sources },
+  });
   return {
     ...result,
     command: {
-      contentEntryId: entry._id,
-      deliveryAnchorId,
-      inference,
+      added: [{ contentEntryId: entry._id, placement: { mode: "physical", venueTargetId: anchor.venueTargetId, deliveryAnchorId: anchorId, anchorCreated: false } }],
     },
   };
-}
-
-async function addContentToVisit({ visitId, actorUserId, payload = {} }) {
-  return addContentEntry({ visitId, actorUserId, payload });
-}
-
-async function addContentToStop({ visitId, anchorId, actorUserId, payload = {} }) {
-  return addContentEntry({ visitId, actorUserId, payload, explicitAnchorId: anchorId });
 }
 
 async function attachContentToStop({ visitId, contentEntryId, anchorId, actorUserId }) {
