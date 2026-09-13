@@ -126,20 +126,36 @@ test("drag and drop riordina tappe e contenuti senza confondere il delivery", ()
   assert.match(controller, /authoringSequenceCommandService\.reorderVisitContent/);
 });
 
-test("riordino conserva fallback accessibili e spostamento tappa esplicito", () => {
+test("la collocazione della card è reversibile senza rimuovere il contenuto", () => {
+  assert.match(view, /data-entry-placement/);
+  assert.match(view, /Collocazione/);
+  assert.match(view, /Contesto generale/);
+  assert.match(view, /physical:/);
+  assert.match(view, /authoringRepository\.setVisitContentPlacement/);
+  assert.match(authoringRepository, /setVisitContentPlacement\(visitId, contentEntryId, placement\)/);
+  assert.match(authoringRepository, /content\/\$\{encodeURIComponent\(contentEntryId\)\}\/placement/);
+  assert.match(routes, /commands\/content\/:contentEntryId\/placement/);
+  assert.match(controller, /authoringCommandService\.setContentPlacement/);
+  assert.match(commands, /async function setContentPlacement/);
+  assert.match(commands, /cleanupOrphanAnchor/);
+  assert.match(commands, /entry\.deliveryAnchorId = null/);
+  assert.match(commands, /ensureAnchorForTarget/);
+  assert.doesNotMatch(view, /data-entry-stop/);
+  assert.doesNotMatch(view, /attachVisitContentToStop|detachVisitContentFromStop/);
+  assert.doesNotMatch(authoringRepository, /attachVisitContentToStop|detachVisitContentFromStop/);
+  assert.doesNotMatch(routes, /content\/:contentEntryId\/stop/);
+});
+
+test("riordino conserva fallback accessibili mentre le tappe restano una proiezione dei contenuti", () => {
   assert.match(view, /aria-label="Sposta contenuto prima"/);
   assert.match(view, /aria-label="Sposta contenuto dopo"/);
   assert.match(view, /aria-label="Sposta tappa prima"/);
   assert.match(view, /aria-label="Sposta tappa dopo"/);
-  assert.match(view, /data-entry-stop/);
-  assert.match(view, /attachVisitContentToStop/);
-  assert.match(view, /detachVisitContentFromStop/);
-  assert.match(view, /Presenta in/);
+  assert.match(view, /data-remove-stop/);
+  assert.match(view, /Manca ancora una tappa fisica/);
 });
 
-test("le nuove tappe fisiche nascono solo dalla scelta esplicita sul contenuto", () => {
-  assert.match(view, /Manca ancora una tappa fisica/);
-  assert.match(view, /data-remove-stop/);
+test("le nuove tappe fisiche non hanno un browser autonomo di VenueTarget", () => {
   assert.match(contentDialog, /value="physical"/);
   assert.match(contentDialog, /data-placement-target/);
   assert.doesNotMatch(view, /renderManualStopBrowser/);
@@ -148,9 +164,11 @@ test("le nuove tappe fisiche nascono solo dalla scelta esplicita sul contenuto",
   assert.doesNotMatch(view, /data-add-stop/);
   assert.doesNotMatch(view, /authoringRepository\.venueTargets/);
   assert.doesNotMatch(view, /selectedVenueId|venueTargets\s*=/);
+  assert.doesNotMatch(routes, /commands\/stops"/);
+  assert.doesNotMatch(routes, /stops\/:anchorId\/content/);
 });
 
-test("il repository espone la projection pubblicata delle entità fisiche della sede", async () => {
+test("il repository espone ancora la projection generica delle entità fisiche della sede", async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = null;
   globalThis.fetch = async (url) => {
