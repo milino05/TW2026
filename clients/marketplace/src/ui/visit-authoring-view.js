@@ -6,6 +6,7 @@ import { marketplaceRepository } from "../infrastructure/http/marketplace-reposi
 import { userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { icon } from "./icons.js";
 import { openMessageActionDialog } from "./message-action-dialog.js";
+import "./visit-content-add-dialog.js";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -70,20 +71,12 @@ function suggestedJoinAlias(title) {
 export class ArtAroundVisitAuthoringView extends HTMLElement {
   context = readOperatingContext();
   projection = null;
-  content = null;
   venueTargets = null;
   busy = false;
   error = null;
   message = null;
-  query = "";
-  searchPerformed = false;
-  page = 1;
-  contentAccess = "all";
-  selectedSourceKey = "all";
-  selectedContentVenueId = null;
   selectedVenueId = null;
   activeStep = 1;
-  pendingOccurrence = null;
   dragState = null;
   quizDraft = [];
 
@@ -96,6 +89,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     this.addEventListener("dragover", this.onDragOver);
     this.addEventListener("drop", this.onDrop);
     this.addEventListener("dragend", this.onDragEnd);
+    this.addEventListener("visit-content-added", this.onVisitContentAdded);
     this.load();
   }
   disconnectedCallback() {
@@ -107,6 +101,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     this.removeEventListener("dragover", this.onDragOver);
     this.removeEventListener("drop", this.onDrop);
     this.removeEventListener("dragend", this.onDragEnd);
+    this.removeEventListener("visit-content-added", this.onVisitContentAdded);
   }
 
   get visitId() { return currentParams().visitId; }
@@ -124,9 +119,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     return (this.projection?.venueSelector?.organizations || []).flatMap((organization) =>
       (organization.venues || []).map((venue) => ({ ...venue, organizationName: organization.name }))
     );
-  }
-  stopById(anchorId) {
-    return (this.revision?.stops || []).find((stop) => id(stop.id) === id(anchorId)) || null;
   }
   entriesForAnchor(anchorId) {
     const entries = this.revision?.entries || [];
@@ -153,7 +145,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       if (!venues.some((venue) => id(venue.id) === id(this.selectedVenueId))) {
         this.selectedVenueId = id(this.revision?.stops?.[0]?.venue?.id || venues[0]?.id || "") || null;
       }
-      await Promise.all([this.loadVenueTargets(false), this.loadContent(false)]);
+      await this.loadVenueTargets(false);
       if (this.visitId) {
         const requested = currentParams().step;
         this.activeStep = this.canOpenStep(requested) ? requested : (this.revision?.status === "published" ? 5 : 1);
@@ -187,28 +179,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     } catch (error) {
       this.venueTargets = null;
       if (render) this.error = error instanceof Error ? error.message : "Entità della sede non disponibili";
-    }
-    if (render) this.render();
-  }
-
-  async loadContent(render = true) {
-    if (!this.principal || !this.visitId || !this.searchPerformed) {
-      this.content = null;
-      if (render) this.render();
-      return;
-    }
-    try {
-      this.content = await authoringRepository.searchVisitContentCandidates(this.visitId, {
-        q: this.query,
-        access: this.contentAccess,
-        source: this.selectedSourceKey,
-        venueId: this.selectedContentVenueId,
-        page: this.page,
-        limit: 20,
-      });
-    } catch (error) {
-      this.content = null;
-      if (render) this.error = error instanceof Error ? error.message : "Contenuti disponibili non caricabili";
     }
     if (render) this.render();
   }
@@ -263,7 +233,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     }));
   }
 
-  async execute(callback, successMessage, { refreshContent = false, refreshVenueTargets = false } = {}) {
+  async execute(callback, successMessage, { refreshVenueTargets = false } = {}) {
     this.busy = true;
     this.error = null;
     this.message = null;
@@ -271,7 +241,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     try {
       const result = await callback();
       await this.reloadProjection();
-      if (refreshContent) await this.loadContent(false);
       if (refreshVenueTargets) await this.loadVenueTargets(false);
       this.message = typeof successMessage === "function" ? successMessage(result) : successMessage;
       return result;
@@ -307,41 +276,30 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     this.activeStep = 5;
   }
 
-  async addSelectedContent(result, venueTargetId = null) {
+  onVisitContentAdded = async (event) => {
+    event.stopPropagation();
+    const count = Number(event.detail?.count || 0);
     this.busy = true;
     this.error = null;
     this.message = null;
     this.render();
     try {
-      const payload = {
-        contentSource: result.contentSource,
-        itemEditionId: result.itemEditionId,
-        itemRevisionId: result.itemRevisionId,
-        role: "recommended",
-        ...(venueTargetId ? { venueTargetId } : {}),
-      };
-      const response = await authoringRepository.addVisitContent(this.visitId, payload);
-      this.pendingOccurrence = null;
       await this.reloadProjection();
-      await this.loadContent(false);
-      const inference = response?.command?.inference?.status;
-      this.message = inference === "inferred"
-        ? "Contenuto aggiunto; la collocazione fisica è stata riconosciuta automaticamente."
-        : inference === "selected_occurrence"
-          ? "Contenuto aggiunto nell'occorrenza scelta."
-          : "Contenuto aggiunto alla visita.";
+      await this.loadVenueTargets(false);
+      this.message = count === 1 ? "Contenuto aggiunto alla visita." : `${count} contenuti aggiunti alla visita.`;
     } catch (error) {
-      if (error?.code === "VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED") {
-        const candidates = error.details?.find((detail) => detail.code === "VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED")?.context?.candidates || [];
-        this.pendingOccurrence = { result, candidates };
-        this.message = "Questo contenuto esiste in più punti: scegli l'occorrenza fisica corretta.";
-      } else {
-        this.error = error instanceof Error ? error.message : "Impossibile aggiungere il contenuto";
-      }
+      this.error = error instanceof Error ? error.message : "La visita è stata aggiornata ma non è possibile ricaricarla";
     } finally {
       this.busy = false;
       this.render();
     }
+  };
+
+  openContentDialog() {
+    if (!this.editable || this.busy || this.querySelector("artaround-visit-content-add-dialog")) return;
+    const dialog = document.createElement("artaround-visit-content-add-dialog");
+    dialog.setAttribute("visit-id", this.visitId);
+    this.append(dialog);
   }
 
   canOpenStep(step) {
@@ -397,18 +355,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       }), "Informazioni principali salvate");
       return;
     }
-    if (form.matches("[data-visit-search]")) {
-      this.query = String(data.get("q") || "").trim();
-      this.searchPerformed = true;
-      this.page = 1;
-      this.busy = true;
-      this.error = null;
-      this.render();
-      await this.loadContent(false);
-      this.busy = false;
-      this.render();
-      return;
-    }
     if (form.matches("[data-visit-settings]")) {
       const payload = {
         presentationBaseline: {
@@ -446,20 +392,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
   onChange = async (event) => {
     const target = event.target instanceof HTMLSelectElement ? event.target : null;
     if (!target) return;
-    if (target.matches("[data-source-filter]")) {
-      this.selectedSourceKey = target.value || "all";
-      this.page = 1;
-      this.pendingOccurrence = null;
-      this.busy = true; this.render(); await this.loadContent(false); this.busy = false; this.render();
-      return;
-    }
-    if (target.matches("[data-content-venue]")) {
-      this.selectedContentVenueId = target.value || null;
-      this.page = 1;
-      this.pendingOccurrence = null;
-      this.busy = true; this.render(); await this.loadContent(false); this.busy = false; this.render();
-      return;
-    }
     if (target.matches("[data-venue]")) {
       this.selectedVenueId = target.value || null;
       this.busy = true; this.render(); await this.loadVenueTargets(false); this.busy = false; this.render();
@@ -497,6 +429,7 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.closest("button[data-back]")) { navigate("/workspace"); return; }
+    if (target.closest("button[data-open-visit-content]")) { this.openContentDialog(); return; }
     const workflowButton = target.closest("button[data-workflow-operation]");
     if (workflowButton) {
       const operation = this.availableOperation(workflowButton.dataset.workflowOperation);
@@ -545,32 +478,8 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
       this.render();
       return;
     }
-    const pageButton = target.closest("button[data-content-page]");
-    if (pageButton) {
-      this.page = Math.max(1, Number(pageButton.dataset.contentPage) || 1);
-      this.busy = true; this.render(); await this.loadContent(false); this.busy = false; this.render(); return;
-    }
-    const accessButton = target.closest("button[data-content-access]");
-    if (accessButton) {
-      this.contentAccess = accessButton.dataset.contentAccess || "all";
-      this.page = 1;
-      this.pendingOccurrence = null;
-      this.busy = true; this.render(); await this.loadContent(false); this.busy = false; this.render(); return;
-    }
-    const addButton = target.closest("button[data-add-content]");
-    if (addButton) {
-      const result = (this.content?.results || []).find((entry) => id(entry.itemRevisionId) === id(addButton.dataset.addContent));
-      if (result) await this.addSelectedContent(result);
-      return;
-    }
-    const occurrenceButton = target.closest("button[data-occurrence-target]");
-    if (occurrenceButton && this.pendingOccurrence) {
-      await this.addSelectedContent(this.pendingOccurrence.result, occurrenceButton.dataset.occurrenceTarget);
-      return;
-    }
-    if (target.closest("button[data-cancel-occurrence]")) { this.pendingOccurrence = null; this.message = null; this.render(); return; }
     const removeContent = target.closest("button[data-remove-content]");
-    if (removeContent) { await this.execute(() => authoringRepository.removeVisitContent(this.visitId, removeContent.dataset.removeContent), "Contenuto rimosso dalla visita", { refreshContent: true }); return; }
+    if (removeContent) { await this.execute(() => authoringRepository.removeVisitContent(this.visitId, removeContent.dataset.removeContent), "Contenuto rimosso dalla visita"); return; }
     const moveContent = target.closest("button[data-move-content]");
     if (moveContent) {
       const entryId = moveContent.dataset.moveContent;
@@ -668,30 +577,6 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">1</span><div><span class="eyebrow">Informazioni</span><h2>Presenta la visita</h2></div></header><form data-visit-main class="editor-form"><label>Titolo<input name="title" required maxlength="160" value="${escapeHtml(this.revision?.title || "")}"></label><label>Descrizione<textarea name="description" rows="5">${escapeHtml(this.revision?.description || "")}</textarea></label><label class="synchronized-toggle"><input type="checkbox" name="synchronized" ${synchronized ? "checked" : ""}><span><strong>Visita sincronizzata</strong><small>La guida controlla l'avanzamento comune dal Navigator. I partecipanti mantengono i propri adattamenti di lettura e ascolto.</small></span></label><div class="step-actions"><button type="submit" ${this.busy ? "disabled" : ""}>Salva</button><button class="button-secondary" type="button" data-step="2">Costruisci la visita</button></div></form></section>`;
   }
 
-  renderOccurrenceChoice() {
-    if (!this.pendingOccurrence) return "";
-    return `<section class="occurrence-choice" role="status"><div><strong>Scegli dove si trova l’entità</strong><p>Il contenuto corrisponde a più occorrenze fisiche pubblicate.</p></div><div class="occurrence-grid">${(this.pendingOccurrence.candidates || []).map((candidate) => `<button type="button" class="occurrence-card" data-occurrence-target="${escapeHtml(id(candidate.venueTargetId))}"><strong>${escapeHtml(candidate.label)}</strong><small>${escapeHtml(candidate.venue?.name || "Sede")}</small></button>`).join("")}</div><button class="button-secondary" type="button" data-cancel-occurrence>Annulla</button></section>`;
-  }
-
-  renderContentSearch() {
-    if (!this.editable) return `<p class="note">La revisione non è modificabile.</p>`;
-    const sourceOptions = (this.content?.filters?.sources || []).map((source) => `<option value="${escapeHtml(source.key)}" ${source.key === this.selectedSourceKey ? "selected" : ""}>${escapeHtml(source.label)}</option>`).join("");
-    const venueOptions = this.venueChoices().map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedContentVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
-    const existing = new Set((this.revision?.entries || []).map((entry) => id(entry.itemRevisionId)));
-    const cards = (this.content?.results || []).map((result) => {
-      const alreadyAdded = existing.has(id(result.itemRevisionId));
-      const availability = (result.availability || []).slice(0, 2).map((entry) => `<span class="availability-reason">${escapeHtml(entry.label)}</span>`).join("");
-      return `<article class="candidate-card"><div class="candidate-copy"><h3>${escapeHtml(result.label)}</h3><p>${escapeHtml((result.authorCredits || []).join(", ") || "Autore non indicato")}</p><div class="availability-list">${availability}</div></div><button type="button" data-add-content="${escapeHtml(id(result.itemRevisionId))}" ${alreadyAdded || this.busy ? "disabled" : ""}>${alreadyAdded ? `${icon("check", { size: 14 })} Aggiunto` : `${icon("plus", { size: 14 })} Aggiungi`}</button></article>`;
-    }).join("");
-    const page = Number(this.content?.page) || 1;
-    const limit = Number(this.content?.limit) || 20;
-    const total = Number(this.content?.total) || 0;
-    const results = this.searchPerformed
-      ? `<section class="search-results-panel" aria-live="polite"><div class="candidate-heading"><strong>${total} ${total === 1 ? "contenuto trovato" : "contenuti trovati"}</strong><small>Ogni contenuto compare una sola volta.</small></div><div class="candidate-grid candidate-grid--scroll">${cards || `<div class="empty-state compact"><h3>Nessun contenuto trovato</h3><p>Prova a cambiare ricerca o filtri.</p></div>`}</div><nav class="pagination"><button type="button" data-content-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>Precedente</button><span>Pagina ${page}</span><button type="button" data-content-page="${page + 1}" ${page * limit >= total || this.busy ? "disabled" : ""}>Successiva</button></nav></section>`
-      : `<div class="search-prompt"><span>${icon("search", { size: 20 })}</span><div><strong>Cerca prima di scegliere</strong><p>Scrivi un titolo, un autore o un argomento. I risultati compariranno qui senza caricare in anticipo l’intera libreria.</p></div></div>`;
-    return `<div class="content-browser">${this.renderOccurrenceChoice()}<form data-visit-search class="search-inline"><label>Cerca contenuti<input name="q" value="${escapeHtml(this.query)}" placeholder="Titolo, autore o argomento"></label><button type="submit" ${this.busy ? "disabled" : ""}>${icon("search", { size: 14 })} Cerca</button></form><div class="content-access-filter" role="group" aria-label="Disponibilità dei contenuti"><button type="button" class="${this.contentAccess === "all" ? "" : "button-secondary"}" data-content-access="all">Tutti</button><button type="button" class="${this.contentAccess === "owned" ? "" : "button-secondary"}" data-content-access="owned">Creati da me</button><button type="button" class="${this.contentAccess === "acquired" ? "" : "button-secondary"}" data-content-access="acquired">Acquistati</button></div><details class="advanced-panel filters"><summary>Filtri avanzati</summary><div class="content-filter-bar"><label>Sede<select data-content-venue><option value="">Tutte le sedi</option>${venueOptions}</select></label><label>Fonte<select data-source-filter><option value="all">Tutte le fonti</option>${sourceOptions}</select></label></div></details>${results}</div>`;
-  }
-
   renderEntryCard(entry, index, anchorKey, total) {
     const stops = this.revision?.stops || [];
     return `<article class="sequence-entry" draggable="${this.editable && !this.busy}" data-drag-kind="content" data-content-id="${escapeHtml(entry.id)}" data-content-index="${index}" data-anchor-key="${escapeHtml(anchorKey)}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><div class="entry-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml((entry.authorCredits || []).join(", ") || entry.source?.name || "Contenuto")}</small></div>${this.editable ? `<div class="entry-controls"><label>Importanza<select data-entry-role="${escapeHtml(entry.id)}"><option value="core" ${entry.role === "core" ? "selected" : ""}>Essenziale</option><option value="recommended" ${entry.role === "recommended" ? "selected" : ""}>Consigliato</option><option value="optional" ${entry.role === "optional" ? "selected" : ""}>Facoltativo</option></select></label><label>Presenta in<select data-entry-stop="${escapeHtml(entry.id)}"><option value="" ${!entry.deliveryAnchorId ? "selected" : ""}>Contesto generale</option>${stops.map((stop) => `<option value="${escapeHtml(stop.id)}" ${id(stop.id) === id(entry.deliveryAnchorId) ? "selected" : ""}>${escapeHtml(stop.label)} · ${escapeHtml(stop.venue?.name || "Sede")}</option>`).join("")}</select></label><div class="compact-actions"><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="-1" aria-label="Sposta contenuto prima" ${index === 0 || this.busy ? "disabled" : ""}>↑</button><button class="button-secondary icon-button" type="button" data-move-content="${escapeHtml(entry.id)}" data-anchor-key="${escapeHtml(anchorKey)}" data-direction="1" aria-label="Sposta contenuto dopo" ${index === total - 1 || this.busy ? "disabled" : ""}>↓</button><button class="button-secondary danger" type="button" data-remove-content="${escapeHtml(entry.id)}">Rimuovi</button></div></div>` : `<span class="chip">${escapeHtml(roleLabel(entry.role))}</span>`}</article>`;
@@ -707,21 +592,22 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     const venueOptions = this.venueChoices().map((venue) => `<option value="${escapeHtml(id(venue.id))}" ${id(venue.id) === id(this.selectedVenueId) ? "selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.organizationName)}</option>`).join("");
     const used = new Set((this.revision?.stops || []).map((stop) => id(stop.venueTargetId)));
     const targets = (this.venueTargets?.targets || []).filter((entry) => !used.has(id(entry.id)));
-    return `<section class="stop-builder"><header><span class="stop-builder__icon">${icon("plus", { size: 18 })}</span><div><span class="eyebrow">Tappe della visita</span><h4>Aggiungi una tappa fisica</h4><p>Scegli un’opera o un punto della sede in cui il visitatore dovrà fermarsi.</p></div></header><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid target-grid--scroll">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Entità fisica")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">${icon("plus", { size: 14 })} Aggiungi</button></article>`).join("") || `<p class="note">Nessuna entità fisica pubblicata disponibile in questa sede.</p>`}</div></section>`;
+    return `<section class="stop-builder"><header><span class="stop-builder__icon">${icon("plus", { size: 18 })}</span><div><span class="eyebrow">Tappe della visita</span><h4>Aggiungi una tappa fisica</h4><p>Usa questo controllo solo per aggiungere una tappa che non nasce dalla selezione di un contenuto.</p></div></header><label>Sede<select data-venue>${venueOptions || "<option value=''>Nessuna sede disponibile</option>"}</select></label><div class="target-grid target-grid--scroll">${targets.map((entry) => `<article class="target-card"><div><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.subject?.preferredLabel || entry.description || "Entità fisica")}</small></div><button type="button" data-add-stop="${escapeHtml(id(entry.id))}">${icon("plus", { size: 14 })} Aggiungi</button></article>`).join("") || `<p class="note">Nessuna entità fisica pubblicata disponibile in questa sede.</p>`}</div></section>`;
   }
 
   renderVisitSequence() {
     const stops = this.revision?.stops || [];
     const contextual = this.contextualEntries();
-    if (!(this.revision?.entries || []).length && !stops.length) return `<div class="empty-state compact"><h3>La visita è ancora vuota</h3><p>Aggiungi un contenuto dalla ricerca.</p></div>${this.renderManualStopBrowser()}`;
-    const missingStop = !stops.length ? `<div class="missing-stop-notice" role="status"><strong>Manca ancora una tappa fisica</strong><p>I contenuti generali possono accompagnare la visita, ma per completarla serve almeno un luogo in cui fermarsi. Sceglilo qui sotto.</p></div>` : "";
+    if (!(this.revision?.entries || []).length && !stops.length) return `<div class="empty-state compact"><h3>La visita è ancora vuota</h3><p>Usa “Aggiungi contenuti” per iniziare.</p></div>${this.renderManualStopBrowser()}`;
+    const missingStop = !stops.length ? `<div class="missing-stop-notice" role="status"><strong>Manca ancora una tappa fisica</strong><p>I contenuti generali possono accompagnare la visita, ma per completarla serve almeno un luogo in cui fermarsi. Puoi aggiungerlo scegliendo la collocazione di un contenuto oppure manualmente qui sotto.</p></div>` : "";
     return `<div class="visit-sequence">${missingStop}${stops.map((stop, index) => this.renderStopGroup(stop, index, stops.length)).join("")}${contextual.length ? `<section class="sequence-group contextual-group"><header><div><strong>Contesto generale</strong><small>Contenuti senza una tappa fisica specifica</small></div></header><div class="sequence-entry-list">${contextual.map((entry, index) => this.renderEntryCard(entry, index, "contextual", contextual.length)).join("")}</div></section>` : ""}${this.renderManualStopBrowser()}</div>`;
   }
 
   renderStepTwo() {
     if (this.activeStep !== 2) return "";
     const count = (this.revision?.entries || []).length;
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Costruisci la visita</span><h2>Trova i contenuti, aggiungili e mettili in ordine</h2><p>ArtAround propone la collocazione fisica quando è univoca. Trascina le tappe o i contenuti della stessa tappa per cambiare la sequenza.</p></div><span class="count">${count}</span></header><div class="visit-content-composer"><section class="available-content-pane" aria-label="Contenuti disponibili">${this.renderContentSearch()}</section><aside class="visit-selection-pane" aria-label="Sequenza della visita"><header><span class="eyebrow">La tua visita</span><h3>${escapeHtml(this.revision?.title || "Visita")}</h3><p>${count} ${count === 1 ? "contenuto" : "contenuti"}</p></header>${this.renderVisitSequence()}</aside></div><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
+    const stops = (this.revision?.stops || []).length;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Costruisci la visita</span><h2>Organizza contenuti e tappe</h2><p>Aggiungi i contenuti disponibili per questa area di lavoro. Quando un soggetto è esposto, decidi esplicitamente se deve diventare una tappa fisica.</p></div><span class="count">${count}</span></header><div class="visit-build-toolbar"><div><strong>${count} ${count === 1 ? "contenuto" : "contenuti"} · ${stops} ${stops === 1 ? "tappa" : "tappe"}</strong><p class="note">Trascina tappe e contenuti della stessa tappa per cambiare la sequenza.</p></div>${this.editable ? `<button type="button" data-open-visit-content>${icon("plus", { size: 15 })} Aggiungi contenuti</button>` : ""}</div><section class="visit-selection-pane" aria-label="Sequenza della visita">${this.renderVisitSequence()}</section><div class="step-actions"><button class="button-secondary" type="button" data-step="1">Indietro</button><button type="button" data-step="3">Continua alle impostazioni ${icon("chevron", { size: 15 })}</button></div></section>`;
   }
 
   renderQuizEditor() {
@@ -789,22 +675,21 @@ export class ArtAroundVisitAuthoringView extends HTMLElement {
     if (this.busy && !this.projection) { this.innerHTML = `<main class="page"><div class="empty-state"><p>Preparazione dell'editor visita…</p></div></main>`; return; }
     if (!this.projection) { this.innerHTML = `<main class="page"><p role="alert">${escapeHtml(this.error || "Editor visita non disponibile")}</p></main>`; return; }
     if (!this.visitId) { this.innerHTML = this.styles() + this.renderCreate(); return; }
-    this.innerHTML = `${this.styles()}<main class="page visit-authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Libreria</button><span>/</span><span>Visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>${escapeHtml(this.revision?.title || "Visita")}</h1><p>Cerca i contenuti, aggiungili e costruisci una sequenza eseguibile nello spazio.</p></div></header>${this.renderProgress()}${this.busy ? `<p role="status">Salvataggio…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.message ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}${this.renderStepFive()}</main>`;
+    this.innerHTML = `${this.styles()}<main class="page visit-authoring-page" aria-busy="${this.busy}"><nav class="breadcrumb"><button type="button" data-back>${icon("arrowLeft", { size: 15 })} Libreria</button><span>/</span><span>Visita</span></nav><header class="page-header"><div><span class="eyebrow">Crea visita</span><h1>${escapeHtml(this.revision?.title || "Visita")}</h1><p>Seleziona i contenuti disponibili, scegli le eventuali tappe fisiche e costruisci una sequenza eseguibile nello spazio.</p></div></header>${this.renderProgress()}${this.busy ? `<p role="status">Salvataggio…</p>` : ""}${this.error ? `<p role="alert">${icon("warning", { size: 16 })} ${escapeHtml(this.error)}</p>` : ""}${this.message ? `<p class="status success" role="status">${icon("check", { size: 16 })} ${escapeHtml(this.message)}</p>` : ""}${this.renderStepOne()}${this.renderStepTwo()}${this.renderStepThree()}${this.renderStepFour()}${this.renderStepFive()}</main>`;
   }
 
   styles() {
     return `<style>
       :host{display:block}.visit-authoring-page{display:grid;gap:1rem;max-width:var(--content);margin:auto;padding:2rem 1rem 5rem}.wizard-step{padding:1.35rem}.step-heading{display:flex;gap:.85rem;align-items:flex-start}.step-number,.sequence-index{display:grid;place-items:center;flex:0 0 1.8rem;height:1.8rem;border-radius:999px;background:var(--ink-900);color:#fff}.editor-form{display:grid;gap:.9rem;max-width:52rem;margin-top:1rem}.step-actions,.workflow-actions,.compact-actions{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
       .authoring-progress{overflow:auto}.authoring-progress ol{display:grid;grid-template-columns:repeat(5,minmax(7rem,1fr));gap:.55rem;min-width:35rem;margin:0;padding:0;list-style:none}.authoring-progress__summary{display:none}.authoring-progress button{display:flex;width:100%;align-items:center;gap:.5rem;padding:.65rem;border:1px solid var(--line);border-radius:.7rem;background:var(--surface);color:var(--ink-800)}.authoring-progress li[data-current=true] button{background:var(--ink-900);color:#fff}.authoring-progress button>span{display:grid;place-items:center;flex:0 0 1.7rem;height:1.7rem;border-radius:999px;background:var(--sage-100);color:var(--ink-800)}
-      .visit-content-composer{display:grid;grid-template-columns:1fr;gap:1rem;margin-top:1.25rem}.available-content-pane,.visit-selection-pane{min-width:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50);padding:1rem}.visit-selection-pane>header{padding-bottom:.75rem;border-bottom:1px solid var(--line)}
-      .content-browser,.candidate-grid,.visit-sequence,.sequence-entry-list,.target-grid,.route-leg-list{display:grid;gap:.7rem}.search-inline{display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:end}.content-access-filter{display:flex;gap:.4rem;flex-wrap:wrap}.content-filter-bar{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:.7rem}.search-prompt{display:flex;align-items:flex-start;gap:.75rem;padding:1rem;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--sage-600)}.search-prompt>span{display:grid;place-items:center;flex:0 0 2.5rem;height:2.5rem;border-radius:.65rem;background:var(--sage-100);color:var(--ink-800)}.search-prompt p{margin:.25rem 0 0}.search-results-panel{display:grid;gap:.7rem;padding:.85rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.candidate-heading{display:flex;justify-content:space-between;gap:1rem;align-items:end}.candidate-grid--scroll{max-height:28rem;overflow-y:auto;padding-right:.25rem;overscroll-behavior:contain}.candidate-card,.sequence-entry,.target-card,.route-leg{display:grid;gap:.7rem;align-items:center;padding:.9rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.candidate-card{grid-template-columns:minmax(0,1fr) auto}.candidate-copy h3,.candidate-copy p{margin:.15rem 0}.availability-list{display:flex;gap:.35rem;flex-wrap:wrap}.availability-reason,.chip{display:inline-flex;width:max-content;border-radius:999px;padding:.22rem .5rem;background:var(--sage-100);font-size:.72rem;font-weight:700}
-      .sequence-group{padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.sequence-group>header{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:.55rem;align-items:center}.sequence-group>header small,.sequence-entry small{display:block;color:var(--sage-600)}.sequence-entry{grid-template-columns:auto minmax(0,1fr);margin-top:.55rem}.entry-controls{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:.55rem}.entry-controls .compact-actions{grid-column:1/-1;margin-top:0}.drag-handle{cursor:grab;color:var(--sage-600);font-weight:900;letter-spacing:-.18rem;padding-right:.18rem}.sequence-group[data-dragging=true],.sequence-entry[data-dragging=true]{opacity:.45}.contextual-group{border-style:dashed}.icon-button{min-width:2.25rem;padding:.4rem}.danger{color:var(--red-700)}
-      .advanced-panel{padding:.8rem;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--surface)}.missing-stop-notice{padding:.9rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.missing-stop-notice p{margin:.3rem 0 0}.stop-builder{display:grid;gap:.8rem;padding:1rem;border:1px solid var(--sage-300);border-radius:var(--radius-lg);background:var(--sage-50)}.stop-builder>header{display:flex;align-items:flex-start;gap:.75rem}.stop-builder h4,.stop-builder p{margin:0}.stop-builder p{margin-top:.2rem;color:var(--sage-600)}.stop-builder__icon{display:grid;place-items:center;flex:0 0 2.5rem;height:2.5rem;border-radius:.7rem;background:var(--ink-900);color:#fff}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:.1rem}.target-grid--scroll{max-height:20rem;overflow-y:auto;padding-right:.25rem}.target-card{grid-template-columns:1fr auto}.occurrence-choice{display:grid;gap:.75rem;padding:1rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.occurrence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.occurrence-card{display:grid;text-align:left;padding:.8rem}
+      .visit-build-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:1.1rem 0;padding:.9rem 1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50)}.visit-build-toolbar p{margin:.2rem 0 0}.visit-selection-pane{min-width:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50);padding:1rem}
+      .visit-sequence,.sequence-entry-list,.target-grid,.route-leg-list{display:grid;gap:.7rem}.sequence-group{padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.sequence-group>header{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:.55rem;align-items:center}.sequence-group>header small,.sequence-entry small{display:block;color:var(--sage-600)}.sequence-entry{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.7rem;align-items:center;padding:.9rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);margin-top:.55rem}.entry-controls{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:.55rem}.entry-controls .compact-actions{grid-column:1/-1;margin-top:0}.drag-handle{cursor:grab;color:var(--sage-600);font-weight:900;letter-spacing:-.18rem;padding-right:.18rem}.sequence-group[data-dragging=true],.sequence-entry[data-dragging=true]{opacity:.45}.contextual-group{border-style:dashed}.icon-button{min-width:2.25rem;padding:.4rem}.danger{color:var(--red-700)}.chip{display:inline-flex;width:max-content;border-radius:999px;padding:.22rem .5rem;background:var(--sage-100);font-size:.72rem;font-weight:700}
+      .missing-stop-notice{padding:.9rem;border:1px solid var(--amber-500);border-radius:var(--radius-md);background:var(--amber-100)}.missing-stop-notice p{margin:.3rem 0 0}.stop-builder{display:grid;gap:.8rem;padding:1rem;border:1px solid var(--sage-300);border-radius:var(--radius-lg);background:var(--sage-50)}.stop-builder>header{display:flex;align-items:flex-start;gap:.75rem}.stop-builder h4,.stop-builder p{margin:0}.stop-builder p{margin-top:.2rem;color:var(--sage-600)}.stop-builder__icon{display:grid;place-items:center;flex:0 0 2.5rem;height:2.5rem;border-radius:.7rem;background:var(--ink-900);color:#fff}.target-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:.1rem}.target-grid--scroll{max-height:20rem;overflow-y:auto;padding-right:.25rem}.target-card,.route-leg{display:grid;gap:.7rem;align-items:center;padding:.9rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.target-card{grid-template-columns:1fr auto}
       .visit-settings-form{display:grid;gap:1rem;margin-top:1.2rem}.preference-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(18rem,.8fr);gap:1.25rem;align-items:center;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50)}.preference-card__copy h3,.preference-card__copy p{margin:0}.preference-card__copy h3{margin:.15rem 0 .35rem}.preference-card__copy p{color:var(--sage-600)}.range-control{display:grid;gap:.55rem;padding:.85rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.range-value{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;color:var(--sage-600);font-size:.78rem}.range-value output{color:var(--ink-900);font-size:1rem;font-weight:800}.range-control input[type=range]{width:100%;accent-color:var(--ink-900)}.range-ends{display:flex;justify-content:space-between;gap:1rem;color:var(--sage-600);font-size:.72rem}.locale-setting{max-width:28rem}.locale-setting small{color:var(--sage-600);font-weight:400}
       .synchronized-toggle{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.75rem;align-items:start;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-50);cursor:pointer}.synchronized-toggle input{width:1.15rem;height:1.15rem;margin-top:.15rem;accent-color:var(--ink-900)}.synchronized-toggle span{display:grid;gap:.2rem}.synchronized-toggle small{color:var(--sage-600);font-weight:400;line-height:1.45}.synchronized-settings{display:grid;gap:1rem;padding:1rem;border:1px solid var(--sage-300);border-radius:var(--radius-lg);background:var(--sage-50)}.synchronized-settings>header{display:flex;gap:.8rem;align-items:flex-start}.synchronized-settings>header h3,.synchronized-settings>header p{margin:0}.synchronized-settings>header h3{margin:.12rem 0 .3rem}.synchronized-settings>header p{color:var(--sage-600)}.synchronized-settings__icon{display:grid;place-items:center;flex:0 0 2.6rem;height:2.6rem;border-radius:.75rem;background:var(--ink-900);color:#fff}.join-alias-setting{max-width:34rem}.join-alias-setting small{color:var(--sage-600);font-weight:400}.quiz-editor{display:grid;gap:.8rem;padding-top:.25rem}.quiz-editor-heading,.quiz-question-card>header,.quiz-question-footer{display:flex;justify-content:space-between;gap:.75rem;align-items:center}.quiz-editor-heading h4,.quiz-editor-heading p,.quiz-question-card h4{margin:0}.quiz-editor-heading p{margin-top:.2rem;color:var(--sage-600)}.quiz-question-card{display:grid;gap:.9rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.quiz-option-list{display:grid;gap:.55rem}.field-label{font-size:.78rem;font-weight:800;color:var(--ink-800)}.quiz-option-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.65rem;align-items:end;padding:.65rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.quiz-option-row label{margin:0}.quiz-correct-choice{align-self:center;display:flex;gap:.35rem;align-items:center;font-size:.75rem;white-space:nowrap}.quiz-correct-choice input{width:1rem;height:1rem;accent-color:var(--ink-900)}.quiz-question-footer label{max-width:10rem}.empty-state.compact{padding:1rem}
       .pagination{display:flex;justify-content:space-between;align-items:center}.route-blockers{display:grid;gap:.6rem;padding:0;list-style:none}.route-blockers li{display:flex;justify-content:space-between;gap:.75rem;align-items:center}.transfer-form{display:grid;grid-template-columns:8rem minmax(12rem,1fr) auto;gap:.6rem;align-items:end}.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}.review-grid article{display:grid;gap:.18rem;padding:.8rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness,.issue-panel,.workflow-panel{margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--sage-50)}.workflow-panel{display:grid;grid-template-columns:minmax(12rem,.75fr) minmax(0,1.25fr);gap:1rem}.note{color:var(--sage-600)}
-      @media(max-width:68rem){.entry-controls,.workflow-panel,.transfer-form,.preference-card{grid-template-columns:1fr}.target-grid,.occurrence-grid{grid-template-columns:1fr}.sequence-group>header{grid-template-columns:auto auto 1fr}.sequence-group>header .compact-actions{grid-column:1/-1}}
-      @media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(5,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}.search-inline,.content-filter-bar{grid-template-columns:1fr}.quiz-option-row{grid-template-columns:1fr auto}.quiz-correct-choice{grid-column:1/-1}.quiz-editor-heading,.quiz-question-card>header,.quiz-question-footer{align-items:stretch;flex-direction:column}.quiz-question-footer label{max-width:none}}
+      @media(max-width:68rem){.entry-controls,.workflow-panel,.transfer-form,.preference-card{grid-template-columns:1fr}.target-grid{grid-template-columns:1fr}.sequence-group>header{grid-template-columns:auto auto 1fr}.sequence-group>header .compact-actions{grid-column:1/-1}}
+      @media(max-width:48rem){.authoring-progress ol{grid-template-columns:repeat(5,minmax(0,1fr));min-width:0}.authoring-progress button strong{font-size:.62rem}.quiz-option-row{grid-template-columns:1fr auto}.quiz-correct-choice{grid-column:1/-1}.quiz-editor-heading,.quiz-question-card>header,.quiz-question-footer{align-items:stretch;flex-direction:column}.quiz-question-footer label{max-width:none}}
       @media(max-width:32rem){.authoring-progress__summary{display:grid;gap:.1rem}.authoring-progress button strong{display:none}}
     </style>`;
   }
