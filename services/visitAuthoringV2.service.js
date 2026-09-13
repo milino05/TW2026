@@ -208,9 +208,8 @@ async function hydrateVisitRevision(revision) {
     },
     title: revision.title,
     description: revision.description || "",
-    deliveryMode: revision.deliveryMode || "self_guided",
-    synchronization: {
-      joinAlias: revision.synchronization?.joinAlias || "",
+    groupSessionDefaults: {
+      preferredJoinAlias: revision.groupSessionDefaults?.preferredJoinAlias || "",
     },
     quiz: {
       questions: (revision.quiz?.questions || []).map((question) => ({
