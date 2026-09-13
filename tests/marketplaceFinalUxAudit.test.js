@@ -74,7 +74,7 @@ test("le aree operative non reintroducono selector di principal", () => {
 
 test("authoring e commerce mantengono feature parity strutturale", () => {
   for (const term of ["Di cosa parla", "Controllo finale", "data-new-edition", "data-content-space-id", "data-add-text", "data-remove-text"]) assert.match(itemEditor, new RegExp(term));
-  for (const term of ["Informazioni principali", "Contenuti", "Tappe", "Impostazioni", "Percorso", "Riepilogo e pubblicazione", "data-open-visit-content", "data-remove-stop"]) assert.match(visitEditor, new RegExp(term));
+  for (const term of ["Informazioni principali", "Contenuti", "Tappe", "Impostazioni", "Percorso", "Riepilogo e pubblicazione", "data-open-visit-content", "data-entry-placement", "data-remove-stop"]) assert.match(visitEditor, new RegExp(term));
   for (const term of ["Schede nel catalogo", "Nuova offerta", "withdrawOffer", "withdrawListing", "openOfferCreateDialog"]) assert.match(commerce, new RegExp(term));
   for (const term of ["pricingType", "priceInMinorUnits", "currency", "capability", "versionPolicy", "createOffer", "Pubblica offerta"]) assert.match(offerDialog, new RegExp(term));
 });
