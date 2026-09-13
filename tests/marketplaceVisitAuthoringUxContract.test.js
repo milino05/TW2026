@@ -94,6 +94,15 @@ test("selezione contenuti è multipla e l'importanza iniziale resta consigliata"
   assert.match(view, /data-entry-role/);
 });
 
+test("lo stesso contenuto non può essere aggiunto due volte", () => {
+  assert.match(contentDialog, /authoringRepository\.visitProjection/);
+  assert.match(contentDialog, /includedRevisionIds/);
+  assert.match(contentDialog, /Già nella visita/);
+  assert.match(contentDialog, /alreadyIncluded \? "disabled"/);
+  assert.match(commands, /assertNoDuplicateContentRevisions/);
+  assert.match(commands, /VISIT_CONTENT_ALREADY_INCLUDED/);
+});
+
 test("collocazione fisica è suggerita in lettura ma resta una decisione esplicita", () => {
   assert.match(service, /placementOptions/);
   assert.match(service, /resolvePublishedOccurrencesForSubjects/);
