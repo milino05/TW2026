@@ -1,7 +1,7 @@
 import { icon } from "./icons.js";
 import { venueMapCreationDialogMixin } from "./venue-editor-map-creation-dialog-mixin.js";
 
-const SPATIAL_TABS = new Set(["map", "places", "connections", "slots", "inventory"]);
+const SPATIAL_TABS = new Set(["map", "places", "connections", "slots"]);
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function metricLabel(connection) {
@@ -134,16 +134,15 @@ export const venueContextualWorkspaceMixin = {
     const activeTab = normalizedSpatialTab(this.activeSpatialTab);
     this.activeSpatialTab = activeTab;
     const vocabulary = this.data.physicalVocabulary;
-    const tabs = [["map", "Mappa"], ["places", "Luoghi"], ["connections", "Collegamenti"], ["slots", "Slot espositivi"], ["inventory", "Inventario"]];
+    const tabs = [["map", "Mappa"], ["places", "Luoghi"], ["connections", "Collegamenti"], ["slots", "Slot espositivi"]];
     const spatialTabs = tabs.map(([key, label]) => `<button type="button" id="venue-spatial-tab-${key}" role="tab" data-spatial-tab="${key}" aria-controls="venue-spatial-panel-${key}" aria-selected="${activeTab === key}">${label}</button>`).join("");
     const mapPanel = `<div class="venue-canvas-layout venue-canvas-layout--full">${this.renderMapPreview(editable)}</div>${this.renderCalibrationComposer(editable)}${this.renderGeometryComposer(editable)}`;
     const panel = activeTab === "places" ? this.renderPlaces(editable)
       : activeTab === "connections" ? this.renderConnections(editable)
         : activeTab === "slots" ? this.renderExhibitSlots(editable)
-          : activeTab === "inventory" ? this.renderTargets(editable)
-            : mapPanel;
+          : mapPanel;
     const vocabularyContext = vocabulary ? `<div class="venue-vocabulary-context" aria-label="Vocabolario fisico in uso"><span><strong>${escapeHtml(vocabulary.name)}</strong><small>v${vocabulary.version} · ${escapeHtml(vocabulary.status)}</small></span>${vocabulary.canManage ? `<button class="button-secondary small" type="button" data-edit-physical-vocabulary="${escapeHtml(vocabulary.id)}">Gestisci vocabolario</button>` : ""}</div>` : "";
-    const section = `<section class="venue-section venue-spatial-section" id="venue-map"><header class="venue-spatial-header"><div><span class="eyebrow">Spazi e mappa</span><h2>Editor spaziale</h2></div>${vocabularyContext}</header>${this.renderSpatialIssues?.() || ""}<nav class="venue-spatial-tabs" role="tablist" aria-label="Strumenti dell’editor">${spatialTabs}</nav><div class="venue-spatial-workspace" id="venue-spatial-panel-${escapeHtml(activeTab)}" role="tabpanel" aria-labelledby="venue-spatial-tab-${escapeHtml(activeTab)}">${panel}</div></section>`;
+    const section = `<section class="venue-section venue-spatial-section" id="venue-map"><header class="venue-spatial-header"><div><span class="eyebrow">Spazi e mappa</span><h2>Editor spaziale</h2></div>${vocabularyContext}</header>${this.renderTargetPlacementBanner?.() || ""}${this.renderSpatialIssues?.() || ""}<nav class="venue-spatial-tabs" role="tablist" aria-label="Strumenti dell’editor">${spatialTabs}</nav><div class="venue-spatial-workspace" id="venue-spatial-panel-${escapeHtml(activeTab)}" role="tabpanel" aria-labelledby="venue-spatial-tab-${escapeHtml(activeTab)}">${panel}</div></section>`;
     return `${section}${this.renderSpatialInspector(editable)}${this.renderFloorDialog?.(editable) || ""}${this.renderMapCreationDialog(editable)}`;
   },
 };
