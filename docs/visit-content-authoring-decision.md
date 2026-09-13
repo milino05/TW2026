@@ -40,7 +40,7 @@ Il cambio di collocazione modifica soltanto il delivery della `ContentEntry`:
 - se una `ContentEntry` lascia un anchor che non è più usato da nessun altro contenuto, quell'anchor viene rimosso insieme ai `routeHints` che lo referenziano;
 - se altri contenuti usano ancora lo stesso anchor, la tappa resta nella visita.
 
-Di conseguenza una sequenza come `Gioconda: tappa → contestuale → tappa` conserva la stessa `ContentEntry`; cambiano soltanto `deliveryAnchorId` e, quando necessario, il `VisitAnchor` associato.
+Di conseguenza una sequenza come `Gioconda: tappa → contestuale → tappa` conserva la stessa `ContentEntry`; cambiano soltanto `deliveryAnchorId` e, quando necessario, il `VisitAnchor` associato. La tappa ripristinata viene inserita nella sequenza fisica corrente come nuovo anchor; non viene mantenuto un anchor vuoto nascosto soltanto per ricordarne una posizione precedente.
 
 `Costruisci la visita` non espone un browser autonomo di `VenueTarget` né un'azione separata "Aggiungi tappa". Le tappe sono la proiezione fisica delle scelte di collocazione dei contenuti. Una tappa già presente resta visibile e riordinabile; l'azione di rimozione della tappa rende contestuali i contenuti che vi erano associati, che possono essere nuovamente resi fisici dalle rispettive card.
 
