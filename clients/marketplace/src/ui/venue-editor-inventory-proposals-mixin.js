@@ -139,6 +139,7 @@ export const venueInventoryProposalsMixin = {
         const acceptedTarget = (this.data?.targets || []).find((entry) => subjectId && targetSubjectId(entry) === subjectId);
         if (acceptedTarget) this.selectedVenueTargetId = id(acceptedTarget.id);
       }
+      this.render();
     }
     return true;
   },
