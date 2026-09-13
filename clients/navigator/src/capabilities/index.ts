@@ -34,6 +34,7 @@ export type TextToSpeechLifecycleType = "started" | "paused" | "resumed" | "comp
 export interface TextToSpeechLifecycleEvent {
   type: TextToSpeechLifecycleType;
   activeSeconds: number;
+  utteranceText: string;
 }
 
 export interface TextToSpeechCapability {
