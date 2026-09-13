@@ -72,11 +72,13 @@ requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry
 requirePattern("services/visitAuthoringCommandV2.service.js", /VISIT_CONTENT_PLACEMENT_REQUIRED[\s\S]*assertPublishedTargetForSubject[\s\S]*ensureAnchorForTarget/, "Explicit backend-authoritative Visit placement command");
 rejectPattern("services/visitAuthoringCommandV2.service.js", /VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED|status:\s*["']inferred["']/, "Legacy implicit Visit physical inference");
 for (const [pattern, label] of [
-  [/renderManualStopBrowser/, "Manual stop advanced browser"],
-  [/class="stop-builder"/, "Manual stop builder disclosure"],
-  [/Aggiungi una tappa fisica/, "Manual stop builder label"],
-  [/data-add-stop/, "Manual stop add action"],
-]) requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
+  [/renderManualStopBrowser/, "Parallel manual stop browser"],
+  [/class="stop-builder"/, "Parallel manual stop builder"],
+  [/Aggiungi una tappa fisica/, "Parallel manual stop builder label"],
+  [/data-add-stop/, "Parallel manual stop add action"],
+  [/authoringRepository\.venueTargets\(/, "Visit authoring direct VenueTarget browser"],
+]) rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
+requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Manca ancora una tappa fisica[\s\S]*Tappa fisica/, "Missing physical stop guidance through content placement");
 requirePattern("services/visitSequenceV2.service.js", /canonicalizeContentEntries[\s\S]*reorderWithinDeliveryGroup[\s\S]*sameDeliveryGroup/, "Canonical Visit sequence domain helper");
 requirePattern("services/visitAuthoringSequenceCommandV2.service.js", /canonicalizeContentEntries[\s\S]*reorderWithinDeliveryGroup[\s\S]*updateVisitV2/, "Content reorder command preserves delivery groups");
 requirePattern("services/sessionPlanV2.service.js", /canonicalizeContentEntries[\s\S]*orderedContentEntries/, "SessionPlan consumes canonical Visit sequence");
