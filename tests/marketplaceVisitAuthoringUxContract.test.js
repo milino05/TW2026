@@ -137,19 +137,20 @@ test("riordino conserva fallback accessibili e spostamento tappa esplicito", () 
   assert.match(view, /Presenta in/);
 });
 
-test("aggiunta manuale delle tappe resta disponibile come use case separato", () => {
-  assert.match(view, /class="stop-builder"/);
-  assert.match(view, /Aggiungi una tappa fisica/);
+test("le nuove tappe fisiche nascono solo dalla scelta esplicita sul contenuto", () => {
   assert.match(view, /Manca ancora una tappa fisica/);
-  assert.match(view, /target-grid--scroll/);
-  assert.match(view, /data-add-stop/);
   assert.match(view, /data-remove-stop/);
-  assert.match(view, /authoringRepository\.venueTargets\(this\.selectedVenueId\)/);
-  assert.match(authoringRepository, /venueTargets\(venueId\)/);
-  assert.match(authoringRepository, /\/v2\/marketplace\/discovery\/venues\/\$\{encodeURIComponent\(venueId\)\}/);
+  assert.match(contentDialog, /value="physical"/);
+  assert.match(contentDialog, /data-placement-target/);
+  assert.doesNotMatch(view, /renderManualStopBrowser/);
+  assert.doesNotMatch(view, /class="stop-builder"/);
+  assert.doesNotMatch(view, /Aggiungi una tappa fisica/);
+  assert.doesNotMatch(view, /data-add-stop/);
+  assert.doesNotMatch(view, /authoringRepository\.venueTargets/);
+  assert.doesNotMatch(view, /selectedVenueId|venueTargets\s*=/);
 });
 
-test("il repository carica la projection pubblicata usata dalle card delle tappe", async () => {
+test("il repository espone la projection pubblicata delle entità fisiche della sede", async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = null;
   globalThis.fetch = async (url) => {
