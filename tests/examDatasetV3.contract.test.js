@@ -20,7 +20,10 @@ test("dataset demo V3 conserva i requisiti quantitativi d'esame", () => {
   assert.ok(MUSEUM_PLANS.every((entry) => entry.works.length === 12));
   assert.ok(MUSEUM_PLANS.every((entry) => allSubjects(entry).length > entry.works.length));
   assert.equal(MUSEUM_PLANS.flatMap((entry) => entry.visits).length, 6);
-  assert.equal(MUSEUM_PLANS.flatMap((entry) => entry.visits).filter((entry) => entry.synchronized).length, 2);
+  const groupPrepared = MUSEUM_PLANS.flatMap((entry) => entry.visits).filter((entry) => entry.groupSessionDefaults?.preferredJoinAlias && entry.quiz);
+  assert.equal(groupPrepared.length, 2);
+  assert.ok(groupPrepared.every((entry) => typeof entry.groupSessionDefaults.preferredJoinAlias === "string"));
+  assert.ok(MUSEUM_PLANS.flatMap((entry) => entry.visits).every((entry) => entry.synchronized === undefined));
   assert.ok(MUSEUM_PLANS.flatMap((entry) => entry.visits).every((entry) => entry.indexes.length >= 10));
   assert.equal(MUSEUM_PLANS.find((entry) => entry.key === "pinacoteca").visits.length, 3);
 });
