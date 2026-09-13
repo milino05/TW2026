@@ -21,7 +21,7 @@ export interface SessionProjection {
     sourceType?: string;
     currentEntryIndex: number;
     runtimeVersion: number;
-    deliveryMode?: "self_guided" | "synchronized";
+    executionMode?: "self_guided" | "synchronized";
   };
   synchronization: null | {
     id: string;
