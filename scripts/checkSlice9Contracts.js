@@ -41,7 +41,8 @@ requirePattern("tests/routingCatalogFacilities.test.js", /elevatorDefinition[\s\
 requirePattern("services/visitAuthoringV2.service.js", /getVisitAuthoringProjection[\s\S]*searchVisitAuthoringContent/, "Visit authoring projection and scalable search");
 requirePattern("services/visitAuthoringV2.service.js", /mayEditEditorialRevision\(revision\)\s*\|\|\s*revision\.status\s*===\s*["']published["']/, "Published Visit edit through a new working revision");
 requirePattern("services/visitAuthoringV2.service.js", /presentationProfiles/, "Visit authoring presentation-level metadata");
-requirePattern("services/visitAuthoringV2.service.js", /primarySubjectId:\s*item\?\.primarySubjectId\s*\|\|\s*null/, "Visit entry primary Subject projection for anchor suggestions");
+requirePattern("services/visitAuthoringV2.service.js", /placementOptions[\s\S]*occurrences/, "Visit candidate physical placement read model");
+requirePattern("services/visitPlacementOptionsV2.service.js", /resolvePublishedOccurrencesForSubjects[\s\S]*resolveVenueTargetExhibit/, "Batched published occurrence resolution");
 requirePattern("routes/marketplaceV2.routes.js", /visit-authoring\/new[\s\S]*visit-authoring\/releases\/:editorialReleaseId\/content[\s\S]*visit-authoring\/:visitId/, "Visit authoring read routes");
 requirePattern("clients/marketplace/src/application/router.js", /\/workspace\/visit-authoring/, "Visit authoring client route");
 requirePattern("clients/marketplace/src/ui/app-shell.js", /visit-authoring-view[\s\S]*artaround-visit-authoring-view/, "Visit authoring client mount");
@@ -51,17 +52,25 @@ requirePattern("clients/marketplace/src/ui/workspace-view.js", /resourceType\s*=
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /createVisit[\s\S]*updateVisit/, "Visit create and edit through VisitV2 API");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /Informazioni[\s\S]*Costruisci la visita[\s\S]*Impostazioni[\s\S]*Percorso[\s\S]*Pubblicazione/, "Five-step Visit authoring workflow");
 for (const [pattern, label] of [
-  [/visit-content-composer/, "Unified Visit composer"],
+  [/data-open-visit-content/, "Visit content modal launcher"],
   [/renderVisitSequence/, "Visit sequence rendering"],
-  [/data-add-content/, "Visit content add control"],
   [/data-drag-kind="stop"/, "Visit stop drag"],
   [/data-drag-kind="content"/, "Visit content drag"],
   [/data-move-stop/, "Accessible stop reorder"],
   [/data-move-content/, "Accessible content reorder"],
 ]) requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", pattern, label);
+for (const [pattern, label] of [
+  [/createTaskDialog/, "Shared Task Modal reuse"],
+  [/searchVisitContentCandidates/, "Paginated unified Visit content search"],
+  [/data-content-choice/, "Multi-select Visit content card"],
+  [/data-content-page/, "Visit content pagination"],
+  [/value="contextual"[\s\S]*value="physical"/, "Explicit Visit content placement choice"],
+  [/placement:\s*placement/, "Explicit placement command payload"],
+]) requirePattern("clients/marketplace/src/ui/visit-content-add-dialog.js", pattern, label);
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
-requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /searchVisitContentCandidates[\s\S]*data-content-page/, "Paginated unified Visit content search");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry-stop[\s\S]*attachVisitContentToStop[\s\S]*detachVisitContentFromStop/, "Explicit content-to-anchor reassignment");
+requirePattern("services/visitAuthoringCommandV2.service.js", /VISIT_CONTENT_PLACEMENT_REQUIRED[\s\S]*assertPublishedTargetForSubject[\s\S]*ensureAnchorForTarget/, "Explicit backend-authoritative Visit placement command");
+rejectPattern("services/visitAuthoringCommandV2.service.js", /VISIT_CONTENT_OCCURRENCE_SELECTION_REQUIRED|status:\s*["']inferred["']/, "Legacy implicit Visit physical inference");
 for (const [pattern, label] of [
   [/renderManualStopBrowser/, "Manual stop advanced browser"],
   [/class="stop-builder"/, "Manual stop builder disclosure"],
@@ -79,6 +88,7 @@ requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /executeWor
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /window\.prompt\(/, "Native prompt in Visit workflow");
 rejectPattern("clients/marketplace/src/ui/visit-authoring-view.js", /role:\s*["']logistics["']|itemType:\s*["']logistics["']/, "Logistics encoded as Visit content");
 requirePattern("tests/visitAuthoringV2.test.js", /published[\s\S]*visit\.edit[\s\S]*in_review[\s\S]*workflow\.withdraw_review/, "Visit editor workflow regression test");
+requirePattern("tests/visitAuthoringV2.test.js", /mode:\s*["']contextual["'][\s\S]*mode:\s*["']physical["'][\s\S]*anchorCreated/, "Explicit Visit placement regression tests");
 requirePattern("tests/visitAuthoringSequenceV2.test.js", /canonicalizzazione[\s\S]*stessa tappa[\s\S]*contestuali[\s\S]*OUT_OF_RANGE/, "Visit content sequence regression tests");
 
 requirePattern("app.js", /mountBuiltSpa[\s\S]*res\.redirect\(308[\s\S]*\/navigator[\s\S]*\/marketplace/, "Same-site client hosting and canonical redirects");
