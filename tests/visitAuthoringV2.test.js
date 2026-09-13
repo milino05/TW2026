@@ -69,6 +69,7 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(new Set(candidates.results.map((entry) => String(entry.itemEditionId))).size, candidates.results.length, "lo stesso contenuto compare una volta anche con più fonti");
     assert.equal(candidates.filters.sources.some((entry) => entry.kind === "editorial_release"), true);
     assert.equal(candidates.results.some((entry) => (entry.availability || []).length > 1), true, "la card conserva tutte le provenienze disponibili");
+    assert.equal(candidates.results.every((entry) => Array.isArray(entry.placementOptions?.occurrences)), true, "ogni card riceve opzioni fisiche come read model");
 
     const ownedOnly = await searchVisitAuthoringCandidates({ actorUserId: manager._id, visitId, source: "owned", page: 1, limit: 5 });
     assert.ok(ownedOnly.results.length > 0);
@@ -83,20 +84,51 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(emptyVisitProjection.visit.revision.routeReview.blockers[0].code, "VISIT_PHYSICAL_STOP_REQUIRED");
     const directCandidates = await searchVisitAuthoringCandidates({ actorUserId: manager._id, visitId: directVisit.visit._id, source: "owned", page: 1, limit: 1 });
     const directCandidate = directCandidates.results[0];
+    const directOccurrence = directCandidate.placementOptions.occurrences[0];
+    assert.ok(directOccurrence?.venueTargetId, "il contenuto del seed espone una collocazione fisica pubblicata");
+
+    const contextualVisit = await visitService.createVisitV2({
+      actorUserId: manager._id,
+      payload: { ownerType: "organization", ownerId: IDS.organization, title: "Visita contestuale esplicita" },
+    });
+    const contextualAdded = await addContentToVisit({
+      actorUserId: manager._id,
+      visitId: contextualVisit.visit._id,
+      payload: {
+        entries: [{
+          contentSource: directCandidate.contentSource,
+          itemEditionId: directCandidate.itemEditionId,
+          itemRevisionId: directCandidate.itemRevisionId,
+          role: "recommended",
+          placement: { mode: "contextual" },
+        }],
+      },
+    });
+    assert.equal(contextualAdded.revision.visitAnchors.length, 0, "una occurrence disponibile non crea automaticamente una tappa");
+    assert.equal(contextualAdded.revision.contentEntries[0].deliveryAnchorId, null);
+    assert.equal(contextualAdded.command.added[0].placement.mode, "contextual");
+
     const added = await addContentToVisit({
       actorUserId: manager._id,
       visitId: directVisit.visit._id,
       payload: {
-        contentSource: directCandidate.contentSource,
-        itemEditionId: directCandidate.itemEditionId,
-        itemRevisionId: directCandidate.itemRevisionId,
-        role: "core",
+        entries: [{
+          contentSource: directCandidate.contentSource,
+          itemEditionId: directCandidate.itemEditionId,
+          itemRevisionId: directCandidate.itemRevisionId,
+          role: "core",
+          placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+        }],
       },
     });
     assert.equal(added.revision.contentSources.length, 1);
     assert.equal(added.revision.contentSources[0].sourceType, "item_revision");
     assert.equal(added.revision.editorialSources.length, 0, "un contenuto diretto non crea raccolte fittizie");
     assert.equal(String(added.revision.contentEntries[0].contentSourceId), String(added.revision.contentSources[0]._id));
+    assert.equal(added.revision.visitAnchors.length, 1);
+    assert.equal(String(added.revision.contentEntries[0].deliveryAnchorId), String(added.revision.visitAnchors[0]._id));
+    assert.equal(added.command.added[0].placement.mode, "physical");
+    assert.equal(added.command.added[0].placement.anchorCreated, true);
     const directConsistency = await publication.evaluateVisitV2Consistency({ visitId: directVisit.visit._id, actorUserId: manager._id });
     assert.equal(directConsistency.revision.integrity.status, "valid");
     const directSnapshot = visitRevisionSourceSnapshotV2({ visit: directVisit.visit, revision: directConsistency.revision });
@@ -104,6 +136,29 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     const sessionEntries = await materializeContentEntries({ source: directSnapshot });
     assert.equal(sessionEntries.length, 1);
     assert.ok(sessionEntries[0].namespaceRevisionId, "il Navigator risolve le regole direttamente dalla ItemRevision");
+
+    const batchVisit = await visitService.createVisitV2({
+      actorUserId: manager._id,
+      payload: { ownerType: "organization", ownerId: IDS.organization, title: "Visita batch" },
+    });
+    const batched = await addContentToVisit({
+      actorUserId: manager._id,
+      visitId: batchVisit.visit._id,
+      payload: {
+        entries: ["core", "optional"].map((role) => ({
+          contentSource: directCandidate.contentSource,
+          itemEditionId: directCandidate.itemEditionId,
+          itemRevisionId: directCandidate.itemRevisionId,
+          role,
+          placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+        })),
+      },
+    });
+    assert.equal(batched.revision.contentEntries.length, 2, "il comando aggiunge più contenuti in una sola mutazione applicativa");
+    assert.equal(batched.revision.visitAnchors.length, 1, "due contenuti sullo stesso target riusano una sola tappa");
+    assert.equal(batched.command.added.length, 2);
+    assert.equal(batched.command.added[0].placement.anchorCreated, true);
+    assert.equal(batched.command.added[1].placement.anchorCreated, false);
 
     const licensedAuthor = await User.create({ username: "visit-direct-license", passwordHash: "test-hash" });
     await Entitlement.create({
@@ -126,9 +181,12 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
       actorUserId: licensedAuthor._id,
       visitId: licensedVisit.visit._id,
       payload: {
-        contentSource: acquiredCandidates.results[0].contentSource,
-        itemEditionId: acquiredCandidates.results[0].itemEditionId,
-        itemRevisionId: acquiredCandidates.results[0].itemRevisionId,
+        entries: [{
+          contentSource: acquiredCandidates.results[0].contentSource,
+          itemEditionId: acquiredCandidates.results[0].itemEditionId,
+          itemRevisionId: acquiredCandidates.results[0].itemRevisionId,
+          placement: { mode: "contextual" },
+        }],
       },
     });
     assert.equal(await Adoption.countDocuments({ adoptedBy: licensedAuthor._id, action: "content_visit" }), 1);
