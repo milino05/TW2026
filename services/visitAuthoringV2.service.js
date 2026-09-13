@@ -89,6 +89,7 @@ async function hydrateVisitRevision(revision) {
   ]);
   const itemRevisionById = new Map(itemRevisions.map((entry) => [id(entry), entry]));
   const itemById = new Map(items.map((entry) => [id(entry), entry]));
+  const occurrenceBySubject = await resolvePublishedOccurrencesForSubjects(items.map((entry) => entry.primarySubjectId).filter(Boolean));
 
   const targetIds = (revision.visitAnchors || []).map((entry) => entry.venueTargetId);
   const targets = targetIds.length
@@ -174,6 +175,9 @@ async function hydrateVisitRevision(revision) {
         subjectId: target.subjectId,
         venue: { id: target.venueId, name: venue?.name || "Venue" },
       } : null,
+      placementOptions: {
+        occurrences: occurrenceBySubject.get(id(item?.primarySubjectId)) || [],
+      },
       role: entry.role || "recommended",
     };
   });
