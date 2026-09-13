@@ -9,6 +9,7 @@ function source(relativePath) {
 }
 
 const venueView = source("clients/marketplace/src/ui/venue-editor-view.js");
+const venueSections = source("clients/marketplace/src/ui/venue-editor-section-mixin.js");
 const userFacingErrors = source("clients/marketplace/src/application/user-facing-errors.js");
 const managementService = source("services/marketplaceManagementV2.service.js");
 const integrityService = source("services/venueReleaseIntegrity.service.js");
@@ -29,6 +30,14 @@ test("il blocker del vocabolario fisico è user-facing e indica il percorso di r
   assert.match(userFacingErrors, /Spazi e mappa/);
   assert.match(userFacingErrors, /Gestisci vocabolario/);
   assert.match(userFacingErrors, /La sede non è ancora pronta per la pubblicazione/);
+  assert.match(venueSections, /Prima pubblica il vocabolario fisico/);
+  assert.match(venueSections, /data-edit-physical-vocabulary/);
+  assert.match(venueSections, /physicalVocabulary\.canManage/);
+});
+
+test("l'onboarding rende esplicito lo stato pubblicabile del vocabolario", () => {
+  assert.match(venueSections, /statusLabel\(entry\.revisionStatus\)/);
+  assert.match(venueSections, /Il nuovo vocabolario nasce come bozza e va pubblicato prima della sede/);
 });
 
 test("la correzione preserva il vincolo di snapshot fisico pubblicato e integro", () => {
