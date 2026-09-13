@@ -1,5 +1,4 @@
 const User = require("../models/user");
-const VisitRevisionV2 = require("../models/visitRevisionV2.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const SynchronizedVisitQuizAttempt = require("../models/synchronizedVisitQuizAttempt.model");
@@ -18,7 +17,7 @@ const {
   deriveSemanticExplorationActions,
   materializeSemanticPresentation,
 } = require("./runtimeSemanticExplorationV2.service");
-const { resetSynchronizedPlayback } = require("./synchronizedVisitSession.service");
+const { resetSynchronizedPlayback, synchronizedQuizAvailable } = require("./synchronizedVisitSession.service");
 
 function effectivePresentation(session, entry) {
   const override = (session.presentationOverrides || []).find((value) => id(value.contentEntryId) === id(entry._id));
@@ -175,12 +174,6 @@ async function semanticActions({ session, plan, entry, anchor, semanticPresentat
   }));
 }
 
-async function synchronizedQuizAvailable(synchronizedSession) {
-  if (!synchronizedSession?.visitRevisionId) return false;
-  const revision = await VisitRevisionV2.findById(synchronizedSession.visitRevisionId).select("quiz.questions._id").lean();
-  return Boolean(revision?.quiz?.questions?.length);
-}
-
 async function deriveRuntimeActions({ sessionId, userId }) {
   const state = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
   const { session, plan, synchronizedSession, membership, effectiveStatus, physicalSession } = state;
@@ -265,6 +258,8 @@ async function deriveRuntimeActions({ sessionId, userId }) {
         if (index < entries.length - 1) actions.push(groupAction(ACTION_DEFINITIONS.PROGRESS_NEXT, { context }));
         if (await synchronizedQuizAvailable(synchronizedSession)) {
           actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_START_QUIZ, { context }));
+        } else {
+          actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_COMPLETE, { context }));
         }
       }
     } else {
