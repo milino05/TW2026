@@ -65,7 +65,7 @@ for (const [pattern, label] of [
   [/data-content-choice/, "Multi-select Visit content card"],
   [/data-content-page/, "Visit content pagination"],
   [/value="contextual"[\s\S]*value="physical"/, "Explicit Visit content placement choice"],
-  [/placement:\s*placement/, "Explicit placement command payload"],
+  [/placement,/, "Explicit placement command payload"],
 ]) requirePattern("clients/marketplace/src/ui/visit-content-add-dialog.js", pattern, label);
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /value="core"[\s\S]*value="recommended"[\s\S]*value="optional"/, "Visit content role controls");
 requirePattern("clients/marketplace/src/ui/visit-authoring-view.js", /data-entry-stop[\s\S]*attachVisitContentToStop[\s\S]*detachVisitContentFromStop/, "Explicit content-to-anchor reassignment");
