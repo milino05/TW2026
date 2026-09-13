@@ -86,6 +86,7 @@ async function createSynchronizedVisitRuntime({
   visitId,
   visitRevisionId,
   preferredAlias,
+  expectedParticipants = [],
   plan,
   venuePins,
   navigationSnapshot,
@@ -104,6 +105,10 @@ async function createSynchronizedVisitRuntime({
       visitRevisionId,
       hostUserId,
       joinAlias: normalizeJoinAlias(preferredAlias) || "Visita insieme",
+      expectedParticipants: (expectedParticipants || []).map((participant) => ({
+        userId: participant.userId,
+        username: participant.username,
+      })),
       joinLookupKey: null,
       status: "lobby",
       currentEntryIndex: 0,
@@ -244,6 +249,7 @@ async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }
   if (!revision) throw new AppError("Snapshot della visita non disponibile", 409);
   if (!sharedPlan) throw new AppError("Piano condiviso non disponibile", 409);
   let participants = null;
+  let expectedParticipants = null;
   if (membership.role === "host") {
     const memberships = await SynchronizedVisitMembership.find({ synchronizedSessionId: group._id, status: { $ne: "removed" } }).sort({ joinedAt: 1 }).lean();
     const [users, personalSessions] = await Promise.all([
@@ -254,7 +260,17 @@ async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }
     ]);
     const userById = new Map(users.map((entry) => [String(entry._id), entry]));
     const sessionById = new Map(personalSessions.map((entry) => [String(entry._id), entry]));
+    const membershipByUserId = new Map(memberships.map((entry) => [String(entry.userId), entry]));
     const currentContentEntryId = sharedPlan.contentEntries?.[group.currentEntryIndex]?._id || null;
+    expectedParticipants = (group.expectedParticipants || []).map((expected) => {
+      const joinedMembership = membershipByUserId.get(String(expected.userId));
+      return {
+        userId: expected.userId,
+        username: expected.username,
+        joined: Boolean(joinedMembership && joinedMembership.status !== "removed"),
+        joinedAt: joinedMembership?.joinedAt || null,
+      };
+    });
     participants = memberships.map((entry) => {
       const personal = sessionById.get(String(entry.visitSessionId));
       return {
@@ -314,6 +330,7 @@ async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }
       visitSessionId: visitSession._id,
       joinedAt: membership.joinedAt,
     },
+    expectedParticipants,
     participants,
   };
 }
