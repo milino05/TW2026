@@ -13,7 +13,10 @@ const ExecutionSourceSchema = new Schema({
   visitRevisionId: { type: Schema.Types.ObjectId, ref: "VisitRevisionV2", default: null },
   generatedVisitPlanId: { type: Schema.Types.ObjectId, ref: "GeneratedVisitPlanV2", default: null },
   versionPolicy: { type: String, enum: ["follow_current", "pinned", "fixed_generated_plan"], required: true },
-  deliveryMode: { type: String, enum: ["self_guided", "synchronized"], default: "self_guided" },
+}, { _id: false });
+
+const GroupSessionSetupSchema = new Schema({
+  requestedJoinAlias: { type: String, trim: true, maxlength: 80, default: null },
 }, { _id: false });
 
 const PresentationPreferenceSchema = new Schema({
@@ -36,6 +39,8 @@ const NavigationSnapshotSchema = new Schema({
 const ExecutionPreparationSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true, immutable: true },
   source: { type: ExecutionSourceSchema, required: true, immutable: true },
+  executionMode: { type: String, enum: ["self_guided", "synchronized"], default: "self_guided", required: true },
+  groupSessionSetup: { type: GroupSessionSetupSchema, default: () => ({}) },
   version: { type: Number, min: 1, default: 1, required: true },
   status: { type: String, enum: ["active", "starting", "consumed"], default: "active", index: true },
   preparationDraft: { type: Schema.Types.Mixed, default: {} },
@@ -61,6 +66,12 @@ ExecutionPreparationSchema.pre("validate", function validateSource(next) {
   }
   if (this.source?.sourceType === "generated_plan" && !this.source.generatedVisitPlanId) {
     this.invalidate("source", "Una preparation GeneratedPlan richiede generatedVisitPlanId");
+  }
+  if (this.source?.sourceType === "generated_plan" && this.executionMode === "synchronized") {
+    this.invalidate("executionMode", "I GeneratedVisitPlan non supportano ancora l'esecuzione sincronizzata");
+  }
+  if (this.executionMode === "self_guided" && this.groupSessionSetup?.requestedJoinAlias) {
+    this.invalidate("groupSessionSetup.requestedJoinAlias", "L'alias di ingresso appartiene soltanto all'esecuzione sincronizzata");
   }
   if (this.readiness?.status === "ready" && !this.preparedPlanCandidate) {
     this.invalidate("preparedPlanCandidate", "Una preparation ready richiede un candidate plan");
