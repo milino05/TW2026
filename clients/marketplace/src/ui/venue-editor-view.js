@@ -1,3 +1,4 @@
+import { notify } from "../application/ui-feedback.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import "./semantic-entity-picker.js";
 import { venueActionMixin } from "./venue-editor-action-mixin.js";
@@ -145,6 +146,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
 
   async refreshServerState() {
     this.data = await managementRepository.venue(this.id);
+    if (this.data?.release?.liveIntegrity) this.data.release.integrity = this.data.release.liveIntegrity;
     const floorIds = new Set((this.data?.layout?.floors || []).map((floor) => String(floor._id)));
     if (!floorIds.has(String(this.selectedFloorId || ""))) this.selectedFloorId = [...floorIds][0] || null;
     this.validateSpatialEditor();
@@ -188,7 +190,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
       this.message = message;
       return true;
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Operazione non riuscita";
+      const failureMessage = error instanceof Error ? error.message : "Operazione non riuscita";
+      await this.refreshServerState().catch(() => {});
+      this.error = null;
+      notify.danger(failureMessage, { duration: 6000 });
       return false;
     } finally {
       this.busy = false;
