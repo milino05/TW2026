@@ -153,6 +153,15 @@ function mergeDraft(current = {}, patch = {}) {
   }
   return next;
 }
+function withVisitExecutionDefaults(snapshot, revision) {
+  return {
+    ...snapshot,
+    title: revision.title,
+    groupSessionDefaults: {
+      preferredJoinAlias: revision.groupSessionDefaults?.preferredJoinAlias || null,
+    },
+  };
+}
 
 async function resolveExactSource({ userId, payload = {} }) {
   const hasVisit = Boolean(payload.visitId);
@@ -172,7 +181,7 @@ async function resolveExactSource({ userId, payload = {} }) {
         generatedVisitPlanId: null,
         versionPolicy: access.entitlement?.versionPolicy === "pinned" ? "pinned" : "follow_current",
       },
-      sourceSnapshot: visitRevisionSourceSnapshotV2({ visit, revision }),
+      sourceSnapshot: withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision),
     };
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: payload.generatedVisitPlanId, userId }).lean();
@@ -209,7 +218,7 @@ async function loadExactSourceForPreparation(preparation, { revalidateAuthorizat
       status: { $in: ["published", "superseded"] },
     }).lean();
     if (!revision) throw new AppError("VisitRevision pinzata dalla preparation non disponibile", 409, [{ code: "PREPARATION_SOURCE_UNAVAILABLE" }]);
-    return visitRevisionSourceSnapshotV2({ visit, revision });
+    return withVisitExecutionDefaults(visitRevisionSourceSnapshotV2({ visit, revision }), revision);
   }
   const plan = await GeneratedVisitPlanV2.findOne({ _id: source.generatedVisitPlanId, userId: preparation.userId }).lean();
   if (!plan || plan.status !== "accepted") {
