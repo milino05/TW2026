@@ -2,6 +2,7 @@ import { navigate, replaceCurrentHistoryUrl } from "../application/router.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { openMessageActionDialog } from "./message-action-dialog.js";
+import { renderOwnedResourceRemoval, requestOwnedResourceRemoval } from "./owned-resource-removal.js";
 import { createTaskDialog } from "./task-dialog.js";
 import { icon } from "./icons.js";
 
@@ -382,6 +383,33 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     await this.execute(() => managementRepository.applyPhysicalVocabularyStarter(this.id), "Configurazione base applicata senza sovrascrivere le definizioni esistenti.");
   }
 
+  async requestRemoval() {
+    const vocabulary = this.data?.physicalVocabulary;
+    if (!vocabulary || !has(this.operations(), "physical_vocabulary.trash")) return;
+    try {
+      const removal = await requestOwnedResourceRemoval({
+        principal: { principalType: vocabulary.owner.type, principalId: vocabulary.owner.id },
+        resourceType: "physical_vocabulary",
+        resourceId: this.id,
+        title: vocabulary.name,
+        unsavedChanges: this.dirty,
+        onConfirmed: () => {
+          this.busy = true;
+          this.error = null;
+          this.message = null;
+          this.render();
+        },
+      });
+      if (!removal) return;
+      this.dirty = false;
+      navigate(physicalVocabularyBackUrl(vocabulary.owner));
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile eliminare il vocabolario fisico";
+      this.busy = false;
+      this.render();
+    }
+  }
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -398,6 +426,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (target.closest("[data-tutorial-prev]")) { this.setTutorialStep(this.tutorialStep - 1); return; }
     if (target.closest("[data-starter-open], [data-starter-apply]")) { this.openStarterDialog(); return; }
     if (target.closest("[data-working-ensure]")) { await this.execute(() => managementRepository.ensurePhysicalVocabularyWorking(this.id), "Nuova bozza creata dalla versione pubblicata."); return; }
+    if (target.closest("[data-owned-resource-removal]")) { await this.requestRemoval(); return; }
     const add = target.closest("[data-add-definition]");
     if (add) { this.definitions[add.dataset.addDefinition].push(emptyDefinition(add.dataset.addDefinition)); this.dirty = true; this.render(); return; }
     const remove = target.closest("[data-remove-definition]");
@@ -490,7 +519,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     const vocabulary = this.data.physicalVocabulary; const revision = this.data.revision;
     const editableMetadata = has(this.operations(), "physical_vocabulary.update"); const canStarter = has(this.operations(), "physical_vocabulary.starter.apply"); const canEnsure = has(this.operations(), "physical_vocabulary.working.ensure");
     const counts = DEFINITION_FIELDS.map((field) => `<div><strong>${this.definitions[field].length}</strong><span>${META[field].title}</span></div>`).join("");
-    return `<section class="physical-editor-section"><div class="physical-overview-grid"><section class="panel physical-overview-copy"><span class="eyebrow">Vocabolario fisico</span><h2>Un linguaggio riutilizzabile per sedi e routing</h2><p>Qui descrivi categorie e caratteristiche fisiche. Le Venue useranno queste definizioni per costruire mappe concrete senza duplicare il vocabolario.</p><div class="physical-count-grid">${counts}</div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-start>${icon("book", { size: 16 })} Ripeti tutorial</button>${canStarter ? `<button type="button" data-starter-open>${icon("plus", { size: 16 })} Configurazione base</button>` : ""}</div></section><section class="panel"><span class="eyebrow">Versione</span><h3>${escapeHtml(sourceLabel(vocabulary.source))}${revision ? ` · v${revision.version}` : ""}</h3><p>Stato: <strong>${escapeHtml(statusLabel(revision?.status))}</strong></p>${canEnsure ? `<button type="button" data-working-ensure>Crea nuova bozza</button>` : ""}${this.renderIntegrity()}</section></div><form class="panel physical-metadata-form" data-metadata-form><div class="section-heading compact"><div><h3>Informazioni generali</h3><p>Nome e descrizione identificano il vocabolario nel Marketplace e nelle Venue.</p></div></div><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(vocabulary.name)}" ${editableMetadata ? "" : "disabled"}></label><label>Descrizione<textarea name="description" rows="4" ${editableMetadata ? "" : "disabled"}>${escapeHtml(vocabulary.description || "")}</textarea></label>${editableMetadata ? `<button>${icon("check", { size: 16 })} Salva dettagli</button>` : ""}</form>${this.renderWorkflow()}</section>`;
+    return `<section class="physical-editor-section"><div class="physical-overview-grid"><section class="panel physical-overview-copy"><span class="eyebrow">Vocabolario fisico</span><h2>Un linguaggio riutilizzabile per sedi e routing</h2><p>Qui descrivi categorie e caratteristiche fisiche. Le Venue useranno queste definizioni per costruire mappe concrete senza duplicare il vocabolario.</p><div class="physical-count-grid">${counts}</div><div class="button-row"><button type="button" class="button-secondary" data-tutorial-start>${icon("book", { size: 16 })} Ripeti tutorial</button>${canStarter ? `<button type="button" data-starter-open>${icon("plus", { size: 16 })} Configurazione base</button>` : ""}</div></section><section class="panel"><span class="eyebrow">Versione</span><h3>${escapeHtml(sourceLabel(vocabulary.source))}${revision ? ` · v${revision.version}` : ""}</h3><p>Stato: <strong>${escapeHtml(statusLabel(revision?.status))}</strong></p>${canEnsure ? `<button type="button" data-working-ensure>Crea nuova bozza</button>` : ""}${this.renderIntegrity()}</section></div><form class="panel physical-metadata-form" data-metadata-form><div class="section-heading compact"><div><h3>Informazioni generali</h3><p>Nome e descrizione identificano il vocabolario nel Marketplace e nelle Venue.</p></div></div><label>Nome<input name="name" required maxlength="160" value="${escapeHtml(vocabulary.name)}" ${editableMetadata ? "" : "disabled"}></label><label>Descrizione<textarea name="description" rows="4" ${editableMetadata ? "" : "disabled"}>${escapeHtml(vocabulary.description || "")}</textarea></label>${editableMetadata ? `<button>${icon("check", { size: 16 })} Salva dettagli</button>` : ""}</form>${this.renderWorkflow()}${renderOwnedResourceRemoval({ resourceType: "physical_vocabulary", availableOperations: this.operations(), operationCodes: ["physical_vocabulary.trash"] })}</section>`;
   }
 
   renderRequirement(profileIndex, requirement, requirementIndex, editable) {
