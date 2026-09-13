@@ -6,6 +6,7 @@ import { useConfiguredVenueStore, useRuntimeStore } from "../application/stores"
 import { navigatorVisitRepository, type NavigatorVisitDetail } from "../infrastructure/http/navigatorVisitRepository";
 import {
   executionPreparationRepository,
+  type ExecutionMode,
   type ExecutionPreparationProjection,
   type RoutingProfileSelection,
 } from "../infrastructure/http/executionPreparationRepository";
@@ -25,6 +26,7 @@ const depthPreference = ref(0.5);
 const complexityPreference = ref(0.5);
 const movementPacePreference = ref(0.5);
 const selectedRoutingProfiles = ref<Record<string, string>>({});
+const requestedJoinAlias = ref("");
 const venueId = computed(() => String(route.params.venueId || ""));
 
 const canStart = computed(() => Boolean(
@@ -33,6 +35,7 @@ const canStart = computed(() => Boolean(
   preparation.value.readiness.status === "ready" &&
   preparation.value.readiness.blockers.length === 0,
 ));
+const synchronizedModeAvailable = computed(() => preparation.value?.availableExecutionModes.includes("synchronized") === true);
 
 function preferenceLabel(value: number, labels: [string, string, string]) {
   return labels[Math.min(2, Math.floor(value * 3))];
@@ -81,6 +84,7 @@ function syncPreparationControls(value: ExecutionPreparationProjection) {
   selectedRoutingProfiles.value = Object.fromEntries(
     (value.navigation.routingProfileSelections || []).map((selection) => [String(selection.venueId), selection.routingProfileDefinitionId]),
   );
+  requestedJoinAlias.value = value.groupSessionSetup.requestedJoinAlias || "";
 }
 
 onMounted(async () => {
@@ -89,7 +93,7 @@ onMounted(async () => {
       String(route.params.visitId),
       venueId.value,
     );
-    preparation.value = await executionPreparationRepository.createForVisit(detail.value.visit.id);
+    preparation.value = await executionPreparationRepository.createForVisit(detail.value.visit.id, "self_guided");
     syncPreparationControls(preparation.value);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Impossibile preparare la visita";
@@ -98,25 +102,41 @@ onMounted(async () => {
   }
 });
 
-async function updatePreparation() {
-  if (!preparation.value || preparation.value.status !== "active" || updating.value) return;
+async function patchPreparation(patch: Parameters<typeof executionPreparationRepository.update>[1], fallbackMessage: string) {
+  if (!preparation.value || preparation.value.status !== "active" || updating.value || starting.value) return;
   updating.value = true;
   error.value = null;
   try {
-    preparation.value = await executionPreparationRepository.update(preparation.value, {
-      presentationPreference: {
-        depthPreference: depthPreference.value,
-        languageComplexityPreference: complexityPreference.value,
-      },
-      movementPacePreference: movementPacePreference.value,
-      routingProfileSelections: routingProfileSelections(),
-    });
+    preparation.value = await executionPreparationRepository.update(preparation.value, patch);
     syncPreparationControls(preparation.value);
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : "Impossibile aggiornare la preparazione";
+    error.value = cause instanceof Error ? cause.message : fallbackMessage;
   } finally {
     updating.value = false;
   }
+}
+
+async function updatePreparation() {
+  await patchPreparation({
+    presentationPreference: {
+      depthPreference: depthPreference.value,
+      languageComplexityPreference: complexityPreference.value,
+    },
+    movementPacePreference: movementPacePreference.value,
+    routingProfileSelections: routingProfileSelections(),
+  }, "Impossibile aggiornare la preparazione");
+}
+
+async function selectExecutionMode(executionMode: ExecutionMode) {
+  if (preparation.value?.executionMode === executionMode) return;
+  await patchPreparation({ executionMode }, "Impossibile cambiare la modalità di avvio");
+}
+
+async function updateGroupAlias() {
+  if (preparation.value?.executionMode !== "synchronized") return;
+  await patchPreparation({
+    groupSessionSetup: { requestedJoinAlias: requestedJoinAlias.value.trim() || null },
+  }, "Impossibile aggiornare il nome di ingresso");
 }
 
 async function start() {
@@ -269,6 +289,58 @@ async function start() {
             {{ preparation.logisticsPreview.routeSummary.legCount }} spostamenti
           </p>
 
+          <section class="execution-mode" aria-labelledby="execution-mode-title">
+            <div class="execution-mode-intro">
+              <strong id="execution-mode-title">Modalità di avvio</strong>
+              <small>Scegli come eseguire questa visita. La scelta riguarda solo questa sessione.</small>
+            </div>
+            <div class="execution-mode-options">
+              <button
+                type="button"
+                class="execution-mode-option"
+                :class="{ selected: preparation.executionMode === 'self_guided' }"
+                :aria-pressed="preparation.executionMode === 'self_guided'"
+                :disabled="updating || starting"
+                @click="selectExecutionMode('self_guided')"
+              >
+                <span aria-hidden="true">◉</span>
+                <span><strong>Personale</strong><small>Segui il percorso al tuo ritmo.</small></span>
+              </button>
+              <button
+                v-if="synchronizedModeAvailable"
+                type="button"
+                class="execution-mode-option"
+                :class="{ selected: preparation.executionMode === 'synchronized' }"
+                :aria-pressed="preparation.executionMode === 'synchronized'"
+                :disabled="updating || starting"
+                @click="selectExecutionMode('synchronized')"
+              >
+                <span aria-hidden="true">◎</span>
+                <span><strong>Di gruppo</strong><small>Guida i partecipanti sulla stessa tappa.</small></span>
+              </button>
+            </div>
+
+            <div v-if="preparation.executionMode === 'synchronized'" class="group-session-setup">
+              <label for="requested-join-alias">
+                <span><strong>Nome per entrare</strong></span>
+                <input
+                  id="requested-join-alias"
+                  v-model="requestedJoinAlias"
+                  type="text"
+                  maxlength="80"
+                  autocomplete="off"
+                  :disabled="updating || starting"
+                  @change="updateGroupAlias"
+                >
+                <small>I partecipanti useranno queste parole per entrare nella lobby. In caso di collisione il backend assegnerà una variante leggibile.</small>
+              </label>
+              <p v-if="detail.visit.quizQuestionCount" class="quiz-availability">
+                {{ detail.visit.quizQuestionCount }} {{ detail.visit.quizQuestionCount === 1 ? "domanda disponibile" : "domande disponibili" }} per il quiz finale.
+              </p>
+              <p v-else class="quiz-availability muted">Nessun quiz preparato: la visita di gruppo può comunque essere avviata.</p>
+            </div>
+          </section>
+
           <div v-if="canStart" class="readiness ready"><span aria-hidden="true">✓</span>Nessun impedimento rilevato</div>
           <div v-else class="readiness blocked"><span aria-hidden="true">!</span>Controlla le indicazioni prima di iniziare</div>
 
@@ -284,7 +356,7 @@ async function start() {
           <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
 
           <button class="start-visit" type="button" :disabled="starting || updating || !canStart" @click="start">
-            {{ starting ? "Avvio…" : detail.visit.deliveryMode === "synchronized" ? "Crea la lobby →" : "Inizia visita →" }}
+            {{ starting ? "Avvio…" : preparation.executionMode === "synchronized" ? "Crea la lobby →" : "Inizia visita →" }}
           </button>
         </aside>
       </div>
@@ -526,6 +598,59 @@ async function start() {
 .previsit-summary dt { color: var(--navigator-muted); }
 .previsit-summary dd { margin: 0; font-weight: 750; }
 .route-summary { color: var(--navigator-muted); font-size: .78rem; line-height: 1.45; }
+.execution-mode {
+  display: grid;
+  gap: .75rem;
+  margin-top: 1.15rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--navigator-border);
+}
+.execution-mode-intro { display: grid; gap: .25rem; }
+.execution-mode-intro small { color: var(--navigator-muted); line-height: 1.4; }
+.execution-mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
+.execution-mode-option {
+  min-width: 0;
+  min-height: 5rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: .55rem;
+  padding: .75rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .8rem;
+  color: var(--navigator-ink);
+  background: var(--navigator-surface-raised);
+  text-align: left;
+}
+.execution-mode-option > span:last-child { display: grid; gap: .18rem; }
+.execution-mode-option small { color: var(--navigator-muted); line-height: 1.3; }
+.execution-mode-option.selected {
+  border-color: var(--navigator-brand-primary);
+  background: color-mix(in srgb, var(--navigator-brand-primary) 9%, var(--navigator-surface-raised));
+  box-shadow: inset 0 0 0 1px var(--navigator-brand-primary);
+}
+.group-session-setup {
+  display: grid;
+  gap: .7rem;
+  padding: .85rem;
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--navigator-brand-primary) 6%, var(--navigator-surface-raised));
+}
+.group-session-setup label { display: grid; gap: .4rem; }
+.group-session-setup input {
+  width: 100%;
+  min-height: 46px;
+  padding: .65rem .75rem;
+  border: 1px solid var(--navigator-border);
+  border-radius: .7rem;
+  color: var(--navigator-ink);
+  background: var(--navigator-surface-raised);
+  font: inherit;
+}
+.group-session-setup small,
+.quiz-availability { color: var(--navigator-muted); font-size: .78rem; line-height: 1.4; }
+.quiz-availability { margin: 0; }
+.quiz-availability.muted { opacity: .88; }
 .readiness {
   display: flex;
   align-items: center;
@@ -569,6 +694,7 @@ async function start() {
   .previsit-card,
   .previsit-summary { border-radius: 1rem; }
   .preparation-controls label > span { align-items: flex-start; flex-direction: column; gap: .25rem; }
+  .execution-mode-options { grid-template-columns: 1fr; }
   .update-estimate { width: 100%; }
 }
 </style>
