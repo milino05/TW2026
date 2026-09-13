@@ -28,6 +28,12 @@ test("tutti i modal Venue condividono un solo lifecycle portallato", () => {
   assert.doesNotMatch(venueView, /syncInventoryDialog|releaseInventoryDialog/);
 });
 
+test("la chiusura Venue resta disponibile anche durante operazioni asincrone", () => {
+  assert.match(modalLifecycle, /canDismiss:\s*\(\)\s*=>\s*true/);
+  assert.match(modalLifecycle, /control instanceof HTMLButtonElement\) control\.disabled = false/);
+  assert.doesNotMatch(modalLifecycle, /canDismiss:\s*\(\)\s*=>\s*!this\.busy/);
+});
+
 test("Escape locale Venue resta limitato allo stato mappa non modale", () => {
   assert.match(venueView, /event\.key === "Escape" && !this\._venueModalLayers\?\.length && \(this\.pendingMapAction \|\| this\.draggingPlace\)/);
   assert.match(venueView, /this\.cancelMapAction\(\)/);
