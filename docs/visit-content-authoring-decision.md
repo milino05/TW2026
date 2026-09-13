@@ -31,6 +31,8 @@ Per ogni contenuto selezionato:
 
 L'inference fisica è quindi informazione di lettura/suggerimento e non decisione editoriale.
 
+La creazione di **nuove** tappe fisiche avviene esclusivamente come conseguenza di una scelta `physical` effettuata su un contenuto nel selettore. `Costruisci la visita` non espone un secondo browser di `VenueTarget` né un'azione autonoma "Aggiungi tappa". Le tappe già presenti restano visibili, riordinabili e rimovibili perché rappresentano la struttura fisica risultante dalle scelte editoriali sui contenuti.
+
 ## Read model
 
 `searchVisitAuthoringCandidates` proietta per ciascun candidato `placementOptions.occurrences[]`. Le occurrence vengono risolte backend-side in batch sui Subject presenti nella pagina corrente e includono soltanto informazioni user-facing sulla Venue e sulla posizione pubblicata.
