@@ -45,6 +45,12 @@ function prepareVenueModalPanel(layer) {
   return taskPanel;
 }
 
+function enableVenueDismissControls(layer) {
+  for (const control of layer.querySelectorAll(DISMISS_SELECTOR)) {
+    if (control instanceof HTMLButtonElement) control.disabled = false;
+  }
+}
+
 function dismissVenueModal(editor, layer) {
   if (layer.matches(".venue-inventory-modal-layer")) {
     const targetId = editor.selectedVenueTargetId || editor.inventoryDetailTargetId;
@@ -135,6 +141,7 @@ export const venueModalLifecycleMixin = {
     this._venueModalLayers = layers.map((layer) => {
       const panel = prepareVenueModalPanel(layer);
       if (!(panel instanceof HTMLElement)) return null;
+      enableVenueDismissControls(layer);
       layer.dataset.modalBackdrop = "true";
       const click = (event) => {
         const target = event.target instanceof Element ? event.target : null;
