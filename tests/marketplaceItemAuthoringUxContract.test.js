@@ -6,21 +6,18 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const itemPath = path.join(root, "clients/marketplace/src/ui/item-authoring-view.js");
-const itemVenuePath = path.join(root, "clients/marketplace/src/ui/item-authoring-subject-venues.js");
 const subjectVenueDialogPath = path.join(root, "clients/marketplace/src/ui/subject-venue-dialog.js");
 const pickerPath = path.join(root, "clients/marketplace/src/ui/semantic-entity-picker.js");
 const presencePath = path.join(root, "clients/marketplace/src/ui/subject-presence.js");
 const authoringRepositoryPath = path.join(root, "clients/marketplace/src/infrastructure/http/authoring-repository.js");
-const itemFacadeSource = fs.readFileSync(itemPath, "utf8");
-const itemVenueSource = fs.readFileSync(itemVenuePath, "utf8");
+const source = fs.readFileSync(itemPath, "utf8");
 const subjectVenueDialogSource = fs.readFileSync(subjectVenueDialogPath, "utf8");
-const source = `${itemFacadeSource}\n${itemVenueSource}`;
 const pickerSource = fs.readFileSync(pickerPath, "utf8");
 const presenceSource = fs.readFileSync(presencePath, "utf8");
 const authoringRepositorySource = fs.readFileSync(authoringRepositoryPath, "utf8");
 
 test("item authoring e integrazione Subject/Venue passano il syntax gate", () => {
-  for (const target of [itemPath, itemVenuePath, subjectVenueDialogPath, pickerPath, presencePath, authoringRepositoryPath]) {
+  for (const target of [itemPath, subjectVenueDialogPath, pickerPath, presencePath, authoringRepositoryPath]) {
     const result = spawnSync(process.execPath, ["--check", target], { encoding: "utf8" });
     assert.equal(result.status, 0, `${target}: ${result.stderr || result.stdout}`);
   }
@@ -39,9 +36,9 @@ test("la creazione parte dal Subject e la presenza nelle sedi esce dallo step un
   assert.match(source, /authoringRepository\.getSubject\(this\.preselectedSubjectId\)/);
   assert.match(source, /<artaround-semantic-entity-picker mode="subject" entity-kind="item"><\/artaround-semantic-entity-picker>/);
   assert.match(source, /Crea Item e continua/);
-  assert.match(itemVenueSource, /prototype\.renderSubjectPresence = function renderSubjectPresenceOutsideAuthoringFlow\(\) \{ return ""; \}/);
-  assert.match(itemVenueSource, /data-open-subject-venues/);
-  assert.match(itemVenueSource, /openSubjectVenueDialog/);
+  assert.doesNotMatch(source, /renderSubjectPresence|artaround-subject-presence/);
+  assert.match(source, /data-open-subject-venues/);
+  assert.match(source, /openSubjectVenueDialog/);
   assert.match(subjectVenueDialogSource, /artaround-subject-presence/);
   assert.match(presenceSource, /Inventario fisico|Presenza nelle sedi|subject-venue-surface/);
   assert.doesNotMatch(source, /physicalIntent|createItemWithPhysicalIntent|venueTargetContext/);
@@ -126,9 +123,10 @@ test("il controllo finale è backend-authoritative e può aprire la presenza nel
   assert.match(source, /Controlla se è tutto pronto/);
   assert.match(source, /Il grafo semantico non si modifica qui/);
   assert.match(source, /apri la sezione Relazioni dello Studio/);
-  assert.match(itemVenueSource, /Presenza nelle sedi/);
-  assert.match(itemVenueSource, /renderStepFourWithSubjectVenue/);
-  assert.match(itemVenueSource, /renderPrivateSuccessWithSubjectVenue/);
+  assert.match(source, /Presenza nelle sedi/);
+  assert.match(source, /renderStepFour\(\)/);
+  assert.match(source, /renderPrivateSuccessDialog\(\)/);
+  assert.match(source, /sourcePreviewMedia: this\.projection\?\.lineage\?\.recognitionMedia/);
   assert.doesNotMatch(source, /workflow\.publish/);
 });
 

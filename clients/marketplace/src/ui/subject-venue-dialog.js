@@ -3,7 +3,7 @@ import "./subject-presence.js";
 
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 
-export function openSubjectVenueDialog({ subject, subjectId, sourceItemId = null, principal, onChanged = null, onDismiss = null } = {}) {
+export function openSubjectVenueDialog({ subject, subjectId, sourceItemId = null, sourcePreviewMedia = null, principal, onChanged = null, onDismiss = null } = {}) {
   let controller = null;
   const resolvedSubjectId = subjectId || subject?.id || subject?._id || null;
   controller = createTaskDialog({
@@ -18,7 +18,7 @@ export function openSubjectVenueDialog({ subject, subjectId, sourceItemId = null
   });
   const configure = () => {
     const surface = controller?.layer?.querySelector("artaround-subject-presence[data-subject-venue-dialog-surface]");
-    surface?.configure?.({ subjectId: resolvedSubjectId, sourceItemId, principal });
+    surface?.configure?.({ subjectId: resolvedSubjectId, sourceItemId, sourcePreviewMedia, principal });
   };
   controller.layer.addEventListener("subject-presence-changed", (event) => {
     event.stopPropagation();

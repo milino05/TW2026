@@ -147,7 +147,7 @@ const DEPENDENCIES = Object.freeze({
   "venue.profile.manage": ["venue.view"],
   "venue.primary_context.manage": ["venue.view"],
   "venue.inventory.propose": ["venue.view"],
-  "venue.inventory.manage": ["venue.inventory.propose"],
+  "venue.inventory.manage": ["venue.view"],
   "venue.physical.edit": ["venue.view"],
   "venue.physical.review": ["venue.view"],
   "venue.physical.publish": ["venue.view"],

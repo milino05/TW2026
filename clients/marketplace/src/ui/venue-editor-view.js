@@ -16,6 +16,7 @@ import { venueSpatialInteractionMixin } from "./venue-editor-spatial-interaction
 import { venueSpatialOverlayMixin } from "./venue-editor-spatial-overlay-mixin.js";
 import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 import { venueSlotInventoryMixin } from "./venue-editor-slot-inventory-mixin.js";
+import { venueSubjectInventoryMixin } from "./venue-editor-subject-inventory-mixin.js";
 import { venueInventoryProposalsMixin } from "./venue-editor-inventory-proposals-mixin.js";
 import { venueModalLifecycleMixin } from "./venue-modal-lifecycle-mixin.js";
 
@@ -233,6 +234,7 @@ Object.assign(
   venueSpatialOverlayMixin,
   venueMapRefinementMixin,
   venueSlotInventoryMixin,
+  venueSubjectInventoryMixin,
   venueInventoryProposalsMixin,
   venueModalLifecycleMixin,
 );

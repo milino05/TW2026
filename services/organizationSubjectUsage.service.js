@@ -18,6 +18,7 @@ function emptyUsage() {
     draftCount: 0,
     collectionCount: 0,
     venueCount: 0,
+    lastActivityAt: null,
     previewMedia: null,
   };
 }
@@ -40,6 +41,7 @@ async function projectOrganizationSubjectUsage({ organizationId, subjectIds = []
     itemToSubjectId.set(id(item._id), subjectId);
     const usage = result.get(subjectId) || emptyUsage();
     usage.itemCount += 1;
+    if (!usage.lastActivityAt && item.updatedAt) usage.lastActivityAt = item.updatedAt;
     if (!usage.previewMedia && item.recognitionMedia?.url) usage.previewMedia = item.recognitionMedia;
     result.set(subjectId, usage);
   }

@@ -9,7 +9,8 @@ function source(relativePath) { return fs.readFileSync(path.join(__dirname, ".."
 const contextualWorkspace = source("clients/marketplace/src/ui/venue-editor-contextual-workspace-mixin.js");
 const inventoryProposals = source("clients/marketplace/src/ui/venue-editor-inventory-proposals-mixin.js");
 const slotInventory = source("clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js");
-const subjectInventoryIntegration = source("clients/marketplace/src/ui/venue-editor-subject-inventory-integration.js");
+const subjectInventoryMixin = source("clients/marketplace/src/ui/venue-editor-subject-inventory-mixin.js");
+const venueEditorView = source("clients/marketplace/src/ui/venue-editor-view.js");
 const inventorySearch = source("clients/marketplace/src/ui/venue-editor-inventory-search-mixin.js");
 const targetCreateDialog = source("clients/marketplace/src/ui/venue-target-create-dialog.js");
 const venueActions = source("clients/marketplace/src/ui/venue-editor-action-mixin.js");
@@ -48,12 +49,14 @@ test("Lo slot resta un entry point simmetrico verso l'inventario", () => {
   assert.match(slotInventory, /data-assign-selected-inventory-target/);
 });
 
-test("Il + dell'inventario apre il browser Subject condiviso e non il vecchio overlay inline", () => {
-  assert.match(subjectInventoryIntegration, /installVenueSubjectInventoryIntegration/);
-  assert.match(subjectInventoryIntegration, /data-open-inventory-subject-picker/);
-  assert.match(subjectInventoryIntegration, /openInventoryTargetCreateDialog/);
-  assert.match(subjectInventoryIntegration, /inventoryCapabilities/);
-  assert.match(subjectInventoryIntegration, /renderInventorySubjectPickerViaSharedDialog/);
+test("Il + dell'inventario apre il browser Subject condiviso tramite composizione statica", () => {
+  assert.match(venueEditorView, /import \{ venueSubjectInventoryMixin \} from "\.\/venue-editor-subject-inventory-mixin\.js"/);
+  assert.match(venueEditorView, /venueSlotInventoryMixin,\s*venueSubjectInventoryMixin,/);
+  assert.match(subjectInventoryMixin, /data-open-inventory-subject-picker/);
+  assert.match(subjectInventoryMixin, /openInventoryTargetCreateDialog/);
+  assert.match(subjectInventoryMixin, /inventoryCapabilities/);
+  assert.match(subjectInventoryMixin, /renderInventorySubjectPickerOverlay\(\) \{ return ""; \}/);
+  assert.doesNotMatch(subjectInventoryMixin, /customElements\.get|prototype\.|installVenueSubjectInventoryIntegration/);
   assert.match(inventorySearch, /openVenueTargetCreateDialog/);
   assert.match(targetCreateDialog, /Dalla tua organizzazione|Subject già utilizzato dalla tua organizzazione/);
   assert.match(targetCreateDialog, /organizationUsage/);
@@ -80,7 +83,8 @@ test("Accettare una proposta porta all'entità canonica appena inventariata", ()
 test("i moduli nuovi del workflow inventario passano il syntax gate", () => {
   for (const relative of [
     "clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js",
-    "clients/marketplace/src/ui/venue-editor-subject-inventory-integration.js",
+    "clients/marketplace/src/ui/venue-editor-subject-inventory-mixin.js",
+    "clients/marketplace/src/ui/venue-editor-view.js",
     "clients/marketplace/src/ui/venue-editor-inventory-search-mixin.js",
     "clients/marketplace/src/ui/venue-target-create-dialog.js",
   ]) {
