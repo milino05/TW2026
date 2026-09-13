@@ -9,13 +9,6 @@ export interface SynchronizedParticipantRequest {
   at: string | null;
 }
 
-export interface SynchronizedExpectedParticipant {
-  userId: string;
-  username: string;
-  joined: boolean;
-  joinedAt: string | null;
-}
-
 export interface SynchronizedParticipant {
   userId: string;
   username: string;
@@ -88,7 +81,6 @@ export interface SynchronizedVisitProjection {
     visitSessionId: string;
     joinedAt: string;
   };
-  expectedParticipants: SynchronizedExpectedParticipant[] | null;
   participants: SynchronizedParticipant[] | null;
   rejoined?: boolean;
 }

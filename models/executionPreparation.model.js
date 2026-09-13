@@ -15,14 +15,8 @@ const ExecutionSourceSchema = new Schema({
   versionPolicy: { type: String, enum: ["follow_current", "pinned", "fixed_generated_plan"], required: true },
 }, { _id: false });
 
-const ExpectedParticipantSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  username: { type: String, required: true, trim: true, lowercase: true, maxlength: 120 },
-}, { _id: false });
-
 const GroupSessionSetupSchema = new Schema({
   requestedJoinAlias: { type: String, trim: true, maxlength: 80, default: null },
-  expectedParticipants: { type: [ExpectedParticipantSchema], default: [] },
 }, { _id: false });
 
 const PresentationPreferenceSchema = new Schema({
@@ -76,22 +70,11 @@ ExecutionPreparationSchema.pre("validate", function validateSource(next) {
   if (this.source?.sourceType === "generated_plan" && this.executionMode === "synchronized") {
     this.invalidate("executionMode", "I GeneratedVisitPlan non supportano ancora l'esecuzione sincronizzata");
   }
-  if (this.executionMode === "self_guided" && (
-    this.groupSessionSetup?.requestedJoinAlias || (this.groupSessionSetup?.expectedParticipants || []).length
-  )) {
-    this.invalidate("groupSessionSetup", "La configurazione del gruppo appartiene soltanto all'esecuzione sincronizzata");
+  if (this.executionMode === "self_guided" && this.groupSessionSetup?.requestedJoinAlias) {
+    this.invalidate("groupSessionSetup.requestedJoinAlias", "L'alias di ingresso appartiene soltanto all'esecuzione sincronizzata");
   }
   if (this.readiness?.status === "ready" && !this.preparedPlanCandidate) {
     this.invalidate("preparedPlanCandidate", "Una preparation ready richiede un candidate plan");
-  }
-  const expectedUserIds = new Set();
-  for (const participant of this.groupSessionSetup?.expectedParticipants || []) {
-    const userId = String(participant.userId || "");
-    if (expectedUserIds.has(userId)) {
-      this.invalidate("groupSessionSetup.expectedParticipants", "Uno studente atteso può comparire una sola volta");
-      break;
-    }
-    expectedUserIds.add(userId);
   }
   const profileVenueIds = new Set();
   for (const selection of this.navigationSnapshot?.routingProfileSelections || []) {

@@ -27,7 +27,6 @@ const complexityPreference = ref(0.5);
 const movementPacePreference = ref(0.5);
 const selectedRoutingProfiles = ref<Record<string, string>>({});
 const requestedJoinAlias = ref("");
-const expectedParticipantUsernames = ref("");
 const venueId = computed(() => String(route.params.venueId || ""));
 
 const canStart = computed(() => Boolean(
@@ -78,13 +77,6 @@ function routingProfileSelections(): RoutingProfileSelection[] {
     .map(([targetVenueId, routingProfileDefinitionId]) => ({ venueId: targetVenueId, routingProfileDefinitionId }));
 }
 
-function expectedUsernames() {
-  return [...new Set(expectedParticipantUsernames.value
-    .split(/[\n,;]+/)
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean))];
-}
-
 function syncPreparationControls(value: ExecutionPreparationProjection) {
   depthPreference.value = value.effectivePresentationPreference?.depthPreference ?? 0.5;
   complexityPreference.value = value.effectivePresentationPreference?.languageComplexityPreference ?? 0.5;
@@ -93,7 +85,6 @@ function syncPreparationControls(value: ExecutionPreparationProjection) {
     (value.navigation.routingProfileSelections || []).map((selection) => [String(selection.venueId), selection.routingProfileDefinitionId]),
   );
   requestedJoinAlias.value = value.groupSessionSetup.requestedJoinAlias || "";
-  expectedParticipantUsernames.value = (value.groupSessionSetup.expectedParticipants || []).map((participant) => participant.username).join(", ");
 }
 
 onMounted(async () => {
@@ -146,13 +137,6 @@ async function updateGroupAlias() {
   await patchPreparation({
     groupSessionSetup: { requestedJoinAlias: requestedJoinAlias.value.trim() || null },
   }, "Impossibile aggiornare il nome di ingresso");
-}
-
-async function updateExpectedParticipants() {
-  if (preparation.value?.executionMode !== "synchronized") return;
-  await patchPreparation({
-    groupSessionSetup: { expectedParticipantUsernames: expectedUsernames() },
-  }, "Impossibile aggiornare i partecipanti attesi");
 }
 
 async function start() {
@@ -350,22 +334,6 @@ async function start() {
                 >
                 <small>I partecipanti useranno queste parole per entrare nella lobby. In caso di collisione il backend assegnerà una variante leggibile.</small>
               </label>
-              <label for="expected-participants">
-                <span><strong>Partecipanti attesi (facoltativo)</strong></span>
-                <textarea
-                  id="expected-participants"
-                  v-model="expectedParticipantUsernames"
-                  rows="3"
-                  autocomplete="off"
-                  :disabled="updating || starting"
-                  placeholder="studente1, studente2"
-                  @change="updateExpectedParticipants"
-                ></textarea>
-                <small>Inserisci username separati da virgola o su righe diverse. Servono solo per mostrare chi è già entrato e chi manca; non viene creata una classe permanente e il join resta aperto agli utenti autorizzati.</small>
-              </label>
-              <p v-if="preparation.groupSessionSetup.expectedParticipants.length" class="attendance-summary">
-                {{ preparation.groupSessionSetup.expectedParticipants.length }} {{ preparation.groupSessionSetup.expectedParticipants.length === 1 ? "partecipante atteso" : "partecipanti attesi" }}.
-              </p>
               <p v-if="detail.visit.quizQuestionCount" class="quiz-availability">
                 {{ detail.visit.quizQuestionCount }} {{ detail.visit.quizQuestionCount === 1 ? "domanda disponibile" : "domande disponibili" }} per il quiz finale.
               </p>
@@ -669,8 +637,7 @@ async function start() {
   background: color-mix(in srgb, var(--navigator-brand-primary) 6%, var(--navigator-surface-raised));
 }
 .group-session-setup label { display: grid; gap: .4rem; }
-.group-session-setup input,
-.group-session-setup textarea {
+.group-session-setup input {
   width: 100%;
   min-height: 46px;
   padding: .65rem .75rem;
@@ -680,12 +647,9 @@ async function start() {
   background: var(--navigator-surface-raised);
   font: inherit;
 }
-.group-session-setup textarea { resize: vertical; }
 .group-session-setup small,
-.quiz-availability,
-.attendance-summary { color: var(--navigator-muted); font-size: .78rem; line-height: 1.4; }
-.quiz-availability,
-.attendance-summary { margin: 0; }
+.quiz-availability { color: var(--navigator-muted); font-size: .78rem; line-height: 1.4; }
+.quiz-availability { margin: 0; }
 .quiz-availability.muted { opacity: .88; }
 .readiness {
   display: flex;

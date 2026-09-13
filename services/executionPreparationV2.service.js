@@ -33,7 +33,6 @@ const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const EXECUTION_MODES = new Set(["self_guided", "synchronized"]);
-const MAX_EXPECTED_PARTICIPANTS = 100;
 
 function id(value) { return String(value?._id || value || ""); }
 function validUnit(value) { return Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1; }
@@ -88,71 +87,17 @@ function preferredJoinAlias(sourceSnapshot) {
       || "Visita insieme",
   );
 }
-function normalizeExpectedParticipantUsernames(value) {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) {
-    throw new AppError("expectedParticipantUsernames deve essere un array", 400, [{
-      field: "groupSessionSetup.expectedParticipantUsernames",
-      code: "INVALID_TYPE",
-    }]);
-  }
-  const result = [...new Set(value.map((entry) => String(entry || "").trim().toLowerCase()).filter(Boolean))];
-  if (result.length > MAX_EXPECTED_PARTICIPANTS) {
-    throw new AppError(`Sono ammessi al massimo ${MAX_EXPECTED_PARTICIPANTS} partecipanti attesi`, 400, [{
-      field: "groupSessionSetup.expectedParticipantUsernames",
-      code: "OUT_OF_RANGE",
-    }]);
-  }
-  return result;
-}
-async function resolveExpectedParticipants({ setup, current, hostUserId }) {
-  const explicitlyProvided = setup && Object.prototype.hasOwnProperty.call(setup, "expectedParticipantUsernames");
-  if (!explicitlyProvided) {
-    return (current?.expectedParticipants || []).map((participant) => ({
-      userId: participant.userId,
-      username: participant.username,
-    }));
-  }
-  const usernames = normalizeExpectedParticipantUsernames(setup.expectedParticipantUsernames) || [];
-  if (!usernames.length) return [];
-  const users = await User.find({ username: { $in: usernames }, status: "active" }).select("_id username").lean();
-  const userByName = new Map(users.map((user) => [String(user.username).toLowerCase(), user]));
-  const missing = usernames.filter((username) => !userByName.has(username));
-  if (missing.length) {
-    throw new AppError("Uno o più partecipanti attesi non corrispondono a utenti attivi", 400, [{
-      field: "groupSessionSetup.expectedParticipantUsernames",
-      code: "EXPECTED_PARTICIPANT_NOT_FOUND",
-      context: { usernames: missing },
-    }]);
-  }
-  const hostEntry = users.find((user) => id(user._id) === id(hostUserId));
-  if (hostEntry) {
-    throw new AppError("La guida non può essere inserita tra i partecipanti attesi", 400, [{
-      field: "groupSessionSetup.expectedParticipantUsernames",
-      code: "EXPECTED_PARTICIPANT_IS_HOST",
-      context: { username: hostEntry.username },
-    }]);
-  }
-  return usernames.map((username) => {
-    const user = userByName.get(username);
-    return { userId: user._id, username: user.username };
-  });
-}
-async function resolveGroupSessionSetup({ payload = {}, current = null, executionMode, sourceSnapshot, hostUserId }) {
-  if (executionMode !== "synchronized") return { requestedJoinAlias: null, expectedParticipants: [] };
+function resolveGroupSessionSetup({ payload = {}, current = null, executionMode, sourceSnapshot }) {
+  if (executionMode !== "synchronized") return { requestedJoinAlias: null };
   const setup = payload.groupSessionSetup;
   if (setup !== undefined && (setup == null || typeof setup !== "object" || Array.isArray(setup))) {
     throw new AppError("groupSessionSetup deve essere un oggetto", 400, [{ field: "groupSessionSetup", code: "INVALID_TYPE" }]);
   }
-  const aliasExplicitlyProvided = setup && Object.prototype.hasOwnProperty.call(setup, "requestedJoinAlias");
-  const requestedJoinAlias = aliasExplicitlyProvided
+  const explicitlyProvided = setup && Object.prototype.hasOwnProperty.call(setup, "requestedJoinAlias");
+  const requestedJoinAlias = explicitlyProvided
     ? normalizeJoinAlias(setup.requestedJoinAlias)
     : normalizeJoinAlias(current?.requestedJoinAlias) || preferredJoinAlias(sourceSnapshot);
-  const expectedParticipants = await resolveExpectedParticipants({ setup, current, hostUserId });
-  return {
-    requestedJoinAlias: requestedJoinAlias || preferredJoinAlias(sourceSnapshot),
-    expectedParticipants,
-  };
+  return { requestedJoinAlias: requestedJoinAlias || preferredJoinAlias(sourceSnapshot) };
 }
 function normalizePresentationPreference(stored = null, override = null) {
   const result = {
@@ -437,10 +382,6 @@ function publicProjection(preparation) {
       : ["self_guided"],
     groupSessionSetup: {
       requestedJoinAlias: preparation.groupSessionSetup?.requestedJoinAlias || null,
-      expectedParticipants: (preparation.groupSessionSetup?.expectedParticipants || []).map((participant) => ({
-        userId: participant.userId,
-        username: participant.username,
-      })),
     },
     effectivePresentationPreference: preparation.effectivePresentationPreference || null,
     navigation: {
@@ -463,11 +404,10 @@ async function createExecutionPreparation({ userId, payload = {} }) {
   const resolved = await resolveExactSource({ userId, payload });
   const executionMode = normalizeExecutionMode(payload.executionMode, "self_guided");
   assertExecutionModeSupported(resolved.identity.sourceType, executionMode);
-  const groupSessionSetup = await resolveGroupSessionSetup({
+  const groupSessionSetup = resolveGroupSessionSetup({
     payload,
     executionMode,
     sourceSnapshot: resolved.sourceSnapshot,
-    hostUserId: userId,
   });
   const draft = normalizedDraft(payload);
   const presentation = normalizePresentationPreference(user.defaultPresentationPreference, draft.presentationPreference);
@@ -510,12 +450,11 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
   const sourceSnapshot = await loadExactSourceForPreparation(preparation);
   const executionMode = normalizeExecutionMode(payload.executionMode, preparation.executionMode || "self_guided");
   assertExecutionModeSupported(preparation.source.sourceType, executionMode);
-  const groupSessionSetup = await resolveGroupSessionSetup({
+  const groupSessionSetup = resolveGroupSessionSetup({
     payload,
     current: preparation.groupSessionSetup,
     executionMode,
     sourceSnapshot,
-    hostUserId: userId,
   });
   const patch = normalizedDraft(payload);
   const draft = mergeDraft(preparation.preparationDraft || {}, patch);
@@ -620,7 +559,6 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
         visitId: claimed.source.visitId,
         visitRevisionId: claimed.source.visitRevisionId,
         preferredAlias: claimed.groupSessionSetup?.requestedJoinAlias || preferredJoinAlias(sourceSnapshot),
-        expectedParticipants: claimed.groupSessionSetup?.expectedParticipants || [],
         plan: claimed.preparedPlanCandidate,
         venuePins: claimed.venuePins || [],
         navigationSnapshot: claimed.navigationSnapshot,

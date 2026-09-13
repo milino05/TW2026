@@ -481,27 +481,7 @@ onUnmounted(() => {
           <div class="alias" aria-label="Alias della visita">{{ group.synchronizedSession.joinAlias }}</div>
           <p>Gli studenti aprono “Entra in una visita” e scrivono l’alias. Poi puoi iniziare.</p>
           <div class="participant-count"><strong>{{ group.synchronizedSession.participantCount }}</strong><span>partecipanti pronti</span></div>
-          <template v-if="group.expectedParticipants?.length">
-            <p class="eyebrow">Presenze attese</p>
-            <ul class="participant-list" aria-label="Partecipanti attesi">
-              <li v-for="participant in group.expectedParticipants" :key="participant.userId">
-                <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
-                <strong>{{ participant.username }}</strong>
-                <small>{{ participant.joined ? (onlineUserIds.has(String(participant.userId)) ? 'Collegato · Online' : 'Collegato') : 'Non ancora collegato' }}</small>
-              </li>
-            </ul>
-          </template>
-          <template v-if="group.participants?.some((participant) => participant.role === 'participant' && !group.expectedParticipants?.some((expected) => expected.userId === participant.userId))">
-            <p class="eyebrow">Altri collegati</p>
-            <ul class="participant-list">
-              <li v-for="participant in group.participants.filter((entry) => entry.role === 'participant' && !group.expectedParticipants?.some((expected) => expected.userId === entry.userId))" :key="participant.userId">
-                <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
-                <strong>{{ participant.username }}</strong>
-                <small>{{ onlineUserIds.has(String(participant.userId)) ? 'Online' : 'Entrato' }}</small>
-              </li>
-            </ul>
-          </template>
-          <ul v-else-if="!group.expectedParticipants?.length && group.participants?.length" class="participant-list">
+          <ul v-if="group.participants?.length" class="participant-list">
             <li v-for="participant in group.participants" :key="participant.userId">
               <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
               <strong>{{ participant.username }}</strong>
@@ -647,17 +627,6 @@ onUnmounted(() => {
             <button ref="groupPanelClose" type="button" aria-label="Chiudi controllo del gruppo" @click="groupPanelOpen = false">×</button>
           </header>
           <div class="group-sheet-scroll">
-            <template v-if="group.expectedParticipants?.length">
-              <p class="eyebrow">Presenze attese</p>
-              <ul class="participant-list compact" aria-label="Presenze attese">
-                <li v-for="participant in group.expectedParticipants" :key="participant.userId">
-                  <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
-                  <strong>{{ participant.username }}</strong>
-                  <small>{{ participant.joined ? (onlineUserIds.has(String(participant.userId)) ? 'Collegato · Online' : 'Collegato · Offline') : 'Non ancora collegato' }}</small>
-                </li>
-              </ul>
-            </template>
-            <p class="eyebrow">Attività dei collegati</p>
             <ul class="participant-list compact">
               <li v-for="participant in group.participants?.filter((entry) => entry.role === 'participant')" :key="participant.userId">
                 <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>

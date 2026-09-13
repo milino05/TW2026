@@ -24,10 +24,6 @@ export interface ExecutionPreparationProjection {
   availableExecutionModes: ExecutionMode[];
   groupSessionSetup: {
     requestedJoinAlias: string | null;
-    expectedParticipants: Array<{
-      userId: string;
-      username: string;
-    }>;
   };
   effectivePresentationPreference: null | {
     depthPreference: number | null;
@@ -98,7 +94,6 @@ export interface PreparationUpdate {
   executionMode?: ExecutionMode;
   groupSessionSetup?: {
     requestedJoinAlias?: string | null;
-    expectedParticipantUsernames?: string[];
   };
 }
 
