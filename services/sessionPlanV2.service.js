@@ -41,9 +41,9 @@ function visitRevisionSourceSnapshotV2({ visit, revision }) {
     principal: { type: visit.ownerType, id: visit.ownerId },
     visitId: visit._id,
     visitRevisionId: revision._id,
-    deliveryMode: revisionSnapshot.deliveryMode || "self_guided",
-    synchronization: {
-      joinAlias: revisionSnapshot.synchronization?.joinAlias || null,
+    title: revisionSnapshot.title,
+    groupSessionDefaults: {
+      preferredJoinAlias: revisionSnapshot.groupSessionDefaults?.preferredJoinAlias || null,
     },
     quiz: {
       questions: (revisionSnapshot.quiz?.questions || []).map((question) => ({
