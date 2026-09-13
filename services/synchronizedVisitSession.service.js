@@ -5,12 +5,14 @@ const SessionPlanRevisionV2 = require("../models/sessionPlanRevisionV2.model");
 const SynchronizedVisitSession = require("../models/synchronizedVisitSession.model");
 const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
 const AppError = require("../utils/AppError");
+const { ACTION_DEFINITIONS } = require("../config/runtimeActions");
 const {
   createInitialSynchronizedSessionPlan,
   buildPersonalPresentationOverrides,
 } = require("./sessionPlanV2.service");
 
 const JOINABLE_STATUSES = ["lobby", "active", "quiz"];
+const OBSERVABLE_REQUEST_FAMILIES = new Set(["presentation", "semantic"]);
 
 function normalizeJoinAlias(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -204,6 +206,31 @@ async function joinSynchronizedVisitSession({ userId, alias }) {
   }
 }
 
+function participantRequestLabel(event) {
+  const recorded = String(event?.metadata?.actionLabel || "").trim();
+  if (recorded) return recorded;
+  const definition = ACTION_DEFINITIONS[event?.actionType];
+  if (definition?.label) return definition.label;
+  return event?.actionFamily === "semantic" ? "Approfondimento collegato" : "Adattamento personale";
+}
+
+function participantRequests(personal) {
+  return (personal?.interactionEvents || [])
+    .filter((event) => event.category === "action"
+      && event.result?.status === "applied"
+      && OBSERVABLE_REQUEST_FAMILIES.has(event.actionFamily)
+      && event.actionType !== "SEMANTIC_RETURN")
+    .map((event) => ({
+      actionType: event.actionType || null,
+      family: event.actionFamily,
+      label: participantRequestLabel(event),
+      contentEntryId: event.context?.contentEntryId || null,
+      interactionChannel: event.interactionChannel || null,
+      at: event.at || null,
+    }))
+    .sort((left, right) => new Date(right.at || 0) - new Date(left.at || 0));
+}
+
 async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }) {
   const { group, membership, visitSession } = await loadMembershipRuntime({ synchronizedSessionId, userId });
   const [revision, sharedPlan] = await Promise.all([
@@ -228,34 +255,37 @@ async function projectSynchronizedVisitSession({ synchronizedSessionId, userId }
     const userById = new Map(users.map((entry) => [String(entry._id), entry]));
     const sessionById = new Map(personalSessions.map((entry) => [String(entry._id), entry]));
     const currentContentEntryId = sharedPlan.contentEntries?.[group.currentEntryIndex]?._id || null;
-    participants = memberships.map((entry) => ({
-      userId: entry.userId,
-      username: userById.get(String(entry.userId))?.username || "Partecipante",
-      role: entry.role,
-      status: entry.status,
-      joinedAt: entry.joinedAt,
-      visitSessionId: entry.visitSessionId,
-      experience: (() => {
-        const personal = sessionById.get(String(entry.visitSessionId));
-        const experiences = currentContentEntryId
-          ? (personal?.contentEntryExperiences || []).filter((value) => String(value.contentEntryId) === String(currentContentEntryId))
-          : [];
-        const latestExperience = experiences.at(-1) || null;
-        const currentEvents = currentContentEntryId
-          ? (personal?.interactionEvents || []).filter((value) => String(value.context?.contentEntryId || "") === String(currentContentEntryId))
-          : [];
-        const semanticActive = Boolean(currentContentEntryId)
-          && String(personal?.semanticPresentation?.sourceContentEntryId || "") === String(currentContentEntryId);
-        const completionRatio = latestExperience?.completionRatio ?? 0;
-        const lastActivityAt = [latestExperience?.createdAt, ...currentEvents.map((value) => value.at)].filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || null;
-        return {
-          status: completionRatio >= 0.95 ? "completed" : (latestExperience || currentEvents.length || semanticActive) ? "in_progress" : "not_started",
-          completionRatio,
-          personalAdaptationActive: semanticActive || (personal?.presentationOverrides || []).some((value) => String(value.contentEntryId) === String(currentContentEntryId)),
-          lastActivityAt,
-        };
-      })(),
-    }));
+    participants = memberships.map((entry) => {
+      const personal = sessionById.get(String(entry.visitSessionId));
+      return {
+        userId: entry.userId,
+        username: userById.get(String(entry.userId))?.username || "Partecipante",
+        role: entry.role,
+        status: entry.status,
+        joinedAt: entry.joinedAt,
+        visitSessionId: entry.visitSessionId,
+        requests: participantRequests(personal),
+        experience: (() => {
+          const experiences = currentContentEntryId
+            ? (personal?.contentEntryExperiences || []).filter((value) => String(value.contentEntryId) === String(currentContentEntryId))
+            : [];
+          const latestExperience = experiences.at(-1) || null;
+          const currentEvents = currentContentEntryId
+            ? (personal?.interactionEvents || []).filter((value) => String(value.context?.contentEntryId || "") === String(currentContentEntryId))
+            : [];
+          const semanticActive = Boolean(currentContentEntryId)
+            && String(personal?.semanticPresentation?.sourceContentEntryId || "") === String(currentContentEntryId);
+          const completionRatio = latestExperience?.completionRatio ?? 0;
+          const lastActivityAt = [latestExperience?.createdAt, ...currentEvents.map((value) => value.at)].filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || null;
+          return {
+            status: completionRatio >= 0.95 ? "completed" : (latestExperience || currentEvents.length || semanticActive) ? "in_progress" : "not_started",
+            completionRatio,
+            personalAdaptationActive: semanticActive || (personal?.presentationOverrides || []).some((value) => String(value.contentEntryId) === String(currentContentEntryId)),
+            lastActivityAt,
+          };
+        })(),
+      };
+    });
   }
   return {
     synchronizedSession: {
