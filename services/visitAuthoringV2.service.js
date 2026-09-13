@@ -12,6 +12,7 @@ const { projectEditorialWorkflowOperations, mayEditEditorialRevision } = require
 const { assertCanComposeEditorialRelease } = require("./visitEditorialUsageAuthorization.service");
 const { projectVisitAuthoringRouteReview } = require("./visitAuthoringRouteReviewV2.service");
 const { venueTargetIdentityMap } = require("./venueTargetIdentityProjection.service");
+const { resolvePublishedOccurrencesForSubjects } = require("./visitPlacementOptionsV2.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function escapeRegex(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -228,8 +229,6 @@ async function hydrateVisitRevision(revision) {
         version: release?.version || null,
       };
     }),
-    // Raw projections remain temporarily available to non-stop-centric consumers. The
-    // Marketplace Visit editor consumes stops/contextualEntries instead of rewriting them.
     anchors: projectedAnchors,
     entries: projectedEntries,
     stops,
@@ -491,6 +490,7 @@ async function searchVisitAuthoringCandidates({
     ? itemIds.map((itemId) => preloadedItemById.get(id(itemId))).filter(Boolean)
     : await ItemV2.find({ _id: { $in: itemIds }, lifecycleStatus: "active" }).select("primarySubjectId").lean();
   const itemById = new Map(items.map((entry) => [id(entry._id), entry]));
+  const occurrenceBySubject = await resolvePublishedOccurrencesForSubjects(items.map((entry) => entry.primarySubjectId).filter(Boolean));
 
   return {
     page: safePage,
@@ -526,6 +526,9 @@ async function searchVisitAuthoringCandidates({
           label: reason.label,
           sourceName: reason.sourceName,
         })),
+        placementOptions: {
+          occurrences: occurrenceBySubject.get(id(item.primarySubjectId)) || [],
+        },
       };
     }).filter(Boolean),
   };
