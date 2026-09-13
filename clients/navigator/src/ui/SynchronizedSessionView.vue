@@ -632,12 +632,13 @@ onUnmounted(() => {
                 <span class="avatar">{{ participant.username.slice(0, 1).toUpperCase() }}</span>
                 <strong>{{ participant.username }}</strong>
                 <small>{{ onlineUserIds.has(String(participant.userId)) ? 'Online' : 'Offline' }} · {{ participant.experience?.status === 'completed' ? 'Completato' : participant.experience?.status === 'in_progress' ? 'Sta seguendo' : 'Non iniziato' }}<template v-if="participant.experience?.personalAdaptationActive"> · Adattamento personale</template></small>
+                <small v-if="participant.requests?.length">Richieste: {{ participant.requests.map((request) => request.label).join(' · ') }}</small>
               </li>
             </ul>
             <p v-if="!group.synchronizedSession.participantCount" class="empty-participants">Nessun partecipante è ancora collegato.</p>
           </div>
           <div v-if="groupPanelActions.length" class="host-actions group-sheet-actions">
-            <button v-for="action in groupPanelActions" :key="action.actionId" type="button" :class="{ primary: action.type === 'SYNCHRONIZED_START_QUIZ' }" :disabled="interactionBusy" @click="dispatch(action)">{{ action.label }}</button>
+            <button v-for="action in groupPanelActions" :key="action.actionId" type="button" :class="{ primary: ['SYNCHRONIZED_START_QUIZ', 'SYNCHRONIZED_COMPLETE'].includes(action.type) }" :disabled="interactionBusy" @click="dispatch(action)">{{ action.label }}</button>
           </div>
           <div class="group-danger">
             <button type="button" :disabled="interactionBusy" @click="confirmingCancel = true">Annulla questa sessione</button>
