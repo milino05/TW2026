@@ -95,7 +95,17 @@ Non esistono Navigator separati per guida e partecipante. Lo stesso client ricev
 
 ## SV-11 — Telemetria osservabile, non riconoscimento dell'attenzione
 
-Lo stato di fruizione viene derivato da eventi applicativi osservabili: avvio, playback, pausa, completamento, `completionRatio`, richieste e interazioni. Non vengono introdotti webcam, eye tracking o inferenze biometriche.
+Lo stato di fruizione viene derivato esclusivamente da eventi applicativi osservabili: visibilità della pagina, playback TTS realmente avviato, pausa, completamento, `completionRatio`, richieste e interazioni. Non vengono introdotti webcam, eye tracking o inferenze biometriche.
+
+La dashboard host distingue inoltre tre dimensioni che non devono essere confuse:
+
+```text
+connessione: online | offline
+attività:    active | inactive
+modalità:    reading | audio | null
+```
+
+`reading` significa che la pagina della visita è in foreground; `audio` significa che il browser segnala la lettura TTS in corso. Il passaggio in background senza audio produce `inactive` dopo una breve tolleranza anti-flicker. Questi segnali descrivono soltanto l'uso osservabile dell'applicazione e non dimostrano attenzione cognitiva.
 
 ## SV-12 — Accesso temporaneo ai contenuti privati tramite membership
 
@@ -112,6 +122,8 @@ Il realtime notifica cambiamenti del runtime ma non diventa fonte primaria della
 ```text
 command → aggiornamento backend/versione → evento realtime → refresh projection autorevole
 ```
+
+La presence è l'eccezione intenzionale perché rappresenta stato di connessione e attività effimero: non modifica membership o dominio persistente e non viene usata per autorizzare comandi.
 
 ## SV-15 — Runtime versionato e concorrenza esplicita
 
@@ -143,6 +155,8 @@ Non sceglie `executionMode`, non seleziona la Visit da eseguire e non vede conce
 
 La guida sceglie nel pre-visit del Navigator se avviare personalmente o in gruppo. In modalità di gruppo può confermare/modificare il nome di ingresso prima di creare la lobby. Durante la sessione vede progressione, partecipanti, stato di fruizione osservabile, playback, eventuale quiz e chiusura.
 
+Lo stato principale del partecipante combina presence e modalità di fruizione, ad esempio `Sta seguendo · Lettura`, `Sta seguendo · Audio`, `Non attivo` oppure `Offline`. La richiesta personale più recente sul contenuto corrente può essere mostrata nello stesso riepilogo, mentre lo storico resta disponibile separatamente.
+
 ## SV-20 — Ordine del refactoring e vertical slice
 
 La migrazione al nuovo modello procede in modo coordinato, senza compatibility layer permanente:
@@ -173,9 +187,13 @@ completedAt
 
 La coppia `(synchronizedSessionId, userId)` è unica.
 
-## SV-23 — Membership e presenza realtime sono concetti distinti
+## SV-23 — Membership, connessione e attività realtime sono concetti distinti
 
-La perdita temporanea di rete non rimuove la membership. La presenza online/offline viene derivata dal realtime; membership e autorizzazione persistono secondo il lifecycle della sessione.
+La perdita temporanea di rete non rimuove la membership. La presence realtime mantiene per ogni utente le connessioni Socket.IO effettivamente attive e aggrega l'attività di eventuali tab/dispositivi multipli: se almeno una connessione sta fruendo il partecipante resta `active`, con priorità ad `audio` rispetto a `reading`.
+
+Un utente può quindi essere `online` ma `inactive` quando la visita è ancora connessa e nessuna connessione sta leggendo in foreground o riproducendo audio. Quando tutte le connessioni cadono diventa `offline`. ArtAround non tenta di dedurre la causa della disconnessione: telefono spento, perdita di rete e browser terminato sono indistinguibili e vengono rappresentati semplicemente come `offline`.
+
+Membership e autorizzazione persistono secondo il lifecycle della sessione; presence e attività restano effimere e non vengono scritte in `SynchronizedVisitMembership`.
 
 ## SV-24 — Lifecycle minimale del group runtime
 
