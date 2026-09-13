@@ -6,8 +6,10 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const workspacePath = path.join(root, "clients/marketplace/src/ui/workspace-view.js");
+const removalUiPath = path.join(root, "clients/marketplace/src/ui/owned-resource-removal.js");
 const removalPath = path.join(root, "services/marketplaceResourceRemovalV2.service.js");
 const workspace = fs.readFileSync(workspacePath, "utf8");
+const removalUi = fs.readFileSync(removalUiPath, "utf8");
 const removal = fs.readFileSync(removalPath, "utf8");
 
 test("workspace resource detail still opens editorial collections in the current Studio", () => {
@@ -16,13 +18,17 @@ test("workspace resource detail still opens editorial collections in the current
 });
 
 test("collection removal UI explains local graph trashing and immutable release preservation", () => {
-  assert.match(workspace, /semanticGraphRelationCount/);
-  assert.match(workspace, /grafo locale/);
-  assert.match(workspace, /revisioni immutabili/);
-  assert.match(workspace, /release già pubblicate/);
-  assert.doesNotMatch(workspace, /Potrà essere riutilizzato da un'altra raccolta/);
-  assert.doesNotMatch(workspace, /collegamenti dovranno essere ricreati/);
-  assert.doesNotMatch(workspace, /affectedConnectionCount/);
+  assert.match(workspace, /renderOwnedResourceRemoval/);
+  assert.match(workspace, /requestOwnedResourceRemoval/);
+  assert.match(workspace, /removalImpact:\s*asset\.removalImpact/);
+  assert.match(removalUi, /semanticGraphRelationCount/);
+  assert.match(removalUi, /grafo locale/);
+  assert.match(removalUi, /revisioni immutabili/);
+  assert.match(removalUi, /release già pubblicate/);
+  const removalSurface = `${workspace}\n${removalUi}`;
+  assert.doesNotMatch(removalSurface, /Potrà essere riutilizzato da un'altra raccolta/);
+  assert.doesNotMatch(removalSurface, /collegamenti dovranno essere ricreati/);
+  assert.doesNotMatch(removalSurface, /affectedConnectionCount/);
 });
 
 test("collection removal trashes the one-to-one local SemanticGraph while preserving its revisions", () => {
@@ -36,7 +42,7 @@ test("collection removal trashes the one-to-one local SemanticGraph while preser
 });
 
 test("collection removal UX files pass the syntax gate", () => {
-  for (const file of [workspacePath, removalPath]) {
+  for (const file of [workspacePath, removalUiPath, removalPath]) {
     const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
     assert.equal(result.status, 0, `${path.relative(root, file)}: ${result.stderr || result.stdout}`);
   }
