@@ -74,7 +74,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
     await this.load();
   }
 
-  async load() {
+  async load({ focusSearch = false } = {}) {
     this.busy = true;
     this.error = null;
     this.taskDialog?.render();
@@ -102,6 +102,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
     } finally {
       this.busy = false;
       this.taskDialog?.render();
+      if (focusSearch && this.step === "select") requestAnimationFrame(() => this.taskDialog?.focus("input[name='q']"));
     }
   }
 
@@ -185,7 +186,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
     this.query = String(new FormData(form).get("q") || "").trim();
     this.page = 1;
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    void this.load();
+    void this.load({ focusSearch: true });
   };
 
   onDialogInput = (event) => {
@@ -194,7 +195,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
     this.query = target.value;
     this.page = 1;
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => void this.load(), 280);
+    this.searchTimer = setTimeout(() => void this.load({ focusSearch: true }), 280);
   };
 
   onDialogChange = (event) => {
