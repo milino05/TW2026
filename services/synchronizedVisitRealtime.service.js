@@ -18,9 +18,8 @@ function sessionPresence(sessionId) {
 }
 
 function normalizeParticipantActivity(payload = {}) {
-  const activity = payload.activity === "active" ? "active" : "inactive";
-  const mode = activity === "active" && ACTIVE_MODES.has(payload.mode) ? payload.mode : null;
-  return { activity, mode };
+  const mode = payload.activity === "active" && ACTIVE_MODES.has(payload.mode) ? payload.mode : null;
+  return { activity: mode ? "active" : "inactive", mode };
 }
 
 function aggregateConnectionActivity(connections) {
