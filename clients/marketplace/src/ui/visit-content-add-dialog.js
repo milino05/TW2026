@@ -34,6 +34,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
   access = "all";
   source = "all";
   data = null;
+  includedRevisionIds = null;
   selected = new Map();
   placements = new Map();
   busy = false;
@@ -79,13 +80,25 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
     this.error = null;
     this.taskDialog?.render();
     try {
-      this.data = await authoringRepository.searchVisitContentCandidates(this.visitId, {
-        q: this.query,
-        access: this.access,
-        source: this.source,
-        page: this.page,
-        limit: this.pageSize,
-      });
+      const projectionRequest = this.includedRevisionIds === null
+        ? authoringRepository.visitProjection({ visitId: this.visitId })
+        : Promise.resolve(null);
+      const [data, projection] = await Promise.all([
+        authoringRepository.searchVisitContentCandidates(this.visitId, {
+          q: this.query,
+          access: this.access,
+          source: this.source,
+          page: this.page,
+          limit: this.pageSize,
+        }),
+        projectionRequest,
+      ]);
+      this.data = data;
+      if (projection) {
+        this.includedRevisionIds = new Set(
+          (projection?.visit?.revision?.entries || []).map((entry) => id(entry.itemRevisionId)).filter(Boolean),
+        );
+      }
       const maxPage = Math.max(1, Math.ceil(Number(this.data?.total || 0) / this.pageSize));
       if (this.page > maxPage) {
         this.page = maxPage;
@@ -110,7 +123,7 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
 
   toggleCandidate(candidate) {
     const key = this.candidateKey(candidate);
-    if (!key) return;
+    if (!key || this.includedRevisionIds?.has(key)) return;
     if (this.selected.has(key)) {
       this.selected.delete(key);
       this.placements.delete(key);
@@ -259,12 +272,13 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
 
   renderCandidate(candidate) {
     const key = this.candidateKey(candidate);
-    const selected = this.selected.has(key);
+    const alreadyIncluded = this.includedRevisionIds?.has(key) || false;
+    const selected = !alreadyIncluded && this.selected.has(key);
     const provenance = (candidate.availability || []).slice(0, 2).map((entry) => `<span class="chip">${escapeHtml(entry.label)}</span>`).join("");
-    return `<button type="button" class="task-resource-choice" data-content-choice="${escapeHtml(key)}" aria-pressed="${selected}" aria-current="${selected}">
-      <span class="task-resource-choice__mark">${selected ? icon("check", { size: 18 }) : icon("book", { size: 18 })}</span>
+    return `<button type="button" class="task-resource-choice" data-content-choice="${escapeHtml(key)}" aria-pressed="${selected}" aria-current="${selected}" ${alreadyIncluded ? "disabled" : ""}>
+      <span class="task-resource-choice__mark">${selected || alreadyIncluded ? icon("check", { size: 18 }) : icon("book", { size: 18 })}</span>
       <span class="task-resource-choice__copy"><strong>${escapeHtml(candidate.label || "Contenuto")}</strong><small>${escapeHtml((candidate.authorCredits || []).join(", ") || "Autore non indicato")}</small><span class="task-resource-choice__meta">${escapeHtml(profileSummary(candidate.presentationProfiles || []))}</span><span class="button-row">${provenance}</span></span>
-      <span class="task-resource-choice__state">${selected ? "Selezionato" : "Seleziona"}</span>
+      <span class="task-resource-choice__state">${alreadyIncluded ? "Già nella visita" : selected ? "Selezionato" : "Seleziona"}</span>
     </button>`;
   }
 
