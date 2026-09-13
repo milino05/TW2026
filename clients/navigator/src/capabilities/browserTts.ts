@@ -12,6 +12,8 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
   private readonly lifecycleListeners = new Set<(event: TextToSpeechLifecycleEvent) => void>();
   private activeStartedAtMs: number | null = null;
   private accumulatedActiveMs = 0;
+  private lifecycleStarted = false;
+  private utteranceText = "";
 
   get supported() {
     return typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
@@ -39,15 +41,18 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
     this.activeStartedAtMs = null;
   }
 
-  private resetTiming() {
+  private resetLifecycle() {
     this.activeStartedAtMs = null;
     this.accumulatedActiveMs = 0;
+    this.lifecycleStarted = false;
+    this.utteranceText = "";
   }
 
   private emitLifecycle(type: TextToSpeechLifecycleType) {
     const event = {
       type,
       activeSeconds: Math.max(0, this.accumulatedActiveMs / 1000),
+      utteranceText: this.utteranceText,
     } satisfies TextToSpeechLifecycleEvent;
     for (const listener of this.lifecycleListeners) listener(event);
   }
@@ -55,70 +60,74 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
   speak(text: string, locale?: string | null) {
     if (!this.supported || !text.trim()) return false;
     this.stop();
-    this.resetTiming();
+    this.resetLifecycle();
 
     const utterance = new SpeechSynthesisUtterance(text);
     this.utterance = utterance;
+    this.utteranceText = text;
     if (locale) utterance.lang = locale;
-    let started = false;
-    const markStarted = () => {
-      if (started || this.utterance !== utterance) return;
-      started = true;
+
+    utterance.onstart = () => {
+      if (this.utterance !== utterance || this.lifecycleStarted) return;
+      this.lifecycleStarted = true;
       this.activeStartedAtMs = this.nowMs();
       this.setState("speaking");
       this.emitLifecycle("started");
     };
-
-    utterance.onstart = markStarted;
     utterance.onend = () => {
       if (this.utterance !== utterance) return;
-      this.captureActiveTime();
-      this.emitLifecycle("completed");
+      if (this.lifecycleStarted) {
+        this.captureActiveTime();
+        this.emitLifecycle("completed");
+      }
       this.utterance = null;
-      this.resetTiming();
+      this.resetLifecycle();
       this.setState("idle");
     };
     utterance.onerror = () => {
       if (this.utterance !== utterance) return;
-      this.captureActiveTime();
-      this.emitLifecycle("error");
+      if (this.lifecycleStarted) {
+        this.captureActiveTime();
+        this.emitLifecycle("error");
+      }
       this.utterance = null;
-      this.resetTiming();
+      this.resetLifecycle();
       this.setState("idle");
     };
 
+    // La UI reagisce subito al comando; la telemetria parte soltanto da onstart,
+    // cioè quando il browser conferma che l'utterance è realmente iniziata.
+    this.setState("speaking");
     window.speechSynthesis.speak(utterance);
-    // Mantiene la UI reattiva anche nei browser che notificano onstart con ritardo.
-    markStarted();
     return true;
   }
 
   pause() {
     if (!this.supported || this.currentState !== "speaking") return false;
-    this.captureActiveTime();
+    if (this.lifecycleStarted) this.captureActiveTime();
     window.speechSynthesis.pause();
     this.setState("paused");
-    this.emitLifecycle("paused");
+    if (this.lifecycleStarted) this.emitLifecycle("paused");
     return true;
   }
 
   resume() {
     if (!this.supported || this.currentState !== "paused") return false;
     window.speechSynthesis.resume();
-    this.activeStartedAtMs = this.nowMs();
+    if (this.lifecycleStarted) this.activeStartedAtMs = this.nowMs();
     this.setState("speaking");
-    this.emitLifecycle("resumed");
+    if (this.lifecycleStarted) this.emitLifecycle("resumed");
     return true;
   }
 
   stop() {
     if (!this.supported) return;
-    const wasActive = this.utterance !== null || this.currentState !== "idle";
-    if (this.currentState === "speaking") this.captureActiveTime();
+    const shouldReportStop = this.lifecycleStarted;
+    if (shouldReportStop && this.currentState === "speaking") this.captureActiveTime();
     this.utterance = null;
     window.speechSynthesis.cancel();
-    if (wasActive) this.emitLifecycle("stopped");
-    this.resetTiming();
+    if (shouldReportStop) this.emitLifecycle("stopped");
+    this.resetLifecycle();
     this.setState("idle");
   }
 
