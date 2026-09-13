@@ -2,6 +2,13 @@
 .resource-operation-confirmation{margin:1rem 0}.resource-operation-confirmation>div:first-child{display:grid;gap:.55rem;min-width:min(100%,34rem)}
 .composer-actions>div{display:grid;gap:.55rem;min-width:0}.composer-actions .technical-details{max-width:42rem}.release-context strong{color:var(--ink-800)}
 
+/* Make physical stops scan as numbered visit steps without changing their domain labels. */
+.visit-authoring-page .visit-sequence{counter-reset:visit-stop}
+.visit-authoring-page .sequence-group[data-drag-kind="stop"]{counter-increment:visit-stop}
+.visit-authoring-page .sequence-group[data-drag-kind="stop"]>header{grid-template-columns:auto minmax(0,1fr) auto}
+.visit-authoring-page .sequence-group[data-drag-kind="stop"] .sequence-index{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.visit-authoring-page .sequence-group[data-drag-kind="stop"]>header>div>strong::before{content:"Tappa " counter(visit-stop) " · "}
+
 /* Avoid the intermediate icon-only navigation state: on tablet use the same complete labelled menu as mobile. */
 @media(max-width:68rem){
   .menu-toggle{display:inline-flex;margin-left:auto}
