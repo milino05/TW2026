@@ -15,7 +15,10 @@ function normalizedSeconds(value: unknown) {
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
 }
 
-async function resolveParticipantExperienceContext(router: Router): Promise<ExperienceContext | null> {
+async function resolveParticipantExperienceContext(
+  router: Router,
+  utteranceText: string,
+): Promise<ExperienceContext | null> {
   const route = router.currentRoute.value;
   if (route.name !== "together-session") return null;
   const synchronizedSessionId = String(route.params.synchronizedSessionId || "");
@@ -26,6 +29,7 @@ async function resolveParticipantExperienceContext(router: Router): Promise<Expe
 
   const runtime = await sessionRepository.current(group.membership.visitSessionId);
   if (runtime.synchronization?.role !== "participant" || !runtime.current) return null;
+  if (runtime.current.presentation.text !== utteranceText) return null;
 
   return {
     visitSessionId: group.membership.visitSessionId,
@@ -59,7 +63,7 @@ export function installSynchronizedContentExperienceTelemetry(router: Router) {
 
   async function handle(event: TextToSpeechLifecycleEvent) {
     if (event.type === "started") {
-      activeContext = await resolveParticipantExperienceContext(router);
+      activeContext = await resolveParticipantExperienceContext(router, event.utteranceText);
       if (activeContext) {
         await reportExperience(activeContext, { activeSeconds: 0, completed: false });
       }
