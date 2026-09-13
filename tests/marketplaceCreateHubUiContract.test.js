@@ -9,6 +9,7 @@ const files = {
   shell: "clients/marketplace/src/ui/app-shell.js",
   create: "clients/marketplace/src/ui/create-hub-view.js",
   item: "clients/marketplace/src/ui/item-authoring-view.js",
+  subjectVenueDialog: "clients/marketplace/src/ui/subject-venue-dialog.js",
   visit: "clients/marketplace/src/ui/visit-authoring-view.js",
   collection: "clients/marketplace/src/ui/editorial-collection-create-view.js",
   studio: "clients/marketplace/src/ui/editorial-studio-view.js",
@@ -19,6 +20,7 @@ function read(key) { return fs.readFileSync(path.join(root, files[key]), "utf8")
 const shell = read("shell");
 const create = read("create");
 const item = read("item");
+const subjectVenueDialog = read("subjectVenueDialog");
 const visit = read("visit");
 const collection = read("collection");
 const studio = read("studio");
@@ -78,7 +80,9 @@ test("la creazione del contenuto parte dal Subject nello spazio editoriale corre
   assert.match(create, /item-authoring\?contentSpaceId=/);
   assert.doesNotMatch(create, /Sede di riferimento|Nessuna sede specifica|venueTargetId|physicalIntent|organizationVenues\(/);
   assert.match(item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
-  assert.match(item, /artaround-subject-presence/);
+  assert.match(item, /openSubjectVenueDialog/);
+  assert.doesNotMatch(item, /<artaround-subject-presence/);
+  assert.match(subjectVenueDialog, /<artaround-subject-presence/);
 });
 
 test("la semantica curatoriale usa lo Studio ma resta separata dai contenuti dell'Item", () => {
