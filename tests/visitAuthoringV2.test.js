@@ -27,6 +27,9 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Entitlement = require("../models/entitlement.model");
+    const ItemV2 = require("../models/itemV2.model");
+    const ItemEdition = require("../models/itemEdition.model");
+    const ItemRevisionV2 = require("../models/itemRevisionV2.model");
     const { Adoption } = require("../models/adoption.model");
     const { IDS, seedExamDataset } = require("../scripts/examDatasetV2");
     const visitService = require("../services/visitV2.service");
@@ -86,6 +89,49 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     const directCandidate = directCandidates.results[0];
     const directOccurrence = directCandidate.placementOptions.occurrences[0];
     assert.ok(directOccurrence?.venueTargetId, "il contenuto del seed espone una collocazione fisica pubblicata");
+
+    const [sourceItem, sourceEdition, sourceRevision] = await Promise.all([
+      ItemV2.findById(directCandidate.itemId).lean(),
+      ItemEdition.findById(directCandidate.itemEditionId).lean(),
+      ItemRevisionV2.findById(directCandidate.itemRevisionId).lean(),
+    ]);
+    const siblingItem = await ItemV2.create({
+      primarySubjectId: sourceItem.primarySubjectId,
+      ownerType: "organization",
+      ownerId: IDS.organization,
+      createdBy: manager._id,
+    });
+    const siblingEdition = await ItemEdition.create({
+      itemId: siblingItem._id,
+      namespaceId: sourceEdition.namespaceId,
+      createdBy: manager._id,
+    });
+    const siblingRevision = await ItemRevisionV2.create({
+      itemEditionId: siblingEdition._id,
+      version: 1,
+      authoredAgainstNamespaceRevisionId: sourceRevision.authoredAgainstNamespaceRevisionId,
+      label: `${sourceRevision.label} · contenuto alternativo`,
+      relatedSubjectIds: sourceRevision.relatedSubjectIds || [],
+      tags: sourceRevision.tags || [],
+      authorCredits: sourceRevision.authorCredits || [],
+      metadata: sourceRevision.metadata || {},
+      illustrativeMedia: sourceRevision.illustrativeMedia || [],
+      selectionSignals: sourceRevision.selectionSignals || [],
+      presentationVariants: sourceRevision.presentationVariants || [],
+      defaultPresentation: sourceRevision.defaultPresentation || null,
+      status: "published",
+      publication: { publishedAt: new Date(), publishedBy: manager._id },
+      createdBy: manager._id,
+      updatedBy: manager._id,
+    });
+    siblingEdition.publishedRevisionId = siblingRevision._id;
+    await siblingEdition.save();
+    const siblingCandidate = {
+      contentSource: { sourceType: "item_revision", itemRevisionId: siblingRevision._id },
+      itemId: siblingItem._id,
+      itemEditionId: siblingEdition._id,
+      itemRevisionId: siblingRevision._id,
+    };
 
     const contextualVisit = await visitService.createVisitV2({
       actorUserId: manager._id,
@@ -172,6 +218,22 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     assert.equal(String(added.revision.contentEntries[0].deliveryAnchorId), String(added.revision.visitAnchors[0]._id));
     assert.equal(added.command.added[0].placement.mode, "physical");
     assert.equal(added.command.added[0].placement.anchorCreated, true);
+
+    await assert.rejects(
+      () => addContentToVisit({
+        actorUserId: manager._id,
+        visitId: directVisit.visit._id,
+        payload: { entries: [{
+          contentSource: directCandidate.contentSource,
+          itemEditionId: directCandidate.itemEditionId,
+          itemRevisionId: directCandidate.itemRevisionId,
+          placement: { mode: "contextual" },
+        }] },
+      }),
+      (error) => error?.details?.some((detail) => detail.code === "VISIT_CONTENT_ALREADY_INCLUDED"),
+      "la stessa ItemRevision non può essere aggiunta due volte alla visita",
+    );
+
     const directConsistency = await publication.evaluateVisitV2Consistency({ visitId: directVisit.visit._id, actorUserId: manager._id });
     assert.equal(directConsistency.revision.integrity.status, "valid");
     const directSnapshot = visitRevisionSourceSnapshotV2({ visit: directVisit.visit, revision: directConsistency.revision });
@@ -179,6 +241,28 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
     const sessionEntries = await materializeContentEntries({ source: directSnapshot });
     assert.equal(sessionEntries.length, 1);
     assert.ok(sessionEntries[0].namespaceRevisionId, "il Navigator risolve le regole direttamente dalla ItemRevision");
+
+    const duplicateBatchVisit = await visitService.createVisitV2({
+      actorUserId: manager._id,
+      payload: { ownerType: "organization", ownerId: IDS.organization, title: "Visita duplicati batch" },
+    });
+    await assert.rejects(
+      () => addContentToVisit({
+        actorUserId: manager._id,
+        visitId: duplicateBatchVisit.visit._id,
+        payload: {
+          entries: ["core", "optional"].map((role) => ({
+            contentSource: directCandidate.contentSource,
+            itemEditionId: directCandidate.itemEditionId,
+            itemRevisionId: directCandidate.itemRevisionId,
+            role,
+            placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+          })),
+        },
+      }),
+      (error) => error?.details?.some((detail) => detail.code === "VISIT_CONTENT_ALREADY_INCLUDED"),
+      "lo stesso contenuto non può comparire due volte nello stesso batch",
+    );
 
     const batchVisit = await visitService.createVisitV2({
       actorUserId: manager._id,
@@ -188,17 +272,26 @@ test("visit authoring projects scalable content and obeys revision workflow", { 
       actorUserId: manager._id,
       visitId: batchVisit.visit._id,
       payload: {
-        entries: ["core", "optional"].map((role) => ({
-          contentSource: directCandidate.contentSource,
-          itemEditionId: directCandidate.itemEditionId,
-          itemRevisionId: directCandidate.itemRevisionId,
-          role,
-          placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
-        })),
+        entries: [
+          {
+            contentSource: directCandidate.contentSource,
+            itemEditionId: directCandidate.itemEditionId,
+            itemRevisionId: directCandidate.itemRevisionId,
+            role: "core",
+            placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+          },
+          {
+            contentSource: siblingCandidate.contentSource,
+            itemEditionId: siblingCandidate.itemEditionId,
+            itemRevisionId: siblingCandidate.itemRevisionId,
+            role: "optional",
+            placement: { mode: "physical", venueTargetId: directOccurrence.venueTargetId },
+          },
+        ],
       },
     });
-    assert.equal(batched.revision.contentEntries.length, 2, "il comando aggiunge più contenuti in una sola mutazione applicativa");
-    assert.equal(batched.revision.visitAnchors.length, 1, "due contenuti sullo stesso target riusano una sola tappa");
+    assert.equal(batched.revision.contentEntries.length, 2, "il comando aggiunge contenuti distinti in una sola mutazione applicativa");
+    assert.equal(batched.revision.visitAnchors.length, 1, "due contenuti distinti sullo stesso target riusano una sola tappa");
     assert.equal(batched.command.added.length, 2);
     assert.equal(batched.command.added[0].placement.anchorCreated, true);
     assert.equal(batched.command.added[1].placement.anchorCreated, false);
