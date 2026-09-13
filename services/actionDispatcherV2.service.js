@@ -71,7 +71,7 @@ function interactionEvent({ userId, descriptor, actionId, interactionChannel, st
     interactionChannel,
     context: descriptor?.context || {},
     result: { status, code },
-    metadata: null,
+    metadata: descriptor?.label ? { actionLabel: descriptor.label } : null,
     at: new Date(),
   };
 }
@@ -174,7 +174,7 @@ async function executeDescriptor({ sessionId, userId, descriptor, input = null }
     case "CHECK_ROUTE_OBSTACLES":
       return {
         type: "obstacle_check",
-        obstacleCheck: await projectNextRouteObstacles({ sessionId, userId }),
+        obstacleCheck: await projectNextRouteObstacles({ sessionId, userId, routeResult: null }),
       };
     default:
       throw new AppError("Action non supportata dal dispatcher", 409, [{ code: "ACTION_NOT_SUPPORTED" }]);
