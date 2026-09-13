@@ -14,6 +14,7 @@ Il selettore:
 - supporta ricerca, paginazione, filtri owned/acquired e provenienza;
 - consente selezione multipla;
 - riusa `createTaskDialog` e le primitive visuali `task-selection-*` / `task-resource-choice*` esistenti;
+- mostra come **Già nella visita** una `ItemRevision` già presente e non consente di selezionarla nuovamente;
 - non espone `ContentSource`, `EditorialRelease`, `ItemRevision` o altri identificatori tecnici come concetti user-facing.
 
 Il principal resta un boundary netto: una Visit user-owned cerca nel workspace User; una Visit organization-owned cerca nel workspace Organization. Contenuti privati dell'altro principal non vengono aggiunti implicitamente alla ricerca.
@@ -22,12 +23,14 @@ Il principal resta un boundary netto: una Visit user-owned cerca nel workspace U
 
 L'aggiunta di un contenuto rappresenta sempre una scelta esplicita di una `ContentEntry`. La presenza fisica del `primarySubject` non implica automaticamente la creazione di un `VisitAnchor`.
 
+Una stessa `ItemRevision` può comparire al massimo una volta nella stessa VisitRevision. Questo non limita il requisito di avere più contenuti sullo stesso oggetto: Item/ItemEdition/ItemRevision differenti possono condividere lo stesso `primarySubject` e restano contenuti distinti. Il comando di aggiunta rivalida l'invariante anche backend-side e rifiuta sia revisioni già presenti sia duplicati nello stesso batch.
+
 Per ogni contenuto selezionato:
 
 - se non esistono occurrence fisiche pubblicate e utilizzabili, il contenuto viene aggiunto come contestuale;
 - se esiste almeno una occurrence, l'autore deve scegliere esplicitamente fra `contextual` e `physical`;
 - in modalità `physical` deve scegliere esplicitamente il `VenueTarget` quando necessario;
-- più contenuti collocati sullo stesso `VenueTarget` riusano un unico `VisitAnchor`.
+- più contenuti distinti collocati sullo stesso `VenueTarget` riusano un unico `VisitAnchor`.
 
 L'inference fisica è quindi informazione di lettura/suggerimento e non decisione editoriale.
 
@@ -48,7 +51,7 @@ Di conseguenza una sequenza come `Gioconda: tappa → contestuale → tappa` con
 
 `searchVisitAuthoringCandidates` proietta per ciascun candidato `placementOptions.occurrences[]`. Le occurrence vengono risolte backend-side in batch sui Subject presenti nella pagina corrente e includono soltanto informazioni user-facing sulla Venue e sulla posizione pubblicata.
 
-La projection della Visit applica lo stesso resolver batch ai `primarySubjectId` delle `ContentEntry` già presenti, così il controllo **Collocazione** può mostrare le alternative fisiche correnti senza un browser parallelo o query N+1.
+La projection della Visit applica lo stesso resolver batch ai `primarySubjectId` delle `ContentEntry` già presenti, così il controllo **Collocazione** può mostrare le alternative fisiche correnti senza un browser parallelo o query N+1. La modal riusa inoltre la stessa projection per conoscere le `ItemRevision` già incluse e disabilitarle, senza introdurre una seconda sorgente di verità.
 
 Il client non ricostruisce autonomamente relazioni `Subject -> VenueTarget -> VenueRelease -> LayoutRevision`.
 
@@ -58,6 +61,8 @@ Il client non ricostruisce autonomamente relazioni `Subject -> VenueTarget -> Ve
 
 - `placement: { mode: "contextual" }`
 - `placement: { mode: "physical", venueTargetId }`
+
+Il comando rifiuta con `VISIT_CONTENT_ALREADY_INCLUDED` una `ItemRevision` già presente nella visita o ripetuta nello stesso batch.
 
 Dopo l'aggiunta, `PUT /v2/visits/:visitId/commands/content/:contentEntryId/placement` applica la stessa scelta discriminata a una `ContentEntry` esistente. Il comando rivalida la validità corrente del target fisico, crea/riusa l'anchor necessario e ripulisce un eventuale anchor precedente diventato orfano nello stesso aggiornamento della working `VisitRevision`.
 
