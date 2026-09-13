@@ -4,6 +4,7 @@ import { managementRepository } from "../infrastructure/http/management-reposito
 import { userFacingFieldLabel, userFacingIssueMessage } from "../application/user-facing-errors.js";
 import { starterDefinitions } from "../application/namespace-editor-starter.js";
 import { openActionDialog } from "./feedback-primitives.js";
+import { renderOwnedResourceRemoval, requestOwnedResourceRemoval } from "./owned-resource-removal.js";
 import { icon } from "./icons.js";
 import "./semantic-entity-picker.js";
 
@@ -282,6 +283,32 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
   definitionSemanticInput(field, index) { return this.querySelector(`[data-collection="${field}"] [data-definition-index="${index}"] [name="semanticRefs"]`); }
   async runWorkflowRequest(code) { const action = WORKFLOW_ACTION[code]; if (!action) return null; return managementRepository.namespaceWorkflow(this.id, action, {}); }
   async performWorkflow(code) { if (code !== "namespace.revision.check") return; await this.execute(async () => { const result = await this.runWorkflowRequest(code); this.privateSuccessOpen = Boolean(result?.finalized && !(result?.issues || []).some((issue) => issue.severity !== "warning")); }, null); }
+  async requestRemoval() {
+    const namespace = this.data?.namespace;
+    if (!namespace || !has(this.data?.availableOperations, "namespace.trash")) return;
+    try {
+      const removal = await requestOwnedResourceRemoval({
+        principal: { principalType: namespace.owner.type, principalId: namespace.owner.id },
+        resourceType: "namespace",
+        resourceId: this.id,
+        title: namespace.name,
+        unsavedChanges: this.dirty,
+        onConfirmed: () => {
+          this.busy = true;
+          this.error = null;
+          this.message = null;
+          this.render();
+        },
+      });
+      if (!removal) return;
+      this.dirty = false;
+      navigate(ownerBackUrl(namespace.owner));
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile eliminare le regole editoriali";
+      this.busy = false;
+      this.render();
+    }
+  }
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;
@@ -308,6 +335,7 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
       if (confirmed) navigate(ownerBackUrl(this.data?.namespace.owner));
       return;
     }
+    if (target.closest("[data-owned-resource-removal]")) { await this.requestRemoval(); return; }
     const editDefinition = target.closest("[data-edit-definition]");
     if (editDefinition) { if (this.dirty) this.snapshotDraft(); const key = editDefinition.dataset.editDefinition; this.editingDefinitionKey = key; this.render(); requestAnimationFrame(() => this.querySelector(`[data-definition-key="${key}"] input[name="label"]`)?.focus({ preventScroll: true })); return; }
     const add = target.closest("[data-add-definition]");
@@ -383,6 +411,7 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
       <form data-namespace-metadata class="namespace-general-form"><div class="namespace-form-field"><div class="namespace-label-row"><label for="namespace-name">Nome delle regole</label>${helpButton("Nome delle regole", "Scegli un nome che faccia capire a quale collezione, progetto o stile editoriale si applicano.")}</div><input id="namespace-name" name="name" value="${escapeHtml(namespace.name)}" required placeholder="Es. Regole editoriali della collezione permanente"><small>Lo vedranno gli autori quando scelgono le regole da usare.</small></div><div class="namespace-form-field wide"><div class="namespace-label-row"><label for="namespace-description">Scopo e ambito</label>${helpButton("Scopo e ambito", "Spiega per quali contenuti e per quale pubblico sono state pensate queste regole.")}</div><textarea id="namespace-description" name="description" rows="3" placeholder="Es. Linee guida per i contenuti delle opere della collezione, rivolti a visitatori adulti non specialisti.">${escapeHtml(namespace.description || "")}</textarea><small>Una o due frasi sono sufficienti.</small></div><button type="submit">${icon("check", { size: 16 })} Salva dettagli</button></form>
       ${ensure ? `<div class="namespace-start"><div><strong>Non c'è una bozza modificabile</strong><p>Avvia una bozza per aggiornare le regole mantenendo intatta la versione privata corrente.</p></div><button type="button" data-operation="namespace.working.ensure">${escapeHtml(ensure.label)}</button></div>` : ""}
       ${revision ? `<div class="namespace-workflow" data-tutorial-anchor="workflow"><div class="namespace-workflow-heading"><div><span class="eyebrow">Controllo finale</span><h3>${escapeHtml(statusLabel(revision.status))}</h3><p>${privateReady ? "Le regole hanno superato i controlli e restano private finché non sceglierai di portarle nel Marketplace." : "Se manca qualcosa, verrai portato direttamente alla sezione da correggere. Se è tutto corretto, le regole diventeranno private."}</p></div><span class="chip" data-tone="${revision.integrity.status === "valid" ? "success" : "warning"}">${icon(revision.integrity.status === "valid" ? "check" : "warning", { size: 14 })} ${privateReady ? "Regole private e corrette" : revision.integrity.status === "valid" ? "Controllo superato" : "Da controllare"}</span></div>${issues ? `<div class="issues"><h4>Problemi da risolvere</h4><ul>${issues}</ul></div>` : privateReady ? `<p class="note">Questa versione è pronta per essere usata e non è visibile nel Marketplace.</p>` : `<p class="note">Nessun problema segnalato nell'ultimo controllo.</p>`}${workflowButtons ? `<div class="button-row">${workflowButtons}</div>` : ""}</div>` : ""}
+      ${renderOwnedResourceRemoval({ resourceType: "namespace", availableOperations, operationCodes: ["namespace.trash"] })}
     </section>`;
   }
 

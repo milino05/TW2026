@@ -96,7 +96,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
-    this.releaseInventoryDialog?.({ restoreFocus: false });
     this.releaseVenueModalLayers?.({ restoreFocus: false });
     this._targetCreateDialog?.close?.({ restoreFocus: false, notify: false });
     this._targetCreateDialog = null;
@@ -164,15 +163,25 @@ export class ArtAroundVenueEditorView extends HTMLElement {
 
   async load() {
     if (!this.id) { this.error = "Sede non specificata"; this.render(); return; }
-    this.busy = true; this.error = null; this.render();
-    try { await this.refreshServerState(); }
-    catch (error) { this.error = error instanceof Error ? error.message : "Sede non disponibile"; }
-    finally { this.busy = false; this.render(); }
+    this.busy = true;
+    this.error = null;
+    try {
+      this.render();
+      await this.refreshServerState();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Sede non disponibile";
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   }
 
   async execute(callback, message) {
-    this.busy = true; this.error = null; this.message = null; this.render();
+    this.busy = true;
+    this.error = null;
+    this.message = null;
     try {
+      this.render();
       await callback();
       await this.refreshServerState();
       this.message = message;
@@ -180,7 +189,10 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Operazione non riuscita";
       return false;
-    } finally { this.busy = false; this.render(); }
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   }
 
   onSectionKeyDown = (event) => {
@@ -227,10 +239,8 @@ Object.assign(
 
 const renderVenueEditor = ArtAroundVenueEditorView.prototype.render;
 ArtAroundVenueEditorView.prototype.render = function renderWithSharedDialogLifecycles(...args) {
-  this.releaseInventoryDialog?.({ restoreFocus: false });
   this.releaseVenueModalLayers?.({ restoreFocus: false });
   const result = renderVenueEditor.apply(this, args);
-  this.syncInventoryDialog?.();
   this.syncVenueModalLayers?.();
   return result;
 };

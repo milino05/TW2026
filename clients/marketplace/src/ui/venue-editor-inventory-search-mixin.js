@@ -1,5 +1,4 @@
 import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
-import { mountModalInteraction } from "../application/modal-interaction.js";
 import { openVenueTargetCreateDialog } from "./venue-target-create-dialog.js";
 
 function id(value) { return String(value?._id || value?.id || value || ""); }
@@ -31,69 +30,11 @@ function escapeHtml(value = "") {
 }
 
 export const venueInventorySearchMixin = {
-  releaseInventoryDialog({ restoreFocus = false } = {}) {
-    const layer = this._inventoryDialogLayer;
-    if (layer) {
-      if (this._inventoryDialogClickHandler) layer.removeEventListener("click", this._inventoryDialogClickHandler);
-      if (this._inventoryDialogSubmitHandler) layer.removeEventListener("submit", this._inventoryDialogSubmitHandler);
-    }
-    this._inventoryDialogInteraction?.release?.({ restoreFocus });
-    this._inventoryDialogInteraction = null;
-    this._inventoryDialogLayer = null;
-    this._inventoryDialogClickHandler = null;
-    this._inventoryDialogSubmitHandler = null;
-  },
-
   restoreInventoryLauncherFocus(targetId) {
     requestAnimationFrame(() => {
       const launcher = [...this.querySelectorAll("[data-select-venue-target]")]
         .find((button) => id(button.dataset.selectVenueTarget) === id(targetId));
       launcher?.focus?.({ preventScroll: true });
-    });
-  },
-
-  closeInventoryDialog() {
-    const targetId = this.selectedVenueTargetId;
-    this.releaseInventoryDialog({ restoreFocus: false });
-    this.selectedVenueTargetId = null;
-    this.render();
-    this.restoreInventoryLauncherFocus(targetId);
-  },
-
-  syncInventoryDialog() {
-    if (!this.selectedVenueTargetId) {
-      this.releaseInventoryDialog({ restoreFocus: false });
-      return;
-    }
-    const layer = this.querySelector(".venue-inventory-modal-layer");
-    if (!(layer instanceof HTMLElement)) {
-      this.releaseInventoryDialog({ restoreFocus: false });
-      return;
-    }
-
-    this.releaseInventoryDialog({ restoreFocus: false });
-    const clickHandler = (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("[data-modal-dismiss]")) return;
-      void this.onClick(event);
-    };
-    const submitHandler = (event) => { void this.onSubmit(event); };
-    layer.addEventListener("click", clickHandler);
-    layer.addEventListener("submit", submitHandler);
-    this._inventoryDialogLayer = layer;
-    this._inventoryDialogClickHandler = clickHandler;
-    this._inventoryDialogSubmitHandler = submitHandler;
-    this._inventoryDialogInteraction = mountModalInteraction({
-      layer,
-      panel: () => layer.querySelector(".venue-inventory-dialog"),
-      kind: "modal",
-      initialFocus: "[data-modal-dismiss]",
-      canDismiss: () => !this.busy,
-      onRequestDismiss: () => {
-        this.closeInventoryDialog();
-        return true;
-      },
-      lockScroll: true,
     });
   },
 
@@ -114,8 +55,8 @@ export const venueInventorySearchMixin = {
         this.busy = true;
         this.error = null;
         this.message = null;
-        this.render();
         try {
+          this.render();
           await this.refreshServerState();
           this.message = "Entità aggiunta all’inventario della sede.";
         } catch (error) {

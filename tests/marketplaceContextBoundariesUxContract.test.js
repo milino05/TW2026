@@ -109,7 +109,7 @@ test("l'inbox Venue decide l'appartenenza all'inventario senza collocazione auto
   assert.match(source.venueInventoryProposals, /Scrivi una motivazione prima di rifiutare la proposta/);
   assert.match(source.venueInventoryProposals, /senza collocazione automatica/);
   assert.match(source.venueInventoryProposals, /Nessuno slot verrà assegnato automaticamente/);
-  assert.match(source.venueInventoryProposals, /La collocazione fisica resta nella sezione Spazi e mappa/);
+  assert.match(source.venueInventoryProposals, /Accettare non li colloca automaticamente sulla mappa/);
 });
 
 test("l'inventario fisico resta scoped alla Venue", () => {

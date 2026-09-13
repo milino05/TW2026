@@ -6,8 +6,8 @@ import {
 } from "../application/editorial-space-preference.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
-import { openActionDialog } from "./feedback-primitives.js";
 import { openMessageActionDialog } from "./message-action-dialog.js";
+import { renderOwnedResourceRemoval, requestOwnedResourceRemoval } from "./owned-resource-removal.js";
 import { openSpaceSelectionDialog } from "./workspace-space-dialogs.js";
 import { icon } from "./icons.js";
 import { editorLabel, integrityLabel, resourceLabel, resourceStateLabel } from "./presentation.js";
@@ -169,47 +169,25 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     await this.executeOperation({ operationCode, sourceRef, payload: { message } });
   }
 
-  removalCopy(asset) {
-    return {
-      item_edition: { subject: "contenuto", consequence: "Il contenuto e tutte le sue versioni editoriali non compariranno più nella tua Libreria." },
-      editorial_context: { subject: "raccolta editoriale", consequence: "La raccolta non comparirà più nella tua Libreria e non potrà essere usata per nuove visite o nuove pubblicazioni." },
-      namespace: { subject: "regole editoriali", consequence: "Le regole editoriali non compariranno più nella tua Libreria e non saranno disponibili per nuovi contenuti." },
-      physical_vocabulary: { subject: "vocabolario fisico", consequence: "Il vocabolario fisico non comparirà più nella tua Libreria e non potrà essere scelto per nuovo authoring di sedi. Le revisioni già pinzate restano snapshot storiche utilizzabili." },
-      visit: { subject: "visita", consequence: "La visita e tutte le sue versioni non compariranno più nella tua Libreria e non potranno essere pubblicate nuovamente." },
-    }[asset.resourceType] || null;
-  }
-
   async requestRemoval() {
     const principal = this.principal();
     const asset = this.detail?.asset;
-    const copy = asset ? this.removalCopy(asset) : null;
-    if (!principal || !asset || !copy) return;
-    const relationCount = asset.resourceType === "editorial_context" ? Number(asset.removalImpact?.semanticGraphRelationCount || 0) : 0;
-    const graphImpact = asset.resourceType === "editorial_context"
-      ? ` Anche il grafo locale verrà ritirato${relationCount ? ` con ${relationCount} ${relationCount === 1 ? "relazione" : "relazioni"} nella revisione corrente` : ""}; le revisioni immutabili e le release già pubblicate restano conservate.`
-      : "";
-    const confirmed = await openActionDialog({
-      title: `Eliminare ${copy.subject} “${asset.title}”?`,
-      message: `${copy.consequence}${graphImpact} Le pubblicazioni verranno ritirate e le offerte rese inattive. Acquisizioni e diritti già concessi restano validi.`,
-      confirmLabel: `Elimina ${copy.subject}`,
-      cancelLabel: "Annulla",
-      tone: "danger",
-    });
-    if (!confirmed) return;
-    this.busy = true;
-    this.error = null;
-    this.message = null;
-    this.render();
+    if (!principal || !asset) return;
     try {
-      await marketplaceRepository.removeWorkspaceResource(principal, { resourceType: asset.resourceType, resourceId: asset.resourceId });
-      const removed = {
-        item_edition: "content",
-        editorial_context: "collection",
-        namespace: "namespace",
-        physical_vocabulary: "physical_vocabulary",
-        visit: "visit",
-      }[asset.resourceType] || "resource";
-      navigate(`/workspace?removed=${removed}`);
+      const removal = await requestOwnedResourceRemoval({
+        principal,
+        resourceType: asset.resourceType,
+        resourceId: asset.resourceId,
+        title: asset.title,
+        removalImpact: asset.removalImpact,
+        onConfirmed: () => {
+          this.busy = true;
+          this.error = null;
+          this.message = null;
+          this.render();
+        },
+      });
+      if (removal) navigate(`/workspace?removed=${encodeURIComponent(removal.removedKey)}`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è stato possibile rimuovere la risorsa";
       this.busy = false;
@@ -222,7 +200,7 @@ export class ArtAroundWorkspaceView extends HTMLElement {
     if (target?.closest("button[data-workspace-back]")) { this.backToWorkspace(); return; }
     const authoringButton = target?.closest("button[data-authoring-href]");
     if (authoringButton) { navigate(authoringButton.dataset.authoringHref); return; }
-    if (target?.closest("button[data-request-removal]")) { await this.requestRemoval(); return; }
+    if (target?.closest("button[data-owned-resource-removal]")) { await this.requestRemoval(); return; }
     const listingButton = target?.closest("button[data-create-listing]");
     if (listingButton) {
       const principal = this.principal();
@@ -284,10 +262,11 @@ export class ArtAroundWorkspaceView extends HTMLElement {
   }
 
   renderRemoval(asset) {
-    const allowed = asset.ownership === "owned" && (asset.availableOperations || []).some((operation) => operation.code === "remove_resource");
-    const copy = allowed ? this.removalCopy(asset) : null;
-    if (!copy) return "";
-    return `<section class="panel resource-danger-zone"><span class="eyebrow">Operazione sensibile</span><h2>Elimina dall’account</h2><p>${escapeHtml(copy.consequence)}</p><p class="note">Chi ha già acquisito la risorsa continuerà a usare la snapshot autorizzata. Lo storico commerciale non verrà cancellato.</p><button class="danger" type="button" data-request-removal>${icon("trash", { size: 15 })} Elimina ${escapeHtml(copy.subject)}</button></section>`;
+    return renderOwnedResourceRemoval({
+      resourceType: asset.resourceType,
+      availableOperations: asset.availableOperations,
+      ownership: asset.ownership,
+    });
   }
 
   renderResourceFacts(asset) {
