@@ -27,6 +27,13 @@ function aliasCandidate(baseAlias, suffix) {
 
 function duplicateKey(error) { return Number(error?.code) === 11000; }
 
+async function synchronizedQuizAvailable(groupOrRevisionId) {
+  const revisionId = groupOrRevisionId?.visitRevisionId || groupOrRevisionId;
+  if (!revisionId) return false;
+  const revision = await VisitRevisionV2.findById(revisionId).select("quiz.questions._id").lean();
+  return Boolean(revision?.quiz?.questions?.length);
+}
+
 async function activateReadableAlias(group, preferredAlias) {
   const baseAlias = normalizeJoinAlias(preferredAlias) || "Visita insieme";
   for (let suffix = 1; suffix <= 999; suffix += 1) {
@@ -342,8 +349,7 @@ async function startSynchronizedVisit({ synchronizedSessionId, userId }) {
 
 async function startSynchronizedQuiz({ synchronizedSessionId, userId }) {
   const group = await requireHostRuntime({ synchronizedSessionId, userId, status: "active" });
-  const revision = await VisitRevisionV2.findById(group.visitRevisionId).select("quiz.questions").lean();
-  if (!revision?.quiz?.questions?.length) throw new AppError("Questa visita non contiene un quiz", 409, [{ code: "SYNCHRONIZED_QUIZ_UNAVAILABLE" }]);
+  if (!(await synchronizedQuizAvailable(group))) throw new AppError("Questa visita non contiene un quiz", 409, [{ code: "SYNCHRONIZED_QUIZ_UNAVAILABLE" }]);
   group.status = "quiz";
   resetSynchronizedPlayback(group, { changedBy: userId });
   group.quizStartedAt = new Date();
@@ -352,7 +358,14 @@ async function startSynchronizedQuiz({ synchronizedSessionId, userId }) {
 }
 
 async function completeSynchronizedVisit({ synchronizedSessionId, userId }) {
-  const group = await requireHostRuntime({ synchronizedSessionId, userId, status: "quiz" });
+  const group = await requireHostRuntime({ synchronizedSessionId, userId });
+  if (group.status === "active") {
+    if (await synchronizedQuizAvailable(group)) {
+      throw new AppError("Avvia il quiz prima di completare questa visita", 409, [{ code: "SYNCHRONIZED_QUIZ_REQUIRED_BEFORE_COMPLETE" }]);
+    }
+  } else if (group.status !== "quiz") {
+    throw new AppError("Operazione non disponibile nello stato corrente", 409, [{ code: "SYNCHRONIZED_STATUS_CONFLICT", context: { currentStatus: group.status } }]);
+  }
   const completedAt = new Date();
   group.status = "completed";
   group.joinLookupKey = null;
@@ -402,6 +415,7 @@ module.exports = {
   JOINABLE_STATUSES,
   normalizeJoinAlias,
   joinLookupKey,
+  synchronizedQuizAvailable,
   createSynchronizedVisitRuntime,
   joinSynchronizedVisitSession,
   loadMembershipRuntime,
