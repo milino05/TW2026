@@ -1,10 +1,16 @@
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
-const { effectiveRevisionId } = require("./versionedSchemaDependency.service");
+const { effectiveRevisionId, assertDependencyReady } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
-async function loadEffectiveNamespaceRevision({ namespace, binding, requireStable = true }) {
+async function loadEffectiveNamespaceRevision({
+  namespace,
+  binding,
+  requireStable = true,
+  requireValidatedConsumer = false,
+  consumerSnapshotId = null,
+}) {
   if (!namespace) throw new AppError("Namespace non disponibile", 409, [{ code: "NAMESPACE_NOT_AVAILABLE" }]);
   const revisionId = effectiveRevisionId({
     binding,
@@ -24,6 +30,15 @@ async function loadEffectiveNamespaceRevision({ namespace, binding, requireStabl
   }
   if (id(revision.namespaceId) !== id(namespace._id)) {
     throw new AppError("NamespaceRevision effettiva fuori lineage", 409, [{ code: "NAMESPACE_REVISION_LINEAGE_MISMATCH" }]);
+  }
+  if (requireValidatedConsumer) {
+    assertDependencyReady({
+      binding,
+      consumerSnapshotId,
+      dependencyRevisionId: revision._id,
+      codePrefix: "NAMESPACE_DEPENDENCY",
+      field: "namespaceDependency",
+    });
   }
   return revision;
 }
