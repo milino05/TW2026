@@ -22,9 +22,9 @@ function placeTypeMap(bundle) {
     .map((definition) => [definition.definitionId, definition]));
 }
 
-async function projectKnownLocation({ routingSession, location }) {
+async function projectKnownLocation({ routingConfigurationOwner, location }) {
   if (!location?.venueId || !location?.placeId) return null;
-  const bundle = await loadPinnedBundle(routingSession, location.venueId);
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, location.venueId);
   const place = placeById(bundle, location.placeId);
   if (!place) return null;
   const type = placeTypeMap(bundle).get(place.placeTypeDefinitionId) || null;
@@ -44,23 +44,23 @@ async function projectKnownLocation({ routingSession, location }) {
   };
 }
 
-async function projectSelectableLocations({ routingSession, plan }) {
+async function projectSelectableLocations({ routingConfigurationOwner, plan }) {
   const result = [];
-  for (const pin of routingSession.venuePins || []) {
-    const bundle = await loadPinnedBundle(routingSession, pin.venueId);
+  for (const pin of routingConfigurationOwner.venuePins || []) {
+    const bundle = await loadPinnedBundle(routingConfigurationOwner, pin.venueId);
     const typeById = placeTypeMap(bundle);
     const anchoredPlaceIds = new Set();
     for (const anchor of (plan.visitAnchors || []).filter((entry) => id(entry.venueId) === id(pin.venueId))) {
       const place = placeById(bundle, anchor.placeId);
-      if (!place) continue;
+      if (!place || anchoredPlaceIds.has(id(place._id))) continue;
       anchoredPlaceIds.add(id(place._id));
       result.push({
         kind: "visit_stop",
         venueId: pin.venueId,
         placeId: place._id,
         visitAnchorId: anchor._id,
-        label: place.label || `Tappa ${(plan.visitAnchors || []).findIndex((entry) => id(entry._id) === id(anchor._id)) + 1}`,
-        category: "Tappa della visita",
+        label: place.label || `Area tappa ${(plan.visitAnchors || []).findIndex((entry) => id(entry._id) === id(anchor._id)) + 1}`,
+        category: "Area della visita",
         floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },
         locationRef: { kind: "visit_anchor", visitAnchorId: anchor._id },
@@ -146,8 +146,8 @@ function annotateStops({ baseMap, personalSession, plan, currentAnchor }) {
 async function projectActiveNavigation({ sessionId, userId, state, execution }) {
   if (![EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.NAVIGATING_DETOUR].includes(execution.phase)) return null;
   const live = await resolveLiveRouteV2({
-    personalSession: state.session,
-    routingSession: state.physicalSession,
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
     plan: state.plan,
     currentEntryIndex: state.currentEntryIndex,
     effectiveStatus: state.effectiveStatus,
@@ -169,7 +169,7 @@ async function projectActiveNavigation({ sessionId, userId, state, execution }) 
       },
     };
   }
-  const bundle = await loadPinnedBundle(state.physicalSession, live.venueId);
+  const bundle = await loadPinnedBundle(state.routingConfigurationOwner, live.venueId);
   const destination = placeById(bundle, live.toPlaceId);
   if (!destination) return null;
   const projected = await projectNavigationRoute({
@@ -194,19 +194,19 @@ async function projectNavigatorMap({ sessionId, userId }) {
     getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true }),
   ]);
   const execution = deriveVisitExecutionState({
-    personalSession: state.session,
+    personalSession: state.physicalRuntimeOwner,
     plan: state.plan,
     currentEntryIndex: state.currentEntryIndex,
     effectiveStatus: state.effectiveStatus,
   });
   const [knownLocation, selectableLocations, activeNavigation] = await Promise.all([
-    projectKnownLocation({ routingSession: state.physicalSession, location: execution.knownLocation }),
-    projectSelectableLocations({ routingSession: state.physicalSession, plan: state.plan }),
+    projectKnownLocation({ routingConfigurationOwner: state.routingConfigurationOwner, location: execution.knownLocation }),
+    projectSelectableLocations({ routingConfigurationOwner: state.routingConfigurationOwner, plan: state.plan }),
     projectActiveNavigation({ sessionId, userId, state, execution }),
   ]);
   const venues = annotateStops({
     baseMap,
-    personalSession: state.session,
+    personalSession: state.physicalRuntimeOwner,
     plan: state.plan,
     currentAnchor: execution.contextAnchor,
   });
