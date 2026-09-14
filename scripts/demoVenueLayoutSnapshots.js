@@ -105,13 +105,7 @@ async function exportDemoVenueLayoutSnapshots({
       floor.mapAsset.fixture = { file: fixtureRelativePath, sha256 };
     }
 
-    document.venues[plan.key] = {
-      source: {
-        venueId: String(venue._id),
-        view: venue.workingReleaseId ? "working" : "published",
-      },
-      layout: snapshot,
-    };
+    document.venues[plan.key] = { layout: snapshot };
   }
 
   await fs.writeFile(path.join(fixtureRoot, SNAPSHOT_FILE), `${JSON.stringify(document, null, 2)}\n`, "utf8");
