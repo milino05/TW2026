@@ -70,7 +70,7 @@ test("la configurazione base è proposta alla fine e resta disponibile nella pag
   assert.match(source, /data-starter-apply/);
   assert.match(source, /data-starter-confirm/);
   assert.match(source, /applyPhysicalVocabularyStarter/);
-  for (const summary of ["13 tipi di luogo", "8 collegamenti", "9 caratteristiche", "4 profili"]) assert.match(source, new RegExp(summary));
+  for (const summary of ["13 tipi di luogo", "8 collegamenti", "7 caratteristiche", "2 profili"]) assert.match(source, new RegExp(summary));
 });
 
 test("la creazione Organization usa il creator condiviso con partenza vuota come default, senza nascondere la scelta starter", () => {
