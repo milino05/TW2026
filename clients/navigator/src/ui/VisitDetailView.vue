@@ -8,8 +8,10 @@ import {
   executionPreparationRepository,
   type ExecutionMode,
   type ExecutionPreparationProjection,
-  type RoutingProfileSelection,
+  type PreparationUpdate,
 } from "../infrastructure/http/executionPreparationRepository";
+import ChoiceCard from "./ChoiceCard.vue";
+import NavigationPreferencesPanel from "./NavigationPreferencesPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -24,8 +26,6 @@ const starting = ref(false);
 const error = ref<string | null>(null);
 const depthPreference = ref(0.5);
 const complexityPreference = ref(0.5);
-const movementPacePreference = ref(0.5);
-const selectedRoutingProfiles = ref<Record<string, string>>({});
 const requestedJoinAlias = ref("");
 const venueId = computed(() => String(route.params.venueId || ""));
 
@@ -49,10 +49,6 @@ const complexityLabel = computed(() => preferenceLabel(
   complexityPreference.value,
   ["Accessibile", "Intermedio", "Specialistico"],
 ));
-const movementPaceLabel = computed(() => preferenceLabel(
-  movementPacePreference.value,
-  ["Rilassato", "Regolare", "Sostenuto"],
-));
 
 function minutes(seconds: number) {
   return Math.max(0, Math.ceil(seconds / 60));
@@ -67,32 +63,9 @@ function detailedDuration(seconds: number) {
   return `${wholeMinutes} min ${remainingSeconds} s`;
 }
 
-function preparationVenueLabel(targetVenueId: string) {
-  return preparation.value?.preVisit.venues.find((venue) => String(venue.id) === String(targetVenueId))?.name || "Sede";
-}
-
-function selectedProfile(group: ExecutionPreparationProjection["navigation"]["profilesByVenue"][number]) {
-  const selectedId = selectedRoutingProfiles.value[String(group.venueId)] || "";
-  return group.profiles.find((profile) => profile.definitionId === selectedId) || null;
-}
-
-function routingProfileSelections(): RoutingProfileSelection[] {
-  const availableByVenue = new Map((preparation.value?.navigation.profilesByVenue || []).map((group) => [
-    String(group.venueId),
-    new Set(group.profiles.map((profile) => profile.definitionId)),
-  ]));
-  return Object.entries(selectedRoutingProfiles.value)
-    .filter(([targetVenueId, profileId]) => Boolean(profileId) && availableByVenue.get(targetVenueId)?.has(profileId))
-    .map(([targetVenueId, routingProfileDefinitionId]) => ({ venueId: targetVenueId, routingProfileDefinitionId }));
-}
-
 function syncPreparationControls(value: ExecutionPreparationProjection) {
   depthPreference.value = value.effectivePresentationPreference?.depthPreference ?? 0.5;
   complexityPreference.value = value.effectivePresentationPreference?.languageComplexityPreference ?? 0.5;
-  movementPacePreference.value = value.navigation.movementPacePreference;
-  selectedRoutingProfiles.value = Object.fromEntries(
-    (value.navigation.routingProfileSelections || []).map((selection) => [String(selection.venueId), selection.routingProfileDefinitionId]),
-  );
   requestedJoinAlias.value = value.groupSessionSetup.requestedJoinAlias || "";
 }
 
@@ -111,7 +84,7 @@ onMounted(async () => {
   }
 });
 
-async function patchPreparation(patch: Parameters<typeof executionPreparationRepository.update>[1], fallbackMessage: string) {
+async function patchPreparation(patch: PreparationUpdate, fallbackMessage: string) {
   if (!preparation.value || preparation.value.status !== "active" || updating.value || starting.value) return;
   updating.value = true;
   error.value = null;
@@ -125,15 +98,17 @@ async function patchPreparation(patch: Parameters<typeof executionPreparationRep
   }
 }
 
-async function updatePreparation() {
+async function updatePresentation() {
   await patchPreparation({
     presentationPreference: {
       depthPreference: depthPreference.value,
       languageComplexityPreference: complexityPreference.value,
     },
-    movementPacePreference: movementPacePreference.value,
-    routingProfileSelections: routingProfileSelections(),
-  }, "Impossibile aggiornare la preparazione");
+  }, "Impossibile aggiornare la presentazione");
+}
+
+async function updateNavigation(patch: PreparationUpdate) {
+  await patchPreparation(patch, "Impossibile aggiornare il percorso");
 }
 
 async function selectExecutionMode(executionMode: ExecutionMode) {
@@ -229,53 +204,37 @@ async function start() {
             <div class="section-intro">
               <p class="eyebrow">Adatta la visita</p>
               <h2 id="preparation-title">Personalizza l’esperienza</h2>
-              <p>Regola racconto e percorso: durata, readiness e logistica vengono ricalcolati dal backend.</p>
+              <p>Regola racconto e percorso. Durata, readiness e logistica vengono ricalcolati dal backend.</p>
             </div>
-            <div class="preparation-controls">
-              <label>
-                <span><strong>Approfondimento</strong><output>{{ depthLabel }}</output></span>
-                <input v-model.number="depthPreference" type="range" min="0" max="1" step="0.1">
-                <small>Da una sintesi essenziale a un racconto più approfondito.</small>
-              </label>
-              <label>
-                <span><strong>Complessità del linguaggio</strong><output>{{ complexityLabel }}</output></span>
-                <input v-model.number="complexityPreference" type="range" min="0" max="1" step="0.1">
-                <small>Adatta il lessico al livello che preferisci.</small>
-              </label>
 
-              <section v-if="preparation.navigation.profilesByVenue.length" class="routing-profile-section">
-                <div class="routing-profile-intro">
-                  <strong>Profilo di percorso</strong>
-                  <small>I profili sono definiti separatamente da ciascuna sede e non vengono confrontati per nome.</small>
-                </div>
-                <article v-for="group in preparation.navigation.profilesByVenue" :key="group.venueId" class="routing-profile-card">
-                  <label>
-                    <span><strong>{{ preparationVenueLabel(group.venueId) }}</strong></span>
-                    <select v-model="selectedRoutingProfiles[group.venueId]" :disabled="updating || starting" @change="updatePreparation">
-                      <option value="">Nessun profilo specifico</option>
-                      <option v-for="profile in group.profiles" :key="profile.definitionId" :value="profile.definitionId">{{ profile.label }}</option>
-                    </select>
-                  </label>
-                  <template v-if="selectedProfile(group)">
-                    <p>{{ selectedProfile(group)?.description }}</p>
-                    <ul v-if="selectedProfile(group)?.requirements.length">
-                      <li v-for="requirement in selectedProfile(group)?.requirements" :key="`${requirement.label}-${requirement.operator}-${JSON.stringify(requirement.value)}-${requirement.priority}`">
-                        {{ requirement.label }} · {{ requirement.priority === "required" ? "necessario" : requirement.priority === "avoid" ? "da evitare" : "preferito" }}
-                      </li>
-                    </ul>
-                  </template>
-                </article>
-              </section>
-
-              <label>
-                <span><strong>Ritmo di spostamento</strong><output>{{ movementPaceLabel }}</output></span>
-                <input v-model.number="movementPacePreference" type="range" min="0" max="1" step="0.1">
-                <small>Influisce sul tempo previsto tra una tappa e la successiva.</small>
-              </label>
-              <button class="update-estimate" type="button" :disabled="updating || starting" @click="updatePreparation">
-                {{ updating ? "Aggiornamento…" : "Aggiorna stima" }}
+            <section class="presentation-panel" aria-labelledby="presentation-title">
+              <div class="preference-section-heading">
+                <strong id="presentation-title">Come vuoi ascoltare</strong>
+                <small>Queste modifiche valgono soltanto per questa visita.</small>
+              </div>
+              <div class="presentation-controls">
+                <label>
+                  <span><strong>Approfondimento</strong><output>{{ depthLabel }}</output></span>
+                  <input v-model.number="depthPreference" type="range" min="0" max="1" step="0.1" :disabled="updating || starting">
+                  <small>Da una sintesi essenziale a un racconto più approfondito.</small>
+                </label>
+                <label>
+                  <span><strong>Complessità del linguaggio</strong><output>{{ complexityLabel }}</output></span>
+                  <input v-model.number="complexityPreference" type="range" min="0" max="1" step="0.1" :disabled="updating || starting">
+                  <small>Adatta il lessico al livello che preferisci.</small>
+                </label>
+              </div>
+              <button class="update-estimate" type="button" :disabled="updating || starting" @click="updatePresentation">
+                {{ updating ? "Aggiornamento…" : "Aggiorna racconto" }}
               </button>
-            </div>
+            </section>
+
+            <NavigationPreferencesPanel
+              :navigation="preparation.navigation"
+              :execution-mode="preparation.executionMode"
+              :disabled="updating || starting"
+              @apply="updateNavigation"
+            />
           </section>
         </div>
 
@@ -304,32 +263,25 @@ async function start() {
               <small>Scegli come eseguire questa visita. La scelta riguarda solo questa sessione.</small>
             </div>
             <div class="execution-mode-options">
-              <button
-                type="button"
-                class="execution-mode-option"
-                :class="{ selected: preparation.executionMode === 'self_guided' }"
-                :aria-pressed="preparation.executionMode === 'self_guided'"
+              <ChoiceCard
+                :selected="preparation.executionMode === 'self_guided'"
                 :disabled="updating || starting"
-                @click="selectExecutionMode('self_guided')"
-              >
-                <span aria-hidden="true">◉</span>
-                <span><strong>Personale</strong><small>Segui il percorso al tuo ritmo.</small></span>
-              </button>
-              <button
+                title="Personale"
+                description="Segui il percorso al tuo ritmo."
+                @activate="selectExecutionMode('self_guided')"
+              />
+              <ChoiceCard
                 v-if="synchronizedModeAvailable"
-                type="button"
-                class="execution-mode-option"
-                :class="{ selected: preparation.executionMode === 'synchronized' }"
-                :aria-pressed="preparation.executionMode === 'synchronized'"
+                :selected="preparation.executionMode === 'synchronized'"
                 :disabled="updating || starting"
-                @click="selectExecutionMode('synchronized')"
-              >
-                <span aria-hidden="true">◎</span>
-                <span><strong>Di gruppo</strong><small>Guida i partecipanti sulla stessa tappa.</small></span>
-              </button>
+                title="Di gruppo"
+                description="Guida i partecipanti sulla stessa tappa e sul percorso che hai configurato."
+                @activate="selectExecutionMode('synchronized')"
+              />
             </div>
 
             <div v-if="preparation.executionMode === 'synchronized'" class="group-session-setup">
+              <p class="group-route-summary"><strong>Percorso dell’host</strong><span>Le tue esigenze e le opzioni di percorso diventano il percorso condiviso del gruppo.</span></p>
               <label for="requested-join-alias">
                 <span><strong>Nome per entrare</strong></span>
                 <input
@@ -535,50 +487,23 @@ async function start() {
 .venue-information > p,
 .empty-information { margin: 0; color: var(--navigator-muted); }
 
-.preparation-controls {
+.presentation-panel {
   display: grid;
-  gap: 0;
+  gap: .9rem;
+  margin-bottom: 1.35rem;
+  padding-bottom: 1.35rem;
+  border-bottom: 1px solid var(--navigator-border);
 }
-.preparation-controls > label {
-  display: grid;
-  gap: .55rem;
-  padding: 1.1rem 0;
-  border-top: 1px solid var(--navigator-border);
-}
-.preparation-controls label > span { display: flex; justify-content: space-between; gap: 1rem; }
-.preparation-controls output { color: var(--navigator-primary); font-size: .82rem; font-weight: 750; }
-.preparation-controls input { width: 100%; accent-color: var(--navigator-brand-primary); cursor: pointer; }
-.preparation-controls small { color: var(--navigator-muted); line-height: 1.4; }
-.routing-profile-section {
-  display: grid;
-  gap: .8rem;
-  padding: 1.1rem 0;
-  border-top: 1px solid var(--navigator-border);
-}
-.routing-profile-intro { display: grid; gap: .35rem; }
-.routing-profile-card {
-  display: grid;
-  gap: .55rem;
-  padding: .9rem;
-  border: 1px solid var(--navigator-border);
-  border-radius: .85rem;
-  background: color-mix(in srgb, var(--navigator-brand-primary) 5%, var(--navigator-surface-raised));
-}
-.routing-profile-card label { display: grid; gap: .5rem; }
-.routing-profile-card select {
-  width: 100%;
-  min-height: 46px;
-  padding: .65rem .75rem;
-  border: 1px solid var(--navigator-border);
-  border-radius: .7rem;
-  color: var(--navigator-ink);
-  background: var(--navigator-surface-raised);
-}
-.routing-profile-card p { margin: 0; color: var(--navigator-muted); line-height: 1.45; }
-.routing-profile-card ul { margin: 0; padding-left: 1.15rem; color: var(--navigator-muted); font-size: .8rem; line-height: 1.45; }
+.preference-section-heading { display: grid; gap: .25rem; }
+.preference-section-heading small { color: var(--navigator-muted); line-height: 1.4; }
+.presentation-controls { display: grid; gap: 0; }
+.presentation-controls > label { display: grid; gap: .55rem; padding: .9rem 0; border-top: 1px solid var(--navigator-border); }
+.presentation-controls label > span { display: flex; justify-content: space-between; gap: 1rem; }
+.presentation-controls output { color: var(--navigator-primary); font-size: .82rem; font-weight: 750; }
+.presentation-controls input { width: 100%; accent-color: var(--navigator-brand-primary); cursor: pointer; }
+.presentation-controls small { color: var(--navigator-muted); line-height: 1.4; }
 .update-estimate {
   justify-self: start;
-  margin-top: .6rem;
   border-color: color-mix(in srgb, var(--navigator-primary) 38%, var(--navigator-border));
   color: var(--navigator-primary);
   background: color-mix(in srgb, var(--navigator-primary) 7%, var(--navigator-surface-raised));
@@ -616,28 +541,7 @@ async function start() {
 }
 .execution-mode-intro { display: grid; gap: .25rem; }
 .execution-mode-intro small { color: var(--navigator-muted); line-height: 1.4; }
-.execution-mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
-.execution-mode-option {
-  min-width: 0;
-  min-height: 5rem;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: start;
-  gap: .55rem;
-  padding: .75rem;
-  border: 1px solid var(--navigator-border);
-  border-radius: .8rem;
-  color: var(--navigator-ink);
-  background: var(--navigator-surface-raised);
-  text-align: left;
-}
-.execution-mode-option > span:last-child { display: grid; gap: .18rem; }
-.execution-mode-option small { color: var(--navigator-muted); line-height: 1.3; }
-.execution-mode-option.selected {
-  border-color: var(--navigator-brand-primary);
-  background: color-mix(in srgb, var(--navigator-brand-primary) 9%, var(--navigator-surface-raised));
-  box-shadow: inset 0 0 0 1px var(--navigator-brand-primary);
-}
+.execution-mode-options { display: grid; gap: .55rem; }
 .group-session-setup {
   display: grid;
   gap: .7rem;
@@ -645,6 +549,8 @@ async function start() {
   border-radius: .85rem;
   background: color-mix(in srgb, var(--navigator-brand-primary) 6%, var(--navigator-surface-raised));
 }
+.group-route-summary { display: grid; gap: .2rem; margin: 0; padding-bottom: .65rem; border-bottom: 1px solid var(--navigator-border); }
+.group-route-summary span { color: var(--navigator-muted); font-size: .78rem; line-height: 1.4; }
 .group-session-setup label { display: grid; gap: .4rem; }
 .group-session-setup input {
   width: 100%;
@@ -702,8 +608,7 @@ async function start() {
   .visit-meta { gap: .35rem; }
   .previsit-card,
   .previsit-summary { border-radius: 1rem; }
-  .preparation-controls label > span { align-items: flex-start; flex-direction: column; gap: .25rem; }
-  .execution-mode-options { grid-template-columns: 1fr; }
+  .presentation-controls label > span { align-items: flex-start; flex-direction: column; gap: .25rem; }
   .update-estimate { width: 100%; }
 }
 </style>
