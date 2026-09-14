@@ -198,7 +198,7 @@ export const venueActionMixin = {
     if (form.matches("[data-physical-onboarding]")) {
       const mode = String(data.get("mode") || this.onboarding?.recommendedMode || "starter");
       const payload = mode === "existing"
-        ? { mode, physicalVocabularyRevisionId: String(data.get("physicalVocabularyRevisionId") || "") }
+        ? { mode, physicalVocabularyId: String(data.get("physicalVocabularyId") || "") }
         : { mode, name: String(data.get("name") || ""), description: String(data.get("description") || "") };
       await this.execute(() => managementRepository.initializeVenuePhysicalOnboarding(this.id, payload), "Configurazione fisica iniziale pronta.");
       return;
