@@ -64,11 +64,26 @@ test("delivery anchor and context anchor remain distinct concepts", () => {
   assert.equal(String(contextAnchorForIndex(value.plan, 2)._id), String(value.firstAnchorId));
 });
 
-test("a session with physical stops requires an explicit known location before delivery", () => {
+test("a session with physical stops requires an explicit known location before anchored delivery", () => {
   const value = fixture();
   const runtime = deriveVisitExecutionState({ personalSession: session(), plan: value.plan, currentEntryIndex: 0 });
   assert.equal(runtime.phase, EXECUTION_PHASES.LOCATION_REQUIRED);
   assert.equal(runtime.presentationAvailable, false);
+});
+
+test("location-independent content stays deliverable even when the same visit has physical stops", () => {
+  const value = fixture();
+  const independentEntry = { _id: oid(), deliveryAnchorId: null };
+  value.plan.contentEntries.splice(2, 0, independentEntry);
+  const runtime = deriveVisitExecutionState({
+    personalSession: session(),
+    plan: value.plan,
+    currentEntryIndex: 2,
+  });
+  assert.equal(runtime.phase, EXECUTION_PHASES.PRESENTING_VISIT_CONTENT);
+  assert.equal(runtime.presentationAvailable, true);
+  assert.equal(runtime.deliveryAnchor, null);
+  assert.equal(String(runtime.contextAnchor._id), String(value.firstAnchorId));
 });
 
 test("location-independent content can be delivered when the plan has no physical stops", () => {
