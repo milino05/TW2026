@@ -66,7 +66,9 @@ async function exportDemoVenueLayoutSnapshots({
   floorPlanRoot = configuredFloorPlanRoot(),
 } = {}) {
   const floorPlansFixtureRoot = path.join(fixtureRoot, "floor-plans");
-  await fs.rm(fixtureRoot, { recursive: true, force: true });
+  await fs.mkdir(fixtureRoot, { recursive: true });
+  await fs.rm(path.join(fixtureRoot, SNAPSHOT_FILE), { force: true });
+  await fs.rm(floorPlansFixtureRoot, { recursive: true, force: true });
   await fs.mkdir(floorPlansFixtureRoot, { recursive: true });
 
   const document = {
