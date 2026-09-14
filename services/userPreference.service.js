@@ -69,7 +69,10 @@ async function setDefaultPresentationPreference({ userId, payload }) {
 
 async function setDefaultNavigationPreference({ userId, payload }) {
   const currentUser = await getActiveUserOrFail(userId);
-  const preference = normalizeNavigationPreference(payload || {}, currentUser.defaultNavigationPreference || {});
+  const currentPreference = currentUser.defaultNavigationPreference?.toObject?.()
+    || currentUser.defaultNavigationPreference
+    || {};
+  const preference = normalizeNavigationPreference(payload || {}, currentPreference);
   const user = await User.findByIdAndUpdate(
     userId,
     { $set: { defaultNavigationPreference: preference } },
