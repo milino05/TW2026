@@ -606,9 +606,11 @@ onUnmounted(() => {
               :map="map"
               :navigation="null"
               :current-visit-anchor-id="currentAnchorId"
+              :available-actions="runtime.availableActions"
               :location-selection-mode="locationSelectionMode"
               :selection-busy="interactionBusy"
               @select-location="selectLocation"
+              @select-action="requestPersonalAction"
             />
             <p v-else>La mappa non è disponibile.</p>
           </section>
@@ -641,7 +643,7 @@ onUnmounted(() => {
           <div v-if="quiz.attempt" class="quiz-result"><div class="waiting-symbol" aria-hidden="true">✓</div><p class="eyebrow">Risposte inviate</p><h2>Hai ottenuto {{ quiz.attempt.score }} su {{ quiz.attempt.maxScore }}</h2><p>La guida può vedere il risultato. Puoi aspettare qui la conclusione.</p></div>
           <form v-else class="quiz-form" @submit.prevent="submitQuiz">
             <div class="quiz-heading"><p class="eyebrow">Quiz finale</p><h2>Scegli una risposta</h2><p>Leggi con calma: serve una risposta per ogni domanda.</p></div>
-            <fieldset v-for="(question, questionIndex) in quiz.questions" :key="question.id"><legend><span>{{ questionIndex + 1 }}</span>{{ question.question }}</legend><label v-for="(option, optionIndex) in question.options" :key="optionIndex" class="quiz-choice"><input v-model.number="quizAnswers[question.id]" type="radio" :name="`question-${question.id}`" :value="optionIndex"><span>{{ option }}</span></label></fieldset>
+            <fieldset v-for="(question, questionIndex) in quiz.questions" :key="question.id"><legend><span>{{ questionIndex + 1 }}</span>{{ question.question }}</legend><label v-for="(option, optionIndex) in quiz.questions[questionIndex].options" :key="optionIndex" class="quiz-choice"><input v-model.number="quizAnswers[question.id]" type="radio" :name="`question-${question.id}`" :value="optionIndex"><span>{{ option }}</span></label></fieldset>
             <button class="primary-action" type="submit" :disabled="actionBusy || quiz.questions.some((question) => quizAnswers[question.id] === undefined)">{{ actionBusy ? 'Invio…' : 'Invia le risposte' }}</button>
           </form>
         </template>
