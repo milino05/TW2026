@@ -10,6 +10,7 @@ const { placesForPhysicalFeature } = require("./venueRouting.service");
 const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
+const { compileVenueControlSelections } = require("./venueRoutingControlSelectionV2.service");
 const { resolveVenueTargetExhibit, resolveApproachInstruction } = require("./venueExhibitResolution.service");
 
 function id(value) { return String(value?._id || value || ""); }
@@ -40,16 +41,42 @@ function routingBlockerDetails(blockers = [], { venueId = null, field = "navigat
 function globalSemanticRequirements(requirements = []) {
   return (requirements || []).filter((requirement) => requirement?.physicalFeatureRef?.kind === "semantic");
 }
-function assertRequirementScope({ requirements = [], venueCount }) {
-  if (venueCount <= 1) return;
+function assertRequirementScope({ requirements = [] }) {
   const local = (requirements || []).filter((requirement) => requirement?.physicalFeatureRef?.kind === "local" || requirement?.physicalAttributeDefinitionId);
   if (!local.length) return;
   throw new AppError("Un requisito locale deve essere limitato a una singola Venue", 409, local.map((requirement) => ({
     field: "navigation.requirements",
     code: "LOCAL_PHYSICAL_FEATURE_REQUIRES_VENUE_SCOPE",
-    message: "Un PhysicalFeatureRef locale non può essere applicato come preferenza globale a più sedi.",
+    message: "Un PhysicalFeatureRef locale non può essere applicato come preferenza globale.",
     context: { physicalFeatureRef: requirement.physicalFeatureRef || null },
   })));
+}
+function venueRequirementMap(entries = [], bundleByVenueId = new Map()) {
+  if (!Array.isArray(entries)) throw new AppError("navigation.venueRequirements deve essere un array", 400, [{ field: "navigation.venueRequirements", code: "INVALID_TYPE" }]);
+  const result = new Map();
+  for (const [index, entry] of entries.entries()) {
+    const venueId = id(entry?.venueId);
+    if (!venueId || !bundleByVenueId.has(venueId)) {
+      throw new AppError("Requisiti locali fuori dallo scope fisico", 409, [{
+        field: `navigation.venueRequirements[${index}].venueId`,
+        code: "VENUE_REQUIREMENTS_OUTSIDE_PHYSICAL_SCOPE",
+        context: { venueId },
+      }]);
+    }
+    if (result.has(venueId)) {
+      throw new AppError("È ammesso un solo gruppo di requisiti locali per Venue", 400, [{ field: `navigation.venueRequirements[${index}].venueId`, code: "DUPLICATE_VALUE" }]);
+    }
+    const requirements = Array.isArray(entry?.requirements) ? entry.requirements : [];
+    const invalid = requirements.find((requirement) => requirement?.physicalFeatureRef?.kind !== "local");
+    if (invalid) {
+      throw new AppError("I requisiti scoped per Venue devono usare riferimenti fisici locali", 400, [{
+        field: `navigation.venueRequirements[${index}].requirements`,
+        code: "LOCAL_PHYSICAL_FEATURE_REQUIRED",
+      }]);
+    }
+    result.set(venueId, requirements);
+  }
+  return result;
 }
 function interVenueRequirementOutcome({ requirements = [], fromVenueId, toVenueId }) {
   const relevant = globalSemanticRequirements(requirements);
@@ -83,9 +110,10 @@ function assertProfileSelectionScope(profileSelections, bundleByVenueId) {
     context: { venueId },
   })));
 }
-function resolveNavigationRequirementsForVenue({ bundle, globalRequirements = [], routingProfileSelection = null }) {
+function resolveNavigationRequirementsForVenue({ bundle, globalRequirements = [], localRequirements = [], routingProfileSelection = null }) {
   return resolveVenueRoutingRequirements({
     globalRequirements,
+    localRequirements,
     routingProfileSelection,
     physicalVocabulary: bundle.physicalVocabulary,
     revision: bundle.physicalVocabularyRevision,
@@ -125,9 +153,13 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
 
 async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHints = new Map(), navigation = {} }) {
   const resolved = await resolveSessionVenuePins(sourceAnchors);
-  assertRequirementScope({ requirements: navigation.requirements || [], venueCount: resolved.bundleByVenueId.size });
+  assertRequirementScope({ requirements: navigation.requirements || [] });
   const profileSelections = selectionMap(navigation.routingProfileSelections || []);
   assertProfileSelectionScope(profileSelections, resolved.bundleByVenueId);
+  const compiledVenueRequirements = Array.isArray(navigation.venueControlSelections) && navigation.venueControlSelections.length
+    ? compileVenueControlSelections({ selections: navigation.venueControlSelections, bundleByVenueId: resolved.bundleByVenueId })
+    : (navigation.venueRequirements || []);
+  const localRequirementsByVenue = venueRequirementMap(compiledVenueRequirements, resolved.bundleByVenueId);
   const profiles = sourceAnchors.length ? await VenueTargetObservationProfile.find({ venueTargetId: { $in: sourceAnchors.map((entry) => entry.venueTargetId) } }).lean() : [];
   const profileByTarget = new Map(profiles.map((entry) => [id(entry.venueTargetId), entry]));
   const warnings = [], requirementsByVenue = new Map();
@@ -135,6 +167,7 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
     const translated = resolveNavigationRequirementsForVenue({
       bundle,
       globalRequirements: navigation.requirements || [],
+      localRequirements: localRequirementsByVenue.get(venueId) || [],
       routingProfileSelection: profileSelections.get(venueId) || null,
     });
     if (translated.blockers.length) throw new AppError("Una Venue non supporta la configurazione di routing richiesta", 409, routingBlockerDetails(translated.blockers, { venueId }));
@@ -191,19 +224,32 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
     });
     legs.push({ type: "indoor", fromAnchorId: from._id, toAnchorId: to._id, venueReleaseId: bundle.release._id, layoutRevisionId: bundle.layout._id, path: (route.path || []).map((entry) => entry.connectionId || entry), estimatedSeconds: Math.round(route.estimatedSeconds), preferencePenalty: route.preferencePenalty || 0, instruction: hint?.instruction || hint?.instructionOverride || null });
   }
-  return { ...resolved, visitAnchors, physicalRoute: { legs }, warnings, speedMps };
+  return {
+    ...resolved,
+    visitAnchors,
+    physicalRoute: { legs },
+    warnings,
+    speedMps,
+    navigationSnapshot: {
+      movementPacePreference: Number(navigation.movementPacePreference ?? 0.5),
+      routingProfileSelections: [...profileSelections.values()],
+      requirements: navigation.requirements || [],
+      venueRequirements: compiledVenueRequirements,
+    },
+  };
 }
 
 async function loadPinnedBundle(session, venueId) {
   const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(venueId));
   if (!pin) throw new AppError("Venue non pinzata nella Session", 409);
-  const [release, layout] = await Promise.all([
+  const [venue, release, layout] = await Promise.all([
+    Venue.findById(pin.venueId).lean(),
     VenueRelease.findOne({ _id: pin.venueReleaseId, venueId: pin.venueId }).lean(),
     LayoutRevision.findOne({ _id: pin.layoutRevisionId, venueId: pin.venueId }).lean(),
   ]);
-  if (!release || !layout) throw new AppError("Snapshot fisica pinzata dalla Session non disponibile", 409);
+  if (!venue || !release || !layout) throw new AppError("Snapshot fisica pinzata dalla Session non disponibile", 409);
   const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
-  return { pin, release, layout, physicalVocabulary, physicalVocabularyRevision };
+  return { pin, venue, release, layout, physicalVocabulary, physicalVocabularyRevision };
 }
 
 async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, physicalFeatureRef }) {
@@ -211,9 +257,12 @@ async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, 
   const destinations = placesForPhysicalFeature({ layoutRevision: bundle.layout, physicalVocabulary: bundle.physicalVocabulary, physicalVocabularyRevision: bundle.physicalVocabularyRevision, physicalFeatureRef });
   if (!destinations.length) throw new AppError("La Venue non contiene una destinazione per la caratteristica fisica richiesta", 404);
   const profileSelections = selectionMap(session.navigationSnapshot?.routingProfileSelections || []);
+  const localRequirements = (session.navigationSnapshot?.venueRequirements || [])
+    .find((entry) => id(entry.venueId) === id(venueId))?.requirements || [];
   const translated = resolveNavigationRequirementsForVenue({
     bundle,
     globalRequirements: session.navigationSnapshot?.requirements || [],
+    localRequirements,
     routingProfileSelection: profileSelections.get(id(venueId)) || null,
   });
   if (translated.blockers.length) throw new AppError("Snapshot fisica non supporta la configurazione di routing richiesta", 409, routingBlockerDetails(translated.blockers, { venueId }));
