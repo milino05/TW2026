@@ -16,17 +16,23 @@ Una Tappa è un `VisitAnchor` con il gruppo di ContentEntry consegnate tramite l
 
 Se l'utente seleziona esplicitamente una Tappa precedente, il cursore narrativo viene spostato alla prima ContentEntry di quella Tappa. La posizione fisica e lo storico non vengono riscritti. Per esempio Tappa 5 → Tappa 3 produce poi la progressione ordinaria 3 → 4 → 5 → 6.
 
+Una ContentEntry con `deliveryAnchorId = null` resta immediatamente presentabile anche se la stessa visita contiene altre Tappe fisiche: l'esistenza di VisitAnchor altrove nel piano non introduce implicitamente un gate di posizione. L'utente può comunque confermare facoltativamente la propria posizione per usare orientamento e facility.
+
 ## 3. KnownLocation
 
 `knownLocation` contiene riferimenti fisici pinzati (`venueId`, `placeId` e, quando noti, `visitAnchorId`, `venueTargetId`, `exhibitSlotId`) e provenance della conoscenza (`manual_selection`, `navigation_confirmation`, `qr`, `teleport`, `geolocation`).
 
 Il runtime non sostiene che `knownLocation` sia una misura GPS: è l'ultima posizione accettata dal sistema. L'utente può correggerla esplicitamente. I provider 18–33 alimenteranno lo stesso concetto senza cambiare la macchina a stati.
 
+La **selezione manuale sulla mappa è evidenza place-level**: conferma `venueId + placeId`, ma non prova da sola che l'utente abbia identificato un determinato VisitAnchor, VenueTarget o ExhibitSlot. L'identificazione esatta dell'oggetto deriva dall'approach confermato oppure da provider che possano fornire un'evidenza più forte, come QR/teleport/geolocation quando configurati a tale scopo.
+
 ## 4. Route live derivata
 
 Il backend riusa il routing esistente e lo snapshot fisico pinzato. La route live viene ricalcolata da `knownLocation + destination` e non viene persistita. `progress.next` durante la navigazione conferma il primo passo della route corrente e aggiorna la KnownLocation; non avanza il cursore narrativo.
 
 La route pianificata nel SessionPlan e la route live restano concetti diversi.
+
+Un trasferimento inter-Venue viene eseguito soltanto se esiste la corrispondente leg `inter_venue` nel SessionPlan. L'origine può essere provata da un VisitAnchor esatto oppure dalla presenza place-level nell'area dell'anchor sorgente; non è necessario fingere di aver identificato l'opera precedente per iniziare un trasferimento già pianificato.
 
 ## 5. Approach e presentation gate
 
@@ -42,6 +48,15 @@ La deviazione fisica è distinta da `semanticPresentation` e `semantic.return`.
 
 Il piano e la progressione narrativa appartengono alla `SynchronizedVisitSession`; `knownLocation`, deviazioni, presentation override ed esplorazioni semantiche restano personali nella `VisitSessionV2` di ciascun partecipante. Il partecipante non riceve next/previous narrativi, ma può confermare personalmente i passi fisici. Il playback condiviso della guida resta autorevole per la presentazione comune.
 
+Gli owner runtime sono espliciti:
+
+- `planOwner`: possiede il `SessionPlanRevisionV2` corrente;
+- `progressOwner`: possiede cursore narrativo, stato di avanzamento e relativa `runtimeVersion`;
+- `routingConfigurationOwner`: possiede venue pin, navigation snapshot e velocità/configurazione di routing;
+- `physicalRuntimeOwner`: è sempre la `VisitSessionV2` personale e possiede KnownLocation e deviazioni.
+
+In self-guided i quattro ruoli coincidono con la VisitSession. In synchronized i primi tre ruoli appartengono alla `SynchronizedVisitSession`, mentre `physicalRuntimeOwner` resta personale. Il vecchio concetto ambiguo `physicalSession` non fa parte del contratto runtime.
+
 ## 8. Runtime derivato
 
 Le fasi canoniche sono:
@@ -55,11 +70,13 @@ Le fasi canoniche sono:
 - `at_detour_destination`
 - `route_completed`
 
-La fase è una projection derivata e non un campo persistente.
+La fase è una projection derivata e non un campo persistente. `location_required` si applica quando la ContentEntry narrativa corrente richiede un delivery anchor e non esiste ancora una KnownLocation sufficiente per avviare il routing; non blocca le ContentEntry realmente location-independent.
 
 ## 9. Boundary
 
 Le mutazioni runtime continuano a passare dal protocollo Action e da `POST /v2/visit-sessions/:sessionId/actions`. Le API `current` e `map` restano read projection. I resolver di location, incluso il public-code resolver, non spostano implicitamente la Session.
+
+Le action che richiedono un parametro concreto (`location.confirm`, `location.correct`, `visit.stop.select`) vengono materializzate dalla UI attraverso Mappa/Tappe e inviate al medesimo ActionDispatcher soltanto dopo la scelta dell'utente.
 
 ## 10. Principio di riuso
 
