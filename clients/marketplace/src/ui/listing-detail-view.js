@@ -90,14 +90,13 @@ export class ArtAroundListingDetailView extends HTMLElement {
   renderTechnicalOfferDetails(offer) { return `<details class="technical-details"><summary>Dettagli tecnici della licenza</summary><dl class="definition-list">${(offer.uses || []).map((use) => `<div><dt>${escapeHtml(rightLabel(use))}</dt><dd><code>${escapeHtml(use.capability)}</code> · <code>${escapeHtml(use.resourceType)}</code></dd></div>`).join("")}<div><dt>Aggiornamenti</dt><dd>${escapeHtml(offer.versionBehaviour?.label || "Non specificato")}</dd></div></dl></details>`; }
 
   renderOffer(offer) {
-    const paid = offer.pricing?.type === "paid";
-    const actionLabel = paid ? "Acquista licenza" : "Aggiungi alla libreria";
+    const actionLabel = "Acquista";
     return `<article class="consumer-offer-card"><header><div><span class="eyebrow">${escapeHtml(offer.label || "Offerta")}</span><h3>${escapeHtml(formatPrice(offer.pricing))}</h3></div>${offer.fullyAvailable ? `<span class="chip" data-tone="success">${icon("check", { size: 14 })} Già disponibile</span>` : ""}</header><div><strong>Cosa puoi fare</strong>${this.renderRights(offer)}</div><p class="consumer-version-note">${escapeHtml(offer.versionBehaviour?.label || "Condizioni di aggiornamento non specificate")}</p>${this.renderTechnicalOfferDetails(offer)}${offer.fullyAvailable ? `<p class="note">Questa offerta è già disponibile nella libreria dell'area corrente.</p>` : `<button type="button" data-start-acquisition="${escapeHtml(offer.id)}" ${this.busy ? "disabled" : ""}>${actionLabel}</button>`}</article>`;
   }
 
   renderSuccess() {
     if (!this.message) return "";
-    return `<section class="consumer-success" role="status"><div>${icon("check", { size: 20 })}<div><strong>${escapeHtml(this.message)}</strong><p>I diritti sono disponibili senza copiare o trasferire la proprietà della risorsa.</p></div></div><div class="button-row"><a class="button-link" data-route href="/workspace?ownership=licensed">Apri in Libreria</a><a class="button-link secondary" data-route href="/acquisitions">Vedi acquisizioni</a></div></section>`;
+    return `<section class="consumer-success" role="status"><div>${icon("check", { size: 20 })}<div><strong>${escapeHtml(this.message)}</strong><p>I diritti sono disponibili senza copiare o trasferire la proprietà della risorsa.</p></div></div><div class="button-row"><a class="button-link" data-route href="/acquisitions">Vai alle Attività</a></div></section>`;
   }
 
   render() {

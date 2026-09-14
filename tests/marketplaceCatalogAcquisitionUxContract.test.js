@@ -92,8 +92,10 @@ test("acquisizioni e diritti sono contestuali senza selector duplicato", () => {
 
 test("acquisire non copia né trasferisce la proprietà editoriale", () => {
   assert.match(detail, /senza copiare o trasferire la proprietà della risorsa/);
-  assert.match(detail, /Aggiungi alla libreria/);
-  assert.match(detail, /Apri in Libreria/);
+  assert.match(detail, /actionLabel = "Acquista"/);
+  assert.doesNotMatch(detail, /Aggiungi alla libreria|Acquista licenza/);
+  assert.match(detail, /href="\/acquisitions">Vai alle Attività/);
+  assert.doesNotMatch(detail, /Apri in Libreria|workspace\?ownership=licensed/);
 });
 
 test("l'immagine facoltativa del contenuto compare nel catalogo e nel dettaglio", () => {
