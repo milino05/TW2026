@@ -69,7 +69,6 @@ async function exportDemoVenueLayoutSnapshots({
 
   const document = {
     version: SNAPSHOT_VERSION,
-    generatedAt: new Date().toISOString(),
     venues: {},
   };
 
@@ -109,8 +108,6 @@ async function exportDemoVenueLayoutSnapshots({
     document.venues[plan.key] = {
       source: {
         venueId: String(venue._id),
-        releaseId: String(release._id),
-        layoutRevisionId: String(layout._id),
         view: venue.workingReleaseId ? "working" : "published",
       },
       layout: snapshot,
