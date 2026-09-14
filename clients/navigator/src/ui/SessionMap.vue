@@ -30,7 +30,6 @@ const effectiveNavigation = computed<NavigationProjection | null>(() => indoorAc
 const physicalProgressAction = computed(() => props.availableActions.find((action) => action.type === "PHYSICAL_PROGRESS_NEXT") || null);
 const returnAction = computed(() => props.availableActions.find((action) => action.type === "NAVIGATION_RETURN_TO_VISIT") || null);
 const correctLocationAction = computed(() => props.availableActions.find((action) => action.type === "LOCATION_CORRECT") || null);
-const facilityActions = computed(() => props.availableActions.filter((action) => action.actionId.startsWith("navigation.place.")));
 const otherNavigationActions = computed(() => props.availableActions.filter((action) =>
   action.family === "navigation"
   && !action.actionId.startsWith("navigation.place.")
@@ -56,10 +55,18 @@ watch(() => [
     focusVenue(props.map.activeNavigation.destination.venueId);
     return;
   }
-  if (props.map.knownLocation?.venueId) focusVenue(props.map.knownLocation.venueId);
+  if (props.map.knownLocation?.venueId) {
+    focusVenue(props.map.knownLocation.venueId);
+    return;
+  }
+  if (props.currentVisitAnchorId) {
+    const index = props.map.venues.findIndex((candidate) =>
+      candidate.stops.some((stop) => stop.visitAnchorId === props.currentVisitAnchorId));
+    if (index >= 0) venueIndex.value = index;
+  }
 }, { immediate: true });
 
-watch([venue, () => props.map.knownLocation?.floorId, () => props.locationSelectionMode, effectiveNavigation], ([value]) => {
+watch([venue, () => props.currentVisitAnchorId, () => props.map.knownLocation?.floorId, () => props.locationSelectionMode, effectiveNavigation], ([value]) => {
   if (!value) { selectedFloorId.value = null; return; }
   if (props.locationSelectionMode && props.map.knownLocation?.venueId === value.id && props.map.knownLocation.floorId) {
     selectedFloorId.value = props.map.knownLocation.floorId;
@@ -74,10 +81,12 @@ watch([venue, () => props.map.knownLocation?.floorId, () => props.locationSelect
     selectedFloorId.value = props.map.knownLocation.floorId;
     return;
   }
-  selectedFloorId.value = value.floors[0]?.id || null;
+  const currentStop = value.stops.find((stop) => stop.visitAnchorId === props.currentVisitAnchorId);
+  selectedFloorId.value = currentStop?.floorId || value.floors[0]?.id || null;
 }, { immediate: true });
 
 const floor = computed(() => venue.value?.floors.find((entry) => entry.id === selectedFloorId.value) || null);
+const facilities = computed(() => venue.value?.facilities.filter((entry) => entry.floorId === selectedFloorId.value) || []);
 const selectableLocations = computed(() => props.map.selectableLocations.filter((entry) => entry.venueId === venue.value?.id && entry.floorId === selectedFloorId.value));
 const knownLocation = computed(() => props.map.knownLocation?.venueId === venue.value?.id && props.map.knownLocation.floorId === selectedFloorId.value ? props.map.knownLocation : null);
 const navigationOverlays = computed(() => {
@@ -85,6 +94,12 @@ const navigationOverlays = computed(() => {
   if (!venue.value || navigation?.destination.venueId !== venue.value.id) return [];
   return navigation.route.overlays.filter((entry) => entry.floorId === selectedFloorId.value);
 });
+
+function facilityAction(facility: { physicalFeatureRef: { definitionId: string } }) {
+  if (props.locationSelectionMode) return null;
+  return props.availableActions.find((action) =>
+    action.actionId === `navigation.place.${facility.physicalFeatureRef.definitionId}`) || null;
+}
 
 function pointStyle(point: { x: number; y: number }) {
   return { left: `${point.x * 100}%`, top: `${point.y * 100}%` };
@@ -116,6 +131,25 @@ function pointStyle(point: { x: number; y: number }) {
         <polyline v-for="(overlay, index) in navigationOverlays" :key="`navigation-${index}`" :points="overlay.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')" fill="none" vector-effect="non-scaling-stroke" class="navigation-route" />
       </svg>
 
+      <template v-for="facility in facilities" :key="facility.id">
+        <button
+          v-if="facilityAction(facility)"
+          type="button"
+          class="map-marker facility-marker facility-action"
+          :style="pointStyle(facility.position)"
+          :title="`Vai a ${facility.label}`"
+          :aria-label="`Vai a ${facility.label}`"
+          :disabled="selectionBusy"
+          @click="emit('selectAction', facilityAction(facility)!)"
+        >•</button>
+        <span
+          v-else
+          class="map-marker facility-marker"
+          :style="pointStyle(facility.position)"
+          :title="`${facility.category}: ${facility.label}`"
+        >•</span>
+      </template>
+
       <span v-if="knownLocation && !locationSelectionMode" class="map-marker known-location-marker" :style="pointStyle(knownLocation.position)" title="Ultima posizione confermata" aria-label="Ultima posizione confermata"></span>
       <span v-if="!locationSelectionMode && effectiveNavigation && effectiveNavigation.destination.venueId === venue.id && effectiveNavigation.destination.floorId === selectedFloorId" class="map-marker destination-marker" :style="pointStyle(effectiveNavigation.destination.position)" :title="effectiveNavigation.destination.label">◎</span>
 
@@ -135,10 +169,6 @@ function pointStyle(point: { x: number; y: number }) {
     </article>
 
     <section v-if="!locationSelectionMode" class="map-actions" aria-label="Azioni sulla mappa">
-      <div v-if="facilityActions.length" class="map-action-group">
-        <strong>Luoghi utili</strong>
-        <div class="action-row"><button v-for="action in facilityActions" :key="action.actionId" type="button" :disabled="selectionBusy" @click="emit('selectAction', action)">{{ action.label }}</button></div>
-      </div>
       <div class="action-row map-primary-actions">
         <button v-if="physicalProgressAction" type="button" class="physical-progress-action" :disabled="selectionBusy" @click="emit('selectAction', physicalProgressAction)">{{ physicalProgressAction.label }}</button>
         <button v-if="returnAction" type="button" class="return-action" :disabled="selectionBusy" @click="emit('selectAction', returnAction)">← Torna alla visita</button>
@@ -172,6 +202,9 @@ function pointStyle(point: { x: number; y: number }) {
 .map-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .navigation-route { stroke:var(--navigator-route-active); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1px 1px color-mix(in srgb,var(--navigator-route-active) 35%,transparent)); }
 .map-marker,.selectable-location-marker { position:absolute; transform:translate(-50%,-50%); z-index:2; }
+.facility-marker { display:grid; place-items:center; width:1.65rem; height:1.65rem; padding:0; border:2px solid var(--navigator-surface-raised); border-radius:999px; color:var(--navigator-primary); background:var(--navigator-surface-raised); box-shadow:0 2px 7px rgba(0,0,0,.22); font-size:.8rem; font-weight:900; }
+.facility-action { cursor:pointer; font:inherit; }
+.facility-action:disabled { cursor:default; opacity:.55; }
 .known-location-marker { width:1rem; height:1rem; border:3px solid var(--navigator-surface-raised); border-radius:50%; background:var(--navigator-ink); box-shadow:0 0 0 2px var(--navigator-primary); }
 .destination-marker { display:grid; place-items:center; width:1.9rem; height:1.9rem; border:2px solid var(--navigator-route-active); border-radius:50%; color:var(--navigator-route-active); background:var(--navigator-surface-raised); font-weight:900; }
 .selectable-location-marker { width:2rem; height:2rem; border:2px solid var(--navigator-primary); border-radius:50%; color:var(--navigator-primary); background:var(--navigator-surface-raised); font-weight:900; }
@@ -181,8 +214,6 @@ function pointStyle(point: { x: number; y: number }) {
 .destination-summary small,.destination-summary span { color:var(--navigator-muted); }
 .destination-mark { color:var(--navigator-route-active); font-size:1.35rem; font-weight:900; }
 .map-actions { display:grid; gap:.8rem; margin-top:.9rem; }
-.map-action-group { display:grid; gap:.45rem; }
-.map-action-group>strong { font-size:.8rem; }
 .action-row { display:flex; flex-wrap:wrap; gap:.45rem; }
 .map-primary-actions { padding-top:.7rem; border-top:1px solid var(--navigator-border); }
 .map-actions .physical-progress-action { border-color:var(--navigator-route-active); color:#fff; background:var(--navigator-route-active); }
