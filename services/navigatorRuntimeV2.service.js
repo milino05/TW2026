@@ -197,6 +197,13 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
+  if (execution.phase === EXECUTION_PHASES.ROUTE_COMPLETED) {
+    actions.push(...baseActionsByFamilies(base.actions, new Set(["progress", "lifecycle"])));
+    if (stopAction) actions.push(stopAction);
+    actions.push(...await physicalFeatureActions({ session, routingSession, execution, entry }));
+    return { ...base, execution, actions: dedupeActions(actions) };
+  }
+
   const presentationAllowed = execution.presentationAvailable
     || synchronizedPlaybackOverridesPhysicalGate({ synchronizedSession, entry });
   if (presentationAllowed) {
@@ -229,6 +236,31 @@ function projectKnownLocation(location) {
   };
 }
 
+function projectLiveNavigationSummary(navigation) {
+  if (!navigation) return null;
+  if (navigation.type === "inter_venue") {
+    return {
+      intent: navigation.intent,
+      type: "inter_venue",
+      destination: navigation.destination,
+      nextInstruction: navigation.transferInstruction || null,
+      remainingStepCount: 1,
+      estimatedSeconds: Math.round(Number(navigation.estimatedSeconds) || 0),
+      distanceMeters: null,
+    };
+  }
+  const firstStep = navigation.path?.[0] || null;
+  return {
+    intent: navigation.intent,
+    type: "indoor",
+    destination: navigation.destination,
+    nextInstruction: firstStep?.instruction || null,
+    remainingStepCount: navigation.path?.length || 0,
+    estimatedSeconds: Math.round(Number(navigation.estimatedSeconds) || 0),
+    distanceMeters: Math.round((Number(navigation.distanceMeters) || 0) * 10) / 10,
+  };
+}
+
 async function currentNavigatorRuntimeProjection({ sessionId, userId }) {
   const derived = await deriveNavigatorRuntimeActions({ sessionId, userId });
   const baseProjection = await currentBaseSessionProjection({ sessionId, userId });
@@ -243,7 +275,7 @@ async function currentNavigatorRuntimeProjection({ sessionId, userId }) {
   } = derived;
   const presentationAllowed = execution.presentationAvailable
     || synchronizedPlaybackOverridesPhysicalGate({ synchronizedSession, entry: execution.entry });
-  const navigation = [EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.NAVIGATING_DETOUR]
+  const liveNavigation = [EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.NAVIGATING_DETOUR]
     .includes(execution.phase)
     ? await resolveLiveRouteV2({
       personalSession: session,
@@ -276,7 +308,7 @@ async function currentNavigatorRuntimeProjection({ sessionId, userId }) {
         },
         startedAt: execution.detour.startedAt || null,
       } : null,
-      navigation,
+      navigation: projectLiveNavigationSummary(liveNavigation),
     },
     current: presentationAllowed ? baseProjection.current : null,
     availableActions: derived.actions.filter((action) => !action.hidden).map(publicAction),
@@ -309,13 +341,17 @@ async function correctNavigatorLocationV2({ sessionId, userId, locationRef }) {
 
 async function advanceNavigatorPhysicalProgressV2({ sessionId, userId }) {
   const state = await loadNavigatorState({ sessionId, userId });
-  return advancePhysicalProgressV2({
+  const result = await advancePhysicalProgressV2({
     personalSession: state.session,
     routingSession: state.physicalSession,
     plan: state.plan,
     currentEntryIndex: state.currentEntryIndex,
     effectiveStatus: state.effectiveStatus,
   });
+  return {
+    type: result.type,
+    knownLocation: projectKnownLocation(result.knownLocation),
+  };
 }
 
 async function startNavigatorPhysicalDetourV2({ sessionId, userId, physicalFeatureRef }) {
@@ -388,5 +424,6 @@ module.exports = {
   advanceNavigatorNarrativeProgressV2,
   selectNavigatorVisitStopV2,
   synchronizedPlaybackOverridesPhysicalGate,
+  projectLiveNavigationSummary,
   visitStopIndex,
 };
