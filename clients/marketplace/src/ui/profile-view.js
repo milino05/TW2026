@@ -109,7 +109,11 @@ export class ArtAroundProfileView extends HTMLElement {
       const priority = String(data.get(`need:${need.id}:priority`) || need.defaultPriority || "preferred");
       let value = need.value;
       if (need.valueMode === "user") {
-        value = Number(data.get(`need:${need.id}:value`));
+        const rawValue = data.get(`need:${need.id}:value`);
+        if (rawValue == null || String(rawValue).trim() === "") {
+          throw new Error(`Inserisci un valore per “${need.label}”.`);
+        }
+        value = Number(rawValue);
         if (!Number.isFinite(value) || value < 0) {
           throw new Error(`Inserisci un valore valido per “${need.label}”.`);
         }
