@@ -110,12 +110,17 @@ function needSupport(needId: string) {
   };
 }
 
+function missingValue(value: unknown) {
+  return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
+}
+
 function needRequirement(need: PersonalNavigationNeedDefinition): RoutingRequirement | null {
   const state = needStates[need.id];
   if (!state?.enabled) return null;
   let value = need.value;
   if (need.valueMode === "user") {
     if (need.dataType === "number") {
+      if (missingValue(state.value)) throw new Error(`Inserisci un valore per “${need.label}”.`);
       const parsed = Number(state.value);
       if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`Inserisci un valore valido per “${need.label}”.`);
       value = parsed;
@@ -157,6 +162,7 @@ function buildPatch(): PreparationUpdate {
     }
     let value: unknown = state.value;
     if (control.dataType === "number") {
+      if (missingValue(value)) throw new Error(`Inserisci un valore per “${control.label}”.`);
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) throw new Error(`Inserisci un valore valido per “${control.label}”.`);
       value = parsed;
