@@ -1,4 +1,8 @@
 const { semanticSignature, exactSemanticRefs } = require("./physicalVocabularyResolver.service");
+const {
+  NAVIGATION_SEMANTIC_SCHEME,
+  NAVIGATION_NEED_CATALOG,
+} = require("../config/navigationNeedCatalog");
 
 function id(value) { return String(value?._id || value || ""); }
 function optionValues(definition) { return (definition?.options || []).map((option) => String(option.value)).sort(); }
@@ -23,6 +27,27 @@ function routingControl(definition, physicalFeatureRef, key) {
     options: definition.options || [],
     recommendedOperator: definition.metadata?.recommendedOperator || (definition.dataType === "number" ? "gte" : "eq"),
     physicalFeatureRef,
+  };
+}
+function visitorControlProjection(definition, physicalVocabularyId) {
+  const control = definition?.visitorControl;
+  if (!control?.enabled) return null;
+  return {
+    definitionId: definition.definitionId,
+    label: control.label || definition.label,
+    description: control.description || definition.description || "",
+    dataType: definition.dataType,
+    unit: definition.unit || null,
+    options: definition.options || [],
+    operator: control.operator || "eq",
+    valueMode: control.valueMode || "fixed",
+    ...(control.valueMode === "fixed" ? { value: control.value } : {}),
+    priority: control.priority || "preferred",
+    physicalFeatureRef: {
+      kind: "local",
+      physicalVocabularyId,
+      definitionId: definition.definitionId,
+    },
   };
 }
 function profileRequirementSummary(requirement, attributeById) {
@@ -83,6 +108,23 @@ function projectFederatedControls(selectedRevisions) {
   }
   return controls;
 }
+function visitorControlsProjection(revision) {
+  return (revision?.physicalAttributes || [])
+    .map((definition) => visitorControlProjection(definition, revision.physicalVocabularyId))
+    .filter(Boolean);
+}
+function canonicalNeedSupportProjection(revision) {
+  const index = exactAttributeIndex(revision);
+  return NAVIGATION_NEED_CATALOG.map((need) => {
+    const signature = semanticSignature({ scheme: NAVIGATION_SEMANTIC_SCHEME, id: need.id });
+    const match = index.get(signature);
+    return {
+      id: need.id,
+      supported: Boolean(match && definitionsCompatible(match.definition, need)),
+      definitionId: match?.definition?.definitionId || null,
+    };
+  });
+}
 function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueId = new Map(), revisionById = new Map() }) {
   const selected = selectedVenueIds.map(String);
   const revisionForVenue = new Map();
@@ -109,6 +151,10 @@ function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueI
 module.exports = {
   definitionsCompatible,
   exactAttributeIndex,
+  routingControl,
+  visitorControlProjection,
+  visitorControlsProjection,
+  canonicalNeedSupportProjection,
   profileProjection,
   projectFederatedControls,
   projectRoutingNavigationOptions,
