@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const {
+  anchorLocationValue,
   resolveIndoorLiveRouteFromBundle,
   resolvePlannedInterVenueRoute,
   nextKnownLocationFromRoute,
@@ -64,6 +65,37 @@ function routingFixture() {
   };
   return { venueId, placeA, placeB, placeC, bundle, routingSession };
 }
+
+test("manual selection of a visit stop confirms only its place, not the artwork", () => {
+  const anchor = {
+    _id: oid(),
+    venueId: oid(),
+    placeId: oid(),
+    venueTargetId: oid(),
+    exhibitSlotId: oid(),
+  };
+  const location = anchorLocationValue(anchor, { source: "manual_selection" });
+  assert.equal(String(location.venueId), String(anchor.venueId));
+  assert.equal(String(location.placeId), String(anchor.placeId));
+  assert.equal(location.visitAnchorId, null);
+  assert.equal(location.venueTargetId, null);
+  assert.equal(location.exhibitSlotId, null);
+});
+
+test("an exact provider may resolve a visit stop to its anchor and exhibit slot", () => {
+  const anchor = {
+    _id: oid(),
+    venueId: oid(),
+    placeId: oid(),
+    venueTargetId: oid(),
+    exhibitSlotId: oid(),
+  };
+  const location = anchorLocationValue(anchor, { source: "qr", providerId: "public-code" });
+  assert.equal(String(location.visitAnchorId), String(anchor._id));
+  assert.equal(String(location.venueTargetId), String(anchor.venueTargetId));
+  assert.equal(String(location.exhibitSlotId), String(anchor.exhibitSlotId));
+  assert.equal(location.providerId, "public-code");
+});
 
 test("live indoor routing riusa il grafo esistente e restituisce edge confermabili", () => {
   const value = routingFixture();
