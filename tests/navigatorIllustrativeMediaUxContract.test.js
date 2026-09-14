@@ -20,7 +20,7 @@ test("il Navigator mostra l'immagine senza ritagliarla e consente di ingrandirla
   assert.match(sessionView, /:alt="currentMedia\.altText"/);
   assert.match(sessionView, /mediaOpen = true/);
   assert.match(sessionView, /class="modal-overlay media-overlay"/);
-  assert.match(sessionView, /\.content-media img[\s\S]*?object-fit: contain/);
-  assert.match(sessionView, /max-height: 35vh/);
+  assert.match(sessionView, /\.content-media img[\s\S]*?object-fit:\s*contain/);
+  assert.match(sessionView, /max-height:\s*35vh/);
   assert.match(sessionView, /Fonte dell'immagine/);
 });

@@ -82,6 +82,10 @@ function sharedPresentationActions(baseActions = []) {
   return baseActions.filter((action) => action.family !== "navigation");
 }
 
+function presentationPhaseBaseActions(baseActions = []) {
+  return baseActions.filter((action) => action.family !== "navigation" || action.type === "CHECK_ROUTE_OBSTACLES");
+}
+
 function visitStopHasContent(plan, visitAnchorId) {
   return (plan?.contentEntries || []).some((entry) => id(entry.deliveryAnchorId) === id(visitAnchorId));
 }
@@ -226,7 +230,10 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
 
   const presentationAllowed = execution.presentationAvailable || sharedPresentationAllowed;
   if (presentationAllowed) {
-    actions.push(...base.actions.filter((action) => action.family !== "navigation"));
+    // Base navigation actions derive from the logical cursor. Facility actions are
+    // rebuilt below from KnownLocation, but the canonical obstacle check still
+    // describes the planned leg that follows the current visit stop.
+    actions.push(...presentationPhaseBaseActions(base.actions));
   } else {
     keepLifecycle();
   }
