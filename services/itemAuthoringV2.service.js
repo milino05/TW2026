@@ -1,7 +1,6 @@
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Namespace = require("../models/namespace.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
@@ -11,6 +10,8 @@ const itemService = require("./itemV2.service");
 const { listContentSpaces } = require("./contentSpace.service");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -197,6 +198,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     editionSummaries.push({
       id: edition._id,
       namespace: namespace ? { id: namespace._id, name: namespace.name } : null,
+      namespaceDependency: projectDependencyState(edition.namespaceDependency),
       workingRevisionId: edition.workingRevisionId || null,
       publishedRevisionId: edition.publishedRevisionId || null,
     });
@@ -210,21 +212,27 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     workflowRevision = revision;
     const namespace = await Namespace.findOne({ _id: selectedEdition.namespaceId, lifecycleStatus: "active" }).lean();
     if (!namespace) throw new AppError("Namespace della Edition non disponibile", 409);
-    const namespaceRevisionId = revision?.authoredAgainstNamespaceRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
-    const namespaceRevision = namespaceRevisionId ? await NamespaceRevision.findById(namespaceRevisionId).lean() : null;
-    if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non disponibile", 409);
+    const namespaceRevision = await loadEffectiveNamespaceRevision({
+      namespace,
+      binding: selectedEdition.namespaceDependency,
+      requireStable: true,
+    });
     const maps = definitionMaps(namespaceRevision);
     const referencedSubjectIds = revision ? collectRevisionSubjectIds(revision) : [];
     const referencedSubjects = referencedSubjectIds.length ? await Subject.find({ _id: { $in: referencedSubjectIds } }).lean() : [];
     const subjectById = new Map(referencedSubjects.map((entry) => [id(entry), entry]));
     selected = {
-      edition: { id: selectedEdition._id },
+      edition: {
+        id: selectedEdition._id,
+        namespaceDependency: projectDependencyState(selectedEdition.namespaceDependency),
+      },
       namespace: projectNamespaceControls(namespace, namespaceRevision),
       revision: revision ? {
         id: revision._id,
         version: revision.version,
         status: revision.status,
         integrity: revision.integrity,
+        authoredAgainstNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
         label: revision.label,
         relatedSubjects: (revision.relatedSubjectIds || []).map((subjectId) => projectSubject(subjectById.get(id(subjectId))) || { id: subjectId, missing: true }),
         authorCredits: revision.authorCredits || [],
