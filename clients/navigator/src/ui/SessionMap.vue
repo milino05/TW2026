@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { MapProjection, NavigationProjection, SelectableLocationProjection } from "../infrastructure/http/navigationRepository";
-import type { AvailableAction, ExecutionPhase } from "../infrastructure/http/sessionRepository";
+import type { AvailableAction } from "../infrastructure/http/sessionRepository";
 
 const props = withDefaults(defineProps<{
   map: MapProjection;
   navigation: NavigationProjection | null;
   currentVisitAnchorId: string | null;
   availableActions?: AvailableAction[];
-  phase?: ExecutionPhase | null;
   locationSelectionMode?: "confirm" | "correct" | null;
   selectionBusy?: boolean;
 }>(), {
   availableActions: () => [],
-  phase: null,
   locationSelectionMode: null,
   selectionBusy: false,
 });
@@ -29,9 +27,6 @@ const venue = computed(() => props.map.venues[venueIndex.value] || null);
 const indoorActiveNavigation = computed(() => props.map.activeNavigation?.type === "indoor" ? props.map.activeNavigation : null);
 const interVenueActiveNavigation = computed(() => props.map.activeNavigation?.type === "inter_venue" ? props.map.activeNavigation : null);
 const effectiveNavigation = computed<NavigationProjection | null>(() => indoorActiveNavigation.value || props.navigation || null);
-const physicalProgressAction = computed(() => ["navigating_to_visit_stop", "navigating_detour"].includes(props.phase || "")
-  ? props.availableActions.find((action) => action.type === "PROGRESS_NEXT") || null
-  : null);
 const returnAction = computed(() => props.availableActions.find((action) => action.type === "NAVIGATION_RETURN_TO_VISIT") || null);
 const correctLocationAction = computed(() => props.availableActions.find((action) => action.type === "LOCATION_CORRECT") || null);
 const facilityActions = computed(() => props.availableActions.filter((action) => action.actionId.startsWith("navigation.place.")));
@@ -144,7 +139,6 @@ function pointStyle(point: { x: number; y: number }) {
         <div class="action-row"><button v-for="action in facilityActions" :key="action.actionId" type="button" :disabled="selectionBusy" @click="emit('selectAction', action)">{{ action.label }}</button></div>
       </div>
       <div class="action-row map-primary-actions">
-        <button v-if="physicalProgressAction" type="button" class="route-progress-action" :disabled="selectionBusy" @click="emit('selectAction', physicalProgressAction)">Indicazione completata →</button>
         <button v-if="returnAction" type="button" class="return-action" :disabled="selectionBusy" @click="emit('selectAction', returnAction)">← Torna alla visita</button>
         <button v-if="correctLocationAction" type="button" :disabled="selectionBusy" @click="emit('selectAction', correctLocationAction)">{{ correctLocationAction.label }}</button>
         <button v-for="action in otherNavigationActions" :key="action.actionId" type="button" :disabled="selectionBusy" @click="emit('selectAction', action)">{{ action.label }}</button>
@@ -189,7 +183,6 @@ function pointStyle(point: { x: number; y: number }) {
 .map-action-group>strong { font-size:.8rem; }
 .action-row { display:flex; flex-wrap:wrap; gap:.45rem; }
 .map-primary-actions { padding-top:.7rem; border-top:1px solid var(--navigator-border); }
-.map-actions .route-progress-action { border-color:var(--navigator-route-active); color:#fff; background:var(--navigator-route-active); }
 .map-actions .return-action { border-color:color-mix(in srgb,var(--navigator-primary) 45%,var(--navigator-border)); }
 .route-instructions { display:grid; gap:.45rem; margin:.9rem 0 0; padding-left:1.35rem; color:var(--navigator-muted); font-size:.82rem; line-height:1.45; }
 .map-warnings { color:var(--navigator-muted); font-size:.78rem; }
