@@ -13,7 +13,10 @@ const AppError = require("../utils/AppError");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
 const { projectRoutingNavigationOptions } = require("./routingProfileV2.service");
-const { revalidateVenuePhysicalDependency } = require("./schemaDependencyAudit.service");
+const {
+  revalidateVenuePhysicalDependency,
+  revalidateEditorialContextNamespaceDependency,
+} = require("./schemaDependencyAudit.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -162,7 +165,7 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
   if (!ownedSpaceIds.length && !contextIds.length) return [];
 
   // Historical records must remain readable for pinned EditorialRelease sources.
-  // Live follow_current availability is enforced separately below on every live aggregate.
+  // Live resources are revalidated below before becoming selectable.
   const contexts = await EditorialContext.find({
     $or: [
       ...(ownedSpaceIds.length ? [{ contentSpaceId: { $in: ownedSpaceIds } }] : []),
@@ -205,6 +208,13 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
     if (context.lifecycleStatus !== "active" || space.lifecycleStatus !== "active" || namespace.lifecycleStatus !== "active") continue;
     const currentRelease = currentReleaseById.get(id(context.publishedReleaseId));
     if (currentRelease && (actorOwnsSpace(space) || liveEntitledContextIds.has(id(context._id)))) {
+      let dependency = null;
+      try {
+        dependency = await revalidateEditorialContextNamespaceDependency({ editorialContextId: context._id });
+      } catch {
+        dependency = null;
+      }
+      if (!dependency?.validation || dependency.validation.status !== "valid") continue;
       sourceRows.push({
         contentSpace: space,
         context,
