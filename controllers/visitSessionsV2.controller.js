@@ -1,7 +1,7 @@
 const service = require("../services/visitSessionV2.service");
 const navigatorRuntime = require("../services/navigatorRuntimeV2.service");
+const navigatorMap = require("../services/navigatorMapProjectionV2.service");
 const actions = require("../services/actionDispatcherV2.service");
-const navigation = require("../services/navigationProjectionV2.service");
 const publicLocation = require("../services/sessionPublicLocationV2.service");
 const realtime = require("../services/synchronizedVisitRealtime.service");
 
@@ -13,7 +13,7 @@ async function current(req, res, next) {
 
 async function map(req, res, next) {
   try {
-    res.json(await navigation.projectSessionMap({ sessionId: req.params.sessionId, userId: req.user._id }));
+    res.json(await navigatorMap.projectNavigatorMap({ sessionId: req.params.sessionId, userId: req.user._id }));
   } catch (error) { next(error); }
 }
 
