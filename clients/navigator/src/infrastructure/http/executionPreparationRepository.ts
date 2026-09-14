@@ -3,25 +3,6 @@ import type { SessionProjection } from "./sessionRepository";
 import type { SynchronizedVisitProjection } from "./synchronizedVisitRepository";
 
 export type ExecutionMode = "self_guided" | "synchronized";
-export type RoutingPriority = "required" | "preferred" | "avoid";
-
-export type SemanticRef = {
-  scheme: string;
-  id: string;
-  matchType: "exact" | "close" | "broader" | "narrower";
-};
-
-export type PhysicalFeatureRef =
-  | { kind: "semantic"; semanticRefs: SemanticRef[] }
-  | { kind: "local"; physicalVocabularyId: string; definitionId: string; semanticRefs?: [] };
-
-export type RoutingRequirement = {
-  physicalFeatureRef: PhysicalFeatureRef;
-  operator: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "in";
-  value: unknown;
-  priority: RoutingPriority;
-  weight: number;
-};
 
 export type RoutingProfileSelection = {
   venueId: string;
@@ -40,14 +21,11 @@ export type PersonalNavigationNeedDefinition = {
   description: string;
   dataType: "boolean" | "number" | "choice" | "string";
   unit: string | null;
-  appliesTo: "place" | "connection" | "both";
-  operator: RoutingRequirement["operator"];
   valueMode: "fixed" | "user";
   value?: unknown;
   allowedPriorities: Array<"preferred" | "required">;
   defaultPriority: "preferred" | "required";
   advanced: boolean;
-  physicalFeatureRef: Extract<PhysicalFeatureRef, { kind: "semantic" }>;
 };
 
 export type PersonalNavigationNeedSelection = {
@@ -60,15 +38,18 @@ export type PersonalNavigationNeedSelection = {
   advanced: boolean;
 };
 
+export type PersonalNavigationNeedSelectionInput = {
+  id: string;
+  priority: "preferred" | "required";
+  value?: unknown;
+};
+
 export type RoutingProfileDefinition = {
   definitionId: string;
   label: string;
   description: string;
   requirements: Array<{
     label: string;
-    operator: string;
-    value: unknown;
-    priority: RoutingPriority;
   }>;
 };
 
@@ -79,11 +60,8 @@ export type VenueNavigationControl = {
   dataType: "boolean" | "number" | "choice";
   unit: string | null;
   options: Array<{ value: string; label: string }>;
-  operator: RoutingRequirement["operator"];
   valueMode: "fixed" | "user";
   value?: unknown;
-  priority: RoutingPriority;
-  physicalFeatureRef: Extract<PhysicalFeatureRef, { kind: "local" }>;
 };
 
 export interface ExecutionPreparationProjection {
@@ -169,7 +147,7 @@ export interface PreparationUpdate {
     locale?: string;
   };
   movementPacePreference?: number;
-  navigationRequirements?: RoutingRequirement[];
+  personalNeedSelections?: PersonalNavigationNeedSelectionInput[];
   venueControlSelections?: VenueControlSelection[];
   routingProfileSelections?: RoutingProfileSelection[];
   executionMode?: ExecutionMode;
