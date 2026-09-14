@@ -12,7 +12,8 @@ const AppError = require("../utils/AppError");
 const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
-const { loadSemanticGraphRevision } = require("./semanticGraphV2.service");
+const { loadSemanticGraphRevision, validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
+const { bindingFromAccess, projectDependencyState } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function sameId(left, right) { return id(left) === id(right); }
@@ -73,13 +74,15 @@ async function resolveAuthoringNamespace({ namespaceId, actorUserId, ownerType, 
   });
   const authorizedRevisionId = access?.resolvedSnapshotRef?.resourceType === "namespace_revision"
     ? access.resolvedSnapshotRef.resourceId
-    : namespace.workingRevisionId || namespace.publishedRevisionId;
+    : namespace.publishedRevisionId;
   if (!authorizedRevisionId) {
-    throw new AppError("Le regole editoriali non hanno una revisione utilizzabile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
+    throw new AppError("Le regole editoriali non hanno una revisione pubblicata utilizzabile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
   }
   const namespaceRevision = await NamespaceRevision.findOne({
     _id: authorizedRevisionId,
     namespaceId: namespace._id,
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
   });
   if (!namespaceRevision) {
     throw new AppError("La revisione delle regole editoriali non è disponibile", 409, [{ code: "NAMESPACE_REVISION_NOT_AVAILABLE" }]);
@@ -124,22 +127,24 @@ async function semanticGraphWorkingCounts(graphs) {
 }
 
 function projectSemanticGraphResource(graph, { usage = null, subjectCount = 0, relationCount = 0 } = {}) {
+  const source = graph?.toObject ? graph.toObject() : graph || {};
   return {
-    id: graph._id,
-    name: graph.displayName,
-    description: graph.description || "",
-    namespaceId: graph.namespaceId,
-    ownerType: graph.ownerType,
-    ownerId: graph.ownerId,
-    workingRevisionId: graph.workingRevisionId || null,
-    workingVersion: Number(graph.workingVersion || 0),
-    lifecycleStatus: graph.lifecycleStatus,
+    id: source._id,
+    name: source.displayName,
+    description: source.description || "",
+    namespaceId: source.namespaceId,
+    namespaceDependency: projectDependencyState(source.namespaceDependency),
+    ownerType: source.ownerType,
+    ownerId: source.ownerId,
+    workingRevisionId: source.workingRevisionId || null,
+    workingVersion: Number(source.workingVersion || 0),
+    lifecycleStatus: source.lifecycleStatus,
     subjectCount: Number(subjectCount || 0),
     relationCount: Number(relationCount || 0),
     collectionUsageCount: Number(usage?.collectionUsageCount || 0),
     contentSpaceUsageCount: Number(usage?.contentSpaceUsageCount || 0),
-    updatedAt: graph.updatedAt || null,
-    createdAt: graph.createdAt || null,
+    updatedAt: source.updatedAt || null,
+    createdAt: source.createdAt || null,
   };
 }
 
@@ -257,6 +262,7 @@ async function createSemanticGraphResource({ payload, actorUserId }) {
     await mongoose.connection.transaction(async (session) => {
       [graph] = await SemanticGraph.create([{
         namespaceId: namespace._id,
+        namespaceDependency: bindingFromAccess({ access, effectiveRevisionId: namespaceRevision._id }),
         displayName,
         description,
         ownerType,
@@ -333,7 +339,7 @@ async function forkSemanticGraphResource({ semanticGraphId, payload, actorUserId
   }
   if (!displayName) throw new AppError("Nome della copia obbligatorio", 400, [{ field: "displayName", code: "REQUIRED" }]);
   await assertCanActForOwner({ actorUserId, ownerType: targetOwnerType, ownerId: targetOwnerId, permissionCode: "semantic_graph.edit" });
-  const { namespaceRevision } = await resolveAuthoringNamespace({
+  const { namespace, namespaceRevision, access } = await resolveAuthoringNamespace({
     namespaceId: source.namespaceId,
     actorUserId,
     ownerType: targetOwnerType,
@@ -341,54 +347,83 @@ async function forkSemanticGraphResource({ semanticGraphId, payload, actorUserId
   });
   if (!source.workingRevisionId) throw new AppError("Il grafo sorgente non ha una revisione di lavoro", 409);
   const sourceSnapshot = await loadSemanticGraphRevision(source.workingRevisionId);
-  if (!sameId(sourceSnapshot.revision.authoredAgainstNamespaceRevisionId, namespaceRevision._id)) {
-    throw new AppError("La revisione corrente del grafo non è compatibile con la revisione Namespace autorizzata", 409, [{ code: "SEMANTIC_GRAPH_FORK_NAMESPACE_REVISION_MISMATCH" }]);
+  const sourceBindings = [...sourceSnapshot.nodes.values()]
+    .filter((node) => node.binding)
+    .map((node) => node.binding);
+  const compatibilityIssues = validateGraphSnapshotAgainstNamespace({
+    subjectBindings: sourceBindings,
+    edges: sourceSnapshot.authoritativeEdges,
+  }, namespaceRevision);
+  if (compatibilityIssues.length) {
+    throw new AppError("La revisione corrente del grafo non è compatibile con la revisione Namespace autorizzata", 409, [{
+      code: "SEMANTIC_GRAPH_FORK_NAMESPACE_REVISION_MISMATCH",
+      context: { namespaceRevisionId: namespaceRevision._id, issues: compatibilityIssues },
+    }]);
   }
   let fork = null;
   let forkRevision = null;
-  await mongoose.connection.transaction(async (session) => {
-    [fork] = await SemanticGraph.create([{
-      namespaceId: source.namespaceId,
-      displayName,
-      description,
-      ownerType: targetOwnerType,
-      ownerId: targetOwnerId,
-      createdBy: actorUserId,
-    }], { session });
-    [forkRevision] = await SemanticGraphRevision.create([{
-      semanticGraphId: fork._id,
-      version: 1,
-      basedOnRevisionId: null,
-      authoredAgainstNamespaceRevisionId: sourceSnapshot.revision.authoredAgainstNamespaceRevisionId,
-      createdBy: actorUserId,
-    }], { session });
-    const bindings = [...sourceSnapshot.nodes.values()]
-      .filter((node) => node.binding)
-      .map((node) => ({
+  try {
+    await mongoose.connection.transaction(async (session) => {
+      [fork] = await SemanticGraph.create([{
+        namespaceId: source.namespaceId,
+        namespaceDependency: bindingFromAccess({ access, effectiveRevisionId: namespaceRevision._id }),
+        displayName,
+        description,
+        ownerType: targetOwnerType,
+        ownerId: targetOwnerId,
+        createdBy: actorUserId,
+      }], { session });
+      [forkRevision] = await SemanticGraphRevision.create([{
+        semanticGraphId: fork._id,
+        version: 1,
+        basedOnRevisionId: null,
+        authoredAgainstNamespaceRevisionId: namespaceRevision._id,
+        createdBy: actorUserId,
+      }], { session });
+      const bindings = sourceBindings.map((binding) => ({
         graphRevisionId: forkRevision._id,
-        subjectId: node.subject._id,
-        subjectClassDefinitionIds: [...(node.binding.subjectClassDefinitionIds || [])],
+        subjectId: binding.subjectId,
+        subjectClassDefinitionIds: [...(binding.subjectClassDefinitionIds || [])],
       }));
-    if (bindings.length) await GraphSubjectBinding.insertMany(bindings, { session, ordered: true });
-    if (sourceSnapshot.authoritativeEdges.length) {
-      await SemanticEdgeV2.insertMany(sourceSnapshot.authoritativeEdges.map((edge) => ({
-        graphRevisionId: forkRevision._id,
-        sourceSubjectId: edge.sourceSubjectId,
-        targetSubjectId: edge.targetSubjectId,
-        relationTypeDefinitionId: edge.relationTypeDefinitionId,
-        weight: edge.weight,
-        metadata: edge.metadata ?? null,
-        provenance: {
-          origin: "forked",
-          sourceGraphRevisionId: sourceSnapshot.revision._id,
-          metadata: edge.provenance ? { sourceProvenance: edge.provenance } : null,
-        },
-      })), { session, ordered: true });
+      if (bindings.length) await GraphSubjectBinding.insertMany(bindings, { session, ordered: true });
+      if (sourceSnapshot.authoritativeEdges.length) {
+        await SemanticEdgeV2.insertMany(sourceSnapshot.authoritativeEdges.map((edge) => ({
+          graphRevisionId: forkRevision._id,
+          sourceSubjectId: edge.sourceSubjectId,
+          targetSubjectId: edge.targetSubjectId,
+          relationTypeDefinitionId: edge.relationTypeDefinitionId,
+          weight: edge.weight,
+          metadata: edge.metadata ?? null,
+          provenance: {
+            origin: "forked",
+            sourceGraphRevisionId: sourceSnapshot.revision._id,
+            metadata: edge.provenance ? { sourceProvenance: edge.provenance } : null,
+          },
+        })), { session, ordered: true });
+      }
+      fork.workingRevisionId = forkRevision._id;
+      fork.workingVersion = 1;
+      await fork.save({ session });
+    });
+    await recordAdoptionFromAccess({
+      access,
+      actorUserId,
+      action: "namespace_use",
+      sourceResourceRef: { resourceType: "namespace", resourceId: namespace._id },
+      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: namespaceRevision._id },
+      resultResourceRef: { resourceType: "semantic_graph", resourceId: fork._id },
+    });
+  } catch (error) {
+    if (fork?._id) {
+      await Promise.allSettled([
+        SemanticGraphRevision.deleteMany({ semanticGraphId: fork._id }),
+        GraphSubjectBinding.deleteMany({ graphRevisionId: forkRevision?._id }),
+        SemanticEdgeV2.deleteMany({ graphRevisionId: forkRevision?._id }),
+        SemanticGraph.deleteOne({ _id: fork._id }),
+      ]);
     }
-    fork.workingRevisionId = forkRevision._id;
-    fork.workingVersion = 1;
-    await fork.save({ session });
-  });
+    throw error;
+  }
   const counts = await semanticGraphWorkingCounts([fork]);
   return {
     graph: projectSemanticGraphResource(fork, {
@@ -549,6 +584,8 @@ async function getSemanticGraphNeighborhood({ semanticGraphId, actorUserId, focu
   }
   const revision = await SemanticGraphRevision.findOne({ _id: semanticGraph.workingRevisionId, semanticGraphId: semanticGraph._id }).lean();
   if (!revision) throw new AppError("Working SemanticGraphRevision non trovata", 409);
+  const graphState = await loadSemanticGraphRevision(revision._id);
+  const effectiveNamespaceRevisionId = graphState.namespaceRevision._id;
   const [totalSubjects, totalEdges] = await Promise.all([
     GraphSubjectBinding.countDocuments({ graphRevisionId: revision._id }),
     SemanticEdgeV2.countDocuments({ graphRevisionId: revision._id }),
@@ -557,7 +594,7 @@ async function getSemanticGraphNeighborhood({ semanticGraphId, actorUserId, focu
     return {
       semanticGraph: projectSemanticGraphResource(semanticGraph, { subjectCount: totalSubjects, relationCount: totalEdges }),
       revision: { id: revision._id, version: revision.version, basedOnRevisionId: revision.basedOnRevisionId || null, authoredAgainstNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId },
-      effectiveNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
+      effectiveNamespaceRevisionId,
       subjects: [],
       edges: [],
       neighborhood: { focusSubjectId: null, totalSubjects, totalEdges, totalNeighbors: 0, visibleNeighbors: 0, hiddenNeighbors: 0, limit: normalizedLimit },
@@ -583,7 +620,7 @@ async function getSemanticGraphNeighborhood({ semanticGraphId, actorUserId, focu
   return {
     semanticGraph: projectSemanticGraphResource(semanticGraph, { subjectCount: totalSubjects, relationCount: totalEdges }),
     revision: { id: revision._id, version: revision.version, basedOnRevisionId: revision.basedOnRevisionId || null, authoredAgainstNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId },
-    effectiveNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
+    effectiveNamespaceRevisionId,
     subjects: visibleIds.map((subjectId) => ({
       subject: subjectById.get(subjectId) || null,
       subjectClassDefinitionIds: bindingById.get(subjectId)?.subjectClassDefinitionIds || [],
