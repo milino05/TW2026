@@ -90,10 +90,6 @@ function deriveVisitExecutionState({ personalSession, plan, currentEntryIndex, e
 
   if (!entry) return result(EXECUTION_PHASES.ROUTE_COMPLETED, false);
 
-  if (!knownLocation && hasPhysicalStops(plan)) {
-    return result(EXECUTION_PHASES.LOCATION_REQUIRED, false);
-  }
-
   if (detour) {
     return result(
       detourDestinationReached(knownLocation, detour)
@@ -107,8 +103,15 @@ function deriveVisitExecutionState({ personalSession, plan, currentEntryIndex, e
     return result(EXECUTION_PHASES.PRESENTING_SEMANTIC_CONTENT, true);
   }
 
+  // A truly location-independent ContentEntry has no delivery gate even when
+  // the same visit contains physical stops elsewhere. Location is requested
+  // only when the current narrative target actually needs a VisitAnchor.
   if (!deliveryAnchor) {
     return result(EXECUTION_PHASES.PRESENTING_VISIT_CONTENT, true);
+  }
+
+  if (!knownLocation && hasPhysicalStops(plan)) {
+    return result(EXECUTION_PHASES.LOCATION_REQUIRED, false);
   }
 
   if (knownLocationSatisfiesAnchor(knownLocation, deliveryAnchor)) {
