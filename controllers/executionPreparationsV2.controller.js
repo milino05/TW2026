@@ -1,4 +1,5 @@
 const service = require("../services/executionPreparationV2.service");
+const navigatorRuntime = require("../services/navigatorRuntimeV2.service");
 
 async function create(req, res, next) {
   try {
@@ -35,7 +36,11 @@ async function start(req, res, next) {
       userId: req.user._id,
       expectedVersion: req.body?.expectedVersion,
     });
-    res.status(alreadyStarted ? 200 : 201).json({ ...result, alreadyStarted });
+    const current = await navigatorRuntime.currentNavigatorRuntimeProjection({
+      sessionId: result.session._id,
+      userId: req.user._id,
+    });
+    res.status(alreadyStarted ? 200 : 201).json({ ...result, current, alreadyStarted });
   } catch (error) { next(error); }
 }
 

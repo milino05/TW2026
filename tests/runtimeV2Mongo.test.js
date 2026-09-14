@@ -48,6 +48,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const GeneratedVisitPlanV2 = require("../models/generatedVisitPlanV2.model");
+    const VisitSessionV2 = require("../models/visitSessionV2.model");
     const UserContentExposureV2 = require("../models/userContentExposureV2.model");
     const VenueTargetObservationProfile = require("../models/venueTargetObservationProfile.model");
     const {
@@ -276,6 +277,22 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     assert.equal(started.current.current.illustrativeMedia[0].altText, "Opera runtime vista frontalmente");
     assert.ok(started.current.availableActions.some((entry) => entry.actionId === "presentation.depth.increase"));
     assert.ok(started.current.availableActions.some((entry) => entry.actionId === toiletsActionId));
+
+    const runtimeSession = await VisitSessionV2.findById(sessionId);
+    runtimeSession.physicalRuntime = {
+      knownLocation: {
+        venueId: venue._id,
+        placeId: targetPlaceR1,
+        visitAnchorId: started.current.current.anchor.visitAnchorId,
+        venueTargetId: target._id,
+        exhibitSlotId: exhibitSlot._id,
+        source: "navigation_confirmation",
+        observedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+      detour: null,
+    };
+    await runtimeSession.save();
 
     const deeper = await dispatchAction({
       sessionId,

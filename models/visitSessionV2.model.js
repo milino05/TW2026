@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const NavigationSnapshotSchema = require("../schemas/navigationSnapshot.schema");
+const PhysicalRuntimeSchema = require("../schemas/physicalRuntime.schema");
 const { Schema } = mongoose;
 
 const VenuePinSchema = new Schema({
@@ -118,6 +119,7 @@ const VisitSessionV2Schema = new Schema({
   currentEntryIndex: { type: Number, min: 0, default: 0 },
   runtimeVersion: { type: Number, min: 1, default: 1, required: true },
   navigationSnapshot: { type: NavigationSnapshotSchema, default: () => ({}) },
+  physicalRuntime: { type: PhysicalRuntimeSchema, default: () => ({}) },
   sessionMovementSpeedMps: { type: Number, min: 0.1, default: null },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
   presentationOverrides: { type: [PresentationOverrideSchema], default: [] },

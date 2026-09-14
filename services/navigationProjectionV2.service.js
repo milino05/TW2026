@@ -116,8 +116,8 @@ async function assessPreparedMapReadiness({ plan, venuePins = [] }) {
 }
 
 async function projectSessionMap({ sessionId, userId }) {
-  const { plan, physicalSession, currentEntryIndex } = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
-  const session = physicalSession;
+  const { plan, routingConfigurationOwner, currentEntryIndex } = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
+  const session = routingConfigurationOwner;
   const targetIds = [...new Set((plan.visitAnchors || []).map((anchor) => id(anchor.venueTargetId)).filter(Boolean))];
   const targets = targetIds.length
     ? await VenueTarget.find({ _id: { $in: targetIds } }).select("_id subjectId displayLabelOverride inventoryNote").lean()
@@ -297,8 +297,8 @@ async function projectSessionMap({ sessionId, userId }) {
 }
 
 async function projectNavigationRoute({ sessionId, userId, routeResult }) {
-  const { physicalSession } = await getCurrentSessionPlanV2({ sessionId, userId });
-  const bundle = await loadPinnedBundle(physicalSession, routeResult.venueId);
+  const { routingConfigurationOwner } = await getCurrentSessionPlanV2({ sessionId, userId });
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, routeResult.venueId);
   const type = placeTypeMap(bundle.physicalVocabularyRevision).get(routeResult.destination.placeTypeDefinitionId) || null;
   const geometry = projectPathGeometry(bundle.layout, routeResult.path || []);
   return {
@@ -344,7 +344,7 @@ function collectObstacleEvidence({ entity, definitionById, obstacles, locationKi
 }
 
 async function projectNextRouteObstacles({ sessionId, userId }) {
-  const { plan, physicalSession, currentEntryIndex } = await getCurrentSessionPlanV2({ sessionId, userId });
+  const { plan, routingConfigurationOwner, currentEntryIndex } = await getCurrentSessionPlanV2({ sessionId, userId });
   const currentAnchor = logicalAnchorForIndex(plan, currentEntryIndex);
   const leg = nextPhysicalLeg(plan, currentAnchor);
   if (!leg) throw new AppError("Nessun prossimo percorso fisico da verificare", 409, [{ code: "NO_NEXT_PHYSICAL_ROUTE" }]);
@@ -356,7 +356,7 @@ async function projectNextRouteObstacles({ sessionId, userId }) {
     };
   }
 
-  const bundle = await loadPinnedBundle(physicalSession, currentAnchor.venueId);
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, currentAnchor.venueId);
   const connections = new Map((bundle.layout.connections || []).map((connection) => [id(connection._id), connection]));
   const places = placeMap(bundle.layout);
   const definitionById = new Map((bundle.physicalVocabularyRevision.physicalAttributes || []).map((definition) => [definition.definitionId, definition]));

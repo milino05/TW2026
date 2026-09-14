@@ -25,8 +25,8 @@ test("realtime sincronizzato notifica soltanto invalidazione e presence, mantene
   assert.match(client, /socket\.on\("connect", subscribe\)/);
   assert.match(client, /setParticipantActivity/);
   assert.match(client, /latestActivity/);
-  assert.match(view, /onInvalidated:\s*\(\)\s*=>\s*refresh\(\{ quiet: true \}\)/);
-  assert.match(view, /window\.setInterval\(\(\)\s*=>\s*refresh\(\{ quiet: true \}\),\s*15000\)/);
+  assert.match(view, /onInvalidated:\s*\(\)\s*=>\s*refresh\(\{\s*quiet:\s*true\s*\}\)/);
+  assert.match(view, /window\.setInterval\(\(\)\s*=>\s*refresh\(\{\s*quiet:\s*true\s*\}\),\s*15000\)/);
   assert.match(controller, /recordContentEntryExperience/);
   assert.match(controller, /notifySynchronizedVisitChangedForVisitSession/);
 });
@@ -39,8 +39,8 @@ test("foreground, audio e inattività alimentano la stessa presence effimera del
   assert.match(view, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
   assert.match(view, /PARTICIPANT_INACTIVE_GRACE_MS = 3000/);
   assert.match(view, /ttsState\.value === "speaking"/);
-  assert.match(view, /mode: "audio"/);
-  assert.match(view, /mode: "reading"/);
+  assert.match(view, /mode:\s*"audio"/);
+  assert.match(view, /mode:\s*"reading"/);
   assert.match(view, /return "Non attivo"/);
   assert.match(view, /`Sta seguendo · \$\{mode\}/);
   assert.match(view, /Richiesta: \$\{request\.label\}/);
@@ -55,10 +55,11 @@ test("il join temporaneo non crea diritti Marketplace permanenti", () => {
   assert.match(runtime, /synchronizedSessionId:\s*group\._id/);
 });
 
-test("la visita sincronizzata riusa ascolto e comandi vocali senza concedere progressione ai partecipanti", () => {
+test("la visita sincronizzata riusa ascolto e comandi vocali senza concedere progressione narrativa ai partecipanti", () => {
   const view = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
   const controlledVoice = source("clients/navigator/src/capabilities/controlledVoice.ts");
   const runtime = source("services/visitSessionV2.service.js");
+  const navigatorRuntime = source("services/navigatorRuntimeV2.service.js");
   const groupRuntime = source("services/synchronizedVisitSession.service.js");
   const groupModel = source("models/synchronizedVisitSession.model.js");
   const dispatcher = source("services/actionDispatcherV2.service.js");
@@ -78,8 +79,12 @@ test("la visita sincronizzata riusa ascolto e comandi vocali senza concedere pro
   assert.match(view, /<FeedbackActionDialog/);
   assert.match(view, /synchronizedSession\.playback\.commandVersion/);
   assert.match(view, /applySharedPlayback/);
-  assert.match(view, /\["progress", "synchronization", "navigation", "lifecycle", "quiz"\]/);
-  assert.match(view, /isHost\.value\s*\?\s*\(runtime\.value\?\.availableActions/);
+  assert.match(view, /action\.runtimeScope !== "synchronized_visit_session"/);
+  assert.match(view, /!\["synchronization",\s*"lifecycle",\s*"quiz"\]\.includes\(action\.family\)/);
+  assert.match(view, /action\.type === "PROGRESS_NEXT" && action\.runtimeScope !== "synchronized_visit_session"/);
+  assert.match(view, /action\.type === "PROGRESS_NEXT" && action\.runtimeScope === "synchronized_visit_session"/);
+  assert.match(view, /personalNextAction\.value \|\| \(isHost\.value \? groupNextAction\.value : null\)/);
+  assert.match(navigatorRuntime, /serverInput:\s*\{\s*executionMode:\s*"physical"\s*\}/);
   assert.match(runtime, /if \(!synchronizedSession \|\| membership\?\.role === "host"\)/);
   assert.match(runtime, /if \(membership\?\.role === "host"\)[\s\S]*PROGRESS_NEXT/);
   assert.doesNotMatch(runtime, /membership\?\.role === "participant"[\s\S]{0,180}PROGRESS_NEXT/);

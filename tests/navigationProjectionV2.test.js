@@ -213,6 +213,19 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
       estimatedTiming: { contentSeconds: 30, observationSeconds: 60, logisticsSeconds: 20, totalSeconds: 110, reservedSeconds: 0 },
     });
     session.currentPlanRevisionId = plan._id;
+    session.physicalRuntime = {
+      knownLocation: {
+        venueId: venue._id,
+        placeId: firstPlaceId,
+        visitAnchorId: firstAnchorId,
+        venueTargetId: firstTargetId,
+        exhibitSlotId: firstSlotId,
+        source: "navigation_confirmation",
+        observedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+      detour: null,
+    };
     await session.save();
 
     const derived = await deriveRuntimeActions({ sessionId: session._id, userId: user._id });

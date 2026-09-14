@@ -255,16 +255,24 @@ async function getCurrentSessionPlanV2({ sessionId, userId, allowCompleted = fal
     planOwnerId: planOwner._id,
   });
   if (!plan) throw new AppError("SessionPlan corrente non trovato", 409);
+
+  const progressOwner = synchronizedSession || session;
+  const routingConfigurationOwner = synchronizedSession || session;
+  const physicalRuntimeOwner = session;
+
   return {
     session,
     plan,
     synchronizedSession,
     membership,
     planOwnerType,
-    currentEntryIndex: synchronizedSession ? synchronizedSession.currentEntryIndex : session.currentEntryIndex,
-    runtimeVersion: synchronizedSession ? synchronizedSession.runtimeVersion : session.runtimeVersion,
-    effectiveStatus: synchronizedSession ? synchronizedSession.status : session.status,
-    physicalSession: synchronizedSession || session,
+    planOwner,
+    progressOwner,
+    routingConfigurationOwner,
+    physicalRuntimeOwner,
+    currentEntryIndex: progressOwner.currentEntryIndex,
+    runtimeVersion: progressOwner.runtimeVersion,
+    effectiveStatus: progressOwner.status,
   };
 }
 
