@@ -27,7 +27,7 @@ Il seed crea tre Organization indipendenti, ognuna con una Venue reale di Bologn
 | MAMbo — Museo d'Arte Moderna di Bologna | `autore1` | arte moderna e contemporanea | Via Don Minzoni 14, Bologna |
 | Museo Civico Archeologico di Bologna | `autore2` | archeologia | Via dell'Archiginnasio 2, Bologna |
 
-Le mappe incluse nel Navigator sono schemi ArtAround originali dall'alto. Servono a provare sale, ExhibitSlot, routing e servizi e **non rappresentano planimetrie ufficiali** dei musei.
+Le mappe PNG incluse nel Navigator sono schemi ArtAround originali dall'alto. Servono a provare sale, ExhibitSlot, routing e servizi e **non rappresentano planimetrie ufficiali** dei musei. Il seed riproduce gli ultimi layout demo pubblicati: 32 luoghi e 34 collegamenti per la Pinacoteca, 30 luoghi e 33 collegamenti per il MAMbo, 30 luoghi e 31 collegamenti per l'Archeologico. Ogni mappa conserva inoltre la calibrazione metrica configurata nell'editor della sede.
 
 ## Regole editoriali
 
@@ -95,7 +95,7 @@ Il verifier controlla almeno:
 - Item per ogni Subject del grafo;
 - almeno due collegamenti per Subject;
 - 12 VenueTarget e 12 ExhibitSlot per Venue;
-- map asset e integrità VenueRelease;
+- planimetria PNG, calibrazione, cardinalità del layout e integrità VenueRelease;
 - sei Visit pubblicate, tutte con almeno dieci contenuti distinti;
 - esattamente due Visit demo predisposte per uso di gruppo con nome suggerito e quiz;
 - assenza di `deliveryMode`/`synchronization` dalle VisitRevision;

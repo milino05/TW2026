@@ -1,0 +1,4725 @@
+{
+  "pinacoteca": {
+    "floors": [
+      {
+        "label": "Piano demo",
+        "mapAsset": {
+          "url": "/maps/pinacoteca-floor-plan.png",
+          "mimeType": "image/png",
+          "width": 1536,
+          "height": 1024,
+          "originalName": "pinacoteca-floor-plan.png"
+        },
+        "calibration": {
+          "method": "line",
+          "distanceMeters": 10,
+          "metersPerPixel": 0.046692446139037926,
+          "line": {
+            "from": {
+              "x": 0.3871460480571174,
+              "y": 0.3537496181883665
+            },
+            "to": {
+              "x": 0.5265743952376895,
+              "y": 0.35524349324592314
+            }
+          },
+          "referenceConnectionId": null
+        },
+        "_id": "06c63fe3d396edb997cba64a"
+      }
+    ],
+    "places": [
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Ingresso",
+        "position": {
+          "x": 0.45805533392328107,
+          "y": 0.7139477955222043
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "b2ae66ded1308d19a2c70718",
+        "placeTypeKey": "entrance"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Informazioni",
+        "position": {
+          "x": 0.3205524116394368,
+          "y": 0.7111094420307364
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "98d3b8741fc125275f94e33a",
+        "placeTypeKey": "information_point"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 1 · Annunciazione",
+        "position": {
+          "x": 0.2789231029955674,
+          "y": 0.4453739474536013
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "59e358c555d6b0b64b805a45",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 2 · Conversione di san Paolo",
+        "position": {
+          "x": 0.25810841828066494,
+          "y": 0.3271088539268472
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "035aaa57f5da76fc018b7104",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 3 · Assunzione della Vergine",
+        "position": {
+          "x": 0.25936993919096596,
+          "y": 0.181406229342281
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "66d2ab25c17b1763657f369e",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 4 · Comunione di san Gerolamo",
+        "position": {
+          "x": 0.372273705207908,
+          "y": 0.13977690803240497
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "46d6d413476faeee76349c84",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 5 · Madonna di san Ludovico",
+        "position": {
+          "x": 0.47003952423091505,
+          "y": 0.12558509498561654
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "a694f3a77c7794ba19389149",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 6 · Assunzione della Vergine",
+        "position": {
+          "x": 0.5551904076876215,
+          "y": 0.13977690803240497
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "bd6febe98b86b3a4a5788a42",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 7 · Strage degli innocenti",
+        "position": {
+          "x": 0.6315107967370596,
+          "y": 0.2637187313368194
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "073ce3c4d4c273141866d21e",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 8 · Sansone vittorioso",
+        "position": {
+          "x": 0.7059389804034655,
+          "y": 0.34508513829559284
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "2c3f87faef0647fe367a11e1",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 9 · Martirio di sant'Agnese",
+        "position": {
+          "x": 0.6422335573132957,
+          "y": 0.4983567283187979
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "9b9df74bb56566d7b02fc05a",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 10 · Madonna del Rosario",
+        "position": {
+          "x": 0.7204462125317014,
+          "y": 0.561099457941454
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "621c59ea183fc0ef08f36782",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 11 · Vestizione di san Guglielmo",
+        "position": {
+          "x": 0.7891976584771397,
+          "y": 0.6301662875144176
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "e07b3c1c1e38c97ce118d6cb",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Sala 12 · San Bruno in adorazione della Madonna",
+        "position": {
+          "x": 0.8270424955690092,
+          "y": 0.7380240849057894
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "81d6a08bf3515a4673b60b5a",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Servizi igienici",
+        "position": {
+          "x": 0.28649204609956713,
+          "y": 0.6133353240725966
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "139664963583c5b5662918ea",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Ascensore",
+        "position": {
+          "x": 0.5589748792396214,
+          "y": 0.5877900514704877
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "f3b246514df209f548e7cd79",
+        "placeTypeKey": "elevator"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Scale",
+        "position": {
+          "x": 0.3602894845073063,
+          "y": 0.5819141413911164
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "acc786ec81ff62173e5573c3",
+        "placeTypeKey": "stairs"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Uscita",
+        "position": {
+          "x": 0.933638778606317,
+          "y": 0.7923015377321073
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "b240115695bf55c925c14a60",
+        "placeTypeKey": "exit"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.37921190305324104,
+          "y": 0.41885766518197026
+        },
+        "attributeValues": [],
+        "_id": "6aa82a2430ceeea81bb44b0b",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.39013379835384393,
+          "y": 0.27756199025297584
+        },
+        "attributeValues": [],
+        "_id": "6aa82a3130ceeea81bb44b74",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.5225907281753873,
+          "y": 0.2703913854177589
+        },
+        "attributeValues": [],
+        "_id": "6aa82a3a30ceeea81bb44bdf",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.5215948114098119,
+          "y": 0.44646946190773606
+        },
+        "attributeValues": [],
+        "_id": "6aa82a4730ceeea81bb44c4c",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.45885205517855443,
+          "y": 0.5035852910202463
+        },
+        "attributeValues": [],
+        "_id": "6aa82a7430ceeea81bb44cbb",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.4578561384129789,
+          "y": 0.2355840920177434
+        },
+        "attributeValues": [],
+        "_id": "6aa82a7e30ceeea81bb44d2c",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.5703283546815565,
+          "y": 0.3316900692503727
+        },
+        "attributeValues": [],
+        "_id": "6aa82d8330ceeea81bb457f8",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.6421007400444491,
+          "y": 0.39408424474239684
+        },
+        "attributeValues": [],
+        "_id": "6aa82d9030ceeea81bb4587b",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7227699980560658,
+          "y": 0.4643959625984162
+        },
+        "attributeValues": [],
+        "_id": "6aa82da230ceeea81bb45959",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.8004515057709559,
+          "y": 0.5207150477093582
+        },
+        "attributeValues": [],
+        "_id": "6aa82dab30ceeea81bb459e0",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.8631942620022134,
+          "y": 0.6176675298268969
+        },
+        "attributeValues": [],
+        "_id": "6aa82db730ceeea81bb45a69",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.8821166805481481,
+          "y": 0.7404142713210454
+        },
+        "attributeValues": [],
+        "_id": "6aa82dc130ceeea81bb45af4",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "Servizi igenici",
+        "position": {
+          "x": 0.6162069041394858,
+          "y": 0.672940906956494
+        },
+        "attributeValues": [],
+        "_id": "6aa82de430ceeea81bb45b81",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "06c63fe3d396edb997cba64a",
+        "label": "incrocio",
+        "position": {
+          "x": 0.31344820740452933,
+          "y": 0.5547255971078053
+        },
+        "attributeValues": [],
+        "_id": "6aa82e3030ceeea81bb45d31",
+        "placeTypeKey": "other"
+      }
+    ],
+    "exhibitSlots": [
+      {
+        "exhibitSlotId": "d2205be98b3f6823071535db",
+        "placeId": "59e358c555d6b0b64b805a45",
+        "label": "Annunciazione · slot demo",
+        "order": 0,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Annunciazione nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "f3daf5da73f8265ffc5e8fb8",
+        "placeId": "035aaa57f5da76fc018b7104",
+        "label": "Conversione di san Paolo · slot demo",
+        "order": 1,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Conversione di san Paolo nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "195d39a652fdac962c5342e1",
+        "placeId": "66d2ab25c17b1763657f369e",
+        "label": "Assunzione della Vergine · slot demo",
+        "order": 2,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Assunzione della Vergine nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "011144b53a390cd97d3ac385",
+        "placeId": "46d6d413476faeee76349c84",
+        "label": "Comunione di san Gerolamo · slot demo",
+        "order": 3,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Comunione di san Gerolamo nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "9c03a2d78a6847ae4e9b3145",
+        "placeId": "a694f3a77c7794ba19389149",
+        "label": "Madonna di san Ludovico · slot demo",
+        "order": 4,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Madonna di san Ludovico nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "dcc126cfafbc313ac09b5241",
+        "placeId": "bd6febe98b86b3a4a5788a42",
+        "label": "Assunzione della Vergine · slot demo",
+        "order": 5,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Assunzione della Vergine nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "22cb23103509e98bf4e15acd",
+        "placeId": "073ce3c4d4c273141866d21e",
+        "label": "Strage degli innocenti · slot demo",
+        "order": 6,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Strage degli innocenti nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "98983fc58ab11838fba46b6a",
+        "placeId": "2c3f87faef0647fe367a11e1",
+        "label": "Sansone vittorioso · slot demo",
+        "order": 7,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Sansone vittorioso nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "822e02783ac75ca1e4531f7e",
+        "placeId": "9b9df74bb56566d7b02fc05a",
+        "label": "Martirio di sant'Agnese · slot demo",
+        "order": 8,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Martirio di sant'Agnese nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "a75358a438f972c09d361f7e",
+        "placeId": "621c59ea183fc0ef08f36782",
+        "label": "Madonna del Rosario · slot demo",
+        "order": 9,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Madonna del Rosario nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "a61bf147ae5204d002cd321f",
+        "placeId": "e07b3c1c1e38c97ce118d6cb",
+        "label": "Vestizione di san Guglielmo · slot demo",
+        "order": 10,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Vestizione di san Guglielmo nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "7d61fcb6338bb45374d7a830",
+        "placeId": "81d6a08bf3515a4673b60b5a",
+        "label": "San Bruno in adorazione della Madonna · slot demo",
+        "order": 11,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca San Bruno in adorazione della Madonna nella sala indicata.",
+          "overrides": []
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromPlaceId": "b2ae66ded1308d19a2c70718",
+        "toPlaceId": "98d3b8741fc125275f94e33a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45805533392328107,
+              "y": 0.7139477955222043
+            },
+            {
+              "x": 0.3205524116394368,
+              "y": 0.7111094420307364
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.862587949242638,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [
+          {
+            "value": true,
+            "physicalAttributeKey": "step_free"
+          },
+          {
+            "value": 120,
+            "physicalAttributeKey": "minimum_width_cm"
+          },
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "has_steps"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "narrow_passage"
+          }
+        ],
+        "instructions": {
+          "forward": "Raggiungi info dall'ingresso.",
+          "backward": "Torna all'ingresso."
+        },
+        "_id": "454dd341eb9dd2dfc554d03e",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "b2ae66ded1308d19a2c70718",
+        "toPlaceId": "f3b246514df209f548e7cd79",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45805533392328107,
+              "y": 0.7139477955222043
+            },
+            {
+              "x": 0.5589748792396214,
+              "y": 0.5877900514704877
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.421900702101786,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [
+          {
+            "value": true,
+            "physicalAttributeKey": "step_free"
+          },
+          {
+            "value": 120,
+            "physicalAttributeKey": "minimum_width_cm"
+          },
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "has_steps"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "narrow_passage"
+          }
+        ],
+        "instructions": {
+          "forward": "Raggiungi l'ascensore dall'ingresso.",
+          "backward": "Torna all'ingresso."
+        },
+        "_id": "b665cdd20eca529daa30d2dd",
+        "connectionTypeKey": "elevator"
+      },
+      {
+        "fromPlaceId": "b2ae66ded1308d19a2c70718",
+        "toPlaceId": "acc786ec81ff62173e5573c3",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45805533392328107,
+              "y": 0.7139477955222043
+            },
+            {
+              "x": 0.3602894845073063,
+              "y": 0.5819141413911164
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.434906033905918,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [
+          {
+            "value": false,
+            "physicalAttributeKey": "step_free"
+          },
+          {
+            "value": 120,
+            "physicalAttributeKey": "minimum_width_cm"
+          },
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "has_steps"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "narrow_passage"
+          }
+        ],
+        "instructions": {
+          "forward": "Raggiungi le scale dall'ingresso.",
+          "backward": "Torna all'ingresso."
+        },
+        "_id": "5bf20fe845a62afffc060fb3",
+        "connectionTypeKey": "stairs"
+      },
+      {
+        "fromPlaceId": "b2ae66ded1308d19a2c70718",
+        "toPlaceId": "6aa82a7430ceeea81bb44cbb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45805533392328107,
+              "y": 0.7139477955222043
+            },
+            {
+              "x": 0.45885205517855443,
+              "y": 0.5035852910202463
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.058238377053872,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui verso la piazza",
+          "backward": "Prosegui verso l'ingresso"
+        },
+        "_id": "6aa82aa930ceeea81bb44e11",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a7430ceeea81bb44cbb",
+        "toPlaceId": "6aa82a2430ceeea81bb44b0b",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45885205517855443,
+              "y": 0.5035852910202463
+            },
+            {
+              "x": 0.37921190305324104,
+              "y": 0.41885766518197026
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.002535814060279,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82cad30ceeea81bb4513f",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a2430ceeea81bb44b0b",
+        "toPlaceId": "6aa82a3130ceeea81bb44b74",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.37921190305324104,
+              "y": 0.41885766518197026
+            },
+            {
+              "x": 0.37021546304233366,
+              "y": 0.35419778526457835
+            },
+            {
+              "x": 0.39013379835384393,
+              "y": 0.27756199025297584
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.0910118011573715,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82d0930ceeea81bb4531b",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a3130ceeea81bb44b74",
+        "toPlaceId": "6aa82a7e30ceeea81bb44d2c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.39013379835384393,
+              "y": 0.27756199025297584
+            },
+            {
+              "x": 0.4578561384129789,
+              "y": 0.2355840920177434
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.255383079176667,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82d1e30ceeea81bb4540c",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a7e30ceeea81bb44d2c",
+        "toPlaceId": "6aa82a3a30ceeea81bb44bdf",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4578561384129789,
+              "y": 0.2355840920177434
+            },
+            {
+              "x": 0.5225907281753873,
+              "y": 0.2703913854177589
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.932010616285589,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82d2e30ceeea81bb45501",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a3a30ceeea81bb44bdf",
+        "toPlaceId": "6aa82a4730ceeea81bb44c4c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5225907281753873,
+              "y": 0.2703913854177589
+            },
+            {
+              "x": 0.5474886473147752,
+              "y": 0.37580916712636026
+            },
+            {
+              "x": 0.5215948114098119,
+              "y": 0.44646946190773606
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.202560730867281,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82d4530ceeea81bb455fa",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a7430ceeea81bb44cbb",
+        "toPlaceId": "6aa82a4730ceeea81bb44c4c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45885205517855443,
+              "y": 0.5035852910202463
+            },
+            {
+              "x": 0.5215948114098119,
+              "y": 0.44646946190773606
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.263714276197374,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi per la piazza centrale",
+          "backward": "Procedi per la piazza centrale"
+        },
+        "_id": "6aa82d5630ceeea81bb456f7",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "b2ae66ded1308d19a2c70718",
+        "toPlaceId": "6aa82de430ceeea81bb45b81",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.45805533392328107,
+              "y": 0.7139477955222043
+            },
+            {
+              "x": 0.6142150706083347,
+              "y": 0.7313016471467844
+            },
+            {
+              "x": 0.6162069041394858,
+              "y": 0.672940906956494
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 14.02446753316973,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui verso il bagno",
+          "backward": "Torna verso l'ingresso"
+        },
+        "_id": "6aa82dfe30ceeea81bb45c10",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82a2430ceeea81bb44b0b",
+        "toPlaceId": "6aa82e3030ceeea81bb45d31",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.37921190305324104,
+              "y": 0.41885766518197026
+            },
+            {
+              "x": 0.34432162713737025,
+              "y": 0.4955681585053955
+            },
+            {
+              "x": 0.31544004093568034,
+              "y": 0.5134946591960756
+            },
+            {
+              "x": 0.31344820740452933,
+              "y": 0.5547255971078053
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 8.658308327402018,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel corridoio secondario",
+          "backward": "Immettiti nella piazza centrale"
+        },
+        "_id": "6aa82e4130ceeea81bb45dc4",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82e3030ceeea81bb45d31",
+        "toPlaceId": "139664963583c5b5662918ea",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.31344820740452933,
+              "y": 0.5547255971078053
+            },
+            {
+              "x": 0.28649204609956713,
+              "y": 0.6133353240725966
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.40448764758517,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel bagno",
+          "backward": "Esci dal bagno"
+        },
+        "_id": "6aa82e6b30ceeea81bb45eed",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82e3030ceeea81bb45d31",
+        "toPlaceId": "98d3b8741fc125275f94e33a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.31344820740452933,
+              "y": 0.5547255971078053
+            },
+            {
+              "x": 0.3205524116394368,
+              "y": 0.7111094420307364
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.494530348662466,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio secondario fino al punto informazioni",
+          "backward": "Prosegui per il corridoio secondario"
+        },
+        "_id": "6aa82e8530ceeea81bb4601a",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82a3a30ceeea81bb44bdf",
+        "toPlaceId": "6aa82d8330ceeea81bb457f8",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5225907281753873,
+              "y": 0.2703913854177589
+            },
+            {
+              "x": 0.5703283546815565,
+              "y": 0.3316900692503727
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.50687553523286,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Immettiti nel corridoio principale",
+          "backward": "Immettiti nella piazza principale"
+        },
+        "_id": "6aa82eda30ceeea81bb4614b",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa82d8330ceeea81bb457f8",
+        "toPlaceId": "6aa82d9030ceeea81bb4587b",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5703283546815565,
+              "y": 0.3316900692503727
+            },
+            {
+              "x": 0.6421007400444491,
+              "y": 0.39408424474239684
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.94949064302747,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio principale",
+          "backward": "Prosegui per il corridoio principale"
+        },
+        "_id": "6aa82f0830ceeea81bb46280",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82d9030ceeea81bb4587b",
+        "toPlaceId": "6aa82da230ceeea81bb45959",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.6421007400444491,
+              "y": 0.39408424474239684
+            },
+            {
+              "x": 0.7227699980560658,
+              "y": 0.4643959625984162
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.691383051579841,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio principale",
+          "backward": "Prosegui per il corridoio principale"
+        },
+        "_id": "6aa82f1f30ceeea81bb463b9",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82da230ceeea81bb45959",
+        "toPlaceId": "6aa82dab30ceeea81bb459e0",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7227699980560658,
+              "y": 0.4643959625984162
+            },
+            {
+              "x": 0.8004515057709559,
+              "y": 0.5207150477093582
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.187918896870503,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio principale",
+          "backward": "Prosegui per il corridoio principale"
+        },
+        "_id": "6aa82f3530ceeea81bb464f6",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82dab30ceeea81bb459e0",
+        "toPlaceId": "6aa82db730ceeea81bb45a69",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8004515057709559,
+              "y": 0.5207150477093582
+            },
+            {
+              "x": 0.8631942620022134,
+              "y": 0.6176675298268969
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.460472955551402,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio principale",
+          "backward": "Prosegui per il corridoio principale"
+        },
+        "_id": "6aa82f6230ceeea81bb46637",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82db730ceeea81bb45a69",
+        "toPlaceId": "6aa82dc130ceeea81bb45af4",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8631942620022134,
+              "y": 0.6176675298268969
+            },
+            {
+              "x": 0.8821166805481481,
+              "y": 0.7404142713210454
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.023761736235656,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui per il corridoio principale",
+          "backward": "Prosegui per il corridoio principale"
+        },
+        "_id": "6aa82f7a30ceeea81bb4677c",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa82dc130ceeea81bb45af4",
+        "toPlaceId": "b240115695bf55c925c14a60",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8821166805481481,
+              "y": 0.7404142713210454
+            },
+            {
+              "x": 0.933638778606317,
+              "y": 0.7923015377321073
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.450719209384785,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui verso l'uscita",
+          "backward": "Torna nel corridoio principale"
+        },
+        "_id": "6aa82fae30ceeea81bb468c6",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a2430ceeea81bb44b0b",
+        "toPlaceId": "59e358c555d6b0b64b805a45",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.37921190305324104,
+              "y": 0.41885766518197026
+            },
+            {
+              "x": 0.2789231029955674,
+              "y": 0.4453739474536013
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.303554961513933,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 01\"",
+          "backward": "Esci dalla \"Sala 01\""
+        },
+        "_id": "6aa82fe330ceeea81bb46a8e",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a3130ceeea81bb44b74",
+        "toPlaceId": "035aaa57f5da76fc018b7104",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.39013379835384393,
+              "y": 0.27756199025297584
+            },
+            {
+              "x": 0.25810841828066494,
+              "y": 0.3271088539268472
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.760656176837445,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 02\"",
+          "backward": "Esci dalla \"Sala 02\""
+        },
+        "_id": "6aa8300230ceeea81bb46bdf",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a3130ceeea81bb44b74",
+        "toPlaceId": "66d2ab25c17b1763657f369e",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.39013379835384393,
+              "y": 0.27756199025297584
+            },
+            {
+              "x": 0.25936993919096596,
+              "y": 0.181406229342281
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.444621560288203,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 03\"",
+          "backward": "Esci dalla \"Sala 03\""
+        },
+        "_id": "6aa8302630ceeea81bb46d34",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a3130ceeea81bb44b74",
+        "toPlaceId": "46d6d413476faeee76349c84",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.39013379835384393,
+              "y": 0.27756199025297584
+            },
+            {
+              "x": 0.372273705207908,
+              "y": 0.13977690803240497
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.711299112549587,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 04\"",
+          "backward": "Esci dalla \"Sala 04\""
+        },
+        "_id": "6aa8303e30ceeea81bb46e8d",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a7e30ceeea81bb44d2c",
+        "toPlaceId": "a694f3a77c7794ba19389149",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4578561384129789,
+              "y": 0.2355840920177434
+            },
+            {
+              "x": 0.47003952423091505,
+              "y": 0.12558509498561654
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.331480016335662,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 05\"",
+          "backward": "Esci dalla \"Sala 05\""
+        },
+        "_id": "6aa8305c30ceeea81bb46fea",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82a3a30ceeea81bb44bdf",
+        "toPlaceId": "bd6febe98b86b3a4a5788a42",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5225907281753873,
+              "y": 0.2703913854177589
+            },
+            {
+              "x": 0.5551904076876215,
+              "y": 0.13977690803240497
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.6683893848615945,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 06\"",
+          "backward": "Esci dalla \"Sala 06\""
+        },
+        "_id": "6aa8307830ceeea81bb4714b",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82d8330ceeea81bb457f8",
+        "toPlaceId": "073ce3c4d4c273141866d21e",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5703283546815565,
+              "y": 0.3316900692503727
+            },
+            {
+              "x": 0.6315107967370596,
+              "y": 0.2637187313368194
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.4604337116474495,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 07\"",
+          "backward": "Esci dalla \"Sala 07\""
+        },
+        "_id": "6aa830bf30ceeea81bb472b0",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82d9030ceeea81bb4587b",
+        "toPlaceId": "2c3f87faef0647fe367a11e1",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.6421007400444491,
+              "y": 0.39408424474239684
+            },
+            {
+              "x": 0.7059389804034655,
+              "y": 0.34508513829559284
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.143046836901223,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 08\"",
+          "backward": "Esci dalla \"Sala 08\""
+        },
+        "_id": "6aa830e430ceeea81bb47419",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82d9030ceeea81bb4587b",
+        "toPlaceId": "9b9df74bb56566d7b02fc05a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.6421007400444491,
+              "y": 0.39408424474239684
+            },
+            {
+              "x": 0.6422335573132957,
+              "y": 0.4983567283187979
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.985596118861667,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 09\"",
+          "backward": "Esci dalla \"Sala 09\""
+        },
+        "_id": "6aa8310830ceeea81bb47586",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82da230ceeea81bb45959",
+        "toPlaceId": "621c59ea183fc0ef08f36782",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7227699980560658,
+              "y": 0.4643959625984162
+            },
+            {
+              "x": 0.7204462125317014,
+              "y": 0.561099457941454
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.626693166597623,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 10\"",
+          "backward": "Esci dalla \"Sala 10\""
+        },
+        "_id": "6aa8312e30ceeea81bb476f7",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82dab30ceeea81bb459e0",
+        "toPlaceId": "e07b3c1c1e38c97ce118d6cb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8004515057709559,
+              "y": 0.5207150477093582
+            },
+            {
+              "x": 0.7891976584771397,
+              "y": 0.6301662875144176
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.295074984324337,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 11\"",
+          "backward": "Esci dalla \"Sala 11\""
+        },
+        "_id": "6aa8314930ceeea81bb4786c",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82dc130ceeea81bb45af4",
+        "toPlaceId": "81d6a08bf3515a4673b60b5a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8821166805481481,
+              "y": 0.7404142713210454
+            },
+            {
+              "x": 0.8270424955690092,
+              "y": 0.7380240849057894
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.9515512794307845,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 12\"",
+          "backward": "Esci dalla \"Sala 12\""
+        },
+        "_id": "6aa8317030ceeea81bb479e5",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa82db730ceeea81bb45a69",
+        "toPlaceId": "e07b3c1c1e38c97ce118d6cb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.8631942620022134,
+              "y": 0.6176675298268969
+            },
+            {
+              "x": 0.7891976584771397,
+              "y": 0.6301662875144176
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.340547680878144,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 11\"",
+          "backward": "Esci dalla \"Sala 11\""
+        },
+        "_id": "6aa8319f30ceeea81bb47b62",
+        "connectionTypeKey": "door"
+      }
+    ]
+  },
+  "mambo": {
+    "floors": [
+      {
+        "label": "Piano demo",
+        "mapAsset": {
+          "url": "/maps/mambo-floor-plan.png",
+          "mimeType": "image/png",
+          "width": 1536,
+          "height": 1024,
+          "originalName": "mambo-floor-plan.png"
+        },
+        "calibration": {
+          "method": "line",
+          "distanceMeters": 10,
+          "metersPerPixel": 0.0401042122423631,
+          "line": {
+            "from": {
+              "x": 0.4727948898966116,
+              "y": 0.28642565044746043
+            },
+            "to": {
+              "x": 0.47179897313103614,
+              "y": 0.5299272848291992
+            }
+          },
+          "referenceConnectionId": null
+        },
+        "_id": "6509f7a0ad2fd8e56e537904"
+      }
+    ],
+    "places": [
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Ingresso",
+        "position": {
+          "x": 0.5085150761884836,
+          "y": 0.7223881804795098
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "4b93bc59d5b6e8861624efa6",
+        "placeTypeKey": "entrance"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Informazioni",
+        "position": {
+          "x": 0.5072535856711503,
+          "y": 0.5525843746723258
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "f62ede8791e691195157f69d",
+        "placeTypeKey": "information_point"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 1 · I funerali di Togliatti",
+        "position": {
+          "x": 0.1502506447260238,
+          "y": 0.37346878718389415
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "1a5a920bf7dd9550e8dbdb78",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 2 · Il comizio – Omaggio a Giuseppe Di Vittorio",
+        "position": {
+          "x": 0.15277364095717424,
+          "y": 0.20361517490392023
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "e013e22e84925e9ab1a76403",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 3 · Coca Cola (particolare)",
+        "position": {
+          "x": 0.28144608403023397,
+          "y": 0.13833281665291386
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "9cc2c744f54972c052f342f6",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 4 · Acquatico dipinto",
+        "position": {
+          "x": 0.3937191047885093,
+          "y": 0.13833281665291386
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "1d40a8188fff0c1c5bec5f91",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 5 · Stella di terracotta 93",
+        "position": {
+          "x": 0.6554792381382629,
+          "y": 0.13644058099193523
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "90937bcb0f8862fb5571aff4",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 6 · Stella di Bologna",
+        "position": {
+          "x": 0.7576602739719366,
+          "y": 0.13738669882242455
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "6646c138cc620d28fba54d58",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 7 · Teste",
+        "position": {
+          "x": 0.8749792567995451,
+          "y": 0.22159145927266594
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "119d069f0e2e6b9e4058dedf",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 8 · Il visconte dimezzato",
+        "position": {
+          "x": 0.8762407473168784,
+          "y": 0.3824320375292342
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "c7627f19c42312c06a2f121d",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 9 · Fiori",
+        "position": {
+          "x": 0.8718255608991796,
+          "y": 0.5195199658990923
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "4bb398bb32446fcee2484f3c",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 10 · Natura morta",
+        "position": {
+          "x": 0.8667795380439111,
+          "y": 0.6500846368116563
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "bb07c99e842732ebfda1c778",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 11 · Concetto spaziale",
+        "position": {
+          "x": 0.15655811250917412,
+          "y": 0.6415197698644626
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "7e344014ff78fc52acf4df29",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Sala 12 · Concetto spaziale, Attese",
+        "position": {
+          "x": 0.15088138998469044,
+          "y": 0.5166318059348345
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "301860b9d6438bb84f418aad",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Servizi igienici",
+        "position": {
+          "x": 0.32433688319143666,
+          "y": 0.651927065999845
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "a62b84eed6a1e151e13f5b8b",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Ascensore",
+        "position": {
+          "x": 0.565282331826288,
+          "y": 0.1854894939115291
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "9514e59dbd56a75ae5b58d46",
+        "placeTypeKey": "elevator"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Scale",
+        "position": {
+          "x": 0.49274641432884975,
+          "y": 0.18265114042006117
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "86d5c5a1264adf3646ffc811",
+        "placeTypeKey": "stairs"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Uscita",
+        "position": {
+          "x": 0.7576602739719366,
+          "y": 0.7329448732385376
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "3a9c8810a498404a9e30de41",
+        "placeTypeKey": "exit"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Atrio",
+        "position": {
+          "x": 0.5078843613227846,
+          "y": 0.4170152359937816
+        },
+        "attributeValues": [],
+        "_id": "6aa7f8e1ddca110f0f73054c",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incrocio",
+        "position": {
+          "x": 0.3962420858231759,
+          "y": 0.5595557764111074
+        },
+        "attributeValues": [],
+        "_id": "6aa7f97cddca110f0f73061e",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incrocio",
+        "position": {
+          "x": 0.2448627374556977,
+          "y": 0.5603276513683673
+        },
+        "attributeValues": [],
+        "_id": "6aa7f98cddca110f0f730697",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incrocio",
+        "position": {
+          "x": 0.24297050167969775,
+          "y": 0.2592869126369393
+        },
+        "attributeValues": [],
+        "_id": "6aa7f9aaddca110f0f730712",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incriocio",
+        "position": {
+          "x": 0.41138003281711083,
+          "y": 0.25644858194019576
+        },
+        "attributeValues": [],
+        "_id": "6aa7f9ceddca110f0f7307e0",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incriocio",
+        "position": {
+          "x": 0.620788096946759,
+          "y": 0.260233053262153
+        },
+        "attributeValues": [],
+        "_id": "6aa7f9edddca110f0f7308b2",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incriocio",
+        "position": {
+          "x": 0.6132191538427592,
+          "y": 0.5620455985666677
+        },
+        "attributeValues": [],
+        "_id": "6aa7fa00ddca110f0f730989",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7865086710528987,
+          "y": 0.2596354667675713
+        },
+        "attributeValues": [],
+        "_id": "6aa7fa16ddca110f0f730a0c",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7894964213496253,
+          "y": 0.5543770429771734
+        },
+        "attributeValues": [],
+        "_id": "6aa7fa30ddca110f0f730a91",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Servizi igenici",
+        "position": {
+          "x": 0.6699864094805635,
+          "y": 0.6601433788164067
+        },
+        "attributeValues": [],
+        "_id": "6aa7fa48ddca110f0f730b18",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Giardino 01",
+        "position": {
+          "x": 0.3273910421225865,
+          "y": 0.41016829345016387
+        },
+        "attributeValues": [],
+        "_id": "6aa801a8ddca110f0f733928",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "6509f7a0ad2fd8e56e537904",
+        "label": "Giardino 02",
+        "position": {
+          "x": 0.6799455771363186,
+          "y": 0.41644256413295705
+        },
+        "attributeValues": [],
+        "_id": "6aa801b7ddca110f0f7339dd",
+        "placeTypeKey": "room"
+      }
+    ],
+    "exhibitSlots": [
+      {
+        "exhibitSlotId": "46e5cb4c8712a3bba1f60361",
+        "placeId": "1a5a920bf7dd9550e8dbdb78",
+        "label": "I funerali di Togliatti · slot demo",
+        "order": 0,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca I funerali di Togliatti nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "2b4d1eaa95ad650b947a9a4b",
+        "placeId": "e013e22e84925e9ab1a76403",
+        "label": "Il comizio – Omaggio a Giuseppe Di Vittorio · slot demo",
+        "order": 1,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Il comizio – Omaggio a Giuseppe Di Vittorio nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "85b7aa300875c0ae7f62bea9",
+        "placeId": "9cc2c744f54972c052f342f6",
+        "label": "Coca Cola (particolare) · slot demo",
+        "order": 2,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Coca Cola (particolare) nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "9631f1bf5127da9633a08018",
+        "placeId": "1d40a8188fff0c1c5bec5f91",
+        "label": "Acquatico dipinto · slot demo",
+        "order": 3,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Acquatico dipinto nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "62e7ff6c22ba0f915d6568dc",
+        "placeId": "90937bcb0f8862fb5571aff4",
+        "label": "Stella di terracotta 93 · slot demo",
+        "order": 4,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Stella di terracotta 93 nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "1ef9efc717f16f27785e7e70",
+        "placeId": "6646c138cc620d28fba54d58",
+        "label": "Stella di Bologna · slot demo",
+        "order": 5,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Stella di Bologna nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "aaef759a0fa4db0787eaa188",
+        "placeId": "119d069f0e2e6b9e4058dedf",
+        "label": "Teste · slot demo",
+        "order": 6,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Teste nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "a33b86cb50d39327616ae8bb",
+        "placeId": "c7627f19c42312c06a2f121d",
+        "label": "Il visconte dimezzato · slot demo",
+        "order": 7,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Il visconte dimezzato nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "720d1be43cc535c348f10c24",
+        "placeId": "4bb398bb32446fcee2484f3c",
+        "label": "Fiori · slot demo",
+        "order": 8,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Fiori nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "643d318dae26743df2439d38",
+        "placeId": "bb07c99e842732ebfda1c778",
+        "label": "Natura morta · slot demo",
+        "order": 9,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Natura morta nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "1b486546d55369eb53040e53",
+        "placeId": "7e344014ff78fc52acf4df29",
+        "label": "Concetto spaziale · slot demo",
+        "order": 10,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Concetto spaziale nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "8f6ecad44f268f1939a894eb",
+        "placeId": "301860b9d6438bb84f418aad",
+        "label": "Concetto spaziale, Attese · slot demo",
+        "order": 11,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Concetto spaziale, Attese nella sala indicata.",
+          "overrides": []
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromPlaceId": "4b93bc59d5b6e8861624efa6",
+        "toPlaceId": "f62ede8791e691195157f69d",
+        "directionality": "bidirectional",
+        "geometry": null,
+        "metricMode": "manual_override",
+        "distanceMeters": 21,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [
+          {
+            "value": true,
+            "physicalAttributeKey": "step_free"
+          },
+          {
+            "value": 120,
+            "physicalAttributeKey": "minimum_width_cm"
+          },
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "has_steps"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "narrow_passage"
+          }
+        ],
+        "instructions": {
+          "forward": "Raggiungi info dall'ingresso.",
+          "backward": "Torna all'ingresso."
+        },
+        "_id": "f6e24e595803ba732fd6e1fc",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "4b93bc59d5b6e8861624efa6",
+        "toPlaceId": "6aa7f97cddca110f0f73061e",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5085150761884836,
+              "y": 0.7223881804795098
+            },
+            {
+              "x": 0.3962420858231759,
+              "y": 0.5595557764111074
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.620147937526642,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a sinistra del punto informazioni",
+          "backward": "Dirigiti verso l'ingresso a destra del punto informazioni"
+        },
+        "_id": "6aa7fa9addca110f0f731085",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "4b93bc59d5b6e8861624efa6",
+        "toPlaceId": "6aa7fa00ddca110f0f730989",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5085150761884836,
+              "y": 0.7223881804795098
+            },
+            {
+              "x": 0.6132191538427592,
+              "y": 0.5620455985666677
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.21729251086703,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a destra del punto informazioni",
+          "backward": "Dirigiti verso l'ingresso a sinistra del punto informazioni"
+        },
+        "_id": "6aa7fae8ddca110f0f731176",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "f62ede8791e691195157f69d",
+        "toPlaceId": "6aa7f97cddca110f0f73061e",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5072535856711503,
+              "y": 0.5525843746723258
+            },
+            {
+              "x": 0.3962420858231759,
+              "y": 0.5595557764111074
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.844306492140164,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio",
+          "backward": "Procedi verso il punto informazioni"
+        },
+        "_id": "6aa7fb40ddca110f0f73135f",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "f62ede8791e691195157f69d",
+        "toPlaceId": "6aa7fa00ddca110f0f730989",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5072535856711503,
+              "y": 0.5525843746723258
+            },
+            {
+              "x": 0.6132191538427592,
+              "y": 0.5620455985666677
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.539039939112735,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio",
+          "backward": "Procedi verso il punto informazioni"
+        },
+        "_id": "6aa7fb6fddca110f0f731458",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "f62ede8791e691195157f69d",
+        "toPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5072535856711503,
+              "y": 0.5525843746723258
+            },
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.5675145448840615,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Procedi dritto fino all'atrio",
+          "backward": "Procedi dritto fino al punto informazioni"
+        },
+        "_id": "6aa7fb97ddca110f0f7315d3",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "6aa7f9ceddca110f0f7307e0",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.41138003281711083,
+              "y": 0.25644858194019576
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 8.878020564519774,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a sinistra dell'atrio",
+          "backward": "Prosegui fino all'atrio"
+        },
+        "_id": "6aa7fbcaddca110f0f7316d4",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "6aa7f9edddca110f0f7308b2",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.620788096946759,
+              "y": 0.260233053262153
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.477604304105178,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a destra dell'atrio",
+          "backward": "Prosegui fino all'atrio"
+        },
+        "_id": "6aa7fc0addca110f0f7317d9",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f97cddca110f0f73061e",
+        "toPlaceId": "6aa7f98cddca110f0f730697",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.3962420858231759,
+              "y": 0.5595557764111074
+            },
+            {
+              "x": 0.2448627374556977,
+              "y": 0.5603276513683673
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.325032332558425,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fc43ddca110f0f7318e2",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa7f98cddca110f0f730697",
+        "toPlaceId": "6aa7f9aaddca110f0f730712",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2448627374556977,
+              "y": 0.5603276513683673
+            },
+            {
+              "x": 0.24297050167969775,
+              "y": 0.2592869126369393
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 12.36330320778372,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fc72ddca110f0f7319ef",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f9aaddca110f0f730712",
+        "toPlaceId": "6aa7f9ceddca110f0f7307e0",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.24297050167969775,
+              "y": 0.2592869126369393
+            },
+            {
+              "x": 0.41138003281711083,
+              "y": 0.25644858194019576
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.374693715949496,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fcafddca110f0f731c74",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa7f9edddca110f0f7308b2",
+        "toPlaceId": "6aa7fa16ddca110f0f730a0c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.620788096946759,
+              "y": 0.260233053262153
+            },
+            {
+              "x": 0.7865086710528987,
+              "y": 0.2596354667675713
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.208428464127532,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fd06ddca110f0f731ea6",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa7fa16ddca110f0f730a0c",
+        "toPlaceId": "6aa7fa30ddca110f0f730a91",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7865086710528987,
+              "y": 0.2596354667675713
+            },
+            {
+              "x": 0.7894964213496253,
+              "y": 0.5543770429771734
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 12.105466969377913,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fd25ddca110f0f731fbf",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa7fa30ddca110f0f730a91",
+        "toPlaceId": "6aa7fa00ddca110f0f730989",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7894964213496253,
+              "y": 0.5543770429771734
+            },
+            {
+              "x": 0.6132191538427592,
+              "y": 0.5620455985666677
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.863257727595972,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa7fd41ddca110f0f7320dc",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "86d5c5a1264adf3646ffc811",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.49274641432884975,
+              "y": 0.18265114042006117
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.669631278241951,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Dirigiti verso le scale",
+          "backward": "Dirigiti verso l'atrio"
+        },
+        "_id": "6aa7fd90ddca110f0f732392",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "9514e59dbd56a75ae5b58d46",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.565282331826288,
+              "y": 0.1854894939115291
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.144131170094363,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Dirigiti verso l'ascensore",
+          "backward": "Dirigiti verso l'atrio"
+        },
+        "_id": "6aa7fdb2ddca110f0f7324b7",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f9aaddca110f0f730712",
+        "toPlaceId": "e013e22e84925e9ab1a76403",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.24297050167969775,
+              "y": 0.2592869126369393
+            },
+            {
+              "x": 0.15277364095717424,
+              "y": 0.20361517490392023
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.0081258691016615,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 02\"",
+          "backward": "Esci dalla \"Sala 02\""
+        },
+        "_id": "6aa7fde0ddca110f0f7325e0",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f9aaddca110f0f730712",
+        "toPlaceId": "9cc2c744f54972c052f342f6",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.24297050167969775,
+              "y": 0.2592869126369393
+            },
+            {
+              "x": 0.28144608403023397,
+              "y": 0.13833281665291386
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.50366384879937,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 03\"",
+          "backward": "Esci dalla \"Sala 03\""
+        },
+        "_id": "6aa7fe0eddca110f0f73270d",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f98cddca110f0f730697",
+        "toPlaceId": "7e344014ff78fc52acf4df29",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2448627374556977,
+              "y": 0.5603276513683673
+            },
+            {
+              "x": 0.15655811250917412,
+              "y": 0.6415197698644626
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.380160371338889,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 11\"",
+          "backward": "Esci dalla \"Sala 11\""
+        },
+        "_id": "6aa7fe4dddca110f0f73283e",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f98cddca110f0f730697",
+        "toPlaceId": "301860b9d6438bb84f418aad",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2448627374556977,
+              "y": 0.5603276513683673
+            },
+            {
+              "x": 0.15088138998469044,
+              "y": 0.5166318059348345
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.060984685417108,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 12\"",
+          "backward": "Esci dalla \"Sala 12\""
+        },
+        "_id": "6aa7fe7bddca110f0f732973",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f9aaddca110f0f730712",
+        "toPlaceId": "1a5a920bf7dd9550e8dbdb78",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.24297050167969775,
+              "y": 0.2592869126369393
+            },
+            {
+              "x": 0.1502506447260238,
+              "y": 0.37346878718389415
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.38980497874216,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 01\"",
+          "backward": "Esci dalla \"Sala 01\""
+        },
+        "_id": "6aa7fed0ddca110f0f732aac",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f9ceddca110f0f7307e0",
+        "toPlaceId": "1d40a8188fff0c1c5bec5f91",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.41138003281711083,
+              "y": 0.25644858194019576
+            },
+            {
+              "x": 0.3937191047885093,
+              "y": 0.13833281665291386
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.9711299513855804,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 04\"",
+          "backward": "Esci dalla \"Sala 04\""
+        },
+        "_id": "6aa7feefddca110f0f732be9",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f9edddca110f0f7308b2",
+        "toPlaceId": "90937bcb0f8862fb5571aff4",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.620788096946759,
+              "y": 0.260233053262153
+            },
+            {
+              "x": 0.6554792381382629,
+              "y": 0.13644058099193523
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.51463356025736,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 05\"",
+          "backward": "Esci dalla \"Sala 05\""
+        },
+        "_id": "6aa7ff20ddca110f0f732d2a",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa16ddca110f0f730a0c",
+        "toPlaceId": "6646c138cc620d28fba54d58",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7865086710528987,
+              "y": 0.2596354667675713
+            },
+            {
+              "x": 0.7576602739719366,
+              "y": 0.13738669882242455
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.325590983126238,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 06\"",
+          "backward": "Esci dalla \"Sala 06\""
+        },
+        "_id": "6aa80004ddca110f0f732e6f",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa16ddca110f0f730a0c",
+        "toPlaceId": "119d069f0e2e6b9e4058dedf",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7865086710528987,
+              "y": 0.2596354667675713
+            },
+            {
+              "x": 0.8749792567995451,
+              "y": 0.22159145927266594
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.669318412444411,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 07\"",
+          "backward": "Esci dalla \"Sala 07\""
+        },
+        "_id": "6aa80020ddca110f0f732fb8",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa16ddca110f0f730a0c",
+        "toPlaceId": "c7627f19c42312c06a2f121d",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7865086710528987,
+              "y": 0.2596354667675713
+            },
+            {
+              "x": 0.8762407473168784,
+              "y": 0.3824320375292342
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.482221080847374,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 08\"",
+          "backward": "Esci dalla \"Sala 08\""
+        },
+        "_id": "6aa80048ddca110f0f733105",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa30ddca110f0f730a91",
+        "toPlaceId": "4bb398bb32446fcee2484f3c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7894964213496253,
+              "y": 0.5543770429771734
+            },
+            {
+              "x": 0.8718255608991796,
+              "y": 0.5195199658990923
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.269630996266386,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 09\"",
+          "backward": "Esci dalla \"Sala 09\""
+        },
+        "_id": "6aa80075ddca110f0f733256",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa30ddca110f0f730a91",
+        "toPlaceId": "bb07c99e842732ebfda1c778",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7894964213496253,
+              "y": 0.5543770429771734
+            },
+            {
+              "x": 0.8667795380439111,
+              "y": 0.6500846368116563
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.173472267973597,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 10\"",
+          "backward": "Esci dalla \"Sala 10\""
+        },
+        "_id": "6aa80098ddca110f0f7333ab",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa30ddca110f0f730a91",
+        "toPlaceId": "3a9c8810a498404a9e30de41",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7894964213496253,
+              "y": 0.5543770429771734
+            },
+            {
+              "x": 0.7526475010233312,
+              "y": 0.5872422942434203
+            },
+            {
+              "x": 0.7576602739719366,
+              "y": 0.7329448732385376
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 8.632327579006793,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Svolta a sinistra e prosegui verso l'uscita",
+          "backward": "Prosegui dritto e imbocca il corridoio"
+        },
+        "_id": "6aa800c7ddca110f0f733504",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f97cddca110f0f73061e",
+        "toPlaceId": "a62b84eed6a1e151e13f5b8b",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.3962420858231759,
+              "y": 0.5595557764111074
+            },
+            {
+              "x": 0.32433688319143666,
+              "y": 0.651927065999845
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.831727932555459,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel bagno",
+          "backward": "Esci dal bagno"
+        },
+        "_id": "6aa80163ddca110f0f733662",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7fa48ddca110f0f730b18",
+        "toPlaceId": "6aa7fa00ddca110f0f730989",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.6699864094805635,
+              "y": 0.6601433788164067
+            },
+            {
+              "x": 0.6132191538427592,
+              "y": 0.5620455985666677
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.334540366903864,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Esci dal bagno",
+          "backward": "Entra nel bagno"
+        },
+        "_id": "6aa80180ddca110f0f7337c3",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "6aa801a8ddca110f0f733928",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.3273910421225865,
+              "y": 0.41016829345016387
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 11.121956031719126,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui verso il \"Giardino 01\"",
+          "backward": "Esci dal \"Giardino 01\""
+        },
+        "_id": "6aa801c3ddca110f0f733a94",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa7f8e1ddca110f0f73054c",
+        "toPlaceId": "6aa801b7ddca110f0f7339dd",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5078843613227846,
+              "y": 0.4170152359937816
+            },
+            {
+              "x": 0.6799455771363186,
+              "y": 0.41644256413295705
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 10.599009030501906,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui verso il \"Giardino 02\"",
+          "backward": "Esci dal \"Giardino 02\""
+        },
+        "_id": "6aa801ecddca110f0f733c05",
+        "connectionTypeKey": "passage"
+      }
+    ]
+  },
+  "archeologico": {
+    "floors": [
+      {
+        "label": "Piano demo",
+        "mapAsset": {
+          "url": "/maps/archeologico-floor-plan.png",
+          "mimeType": "image/png",
+          "width": 1536,
+          "height": 1024,
+          "originalName": "archeologico-floor-plan.png"
+        },
+        "calibration": {
+          "method": "line",
+          "distanceMeters": 15,
+          "metersPerPixel": 0.03142824826421288,
+          "line": {
+            "from": {
+              "x": 0.34432162713737025,
+              "y": 0.3757095769755048
+            },
+            "to": {
+              "x": 0.6550476579969308,
+              "y": 0.3742157019179481
+            }
+          },
+          "referenceConnectionId": null
+        },
+        "_id": "1411531c9fdd0980fdd3ce16"
+      }
+    ],
+    "places": [
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Ingresso",
+        "position": {
+          "x": 0.49842315204981724,
+          "y": 0.836968438424611
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "983cc4bb01b4dafc25eeca90",
+        "placeTypeKey": "entrance"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Informazioni",
+        "position": {
+          "x": 0.49842315204981724,
+          "y": 0.6689821243771341
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "5cf38847c90d40b7e9d0bb35",
+        "placeTypeKey": "information_point"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 1 · Nucleo e schegge della tecnica Levallois",
+        "position": {
+          "x": 0.20891013613982806,
+          "y": 0.6662682756702789
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "e132e4c1be7c28127e95640a",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 2 · Strumento bifacciale preistorico",
+        "position": {
+          "x": 0.210802371915828,
+          "y": 0.5252962630328837
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "d54d0b08b360492650871408",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 3 · Hydria di Hadra",
+        "position": {
+          "x": 0.2133253833434623,
+          "y": 0.3786475434125526
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "6f1c260a6d825c0c57c75ade",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 4 · Oinochoe campana a figure rosse",
+        "position": {
+          "x": 0.212063892826129,
+          "y": 0.25092120319673217
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "4b03ccbd4b6ad9c766e5ac85",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 5 · Cratere a figure rosse",
+        "position": {
+          "x": 0.3508282752343389,
+          "y": 0.16903195364464849
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "e8913710723771d614e0745a",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 6 · Stele funeraria etrusca",
+        "position": {
+          "x": 0.5003154182187849,
+          "y": 0.1425405632120502
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "2057d5fa18876f89f578f8c8",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 7 · Situla decorata",
+        "position": {
+          "x": 0.6592637096902628,
+          "y": 0.1709241893056271
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "c21b6852c7282df0ea43c922",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 8 · Fibula in bronzo",
+        "position": {
+          "x": 0.790459148994473,
+          "y": 0.25224078979161063
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "77644200d5c54239d91a79cb",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 9 · Statua naofora egizia",
+        "position": {
+          "x": 0.7885668828255054,
+          "y": 0.3941589202594951
+        },
+        "attributeValues": [
+          {
+            "value": "medium",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "20d9f61e8a31abf550b6e637",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 10 · Statuetta di divinità egizia",
+        "position": {
+          "x": 0.7809979397215056,
+          "y": 0.5239020009209069
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": true,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "212e9c5df8a69163920a1d91",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 11 · Frammento di sarcofago decorato",
+        "position": {
+          "x": 0.7828901451045378,
+          "y": 0.6478438470200457
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "76ce76ad2cfa6aee452b86c1",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Sala 12 · Cofanetto funerario ligneo",
+        "position": {
+          "x": 0.7854131869251398,
+          "y": 0.7774623545126715
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "12b2cc05cd04189c6d9a8244",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Servizi igienici",
+        "position": {
+          "x": 0.6649404474112304,
+          "y": 0.7322726568163065
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "af78e0d9ee7d131f1d6d2aa9",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Ascensore",
+        "position": {
+          "x": 0.6447565383479623,
+          "y": 0.6070610305950791
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "bd563eb4b52745458c27ec63",
+        "placeTypeKey": "elevator"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Scale",
+        "position": {
+          "x": 0.3602894845073063,
+          "y": 0.6090279873626048
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "6ff02d5e25b2f9a5926dcdcb",
+        "placeTypeKey": "stairs"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Uscita",
+        "position": {
+          "x": 0.9462537445655854,
+          "y": 0.5390399317981847
+        },
+        "attributeValues": [
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "quiet_area"
+          }
+        ],
+        "_id": "5cf187e0fe7ffcd072a6cfd7",
+        "placeTypeKey": "exit"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Atrio",
+        "position": {
+          "x": 0.4971616615324839,
+          "y": 0.5683198464547365
+        },
+        "attributeValues": [],
+        "_id": "6aa80cf3ddca110f0f734b19",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Servizi igenici",
+        "position": {
+          "x": 0.3204196247635579,
+          "y": 0.725624917369124
+        },
+        "attributeValues": [],
+        "_id": "6aa81267ddca110f0f7357fb",
+        "placeTypeKey": "toilets"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.3028914836108353,
+          "y": 0.2618763021486307
+        },
+        "attributeValues": [],
+        "_id": "6aa815bdddca110f0f735934",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.29595325537253453,
+          "y": 0.5096603586066041
+        },
+        "attributeValues": [],
+        "_id": "6aa815c9ddca110f0f73599f",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.4183182306624439,
+          "y": 0.5043322285490246
+        },
+        "attributeValues": [],
+        "_id": "6aa815e2ddca110f0f735a4d",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.4957009755048485,
+          "y": 0.2558012117675485
+        },
+        "attributeValues": [],
+        "_id": "6aa81648ddca110f0f735abc",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7008930183341323,
+          "y": 0.2592122143251166
+        },
+        "attributeValues": [],
+        "_id": "6aa81652ddca110f0f735b2d",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7046774898861321,
+          "y": 0.49721143018659764
+        },
+        "attributeValues": [],
+        "_id": "6aa81662ddca110f0f735ba0",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.5823457341099182,
+          "y": 0.5031869076220999
+        },
+        "attributeValues": [],
+        "_id": "6aa81687ddca110f0f735c15",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "Giardino",
+        "position": {
+          "x": 0.4937091419736974,
+          "y": 0.38820833466302557
+        },
+        "attributeValues": [],
+        "_id": "6aa816c2ddca110f0f735c8c",
+        "placeTypeKey": "room"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.2921687838205346,
+          "y": 0.6165720381674865
+        },
+        "attributeValues": [],
+        "_id": "6aa821ca30ceeea81bb41af1",
+        "placeTypeKey": "other"
+      },
+      {
+        "floorId": "1411531c9fdd0980fdd3ce16",
+        "label": "incrocio",
+        "position": {
+          "x": 0.7059389804034655,
+          "y": 0.6158997761558065
+        },
+        "attributeValues": [],
+        "_id": "6aa821e530ceeea81bb41c99",
+        "placeTypeKey": "other"
+      }
+    ],
+    "exhibitSlots": [
+      {
+        "exhibitSlotId": "5361dc67b31a1c7737de3472",
+        "placeId": "e132e4c1be7c28127e95640a",
+        "label": "Nucleo e schegge della tecnica Levallois · slot demo",
+        "order": 0,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Nucleo e schegge della tecnica Levallois nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "65cef28169f01cf97d772b3b",
+        "placeId": "d54d0b08b360492650871408",
+        "label": "Strumento bifacciale preistorico · slot demo",
+        "order": 1,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Strumento bifacciale preistorico nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "54bb1c5a13bcd15fc8da1e5b",
+        "placeId": "6f1c260a6d825c0c57c75ade",
+        "label": "Hydria di Hadra · slot demo",
+        "order": 2,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Hydria di Hadra nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "e287da763504c462c3e78254",
+        "placeId": "4b03ccbd4b6ad9c766e5ac85",
+        "label": "Oinochoe campana a figure rosse · slot demo",
+        "order": 3,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Oinochoe campana a figure rosse nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "6fe78531bd57ac41d4f3cc2c",
+        "placeId": "e8913710723771d614e0745a",
+        "label": "Cratere a figure rosse · slot demo",
+        "order": 4,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Cratere a figure rosse nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "d8331f63d432c6651211f962",
+        "placeId": "2057d5fa18876f89f578f8c8",
+        "label": "Stele funeraria etrusca · slot demo",
+        "order": 5,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Stele funeraria etrusca nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "59f14c8e2f7a4e5532d9e1db",
+        "placeId": "c21b6852c7282df0ea43c922",
+        "label": "Situla decorata · slot demo",
+        "order": 6,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Situla decorata nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "1513b1a7aa3bd66646d9f699",
+        "placeId": "77644200d5c54239d91a79cb",
+        "label": "Fibula in bronzo · slot demo",
+        "order": 7,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Fibula in bronzo nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "3e38fb7a411f998cf22e5adc",
+        "placeId": "20d9f61e8a31abf550b6e637",
+        "label": "Statua naofora egizia · slot demo",
+        "order": 8,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Statua naofora egizia nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "62a686b48ad0ff44b04de230",
+        "placeId": "212e9c5df8a69163920a1d91",
+        "label": "Statuetta di divinità egizia · slot demo",
+        "order": 9,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Statuetta di divinità egizia nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "d96936fa66986ade2afc4556",
+        "placeId": "76ce76ad2cfa6aee452b86c1",
+        "label": "Frammento di sarcofago decorato · slot demo",
+        "order": 10,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Frammento di sarcofago decorato nella sala indicata.",
+          "overrides": []
+        }
+      },
+      {
+        "exhibitSlotId": "1af842e8eedb64b88602dde9",
+        "placeId": "12b2cc05cd04189c6d9a8244",
+        "label": "Cofanetto funerario ligneo · slot demo",
+        "order": 11,
+        "approachGuidance": {
+          "defaultInstruction": "Cerca Cofanetto funerario ligneo nella sala indicata.",
+          "overrides": []
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromPlaceId": "983cc4bb01b4dafc25eeca90",
+        "toPlaceId": "5cf38847c90d40b7e9d0bb35",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.49842315204981724,
+              "y": 0.836968438424611
+            },
+            {
+              "x": 0.49842315204981724,
+              "y": 0.6689821243771341
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.406223956863114,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [
+          {
+            "value": true,
+            "physicalAttributeKey": "step_free"
+          },
+          {
+            "value": 120,
+            "physicalAttributeKey": "minimum_width_cm"
+          },
+          {
+            "value": "low",
+            "physicalAttributeKey": "sensory_load"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "has_steps"
+          },
+          {
+            "value": false,
+            "physicalAttributeKey": "narrow_passage"
+          }
+        ],
+        "instructions": {
+          "forward": "Raggiungi info dall'ingresso.",
+          "backward": "Torna all'ingresso."
+        },
+        "_id": "448a3a174f9163618bfb334b",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa80cf3ddca110f0f734b19",
+        "toPlaceId": "5cf38847c90d40b7e9d0bb35",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4971616615324839,
+              "y": 0.5683198464547365
+            },
+            {
+              "x": 0.49842315204981724,
+              "y": 0.6689821243771341
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.2401387143757536,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto fino al punto informazioni",
+          "backward": "Prosegui dritto fino all'atrio"
+        },
+        "_id": "6aa814ceddca110f0f735863",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa80cf3ddca110f0f734b19",
+        "toPlaceId": "6aa815e2ddca110f0f735a4d",
+        "directionality": "bidirectional",
+        "geometry": null,
+        "metricMode": "manual_override",
+        "distanceMeters": 1,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a sinistra",
+          "backward": "Procedi fino all'atrio"
+        },
+        "_id": "6aa816d7ddca110f0f735d05",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa80cf3ddca110f0f734b19",
+        "toPlaceId": "6aa81687ddca110f0f735c15",
+        "directionality": "bidirectional",
+        "geometry": null,
+        "metricMode": "manual_override",
+        "distanceMeters": 1,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Imbocca il corridoio a destra",
+          "backward": "Prosegui fino all'atrio"
+        },
+        "_id": "6aa81702ddca110f0f735dfa",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa815e2ddca110f0f735a4d",
+        "toPlaceId": "6aa815c9ddca110f0f73599f",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4183182306624439,
+              "y": 0.5043322285490246
+            },
+            {
+              "x": 0.29595325537253453,
+              "y": 0.5096603586066041
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.909509322846364,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto lungo il corridoio",
+          "backward": "Prosegui dritto lungo il corridoio"
+        },
+        "_id": "6aa81e2330ceeea81bb41315",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa815c9ddca110f0f73599f",
+        "toPlaceId": "6aa815bdddca110f0f735934",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.29595325537253453,
+              "y": 0.5096603586066041
+            },
+            {
+              "x": 0.3028914836108353,
+              "y": 0.2618763021486307
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.981347699405197,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Svolta a destra e continua sul corridoio",
+          "backward": "Prosegui dritto lungo il corridoio"
+        },
+        "_id": "6aa81e5630ceeea81bb41412",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa815bdddca110f0f735934",
+        "toPlaceId": "6aa81648ddca110f0f735abc",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.3028914836108353,
+              "y": 0.2618763021486307
+            },
+            {
+              "x": 0.4957009755048485,
+              "y": 0.2558012117675485
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.309697978126648,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Svolta a destra e prosegui nel corridoio",
+          "backward": "Prosegui dritto nel corridoio"
+        },
+        "_id": "6aa81ec430ceeea81bb41612",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa81648ddca110f0f735abc",
+        "toPlaceId": "6aa81652ddca110f0f735b2d",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4957009755048485,
+              "y": 0.2558012117675485
+            },
+            {
+              "x": 0.7008930183341323,
+              "y": 0.2592122143251166
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 9.906005708323487,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui dritto per il corridoio",
+          "backward": "Prosegui dritto per il corridoio"
+        },
+        "_id": "6aa81f2530ceeea81bb4176e",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa81652ddca110f0f735b2d",
+        "toPlaceId": "6aa81662ddca110f0f735ba0",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7008930183341323,
+              "y": 0.2592122143251166
+            },
+            {
+              "x": 0.7046774898861321,
+              "y": 0.49721143018659764
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.661594446713468,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui lungo il corridoio",
+          "backward": "Prosegui lungo il corridoio"
+        },
+        "_id": "6aa81f4630ceeea81bb41877",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa81662ddca110f0f735ba0",
+        "toPlaceId": "6aa81687ddca110f0f735c15",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7046774898861321,
+              "y": 0.49721143018659764
+            },
+            {
+              "x": 0.5823457341099182,
+              "y": 0.5031869076220999
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.908547734847816,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Prosegui fino alla fine del corridoio",
+          "backward": "Prosegui dritto lungo il corridoio"
+        },
+        "_id": "6aa820a130ceeea81bb419df",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa815bdddca110f0f735934",
+        "toPlaceId": "e8913710723771d614e0745a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.3028914836108353,
+              "y": 0.2618763021486307
+            },
+            {
+              "x": 0.3508282752343389,
+              "y": 0.16903195364464849
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.779279576872554,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 05\"",
+          "backward": "Esci dalla \"Sala 05\""
+        },
+        "_id": "6aa8228d30ceeea81bb41de8",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa815c9ddca110f0f73599f",
+        "toPlaceId": "6aa821ca30ceeea81bb41af1",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.29595325537253453,
+              "y": 0.5096603586066041
+            },
+            {
+              "x": 0.2921687838205346,
+              "y": 0.6165720381674865
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.4455346987484883,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Immettiti nel corridoio a sinistra",
+          "backward": "Immettiti nel corridoio principale"
+        },
+        "_id": "6aa822c230ceeea81bb41f05",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa821ca30ceeea81bb41af1",
+        "toPlaceId": "6aa81267ddca110f0f7357fb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2921687838205346,
+              "y": 0.6165720381674865
+            },
+            {
+              "x": 0.3204196247635579,
+              "y": 0.725624917369124
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.765256267632789,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel bagno",
+          "backward": "Esci dal bagno"
+        },
+        "_id": "6aa8233d30ceeea81bb42026",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa821ca30ceeea81bb41af1",
+        "toPlaceId": "e132e4c1be7c28127e95640a",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2921687838205346,
+              "y": 0.6165720381674865
+            },
+            {
+              "x": 0.20891013613982806,
+              "y": 0.6662682756702789
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.325733961079742,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 01\"",
+          "backward": "Esci dalla \"Sala 01\""
+        },
+        "_id": "6aa8235a30ceeea81bb4214b",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa815c9ddca110f0f73599f",
+        "toPlaceId": "d54d0b08b360492650871408",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.29595325537253453,
+              "y": 0.5096603586066041
+            },
+            {
+              "x": 0.210802371915828,
+              "y": 0.5252962630328837
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.141241628602251,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 02\"",
+          "backward": "Esci dalla \"Sala 02\""
+        },
+        "_id": "6aa8238030ceeea81bb42274",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa815c9ddca110f0f73599f",
+        "toPlaceId": "6f1c260a6d825c0c57c75ade",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.29595325537253453,
+              "y": 0.5096603586066041
+            },
+            {
+              "x": 0.28357070443726384,
+              "y": 0.39179362568327186
+            },
+            {
+              "x": 0.2133253833434623,
+              "y": 0.3786475434125526
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.2573563531424865,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 03\"",
+          "backward": "Esci dalla \"Sala 03\""
+        },
+        "_id": "6aa823ae30ceeea81bb423a1",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa815bdddca110f0f735934",
+        "toPlaceId": "4b03ccbd4b6ad9c766e5ac85",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.3028914836108353,
+              "y": 0.2618763021486307
+            },
+            {
+              "x": 0.212063892826129,
+              "y": 0.25092120319673217
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.398743838726412,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 04\"",
+          "backward": "Esci dalla \"Sala 04\""
+        },
+        "_id": "6aa823cf30ceeea81bb424d2",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81648ddca110f0f735abc",
+        "toPlaceId": "2057d5fa18876f89f578f8c8",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4957009755048485,
+              "y": 0.2558012117675485
+            },
+            {
+              "x": 0.5003154182187849,
+              "y": 0.1425405632120502
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.6518140784266073,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 06\"",
+          "backward": "Esci dalla \"Sala 06\""
+        },
+        "_id": "6aa823ee30ceeea81bb42607",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81652ddca110f0f735b2d",
+        "toPlaceId": "c21b6852c7282df0ea43c922",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7008930183341323,
+              "y": 0.2592122143251166
+            },
+            {
+              "x": 0.6592637096902628,
+              "y": 0.1709241893056271
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.4801833092426566,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 07\"",
+          "backward": "Esci dalla \"Sala 07\""
+        },
+        "_id": "6aa8241530ceeea81bb42740",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81652ddca110f0f735b2d",
+        "toPlaceId": "77644200d5c54239d91a79cb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7008930183341323,
+              "y": 0.2592122143251166
+            },
+            {
+              "x": 0.790459148994473,
+              "y": 0.25224078979161063
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.329513616839358,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 08\"",
+          "backward": "Esci dalla \"Sala 08\""
+        },
+        "_id": "6aa8243130ceeea81bb4287d",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81652ddca110f0f735b2d",
+        "toPlaceId": "20d9f61e8a31abf550b6e637",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7008930183341323,
+              "y": 0.2592122143251166
+            },
+            {
+              "x": 0.7128108304003107,
+              "y": 0.3807389593752422
+            },
+            {
+              "x": 0.7885668828255054,
+              "y": 0.3941589202594951
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.635572128299452,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 09\"",
+          "backward": "Esci dalla \"Sala 09\""
+        },
+        "_id": "6aa8259030ceeea81bb429bf",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81662ddca110f0f735ba0",
+        "toPlaceId": "212e9c5df8a69163920a1d91",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7046774898861321,
+              "y": 0.49721143018659764
+            },
+            {
+              "x": 0.7809979397215056,
+              "y": 0.5239020009209069
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.783084561341055,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 10\"",
+          "backward": "Esci dalla \"Sala 10\""
+        },
+        "_id": "6aa825af30ceeea81bb42b04",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81662ddca110f0f735ba0",
+        "toPlaceId": "6aa821e530ceeea81bb41c99",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7046774898861321,
+              "y": 0.49721143018659764
+            },
+            {
+              "x": 0.7059389804034655,
+              "y": 0.6158997761558065
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.8201762122675125,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Immettiti nel corridoio secondario",
+          "backward": "Immettiti nel corridoio principale"
+        },
+        "_id": "6aa825ee30ceeea81bb42d95",
+        "connectionTypeKey": "corridor"
+      },
+      {
+        "fromPlaceId": "6aa80cf3ddca110f0f734b19",
+        "toPlaceId": "6aa816c2ddca110f0f735c8c",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4971616615324839,
+              "y": 0.5683198464547365
+            },
+            {
+              "x": 0.4937091419736974,
+              "y": 0.38820833466302557
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.798839048123138,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel giardino",
+          "backward": "Esci dal giardino"
+        },
+        "_id": "6aa8262330ceeea81bb42ee2",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa821e530ceeea81bb41c99",
+        "toPlaceId": "76ce76ad2cfa6aee452b86c1",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7059389804034655,
+              "y": 0.6158997761558065
+            },
+            {
+              "x": 0.7828901451045378,
+              "y": 0.6478438470200457
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.8543540075859504,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 11\"",
+          "backward": "Esci dalla \"Sala 11\""
+        },
+        "_id": "6aa8266730ceeea81bb43033",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "76ce76ad2cfa6aee452b86c1",
+        "toPlaceId": "12b2cc05cd04189c6d9a8244",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7828901451045378,
+              "y": 0.6478438470200457
+            },
+            {
+              "x": 0.7854131869251398,
+              "y": 0.7774623545126715
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.173228730774558,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nella \"Sala 12\"",
+          "backward": "Esci dalla \"Sala 12\""
+        },
+        "_id": "6aa8268130ceeea81bb43188",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "212e9c5df8a69163920a1d91",
+        "toPlaceId": "5cf187e0fe7ffcd072a6cfd7",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7809979397215056,
+              "y": 0.5239020009209069
+            },
+            {
+              "x": 0.9462537445655854,
+              "y": 0.5390399317981847
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 7.992385689694146,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Dirigiti verso l'uscita",
+          "backward": "Torna verso la \"Sala 10\""
+        },
+        "_id": "6aa826a430ceeea81bb432e1",
+        "connectionTypeKey": "passage"
+      },
+      {
+        "fromPlaceId": "6aa821ca30ceeea81bb41af1",
+        "toPlaceId": "6ff02d5e25b2f9a5926dcdcb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.2921687838205346,
+              "y": 0.6165720381674865
+            },
+            {
+              "x": 0.3602894845073063,
+              "y": 0.6090279873626048
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 3.297394670072467,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Dirigiti dalle scale",
+          "backward": "Immettiti nel corridoio secondario"
+        },
+        "_id": "6aa8279530ceeea81bb4343e",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa80cf3ddca110f0f734b19",
+        "toPlaceId": "6ff02d5e25b2f9a5926dcdcb",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.4971616615324839,
+              "y": 0.5683198464547365
+            },
+            {
+              "x": 0.3602894845073063,
+              "y": 0.6090279873626048
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 6.735967772466486,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Dirigiti verso le scale",
+          "backward": "Immettiti nell'atrio"
+        },
+        "_id": "6aa827c930ceeea81bb4359f",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa81687ddca110f0f735c15",
+        "toPlaceId": "bd563eb4b52745458c27ec63",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.5823457341099182,
+              "y": 0.5031869076220999
+            },
+            {
+              "x": 0.6391129897477226,
+              "y": 0.5398366530050285
+            },
+            {
+              "x": 0.6447565383479623,
+              "y": 0.6070610305950791
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 5.16395827018607,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nell'ascensore",
+          "backward": "Immettiti nel corridoio principale"
+        },
+        "_id": "6aa827f130ceeea81bb43704",
+        "connectionTypeKey": "door"
+      },
+      {
+        "fromPlaceId": "6aa821e530ceeea81bb41c99",
+        "toPlaceId": "af78e0d9ee7d131f1d6d2aa9",
+        "directionality": "bidirectional",
+        "geometry": {
+          "points": [
+            {
+              "x": 0.7059389804034655,
+              "y": 0.6158997761558065
+            },
+            {
+              "x": 0.6649404474112304,
+              "y": 0.7322726568163065
+            }
+          ]
+        },
+        "metricMode": "geometry_derived",
+        "distanceMeters": 4.235962185234198,
+        "additionalDelaySeconds": 0,
+        "attributeValues": [],
+        "instructions": {
+          "forward": "Entra nel bagno",
+          "backward": "Esci dal bagno"
+        },
+        "_id": "6aa8281f30ceeea81bb4386d",
+        "connectionTypeKey": "door"
+      }
+    ]
+  }
+}

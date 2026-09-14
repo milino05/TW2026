@@ -42,7 +42,8 @@ const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity
 const { computeVisitV2Integrity } = require("../services/visitV2Integrity.service");
 const { assertSelfContainedOffer } = require("../services/marketplaceOfferIntegrity.service");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
-const { createDemoPhysicalVocabulary, physicalAttributeValues } = require("./demoPhysicalVocabulary");
+const { createDemoPhysicalVocabulary } = require("./demoPhysicalVocabulary");
+const DEMO_VENUE_LAYOUTS = require("./demoVenueLayouts.json");
 
 const REQUIRED_USERNAMES = Object.freeze(["autore1", "autore2", "visitatore1", "visitatore2"]);
 const REQUIRED_PASSWORD = "12345678";
@@ -210,18 +211,18 @@ const ARCHAEOLOGY_AUX = Object.freeze({
 });
 
 const MUSEUM_PLANS = Object.freeze([
-  { key: "pinacoteca", organizationName: "Pinacoteca Nazionale di Bologna — ArtAround", owner: "autore1", venueName: "Pinacoteca Nazionale di Bologna", venueId: new mongoose.Types.ObjectId(PINACOTECA_VENUE_ID), mapUrl: "/maps/pinacoteca-bologna-demo-v3.svg", mapName: "pinacoteca-bologna-demo-v3.svg", address: "Via delle Belle Arti 56, Bologna", kind: "art", works: PINACOTECA_WORKS, aux: PINACOTECA_AUX,
+  { key: "pinacoteca", organizationName: "Pinacoteca Nazionale di Bologna — ArtAround", owner: "autore1", venueName: "Pinacoteca Nazionale di Bologna", venueId: new mongoose.Types.ObjectId(PINACOTECA_VENUE_ID), mapUrl: "/maps/pinacoteca-floor-plan.png", mapName: "pinacoteca-floor-plan.png", address: "Via delle Belle Arti 56, Bologna", kind: "art", works: PINACOTECA_WORKS, aux: PINACOTECA_AUX,
     visits: [
       { key: "capolavori", title: "Capolavori della Pinacoteca", description: "Dieci tappe per orientarsi tra Carracci, Reni, Domenichino e Guercino.", indexes: [0,1,2,3,4,5,6,7,8,10], depth: .35, complexity: .35, paid: false },
       { key: "carracci-seicento", title: "Dai Carracci al Seicento", description: "Un percorso di confronto tra riforma carraccesca, classicismo e Barocco emiliano.", indexes: [0,1,2,3,4,5,6,7,8,9,10], depth: .62, complexity: .55, paid: true },
       { key: "classe", title: "Classe alla Pinacoteca", description: "Percorso pensato per una classe, con confronto guidato e quiz finale opzionale per l'esecuzione di gruppo.", indexes: [0,2,3,4,5,6,7,8,9,11], depth: .45, complexity: .35, groupSessionDefaults: { preferredJoinAlias: "FENICE ROSSA" }, quiz: true, paid: false },
     ] },
-  { key: "mambo", organizationName: "MAMbo — Museo d'Arte Moderna di Bologna — ArtAround", owner: "autore1", venueName: "MAMbo — Museo d'Arte Moderna di Bologna", venueId: demoId("venue:mambo"), mapUrl: "/maps/mambo-bologna-demo-v3.svg", mapName: "mambo-bologna-demo-v3.svg", address: "Via Don Minzoni 14, Bologna", kind: "art", works: MAMBO_WORKS, aux: MAMBO_AUX,
+  { key: "mambo", organizationName: "MAMbo — Museo d'Arte Moderna di Bologna — ArtAround", owner: "autore1", venueName: "MAMbo — Museo d'Arte Moderna di Bologna", venueId: demoId("venue:mambo"), mapUrl: "/maps/mambo-floor-plan.png", mapName: "mambo-floor-plan.png", address: "Via Don Minzoni 14, Bologna", kind: "art", works: MAMBO_WORKS, aux: MAMBO_AUX,
     visits: [
       { key: "secondo-novecento", title: "Dal secondo Novecento al contemporaneo", description: "Dieci opere per leggere alcuni passaggi chiave della collezione MAMbo.", indexes: [0,1,2,3,4,5,6,7,8,10], depth: .45, complexity: .45, paid: false },
       { key: "materia-politica", title: "Materia, gesto e politica", description: "Un percorso più analitico tra immagini politiche, Arte Povera e trasformazioni della superficie.", indexes: [0,1,2,4,5,6,7,8,9,10,11], depth: .82, complexity: .8, paid: true },
     ] },
-  { key: "archeologico", organizationName: "Museo Civico Archeologico di Bologna — ArtAround", owner: "autore2", venueName: "Museo Civico Archeologico di Bologna", venueId: demoId("venue:archeologico"), mapUrl: "/maps/archeologico-bologna-demo-v3.svg", mapName: "archeologico-bologna-demo-v3.svg", address: "Via dell'Archiginnasio 2, Bologna", kind: "archaeology", works: ARCHAEOLOGY_ARTIFACTS, aux: ARCHAEOLOGY_AUX,
+  { key: "archeologico", organizationName: "Museo Civico Archeologico di Bologna — ArtAround", owner: "autore2", venueName: "Museo Civico Archeologico di Bologna", venueId: demoId("venue:archeologico"), mapUrl: "/maps/archeologico-floor-plan.png", mapName: "archeologico-floor-plan.png", address: "Via dell'Archiginnasio 2, Bologna", kind: "archaeology", works: ARCHAEOLOGY_ARTIFACTS, aux: ARCHAEOLOGY_AUX,
     visits: [{ key: "laboratorio", title: "Bologna antica: laboratorio di archeologia", description: "Percorso tra Preistoria, Etruria, mondo greco ed Egitto predisposto anche per l'esecuzione di gruppo con quiz finale.", indexes: [0,1,2,3,4,5,6,7,8,9,10,11], depth: .55, complexity: .45, groupSessionDefaults: { preferredJoinAlias: "ATENA BLU" }, quiz: true, paid: false }] },
 ]);
 
@@ -239,6 +240,39 @@ function auxiliarySubjects(plan) {
   ];
 }
 function allSubjects(plan) { return [...plan.works.map((entry) => ({ ...entry, kind: plan.kind === "art" ? "work" : "artifact" })), ...auxiliarySubjects(plan)]; }
+function physicalDefinitionId(definitionsByKey, key, label) {
+  const definition = definitionsByKey.get(key);
+  if (!definition) throw new Error(`${label} fisica mancante nel vocabolario demo: ${key}`);
+  return definition.definitionId;
+}
+function materializeVenueLayout(plan, physical) {
+  const snapshot = DEMO_VENUE_LAYOUTS[plan.key];
+  if (!snapshot) throw new Error(`Layout demo mancante: ${plan.key}`);
+  const attributes = (values = []) => values.map(({ physicalAttributeKey, ...value }) => ({
+    ...value,
+    physicalAttributeDefinitionId: physicalDefinitionId(
+      physical.physicalAttributeByKey,
+      physicalAttributeKey,
+      "Attributo",
+    ),
+  }));
+  return {
+    floors: snapshot.floors,
+    places: snapshot.places.map(({ placeTypeKey, ...place }) => ({
+      ...place,
+      placeTypeDefinitionId: physicalDefinitionId(physical.placeTypeByKey, placeTypeKey, "Tipo di luogo"),
+      attributeValues: attributes(place.attributeValues),
+    })),
+    exhibitSlots: snapshot.exhibitSlots,
+    connections: snapshot.connections.map(({ connectionTypeKey, ...connection }) => ({
+      ...connection,
+      connectionTypeDefinitionId: connectionTypeKey == null
+        ? null
+        : physicalDefinitionId(physical.connectionTypeByKey, connectionTypeKey, "Tipo di collegamento"),
+      attributeValues: attributes(connection.attributeValues),
+    })),
+  };
+}
 function subjectClassId(plan, kind) {
   const defs = defsFor(plan);
   return plan.kind === "art" ? { work: defs.work, author: defs.author, context: defs.context, technique: defs.technique }[kind] : { artifact: defs.artifact, culture: defs.culture, material: defs.material }[kind];
@@ -344,28 +378,12 @@ async function createNamespaceAndContent(plan, organization, owner) {
 async function createVenue(plan, organization, owner, editorial) {
   const ids = idsForPlan(plan);
   const physical = await createDemoPhysicalVocabulary({ physicalVocabularyId: ids.physicalVocabulary, revisionId: ids.physicalVocabularyRevision, organizationId: organization._id, userId: owner._id, name: `${plan.venueName} — Vocabolario fisico`, now: FIXED_NOW });
-  const placeTypeId = (key) => physical.placeTypeByKey.get(key).definitionId; const connectionTypeId = (key) => physical.connectionTypeByKey.get(key).definitionId;
-  const placeAttrs = (load = "low", quiet = false) => physicalAttributeValues(physical.physicalAttributeByKey, { sensory_load: load, quiet_area: quiet });
-  const connectionAttrs = (extra = {}) => physicalAttributeValues(physical.physicalAttributeByKey, { step_free: true, minimum_width_cm: 120, sensory_load: "low", has_steps: false, narrow_passage: false, ...extra });
   const venue = await Venue.create({ _id: ids.venue, name: plan.venueName, description: `${plan.address}. La pianta del seed è una schematizzazione ArtAround dall'alto per la demo e non una planimetria ufficiale.`, ownerOrganizationId: organization._id, primaryEditorialContextId: editorial.editorialContext._id, createdBy: owner._id });
   const workRecords = editorial.itemRecords.filter((record) => plan.works.some((entry) => entry.key === record.spec.key)); const targets = [];
   for (const record of workRecords) targets.push(await VenueTarget.create({ _id: demoId(`venue-target:${plan.key}:${record.spec.key}`), venueId: venue._id, subjectId: record.subject._id, displayLabelOverride: record.spec.label, inventoryNote: `${record.spec.label} — posizione demo`, provenance: { origin: "imported", sourceId: `demo-v3:${plan.key}:${record.spec.key}` }, createdBy: owner._id }));
   const exhibitSlots = await ExhibitSlot.create(plan.works.map((work) => ({ _id: demoId(`exhibit-slot:${plan.key}:${work.key}`), venueId: venue._id, publicCode: `as_${demoId(`slot-code:${plan.key}:${work.key}`).toHexString()}`, createdBy: owner._id })));
-  const floorId = demoId(`floor:${plan.key}:ground`); const f = Object.fromEntries(["entrance", "exit", "info", "toilet", "stairs", "elevator"].map((key) => [key, demoId(`place:${plan.key}:${key}`)]));
-  const workPlaceIds = plan.works.map((work) => demoId(`place:${plan.key}:${work.key}`)); const positions = [[.15,.18],[.31,.18],[.47,.18],[.63,.18],[.79,.18],[.83,.39],[.68,.48],[.52,.48],[.36,.48],[.20,.48],[.27,.68],[.66,.68]];
-  const places = [
-    { _id: f.entrance, placeTypeDefinitionId: placeTypeId("entrance"), label: "Ingresso", floorId, position: { x: .06, y: .82 }, attributeValues: placeAttrs() },
-    { _id: f.info, placeTypeDefinitionId: placeTypeId("information_point"), label: "Informazioni", floorId, position: { x: .18, y: .82 }, attributeValues: placeAttrs() },
-    ...plan.works.map((work, index) => ({ _id: workPlaceIds[index], placeTypeDefinitionId: placeTypeId("room"), label: `Sala ${index + 1} · ${work.label}`, floorId, position: { x: positions[index][0], y: positions[index][1] }, attributeValues: placeAttrs(index % 4 === 0 ? "medium" : "low", index % 3 === 0) })),
-    { _id: f.toilet, placeTypeDefinitionId: placeTypeId("toilets"), label: "Servizi igienici", floorId, position: { x: .38, y: .82 }, attributeValues: placeAttrs() },
-    { _id: f.elevator, placeTypeDefinitionId: placeTypeId("elevator"), label: "Ascensore", floorId, position: { x: .49, y: .82 }, attributeValues: placeAttrs() },
-    { _id: f.stairs, placeTypeDefinitionId: placeTypeId("stairs"), label: "Scale", floorId, position: { x: .60, y: .82 }, attributeValues: placeAttrs() },
-    { _id: f.exit, placeTypeDefinitionId: placeTypeId("exit"), label: "Uscita", floorId, position: { x: .92, y: .82 }, attributeValues: placeAttrs() },
-  ];
-  const routeNodes = [f.entrance, ...workPlaceIds, f.exit]; const connections = [];
-  for (let index = 0; index < routeNodes.length - 1; index += 1) connections.push({ _id: demoId(`connection:${plan.key}:main:${index}`), fromPlaceId: routeNodes[index], toPlaceId: routeNodes[index + 1], directionality: "bidirectional", connectionTypeDefinitionId: connectionTypeId("passage"), metricMode: "manual_override", distanceMeters: 10 + (index % 4) * 3, attributeValues: connectionAttrs(), instructions: { forward: "Prosegui verso la sala successiva indicata dalla mappa.", backward: "Ritorna verso la sala precedente." } });
-  for (const [key, placeId, type] of [["info", f.info, "passage"], ["toilet", f.toilet, "passage"], ["elevator", f.elevator, "elevator"], ["stairs", f.stairs, "stairs"]]) connections.push({ _id: demoId(`connection:${plan.key}:facility:${key}`), fromPlaceId: f.entrance, toPlaceId: placeId, directionality: "bidirectional", connectionTypeDefinitionId: connectionTypeId(type), metricMode: "manual_override", distanceMeters: 8 + connections.length, attributeValues: type === "stairs" ? connectionAttrs({ step_free: false, has_steps: true }) : connectionAttrs(), instructions: { forward: `Raggiungi ${key} dall'ingresso.`, backward: "Torna all'ingresso." } });
-  const layout = await LayoutRevision.create({ _id: ids.layoutRevision, venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, floors: [{ _id: floorId, label: "Piano demo", mapAsset: { url: plan.mapUrl, mimeType: "image/svg+xml", width: 1200, height: 760, originalName: plan.mapName } }], places, exhibitSlots: exhibitSlots.map((slot, index) => ({ exhibitSlotId: slot._id, placeId: workPlaceIds[index], label: `${plan.works[index].label} · slot demo`, order: index, approachGuidance: { defaultInstruction: `Cerca ${plan.works[index].label} nella sala indicata.`, overrides: [] } })), connections, status: "published", createdBy: owner._id, updatedBy: owner._id });
+  const venueLayout = materializeVenueLayout(plan, physical);
+  const layout = await LayoutRevision.create({ _id: ids.layoutRevision, venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, ...venueLayout, status: "published", createdBy: owner._id, updatedBy: owner._id });
   const release = await VenueRelease.create({ _id: ids.venueRelease, venueId: venue._id, version: 1, layoutRevisionId: layout._id, targetBindings: targets.map((target, index) => ({ venueTargetId: target._id, exhibitSlotId: exhibitSlots[index]._id, availability: "active", recognitionMedia: [] })), preVisitInformation: [`Sede reale: ${plan.address}.`, "La pianta ArtAround inclusa nel seed è una schematizzazione didattica dall'alto, non una planimetria ufficiale."], status: "published", integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: owner._id }, review: reviewApproved(owner._id), publication: { publishedAt: FIXED_NOW, publishedBy: owner._id }, createdBy: owner._id, updatedBy: owner._id });
   venue.publishedReleaseId = release._id; await venue.save(); assertNoBlocking(`${plan.key}: VenueRelease`, await computeVenueReleaseIssues({ venue, release, layout }));
   return { venue, targets, exhibitSlots, layout, venueRelease: release, workRecords };
@@ -442,6 +460,8 @@ async function verifyExamDatasetV3() {
     if (!venue || !venueRelease || !layout) add("VENUE_DATA_MISSING", `Venue/Layout/Release incompleti: ${plan.key}`); else {
       const activeBindings = (venueRelease.targetBindings || []).filter((entry) => entry.availability === "active"); totalTargets += activeBindings.length;
       if (activeBindings.length !== 12 || (layout.exhibitSlots || []).length !== 12) add("VENUE_TARGET_SLOT_COUNT", `La venue ${plan.key} deve avere 12 target e 12 slot`, { targets: activeBindings.length, slots: layout.exhibitSlots?.length || 0 }); if (!(layout.floors || []).some((floor) => floor.mapAsset?.url)) add("MAP_ASSET_MISSING", `Mappa mancante: ${plan.key}`);
+      const expectedLayout = DEMO_VENUE_LAYOUTS[plan.key]; const actualFloor = layout.floors?.[0]; const expectedFloor = expectedLayout?.floors?.[0];
+      if (!expectedLayout || layout.places?.length !== expectedLayout.places.length || layout.connections?.length !== expectedLayout.connections.length || actualFloor?.mapAsset?.url !== expectedFloor?.mapAsset?.url || !actualFloor?.calibration) add("VENUE_LAYOUT_SNAPSHOT_MISMATCH", `Il layout pubblicato non corrisponde alla fixture demo: ${plan.key}`, { places: layout.places?.length || 0, expectedPlaces: expectedLayout?.places?.length || 0, connections: layout.connections?.length || 0, expectedConnections: expectedLayout?.connections?.length || 0, mapUrl: actualFloor?.mapAsset?.url || null, expectedMapUrl: expectedFloor?.mapAsset?.url || null, calibrated: Boolean(actualFloor?.calibration) });
       const issues = await computeVenueReleaseIssues({ venue, release: venueRelease, layout }); if (issues.some((entry) => entry.severity !== "warning")) add("VENUE_RELEASE_INVALID", `VenueRelease non valida: ${plan.key}`, { issues });
     }
     const visitIds = plan.visits.map((entry) => demoId(`visit:${plan.key}:${entry.key}`)); const visits = await VisitV2.find({ _id: { $in: visitIds }, lifecycleStatus: "active" }).lean(); totalVisits += visits.length;

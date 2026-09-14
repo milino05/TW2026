@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -10,6 +11,7 @@ const {
   archaeologyNamespaceSnapshot,
   allSubjects,
 } = require("../scripts/examDatasetV3");
+const DEMO_VENUE_LAYOUTS = require("../scripts/demoVenueLayouts.json");
 
 test("dataset demo V3 conserva i requisiti quantitativi d'esame", () => {
   assert.deepEqual(REQUIRED_USERNAMES, ["autore1", "autore2", "visitatore1", "visitatore2"]);
@@ -40,6 +42,31 @@ test("regole editoriali demo espongono le matrici richieste", () => {
   assert.equal(archaeology.durationTypes.length, 2);
   assert.equal(archaeology.languageLevels.length, 2);
   assert.equal(archaeology.relationTypes.length, 3);
+});
+
+test("i layout demo pubblicati restano portabili e completi", () => {
+  const expectedCounts = {
+    pinacoteca: { places: 32, connections: 34 },
+    mambo: { places: 30, connections: 33 },
+    archeologico: { places: 30, connections: 31 },
+  };
+
+  for (const [key, expected] of Object.entries(expectedCounts)) {
+    const layout = DEMO_VENUE_LAYOUTS[key];
+    assert.ok(layout);
+    assert.equal(layout.floors.length, 1);
+    assert.ok(layout.floors[0].calibration);
+    assert.equal(layout.places.length, expected.places);
+    assert.equal(layout.connections.length, expected.connections);
+    assert.equal(layout.exhibitSlots.length, 12);
+    assert.ok(fs.existsSync(path.join(__dirname, "..", "clients", "navigator", "public", layout.floors[0].mapAsset.url)));
+
+    const placeIds = new Set(layout.places.map((place) => place._id));
+    assert.ok(layout.exhibitSlots.every((slot) => placeIds.has(slot.placeId)));
+    assert.ok(layout.connections.every((connection) => placeIds.has(connection.fromPlaceId) && placeIds.has(connection.toPlaceId)));
+    assert.ok(layout.places.every((place) => place.placeTypeKey && place.placeTypeDefinitionId === undefined));
+    assert.ok(layout.connections.every((connection) => connection.connectionTypeKey && connection.connectionTypeDefinitionId === undefined));
+  }
 });
 
 test("le regole dei due musei d'arte restano allineate al modello culturale starter corrente", async () => {
