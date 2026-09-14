@@ -76,6 +76,28 @@ async function revalidateVenuePhysicalDependency({ venueId, expectedDependencyRe
   return { venue, release, layout, dependencyRevision: bundle.revision, validation, changed: true };
 }
 
+async function evaluateItemRevisionNamespaceDependency({ editionId, itemRevisionId, expectedDependencyRevisionId = null }) {
+  const edition = await ItemEdition.findById(editionId).lean();
+  if (!edition) return null;
+  const namespace = await Namespace.findOne({ _id: edition.namespaceId, lifecycleStatus: "active" }).lean();
+  if (!namespace) return null;
+  const namespaceRevision = await loadEffectiveNamespaceRevision({ namespace, binding: edition.namespaceDependency });
+  if (expectedDependencyRevisionId && id(namespaceRevision._id) !== id(expectedDependencyRevisionId)) return null;
+  const itemRevision = await ItemRevisionV2.findOne({
+    _id: itemRevisionId,
+    itemEditionId: edition._id,
+    status: { $in: ["published", "superseded"] },
+  }).lean();
+  if (!itemRevision) return null;
+  const issues = validatePresentationAgainstNamespace(itemRevision, namespaceRevision);
+  const validation = buildValidation({
+    consumerSnapshotId: itemRevision._id,
+    dependencyRevisionId: namespaceRevision._id,
+    issues,
+  });
+  return { edition, itemRevision, dependencyRevision: namespaceRevision, validation };
+}
+
 async function revalidateItemEditionNamespaceDependency({ editionId, expectedDependencyRevisionId = null, force = false }) {
   const edition = await ItemEdition.findOne({ _id: editionId, publishedRevisionId: { $ne: null } }).lean();
   if (!edition) return null;
@@ -91,22 +113,20 @@ async function revalidateItemEditionNamespaceDependency({ editionId, expectedDep
     return { edition, dependencyRevision: namespaceRevision, validation: edition.namespaceDependency.validation, changed: false };
   }
 
-  const itemRevision = await ItemRevisionV2.findOne({
-    _id: edition.publishedRevisionId,
-    itemEditionId: edition._id,
-    status: { $in: ["published", "superseded"] },
-  }).lean();
-  if (!itemRevision) return null;
-  const issues = validatePresentationAgainstNamespace(itemRevision, namespaceRevision);
+  const evaluated = await evaluateItemRevisionNamespaceDependency({
+    editionId: edition._id,
+    itemRevisionId: edition.publishedRevisionId,
+    expectedDependencyRevisionId: namespaceRevision._id,
+  });
+  if (!evaluated) return null;
   if (!await namespaceDependencyStillEffective({ namespaceId: namespace._id, binding: edition.namespaceDependency, revisionId: namespaceRevision._id })) return null;
-  const validation = buildValidation({ consumerSnapshotId: itemRevision._id, dependencyRevisionId: namespaceRevision._id, issues });
   const update = await ItemEdition.updateOne({
     _id: edition._id,
-    publishedRevisionId: itemRevision._id,
+    publishedRevisionId: evaluated.itemRevision._id,
     namespaceId: namespace._id,
-  }, { $set: { "namespaceDependency.validation": validation } });
+  }, { $set: { "namespaceDependency.validation": evaluated.validation } });
   if (update.modifiedCount !== 1) return null;
-  return { edition, itemRevision, dependencyRevision: namespaceRevision, validation, changed: true };
+  return { ...evaluated, changed: true };
 }
 
 async function revalidateSemanticGraphNamespaceDependency({ semanticGraphId, expectedDependencyRevisionId = null, force = false }) {
@@ -280,6 +300,7 @@ async function auditEditorialContextsAgainstNamespace({ namespaceId, namespaceRe
 }
 
 module.exports = {
+  evaluateItemRevisionNamespaceDependency,
   revalidateVenuePhysicalDependency,
   revalidateItemEditionNamespaceDependency,
   revalidateSemanticGraphNamespaceDependency,
