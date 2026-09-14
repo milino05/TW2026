@@ -137,10 +137,14 @@ async function projectRoutingNavigationOptions({ selectedVenueIds = [] }) {
     const venue = venueById.get(venueId);
     if (!venue) continue;
     try {
-      const bundle = await loadVenuePhysicalVocabulary(venue, { requireStable: true });
+      const bundle = await loadVenuePhysicalVocabulary(venue, {
+        requireStable: true,
+        requireValidatedConsumer: Boolean(venue.publishedReleaseId),
+        consumerSnapshotId: venue.publishedReleaseId || null,
+      });
       revisionForVenue.set(venueId, bundle.revision.toObject ? bundle.revision.toObject() : bundle.revision);
     } catch {
-      // Una Venue senza dependency fisica effettiva valida non espone controlli di routing.
+      // Una Venue senza dependency fisica corrente e validata non espone controlli di routing.
     }
   }
   if (revisionForVenue.size !== selected.length) return { requirements: [], profilesByVenue: [] };
