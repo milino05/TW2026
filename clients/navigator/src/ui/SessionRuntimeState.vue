@@ -19,6 +19,7 @@ const emit = defineEmits<{
 const phase = computed(() => props.snapshot.experience?.phase || null);
 const contextStop = computed(() => props.map?.narrativeContextStop || null);
 const recognitionMedia = computed(() => contextStop.value?.recognitionMedia || null);
+const physicalProgressAction = computed(() => props.snapshot.availableActions.find((action) => action.type === "PHYSICAL_PROGRESS_NEXT") || props.nextAction || null);
 const instruction = computed(() => {
   if (phase.value === "approaching_visit_target") {
     return contextStop.value?.approachInstruction || "Cerca l'opera indicata nella sala e conferma quando l'hai trovata.";
@@ -81,11 +82,11 @@ const knownLocationSourceLabel = computed(() => {
     <div class="runtime-actions">
       <button v-if="showMapButton" type="button" class="secondary" @click="emit('showMap')">Apri mappa</button>
       <button
-        v-if="nextAction && phase === 'approaching_visit_target'"
+        v-if="physicalProgressAction && phase === 'approaching_visit_target'"
         type="button"
         class="primary"
         :disabled="busy"
-        @click="emit('selectAction', nextAction)"
+        @click="emit('selectAction', physicalProgressAction)"
       >Trovata!</button>
       <button
         v-if="showReturn && returnAction"
