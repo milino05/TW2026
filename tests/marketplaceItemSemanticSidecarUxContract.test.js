@@ -24,9 +24,12 @@ test("Item relations launcher files pass the syntax gate", () => {
   }
 });
 
-test("Item editor no longer mounts a sidecar and uses the shared Task Dialog selection flow", () => {
-  assert.match(source.main, /item-semantic-relations-launcher\.js/);
+test("Item editor non monta più il pulsante per aggiungere collegamenti", () => {
+  assert.doesNotMatch(source.main, /item-semantic-relations-launcher\.js/);
   assert.doesNotMatch(source.main, /item-semantic-sidecar\.js/);
+});
+
+test("il launcher semantico riusabile conserva il Task Dialog condiviso", () => {
   assert.match(source.launcher, /createTaskDialog/);
   assert.match(source.launcher, /Aggiungi collegamenti/);
   assert.match(source.launcher, /Scegli dove lavorare/);

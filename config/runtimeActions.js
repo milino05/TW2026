@@ -181,7 +181,30 @@ function physicalNavigationActionDefinition(definition) {
     label: `Trova ${definition.label}`,
     controlledVoiceAliases: terms.flatMap((term) => {
       const spokenTerm = term.toLocaleLowerCase("it-IT");
-      return [`trova ${spokenTerm}`, `dov'è ${spokenTerm}`];
+      return [
+        `trova ${spokenTerm}`,
+        `dov'è ${spokenTerm}`,
+        `dov'è il ${spokenTerm}`,
+        `dov'è l'${spokenTerm}`,
+        `dove si trova ${spokenTerm}`,
+        `dove sono i ${spokenTerm}`,
+        `dove sono le ${spokenTerm}`,
+        `dove si trovano ${spokenTerm}`,
+      ];
+    }),
+  };
+}
+
+function placeNavigationActionDefinition({ placeId, label, aliases = [] }) {
+  const terms = [...new Set([label, ...aliases].map((value) => String(value || "").trim()).filter(Boolean))];
+  return {
+    actionId: `navigation.destination.${placeId}`,
+    type: "NAVIGATE_TO_PLACE",
+    family: "navigation",
+    label: `Vai a ${label}`,
+    controlledVoiceAliases: terms.flatMap((term) => {
+      const spokenTerm = term.toLocaleLowerCase("it-IT");
+      return [`vai a ${spokenTerm}`, `portami a ${spokenTerm}`, `dov'è ${spokenTerm}`, `dov'è il ${spokenTerm}`, `dove sono le ${spokenTerm}`];
     }),
   };
 }
@@ -203,5 +226,6 @@ function publicAction(definition) {
 module.exports = {
   ACTION_DEFINITIONS,
   physicalNavigationActionDefinition,
+  placeNavigationActionDefinition,
   publicAction,
 };

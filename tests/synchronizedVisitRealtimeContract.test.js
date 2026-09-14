@@ -47,6 +47,15 @@ test("foreground, audio e inattività alimentano la stessa presence effimera del
   assert.match(view, /Ultima attività/);
 });
 
+test("il quiz sincronizzato mantiene raggiungibili tutte le domande e il pulsante di invio", () => {
+  const view = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
+
+  assert.match(view, /<section v-else-if="group\.synchronizedSession\.status === 'quiz'" class="quiz-card">/);
+  assert.match(view, /\.together-page\{[^}]*height:100%[^}]*min-height:0[^}]*overflow-y:auto/);
+  assert.match(view, /\.together-page\{[^}]*-webkit-overflow-scrolling:touch[^}]*touch-action:pan-y/);
+  assert.match(view, /\{\{ actionBusy \? 'Invio…' : 'Invia le risposte' \}\}<\/button>/);
+});
+
 test("il join temporaneo non crea diritti Marketplace permanenti", () => {
   const runtime = source("services/synchronizedVisitSession.service.js");
   assert.doesNotMatch(runtime, /MarketplaceAcquisition/);
@@ -110,6 +119,14 @@ test("il lifecycle TTS del partecipante alimenta ContentExperience senza spostar
   assert.match(tts, /emitLifecycle\("started"\)/);
   assert.match(tts, /emitLifecycle\("paused"\)/);
   assert.match(tts, /emitLifecycle\("completed"\)/);
+  assert.match(tts, /utterance\.onboundary/);
+  assert.match(tts, /this\.resumeOffset = Math\.min/);
+  assert.match(tts, /MAX_UTTERANCE_CHARS = 180/);
+  assert.match(tts, /this\.startUtterance\(segment\.endOffset, "continuation"\)/);
+  assert.match(tts, /return this\.startUtterance\(this\.resumeOffset, "resumed"\)/);
+  assert.match(tts, /this\.utteranceVoice = this\.selectVoice\(this\.utteranceLocale\)/);
+  assert.match(tts, /if \(this\.utteranceVoice\) utterance\.voice = this\.utteranceVoice/);
+  assert.match(tts, /this\.utterance = null;\s*window\.speechSynthesis\.cancel\(\);\s*this\.setState\("paused"\)/);
   assert.match(tts, /activeSeconds/);
   assert.match(telemetry, /route\.name !== "together-session"/);
   assert.match(telemetry, /group\.membership\.role !== "participant"/);
@@ -117,4 +134,12 @@ test("il lifecycle TTS del partecipante alimenta ContentExperience senza spostar
   assert.match(telemetry, /Math\.min\(0\.94,/);
   assert.match(repository, /content-entries\/experience/);
   assert.match(main, /installSynchronizedContentExperienceTelemetry\(router\)/);
+});
+
+test("la ripresa sincronizzata non cancella la posizione locale già in pausa e non riavvia un audio attivo", () => {
+  const view = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
+
+  assert.match(view, /if \(playback\.state === "paused"\) \{\s*if \(ttsState\.value === "speaking"\) browserTts\.pause\(\);\s*return;/);
+  assert.match(view, /if \(ttsState\.value === "paused"\) browserTts\.resume\(\);\s*else if \(ttsState\.value === "idle" && !browserTts\.speak/);
+  assert.doesNotMatch(view, /if \(ttsState\.value === "speaking"\) browserTts\.pause\(\); else browserTts\.stop\(\);/);
 });

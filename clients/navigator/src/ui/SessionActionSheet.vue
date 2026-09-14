@@ -3,12 +3,13 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { SessionActionGroups } from "../domain/sessionPresentation";
 import type { AvailableAction } from "../infrastructure/http/sessionRepository";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean;
   groups: SessionActionGroups;
   busyActionId: string | null;
   interactionBusy: boolean;
-}>();
+  mode?: "visit" | "map";
+}>(), { mode: "visit" });
 
 const emit = defineEmits<{ close: []; select: [action: AvailableAction] }>();
 const closeButton = ref<HTMLButtonElement | null>(null);
@@ -22,6 +23,11 @@ const visible = computed(() => props.open || autoChoiceOpen.value);
 const choiceMode = computed(() => autoChoiceOpen.value && !props.open);
 const sections = computed(() => {
   if (choiceMode.value) return [{ key: "semantic-choice", title: "Scegli un approfondimento", actions: semanticChoices.value }];
+  if (props.mode === "map") return [{
+    key: "places",
+    title: "Luoghi utili",
+    actions: props.groups.navigation.filter((action) => action.type === "NAVIGATE_TO_PHYSICAL_FEATURE"),
+  }].filter((section) => section.actions.length);
   return [
     { key: "presentation", title: "Adatta il contenuto", actions: props.groups.presentation },
     { key: "semantic", title: "Approfondisci", actions: props.groups.semantic },
@@ -32,8 +38,7 @@ const sections = computed(() => {
 const mapOnlyMode = computed(() => Boolean(
   props.open
   && !choiceMode.value
-  && sections.value.length === 0
-  && (props.groups.navigation.length || props.groups.progress.length),
+  && props.mode === "map",
 ));
 const title = computed(() => {
   if (choiceMode.value) return "Quale approfondimento vuoi aprire?";
@@ -85,7 +90,7 @@ onBeforeUnmount(() => {
           <div>
             <h2 id="session-actions-title">{{ title }}</h2>
             <p v-if="choiceMode" class="sheet-intro">Più contenuti sono pertinenti alla relazione richiesta. Scegli quello che vuoi ascoltare.</p>
-            <p v-else-if="mapOnlyMode" class="sheet-intro">In questo momento le azioni disponibili riguardano orientamento o avanzamento fisico. Usale nella Mappa, dove restano insieme al percorso e ai luoghi utili.</p>
+            <p v-else-if="mapOnlyMode" class="sheet-intro">Scegli il luogo che vuoi raggiungere. Puoi richiedere le stesse azioni anche con il comando vocale.</p>
             <p v-else class="sheet-intro">Le azioni fisiche e i luoghi utili sono disponibili nella Mappa.</p>
           </div>
           <button ref="closeButton" class="close-button" type="button" aria-label="Chiudi azioni" @click="closeSheet">×</button>

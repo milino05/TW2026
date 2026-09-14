@@ -86,16 +86,21 @@ test("Navigator keeps physical actions on the map and content actions out of the
   assert.match(session, /:available-actions="snapshot\.availableActions"/);
   assert.match(synchronized, /:available-actions="runtime\.availableActions"/);
   assert.match(map, /PHYSICAL_PROGRESS_NEXT/);
-  assert.match(map, /navigation\.place\./);
-  assert.match(map, /Torna alla visita/);
+  assert.match(map, /LOCATION_CORRECT/);
+  assert.doesNotMatch(map, /otherNavigationActions/);
+  assert.doesNotMatch(map, /Torna alla visita/);
+  assert.doesNotMatch(map, /class="return-action"/);
   assert.doesNotMatch(map, /plannedOverlays/);
   assert.doesNotMatch(map, /v-for="stop in stops"/);
   assert.match(map, /navigation-route/);
   assert.doesNotMatch(sheet, /Muoviti nel museo/);
-  assert.doesNotMatch(sheet, /actions:\s*props\.groups\.navigation/);
   assert.match(sheet, /mapOnlyMode/);
-  assert.match(sheet, /Azioni sulla mappa/);
-  assert.match(sheet, /azioni disponibili riguardano orientamento o avanzamento fisico/);
+  assert.match(sheet, /mode\?: "visit" \| "map"/);
+  assert.match(sheet, /title: "Luoghi utili"/);
+  assert.match(sheet, /props\.groups\.navigation\.filter\(\(action\) => action\.type === "NAVIGATE_TO_PHYSICAL_FEATURE"\)/);
+  assert.match(sheet, /Puoi richiedere le stesse azioni anche con il comando vocale/);
+  assert.match(session, /openActionSheet\('map'\)[^>]*>Tutte le azioni disponibili<\/button>/);
+  assert.match(synchronized, /openActionSheet\('map'\)[^>]*>Tutte le azioni disponibili<\/button>/);
 });
 
 test("approach UI exposes recognition media and contextual physical confirmation", () => {

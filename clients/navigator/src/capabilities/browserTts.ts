@@ -5,6 +5,9 @@ import type {
   TextToSpeechState,
 } from "./index";
 
+const MAX_UTTERANCE_CHARS = 180;
+type UtteranceStartKind = "started" | "resumed" | "continuation";
+
 export class BrowserTextToSpeech implements TextToSpeechCapability {
   private currentState: TextToSpeechState = "idle";
   private utterance: SpeechSynthesisUtterance | null = null;
@@ -14,6 +17,10 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
   private accumulatedActiveMs = 0;
   private lifecycleStarted = false;
   private utteranceText = "";
+  private utteranceLocale: string | null = null;
+  private utteranceVoice: SpeechSynthesisVoice | null = null;
+  private utteranceOffset = 0;
+  private resumeOffset = 0;
 
   get supported() {
     return typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
@@ -46,6 +53,10 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
     this.accumulatedActiveMs = 0;
     this.lifecycleStarted = false;
     this.utteranceText = "";
+    this.utteranceLocale = null;
+    this.utteranceVoice = null;
+    this.utteranceOffset = 0;
+    this.resumeOffset = 0;
   }
 
   private emitLifecycle(type: TextToSpeechLifecycleType) {
@@ -57,29 +68,78 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
     for (const listener of this.lifecycleListeners) listener(event);
   }
 
-  speak(text: string, locale?: string | null) {
-    if (!this.supported || !text.trim()) return false;
-    this.stop();
-    this.resetLifecycle();
+  private segmentFrom(offset: number) {
+    let normalizedOffset = Math.max(0, Math.min(offset, this.utteranceText.length));
+    while (normalizedOffset < this.utteranceText.length && /\s/.test(this.utteranceText[normalizedOffset])) normalizedOffset += 1;
+    let endOffset = Math.min(this.utteranceText.length, normalizedOffset + MAX_UTTERANCE_CHARS);
+    if (endOffset < this.utteranceText.length) {
+      const segment = this.utteranceText.slice(normalizedOffset, endOffset);
+      const punctuationOffset = Math.max(
+        segment.lastIndexOf(". "),
+        segment.lastIndexOf("! "),
+        segment.lastIndexOf("? "),
+        segment.lastIndexOf("; "),
+        segment.lastIndexOf(": "),
+        segment.lastIndexOf(", "),
+      );
+      const wordOffset = segment.lastIndexOf(" ");
+      const boundaryOffset = punctuationOffset >= 60 ? punctuationOffset + 1 : wordOffset;
+      if (boundaryOffset >= 60) endOffset = normalizedOffset + boundaryOffset + 1;
+    }
+    return {
+      startOffset: normalizedOffset,
+      endOffset,
+      text: this.utteranceText.slice(normalizedOffset, endOffset),
+    };
+  }
 
-    const utterance = new SpeechSynthesisUtterance(text);
+  private selectVoice(locale: string | null) {
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const normalizedLocale = (locale || "").toLowerCase();
+    const language = normalizedLocale.split("-")[0];
+    return voices.find((voice) => voice.lang.toLowerCase() === normalizedLocale)
+      || voices.find((voice) => voice.lang.toLowerCase().split("-")[0] === language)
+      || voices.find((voice) => voice.default)
+      || voices[0];
+  }
+
+  private startUtterance(offset: number, startKind: UtteranceStartKind) {
+    const segment = this.segmentFrom(offset);
+    if (!segment.text) return false;
+
+    const utterance = new SpeechSynthesisUtterance(segment.text);
     this.utterance = utterance;
-    this.utteranceText = text;
-    if (locale) utterance.lang = locale;
+    this.utteranceOffset = segment.startOffset;
+    this.resumeOffset = segment.startOffset;
+    if (this.utteranceLocale) utterance.lang = this.utteranceLocale;
+    if (this.utteranceVoice) utterance.voice = this.utteranceVoice;
 
     utterance.onstart = () => {
-      if (this.utterance !== utterance || this.lifecycleStarted) return;
-      this.lifecycleStarted = true;
+      if (this.utterance !== utterance) return;
       this.activeStartedAtMs = this.nowMs();
       this.setState("speaking");
-      this.emitLifecycle("started");
+      if (this.lifecycleStarted && startKind === "resumed") {
+        this.emitLifecycle("resumed");
+      } else if (!this.lifecycleStarted) {
+        this.lifecycleStarted = true;
+        this.emitLifecycle("started");
+      }
+    };
+    utterance.onboundary = (event) => {
+      if (this.utterance !== utterance || !Number.isFinite(event.charIndex)) return;
+      this.resumeOffset = Math.min(this.utteranceText.length, this.utteranceOffset + event.charIndex);
     };
     utterance.onend = () => {
       if (this.utterance !== utterance) return;
-      if (this.lifecycleStarted) {
-        this.captureActiveTime();
-        this.emitLifecycle("completed");
+      if (this.lifecycleStarted) this.captureActiveTime();
+      if (segment.endOffset < this.utteranceText.length) {
+        this.utterance = null;
+        this.resumeOffset = segment.endOffset;
+        this.startUtterance(segment.endOffset, "continuation");
+        return;
       }
+      if (this.lifecycleStarted) this.emitLifecycle("completed");
       this.utterance = null;
       this.resetLifecycle();
       this.setState("idle");
@@ -102,10 +162,23 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
     return true;
   }
 
+  speak(text: string, locale?: string | null) {
+    if (!this.supported || !text.trim()) return false;
+    this.stop();
+    this.resetLifecycle();
+    this.utteranceText = text;
+    this.utteranceLocale = locale || null;
+    this.utteranceVoice = this.selectVoice(this.utteranceLocale);
+    return this.startUtterance(0, "started");
+  }
+
   pause() {
     if (!this.supported || this.currentState !== "speaking") return false;
     if (this.lifecycleStarted) this.captureActiveTime();
-    window.speechSynthesis.pause();
+    // Alcuni motori Web Speech non producono più audio dopo pause()/resume().
+    // Conserviamo quindi l'ultima parola raggiunta e ricreiamo l'utterance alla ripresa.
+    this.utterance = null;
+    window.speechSynthesis.cancel();
     this.setState("paused");
     if (this.lifecycleStarted) this.emitLifecycle("paused");
     return true;
@@ -113,11 +186,7 @@ export class BrowserTextToSpeech implements TextToSpeechCapability {
 
   resume() {
     if (!this.supported || this.currentState !== "paused") return false;
-    window.speechSynthesis.resume();
-    if (this.lifecycleStarted) this.activeStartedAtMs = this.nowMs();
-    this.setState("speaking");
-    if (this.lifecycleStarted) this.emitLifecycle("resumed");
-    return true;
+    return this.startUtterance(this.resumeOffset, "resumed");
   }
 
   stop() {

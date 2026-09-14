@@ -18,6 +18,7 @@ const {
   correctNavigatorLocationV2,
   advanceNavigatorPhysicalProgressV2,
   startNavigatorPhysicalDetourV2,
+  startNavigatorPlaceDetourV2,
   returnNavigatorToVisitV2,
   advanceNavigatorNarrativeProgressV2,
   selectNavigatorVisitStopV2,
@@ -191,6 +192,18 @@ async function executeDescriptor({ sessionId, userId, descriptor, input = null }
     }
     case "NAVIGATE_TO_PHYSICAL_FEATURE": {
       const routeResult = await startNavigatorPhysicalDetourV2({ sessionId, userId, physicalFeatureRef: descriptor.serverInput?.physicalFeatureRef });
+      return {
+        type: "navigation_requested",
+        navigation: await projectNavigationRoute({ sessionId, userId, routeResult }),
+      };
+    }
+    case "NAVIGATE_TO_PLACE": {
+      const routeResult = await startNavigatorPlaceDetourV2({
+        sessionId,
+        userId,
+        venueId: descriptor.serverInput?.venueId,
+        destinationPlaceId: descriptor.serverInput?.destinationPlaceId,
+      });
       return {
         type: "navigation_requested",
         navigation: await projectNavigationRoute({ sessionId, userId, routeResult }),

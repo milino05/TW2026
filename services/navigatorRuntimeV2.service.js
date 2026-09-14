@@ -3,6 +3,7 @@ const AppError = require("../utils/AppError");
 const {
   ACTION_DEFINITIONS,
   physicalNavigationActionDefinition,
+  placeNavigationActionDefinition,
   publicAction,
 } = require("../config/runtimeActions");
 const {
@@ -27,7 +28,9 @@ const {
   confirmPhysicalLocationV2,
   correctPhysicalLocationV2,
   advancePhysicalProgressV2,
+  resolveIndoorLiveRouteFromBundle,
   startPhysicalDetourV2,
+  startPhysicalPlaceDetourV2,
   returnToVisitV2,
   clearPhysicalDetour,
 } = require("./visitPhysicalRuntimeV2.service");
@@ -137,6 +140,31 @@ async function physicalFeatureActions({ session, routingConfigurationOwner, exec
   return result;
 }
 
+async function physicalPlaceActions({ session, routingConfigurationOwner, execution, entry }) {
+  const knownLocation = execution.knownLocation;
+  if (!knownLocation?.venueId || !knownLocation?.placeId) return [];
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, knownLocation.venueId);
+  const definitionsById = new Map((bundle.physicalVocabularyRevision.placeTypes || [])
+    .map((definition) => [definition.definitionId, definition]));
+  const result = [];
+  for (const place of bundle.layout.places || []) {
+    if (id(place._id) === id(knownLocation.placeId)) continue;
+    try {
+      resolveIndoorLiveRouteFromBundle({ routingSession: routingConfigurationOwner, bundle, fromPlaceId: knownLocation.placeId, toPlaceId: place._id });
+      const definition = definitionsById.get(place.placeTypeDefinitionId);
+      const label = place.label || definition?.label || "Luogo";
+      const aliases = (definition?.localizations || []).flatMap((localization) => [definition.label, ...(localization.aliases || [])]);
+      result.push(personalAction(session, placeNavigationActionDefinition({ placeId: place._id, label, aliases }), {
+        serverInput: { venueId: knownLocation.venueId, destinationPlaceId: place._id },
+        context: actionContext(entry, execution.contextAnchor),
+      }));
+    } catch (error) {
+      if (![404, 409].includes(error?.status)) throw error;
+    }
+  }
+  return result;
+}
+
 function synchronizedPlaybackOverridesPhysicalGate({ synchronizedSession, entry }) {
   if (!synchronizedSession || !entry) return false;
   if (!["playing", "paused"].includes(synchronizedSession.playback?.state)) return false;
@@ -209,6 +237,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     if (execution.detour) actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
     actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
+    actions.push(...await physicalPlaceActions({ session, routingConfigurationOwner, execution, entry }));
     addSharedPresentationActions();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
@@ -217,6 +246,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
     actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
+    actions.push(...await physicalPlaceActions({ session, routingConfigurationOwner, execution, entry }));
     addSharedPresentationActions();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
@@ -225,6 +255,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     actions.push(...baseActionsByFamilies(base.actions, new Set(["progress", "lifecycle"])));
     if (stopAction) actions.push(stopAction);
     actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
+    actions.push(...await physicalPlaceActions({ session, routingConfigurationOwner, execution, entry }));
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
@@ -239,6 +270,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   }
   if (stopAction) actions.push(stopAction);
   actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
+  actions.push(...await physicalPlaceActions({ session, routingConfigurationOwner, execution, entry }));
   return { ...base, execution, actions: dedupeActions(actions) };
 }
 
@@ -389,6 +421,16 @@ async function startNavigatorPhysicalDetourV2({ sessionId, userId, physicalFeatu
   });
 }
 
+async function startNavigatorPlaceDetourV2({ sessionId, userId, venueId, destinationPlaceId }) {
+  const state = await loadNavigatorState({ sessionId, userId });
+  return startPhysicalPlaceDetourV2({
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
+    venueId,
+    destinationPlaceId,
+  });
+}
+
 async function returnNavigatorToVisitV2({ sessionId, userId }) {
   const state = await loadNavigatorState({ sessionId, userId });
   await returnToVisitV2({ personalSession: state.physicalRuntimeOwner });
@@ -446,6 +488,7 @@ module.exports = {
   correctNavigatorLocationV2,
   advanceNavigatorPhysicalProgressV2,
   startNavigatorPhysicalDetourV2,
+  startNavigatorPlaceDetourV2,
   returnNavigatorToVisitV2,
   advanceNavigatorNarrativeProgressV2,
   selectNavigatorVisitStopV2,

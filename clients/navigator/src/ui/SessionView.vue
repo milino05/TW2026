@@ -39,6 +39,7 @@ const voiceBusy = ref(false);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
 const actionSheetOpen = ref(false);
+const actionSheetMode = ref<"visit" | "map">("visit");
 const voiceSheetOpen = ref(false);
 const mediaOpen = ref(false);
 const completionConfirmOpen = ref(false);
@@ -60,6 +61,18 @@ const actionGroups = computed(() => groupSessionActions(snapshot.value?.availabl
 const quickActions = computed(() => quickPresentationActions(snapshot.value?.availableActions || []));
 const previousAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "PROGRESS_PREVIOUS"));
 const nextAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "PROGRESS_NEXT"));
+const completeAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "COMPLETE"));
+const isFinalVisitContent = computed(() => {
+  const progress = snapshot.value?.progress;
+  return Boolean(
+    snapshot.value?.current
+    && !isSemantic.value
+    && snapshot.value?.experience?.phase === "presenting_visit_content"
+    && progress?.contentEntryCount
+    && progress.currentEntryIndex === progress.contentEntryCount - 1,
+  );
+});
+const primaryProgressAction = computed(() => isFinalVisitContent.value ? completeAction.value : nextAction.value);
 const stopSelectAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "VISIT_STOP_SELECT"));
 const returnToVisitAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "NAVIGATION_RETURN_TO_VISIT"));
 const locationConfirmAction = computed(() => actionOfType(snapshot.value?.availableActions || [], "LOCATION_CONFIRM"));
@@ -138,9 +151,18 @@ const audioButtonLabel = computed(() => {
   if (ttsState.value === "paused") return "Riprendi lettura";
   return "Ascolta il testo";
 });
-const voiceExamples = computed(() => (snapshot.value?.availableActions || [])
+const usefulPlaceActions = computed(() => (snapshot.value?.availableActions || []).filter((action) => action.type === "NAVIGATE_TO_PHYSICAL_FEATURE"));
+const voiceAvailableActions = computed(() => activeView.value === "map" && usefulPlaceActions.value.length
+  ? usefulPlaceActions.value
+  : snapshot.value?.availableActions || []);
+const voiceExamples = computed(() => voiceAvailableActions.value
   .filter((action) => action.controlledVoiceAliases?.length)
   .slice(0, 3));
+
+function openActionSheet(mode: "visit" | "map") {
+  actionSheetMode.value = mode;
+  actionSheetOpen.value = true;
+}
 
 watch(() => snapshot.value?.session.runtimeVersion, () => {
   browserTts.stop();
@@ -366,7 +388,7 @@ async function listenControlledVoice() {
   error.value = null;
   try {
     const result = await browserControlledVoice.listen(
-      snapshot.value.availableActions,
+      voiceAvailableActions.value,
       snapshot.value.current?.presentation.locale || "it-IT",
     );
     if (requestId !== voiceSequence) return;
@@ -487,7 +509,7 @@ async function listenControlledVoice() {
               </div>
             </template>
 
-            <button v-if="hasActionSheetActions" class="all-actions" type="button" @click="actionSheetOpen = true">Tutte le azioni disponibili</button>
+            <button v-if="hasActionSheetActions" class="all-actions" type="button" @click="openActionSheet('visit')">Tutte le azioni disponibili</button>
           </template>
 
           <SessionRuntimeState
@@ -503,17 +525,19 @@ async function listenControlledVoice() {
         </section>
 
         <section v-show="activeView === 'map'" id="session-map-panel" class="map-panel" role="tabpanel">
-          <SessionMap
-            v-if="map?.venues.length"
-            :map="map"
-            :navigation="navigation"
-            :current-visit-anchor-id="currentAnchorId"
-            :available-actions="snapshot.availableActions"
-            :location-selection-mode="locationSelectionMode"
-            :selection-busy="interactionBusy"
-            @select-location="selectLocation"
-            @select-action="requestAction"
-          />
+          <template v-if="map?.venues.length">
+            <SessionMap
+              :map="map"
+              :navigation="navigation"
+              :current-visit-anchor-id="currentAnchorId"
+              :available-actions="snapshot.availableActions"
+              :location-selection-mode="locationSelectionMode"
+              :selection-busy="interactionBusy"
+              @select-location="selectLocation"
+              @select-action="requestAction"
+            />
+            <button v-if="usefulPlaceActions.length" class="all-actions map-actions-launcher" type="button" @click="openActionSheet('map')">Tutte le azioni disponibili</button>
+          </template>
           <p v-else>La mappa della visita non è disponibile.</p>
         </section>
 
@@ -538,7 +562,7 @@ async function listenControlledVoice() {
         <svg viewBox="0 0 24 24" width="27" height="27" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
 
-      <button v-if="nextAction" class="progress-action next-action" type="button" :disabled="interactionBusy" @click="requestAction(nextAction)">{{ nextAction.label }} →</button>
+      <button v-if="primaryProgressAction" class="progress-action next-action" type="button" :disabled="interactionBusy" @click="requestAction(primaryProgressAction)">{{ primaryProgressAction.type === "COMPLETE" ? "Termina visita" : primaryProgressAction.label + " →" }}</button>
       <span v-else aria-hidden="true"></span>
     </nav>
 
@@ -553,6 +577,7 @@ async function listenControlledVoice() {
     <SessionActionSheet
       :open="actionSheetOpen"
       :groups="actionGroups"
+      :mode="actionSheetMode"
       :busy-action-id="busyActionId"
       :interaction-busy="interactionBusy"
       @close="actionSheetOpen = false"

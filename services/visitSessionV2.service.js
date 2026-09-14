@@ -263,7 +263,7 @@ async function deriveRuntimeActions({ sessionId, userId }) {
       }
     } else {
       if (index > 0) actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
-      actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_NEXT, { context }));
+      if (index < entries.length - 1) actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_NEXT, { context }));
     }
     if (findAdjacentPresentation({ revision: runtime.revision, namespaceRevision: runtime.namespaceRevision, current: runtime.presentation, axis: "duration", direction: "up" })) {
       actions.push(personalAction(ACTION_DEFINITIONS.PRESENTATION_DEPTH_INCREASE, { context }));

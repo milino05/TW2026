@@ -35,8 +35,10 @@ test("physical facilities on the map reuse authorized navigation actions in self
   const selfGuidedView = source("clients/navigator/src/ui/SessionView.vue");
   const synchronizedView = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
 
-  assert.match(map, /action\.actionId === `navigation\.place\.\$\{facility\.physicalFeatureRef\.definitionId\}`/);
-  assert.match(map, /emit\('selectAction', facilityAction\(facility\)!\)/);
+  assert.match(map, /action\.actionId === `navigation\.destination\.\$\{location\.placeId\}`/);
+  assert.match(map, /visiblePlaces = computed\(\(\) => selectableLocations\.value\.filter/);
+  assert.match(map, /v-for="location in visiblePlaces"/);
+  assert.match(map, /emit\('selectAction', placeAction\(location\)!\)/);
 
   assert.match(selfGuidedView, /:available-actions="snapshot\.availableActions"/);
   assert.match(selfGuidedView, /@select-action="requestAction"/);
@@ -44,4 +46,54 @@ test("physical facilities on the map reuse authorized navigation actions in self
   assert.match(synchronizedView, /:available-actions="runtime\.availableActions"/);
   assert.match(synchronizedView, /@select-action="requestPersonalAction"/);
   assert.match(synchronizedView, /const personalActions = computed\([\s\S]*?runtimeScope !== "synchronized_visit_session"/);
+});
+
+test("le azioni della mappa separano luoghi utili, marcatori e comandi primari", () => {
+  const map = source("clients/navigator/src/ui/SessionMap.vue");
+  const sheet = source("clients/navigator/src/ui/SessionActionSheet.vue");
+  const selfGuidedView = source("clients/navigator/src/ui/SessionView.vue");
+  const synchronizedView = source("clients/navigator/src/ui/SynchronizedSessionView.vue");
+
+  assert.match(sheet, /action\.type === "NAVIGATE_TO_PHYSICAL_FEATURE"/);
+  for (const view of [selfGuidedView, synchronizedView]) {
+    assert.match(view, /usefulPlaceActions = computed\([\s\S]*?action\.type === "NAVIGATE_TO_PHYSICAL_FEATURE"/);
+  }
+  assert.match(map, /v-if="physicalProgressAction"/);
+  assert.match(map, /v-if="correctLocationAction"/);
+  assert.doesNotMatch(map, /otherNavigationActions/);
+  assert.doesNotMatch(map, /returnAction/);
+});
+
+test("la mappa espone zoom utente e marcatori circolari semitrasparenti per tutti i luoghi", () => {
+  const map = source("clients/navigator/src/ui/SessionMap.vue");
+  const runtime = source("services/navigatorRuntimeV2.service.js");
+  const dispatcher = source("services/actionDispatcherV2.service.js");
+
+  assert.match(map, /const zoom = ref\(1\)/);
+  assert.match(map, /Math\.min\(3, Math\.max\(1/);
+  assert.match(map, /aria-label="Riduci la mappa"/);
+  assert.match(map, /aria-label="Ingrandisci la mappa"/);
+  assert.match(map, /@wheel\.ctrl\.prevent="zoomWithWheel"/);
+  assert.match(map, /class="map-viewport"/);
+  assert.match(map, /\.map-viewport \{[^}]*overflow:auto[^}]*touch-action:pan-x pan-y/);
+  assert.match(map, /\.place-marker \{[^}]*border-radius:50%[^}]*opacity:\.72/);
+  assert.match(runtime, /async function physicalPlaceActions/);
+  assert.match(runtime, /placeNavigationActionDefinition\(\{ placeId: place\._id, label, aliases \}\)/);
+  assert.match(runtime, /serverInput: \{ venueId: knownLocation\.venueId, destinationPlaceId: place\._id \}/);
+  assert.match(dispatcher, /case "NAVIGATE_TO_PLACE"/);
+  assert.match(dispatcher, /startNavigatorPlaceDetourV2/);
+  const mapProjection = source("services/navigatorMapProjectionV2.service.js");
+  assert.match(mapProjection, /label: place\.label \|\| type\?\.label \|\| "Luogo"/);
+});
+
+test("l'ultimo contenuto della visita sostituisce Prossimo con Termina visita", () => {
+  const runtime = source("services/visitSessionV2.service.js");
+  const view = source("clients/navigator/src/ui/SessionView.vue");
+
+  assert.match(runtime, /if \(index < entries\.length - 1\) actions\.push\(personalAction\(ACTION_DEFINITIONS\.PROGRESS_NEXT/);
+  assert.match(view, /const completeAction = computed\(\(\) => actionOfType\([^\n]+"COMPLETE"\)\)/);
+  assert.match(view, /snapshot\.value\?\.experience\?\.phase === "presenting_visit_content"/);
+  assert.match(view, /progress\.currentEntryIndex === progress\.contentEntryCount - 1/);
+  assert.match(view, /const primaryProgressAction = computed\(\(\) => isFinalVisitContent\.value \? completeAction\.value : nextAction\.value\)/);
+  assert.match(view, /primaryProgressAction\.type === "COMPLETE" \? "Termina visita" : primaryProgressAction\.label \+ " →"/);
 });

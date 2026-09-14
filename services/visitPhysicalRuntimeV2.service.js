@@ -354,6 +354,29 @@ async function startPhysicalDetourV2({ personalSession, routingSession, physical
   return routeResult;
 }
 
+async function startPhysicalPlaceDetourV2({ personalSession, routingSession, venueId, destinationPlaceId }) {
+  requirePersistableSession(personalSession);
+  const knownLocation = personalSession.physicalRuntime?.knownLocation || null;
+  if (!knownLocation) throw new AppError("Posizione fisica necessaria per scegliere una destinazione", 409, [{ code: "PHYSICAL_LOCATION_REQUIRED" }]);
+  if (id(knownLocation.venueId) !== id(venueId)) throw new AppError("La destinazione deve appartenere alla sede corrente", 409, [{ code: "PHYSICAL_DESTINATION_VENUE_MISMATCH" }]);
+  const bundle = await loadPinnedBundle(routingSession, venueId);
+  const destination = findPlace(bundle, destinationPlaceId);
+  if (!destination) throw new AppError("Destinazione non disponibile", 404, [{ code: "PHYSICAL_PLACE_NOT_FOUND" }]);
+  const routeResult = resolveIndoorLiveRouteFromBundle({
+    routingSession,
+    bundle,
+    fromPlaceId: knownLocation.placeId,
+    toPlaceId: destination._id,
+  });
+  const runtime = ensurePhysicalRuntime(personalSession);
+  runtime.detour = {
+    destination: { venueId: bundle.pin.venueId, placeId: destination._id, physicalFeatureRef: null },
+    startedAt: new Date(),
+  };
+  await personalSession.save();
+  return { ...routeResult, destination, physicalFeatureRef: null };
+}
+
 async function returnToVisitV2({ personalSession }) {
   requirePersistableSession(personalSession);
   if (!personalSession.physicalRuntime?.detour) {
@@ -383,5 +406,6 @@ module.exports = {
   confirmedAnchorLocation,
   advancePhysicalProgressV2,
   startPhysicalDetourV2,
+  startPhysicalPlaceDetourV2,
   returnToVisitV2,
 };

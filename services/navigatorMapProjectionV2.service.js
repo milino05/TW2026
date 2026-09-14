@@ -114,14 +114,14 @@ async function projectSelectableLocations({ routingConfigurationOwner, plan }) {
       });
     }
     for (const place of bundle.layout.places || []) {
-      if (!place.label || anchoredPlaceIds.has(id(place._id)) || facilityPlaceIds.has(id(place._id))) continue;
+      if (anchoredPlaceIds.has(id(place._id)) || facilityPlaceIds.has(id(place._id))) continue;
       const type = typeById.get(place.placeTypeDefinitionId) || null;
       result.push({
         kind: "place",
         venueId: pin.venueId,
         placeId: place._id,
         visitAnchorId: null,
-        label: place.label,
+        label: place.label || type?.label || "Luogo",
         category: type?.label || "Luogo",
         floorId: place.floorId,
         position: { x: place.position.x, y: place.position.y },

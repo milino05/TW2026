@@ -59,6 +59,7 @@ const voiceBusy = ref(false);
 const voiceSheetOpen = ref(false);
 const groupPanelOpen = ref(false);
 const actionSheetOpen = ref(false);
+const actionSheetMode = ref<"visit" | "map">("visit");
 const ttsState = ref<TextToSpeechState>(browserTts.state);
 const groupPanel = ref<HTMLElement | null>(null);
 const groupPanelClose = ref<HTMLButtonElement | null>(null);
@@ -174,7 +175,9 @@ const personalActions = computed(() => (runtime.value?.availableActions || []).f
 const voiceActions = computed(() => isHost.value
   ? (runtime.value?.availableActions || []).filter((action) => action.type !== "SYNCHRONIZED_CANCEL")
   : [...personalActions.value, participantPlaybackVoiceAction.value].filter(Boolean) as AvailableAction[]);
-const voiceExamples = computed(() => voiceActions.value.filter((action) => action.controlledVoiceAliases?.length).slice(0, 3));
+const usefulPlaceActions = computed(() => (runtime.value?.availableActions || []).filter((action) => action.type === "NAVIGATE_TO_PHYSICAL_FEATURE"));
+const voiceAvailableActions = computed(() => activeView.value === "map" && usefulPlaceActions.value.length ? usefulPlaceActions.value : voiceActions.value);
+const voiceExamples = computed(() => voiceAvailableActions.value.filter((action) => action.controlledVoiceAliases?.length).slice(0, 3));
 const primaryMedia = computed(() => runtime.value?.current?.illustrativeMedia?.[0] || null);
 const cancelAction = computed(() => groupActions.value.find((action) => action.type === "SYNCHRONIZED_CANCEL") || null);
 const groupPreviousAction = computed(() => (runtime.value?.availableActions || []).find((action) =>
@@ -223,6 +226,10 @@ const audioButtonLabel = computed(() => {
   if (ttsState.value === "paused") return "Riprendi lettura";
   return "Ascolta il contenuto";
 });
+function openActionSheet(mode: "visit" | "map") {
+  actionSheetMode.value = mode;
+  actionSheetOpen.value = true;
+}
 const progressLabel = computed(() => {
   const current = map.value?.narrativeContextStop;
   const total = map.value?.venues.flatMap((venue) => venue.stops).length || 0;
@@ -418,11 +425,11 @@ function applySharedPlayback() {
   if (playback.state === "idle" || String(playback.contentEntryId || "") !== String(currentContentEntryId || "")) { browserTts.stop(); return; }
   activeView.value = "content";
   if (playback.state === "paused") {
-    if (ttsState.value === "speaking") browserTts.pause(); else browserTts.stop();
+    if (ttsState.value === "speaking") browserTts.pause();
     return;
   }
   if (ttsState.value === "paused") browserTts.resume();
-  else if (!browserTts.speak(presentation.text, presentation.locale || "it-IT")) {
+  else if (ttsState.value === "idle" && !browserTts.speak(presentation.text, presentation.locale || "it-IT")) {
     notice.value = isHost.value ? "Sintesi vocale non supportata dal browser" : "La guida ha avviato l’ascolto. Tocca “Ascolta il contenuto” per abilitarlo su questo dispositivo.";
   } else if (!isHost.value) { notice.value = null; notify.info("La guida ha avviato l’ascolto."); }
 }
@@ -444,7 +451,7 @@ async function listenControlledVoice() {
   error.value = null;
   notice.value = null;
   try {
-    const result = await browserControlledVoice.listen(voiceActions.value, currentPresentation.value?.locale || "it-IT");
+    const result = await browserControlledVoice.listen(voiceAvailableActions.value, currentPresentation.value?.locale || "it-IT");
     if (requestId !== voiceSequence) return;
     voiceSheetOpen.value = false;
     if (!result.action) { notify.warning(result.transcript ? `Comando non disponibile: “${result.transcript}”` : "Nessun comando riconosciuto"); return; }
@@ -585,7 +592,7 @@ onUnmounted(() => {
                 <h2 class="quick-title">Adatta il racconto</h2>
                 <div class="quick-actions"><button v-for="action in quickActions" :key="action.actionId" type="button" :disabled="interactionBusy" @click="dispatch(action)">{{ action.label }}</button></div>
               </template>
-              <button v-if="personalActions.length" class="all-actions" type="button" :disabled="interactionBusy" @click="actionSheetOpen = true">Tutte le azioni disponibili</button>
+              <button v-if="personalActions.length" class="all-actions" type="button" :disabled="interactionBusy" @click="openActionSheet('visit')">Tutte le azioni disponibili</button>
               <p v-if="!isHost" class="participant-note">La guida sceglie il contenuto comune. Le indicazioni di movimento restano personali sul tuo dispositivo.</p>
             </article>
             <SessionRuntimeState
@@ -601,17 +608,19 @@ onUnmounted(() => {
           </section>
 
           <section v-show="activeView === 'map'" class="map-panel">
-            <SessionMap
-              v-if="map"
-              :map="map"
-              :navigation="null"
-              :current-visit-anchor-id="currentAnchorId"
-              :available-actions="runtime.availableActions"
-              :location-selection-mode="locationSelectionMode"
-              :selection-busy="interactionBusy"
-              @select-location="selectLocation"
-              @select-action="requestPersonalAction"
-            />
+            <template v-if="map">
+              <SessionMap
+                :map="map"
+                :navigation="null"
+                :current-visit-anchor-id="currentAnchorId"
+                :available-actions="runtime.availableActions"
+                :location-selection-mode="locationSelectionMode"
+                :selection-busy="interactionBusy"
+                @select-location="selectLocation"
+                @select-action="requestPersonalAction"
+              />
+              <button v-if="usefulPlaceActions.length" class="all-actions map-actions-launcher" type="button" :disabled="interactionBusy" @click="openActionSheet('map')">Tutte le azioni disponibili</button>
+            </template>
             <p v-else>La mappa non è disponibile.</p>
           </section>
 
@@ -660,7 +669,7 @@ onUnmounted(() => {
 
       <FeedbackActionDialog :open="confirmingCancel" tone="danger" :dismissible="!actionBusy" title="Annullare la sessione sincronizzata?" message="La sessione verrà chiusa per tutti e i partecipanti non potranno più rientrare con questo alias." :confirm-label="actionBusy ? 'Annullamento…' : 'Sì, annulla'" cancel-label="Continua la visita" @cancel="confirmingCancel = false" @confirm="cancelSession" />
 
-      <SessionActionSheet :open="actionSheetOpen" :groups="personalActionGroups" :busy-action-id="actionBusy ? 'busy' : null" :interaction-busy="interactionBusy" @close="actionSheetOpen = false" @select="requestPersonalAction" />
+      <SessionActionSheet :open="actionSheetOpen" :groups="personalActionGroups" :mode="actionSheetMode" :busy-action-id="actionBusy ? 'busy' : null" :interaction-busy="interactionBusy" @close="actionSheetOpen = false" @select="requestPersonalAction" />
 
       <Teleport to="body">
         <div v-if="groupPanelOpen && isHost" class="modal-overlay group-overlay" @click.self="groupPanelOpen = false" @keydown="onGroupPanelKeydown">
@@ -683,7 +692,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.together-page{min-height:100vh;width:min(100%,78rem);margin:auto;padding:clamp(1rem,3vw,2rem)}.full-state{margin:20vh auto;padding:1rem;text-align:center}.together-header{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:1rem}.together-header h1{margin:.15rem 0 0}.role-pill{padding:.5rem .75rem;border-radius:999px;background:color-mix(in srgb,var(--navigator-brand-primary) 12%,var(--navigator-surface-raised));font-weight:800}.lobby-card{min-height:min(38rem,75vh);display:grid;place-items:center;align-content:center;gap:.8rem;padding:clamp(1.5rem,6vw,4rem);border:1px solid var(--navigator-border);border-radius:1.6rem;background:var(--navigator-surface-raised);box-shadow:0 18px 48px var(--navigator-shadow);text-align:center}.lobby-card h2,.lobby-card p{margin:0}.lobby-card>p:not(.eyebrow){max-width:36rem;color:var(--navigator-muted);font-size:1.05rem}.alias{padding:.7rem 1.2rem;border:2px solid var(--navigator-brand-primary);border-radius:1rem;background:color-mix(in srgb,var(--navigator-brand-primary) 8%,var(--navigator-surface));font-size:clamp(1.8rem,6vw,3.4rem);font-weight:900}.participant-count{display:flex;align-items:baseline;gap:.5rem}.participant-count strong{font-size:2rem}.participant-list{width:min(100%,34rem);display:grid;gap:.45rem;margin:.4rem 0;padding:0;list-style:none}.participant-list li{display:grid;grid-template-columns:auto 1fr auto;gap:.65rem;align-items:center;padding:.65rem;border:1px solid var(--navigator-border);border-radius:.75rem;text-align:left}.avatar{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:var(--navigator-brand-primary);color:#fff;font-weight:850}.participant-list small{color:var(--navigator-muted)}.primary-action,.primary-link{min-height:3rem;padding:.75rem 1.2rem;border:0;border-radius:.8rem;background:var(--navigator-brand-primary);color:#fff;font:inherit;font-weight:850;text-decoration:none}.waiting-symbol{display:grid;place-items:center;width:4.5rem;height:4.5rem;border-radius:50%;background:var(--navigator-brand-primary);color:#fff;font-size:2rem}.waiting-dots{display:flex;gap:.35rem;margin-top:.8rem}.waiting-dots span{width:.65rem;height:.65rem;border-radius:50%;background:var(--navigator-brand-primary);animation:pulse 1.2s infinite}.waiting-dots span:nth-child(2){animation-delay:.2s}.waiting-dots span:nth-child(3){animation-delay:.4s}@keyframes pulse{50%{opacity:.25;transform:translateY(-.2rem)}}
+.together-page{width:min(100%,78rem);height:100%;min-height:0;margin:auto;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:clamp(1rem,3vw,2rem) clamp(1rem,3vw,2rem) max(clamp(1rem,3vw,2rem),env(safe-area-inset-bottom));scrollbar-width:thin}.full-state{margin:20vh auto;padding:1rem;text-align:center}.together-header{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:1rem}.together-header h1{margin:.15rem 0 0}.role-pill{padding:.5rem .75rem;border-radius:999px;background:color-mix(in srgb,var(--navigator-brand-primary) 12%,var(--navigator-surface-raised));font-weight:800}.lobby-card{min-height:min(38rem,75vh);display:grid;place-items:center;align-content:center;gap:.8rem;padding:clamp(1.5rem,6vw,4rem);border:1px solid var(--navigator-border);border-radius:1.6rem;background:var(--navigator-surface-raised);box-shadow:0 18px 48px var(--navigator-shadow);text-align:center}.lobby-card h2,.lobby-card p{margin:0}.lobby-card>p:not(.eyebrow){max-width:36rem;color:var(--navigator-muted);font-size:1.05rem}.alias{padding:.7rem 1.2rem;border:2px solid var(--navigator-brand-primary);border-radius:1rem;background:color-mix(in srgb,var(--navigator-brand-primary) 8%,var(--navigator-surface));font-size:clamp(1.8rem,6vw,3.4rem);font-weight:900}.participant-count{display:flex;align-items:baseline;gap:.5rem}.participant-count strong{font-size:2rem}.participant-list{width:min(100%,34rem);display:grid;gap:.45rem;margin:.4rem 0;padding:0;list-style:none}.participant-list li{display:grid;grid-template-columns:auto 1fr auto;gap:.65rem;align-items:center;padding:.65rem;border:1px solid var(--navigator-border);border-radius:.75rem;text-align:left}.avatar{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:var(--navigator-brand-primary);color:#fff;font-weight:850}.participant-list small{color:var(--navigator-muted)}.primary-action,.primary-link{min-height:3rem;padding:.75rem 1.2rem;border:0;border-radius:.8rem;background:var(--navigator-brand-primary);color:#fff;font:inherit;font-weight:850;text-decoration:none}.waiting-symbol{display:grid;place-items:center;width:4.5rem;height:4.5rem;border-radius:50%;background:var(--navigator-brand-primary);color:#fff;font-size:2rem}.waiting-dots{display:flex;gap:.35rem;margin-top:.8rem}.waiting-dots span{width:.65rem;height:.65rem;border-radius:50%;background:var(--navigator-brand-primary);animation:pulse 1.2s infinite}.waiting-dots span:nth-child(2){animation-delay:.2s}.waiting-dots span:nth-child(3){animation-delay:.4s}@keyframes pulse{50%{opacity:.25;transform:translateY(-.2rem)}}
 .quiz-card{display:grid;gap:1rem;padding:clamp(1rem,4vw,2rem);border:1px solid var(--navigator-border);border-radius:1.4rem;background:var(--navigator-surface-raised)}.quiz-heading{text-align:center}.quiz-heading h2,.quiz-heading p{margin:.2rem}.quiz-form{display:grid;gap:1rem}.quiz-form fieldset{display:grid;gap:.55rem;margin:0;padding:1rem;border:1px solid var(--navigator-border);border-radius:1rem}.quiz-form legend{display:flex;gap:.6rem;align-items:center;padding:.25rem;font-size:1.1rem;font-weight:850}.quiz-form legend span{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:var(--navigator-brand-primary);color:#fff}.quiz-choice{display:flex;gap:.7rem;align-items:center;min-height:3.2rem;padding:.65rem .8rem;border:1px solid var(--navigator-border);border-radius:.75rem;background:var(--navigator-surface);font-size:1.05rem}.quiz-choice:has(input:checked){border-color:var(--navigator-brand-primary);background:color-mix(in srgb,var(--navigator-brand-primary) 9%,var(--navigator-surface))}.quiz-choice input{width:1.2rem;height:1.2rem;accent-color:var(--navigator-brand-primary)}.quiz-result{min-height:24rem;display:grid;place-items:center;align-content:center;gap:.7rem;text-align:center}.quiz-results{display:grid;gap:.6rem}.quiz-results article{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.8rem;border:1px solid var(--navigator-border);border-radius:.8rem}.quiz-results article>div{display:grid;gap:.2rem}.quiz-results small{color:var(--navigator-muted)}.quiz-results form{display:flex;gap:.4rem}.quiz-results input{min-height:2.6rem;padding:.5rem;border:1px solid var(--navigator-border);border-radius:.6rem;background:var(--navigator-surface);color:var(--navigator-text)}.quiz-results button{border:0;border-radius:.6rem;background:var(--navigator-brand-primary);color:#fff;font-weight:800}
 .cancel-session{display:flex;justify-content:flex-end;gap:1rem;align-items:center;margin-top:1rem;padding:1rem;border:1px solid color-mix(in srgb,#a33 30%,var(--navigator-border));border-radius:1rem;background:color-mix(in srgb,#a33 5%,var(--navigator-surface-raised))}.cancel-session p{margin:.2rem 0 0;color:var(--navigator-muted)}.cancel-session button{min-height:2.6rem;padding:.55rem .8rem;border:1px solid var(--navigator-border);border-radius:.7rem;background:var(--navigator-surface);color:var(--navigator-text);font:inherit;font-weight:750}
 .audio-panel{display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:center;gap:.8rem;margin:1.1rem 0;padding:.75rem;border:1px solid var(--navigator-border);border-radius:1.1rem;background:var(--navigator-surface)}.audio-toggle{width:56px;height:56px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;color:var(--navigator-on-primary);background:var(--navigator-brand-primary);box-shadow:0 6px 16px var(--navigator-shadow)}.audio-panel>div{min-width:0;display:grid;gap:.18rem}.audio-panel strong{font-size:.9rem}.audio-panel span{color:var(--navigator-muted);font-size:.74rem}.audio-stop{padding:.45rem;border:0;color:var(--navigator-brand-primary);background:transparent;font:inherit;font-size:.75rem;font-weight:780}.capability-note{margin:-.65rem 0 .8rem;color:var(--navigator-muted);font-size:.75rem}.voice-action:disabled{opacity:.5}.modal-overlay{position:fixed;z-index:var(--artaround-layer-modal,1000000);inset:0;display:grid;align-items:end;justify-items:center;padding-top:max(4rem,env(safe-area-inset-top));background:rgba(7,12,11,.52)}.voice-sheet{width:min(100%,38rem);padding:1.25rem 1.25rem max(1.5rem,env(safe-area-inset-bottom));border:1px solid var(--navigator-border);border-bottom:0;border-radius:1.6rem 1.6rem 0 0;color:var(--navigator-text);background:var(--navigator-surface-raised);box-shadow:0 -20px 56px rgba(0,0,0,.3);text-align:center}.voice-orb{width:88px;height:88px;display:grid;place-items:center;margin:.35rem auto 1rem;border-radius:50%;color:var(--navigator-on-primary);background:var(--navigator-brand-primary);box-shadow:0 0 0 13px color-mix(in srgb,var(--navigator-brand-primary) 12%,transparent);animation:listening 1.5s ease-in-out infinite}.voice-sheet h2{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:1.8rem;font-weight:500}.voice-sheet>p{color:var(--navigator-muted);font-size:.85rem}.voice-examples{display:flex;justify-content:center;gap:.4rem;flex-wrap:wrap;margin:1rem 0}.voice-examples span{padding:.35rem .55rem;border-radius:999px;background:color-mix(in srgb,var(--navigator-brand-primary) 9%,var(--navigator-surface));font-size:.75rem}.voice-sheet>button{min-height:2.8rem;padding:.6rem 1rem;border:1px solid var(--navigator-border);border-radius:.75rem;background:var(--navigator-surface);color:var(--navigator-text);font:inherit;font-weight:780}@keyframes listening{50%{transform:scale(1.04)}}
