@@ -204,14 +204,15 @@ async function projectNavigatorMap({ sessionId, userId }) {
     projectSelectableLocations({ routingConfigurationOwner: state.routingConfigurationOwner, plan: state.plan }),
     projectActiveNavigation({ sessionId, userId, state, execution }),
   ]);
-  const venues = annotateStops({
+  const annotatedVenues = annotateStops({
     baseMap,
     personalSession: state.physicalRuntimeOwner,
     plan: state.plan,
     currentAnchor: execution.contextAnchor,
   });
-  const projectedBaseMap = { ...baseMap, venues };
-  const narrativeContextStop = findProjectedStop(projectedBaseMap, execution.contextAnchor?._id);
+  const narrativeContextStop = findProjectedStop({ venues: annotatedVenues }, execution.contextAnchor?._id);
+  const plannedVenueRoutes = annotatedVenues.map((venue) => ({ venueId: venue.id, route: venue.route }));
+  const venues = annotatedVenues.map(({ route, ...venue }) => venue);
   return {
     venues,
     knownLocation,
@@ -220,7 +221,7 @@ async function projectNavigatorMap({ sessionId, userId }) {
     plannedVisitRoute: {
       plannedLegs: baseMap.plannedLegs || [],
       interVenueTransitions: baseMap.interVenueTransitions || [],
-      venues: venues.map((venue) => ({ venueId: venue.id, route: venue.route })),
+      venues: plannedVenueRoutes,
     },
     activeNavigation,
   };
