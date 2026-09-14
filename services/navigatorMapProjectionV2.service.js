@@ -55,7 +55,7 @@ async function projectSelectableLocations({ routingConfigurationOwner, plan }) {
       if (!place || anchoredPlaceIds.has(id(place._id))) continue;
       anchoredPlaceIds.add(id(place._id));
       result.push({
-        kind: "visit_stop",
+        kind: "visit_area",
         venueId: pin.venueId,
         placeId: place._id,
         visitAnchorId: anchor._id,
