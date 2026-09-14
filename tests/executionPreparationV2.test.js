@@ -119,7 +119,7 @@ test("un errore fisico noto produce readiness blocked e impedisce lo start", { s
   });
 });
 
-test("una preparation Navigator e blocked se una floor usata non ha asset cartografico", { skip: !mongoUri }, async () => {
+test("una preparation Navigator compila le opzioni locali nello snapshot anche se la readiness e bloccata dalla mappa", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     const User = require("../models/user");
     const Organization = require("../models/organization.model");
@@ -131,6 +131,7 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     const VenueRelease = require("../models/venueRelease.model");
     const VisitV2 = require("../models/visitV2.model");
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
+    const ExecutionPreparation = require("../models/executionPreparation.model");
     const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
     const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
@@ -141,6 +142,18 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Map target", createdBy: owner._id });
     const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: owner._id });
     const physical = await createPublishedPhysicalVocabulary({ userId: owner._id });
+    const stepFree = physical.revision.physicalAttributes.find((definition) => definition.key === "step_free");
+    stepFree.visitorControl = {
+      enabled: true,
+      label: "Usa solo passaggi senza gradini",
+      description: "Preferenza locale della sede.",
+      operator: "eq",
+      valueMode: "fixed",
+      value: true,
+      priority: "preferred",
+    };
+    await physical.revision.save();
+
     const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
     const layout = await LayoutRevision.create({
@@ -186,10 +199,29 @@ test("una preparation Navigator e blocked se una floor usata non ha asset cartog
     visit.publishedRevisionId = revision._id;
     await visit.save();
 
-    const preparation = await createExecutionPreparation({ userId: owner._id, payload: { visitId: visit._id } });
+    const preparation = await createExecutionPreparation({
+      userId: owner._id,
+      payload: {
+        visitId: visit._id,
+        venueControlSelections: [{
+          venueId: venue._id,
+          physicalAttributeDefinitionId: stepFree.definitionId,
+        }],
+      },
+    });
     assert.equal(preparation.readiness.status, "blocked");
     assert.equal(preparation.readiness.blockers[0].code, "NAVIGATOR_MAP_ASSET_MISSING");
     assert.match(preparation.readiness.blockers[0].message, /Piano terra/);
     assert.equal(preparation.logisticsPreview.routeSummary.stopCount, 1);
+    assert.equal(preparation.navigation.venueControlSelections.length, 1);
+    assert.equal(preparation.navigation.venues.length, 1);
+    assert.ok(preparation.navigation.venues[0].controls.some((control) => control.definitionId === stepFree.definitionId));
+
+    const stored = await ExecutionPreparation.findById(preparation.id).lean();
+    assert.equal(stored.navigationSnapshot.venueRequirements.length, 1);
+    assert.equal(String(stored.navigationSnapshot.venueRequirements[0].venueId), String(venue._id));
+    assert.equal(stored.navigationSnapshot.venueRequirements[0].requirements.length, 1);
+    assert.equal(stored.navigationSnapshot.venueRequirements[0].requirements[0].physicalFeatureRef.kind, "local");
+    assert.equal(stored.navigationSnapshot.venueRequirements[0].requirements[0].physicalFeatureRef.definitionId, stepFree.definitionId);
   });
 });
