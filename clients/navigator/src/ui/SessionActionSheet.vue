@@ -29,7 +29,17 @@ const sections = computed(() => {
     { key: "other", title: "Altre azioni", actions: props.groups.other },
   ].filter((section) => section.actions.length);
 });
-const title = computed(() => choiceMode.value ? "Quale approfondimento vuoi aprire?" : "Azioni della visita");
+const mapOnlyMode = computed(() => Boolean(
+  props.open
+  && !choiceMode.value
+  && sections.value.length === 0
+  && (props.groups.navigation.length || props.groups.progress.length),
+));
+const title = computed(() => {
+  if (choiceMode.value) return "Quale approfondimento vuoi aprire?";
+  if (mapOnlyMode.value) return "Azioni sulla mappa";
+  return "Azioni della visita";
+});
 
 function focusables() {
   if (!panel.value) return [] as HTMLElement[];
@@ -71,7 +81,15 @@ onBeforeUnmount(() => {
     <div v-if="visible" class="action-overlay" @click.self="closeSheet" @keydown="onKeydown">
       <section ref="panel" class="action-sheet" role="dialog" aria-modal="true" aria-labelledby="session-actions-title">
         <div class="sheet-grip" aria-hidden="true"></div>
-        <header><div><h2 id="session-actions-title">{{ title }}</h2><p v-if="choiceMode" class="sheet-intro">Più contenuti sono pertinenti alla relazione richiesta. Scegli quello che vuoi ascoltare.</p><p v-else class="sheet-intro">Le azioni fisiche e i luoghi utili sono disponibili nella Mappa.</p></div><button ref="closeButton" class="close-button" type="button" aria-label="Chiudi azioni" @click="closeSheet">×</button></header>
+        <header>
+          <div>
+            <h2 id="session-actions-title">{{ title }}</h2>
+            <p v-if="choiceMode" class="sheet-intro">Più contenuti sono pertinenti alla relazione richiesta. Scegli quello che vuoi ascoltare.</p>
+            <p v-else-if="mapOnlyMode" class="sheet-intro">In questo momento le azioni disponibili riguardano orientamento o avanzamento fisico. Usale nella Mappa, dove restano insieme al percorso e ai luoghi utili.</p>
+            <p v-else class="sheet-intro">Le azioni fisiche e i luoghi utili sono disponibili nella Mappa.</p>
+          </div>
+          <button ref="closeButton" class="close-button" type="button" aria-label="Chiudi azioni" @click="closeSheet">×</button>
+        </header>
         <div v-for="section in sections" :key="section.key" class="action-section"><h3>{{ section.title }}</h3><div class="action-grid"><button v-for="action in section.actions" :key="action.actionId" type="button" class="sheet-action" :class="{ danger: action.type === 'COMPLETE' }" :disabled="interactionBusy" @click="emit('select', action)"><span>{{ action.label }}</span><span v-if="busyActionId === action.actionId" class="busy-mark">…</span></button></div></div>
       </section>
     </div>
