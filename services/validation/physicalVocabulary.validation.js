@@ -233,7 +233,7 @@ function operatorMatchesAttribute(attribute, operator) {
 }
 
 function appliesToCompatible(actual, expected) {
-  if (expected === "both") return APPLIES_TO.includes(actual);
+  if (expected === "both") return actual === "both";
   return actual === expected || actual === "both";
 }
 
