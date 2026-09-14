@@ -27,6 +27,12 @@ export const authoringRepository = {
   uploadItemMedia(payload) {
     return apiClient.request("/item-media", { method: "POST", body: JSON.stringify(payload) });
   },
+  updateItemRecognitionMedia(itemId, recognitionMedia) {
+    return apiClient.request(`/items/${encodeURIComponent(itemId)}/recognition-media`, {
+      method: "PATCH",
+      body: JSON.stringify({ recognitionMedia }),
+    });
+  },
   projection(itemId, { editionId = null } = {}) {
     const query = editionId ? `?editionId=${encodeURIComponent(editionId)}` : "";
     return apiClient.request(`/v2/marketplace/item-authoring/${encodeURIComponent(itemId)}${query}`);
