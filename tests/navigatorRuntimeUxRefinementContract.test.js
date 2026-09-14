@@ -66,11 +66,14 @@ test("physical progress remains server-dispatched through the canonical progress
 
 test("approach recognition prefers VenueTarget media and falls back to Item media", () => {
   const source = read("services/navigatorMapProjectionV2.service.js");
+  const repository = read("clients/navigator/src/infrastructure/http/navigationRepository.ts");
   assert.match(source, /targetBindings/);
   assert.match(source, /recognitionMedia/);
   assert.match(source, /ItemV2/);
-  assert.match(source, /source:\s*"venue_target"/);
-  assert.match(source, /source:\s*"item"/);
+  assert.match(source, /projectedRecognitionMedia\(\(binding\?\.recognitionMedia \|\| \[\]\)\[0\], "venue_target"\)/);
+  assert.match(source, /projectedRecognitionMedia\(item\?\.recognitionMedia, "item"\)/);
+  assert.match(source, /origin,/);
+  assert.match(repository, /origin:\s*"venue_target" \| "item"/);
   assert.doesNotMatch(source, /illustrativeMedia/);
 });
 
