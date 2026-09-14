@@ -9,13 +9,25 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
-const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
 const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
-const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const {
+  revalidateSemanticGraphNamespaceDependency,
+  revalidateItemEditionNamespaceDependency,
+} = require("./schemaDependencyAudit.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
+
+function assertDependencyValidation(result, code, message) {
+  if (!result?.validation || result.validation.status !== "valid") {
+    throw new AppError(message, 409, [{
+      code,
+      context: { issues: result?.validation?.issues || [] },
+    }]);
+  }
+  return result;
+}
 
 function pinKey(pin) {
   return `${id(pin.graphRevisionId)}:${id(pin.namespaceRevisionId)}`;
@@ -147,14 +159,12 @@ async function directSemanticContext({ source, contentEntries }) {
     applicablePairs.has(`${id(context.contentSpaceId)}:${id(context.namespaceId)}`));
   if (!applicableContexts.length) return { pins: [], contexts: [] };
 
-  const [publishedReleases, semanticGraphs, namespaces] = await Promise.all([
+  const [publishedReleases, semanticGraphs] = await Promise.all([
     EditorialRelease.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.publishedReleaseId)) } }).lean(),
     SemanticGraph.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.semanticGraphId)) }, lifecycleStatus: "active" }).lean(),
-    Namespace.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.namespaceId)) }, lifecycleStatus: "active" }).lean(),
   ]);
   const releaseById = new Map(publishedReleases.map((release) => [id(release._id), release]));
   const graphById = new Map(semanticGraphs.map((graph) => [id(graph._id), graph]));
-  const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
 
   const selectedGraphRevisionIds = uniqueIds(applicableContexts.map((context) => {
     const semanticGraph = graphById.get(id(context.semanticGraphId));
@@ -179,15 +189,12 @@ async function directSemanticContext({ source, contentEntries }) {
 
     let namespaceRevisionId = release?.namespaceRevisionId || null;
     if (semanticGraph?.workingRevisionId && id(semanticGraph.workingRevisionId) === id(graphRevision._id)) {
-      const namespace = namespaceById.get(id(context.namespaceId));
-      if (!namespace) throw new AppError("Namespace del grafo diretto non disponibile", 409, [{ code: "SESSION_SEMANTIC_NAMESPACE_UNAVAILABLE" }]);
-      const effectiveNamespaceRevision = await loadEffectiveNamespaceRevision({
-        namespace,
-        binding: semanticGraph.namespaceDependency,
-        requireValidatedConsumer: true,
-        consumerSnapshotId: graphRevision._id,
-      });
-      namespaceRevisionId = effectiveNamespaceRevision._id;
+      const dependency = assertDependencyValidation(
+        await revalidateSemanticGraphNamespaceDependency({ semanticGraphId: semanticGraph._id }),
+        "SESSION_SEMANTIC_GRAPH_DEPENDENCY_REVIEW_REQUIRED",
+        "Il grafo semantico diretto non è compatibile con le regole editoriali correnti",
+      );
+      namespaceRevisionId = dependency.dependencyRevision._id;
     }
     if (!namespaceRevisionId) continue;
 
@@ -240,16 +247,12 @@ async function directSemanticContentPins({ source, contexts }) {
   const itemById = new Map(items.map((item) => [id(item._id), item]));
 
   const namespaceIds = uniqueIds(contexts.map((entry) => entry.namespaceId));
-  const [editions, namespaces] = await Promise.all([
-    ItemEdition.find({
-      itemId: { $in: items.map((item) => item._id) },
-      namespaceId: { $in: namespaceIds },
-      publishedRevisionId: { $ne: null },
-    }).lean(),
-    Namespace.find({ _id: { $in: namespaceIds }, lifecycleStatus: "active" }).lean(),
-  ]);
+  const editions = await ItemEdition.find({
+    itemId: { $in: items.map((item) => item._id) },
+    namespaceId: { $in: namespaceIds },
+    publishedRevisionId: { $ne: null },
+  }).lean();
   if (!editions.length) return [];
-  const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
   const publishedRevisionIds = uniqueIds(editions.map((edition) => edition.publishedRevisionId));
   const revisions = await ItemRevisionV2.find({
     _id: { $in: publishedRevisionIds },
@@ -267,20 +270,17 @@ async function directSemanticContentPins({ source, contexts }) {
       && entry.subjectIds.has(id(item.primarySubjectId))
       && subjectIdsByGraph.get(id(entry.graphRevision._id))?.has(id(item.primarySubjectId)));
     if (!relevantContext) continue;
-    const namespace = namespaceById.get(id(edition.namespaceId));
-    if (!namespace) continue;
-    const effectiveNamespaceRevision = await loadEffectiveNamespaceRevision({
-      namespace,
-      binding: edition.namespaceDependency,
-      requireValidatedConsumer: true,
-      consumerSnapshotId: edition.publishedRevisionId,
-    });
+    const dependency = assertDependencyValidation(
+      await revalidateItemEditionNamespaceDependency({ editionId: edition._id }),
+      "SESSION_ITEM_DEPENDENCY_REVIEW_REQUIRED",
+      "Un contenuto semantico diretto non è compatibile con le regole editoriali correnti",
+    );
     pins.push({
       sourceType: "direct_item",
       itemId: item._id,
       itemEditionId: edition._id,
       itemRevisionId: revision._id,
-      namespaceRevisionId: effectiveNamespaceRevision._id,
+      namespaceRevisionId: dependency.dependencyRevision._id,
       subjectId: item.primarySubjectId,
     });
   }
