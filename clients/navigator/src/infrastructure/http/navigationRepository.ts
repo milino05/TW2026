@@ -131,14 +131,6 @@ export interface MapProjection {
     };
     warnings: Array<{ code: string; message: string }>;
   }>;
-  logicalCurrentStop: null | { visitAnchorId: string; venueId: string };
-  plannedLegs: PlannedNavigationLeg[];
-  interVenueTransitions: Array<{
-    fromVisitAnchorId: string;
-    toVisitAnchorId: string;
-    estimatedSeconds: number;
-    instruction: string | null;
-  }>;
   knownLocation: MapKnownLocationProjection | null;
   narrativeContextStop: null | (VisitStopProjection & { venueId: string });
   selectableLocations: SelectableLocationProjection[];
