@@ -42,6 +42,8 @@ const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity
 const { computeVisitV2Integrity } = require("../services/visitV2Integrity.service");
 const { assertSelfContainedOffer } = require("../services/marketplaceOfferIntegrity.service");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
+const { buildValidation } = require("../services/versionedSchemaDependency.service");
+const { loadVenuePhysicalVocabulary } = require("../services/layoutPhysicalVocabulary.service");
 const { createDemoPhysicalVocabulary } = require("./demoPhysicalVocabulary");
 const DEMO_VENUE_LAYOUTS = require("./demoVenueLayouts.json");
 
@@ -385,7 +387,21 @@ async function createVenue(plan, organization, owner, editorial) {
   const venueLayout = materializeVenueLayout(plan, physical);
   const layout = await LayoutRevision.create({ _id: ids.layoutRevision, venueId: venue._id, version: 1, authoredAgainstPhysicalVocabularyRevisionId: physical.revision._id, ...venueLayout, status: "published", createdBy: owner._id, updatedBy: owner._id });
   const release = await VenueRelease.create({ _id: ids.venueRelease, venueId: venue._id, version: 1, layoutRevisionId: layout._id, targetBindings: targets.map((target, index) => ({ venueTargetId: target._id, exhibitSlotId: exhibitSlots[index]._id, availability: "active", recognitionMedia: [] })), preVisitInformation: [`Sede reale: ${plan.address}.`, "La pianta ArtAround inclusa nel seed è una schematizzazione didattica dall'alto, non una planimetria ufficiale."], status: "published", integrity: { status: "valid", issues: [], checkedAt: FIXED_NOW, checkedBy: owner._id }, review: reviewApproved(owner._id), publication: { publishedAt: FIXED_NOW, publishedBy: owner._id }, createdBy: owner._id, updatedBy: owner._id });
-  venue.publishedReleaseId = release._id; await venue.save(); assertNoBlocking(`${plan.key}: VenueRelease`, await computeVenueReleaseIssues({ venue, release, layout }));
+  const physicalIssues = await computeVenueReleaseIssues({ venue, release, layout, physicalVocabularyRevision: physical.revision });
+  assertNoBlocking(`${plan.key}: VenueRelease`, physicalIssues);
+  venue.physicalVocabularyId = physical.physicalVocabulary._id;
+  venue.physicalVocabularyDependency = {
+    versionPolicy: "follow_current",
+    pinnedRevisionId: null,
+    validation: buildValidation({
+      consumerSnapshotId: release._id,
+      dependencyRevisionId: physical.revision._id,
+      issues: physicalIssues,
+      checkedAt: FIXED_NOW,
+    }),
+  };
+  venue.publishedReleaseId = release._id;
+  await venue.save();
   return { venue, targets, exhibitSlots, layout, venueRelease: release, workRecords };
 }
 function quizFor(plan) {
@@ -461,7 +477,20 @@ async function verifyExamDatasetV3() {
       const activeBindings = (venueRelease.targetBindings || []).filter((entry) => entry.availability === "active"); totalTargets += activeBindings.length;
       if (activeBindings.length !== 12 || (layout.exhibitSlots || []).length !== 12) add("VENUE_TARGET_SLOT_COUNT", `La venue ${plan.key} deve avere 12 target e 12 slot`, { targets: activeBindings.length, slots: layout.exhibitSlots?.length || 0 }); if (!(layout.floors || []).some((floor) => floor.mapAsset?.url)) add("MAP_ASSET_MISSING", `Mappa mancante: ${plan.key}`);
       const expectedLayout = DEMO_VENUE_LAYOUTS[plan.key]; const actualFloor = layout.floors?.[0]; const expectedFloor = expectedLayout?.floors?.[0];
-      if (!expectedLayout || layout.places?.length !== expectedLayout.places.length || layout.connections?.length !== expectedLayout.connections.length || actualFloor?.mapAsset?.url !== expectedFloor?.mapAsset?.url || !actualFloor?.calibration) add("VENUE_LAYOUT_SNAPSHOT_MISMATCH", `Il layout pubblicato non corrisponde alla fixture demo: ${plan.key}`, { places: layout.places?.length || 0, expectedPlaces: expectedLayout?.places?.length || 0, connections: layout.connections?.length || 0, expectedConnections: expectedLayout?.connections?.length || 0, mapUrl: actualFloor?.mapAsset?.url || null, expectedMapUrl: expectedFloor?.mapAsset?.url || null, calibrated: Boolean(actualFloor?.calibration) });
+      if (!expectedLayout || layout.places?.length !== expectedLayout.places.length || layout.connections?.length !== expectedLayout.connections.length || actualFloor?.mapAsset?.url !== expectedFloor?.mapAsset?.url || !actualFloor?.calibration) add("VENUE_LAYOUT_SNAPSHOT_MISMATCH", `Il layout pubblicato non corrisponde alla fixture demo: ${plan.key}`, { places: layout.places?.length || 0, expectedPlaces: expectedLayout?.places?.length || 0, connections: layout.connections?.length || 0, expectedConnections: expectedLayout?.connections.length || 0, mapUrl: actualFloor?.mapAsset?.url || null, expectedMapUrl: expectedFloor?.mapAsset?.url || null, calibrated: Boolean(actualFloor?.calibration) });
+      if (String(venue.physicalVocabularyId || "") !== String(ids.physicalVocabulary)) add("VENUE_PHYSICAL_VOCABULARY_MISMATCH", `PhysicalVocabulary non collegato correttamente alla Venue: ${plan.key}`, { actual: venue.physicalVocabularyId || null, expected: ids.physicalVocabulary });
+      const dependency = venue.physicalVocabularyDependency;
+      const validation = dependency?.validation;
+      if (!dependency || dependency.versionPolicy !== "follow_current" || dependency.pinnedRevisionId) add("VENUE_PHYSICAL_DEPENDENCY_POLICY_INVALID", `Policy PhysicalVocabulary non coerente per la Venue: ${plan.key}`, { dependency });
+      if (String(validation?.consumerSnapshotId || "") !== String(venueRelease._id)
+        || String(validation?.dependencyRevisionId || "") !== String(ids.physicalVocabularyRevision)
+        || validation?.status !== "valid") add("VENUE_PHYSICAL_DEPENDENCY_VALIDATION_INVALID", `Validation PhysicalVocabulary non coerente per la Venue: ${plan.key}`, { validation, venueReleaseId: venueRelease._id, physicalVocabularyRevisionId: ids.physicalVocabularyRevision });
+      try {
+        const resolvedPhysical = await loadVenuePhysicalVocabulary(venue, { requireStable: true, requireValidatedConsumer: true, consumerSnapshotId: venueRelease._id });
+        if (String(resolvedPhysical.revision._id) !== String(ids.physicalVocabularyRevision)) add("VENUE_PHYSICAL_DEPENDENCY_REVISION_MISMATCH", `La Venue risolve una revisione fisica inattesa: ${plan.key}`, { actual: resolvedPhysical.revision._id, expected: ids.physicalVocabularyRevision });
+      } catch (error) {
+        add("VENUE_PHYSICAL_DEPENDENCY_INVALID", `Dipendenza PhysicalVocabulary non utilizzabile dal runtime: ${plan.key}`, { message: error.message, details: error.details || [] });
+      }
       const issues = await computeVenueReleaseIssues({ venue, release: venueRelease, layout }); if (issues.some((entry) => entry.severity !== "warning")) add("VENUE_RELEASE_INVALID", `VenueRelease non valida: ${plan.key}`, { issues });
     }
     const visitIds = plan.visits.map((entry) => demoId(`visit:${plan.key}:${entry.key}`)); const visits = await VisitV2.find({ _id: { $in: visitIds }, lifecycleStatus: "active" }).lean(); totalVisits += visits.length;
