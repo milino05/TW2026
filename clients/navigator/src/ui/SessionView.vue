@@ -54,7 +54,6 @@ const currentAnchorId = computed(() =>
   snapshot.value?.progress?.contextVisitAnchorId
   || snapshot.value?.current?.anchor?.visitAnchorId
   || map.value?.narrativeContextStop?.visitAnchorId
-  || map.value?.logicalCurrentStop?.visitAnchorId
   || null);
 const stopContext = computed(() => resolveSessionStopContext(map.value, currentAnchorId.value));
 const actionGroups = computed(() => groupSessionActions(snapshot.value?.availableActions || []));
