@@ -127,13 +127,14 @@ function hardConstraintConflict(requirements = []) {
 }
 function resolveVenueRoutingRequirements({
   globalRequirements = [],
+  localRequirements = [],
   routingProfileSelection = null,
   physicalVocabulary,
   revision,
   unresolvedAvoidPolicy = "warning",
 } = {}) {
   const translated = translateRoutingRequirements({
-    requirements: globalRequirements,
+    requirements: [...globalRequirements, ...localRequirements],
     physicalVocabulary,
     revision,
     unresolvedAvoidPolicy,
@@ -147,7 +148,7 @@ function resolveVenueRoutingRequirements({
   if (conflict) {
     blockers.push({
       code: "ROUTING_REQUIREMENT_CONFLICT",
-      message: "Il profilo locale e i requisiti globali contengono vincoli obbligatori incompatibili.",
+      message: "Le esigenze personali, le opzioni locali o il profilo della sede contengono vincoli obbligatori incompatibili.",
       priority: "required",
       reason: "hard_requirement_conflict",
       physicalAttributeDefinitionId: conflict.definitionId,
