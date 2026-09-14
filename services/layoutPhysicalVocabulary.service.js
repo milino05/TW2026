@@ -4,7 +4,7 @@ const Venue = require("../models/venue.model");
 const AppError = require("../utils/AppError");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
 const { assertCanUsePhysicalVocabularyForAuthoring } = require("./physicalVocabularyUsageAuthorization.service");
-const { effectiveRevisionId } = require("./versionedSchemaDependency.service");
+const { effectiveRevisionId, assertDependencyReady } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -60,6 +60,11 @@ async function assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevision
 }
 
 async function loadVenuePhysicalVocabulary(venue, options = {}) {
+  const {
+    requireValidatedConsumer = false,
+    consumerSnapshotId = venue?.publishedReleaseId || null,
+    ...bundleOptions
+  } = options || {};
   if (!venue?.physicalVocabularyId) {
     throw new AppError("Venue senza PhysicalVocabulary lineage", 409, [{ code: "VENUE_PHYSICAL_VOCABULARY_REQUIRED" }]);
   }
@@ -71,9 +76,18 @@ async function loadVenuePhysicalVocabulary(venue, options = {}) {
     binding: venue.physicalVocabularyDependency,
     publishedRevisionId: physicalVocabulary.publishedRevisionId,
   });
-  const bundle = await loadPhysicalVocabularyRevisionBundle(revisionId, options);
+  const bundle = await loadPhysicalVocabularyRevisionBundle(revisionId, bundleOptions);
   if (id(bundle.physicalVocabulary._id) !== id(venue.physicalVocabularyId)) {
     throw new AppError("La revisione fisica effettiva non appartiene al PhysicalVocabulary della Venue", 409, [{ code: "PHYSICAL_VOCABULARY_LINEAGE_MISMATCH" }]);
+  }
+  if (requireValidatedConsumer) {
+    assertDependencyReady({
+      binding: venue.physicalVocabularyDependency,
+      consumerSnapshotId,
+      dependencyRevisionId: bundle.revision._id,
+      codePrefix: "PHYSICAL_VOCABULARY_DEPENDENCY",
+      field: "physicalVocabularyDependency",
+    });
   }
   return bundle;
 }
