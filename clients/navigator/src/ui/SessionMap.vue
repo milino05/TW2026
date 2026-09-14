@@ -5,20 +5,24 @@ import type {
   NavigationProjection,
   SelectableLocationProjection,
 } from "../infrastructure/http/navigationRepository";
+import type { AvailableAction } from "../infrastructure/http/sessionRepository";
 
 const props = withDefaults(defineProps<{
   map: MapProjection;
   navigation: NavigationProjection | null;
   currentVisitAnchorId: string | null;
+  availableActions?: AvailableAction[];
   locationSelectionMode?: "confirm" | "correct" | null;
   selectionBusy?: boolean;
 }>(), {
+  availableActions: () => [],
   locationSelectionMode: null,
   selectionBusy: false,
 });
 
 const emit = defineEmits<{
   selectLocation: [location: SelectableLocationProjection["locationRef"]];
+  selectAction: [action: AvailableAction];
 }>();
 
 const venueIndex = ref(0);
@@ -113,6 +117,12 @@ const navigationOverlays = computed(() => {
   return navigation.route.overlays.filter((entry) => entry.floorId === selectedFloorId.value);
 });
 
+function facilityAction(facility: { physicalFeatureRef: { definitionId: string } }) {
+  if (props.locationSelectionMode) return null;
+  return props.availableActions.find((action) =>
+    action.actionId === `navigation.place.${facility.physicalFeatureRef.definitionId}`) || null;
+}
+
 function pointStyle(point: { x: number; y: number }) {
   return { left: `${point.x * 100}%`, top: `${point.y * 100}%` };
 }
@@ -180,13 +190,24 @@ function pointStyle(point: { x: number; y: number }) {
         :style="pointStyle(stop.position)"
         :title="stop.label"
       >{{ stop.order }}</span>
-      <span
-        v-for="facility in facilities"
-        :key="facility.id"
-        class="map-marker facility-marker"
-        :style="pointStyle(facility.position)"
-        :title="`${facility.category}: ${facility.label}`"
-      >•</span>
+      <template v-for="facility in facilities" :key="facility.id">
+        <button
+          v-if="facilityAction(facility)"
+          type="button"
+          class="map-marker facility-marker facility-action"
+          :style="pointStyle(facility.position)"
+          :title="`Vai a ${facility.label}`"
+          :aria-label="`Vai a ${facility.label}`"
+          :disabled="selectionBusy"
+          @click="emit('selectAction', facilityAction(facility)!)"
+        >•</button>
+        <span
+          v-else
+          class="map-marker facility-marker"
+          :style="pointStyle(facility.position)"
+          :title="`${facility.category}: ${facility.label}`"
+        >•</span>
+      </template>
       <span
         v-if="knownLocation"
         class="map-marker known-location-marker"
@@ -285,6 +306,8 @@ function pointStyle(point: { x: number; y: number }) {
 .stop-marker.experienced { border-color:color-mix(in srgb,var(--navigator-primary) 45%,var(--navigator-surface-raised)); }
 .stop-marker.current { color:var(--navigator-on-primary); background:var(--navigator-primary); }
 .facility-marker { color:var(--navigator-primary); background:var(--navigator-surface-raised); }
+.facility-action { cursor:pointer; font:inherit; }
+.facility-action:disabled { cursor:default; opacity:.55; }
 .destination-marker { z-index:4; color:var(--navigator-on-primary); background:var(--navigator-primary); }
 .known-location-marker { z-index:5; width:1rem; min-width:1rem; height:1rem; padding:0; border:3px solid white; background:#d93232; box-shadow:0 0 0 2px rgba(0,0,0,.12),0 2px 8px rgba(0,0,0,.3); }
 .selectable-location-marker { z-index:6; width:2rem; height:2rem; padding:0; border:2px solid var(--navigator-primary); border-radius:50%; color:var(--navigator-primary); background:var(--navigator-surface-raised); box-shadow:0 3px 10px rgba(0,0,0,.2); font-size:1rem; font-weight:900; }
