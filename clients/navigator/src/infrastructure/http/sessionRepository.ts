@@ -14,6 +14,44 @@ export interface AvailableAction {
   runtimeVersion?: number;
 }
 
+export type ExecutionPhase =
+  | "location_required"
+  | "navigating_to_visit_stop"
+  | "approaching_visit_target"
+  | "presenting_visit_content"
+  | "presenting_semantic_content"
+  | "navigating_detour"
+  | "at_detour_destination"
+  | "route_completed";
+
+export type KnownLocationSource =
+  | "manual_selection"
+  | "navigation_confirmation"
+  | "qr"
+  | "teleport"
+  | "geolocation";
+
+export interface KnownLocationProjection {
+  venueId: string;
+  placeId: string;
+  visitAnchorId: string | null;
+  venueTargetId: string | null;
+  exhibitSlotId: string | null;
+  source: KnownLocationSource;
+  providerId: string | null;
+  observedAt: string | null;
+}
+
+export interface LiveNavigationSummary {
+  intent: "visit_progression" | "physical_detour";
+  type: "indoor" | "inter_venue";
+  destination: { venueId: string; placeId: string };
+  nextInstruction: string | null;
+  remainingStepCount: number;
+  estimatedSeconds: number;
+  distanceMeters: number | null;
+}
+
 export interface SessionProjection {
   session: {
     id: string;
@@ -32,6 +70,33 @@ export interface SessionProjection {
     runtimeVersion: number;
   };
   planRevisionId: string;
+  progress?: {
+    currentEntryIndex: number;
+    contentEntryCount: number;
+    deliveryVisitAnchorId: string | null;
+    contextVisitAnchorId: string | null;
+    currentStopOrder: number | null;
+  };
+  experience?: {
+    phase: ExecutionPhase;
+    presentationAvailable: boolean;
+  };
+  physical?: {
+    knownLocation: KnownLocationProjection | null;
+    detour: null | {
+      destination: {
+        venueId: string;
+        placeId: string;
+        physicalFeatureRef: null | {
+          kind: "local";
+          physicalVocabularyId: string;
+          definitionId: string;
+        };
+      };
+      startedAt: string | null;
+    };
+    navigation: LiveNavigationSummary | null;
+  };
   current: null | {
     contentEntryId: string;
     role?: string;
@@ -88,6 +153,10 @@ export interface ActionResult {
     navigation?: NavigationProjection;
     obstacleCheck?: ObstacleCheckProjection;
     choices?: AvailableAction[];
+    location?: KnownLocationProjection;
+    knownLocation?: KnownLocationProjection;
+    visitAnchorId?: string;
+    currentEntryIndex?: number;
   };
 }
 
