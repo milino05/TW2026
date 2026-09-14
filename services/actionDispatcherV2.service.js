@@ -3,18 +3,25 @@ const SynchronizedVisitSession = require("../models/synchronizedVisitSession.mod
 const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
 const AppError = require("../utils/AppError");
 const {
-  deriveRuntimeActions,
-  currentSessionProjection,
-  advanceSession,
   changePresentationDepthV2,
   changePresentationComplexityV2,
   openSemanticPresentationV2,
   returnFromSemanticPresentationV2,
-  routeToPhysicalFeatureV2,
   pauseSessionV2,
   resumeSessionV2,
   completeSessionV2,
 } = require("./visitSessionV2.service");
+const {
+  deriveNavigatorRuntimeActions,
+  currentNavigatorRuntimeProjection,
+  confirmNavigatorLocationV2,
+  correctNavigatorLocationV2,
+  advanceNavigatorPhysicalProgressV2,
+  startNavigatorPhysicalDetourV2,
+  returnNavigatorToVisitV2,
+  advanceNavigatorNarrativeProgressV2,
+  selectNavigatorVisitStopV2,
+} = require("./navigatorRuntimeV2.service");
 const {
   projectNavigationRoute,
   projectNextRouteObstacles,
@@ -136,8 +143,25 @@ async function executeDescriptor({ sessionId, userId, descriptor, input = null }
       await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "resume" }); return null;
     case "SYNCHRONIZED_PLAYBACK_STOP":
       await controlSynchronizedPlayback({ synchronizedSessionId: descriptor.synchronizedSessionId, userId, command: "stop" }); return null;
-    case "PROGRESS_NEXT": await advanceSession({ sessionId, userId, direction: "next" }); return null;
-    case "PROGRESS_PREVIOUS": await advanceSession({ sessionId, userId, direction: "previous" }); return null;
+    case "LOCATION_CONFIRM": {
+      const location = await confirmNavigatorLocationV2({ sessionId, userId, locationRef: input?.location });
+      return { type: "location_confirmed", location };
+    }
+    case "LOCATION_CORRECT": {
+      const location = await correctNavigatorLocationV2({ sessionId, userId, locationRef: input?.location });
+      return { type: "location_corrected", location };
+    }
+    case "VISIT_STOP_SELECT": {
+      const selected = await selectNavigatorVisitStopV2({ sessionId, userId, visitAnchorId: input?.visitAnchorId });
+      return { type: "visit_stop_selected", ...selected };
+    }
+    case "PROGRESS_NEXT":
+      if (descriptor.serverInput?.executionMode === "physical") {
+        return { type: "physical_progress", ...(await advanceNavigatorPhysicalProgressV2({ sessionId, userId })) };
+      }
+      await advanceNavigatorNarrativeProgressV2({ sessionId, userId, direction: "next" }); return null;
+    case "PROGRESS_PREVIOUS":
+      await advanceNavigatorNarrativeProgressV2({ sessionId, userId, direction: "previous" }); return null;
     case "PRESENTATION_DEPTH_INCREASE": await changePresentationDepthV2({ sessionId, userId, direction: "up" }); return null;
     case "PRESENTATION_DEPTH_DECREASE": await changePresentationDepthV2({ sessionId, userId, direction: "down" }); return null;
     case "PRESENTATION_COMPLEXITY_INCREASE": await changePresentationComplexityV2({ sessionId, userId, direction: "up" }); return null;
@@ -166,12 +190,15 @@ async function executeDescriptor({ sessionId, userId, descriptor, input = null }
       return { type: "completion", learning: completed.learning };
     }
     case "NAVIGATE_TO_PHYSICAL_FEATURE": {
-      const routeResult = await routeToPhysicalFeatureV2({ sessionId, userId, physicalFeatureRef: descriptor.serverInput?.physicalFeatureRef });
+      const routeResult = await startNavigatorPhysicalDetourV2({ sessionId, userId, physicalFeatureRef: descriptor.serverInput?.physicalFeatureRef });
       return {
         type: "navigation_requested",
         navigation: await projectNavigationRoute({ sessionId, userId, routeResult }),
       };
     }
+    case "NAVIGATION_RETURN_TO_VISIT":
+      await returnNavigatorToVisitV2({ sessionId, userId });
+      return { type: "navigation_return_to_visit" };
     case "CHECK_ROUTE_OBSTACLES":
       return {
         type: "obstacle_check",
@@ -201,7 +228,7 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
   const expectedRuntimeVersion = normalizeExpectedRuntimeVersion(payload.expectedRuntimeVersion);
   const interactionChannel = normalizeInteractionChannel(payload.interactionChannel);
 
-  const derived = await deriveRuntimeActions({ sessionId, userId });
+  const derived = await deriveNavigatorRuntimeActions({ sessionId, userId });
   const rawDescriptor = derived.actions.find((entry) => entry.actionId === actionId) || null;
   if (!rawDescriptor) {
     await recordRejectedUnavailable({ sessionId, userId, actionId, interactionChannel });
@@ -257,7 +284,7 @@ async function dispatchAction({ sessionId, userId, payload = {} }) {
     });
   }
 
-  const runtime = appendSemanticChoices(await currentSessionProjection({ sessionId, userId }), effect);
+  const runtime = appendSemanticChoices(await currentNavigatorRuntimeProjection({ sessionId, userId }), effect);
   return {
     action: { actionId: descriptor.actionId, type: descriptor.type, family: descriptor.family },
     runtime,
