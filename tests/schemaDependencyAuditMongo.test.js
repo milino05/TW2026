@@ -143,7 +143,11 @@ test("follow_current marks a real breaking ItemEdition dependency as needs_revie
     const result = await revalidateItemEditionNamespaceDependency({ editionId: edition._id, force: true });
     assert.equal(result.validation.status, "needs_review");
     assert.equal(result.validation.outcome, "requires_review");
-    assert.ok(result.validation.issues.some((issue) => String(issue.code || "").includes("DURATION")));
+    assert.ok(result.validation.issues.some((issue) => (
+      issue.code === "UNKNOWN_DURATION_TYPE"
+      && issue.severity === "error"
+      && String(issue.field || "").endsWith(".durationTypeDefinitionId")
+    )));
   });
 });
 
