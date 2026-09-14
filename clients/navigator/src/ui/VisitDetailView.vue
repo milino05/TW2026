@@ -58,6 +58,15 @@ function minutes(seconds: number) {
   return Math.max(0, Math.ceil(seconds / 60));
 }
 
+function detailedDuration(seconds: number) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const wholeMinutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (!wholeMinutes) return `${remainingSeconds} s`;
+  if (!remainingSeconds) return `${wholeMinutes} min`;
+  return `${wholeMinutes} min ${remainingSeconds} s`;
+}
+
 function preparationVenueLabel(targetVenueId: string) {
   return preparation.value?.preVisit.venues.find((venue) => String(venue.id) === String(targetVenueId))?.name || "Sede";
 }
@@ -277,11 +286,11 @@ async function start() {
             <strong>{{ minutes(preparation.logisticsPreview.estimatedTotalSeconds) }}</strong>
             <span>minuti circa</span>
           </div>
-          <dl>
-            <div><dt>Contenuti</dt><dd>{{ minutes(preparation.logisticsPreview.breakdown.contentSeconds) }} min</dd></div>
-            <div><dt>Osservazione</dt><dd>{{ minutes(preparation.logisticsPreview.breakdown.observationSeconds) }} min</dd></div>
-            <div><dt>Spostamenti</dt><dd>{{ minutes(preparation.logisticsPreview.breakdown.travelSeconds) }} min</dd></div>
-            <div v-if="preparation.logisticsPreview.reservedSeconds"><dt>Riserva</dt><dd>+ {{ minutes(preparation.logisticsPreview.reservedSeconds) }} min</dd></div>
+          <dl aria-live="polite">
+            <div><dt>Contenuti</dt><dd>{{ detailedDuration(preparation.logisticsPreview.breakdown.contentSeconds) }}</dd></div>
+            <div><dt>Osservazione</dt><dd>{{ detailedDuration(preparation.logisticsPreview.breakdown.observationSeconds) }}</dd></div>
+            <div><dt>Spostamenti</dt><dd>{{ detailedDuration(preparation.logisticsPreview.breakdown.travelSeconds) }}</dd></div>
+            <div v-if="preparation.logisticsPreview.reservedSeconds"><dt>Riserva</dt><dd>+ {{ detailedDuration(preparation.logisticsPreview.reservedSeconds) }}</dd></div>
           </dl>
           <p v-if="preparation.logisticsPreview.routeSummary.venueCount" class="route-summary">
             {{ preparation.logisticsPreview.routeSummary.venueCount }} sedi ·
