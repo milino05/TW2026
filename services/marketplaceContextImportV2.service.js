@@ -6,6 +6,7 @@ const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const ItemV2 = require("../models/itemV2.model");
 const Namespace = require("../models/namespace.model");
+const NamespaceRevision = require("../models/namespaceRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -15,6 +16,8 @@ const { assertCanActForPrincipal } = require("./principalResolution.service");
 const { assertCapabilitySource } = require("./capabilityAuthorization.service");
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
+const { bindingFromAccess } = require("./versionedSchemaDependency.service");
+const { validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 function id(value) { return String(value?._id || value || ""); }
@@ -57,15 +60,24 @@ async function importEditorialContextSnapshot({
     principalType: ownerType,
     principalId: ownerId,
   });
-  if (namespaceAccess?.basis === "entitlement") {
-    const ref = namespaceAccess.resolvedSnapshotRef;
-    if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, sourceRelease.namespaceRevisionId)) {
-      throw new AppError("Il Namespace autorizzato non copre la release importata", 403, [{
-        code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
-        context: { requiredNamespaceRevisionId: sourceRelease.namespaceRevisionId, authorizedRevisionId: ref?.resourceId || null },
-      }]);
-    }
+  const authorizedNamespaceRef = namespaceAccess?.resolvedSnapshotRef;
+  if (authorizedNamespaceRef?.resourceType !== "namespace_revision") {
+    throw new AppError("Namespace autorizzato senza revisione risolvibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
   }
+  if (namespaceAccess.entitlement?.versionPolicy === "pinned" && !sameId(authorizedNamespaceRef.resourceId, sourceRelease.namespaceRevisionId)) {
+    throw new AppError("Il Namespace pinzato non copre la release importata", 403, [{
+      code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
+      context: { requiredNamespaceRevisionId: sourceRelease.namespaceRevisionId, authorizedRevisionId: authorizedNamespaceRef.resourceId },
+    }]);
+  }
+  const namespaceRevision = await NamespaceRevision.findOne({
+    _id: authorizedNamespaceRef.resourceId,
+    namespaceId: namespace._id,
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  }).lean();
+  if (!namespaceRevision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409);
+  const namespaceDependency = bindingFromAccess({ access: namespaceAccess, effectiveRevisionId: namespaceRevision._id });
 
   const sourceGraphRevision = await SemanticGraphRevision.findById(sourceRelease.graphRevisionId).lean();
   if (!sourceGraphRevision) throw new AppError("GraphRevision sorgente non disponibile", 409);
@@ -73,6 +85,23 @@ async function importEditorialContextSnapshot({
     GraphSubjectBinding.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
     SemanticEdgeV2.find({ graphRevisionId: sourceGraphRevision._id }).lean(),
   ]);
+  const compatibilityIssues = validateGraphSnapshotAgainstNamespace({ subjectBindings: sourceBindings, edges: sourceEdges }, namespaceRevision);
+  const validSelectionSignals = new Set((namespaceRevision.selectionSignals || []).map((entry) => String(entry.definitionId)));
+  for (const [bindingIndex, binding] of (sourceRelease.itemBindings || []).entries()) {
+    for (const [signalIndex, signal] of (binding.curationSignals || []).entries()) {
+      if (!validSelectionSignals.has(String(signal.definitionId))) {
+        compatibilityIssues.push({
+          field: `itemBindings[${bindingIndex}].curationSignals[${signalIndex}].definitionId`,
+          code: "SELECTION_SIGNAL_NOT_IN_NAMESPACE",
+          context: { definitionId: signal.definitionId },
+        });
+      }
+    }
+  }
+  if (compatibilityIssues.length) {
+    throw new AppError("La snapshot editoriale non è compatibile con le Regole editoriali autorizzate correnti", 409, compatibilityIssues);
+  }
+
   const graphSubjectIds = [...new Set(sourceBindings.map((binding) => id(binding.subjectId)).filter(Boolean))];
   const itemBindings = (sourceRelease.itemBindings || []).map((binding) => ({
     itemId: binding.itemId,
@@ -101,6 +130,7 @@ async function importEditorialContextSnapshot({
     });
     semanticGraph = await SemanticGraph.create({
       namespaceId: namespace._id,
+      namespaceDependency,
       displayName: `${String(displayName || `${sourceContext.displayName} — import`).trim()} · Relazioni`,
       ownerType,
       ownerId,
@@ -110,7 +140,7 @@ async function importEditorialContextSnapshot({
       semanticGraphId: semanticGraph._id,
       version: 1,
       basedOnRevisionId: null,
-      authoredAgainstNamespaceRevisionId: sourceRelease.namespaceRevisionId,
+      authoredAgainstNamespaceRevisionId: namespaceRevision._id,
       createdBy: actorUserId,
     });
     semanticGraph.workingRevisionId = graphRevision._id;
@@ -119,6 +149,7 @@ async function importEditorialContextSnapshot({
     context = await EditorialContext.create({
       contentSpaceId: contentSpace._id,
       namespaceId: namespace._id,
+      namespaceDependency,
       semanticGraphId: semanticGraph._id,
       displayName: String(displayName || `${sourceContext.displayName} — import`).trim(),
       shortDescription: sourceContext.shortDescription || null,
@@ -183,7 +214,7 @@ async function importEditorialContextSnapshot({
       actorUserId,
       action: "namespace_use",
       sourceResourceRef: { resourceType: "namespace", resourceId: namespace._id },
-      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: sourceRelease.namespaceRevisionId },
+      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: namespaceRevision._id },
       resultResourceRef: { resourceType: "editorial_context", resourceId: context._id },
     });
     if (namespaceAdoption) adoptionIds.push(namespaceAdoption._id);

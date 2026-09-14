@@ -11,9 +11,23 @@ const ItemV2 = require("../models/itemV2.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const AppError = require("../utils/AppError");
 const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
+const {
+  revalidateSemanticGraphNamespaceDependency,
+  revalidateItemEditionNamespaceDependency,
+} = require("./schemaDependencyAudit.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
+
+function assertDependencyValidation(result, code, message) {
+  if (!result?.validation || result.validation.status !== "valid") {
+    throw new AppError(message, 409, [{
+      code,
+      context: { issues: result?.validation?.issues || [] },
+    }]);
+  }
+  return result;
+}
 
 function pinKey(pin) {
   return `${id(pin.graphRevisionId)}:${id(pin.namespaceRevisionId)}`;
@@ -172,13 +186,25 @@ async function directSemanticContext({ source, contentEntries }) {
     const graphRevision = graphRevisionById.get(id(graphRevisionId));
     if (!graphRevision) continue;
     if (semanticGraph && id(graphRevision.semanticGraphId) !== id(semanticGraph._id)) continue;
+
+    let namespaceRevisionId = release?.namespaceRevisionId || null;
+    if (semanticGraph?.workingRevisionId && id(semanticGraph.workingRevisionId) === id(graphRevision._id)) {
+      const dependency = assertDependencyValidation(
+        await revalidateSemanticGraphNamespaceDependency({ semanticGraphId: semanticGraph._id }),
+        "SESSION_SEMANTIC_GRAPH_DEPENDENCY_REVIEW_REQUIRED",
+        "Il grafo semantico diretto non è compatibile con le regole editoriali correnti",
+      );
+      namespaceRevisionId = dependency.dependencyRevision._id;
+    }
+    if (!namespaceRevisionId) continue;
+
     const subjectIds = [...(subjectsByRevision.get(id(graphRevision._id)) || new Set())];
     pins.push({
       sourceType: "direct_item",
       sourceEditorialReleaseId: null,
       editorialContextId: context._id,
       graphRevisionId: graphRevision._id,
-      namespaceRevisionId: graphRevision.authoredAgainstNamespaceRevisionId,
+      namespaceRevisionId,
       subjectIds,
     });
     resolvedContexts.push({
@@ -186,6 +212,7 @@ async function directSemanticContext({ source, contentEntries }) {
       semanticGraph,
       graphRevision,
       namespaceId: context.namespaceId,
+      namespaceRevisionId,
       subjectIds: new Set(subjectIds),
     });
   }
@@ -224,13 +251,13 @@ async function directSemanticContentPins({ source, contexts }) {
     itemId: { $in: items.map((item) => item._id) },
     namespaceId: { $in: namespaceIds },
     publishedRevisionId: { $ne: null },
-  }).select("_id itemId namespaceId publishedRevisionId").lean();
+  }).lean();
   if (!editions.length) return [];
   const publishedRevisionIds = uniqueIds(editions.map((edition) => edition.publishedRevisionId));
   const revisions = await ItemRevisionV2.find({
     _id: { $in: publishedRevisionIds },
     status: { $in: ["published", "superseded"] },
-  }).select("_id itemEditionId authoredAgainstNamespaceRevisionId").lean();
+  }).select("_id itemEditionId").lean();
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
 
   const pins = [];
@@ -243,12 +270,17 @@ async function directSemanticContentPins({ source, contexts }) {
       && entry.subjectIds.has(id(item.primarySubjectId))
       && subjectIdsByGraph.get(id(entry.graphRevision._id))?.has(id(item.primarySubjectId)));
     if (!relevantContext) continue;
+    const dependency = assertDependencyValidation(
+      await revalidateItemEditionNamespaceDependency({ editionId: edition._id }),
+      "SESSION_ITEM_DEPENDENCY_REVIEW_REQUIRED",
+      "Un contenuto semantico diretto non è compatibile con le regole editoriali correnti",
+    );
     pins.push({
       sourceType: "direct_item",
       itemId: item._id,
       itemEditionId: edition._id,
       itemRevisionId: revision._id,
-      namespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
+      namespaceRevisionId: dependency.dependencyRevision._id,
       subjectId: item.primarySubjectId,
     });
   }

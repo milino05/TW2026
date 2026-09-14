@@ -17,7 +17,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
   taskDialog = null;
   step = "details";
   preflight = null;
-  selectedRevisionId = "";
+  selectedVocabularyId = "";
   busy = false;
   creating = false;
   error = null;
@@ -40,7 +40,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
   reset() {
     this.step = "details";
     this.preflight = null;
-    this.selectedRevisionId = "";
+    this.selectedVocabularyId = "";
     this.error = null;
     this.busy = false;
     this.creating = false;
@@ -60,7 +60,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
     this.taskDialog = createTaskDialog({
       eyebrow: "Nuova sede",
       title: "Aggiungi una sede",
-      description: "Crea il profilo e scegli il vocabolario con cui iniziare a configurarne gli spazi fisici.",
+      description: "Crea il profilo e scegli il vocabolario con cui configurarne gli spazi fisici.",
       size: "large",
       initialFocus: "input[name='name']",
       renderBody: () => this.renderBody(),
@@ -77,7 +77,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
     try {
       this.preflight = await venueCreationRepository.preflight(this.organizationId);
       const choices = this.preflight?.choices || [];
-      this.selectedRevisionId = id(choices[0]?.physicalVocabularyRevisionId);
+      this.selectedVocabularyId = id(choices[0]?.physicalVocabularyId);
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Non è possibile preparare la nuova sede";
     } finally {
@@ -88,7 +88,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
   }
 
   focusPrimary() {
-    const selector = this.step === "details" ? "input[name='name']" : "select[name='physicalVocabularyRevisionId']";
+    const selector = this.step === "details" ? "input[name='name']" : "select[name='physicalVocabularyId']";
     this.taskDialog?.focus(selector);
   }
 
@@ -120,9 +120,9 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
 
   onDialogChange = (event) => {
     const target = event.target instanceof HTMLSelectElement ? event.target : null;
-    if (!target?.matches("select[name='physicalVocabularyRevisionId']")) return;
-    if (target.value === this.selectedRevisionId) return;
-    this.selectedRevisionId = target.value;
+    if (!target?.matches("select[name='physicalVocabularyId']")) return;
+    if (target.value === this.selectedVocabularyId) return;
+    this.selectedVocabularyId = target.value;
     this.dirty = true;
   };
 
@@ -145,13 +145,13 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
       event.preventDefault();
       if (!form.reportValidity()) return;
       const data = new FormData(form);
-      this.selectedRevisionId = String(data.get("physicalVocabularyRevisionId") || "");
+      this.selectedVocabularyId = String(data.get("physicalVocabularyId") || "");
       void this.createVenue();
     }
   };
 
   async createVenue() {
-    if (!this.preflight?.allowed || !this.selectedRevisionId || this.creating) return;
+    if (!this.preflight?.allowed || !this.selectedVocabularyId || this.creating) return;
     this.creating = true;
     this.busy = true;
     this.error = null;
@@ -161,7 +161,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
         ownerOrganizationId: this.organizationId,
         name: this.draft.name.trim(),
         description: this.draft.description.trim(),
-        physicalVocabularyRevisionId: this.selectedRevisionId,
+        physicalVocabularyId: this.selectedVocabularyId,
       });
       const venueId = id(created?.venue);
       if (!venueId) throw new Error("La sede è stata creata ma non è stato restituito il suo identificatore");
@@ -199,17 +199,17 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
   renderPhysicalStep() {
     const choices = this.preflight?.choices || [];
     const options = choices.map((choice) => {
-      const revisionId = id(choice.physicalVocabularyRevisionId);
-      const suffix = choice.basis === "license" ? " · acquisito" : "";
-      const version = choice.version ? ` · v${choice.version}` : "";
-      return `<option value="${escapeHtml(revisionId)}" ${revisionId === id(this.selectedRevisionId) ? "selected" : ""}>${escapeHtml(choice.name)}${escapeHtml(version)}${escapeHtml(suffix)}</option>`;
+      const vocabularyId = id(choice.physicalVocabularyId);
+      const suffix = choice.basis === "license" ? (choice.versionPolicy === "pinned" ? " · acquisito, versione fissata" : " · acquisito") : "";
+      const version = choice.effectiveVersion ? ` · v${choice.effectiveVersion}` : "";
+      return `<option value="${escapeHtml(vocabularyId)}" ${vocabularyId === id(this.selectedVocabularyId) ? "selected" : ""}>${escapeHtml(choice.name)}${escapeHtml(version)}${escapeHtml(suffix)}</option>`;
     }).join("");
     return `<form id="venue-create-physical-form" class="venue-create-form" data-venue-create-physical>
       <section class="venue-create-section">
         <header class="section-heading"><div><span class="eyebrow">Passaggio 2 di 2</span><h3>Vocabolario fisico</h3><p>Determina i tipi di luoghi, collegamenti e attributi disponibili quando configurerai gli spazi della sede.</p></div></header>
         <div class="venue-create-fields venue-create-fields--compact">
-          <label>Vocabolario fisico<select name="physicalVocabularyRevisionId" required>${options}</select></label>
-          <p class="note">La configurazione iniziale verrà creata rispetto alla revisione selezionata. Il vocabolario resta una risorsa autonoma e riutilizzabile.</p>
+          <label>Vocabolario fisico<select name="physicalVocabularyId" required>${options}</select></label>
+          <p class="note">La sede seguirà automaticamente la versione pubblicata corrente del vocabolario, salvo risorse esterne acquisite con versione fissata.</p>
         </div>
       </section>
     </form>`;
@@ -222,7 +222,7 @@ export class ArtAroundVenueCreateDialog extends HTMLElement {
     const manageAction = canManageMissingVocabulary
       ? `<button type="button" data-manage-physical-vocabularies>Gestisci vocabolari fisici</button>`
       : "";
-    return `<div class="empty-state venue-create-blocker"><span>${icon("warning", { size: 28 })}</span><h3>La sede non può ancora essere creata</h3><p>${escapeHtml(blocker?.message || "Manca un vocabolario fisico utilizzabile.")}</p>${manageAction ? `<div class="button-row">${manageAction}</div>` : ""}</div>`;
+    return `<div class="empty-state venue-create-blocker"><span>${icon("warning", { size: 28 })}</span><h3>La sede non può ancora essere creata</h3><p>${escapeHtml(blocker?.message || "Manca un vocabolario fisico pubblicato e utilizzabile.")}</p>${manageAction ? `<div class="button-row">${manageAction}</div>` : ""}</div>`;
   }
 
   renderBody() {

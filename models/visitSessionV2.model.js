@@ -1,13 +1,8 @@
 const mongoose = require("mongoose");
 const NavigationSnapshotSchema = require("../schemas/navigationSnapshot.schema");
 const PhysicalRuntimeSchema = require("../schemas/physicalRuntime.schema");
+const VenuePinSchema = require("../schemas/venuePin.schema");
 const { Schema } = mongoose;
-
-const VenuePinSchema = new Schema({
-  venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
-  venueReleaseId: { type: Schema.Types.ObjectId, ref: "VenueRelease", required: true },
-  layoutRevisionId: { type: Schema.Types.ObjectId, ref: "LayoutRevision", required: true },
-}, { _id: false });
 
 const PresentationSelectionSchema = new Schema({
   variantId: { type: Schema.Types.ObjectId, required: true },

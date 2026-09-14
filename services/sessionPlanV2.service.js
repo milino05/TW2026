@@ -14,6 +14,7 @@ const { id } = require("./physicalExecutionV2.service");
 const { resolveNavigationPreparation } = require("./navigationPreparationV2.service");
 const { canonicalizeContentEntries } = require("./visitSequenceV2.service");
 const { resolveSessionSemanticScope } = require("./sessionSemanticScopeV2.service");
+const { evaluateItemRevisionNamespaceDependency } = require("./schemaDependencyAudit.service");
 
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
 function roleOf(entry) { return ["core", "recommended", "optional"].includes(entry?.role) ? entry.role : "recommended"; }
@@ -117,18 +118,35 @@ async function materializeContentEntries({ source, userPreference = null, explic
   const revisionIds = uniqueIds(source.contentEntries.map((entry) => entry.itemRevisionId));
   const revisions = await ItemRevisionV2.find({ _id: { $in: revisionIds } }).lean();
   const revisionById = new Map(revisions.map((entry) => [id(entry._id), entry]));
-  const namespaceRevisionIds = uniqueIds([
-    ...releases.map((entry) => entry.namespaceRevisionId),
-    ...revisions.map((entry) => entry.authoredAgainstNamespaceRevisionId),
-  ]);
+  const namespaceRevisionIds = uniqueIds(releases.map((entry) => entry.namespaceRevisionId));
   const namespaceRevisions = await NamespaceRevision.find({ _id: { $in: namespaceRevisionIds } }).lean();
   const namespaceRevisionById = new Map(namespaceRevisions.map((entry) => [id(entry._id), entry]));
-  return source.contentEntries.map((entry) => {
+
+  return Promise.all(source.contentEntries.map(async (entry) => {
     const revision = revisionById.get(id(entry.itemRevisionId));
     if (!revision || id(revision.itemEditionId) !== id(entry.itemEditionId)) throw new AppError("ItemRevision della sorgente non risolvibile", 409);
     const release = (entry.sourceEditorialReleaseIds || []).map((releaseId) => releaseById.get(id(releaseId))).find(Boolean);
-    const namespaceRevision = namespaceRevisionById.get(id(release?.namespaceRevisionId || revision.authoredAgainstNamespaceRevisionId));
-    if (!namespaceRevision) throw new AppError("NamespaceRevision della ContentEntry non risolvibile", 409);
+    let namespaceRevision = null;
+    if (release) {
+      namespaceRevision = namespaceRevisionById.get(id(release.namespaceRevisionId));
+      if (!namespaceRevision) throw new AppError("NamespaceRevision storica della EditorialRelease non risolvibile", 409);
+    } else {
+      const dependency = await evaluateItemRevisionNamespaceDependency({
+        editionId: entry.itemEditionId,
+        itemRevisionId: entry.itemRevisionId,
+      });
+      if (!dependency?.validation || dependency.validation.status !== "valid") {
+        throw new AppError("Il contenuto diretto non è compatibile con le regole editoriali correnti", 409, [{
+          code: "SESSION_ITEM_DEPENDENCY_REVIEW_REQUIRED",
+          context: {
+            itemEditionId: entry.itemEditionId,
+            itemRevisionId: entry.itemRevisionId,
+            issues: dependency?.validation?.issues || [],
+          },
+        }]);
+      }
+      namespaceRevision = dependency.dependencyRevision;
+    }
     const baselinePresentation = resolveInitialPresentation({
       revision,
       namespaceRevision,
@@ -149,7 +167,7 @@ async function materializeContentEntries({ source, userPreference = null, explic
       deliveryAnchorId: entry.deliveryAnchorId || null,
       baselinePresentation,
     };
-  });
+  }));
 }
 
 function timingFromMaterialized(contentEntries, visitAnchors, physicalRoute, reservedSeconds = 0) {

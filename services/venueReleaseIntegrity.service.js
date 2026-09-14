@@ -1,7 +1,6 @@
-const PhysicalVocabulary = require("../models/physicalVocabulary.model");
-const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const VenueTarget = require("../models/venueTarget.model");
 const ExhibitSlot = require("../models/exhibitSlot.model");
+const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const {
   deriveMetersPerPixel,
   distanceMetersForGeometry,
@@ -34,7 +33,7 @@ function validateAttributeValues({ values, field, target, attributeById, add }) 
     seen.add(definitionId);
     const definition = attributeById.get(definitionId);
     if (!definition) {
-      add(`${entryField}.physicalAttributeDefinitionId`, "UNKNOWN_PHYSICAL_ATTRIBUTE", "Caratteristica non presente nel PhysicalVocabulary pinzato");
+      add(`${entryField}.physicalAttributeDefinitionId`, "UNKNOWN_PHYSICAL_ATTRIBUTE", "Caratteristica non presente nel PhysicalVocabulary effettivo");
       continue;
     }
     if (![target, "both"].includes(definition.appliesTo)) {
@@ -136,31 +135,30 @@ function validateFloorCalibration({ floor, index, connectionById, placeById, add
   }
 }
 
-async function loadPhysicalVocabularyForLayout(layout, add) {
-  const revisionId = layout.authoredAgainstPhysicalVocabularyRevisionId;
-  const revision = revisionId ? await PhysicalVocabularyRevision.findById(revisionId).lean() : null;
-  if (!revision) {
-    add("layout.authoredAgainstPhysicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_REVISION_NOT_FOUND", "PhysicalVocabularyRevision pinzata non disponibile");
-    return { physicalVocabulary: null, revision: null };
+async function resolveVocabularyForValidation({ layout, physicalVocabularyRevision = null, add }) {
+  if (physicalVocabularyRevision) {
+    if (!["published", "superseded"].includes(physicalVocabularyRevision.status) || physicalVocabularyRevision.integrity?.status !== "valid") {
+      add("physicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_REVISION_NOT_PUBLISHABLE", "La VenueRelease richiede una revisione di vocabolario pubblicata e integra");
+    }
+    return physicalVocabularyRevision;
   }
-  const physicalVocabulary = await PhysicalVocabulary.findById(revision.physicalVocabularyId).lean();
-  if (!physicalVocabulary) {
-    add("layout.authoredAgainstPhysicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_NOT_AVAILABLE", "PhysicalVocabulary della revisione pinzata non disponibile");
+  try {
+    const bundle = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
+    return bundle.revision;
+  } catch (error) {
+    add("physicalVocabularyRevisionId", error?.details?.[0]?.code || "PHYSICAL_VOCABULARY_REVISION_NOT_AVAILABLE", error.message || "PhysicalVocabularyRevision non disponibile");
+    return null;
   }
-  if (!["published", "superseded"].includes(revision.status) || revision.integrity?.status !== "valid") {
-    add("layout.authoredAgainstPhysicalVocabularyRevisionId", "PHYSICAL_VOCABULARY_REVISION_NOT_PUBLISHABLE", "La VenueRelease richiede una revisione di vocabolario pubblicata e integra");
-  }
-  return { physicalVocabulary, revision };
 }
 
-async function computeVenueReleaseIssues({ venue, release, layout }) {
+async function computeVenueReleaseIssues({ venue, release, layout, physicalVocabularyRevision = null }) {
   const issues = [];
   const add = (field, code, message, severity = "error", context = {}) => issues.push({ field, code, message, severity, context });
   if (!venue || !release || !layout) return [{ field: "release", code: "PHYSICAL_SNAPSHOT_INCOMPLETE", message: "VenueRelease o LayoutRevision mancante", severity: "error" }];
   if (id(release.venueId) !== id(venue._id) || id(layout.venueId) !== id(venue._id)) add("venueId", "VENUE_SCOPE_MISMATCH", "Release e Layout devono appartenere alla stessa Venue");
   if (id(release.layoutRevisionId) !== id(layout._id)) add("layoutRevisionId", "LAYOUT_REVISION_MISMATCH", "La VenueRelease deve puntare alla LayoutRevision validata");
 
-  const { revision: vocabulary } = await loadPhysicalVocabularyForLayout(layout, add);
+  const vocabulary = await resolveVocabularyForValidation({ layout, physicalVocabularyRevision, add });
   const placeTypeById = new Map((vocabulary?.placeTypes || []).map((entry) => [entry.definitionId, entry]));
   const connectionTypeById = new Map((vocabulary?.connectionTypes || []).map((entry) => [entry.definitionId, entry]));
   const attributeById = new Map((vocabulary?.physicalAttributes || []).map((entry) => [entry.definitionId, entry]));
@@ -180,7 +178,7 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
     if (placeById.has(placeId)) add(`layout.places[${index}]._id`, "DUPLICATE_PLACE_ID", "Place id duplicato");
     placeById.set(placeId, place);
     if (!floorById.has(id(place.floorId))) add(`layout.places[${index}].floorId`, "UNKNOWN_FLOOR", "Floor non presente nel Layout");
-    if (!placeTypeById.has(place.placeTypeDefinitionId)) add(`layout.places[${index}].placeTypeDefinitionId`, "UNKNOWN_PLACE_TYPE", "PlaceType non presente nel PhysicalVocabulary pinzato");
+    if (!placeTypeById.has(place.placeTypeDefinitionId)) add(`layout.places[${index}].placeTypeDefinitionId`, "UNKNOWN_PLACE_TYPE", "PlaceType non presente nel PhysicalVocabulary effettivo");
     validateAttributeValues({ values: place.attributeValues, field: `layout.places[${index}].attributeValues`, target: "place", attributeById, add });
   }
 
@@ -192,7 +190,7 @@ async function computeVenueReleaseIssues({ venue, release, layout }) {
     connectionById.set(connectionId, connection);
     if (!placeById.has(id(connection.fromPlaceId)) || !placeById.has(id(connection.toPlaceId))) add(`layout.connections[${index}]`, "UNKNOWN_PLACE", "Una Connection riferisce un Place inesistente");
     if (id(connection.fromPlaceId) === id(connection.toPlaceId)) add(`layout.connections[${index}]`, "SELF_CONNECTION", "Una Connection non puo collegare un Place a se stesso");
-    if (connection.connectionTypeDefinitionId && !connectionTypeById.has(connection.connectionTypeDefinitionId)) add(`layout.connections[${index}].connectionTypeDefinitionId`, "UNKNOWN_CONNECTION_TYPE", "ConnectionType non presente nel PhysicalVocabulary pinzato");
+    if (connection.connectionTypeDefinitionId && !connectionTypeById.has(connection.connectionTypeDefinitionId)) add(`layout.connections[${index}].connectionTypeDefinitionId`, "UNKNOWN_CONNECTION_TYPE", "ConnectionType non presente nel PhysicalVocabulary effettivo");
     validateAttributeValues({ values: connection.attributeValues, field: `layout.connections[${index}].attributeValues`, target: "connection", attributeById, add });
     validateConnectionGeometry({ connection, index, placeById, floorById, add });
   }

@@ -4,7 +4,6 @@ const CollectionItemMembership = require("../models/collectionItemMembership.mod
 const ItemV2 = require("../models/itemV2.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
@@ -13,6 +12,7 @@ const { findSemanticGraphResourceOrFail } = require("./semanticGraphResource.ser
 const { writeSemanticGraphSnapshot } = require("./semanticGraphSnapshotWriter.service");
 const { canonicalEdgeKey } = require("./semanticEdgeIdentity.service");
 const { upsertLocalEdgeSuppression, clearLocalEdgeSuppression } = require("./editorialGraphImport.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
 
 function id(value) {
   return String(value?._id || value || "");
@@ -185,14 +185,11 @@ async function loadGraphAuthoringState({ semanticGraphId, actorUserId, allowColl
   const graph = semanticGraph.workingRevisionId
     ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId)
     : null;
-  const namespaceRevisionId = graph?.revision?.authoredAgainstNamespaceRevisionId
-    || namespace.workingRevisionId
-    || namespace.publishedRevisionId;
-  if (!namespaceRevisionId) throw new AppError("Le regole editoriali non hanno una revisione utilizzabile", 409);
-  const namespaceRevision = await NamespaceRevision.findOne({
-    _id: namespaceRevisionId,
-    namespaceId: namespace._id,
-  }).lean();
+  const namespaceRevision = graph?.namespaceRevision || await loadEffectiveNamespaceRevision({
+    namespace,
+    binding: semanticGraph.namespaceDependency,
+    requireStable: true,
+  });
   if (!namespaceRevision) throw new AppError("Revisione delle regole editoriali non disponibile", 409);
 
   return {

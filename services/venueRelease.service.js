@@ -15,8 +15,17 @@ const {
 const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
 const { runPostCommitAudit } = require("./postCommitAudit.service");
 const { auditVisitsAgainstVenueRelease } = require("./visitV2Dependency.service");
-const { assertCanAuthorLayoutAgainstRevision, loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const {
+  assertCanAuthorLayoutAgainstRevision,
+  loadLayoutPhysicalVocabulary,
+  loadVenuePhysicalVocabulary,
+} = require("./layoutPhysicalVocabulary.service");
+const {
+  bindingFromAccess,
+  buildValidation,
+} = require("./versionedSchemaDependency.service");
 
+function id(value) { return String(value?._id || value || ""); }
 function plain(value) { return value?.toObject ? value.toObject() : { ...(value || {}) }; }
 function workflowSnapshot(release) { const source = plain(release); return { status: source.status, review: source.review, publication: source.publication, integrity: source.integrity, updatedBy: source.updatedBy }; }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -49,6 +58,7 @@ async function assertRequestedPhysicalVocabularyCompatible({ physicalVocabularyR
 }
 
 async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevisionId = null, actorUserId }) {
+  let initialVocabularyBundle = null;
   if (!venue.publishedReleaseId) {
     if (!physicalVocabularyRevisionId) {
       throw new AppError("Seleziona un Physical Vocabulary prima di configurare la sede", 409, [{
@@ -56,7 +66,7 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
         code: "PHYSICAL_VOCABULARY_REVISION_REQUIRED",
       }]);
     }
-    await assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId });
+    initialVocabularyBundle = await assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevisionId, venue, actorUserId });
   }
 
   const currentVenue = await Venue.findOne({ _id: venue._id, lifecycleStatus: "active" });
@@ -67,16 +77,24 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
     return { venue: currentVenue, ...existing };
   }
 
+  if (initialVocabularyBundle && currentVenue.physicalVocabularyId
+    && id(currentVenue.physicalVocabularyId) !== id(initialVocabularyBundle.physicalVocabulary._id)) {
+    throw new AppError("La Venue è già associata a un altro Physical Vocabulary", 409, [{ code: "VENUE_PHYSICAL_VOCABULARY_IMMUTABLE" }]);
+  }
+
   let version = 1;
   let basedOnReleaseId = null;
   let targetBindings = [];
   let preVisitInformation = [];
   let sourceLayout = null;
+  let effectivePhysicalVocabularyRevisionId = initialVocabularyBundle?.revision?._id || null;
   if (currentVenue.publishedReleaseId) {
     const published = await VenueRelease.findById(currentVenue.publishedReleaseId).lean();
     if (!published || published.status !== "published") throw new AppError("VenueRelease pubblicata non disponibile", 409);
     sourceLayout = await LayoutRevision.findById(published.layoutRevisionId).lean();
     if (!sourceLayout) throw new AppError("LayoutRevision pubblicata non disponibile", 409);
+    const effectiveVocabulary = await loadVenuePhysicalVocabulary(currentVenue, { requireStable: true });
+    effectivePhysicalVocabularyRevisionId = effectiveVocabulary.revision._id;
     version = published.version + 1;
     basedOnReleaseId = published._id;
     targetBindings = published.targetBindings || [];
@@ -85,9 +103,17 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
 
   const layoutId = new Venue.db.base.Types.ObjectId();
   const releaseId = new Venue.db.base.Types.ObjectId();
+  const claimSet = { workingReleaseId: releaseId };
+  if (initialVocabularyBundle) {
+    claimSet.physicalVocabularyId = initialVocabularyBundle.physicalVocabulary._id;
+    claimSet.physicalVocabularyDependency = bindingFromAccess({
+      access: initialVocabularyBundle.access,
+      effectiveRevisionId: initialVocabularyBundle.revision._id,
+    });
+  }
   const claimedVenue = await Venue.findOneAndUpdate(
     { _id: currentVenue._id, lifecycleStatus: "active", workingReleaseId: null },
-    { $set: { workingReleaseId: releaseId } },
+    { $set: claimSet },
     { new: true },
   );
 
@@ -108,13 +134,13 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
     layout = await LayoutRevision.create({
       _id: layoutId,
       ...(sourceLayout ? {
-        authoredAgainstPhysicalVocabularyRevisionId: sourceLayout.authoredAgainstPhysicalVocabularyRevisionId,
+        authoredAgainstPhysicalVocabularyRevisionId: effectivePhysicalVocabularyRevisionId,
         floors: sourceLayout.floors,
         places: sourceLayout.places,
         exhibitSlots: sourceLayout.exhibitSlots,
         connections: sourceLayout.connections,
         basedOnRevisionId: sourceLayout._id,
-      } : { authoredAgainstPhysicalVocabularyRevisionId: physicalVocabularyRevisionId }),
+      } : { authoredAgainstPhysicalVocabularyRevisionId: effectivePhysicalVocabularyRevisionId }),
       venueId: currentVenue._id,
       version,
       status: "draft",
@@ -136,9 +162,12 @@ async function createWorkingReleaseFromPublished({ venue, physicalVocabularyRevi
   } catch (error) {
     if (release?._id) await VenueRelease.deleteOne({ _id: release._id }).catch(() => {});
     if (layout?._id) await LayoutRevision.deleteOne({ _id: layout._id }).catch(() => {});
+    const unset = initialVocabularyBundle
+      ? { workingReleaseId: null, physicalVocabularyId: null, physicalVocabularyDependency: null }
+      : { workingReleaseId: null };
     await Venue.updateOne(
       { _id: currentVenue._id, lifecycleStatus: "active", workingReleaseId: releaseId },
-      { $set: { workingReleaseId: null } },
+      { $set: unset },
     ).catch(() => {});
     throw error;
   }
@@ -225,6 +254,7 @@ async function publishVenueRelease({ venueId, actorUserId }) {
   const issues = await computeVenueReleaseIssues({ venue, release, layout });
   release.integrity = { status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid", issues, checkedAt: new Date(), checkedBy: actorUserId };
   if (release.integrity.status !== "valid") { await release.save(); throw new AppError("VenueRelease non consistente", 409, issues); }
+  const effectiveVocabulary = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
   const previousReleaseState = workflowSnapshot(release);
   try { approveReviewAndPublish(release, actorUserId); }
   catch (error) { throw new AppError(error.message, 409); }
@@ -256,6 +286,14 @@ async function publishVenueRelease({ venueId, actorUserId }) {
   }
   venue.publishedReleaseId = release._id;
   venue.workingReleaseId = null;
+  await Venue.updateOne(
+    { _id: venue._id, publishedReleaseId: release._id },
+    { $set: { "physicalVocabularyDependency.validation": buildValidation({
+      consumerSnapshotId: release._id,
+      dependencyRevisionId: effectiveVocabulary.revision._id,
+      issues: [],
+    }) } },
+  ).catch(() => {});
   const auditResult = await runPostCommitAudit({
     visitV2DependencyAudit: () => auditVisitsAgainstVenueRelease({ venueId: venue._id, venueReleaseId: release._id }),
   });

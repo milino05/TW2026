@@ -9,6 +9,8 @@ const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAu
 const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess, deleteAdoptions } = require("./marketplaceAdoptionV2.service");
 const { validateEditorialReleaseCoherence } = require("./editorialReleaseIntegrity.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const { buildValidation } = require("./versionedSchemaDependency.service");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
@@ -28,9 +30,16 @@ async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionI
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
   if (!namespace) throw new AppError("Namespace del Context non disponibile", 409);
   const namespaceAccess = await assertCanUseNamespaceForEditorialContext({ namespace, actorUserId, principalType, principalId });
+  const effectiveNamespaceRevision = await loadEffectiveNamespaceRevision({ namespace, binding: context.namespaceDependency });
+  if (!sameId(effectiveNamespaceRevision._id, namespaceRevisionId)) {
+    throw new AppError("Le regole editoriali sono cambiate dopo la revisione: ricontrolla la raccolta", 409, [{
+      code: "EDITORIAL_CONTEXT_DEPENDENCY_CHANGED_SINCE_REVIEW",
+      context: { reviewedRevisionId: namespaceRevisionId, effectiveRevisionId: effectiveNamespaceRevision._id },
+    }]);
+  }
   if (namespaceAccess?.basis === "entitlement") {
     const ref = namespaceAccess.resolvedSnapshotRef;
-    if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, namespaceRevisionId)) {
+    if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, effectiveNamespaceRevision._id)) {
       throw new AppError("La NamespaceRevision approvata non è più autorizzata", 403, [{
         code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
         context: { namespaceRevisionId, authorizedRevisionId: ref?.resourceId || null },
@@ -57,7 +66,7 @@ async function assertReleaseDependenciesAuthorized({ context, namespaceRevisionI
     }
     itemAccesses.push({ binding, access });
   }
-  return { namespace, namespaceAccess, itemAccesses };
+  return { namespace, namespaceAccess, effectiveNamespaceRevision, itemAccesses };
 }
 
 async function nextVersion(editorialContextId, session = null) {
@@ -100,7 +109,7 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
   });
   const issues = await validateEditorialReleaseCoherence({
     editorialContextId: context._id,
-    namespaceRevisionId: revision.namespaceRevisionId,
+    namespaceRevisionId: dependencyAccess.effectiveNamespaceRevision._id,
     graphRevisionId: revision.graphRevisionId,
     itemBindings: frozenBindings,
   });
@@ -113,7 +122,7 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
       actorUserId,
       action: "namespace_use",
       sourceResourceRef: { resourceType: "namespace", resourceId: dependencyAccess.namespace._id },
-      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: revision.namespaceRevisionId },
+      sourceSnapshotRef: { resourceType: "namespace_revision", resourceId: dependencyAccess.effectiveNamespaceRevision._id },
       resultResourceRef: { resourceType: "editorial_context", resourceId: context._id },
     });
     if (namespaceAdoption) adoptionIds.push(namespaceAdoption._id);
@@ -144,6 +153,13 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
         status: "approved",
       }).session(session);
       if (!lockedRevision) throw new AppError("La revisione non è più approvata", 409, [{ code: "APPROVED_CONTEXT_REVISION_REQUIRED" }]);
+      const currentNamespace = await Namespace.findById(lockedContext.namespaceId).select("publishedRevisionId").session(session).lean();
+      const expectedEffectiveId = lockedContext.namespaceDependency?.versionPolicy === "pinned"
+        ? lockedContext.namespaceDependency.pinnedRevisionId
+        : currentNamespace?.publishedRevisionId;
+      if (!sameId(expectedEffectiveId, dependencyAccess.effectiveNamespaceRevision._id)) {
+        throw new AppError("Le regole editoriali sono cambiate durante la pubblicazione", 409, [{ code: "EDITORIAL_CONTEXT_DEPENDENCY_CHANGED_DURING_PUBLISH" }]);
+      }
       const now = new Date();
       [release] = await EditorialRelease.create([{
         editorialContextId: lockedContext._id,
@@ -159,6 +175,15 @@ async function createEditorialRelease({ editorialContextId, editorialContextRevi
       }], { session });
       lockedContext.publishedReleaseId = release._id;
       lockedContext.activeReviewRevisionId = null;
+      if (!lockedContext.namespaceDependency) {
+        lockedContext.namespaceDependency = { versionPolicy: "follow_current", pinnedRevisionId: null, validation: null };
+      }
+      lockedContext.namespaceDependency.validation = buildValidation({
+        consumerSnapshotId: release._id,
+        dependencyRevisionId: dependencyAccess.effectiveNamespaceRevision._id,
+        issues: [],
+        checkedAt: now,
+      });
       await lockedContext.save({ session });
       lockedRevision.status = "published";
       lockedRevision.publication = { publishedAt: now, publishedBy: actorUserId, editorialReleaseId: release._id };

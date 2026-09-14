@@ -1,10 +1,10 @@
 # ArtAround — Stato implementazione client e Physical Domain
 
-Questo documento descrive lo stato corrente del branch `codex/physical-domain-redesign`. Non è una specifica normativa: requisiti ufficiali e decisioni architetturali approvate hanno priorità. Le implementazioni storiche non più coerenti con il dominio corrente non sono documentate come contratti supportati.
+Questo documento descrive lo stato corrente del redesign del Physical Domain. Non è una specifica normativa: requisiti ufficiali e decisioni architetturali approvate hanno priorità. Le implementazioni storiche non più coerenti con il dominio corrente non sono documentate come contratti supportati.
 
 ## Stato corrente
 
-Il redesign del Physical Domain è implementato trasversalmente su dominio, backend, Marketplace e boundary Navigator. La fase di test/CI del redesign viene trattata separatamente e non è dichiarata completata in questo documento.
+Il redesign del Physical Domain è implementato trasversalmente su dominio, backend, Marketplace e boundary Navigator. Le dependency versionate distinguono ora la provenance immutabile delle revisioni dalla dependency effettiva degli aggregate live. La fase di test/CI viene trattata separatamente e non è dichiarata completata in questo documento.
 
 ## PhysicalVocabulary
 
@@ -25,7 +25,9 @@ Lo starter ArtAround è un dataset ricco e riapplicabile in modo non distruttivo
 
 ## Layout e Venue
 
-`LayoutRevision` pinna esattamente la `PhysicalVocabularyRevision` contro cui è stato creato tramite `authoredAgainstPhysicalVocabularyRevisionId`.
+`LayoutRevision.authoredAgainstPhysicalVocabularyRevisionId` registra esattamente la `PhysicalVocabularyRevision` contro cui quello snapshot è stato creato. È una baseline di authoring/provenance, non il resolver operativo permanente della Venue.
+
+La Venue conserva la lineage `physicalVocabularyId` e una `physicalVocabularyDependency`: una dependency `follow_current` viene risolta sulla revisione pubblicata corrente e rivalidata semanticamente; una dependency `pinned` conserva invece la revisione autorizzata. Un cambio compatibile della lineage non crea automaticamente un nuovo Layout; un cambio incompatibile porta la dependency a `needs_review` e ne impedisce l'uso live finché non viene corretta.
 
 Il Layout contiene:
 
@@ -45,7 +47,7 @@ Il Marketplace modifica la configurazione fisica mediante command applicativi se
 La IA corrente è:
 
 1. Panoramica;
-2. Oggetti;
+2. Inventario;
 3. Spazi e mappa;
 4. Informazioni visitatori;
 5. Pubblicazione.
@@ -67,11 +69,11 @@ L'editor espone progressivamente:
 - profili di percorso;
 - mapping esterni.
 
-Il primo flusso di creazione Venue prevede onboarding del PhysicalVocabulary quando il principal non ne possiede uno utilizzabile, con starter ArtAround consigliato, creazione da zero o scelta di una risorsa esistente quando applicabile.
+Il primo flusso di creazione/configurazione Venue sceglie una lineage PhysicalVocabulary utilizzabile (`physicalVocabularyId`), con starter ArtAround consigliato, creazione da zero o scelta di una risorsa esistente quando applicabile. Il frontend non sceglie una revisione operativa da congelare: il backend risolve la revisione effettiva secondo la dependency policy.
 
 ## Routing e riferimenti fisici federati
 
-Il routing engine consuma soltanto definition locali risolte contro il PhysicalVocabulary pinzato dal Layout.
+Il routing engine consuma definition locali risolte contro la PhysicalVocabularyRevision effettiva della Venue. Durante Execution Preparation questa revisione viene validata e poi pinzata nella Session; da quel momento la Session continua a usare lo snapshot esatto anche se la lineage avanza.
 
 Le preferenze e i requirement usano `PhysicalFeatureRef`:
 
@@ -94,22 +96,22 @@ Il Marketplace usa una projection stop-centric composta da:
 
 Le operazioni strutturali passano da command semantici: aggiunta/rimozione contenuto, aggiunta/rimozione tappa, assegnazione/detach contenuto, ruolo e riordino stop. Il frontend non riscrive direttamente `contentEntries[]` o `visitAnchors[]` per queste operazioni.
 
-L'inferenza Content → VisitAnchor usa il `primarySubjectId` editoriale e le occurrence fisiche pubblicate:
+L'inferenza Content → VisitAnchor usa il `primarySubjectId` editoriale e le occurrence fisiche pubblicate come suggerimento all'autore:
 
-- una occurrence utilizzabile: anchor creato o riusato automaticamente;
-- più occurrence: scelta esplicita richiesta all'autore;
-- nessuna occurrence: contenuto contestuale, senza tappa inventata;
-- contenuto aggiunto dentro uno stop: quello stop è il `deliveryAnchor`.
+- una o più occurrence possono rendere disponibile una tappa fisica coerente;
+- l'autore decide esplicitamente se il contenuto debba diventare una tappa fisica e, quando necessario, quale occurrence usare;
+- nessuna occurrence implica contenuto contestuale, senza tappa inventata;
+- contenuto aggiunto dentro uno stop usa quello stop come `deliveryAnchor`.
 
-La route review usa VenueRelease e Layout pubblicati. Un percorso indoor non raggiungibile produce un blocker che rimanda a `Spazi e mappa`; la Visit non modifica il Layout. I trasferimenti inter-Venue richiedono una stima esplicita e non vengono inventati dal sistema.
+La route review usa VenueRelease e configurazione fisica pubblicata. Un percorso indoor non raggiungibile produce un blocker che rimanda a `Spazi e mappa`; la Visit non modifica il Layout. I trasferimenti inter-Venue richiedono una stima esplicita e non vengono inventati dal sistema.
 
 Lo stesso route review partecipa al consistency check autorevole e può bloccare review/pubblicazione della Visit.
 
 ## Navigator — Physical Domain integration
 
-Le azioni fisiche Navigator sono `AvailableAction` generate dalle definition del PhysicalVocabulary pinzato. Label e controlled-voice aliases provengono dal vocabulary; non esiste una enum globale di facility ArtAround.
+Le azioni fisiche Navigator sono `AvailableAction` generate dalle definition della PhysicalVocabularyRevision pinzata nella Session. Label e controlled-voice aliases provengono dal vocabulary; non esiste una enum globale di facility ArtAround.
 
-L'esecuzione fisica riusa lo stesso routing locale e gli stessi `PhysicalFeatureRef` risolti dal backend. MapProjection e navigation projection derivano dagli snapshot VenueRelease/Layout pinzati alla Session.
+Prima dello start, la preparation usa la dependency effettiva della Venue e rifiuta una dependency `needs_review`. Dopo lo start, MapProjection e navigation projection derivano dagli snapshot VenueRelease/Layout/PhysicalVocabularyRevision pinzati alla Session.
 
 Il runtime Action protocol resta l'unico command boundary della Session. I canali supportati includono `button`, `controlled_voice`, `natural_language` e `system`; un futuro resolver NL/LLM dovrà scegliere una delle `AvailableAction` correnti e inviarne l'`actionId`, senza costruire azioni fisiche arbitrarie.
 
@@ -135,10 +137,10 @@ Queste feature non vengono considerate implementate solo perché esistono i rela
 
 ## Verifica
 
-La fase di test del redesign è intenzionalmente separata. In questo stato non si dichiara una nuova suite green, una build verificata o CI green per il branch `codex/physical-domain-redesign`.
+La fase di hardening verifica separatamente contratti, test dedicati, check statici/build e CI. Nessun documento di stato deve dichiarare green una verifica che non sia stata realmente eseguita sul branch corrente.
 
-Le verifiche eseguite durante il redesign corrente sono audit statici dei contratti, delle dipendenze e dei boundary coinvolti. Test obsoleti o non ancora riallineati saranno trattati nella fase dedicata, insieme a build, seed verification e CI.
+Gli audit statici devono controllare in particolare che `authoredAgainst...` resti provenance, che i consumer `follow_current` risolvano la current pubblicata tramite i resolver condivisi e che snapshot/sessioni `pinned` continuino a usare revisioni esatte.
 
 ## Integrazione con `main`
 
-Il branch deve essere riconciliato con gli aggiornamenti successivi di `main` prima della merge finale. La riconciliazione deve preservare le modifiche Marketplace introdotte nel frattempo e risolvere semanticamente i file condivisi; non va effettuata mantenendo contratti fisici legacy per ridurre i conflitti.
+Il branch `feature/versioned-dependency-audit` è stato riallineato sopra gli aggiornamenti di `main` prima dell'hardening finale. Qualunque ulteriore avanzamento di `main` deve essere riconciliato semanticamente prima del merge, preservando i boundary Navigator/Marketplace correnti senza reintrodurre contratti legacy.

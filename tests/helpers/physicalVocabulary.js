@@ -1,6 +1,7 @@
 const PhysicalVocabulary = require("../../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../../models/physicalVocabularyRevision.model");
 const { applyPhysicalStarter } = require("../../services/physicalVocabularyStarter.service");
+const { buildValidation } = require("../../services/versionedSchemaDependency.service");
 
 async function createPublishedPhysicalVocabulary({ userId, ownerType = "user", ownerId = userId, name = "Vocabolario fisico di test" }) {
   const physicalVocabulary = await PhysicalVocabulary.create({
@@ -32,4 +33,26 @@ async function createPublishedPhysicalVocabulary({ userId, ownerType = "user", o
   };
 }
 
-module.exports = { createPublishedPhysicalVocabulary };
+async function bindPublishedVenuePhysicalVocabulary({
+  venue,
+  physicalVocabulary,
+  revision,
+  releaseId,
+  versionPolicy = "follow_current",
+}) {
+  venue.physicalVocabularyId = physicalVocabulary._id;
+  venue.physicalVocabularyDependency = {
+    versionPolicy,
+    pinnedRevisionId: versionPolicy === "pinned" ? revision._id : null,
+    validation: buildValidation({
+      consumerSnapshotId: releaseId,
+      dependencyRevisionId: revision._id,
+      issues: [],
+    }),
+  };
+  venue.publishedReleaseId = releaseId;
+  await venue.save();
+  return venue;
+}
+
+module.exports = { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary };

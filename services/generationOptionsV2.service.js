@@ -4,7 +4,6 @@ const Organization = require("../models/organization.model");
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
 const LayoutRevision = require("../models/layoutRevision.model");
-const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const ContentSpace = require("../models/contentSpace.model");
 const EditorialContext = require("../models/editorialContext.model");
 const EditorialRelease = require("../models/editorialRelease.model");
@@ -14,6 +13,10 @@ const AppError = require("../utils/AppError");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { nowWithin } = require("./capabilityAuthorization.service");
 const { projectRoutingNavigationOptions } = require("./routingProfileV2.service");
+const {
+  revalidateVenuePhysicalDependency,
+  revalidateEditorialContextNamespaceDependency,
+} = require("./schemaDependencyAudit.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -42,15 +45,24 @@ async function projectReadyVenues(selectedVenueIds = []) {
   const releaseById = new Map(releases.map((release) => [id(release._id), release]));
   const layoutIds = uniqueIds(releases.map((release) => release.layoutRevisionId));
   const layouts = layoutIds.length
-    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId authoredAgainstPhysicalVocabularyRevisionId").lean()
+    ? await LayoutRevision.find({ _id: { $in: layoutIds }, status: { $in: ["published", "superseded"] } }).select("_id venueId").lean()
     : [];
   const layoutById = new Map(layouts.map((layout) => [id(layout._id), layout]));
 
-  const readyVenues = venues.filter((venue) => {
+  const structurallyReady = venues.filter((venue) => {
     const release = releaseById.get(id(venue.publishedReleaseId));
     const layout = release ? layoutById.get(id(release.layoutRevisionId)) : null;
     return Boolean(release && layout && id(release.venueId) === id(venue._id) && id(layout.venueId) === id(venue._id));
   });
+  const dependencyChecks = await Promise.all(structurallyReady.map(async (venue) => {
+    try {
+      const result = await revalidateVenuePhysicalDependency({ venueId: venue._id });
+      return result?.validation?.status === "valid" ? venue : null;
+    } catch {
+      return null;
+    }
+  }));
+  const readyVenues = dependencyChecks.filter(Boolean);
   const readyIds = new Set(readyVenues.map((venue) => id(venue._id)));
   const unavailableSelected = selected.filter((venueId) => !readyIds.has(venueId));
   if (unavailableSelected.length) {
@@ -98,17 +110,9 @@ async function projectReadyVenues(selectedVenueIds = []) {
   };
 }
 
-async function projectRoutingControls({ selectedVenueIds, layoutByVenueId }) {
+async function projectRoutingControls({ selectedVenueIds }) {
   if (!selectedVenueIds.length) return { requirements: [], profilesByVenue: [] };
-  const layouts = selectedVenueIds.map((venueId) => layoutByVenueId.get(id(venueId))).filter(Boolean);
-  const revisionIds = uniqueIds(layouts.map((layout) => layout.authoredAgainstPhysicalVocabularyRevisionId));
-  const revisions = await PhysicalVocabularyRevision.find({
-    _id: { $in: revisionIds },
-    status: { $in: ["published", "superseded"] },
-    "integrity.status": "valid",
-  }).lean();
-  const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
-  return projectRoutingNavigationOptions({ selectedVenueIds, layoutByVenueId, revisionById });
+  return projectRoutingNavigationOptions({ selectedVenueIds });
 }
 
 async function ownerSummaries(contentSpaces) {
@@ -161,7 +165,7 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
   if (!ownedSpaceIds.length && !contextIds.length) return [];
 
   // Historical records must remain readable for pinned EditorialRelease sources.
-  // Live follow_current availability is enforced separately below on every live aggregate.
+  // Live resources are revalidated below before becoming selectable.
   const contexts = await EditorialContext.find({
     $or: [
       ...(ownedSpaceIds.length ? [{ contentSpaceId: { $in: ownedSpaceIds } }] : []),
@@ -204,6 +208,13 @@ async function resolveEditorialSourceOptions({ actorUserId, readyVenues }) {
     if (context.lifecycleStatus !== "active" || space.lifecycleStatus !== "active" || namespace.lifecycleStatus !== "active") continue;
     const currentRelease = currentReleaseById.get(id(context.publishedReleaseId));
     if (currentRelease && (actorOwnsSpace(space) || liveEntitledContextIds.has(id(context._id)))) {
+      let dependency = null;
+      try {
+        dependency = await revalidateEditorialContextNamespaceDependency({ editorialContextId: context._id });
+      } catch {
+        dependency = null;
+      }
+      if (!dependency?.validation || dependency.validation.status !== "valid") continue;
       sourceRows.push({
         contentSpace: space,
         context,

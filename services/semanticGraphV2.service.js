@@ -1,9 +1,12 @@
+const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+const Namespace = require("../models/namespace.model");
 const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
 const {
   materializeDirectEdge,
   materializeReverseEdge,
@@ -98,25 +101,35 @@ function validateGraphSnapshotAgainstNamespace({ subjectBindings = [], edges = [
   return issues;
 }
 
+async function resolveEffectiveGraphNamespaceRevision(revision, requestedNamespaceRevisionId = null) {
+  if (requestedNamespaceRevisionId) {
+    const namespaceRevision = await NamespaceRevision.findById(requestedNamespaceRevisionId).lean();
+    if (!namespaceRevision) throw new AppError("NamespaceRevision del graph non trovata", 409);
+    return namespaceRevision;
+  }
+  const semanticGraph = await SemanticGraph.findById(revision.semanticGraphId).lean();
+  if (!semanticGraph) throw new AppError("SemanticGraph della revisione non trovato", 409);
+  const namespace = await Namespace.findOne({ _id: semanticGraph.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace del graph non trovato", 409);
+  return loadEffectiveNamespaceRevision({ namespace, binding: semanticGraph.namespaceDependency });
+}
+
 async function loadSemanticGraphRevision(graphRevisionId, { namespaceRevisionId = null, bypassCache = false } = {}) {
-  const cacheKey = namespaceRevisionId
-    ? `${id(graphRevisionId)}::${id(namespaceRevisionId)}`
-    : id(graphRevisionId);
+  const revision = await SemanticGraphRevision.findById(graphRevisionId).lean();
+  if (!revision) throw new AppError("SemanticGraphRevision non trovata", 404);
+  const namespaceRevision = await resolveEffectiveGraphNamespaceRevision(revision, namespaceRevisionId);
+  const effectiveNamespaceRevisionId = namespaceRevision._id;
+  const cacheKey = `${id(graphRevisionId)}::${id(effectiveNamespaceRevisionId)}`;
   if (!bypassCache && graphCache.has(cacheKey)) {
     const cached = graphCache.get(cacheKey);
     touchCache(cacheKey, cached);
     return cached;
   }
 
-  const revision = await SemanticGraphRevision.findById(graphRevisionId).lean();
-  if (!revision) throw new AppError("SemanticGraphRevision non trovata", 404);
-  const effectiveNamespaceRevisionId = namespaceRevisionId || revision.authoredAgainstNamespaceRevisionId;
-  const [namespaceRevision, bindings, persistedEdges] = await Promise.all([
-    NamespaceRevision.findById(effectiveNamespaceRevisionId).lean(),
+  const [bindings, persistedEdges] = await Promise.all([
     GraphSubjectBinding.find({ graphRevisionId: revision._id }).lean(),
     SemanticEdgeV2.find({ graphRevisionId: revision._id }).lean(),
   ]);
-  if (!namespaceRevision) throw new AppError("NamespaceRevision del graph non trovata", 409);
 
   const subjectIds = new Set(bindings.map((binding) => id(binding.subjectId)));
   persistedEdges.forEach((edge) => {

@@ -1,6 +1,8 @@
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
+const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
 const {
   getSemanticGraphResource,
   findSemanticGraphResourceOrFail,
@@ -32,22 +34,25 @@ async function getSemanticGraphAuthoringProjection({ semanticGraphId, actorUserI
     throw new AppError("La revisione di lavoro del grafo non è disponibile", 409, [{ code: "SEMANTIC_GRAPH_WORKING_REVISION_NOT_AVAILABLE" }]);
   }
 
-  const namespaceRevision = await NamespaceRevision.findOne({
-    _id: graphRevision.authoredAgainstNamespaceRevisionId,
-    namespaceId: graph.namespaceId,
-  }).lean();
-  if (!namespaceRevision) {
-    throw new AppError("La revisione delle regole editoriali usata dal grafo non è disponibile", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_REVISION_NOT_AVAILABLE" }]);
+  const namespace = await Namespace.findOne({ _id: graph.namespaceId, lifecycleStatus: "active" }).lean();
+  if (!namespace) {
+    throw new AppError("Le regole editoriali del grafo non sono disponibili", 409, [{ code: "SEMANTIC_GRAPH_NAMESPACE_NOT_AVAILABLE" }]);
   }
+  const namespaceRevision = await loadEffectiveNamespaceRevision({
+    namespace,
+    binding: graph.namespaceDependency,
+  });
 
   return {
     ...resource,
+    namespaceDependency: projectDependencyState(graph.namespaceDependency),
     workingRevision: {
       id: graphRevision._id,
       version: graphRevision.version,
       basedOnRevisionId: graphRevision.basedOnRevisionId || null,
       authoredAgainstNamespaceRevisionId: graphRevision.authoredAgainstNamespaceRevisionId,
     },
+    effectiveNamespaceRevisionId: namespaceRevision._id,
     namespaceRevision: {
       id: namespaceRevision._id,
       version: namespaceRevision.version,

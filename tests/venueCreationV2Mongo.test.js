@@ -41,7 +41,7 @@ async function fixture(prefix) {
   return { user, organization };
 }
 
-test("configured Venue creation requires and pins an existing PhysicalVocabulary revision", { skip: !mongoUri }, async () => {
+test("configured Venue creation binds an existing PhysicalVocabulary lineage and authors against its effective revision", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     loadAllModels();
     const Venue = require("../models/venue.model");
@@ -59,7 +59,8 @@ test("configured Venue creation requires and pins an existing PhysicalVocabulary
     const preflight = await getVenueCreationPreflight({ organizationId: organization._id, actorUserId: user._id });
     assert.equal(preflight.allowed, true);
     assert.equal(preflight.choices.length, 1);
-    assert.equal(String(preflight.choices[0].physicalVocabularyRevisionId), String(physical.revision._id));
+    assert.equal(String(preflight.choices[0].physicalVocabularyId), String(physical.physicalVocabulary._id));
+    assert.equal(String(preflight.choices[0].effectiveRevisionId), String(physical.revision._id));
 
     const created = await createConfiguredVenue({
       actorUserId: user._id,
@@ -67,19 +68,22 @@ test("configured Venue creation requires and pins an existing PhysicalVocabulary
         ownerOrganizationId: organization._id,
         name: "Museo configurato",
         description: "Sede creata dal nuovo task applicativo.",
-        physicalVocabularyRevisionId: physical.revision._id,
+        physicalVocabularyId: physical.physicalVocabulary._id,
       },
     });
 
     const venue = await Venue.findById(created.venue.id).lean();
     assert.ok(venue);
+    assert.equal(String(venue.physicalVocabularyId), String(physical.physicalVocabulary._id));
+    assert.equal(venue.physicalVocabularyDependency.versionPolicy, "follow_current");
     assert.ok(venue.workingReleaseId);
     const release = await VenueRelease.findById(venue.workingReleaseId).lean();
     assert.ok(release);
     const layout = await LayoutRevision.findById(release.layoutRevisionId).lean();
     assert.ok(layout);
     assert.equal(String(layout.authoredAgainstPhysicalVocabularyRevisionId), String(physical.revision._id));
-    assert.equal(String(created.physicalVocabularyRevisionId), String(physical.revision._id));
+    assert.equal(String(created.physicalVocabularyId), String(physical.physicalVocabulary._id));
+    assert.equal(String(created.effectivePhysicalVocabularyRevisionId), String(physical.revision._id));
   });
 });
 
@@ -101,7 +105,7 @@ test("Venue creation preflight blocks creation when no PhysicalVocabulary is usa
         payload: {
           ownerOrganizationId: organization._id,
           name: "Sede da bloccare",
-          physicalVocabularyRevisionId: new mongoose.Types.ObjectId(),
+          physicalVocabularyId: new mongoose.Types.ObjectId(),
         },
       }),
       (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "PHYSICAL_VOCABULARY_REQUIRED"),
@@ -110,7 +114,7 @@ test("Venue creation preflight blocks creation when no PhysicalVocabulary is usa
   });
 });
 
-test("configured Venue creation rejects a revision outside the usable choices without leaving a Venue", { skip: !mongoUri }, async () => {
+test("configured Venue creation rejects a PhysicalVocabulary lineage outside the usable choices without leaving a Venue", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     loadAllModels();
     const User = require("../models/user");
@@ -128,7 +132,7 @@ test("configured Venue creation rejects a revision outside the usable choices wi
         payload: {
           ownerOrganizationId: organization._id,
           name: "Sede con scelta non valida",
-          physicalVocabularyRevisionId: unavailable.revision._id,
+          physicalVocabularyId: unavailable.physicalVocabulary._id,
         },
       }),
       (error) => error?.status === 409 && error?.details?.some((detail) => detail.code === "PHYSICAL_VOCABULARY_NOT_USABLE"),

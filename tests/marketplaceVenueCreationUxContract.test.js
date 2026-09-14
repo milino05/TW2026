@@ -35,7 +35,7 @@ test("la creazione Sede usa la shell condivisa in due passaggi", () => {
   assert.match(dialog, /Passaggio 1 di 2/);
   assert.match(dialog, /Passaggio 2 di 2/);
   assert.match(dialog, /venue-create-stepper/);
-  assert.match(dialog, /name="physicalVocabularyRevisionId"/);
+  assert.match(dialog, /name="physicalVocabularyId"/);
   assert.match(dialog, /Gestisci vocabolari fisici/);
   assert.match(dialog, /data-venue-create-back/);
   assert.doesNotMatch(dialog, /context-task-modal|data-venue-create-backdrop/);
@@ -43,7 +43,8 @@ test("la creazione Sede usa la shell condivisa in due passaggi", () => {
 
 test("il modal seleziona soltanto vocabolari esistenti e apre poi l'editor della Sede", () => {
   assert.match(dialog, /this\.preflight\?\.choices/);
-  assert.match(dialog, /physicalVocabularyRevisionId: this\.selectedRevisionId/);
+  assert.match(dialog, /physicalVocabularyId: this\.selectedVocabularyId/);
+  assert.doesNotMatch(dialog, /physicalVocabularyRevisionId: this\.selectedRevisionId/);
   assert.doesNotMatch(dialog, /mode:\s*["']starter["']/);
   assert.doesNotMatch(dialog, /mode:\s*["']blank["']/);
   assert.doesNotMatch(dialog, /createPhysicalVocabulary/);

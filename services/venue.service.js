@@ -10,6 +10,7 @@ const { assertVenuePermission, findVenueOrFail } = require("./venueAuthorization
 const { assertCanUseEditorialContextAsVenuePrimary } = require("./editorialContextUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { normalizeVenuePayload, validateVenuePayload } = require("./validation/venue.validation");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
 
 function sameId(a, b) { return String(a || "") === String(b || ""); }
 
@@ -21,6 +22,8 @@ function projectVenue(venue, { includeWorking = false } = {}) {
     description: source.description || "",
     ownerOrganizationId: source.ownerOrganizationId,
     primaryEditorialContextId: source.primaryEditorialContextId || null,
+    physicalVocabularyId: source.physicalVocabularyId || null,
+    physicalVocabularyDependency: projectDependencyState(source.physicalVocabularyDependency),
     publishedReleaseId: source.publishedReleaseId || null,
     lifecycleStatus: source.lifecycleStatus,
   };

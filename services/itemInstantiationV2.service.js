@@ -13,6 +13,7 @@ const { assertCanActForOwner } = require("./resourceOwnership.service");
 const { assertCanUseNamespaceForAuthoring } = require("./namespaceUsageAuthorization.service");
 const { assertCanForkItemEdition } = require("./itemUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
+const { bindingFromAccess } = require("./versionedSchemaDependency.service");
 const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
 const { normalizeRecognitionMedia, validateCreateItemPayload } = require("./validation/itemV2.validation");
 
@@ -108,24 +109,27 @@ async function createItem({ payload, actorUserId }) {
   return item;
 }
 
-async function resolveNamespaceRevision(namespace, requestedRevisionId = null) {
-  const revisionId = requestedRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
-  if (!revisionId) throw new AppError("Il Namespace non ha una revisione disponibile", 409);
-  const revision = await NamespaceRevision.findOne({ _id: revisionId, namespaceId: namespace._id });
-  if (!revision) throw new AppError("NamespaceRevision non trovata", 404);
+async function resolveNamespaceRevision(namespace) {
+  const revisionId = namespace.publishedRevisionId;
+  if (!revisionId) throw new AppError("Il Namespace non ha una revisione pubblicata disponibile", 409, [{ code: "PUBLISHED_NAMESPACE_REVISION_REQUIRED" }]);
+  const revision = await NamespaceRevision.findOne({
+    _id: revisionId,
+    namespaceId: namespace._id,
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  });
+  if (!revision) throw new AppError("NamespaceRevision pubblicata non disponibile", 409, [{ code: "PUBLISHED_NAMESPACE_REVISION_UNAVAILABLE" }]);
   return revision;
 }
 
 async function resolveNamespaceRevisionForAuthoring({ namespace, access }) {
-  if (access?.basis !== "entitlement") return resolveNamespaceRevision(namespace);
-  const ref = access.resolvedSnapshotRef;
-  if (ref?.resourceType !== "namespace_revision") {
-    throw new AppError("Entitlement Namespace senza snapshot di authoring", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
-  }
+  const ref = access?.resolvedSnapshotRef;
+  if (ref?.resourceType !== "namespace_revision") return resolveNamespaceRevision(namespace);
   const revision = await NamespaceRevision.findOne({
     _id: ref.resourceId,
     namespaceId: namespace._id,
     status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
   });
   if (!revision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_UNAVAILABLE" }]);
   return revision;
@@ -167,9 +171,7 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, con
   if (namespace.lifecycleStatus !== "active" && namespaceAccess.basis !== "entitlement") {
     throw new AppError("Namespace della Edition sorgente non disponibile", 409);
   }
-  const targetNamespaceRevision = namespaceAccess.basis === "entitlement"
-    ? await resolveNamespaceRevisionForAuthoring({ namespace, access: namespaceAccess })
-    : await resolveNamespaceRevision(namespace, sourceRevision.authoredAgainstNamespaceRevisionId);
+  const targetNamespaceRevision = await resolveNamespaceRevisionForAuthoring({ namespace, access: namespaceAccess });
   const compatibilityIssues = validatePresentationAgainstNamespace(sourceRevision, targetNamespaceRevision);
   if (compatibilityIssues.length) {
     throw new AppError("La revisione sorgente non e compatibile con la NamespaceRevision autorizzata", 409, [{
@@ -201,6 +203,10 @@ async function forkItem({ sourceItemId, sourceEditionId, ownerType, ownerId, con
     [forkedEdition] = await ItemEdition.create([{
       itemId: forkedItem._id,
       namespaceId: sourceEdition.namespaceId,
+      namespaceDependency: bindingFromAccess({
+        access: namespaceAccess,
+        effectiveRevisionId: targetNamespaceRevision._id,
+      }),
       createdBy: actorUserId,
     }], { session });
     const presentation = clonePresentationForFork(sourceRevision);

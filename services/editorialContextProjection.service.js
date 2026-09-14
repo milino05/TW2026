@@ -3,6 +3,7 @@ const Organization = require("../models/organization.model");
 const EditorialRelease = require("../models/editorialRelease.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
 
 function buildEditorialContextSummary({ editorialContext, contentSpace, namespace, curator, stats = { availableItemCount: 0, subjectCount: 0 } }) {
   return {
@@ -11,6 +12,7 @@ function buildEditorialContextSummary({ editorialContext, contentSpace, namespac
     shortDescription: editorialContext.shortDescription ?? null,
     contentSpace: { id: contentSpace._id, name: contentSpace.name },
     namespace: { id: namespace._id, name: namespace.name },
+    namespaceDependency: projectDependencyState(editorialContext.namespaceDependency),
     curator,
     stats,
   };

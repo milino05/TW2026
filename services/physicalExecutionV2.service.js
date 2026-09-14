@@ -7,7 +7,8 @@ const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
 const { placesForPhysicalFeature } = require("./venueRouting.service");
-const { loadLayoutPhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
+const { loadPhysicalVocabularyRevisionBundle } = require("./layoutPhysicalVocabulary.service");
+const { revalidateVenuePhysicalDependency } = require("./schemaDependencyAudit.service");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
 const { compileVenueControlSelections } = require("./venueRoutingControlSelectionV2.service");
@@ -127,7 +128,7 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
   if (targets.length !== targetIds.length) throw new AppError("Uno o piu VenueTarget della sorgente non esistono", 409, [{ code: "VENUE_TARGET_MISSING_AT_SESSION_START" }]);
   const targetById = new Map(targets.map((entry) => [id(entry._id), entry]));
   const venueIds = uniqueIds(targets.map((entry) => entry.venueId));
-  const venues = await Venue.find({ _id: { $in: venueIds }, lifecycleStatus: "active" }).lean();
+  const venues = await Venue.find({ _id: { $in: venueIds }, lifecycleStatus: "active" });
   if (venues.length !== venueIds.length) throw new AppError("Una Venue richiesta dalla visita non e disponibile", 409);
   const venueById = new Map(venues.map((entry) => [id(entry._id), entry]));
   const venuePins = [], bundleByVenueId = new Map();
@@ -138,15 +139,28 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
     if (!release || release.integrity?.status !== "valid") throw new AppError("VenueRelease corrente non utilizzabile", 409, [{ code: "VENUE_RELEASE_INVALID", context: { venueId } }]);
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non disponibile", 409);
-    const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
+    const dependency = await revalidateVenuePhysicalDependency({ venueId: venue._id });
+    if (!dependency?.validation || dependency.validation.status !== "valid") {
+      throw new AppError("La configurazione fisica corrente della Venue richiede revisione", 409, dependency?.validation?.issues?.length
+        ? dependency.validation.issues
+        : [{ code: "VENUE_PHYSICAL_DEPENDENCY_NEEDS_REVIEW", context: { venueId } }]);
+    }
+    const vocabularyBundle = await loadPhysicalVocabularyRevisionBundle(dependency.dependencyRevision._id, { requireStable: true });
+    const physicalVocabulary = vocabularyBundle.physicalVocabulary;
+    const physicalVocabularyRevision = vocabularyBundle.revision;
     const resolutionByTarget = new Map();
     for (const target of targets.filter((entry) => id(entry.venueId) === venueId)) {
       if (target.lifecycleStatus !== "active") throw new AppError("VenueTarget non disponibile nella VenueRelease corrente", 409, [{ code: "VENUE_TARGET_UNAVAILABLE_AT_SESSION_START", context: { venueId, venueTargetId: target._id } }]);
       resolutionByTarget.set(id(target._id), resolveVenueTargetExhibit({ venueRelease: release, layoutRevision: layout, venueTargetId: target._id }));
     }
-    const pin = { venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id };
+    const pin = {
+      venueId: venue._id,
+      venueReleaseId: release._id,
+      layoutRevisionId: layout._id,
+      physicalVocabularyRevisionId: physicalVocabularyRevision._id,
+    };
     venuePins.push(pin);
-    bundleByVenueId.set(venueId, { venue, release, layout, physicalVocabulary, physicalVocabularyRevision, resolutionByTarget });
+    bundleByVenueId.set(venueId, { venue: venue.toObject ? venue.toObject() : venue, release, layout, physicalVocabulary, physicalVocabularyRevision, resolutionByTarget });
   }
   return { venuePins, targetById, bundleByVenueId };
 }
@@ -242,14 +256,22 @@ async function materializeSessionPhysicalPlan({ sourceAnchors = [], sourceLegHin
 async function loadPinnedBundle(session, venueId) {
   const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(venueId));
   if (!pin) throw new AppError("Venue non pinzata nella Session", 409);
-  const [venue, release, layout] = await Promise.all([
+  if (!pin.physicalVocabularyRevisionId) throw new AppError("VenuePin senza PhysicalVocabularyRevision", 409, [{ code: "PINNED_PHYSICAL_VOCABULARY_REVISION_REQUIRED" }]);
+  const [venue, release, layout, vocabularyBundle] = await Promise.all([
     Venue.findById(pin.venueId).lean(),
     VenueRelease.findOne({ _id: pin.venueReleaseId, venueId: pin.venueId }).lean(),
     LayoutRevision.findOne({ _id: pin.layoutRevisionId, venueId: pin.venueId }).lean(),
+    loadPhysicalVocabularyRevisionBundle(pin.physicalVocabularyRevisionId, { requireStable: true }),
   ]);
   if (!venue || !release || !layout) throw new AppError("Snapshot fisica pinzata dalla Session non disponibile", 409);
-  const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
-  return { pin, venue, release, layout, physicalVocabulary, physicalVocabularyRevision };
+  return {
+    pin,
+    venue,
+    release,
+    layout,
+    physicalVocabulary: vocabularyBundle.physicalVocabulary,
+    physicalVocabularyRevision: vocabularyBundle.revision,
+  };
 }
 
 async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, physicalFeatureRef }) {
@@ -279,6 +301,7 @@ async function routeToPhysicalFeatureInSession({ session, venueId, fromPlaceId, 
     venueId: bundle.pin.venueId,
     venueReleaseId: bundle.pin.venueReleaseId,
     layoutRevisionId: bundle.pin.layoutRevisionId,
+    physicalVocabularyRevisionId: bundle.pin.physicalVocabularyRevisionId,
     requestedPhysicalFeatureRef: physicalFeatureRef,
     physicalFeatureRef: { kind: "local", physicalVocabularyId: bundle.physicalVocabulary._id, definitionId: best.destination.placeTypeDefinitionId },
     destination: best.destination,

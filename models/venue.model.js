@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const versionedSchemaDependencySchema = require("../schemas/versionedSchemaDependency.schema");
 const { Schema } = mongoose;
 
 const VenueSchema = new Schema({
@@ -6,6 +7,8 @@ const VenueSchema = new Schema({
   description: { type: String, trim: true, default: "" },
   ownerOrganizationId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, immutable: true, index: true },
   primaryEditorialContextId: { type: Schema.Types.ObjectId, ref: "EditorialContext", default: null, index: true },
+  physicalVocabularyId: { type: Schema.Types.ObjectId, ref: "PhysicalVocabulary", default: null, index: true },
+  physicalVocabularyDependency: { type: versionedSchemaDependencySchema({ revisionRef: "PhysicalVocabularyRevision" }), default: null },
   workingReleaseId: { type: Schema.Types.ObjectId, ref: "VenueRelease", default: null, index: true },
   publishedReleaseId: { type: Schema.Types.ObjectId, ref: "VenueRelease", default: null, index: true },
   lifecycleStatus: { type: String, enum: ["active", "trashed"], default: "active", index: true },
@@ -15,5 +18,6 @@ const VenueSchema = new Schema({
 }, { timestamps: true });
 
 VenueSchema.index({ ownerOrganizationId: 1, lifecycleStatus: 1, name: 1 });
+VenueSchema.index({ physicalVocabularyId: 1, lifecycleStatus: 1 });
 
 module.exports = mongoose.model("Venue", VenueSchema);

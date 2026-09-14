@@ -1,8 +1,12 @@
 const mongoose = require("mongoose");
+const versionedSchemaDependencySchema = require("../schemas/versionedSchemaDependency.schema");
 const { Schema } = mongoose;
+
+const defaultNamespaceDependency = () => ({ versionPolicy: "follow_current", pinnedRevisionId: null, validation: null });
 
 const SemanticGraphSchema = new Schema({
   namespaceId: { type: Schema.Types.ObjectId, ref: "Namespace", required: true, index: true, immutable: true },
+  namespaceDependency: { type: versionedSchemaDependencySchema({ revisionRef: "NamespaceRevision" }), default: defaultNamespaceDependency },
   displayName: { type: String, required: true, trim: true, index: true },
   description: { type: String, trim: true, default: null },
   ownerType: { type: String, enum: ["user", "organization"], required: true, index: true, immutable: true },

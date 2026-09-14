@@ -106,10 +106,10 @@ rejectPattern(
   "Item authoring round-trip must preserve dangling Subject references",
 );
 
-// A new Editorial Studio collection must resolve its Namespace through the same
-// capability boundary used by other editorial-context writes. This includes pinned
-// Entitlements: the authorized NamespaceRevision is persisted into the initial graph,
-// rather than silently switching to the Namespace's current live revision.
+// New editorial aggregates must bind to the Namespace lineage through the same
+// capability/version policy boundary used by all later consumers. The immutable
+// authoredAgainst field records provenance of each snapshot; it is not the forever-current
+// operational dependency of a follow_current aggregate.
 requirePattern(
   "services/editorialStudioCreationV2.service.js",
   /assertCanUseNamespaceForEditorialContext/,
@@ -117,13 +117,47 @@ requirePattern(
 );
 requirePattern(
   "services/editorialStudioCreationV2.service.js",
-  /resolvedSnapshotRef/,
-  "Editorial Studio authorized Namespace snapshot",
+  /bindingFromAccess/,
+  "Editorial Studio Namespace version-policy binding",
+);
+requirePattern(
+  "services/editorialStudioCreationV2.service.js",
+  /namespaceDependency/,
+  "Editorial Studio persisted Namespace dependency",
 );
 requirePattern(
   "services/editorialStudioCreationV2.service.js",
   /authoredAgainstNamespaceRevisionId:\s*namespaceRevision\._id/,
-  "Editorial Studio initial graph NamespaceRevision pin",
+  "Editorial Studio initial graph Namespace authoring provenance",
+);
+rejectPattern(
+  "services/editorialStudioCreationV2.service.js",
+  /namespace\.workingRevisionId\s*\|\|\s*namespace\.publishedRevisionId/,
+  "Editorial Studio must not bind another aggregate to a Namespace draft",
+);
+
+for (const file of [
+  "services/itemAuthoringV2.service.js",
+  "services/editorialStudioV2.service.js",
+  "services/editorialGraphCommand.service.js",
+]) {
+  requirePattern(file, /loadEffectiveNamespaceRevision/, "Effective Namespace resolver contract");
+}
+
+requirePattern(
+  "services/schemaDependencyAudit.service.js",
+  /evaluateItemRevisionNamespaceDependency/,
+  "Exact ItemRevision Namespace compatibility evaluator",
+);
+requirePattern(
+  "services/sessionPlanV2.service.js",
+  /evaluateItemRevisionNamespaceDependency/,
+  "Session direct-content Namespace dependency evaluation",
+);
+rejectPattern(
+  "services/sessionPlanV2.service.js",
+  /release\?\.namespaceRevisionId\s*\|\|\s*revision\.authoredAgainstNamespaceRevisionId/,
+  "Session must not treat Item authoredAgainst provenance as current Namespace dependency",
 );
 
 if (failed) process.exit(1);

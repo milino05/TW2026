@@ -14,6 +14,7 @@ const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./conte
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { recordAdoptionFromAccess } = require("./marketplaceAdoptionV2.service");
 const { projectEditorialContext } = require("./editorialContextProjection.service");
+const { bindingFromAccess } = require("./versionedSchemaDependency.service");
 
 function clean(value) { return String(value || "").trim(); }
 function sameId(left, right) { return String(left || "") === String(right || ""); }
@@ -273,14 +274,23 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
   const authorizedNamespaceRef = namespaceAccess?.resolvedSnapshotRef;
   const namespaceRevisionId = authorizedNamespaceRef?.resourceType === "namespace_revision"
     ? authorizedNamespaceRef.resourceId
-    : namespace.workingRevisionId || namespace.publishedRevisionId;
+    : namespace.publishedRevisionId;
   if (!namespaceRevisionId) {
-    throw new AppError("Le regole editoriali non hanno una revisione utilizzabile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
+    throw new AppError("Le regole editoriali non hanno una revisione pubblicata utilizzabile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
   }
-  const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: namespace._id }).lean();
+  const namespaceRevision = await NamespaceRevision.findOne({
+    _id: namespaceRevisionId,
+    namespaceId: namespace._id,
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  }).lean();
   if (!namespaceRevision) {
     throw new AppError("La revisione delle regole editoriali non è disponibile", 409, [{ code: "NAMESPACE_REVISION_NOT_AVAILABLE" }]);
   }
+  const namespaceDependency = bindingFromAccess({
+    access: namespaceAccess,
+    effectiveRevisionId: namespaceRevision._id,
+  });
 
   let semanticGraph = null;
   let editorialContext = null;
@@ -288,6 +298,7 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
     await mongoose.connection.transaction(async (session) => {
       [semanticGraph] = await SemanticGraph.create([{
         namespaceId: namespace._id,
+        namespaceDependency,
         displayName: `${displayName} · grafo`,
         description: null,
         ownerType,
@@ -309,6 +320,7 @@ async function createEditorialStudioCollection({ payload, actorUserId }) {
       [editorialContext] = await EditorialContext.create([{
         contentSpaceId: contentSpace._id,
         namespaceId: namespace._id,
+        namespaceDependency,
         semanticGraphId: semanticGraph._id,
         displayName,
         shortDescription,

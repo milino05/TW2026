@@ -1,7 +1,6 @@
 const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Namespace = require("../models/namespace.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const Subject = require("../models/subject.model");
 const User = require("../models/user");
 const Organization = require("../models/organization.model");
@@ -11,6 +10,9 @@ const itemService = require("./itemV2.service");
 const { listContentSpaces } = require("./contentSpace.service");
 const { resolveActorPrincipals } = require("./principalResolution.service");
 const { projectEditorialWorkflowOperations } = require("./editorialWorkflowOperationsV2.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
+const { collectRevisionSubjectIds, validateReferencedSubjects } = require("./itemRevisionSubjectIntegrity.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -27,41 +29,6 @@ function projectIllustrativeMedia(media) {
     source: media.source || null,
     rights: media.rights || null,
   };
-}
-
-function collectRevisionSubjectRefs(revision) {
-  const refs = [];
-  for (const [index, subjectId] of (revision?.relatedSubjectIds || []).entries()) {
-    refs.push({ subjectId: id(subjectId), field: `relatedSubjectIds[${index}]` });
-  }
-  for (const [variantIndex, variant] of (revision?.presentationVariants || []).entries()) {
-    for (const [focusIndex, focus] of (variant.semanticFocus || []).entries()) {
-      refs.push({ subjectId: id(focus.subjectId), field: `presentationVariants[${variantIndex}].semanticFocus[${focusIndex}].subjectId` });
-    }
-    for (const [requirementIndex, requirement] of (variant.knowledgeRequirements || []).entries()) {
-      refs.push({ subjectId: id(requirement.subjectId), field: `presentationVariants[${variantIndex}].knowledgeRequirements[${requirementIndex}].subjectId` });
-    }
-  }
-  return [...new Map(refs.filter((entry) => entry.subjectId).map((entry) => [entry.subjectId, entry])).values()];
-}
-
-function collectRevisionSubjectIds(revision) {
-  return collectRevisionSubjectRefs(revision).map((entry) => entry.subjectId);
-}
-
-async function validateReferencedSubjects(revision) {
-  const refs = collectRevisionSubjectRefs(revision);
-  if (!refs.length) return [];
-  const existing = await Subject.find({ _id: { $in: refs.map((entry) => entry.subjectId) } }).select("_id").lean();
-  const found = new Set(existing.map((entry) => id(entry)));
-  return refs
-    .filter((entry) => !found.has(entry.subjectId))
-    .map((entry) => ({
-      field: entry.field,
-      code: "SUBJECT_REFERENCE_NOT_FOUND",
-      message: "Un Subject referenziato dalla revisione non esiste",
-      context: { subjectId: entry.subjectId },
-    }));
 }
 
 async function checkEditionConsistency({ editionId, actorUserId }) {
@@ -197,6 +164,7 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     editionSummaries.push({
       id: edition._id,
       namespace: namespace ? { id: namespace._id, name: namespace.name } : null,
+      namespaceDependency: projectDependencyState(edition.namespaceDependency),
       workingRevisionId: edition.workingRevisionId || null,
       publishedRevisionId: edition.publishedRevisionId || null,
     });
@@ -210,21 +178,27 @@ async function getItemAuthoringProjection({ itemId, editionId = null, actorUserI
     workflowRevision = revision;
     const namespace = await Namespace.findOne({ _id: selectedEdition.namespaceId, lifecycleStatus: "active" }).lean();
     if (!namespace) throw new AppError("Namespace della Edition non disponibile", 409);
-    const namespaceRevisionId = revision?.authoredAgainstNamespaceRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
-    const namespaceRevision = namespaceRevisionId ? await NamespaceRevision.findById(namespaceRevisionId).lean() : null;
-    if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non disponibile", 409);
+    const namespaceRevision = await loadEffectiveNamespaceRevision({
+      namespace,
+      binding: selectedEdition.namespaceDependency,
+      requireStable: true,
+    });
     const maps = definitionMaps(namespaceRevision);
     const referencedSubjectIds = revision ? collectRevisionSubjectIds(revision) : [];
     const referencedSubjects = referencedSubjectIds.length ? await Subject.find({ _id: { $in: referencedSubjectIds } }).lean() : [];
     const subjectById = new Map(referencedSubjects.map((entry) => [id(entry), entry]));
     selected = {
-      edition: { id: selectedEdition._id },
+      edition: {
+        id: selectedEdition._id,
+        namespaceDependency: projectDependencyState(selectedEdition.namespaceDependency),
+      },
       namespace: projectNamespaceControls(namespace, namespaceRevision),
       revision: revision ? {
         id: revision._id,
         version: revision.version,
         status: revision.status,
         integrity: revision.integrity,
+        authoredAgainstNamespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
         label: revision.label,
         relatedSubjects: (revision.relatedSubjectIds || []).map((subjectId) => projectSubject(subjectById.get(id(subjectId))) || { id: subjectId, missing: true }),
         authorCredits: revision.authorCredits || [],

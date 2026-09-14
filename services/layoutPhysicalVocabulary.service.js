@@ -1,8 +1,10 @@
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
 const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
+const Venue = require("../models/venue.model");
 const AppError = require("../utils/AppError");
 const { assertOrganizationPermission } = require("./organizationAuthorization.service");
 const { assertCanUsePhysicalVocabularyForAuthoring } = require("./physicalVocabularyUsageAuthorization.service");
+const { effectiveRevisionId, assertDependencyReady } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 
@@ -57,15 +59,56 @@ async function assertCanAuthorLayoutAgainstRevision({ physicalVocabularyRevision
   return { ...bundle, access };
 }
 
-async function loadLayoutPhysicalVocabulary(layout, options = {}) {
-  if (!layout?.authoredAgainstPhysicalVocabularyRevisionId) {
-    throw new AppError("LayoutRevision senza PhysicalVocabularyRevision pinzata", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_REVISION_REQUIRED" }]);
+async function loadVenuePhysicalVocabulary(venue, options = {}) {
+  const {
+    requireValidatedConsumer = false,
+    consumerSnapshotId = venue?.publishedReleaseId || null,
+    ...bundleOptions
+  } = options || {};
+  if (!venue?.physicalVocabularyId) {
+    throw new AppError("Venue senza PhysicalVocabulary lineage", 409, [{ code: "VENUE_PHYSICAL_VOCABULARY_REQUIRED" }]);
   }
-  return loadPhysicalVocabularyRevisionBundle(layout.authoredAgainstPhysicalVocabularyRevisionId, options);
+  const physicalVocabulary = await PhysicalVocabulary.findById(venue.physicalVocabularyId);
+  if (!physicalVocabulary) {
+    throw new AppError("PhysicalVocabulary della Venue non disponibile", 409, [{ code: "PHYSICAL_VOCABULARY_NOT_AVAILABLE" }]);
+  }
+  const revisionId = effectiveRevisionId({
+    binding: venue.physicalVocabularyDependency,
+    publishedRevisionId: physicalVocabulary.publishedRevisionId,
+  });
+  const bundle = await loadPhysicalVocabularyRevisionBundle(revisionId, bundleOptions);
+  if (id(bundle.physicalVocabulary._id) !== id(venue.physicalVocabularyId)) {
+    throw new AppError("La revisione fisica effettiva non appartiene al PhysicalVocabulary della Venue", 409, [{ code: "PHYSICAL_VOCABULARY_LINEAGE_MISMATCH" }]);
+  }
+  if (requireValidatedConsumer) {
+    assertDependencyReady({
+      binding: venue.physicalVocabularyDependency,
+      consumerSnapshotId,
+      dependencyRevisionId: bundle.revision._id,
+      codePrefix: "PHYSICAL_VOCABULARY_DEPENDENCY",
+      field: "physicalVocabularyDependency",
+    });
+  }
+  return bundle;
+}
+
+async function loadLayoutPhysicalVocabulary(layout, options = {}) {
+  const { historical = false, ...bundleOptions } = options || {};
+  if (!historical && layout?.venueId) {
+    const venue = await Venue.findById(layout.venueId);
+    if (venue?.physicalVocabularyId && venue.physicalVocabularyDependency) {
+      return loadVenuePhysicalVocabulary(venue, bundleOptions);
+    }
+  }
+  if (!layout?.authoredAgainstPhysicalVocabularyRevisionId) {
+    throw new AppError("LayoutRevision senza PhysicalVocabularyRevision di authoring", 409, [{ code: "LAYOUT_PHYSICAL_VOCABULARY_REVISION_REQUIRED" }]);
+  }
+  return loadPhysicalVocabularyRevisionBundle(layout.authoredAgainstPhysicalVocabularyRevisionId, bundleOptions);
 }
 
 module.exports = {
   loadPhysicalVocabularyRevisionBundle,
   assertCanAuthorLayoutAgainstRevision,
+  loadVenuePhysicalVocabulary,
   loadLayoutPhysicalVocabulary,
 };

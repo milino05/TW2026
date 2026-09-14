@@ -1,3 +1,5 @@
+const Venue = require("../models/venue.model");
+const { loadVenuePhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { semanticSignature, exactSemanticRefs } = require("./physicalVocabularyResolver.service");
 const {
   NAVIGATION_SEMANTIC_SCHEME,
@@ -125,13 +127,25 @@ function canonicalNeedSupportProjection(revision) {
     };
   });
 }
-function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueId = new Map(), revisionById = new Map() }) {
+async function projectRoutingNavigationOptions({ selectedVenueIds = [] }) {
   const selected = selectedVenueIds.map(String);
+  if (!selected.length) return { requirements: [], profilesByVenue: [] };
+  const venues = await Venue.find({ _id: { $in: selected }, lifecycleStatus: "active" }).lean();
+  const venueById = new Map(venues.map((venue) => [id(venue._id), venue]));
   const revisionForVenue = new Map();
   for (const venueId of selected) {
-    const layout = layoutByVenueId.get(venueId);
-    const revision = layout ? revisionById.get(id(layout.authoredAgainstPhysicalVocabularyRevisionId)) : null;
-    if (revision) revisionForVenue.set(venueId, revision);
+    const venue = venueById.get(venueId);
+    if (!venue) continue;
+    try {
+      const bundle = await loadVenuePhysicalVocabulary(venue, {
+        requireStable: true,
+        requireValidatedConsumer: Boolean(venue.publishedReleaseId),
+        consumerSnapshotId: venue.publishedReleaseId || null,
+      });
+      revisionForVenue.set(venueId, bundle.revision.toObject ? bundle.revision.toObject() : bundle.revision);
+    } catch {
+      // Una Venue senza dependency fisica corrente e validata non espone controlli di routing.
+    }
   }
   if (revisionForVenue.size !== selected.length) return { requirements: [], profilesByVenue: [] };
   const selectedRevisions = selected.map((venueId) => revisionForVenue.get(venueId));

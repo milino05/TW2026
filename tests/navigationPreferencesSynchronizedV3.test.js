@@ -98,6 +98,7 @@ test("la sessione sincronizzata congela lo snapshot di navigazione deciso dall'h
         venueId,
         venueReleaseId: new mongoose.Types.ObjectId(),
         layoutRevisionId: new mongoose.Types.ObjectId(),
+        physicalVocabularyRevisionId: new mongoose.Types.ObjectId(),
       }],
       navigationSnapshot,
       sessionMovementSpeedMps: 1,

@@ -10,6 +10,7 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const Subject = require("../models/subject.model");
 const SemanticGraph = require("../models/semanticGraph.model");
+const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
 const AppError = require("../utils/AppError");
 const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./contentSpace.service");
@@ -18,8 +19,8 @@ const { loadSemanticGraphRevision, validateGraphSnapshotAgainstNamespace } = req
 const { writeSemanticGraphSnapshot } = require("./semanticGraphSnapshotWriter.service");
 const { loadCompatibleGraph } = require("./editorialStudioCreationV2.service");
 const { findContextOrFail, assertWorkingStateEditable } = require("./editorialContextEntry.service");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const { canonicalEdgeKey, canonicalEdgeParts, relationDefinition } = require("./semanticEdgeIdentity.service");
+const { revalidateSemanticGraphNamespaceDependency } = require("./schemaDependencyAudit.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function sameId(left, right) { return id(left) === id(right); }
@@ -185,6 +186,27 @@ async function buildImportPreview({ sourceGraph, sourceSnapshot, contentSpace, n
   };
 }
 
+async function assertLiveGraphDependencyReady(semanticGraphId) {
+  const audit = await revalidateSemanticGraphNamespaceDependency({ semanticGraphId });
+  if (!audit?.validation || audit.validation.status !== "valid") {
+    throw new AppError("La sorgente semantica richiede revisione rispetto alle Regole editoriali correnti", 409, [{
+      code: "SEMANTIC_GRAPH_DEPENDENCY_REVIEW_REQUIRED",
+      context: { semanticGraphId, issues: audit?.validation?.issues || [] },
+    }]);
+  }
+  return audit;
+}
+
+async function loadPinnedGraphSnapshot(graphRevisionId) {
+  const revision = await SemanticGraphRevision.findById(graphRevisionId).select("authoredAgainstNamespaceRevisionId semanticGraphId").lean();
+  if (!revision?.authoredAgainstNamespaceRevisionId) {
+    throw new AppError("La revisione semantica pinzata non espone la propria baseline Namespace", 409, [{ code: "PINNED_GRAPH_NAMESPACE_REVISION_REQUIRED" }]);
+  }
+  return loadSemanticGraphRevision(graphRevisionId, {
+    namespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
+  });
+}
+
 async function previewSemanticGraphImport({
   actorUserId,
   sourceSemanticGraphId,
@@ -217,6 +239,7 @@ async function previewSemanticGraphImport({
   if (semanticGraph && sameId(sourceGraph._id, semanticGraph._id)) {
     throw new AppError("Il grafo locale della Raccolta non può essere usato come propria sorgente", 409, [{ code: "SEMANTIC_GRAPH_IMPORT_SELF_SOURCE" }]);
   }
+  await assertLiveGraphDependencyReady(sourceGraph._id);
   const sourceSnapshot = await loadSemanticGraphRevision(sourceGraph.workingRevisionId);
   return buildImportPreview({ sourceGraph, sourceSnapshot, contentSpace, namespaceId, context, semanticGraph });
 }
@@ -227,7 +250,7 @@ async function loadPinnedSources(editorialContextId) {
   for (const source of sourceRows) {
     const [sourceGraph, sourceSnapshot] = await Promise.all([
       SemanticGraph.findById(source.sourceSemanticGraphId).lean(),
-      loadSemanticGraphRevision(source.sourceGraphRevisionId),
+      loadPinnedGraphSnapshot(source.sourceGraphRevisionId),
     ]);
     if (!sourceGraph) continue;
     results.push({ source, sourceGraph, sourceSnapshot });
@@ -237,10 +260,10 @@ async function loadPinnedSources(editorialContextId) {
 
 async function localGraphAndNamespace({ context, semanticGraph }) {
   const localGraph = semanticGraph.workingRevisionId ? await loadSemanticGraphRevision(semanticGraph.workingRevisionId) : null;
-  const namespaceRevisionId = localGraph?.revision?.authoredAgainstNamespaceRevisionId;
-  if (!namespaceRevisionId) throw new AppError("Il grafo locale non ha una revisione delle Regole editoriali", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
-  const namespaceRevision = await NamespaceRevision.findOne({ _id: namespaceRevisionId, namespaceId: context.namespaceId }).lean();
-  if (!namespaceRevision) throw new AppError("Revisione delle Regole editoriali non disponibile", 409);
+  const namespaceRevision = localGraph?.namespaceRevision || null;
+  if (!namespaceRevision || !sameId(namespaceRevision.namespaceId, context.namespaceId)) {
+    throw new AppError("Revisione effettiva delle Regole editoriali non disponibile", 409, [{ code: "NAMESPACE_REVISION_REQUIRED" }]);
+  }
   return { localGraph, namespaceRevision };
 }
 
@@ -312,6 +335,7 @@ async function attachEditorialGraphImportSource({ editorialContextId, sourceSema
   if (sameId(sourceGraph._id, semanticGraph._id)) {
     throw new AppError("Il grafo locale della Raccolta non può essere usato come propria sorgente", 409, [{ code: "SEMANTIC_GRAPH_IMPORT_SELF_SOURCE" }]);
   }
+  await assertLiveGraphDependencyReady(sourceGraph._id);
 
   let source = await EditorialGraphImportSource.findOne({ editorialContextId: context._id, sourceSemanticGraphId: sourceGraph._id });
   if (!source) {
@@ -324,7 +348,7 @@ async function attachEditorialGraphImportSource({ editorialContextId, sourceSema
       updatedBy: actorUserId,
     });
   }
-  const sourceSnapshot = await loadSemanticGraphRevision(source.sourceGraphRevisionId);
+  const sourceSnapshot = await loadPinnedGraphSnapshot(source.sourceGraphRevisionId);
   return {
     source,
     preview: await buildImportPreview({ sourceGraph, sourceSnapshot, contentSpace, namespaceId: context.namespaceId, context, semanticGraph }),
@@ -375,9 +399,10 @@ async function previewEditorialGraphImportSourceUpdate({ editorialContextId, sou
     ownerId: contentSpace.ownerId,
     namespaceId: context.namespaceId,
   });
+  await assertLiveGraphDependencyReady(sourceGraph._id);
   const [{ namespaceRevision }, currentSnapshot, nextSnapshot] = await Promise.all([
     localGraphAndNamespace({ context, semanticGraph }),
-    loadSemanticGraphRevision(source.sourceGraphRevisionId),
+    loadPinnedGraphSnapshot(source.sourceGraphRevisionId),
     loadSemanticGraphRevision(sourceGraph.workingRevisionId),
   ]);
   return {
@@ -405,6 +430,7 @@ async function updateEditorialGraphImportSource({ editorialContextId, sourceId, 
   if (sameId(source.sourceGraphRevisionId, sourceGraph.workingRevisionId)) {
     return { source, updated: false, activatedRelationCount: 0, graphRevisionId: semanticGraph.workingRevisionId };
   }
+  await assertLiveGraphDependencyReady(sourceGraph._id);
 
   const { localGraph, namespaceRevision } = await localGraphAndNamespace({ context, semanticGraph });
   const snapshot = cloneGraphSnapshot(localGraph);
@@ -463,7 +489,7 @@ async function importEditorialGraphSubjects({ editorialContextId, sourceId, item
     throw new AppError("La sorgente non appartiene al grafo locale corrente", 409, [{ code: "SEMANTIC_GRAPH_IMPORT_TARGET_MISMATCH" }]);
   }
 
-  const sourceSnapshot = await loadSemanticGraphRevision(source.sourceGraphRevisionId);
+  const sourceSnapshot = await loadPinnedGraphSnapshot(source.sourceGraphRevisionId);
   const { localGraph, namespaceRevision } = await localGraphAndNamespace({ context, semanticGraph });
   const objectIds = normalizedItemIds.map((value) => new mongoose.Types.ObjectId(value));
   const [spaceMemberships, items] = await Promise.all([

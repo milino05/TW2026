@@ -15,6 +15,7 @@ const LayoutRevision = require("../models/layoutRevision.model");
 const VenueRelease = require("../models/venueRelease.model");
 const { applyPhysicalStarter } = require("../services/physicalVocabularyStarter.service");
 const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");
+const { buildValidation } = require("../services/versionedSchemaDependency.service");
 const { ensureStarterRoles, replaceMembershipWithStarterRole } = require("../services/organizationBootstrap.service");
 const { ensureVisitAuthoringPlaygroundMap } = require("./visitAuthoringPlaygroundMap");
 
@@ -298,6 +299,16 @@ async function seedVisitAuthoringPlayground({ username = "visitatore1", floorPla
     { upsert: true, new: true, runValidators: true },
   );
 
+  venue.physicalVocabularyId = physicalVocabulary._id;
+  venue.physicalVocabularyDependency = {
+    versionPolicy: "follow_current",
+    pinnedRevisionId: null,
+    validation: buildValidation({
+      consumerSnapshotId: release._id,
+      dependencyRevisionId: vocabularyRevision._id,
+      issues: [],
+    }),
+  };
   venue.publishedReleaseId = release._id;
   venue.workingReleaseId = null;
   await venue.save();

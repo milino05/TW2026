@@ -41,6 +41,8 @@ for (const [file, pattern, label] of [
   ["clients/navigator/src/infrastructure/http/generatorRepository.ts", /\battributeKey\b/, "Navigator physical requirement attributeKey contract"],
   ["services/validation/generationV2.validation.js", /["']attributeKey["']|\battributeKey\s*:/, "Generation physical requirement attributeKey contract"],
   ["models/layoutRevision.model.js", /\b(?:routingAttributes|routingPresets|canonicalKey|floorKey|typeKey)\b/, "Legacy Layout physical vocabulary field"],
+  ["clients/marketplace/src/ui/venue-editor-action-mixin.js", /data\.get\(["']physicalVocabularyRevisionId["']\)/, "Venue onboarding revision-level dependency payload"],
+  ["clients/marketplace/src/ui/venue-editor-section-mixin.js", /name=["']physicalVocabularyRevisionId["']/, "Venue onboarding revision-level dependency field"],
 ]) rejectPattern(file, pattern, label);
 
 const physicalProductionFiles = [
@@ -68,7 +70,32 @@ requirePattern(
 requirePattern(
   "models/layoutRevision.model.js",
   /authoredAgainstPhysicalVocabularyRevisionId/,
-  "LayoutRevision PhysicalVocabularyRevision pin",
+  "LayoutRevision PhysicalVocabulary authoring provenance",
+);
+requirePattern(
+  "models/venue.model.js",
+  /physicalVocabularyDependency/,
+  "Venue live PhysicalVocabulary dependency binding",
+);
+requirePattern(
+  "services/layoutPhysicalVocabulary.service.js",
+  /loadVenuePhysicalVocabulary/,
+  "Venue effective PhysicalVocabulary resolver",
+);
+requirePattern(
+  "services/schemaDependencyAudit.service.js",
+  /revalidateVenuePhysicalDependency/,
+  "Venue semantic dependency audit",
+);
+requirePattern(
+  "services/schemaDependencyAudit.service.js",
+  /computeVenueReleaseIssues[\s\S]*physicalVocabularyRevision:\s*bundle\.revision/,
+  "Venue dependency audit against effective PhysicalVocabularyRevision",
+);
+requirePattern(
+  "clients/marketplace/src/ui/venue-editor-action-mixin.js",
+  /data\.get\(["']physicalVocabularyId["']\)/,
+  "Venue onboarding lineage-level PhysicalVocabulary payload",
 );
 requirePattern(
   "clients/navigator/src/infrastructure/http/generatorRepository.ts",

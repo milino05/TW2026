@@ -696,9 +696,13 @@ Questo preserva la separazione fra riuso e derivazione.
 
 ## 15. Namespace per creator
 
-Un Namespace live con `namespace.author/follow_current` puo essere usato per nuove ItemEdition e EditorialContext.
+Un Namespace live con `namespace.author/follow_current` puo essere usato per nuove ItemEdition e EditorialContext risolvendo la `NamespaceRevision` pubblicata corrente della lineage. Una eventuale `workingRevisionId` del Namespace resta una bozza interna al workflow del Namespace e non diventa implicitamente lo schema di authoring di altri aggregate.
 
-Le revisioni gia authored restano pinzate alla propria `authoredAgainstNamespaceRevisionId`; una nuova published NamespaceRevision non le riscrive automaticamente.
+Il campo `authoredAgainstNamespaceRevisionId` delle revisioni Item/Graph conserva la **provenance di authoring**: identifica la NamespaceRevision contro cui quella snapshot e stata materialmente creata e validata. Non equivale alla dependency operativa corrente della lineage consumer e non viene riscritto quando il Namespace avanza.
+
+Per i consumer live `follow_current`, una nuova `NamespaceRevision` pubblicata viene sottoposta a dependency audit rispetto agli usi reali del consumer. Se il consumer resta compatibile, la dependency effettiva avanza automaticamente alla nuova revisione senza generare una nuova ItemRevision, GraphRevision o EditorialRelease soltanto per aggiornare il riferimento. Se il cambiamento rende realmente incompatibile un definitionId o un vincolo utilizzato, il consumer passa a `needs_review` finche l'incompatibilita non viene risolta.
+
+Un entitlement `pinned` mantiene invece la `NamespaceRevision` autorizzata, anche quando essa diventa `superseded`: in quel caso la revisione storica e intenzionalmente la dependency effettiva del consumer.
 
 `namespace.fork` produce invece una lineage indipendente con nuove definition identities secondo le regole del Domain Model v2.
 
