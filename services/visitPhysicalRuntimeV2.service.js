@@ -152,19 +152,29 @@ async function resolveIndoorLiveRoute({ routingSession, venueId, fromPlaceId, to
   return resolveIndoorLiveRouteFromBundle({ routingSession, bundle, fromPlaceId, toPlaceId });
 }
 
+function locationMatchesAnchorArea(knownLocation, anchor) {
+  return Boolean(knownLocation?.venueId && knownLocation?.placeId && anchor?.venueId && anchor?.placeId
+    && id(knownLocation.venueId) === id(anchor.venueId)
+    && id(knownLocation.placeId) === id(anchor.placeId));
+}
+
 function resolvePlannedInterVenueRoute({ plan, knownLocation, destinationAnchor }) {
-  if (!knownLocation?.visitAnchorId || !destinationAnchor?._id) {
+  if (!knownLocation?.venueId || !knownLocation?.placeId || !destinationAnchor?._id) {
     throw new AppError("Trasferimento inter-sede live non determinabile dalla posizione corrente", 409, [{
       code: "LIVE_INTER_VENUE_ROUTE_UNAVAILABLE",
     }]);
   }
-  const leg = (plan?.physicalRoute?.legs || []).find((entry) => entry.type === "inter_venue"
-    && id(entry.fromAnchorId) === id(knownLocation.visitAnchorId)
-    && id(entry.toAnchorId) === id(destinationAnchor._id));
+  const leg = (plan?.physicalRoute?.legs || []).find((entry) => {
+    if (entry.type !== "inter_venue" || id(entry.toAnchorId) !== id(destinationAnchor._id)) return false;
+    const sourceAnchor = anchorById(plan, entry.fromAnchorId);
+    if (!sourceAnchor) return false;
+    const exactAnchorMatch = knownLocation.visitAnchorId && id(knownLocation.visitAnchorId) === id(sourceAnchor._id);
+    return exactAnchorMatch || locationMatchesAnchorArea(knownLocation, sourceAnchor);
+  });
   if (!leg) {
     throw new AppError("Trasferimento inter-sede live non disponibile", 409, [{
       code: "LIVE_INTER_VENUE_ROUTE_UNAVAILABLE",
-      context: { fromVisitAnchorId: knownLocation.visitAnchorId, toVisitAnchorId: destinationAnchor._id },
+      context: { fromVisitAnchorId: knownLocation.visitAnchorId || null, toVisitAnchorId: destinationAnchor._id },
     }]);
   }
   return {
@@ -363,6 +373,7 @@ module.exports = {
   resolvedRoutingRequirements,
   resolveIndoorLiveRouteFromBundle,
   resolveIndoorLiveRoute,
+  locationMatchesAnchorArea,
   resolvePlannedInterVenueRoute,
   resolveLiveRouteV2,
   resolveLocationReference,
