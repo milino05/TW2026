@@ -20,6 +20,7 @@
     "seed:users": "node -r ./config/mongoUnitOfWork.js scripts/seedRequiredUsers.js",
     "seed:visit-ui": "node -r ./config/mongoUnitOfWork.js scripts/seedVisitAuthoringPlayground.js",
     "snapshot:demo-layouts": "node -r ./config/mongoUnitOfWork.js scripts/snapshotDemoVenueLayouts.js",
+    "snapshot:demo-layouts:docker": "sh scripts/snapshotDemoVenueLayoutsDocker.sh",
     "migrate:organization-rbac": "node -r ./config/mongoUnitOfWork.js scripts/migrateOrganizationRbac.js",
     "migrate:exhibit-slots": "node -r ./config/mongoUnitOfWork.js scripts/migrateVenueExhibitSlots.js",
     "migrate:editorial-inventory": "node -r ./config/mongoUnitOfWork.js scripts/migrateEditorialStudioInventory.js",
