@@ -5,8 +5,8 @@ import type {
   ExecutionMode,
   ExecutionPreparationProjection,
   PersonalNavigationNeedDefinition,
+  PersonalNavigationNeedSelectionInput,
   PreparationUpdate,
-  RoutingRequirement,
   VenueNavigationControl,
 } from "../infrastructure/http/executionPreparationRepository";
 
@@ -114,25 +114,19 @@ function missingValue(value: unknown) {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
 }
 
-function needRequirement(need: PersonalNavigationNeedDefinition): RoutingRequirement | null {
+function needSelection(need: PersonalNavigationNeedDefinition): PersonalNavigationNeedSelectionInput | null {
   const state = needStates[need.id];
   if (!state?.enabled) return null;
-  let value = need.value;
   if (need.valueMode === "user") {
     if (need.dataType === "number") {
       if (missingValue(state.value)) throw new Error(`Inserisci un valore per “${need.label}”.`);
       const parsed = Number(state.value);
       if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`Inserisci un valore valido per “${need.label}”.`);
-      value = parsed;
-    } else value = state.value;
+      return { id: need.id, priority: state.priority, value: parsed };
+    }
+    return { id: need.id, priority: state.priority, value: state.value };
   }
-  return {
-    physicalFeatureRef: need.physicalFeatureRef,
-    operator: need.operator,
-    value,
-    priority: state.priority,
-    weight: 1,
-  };
+  return { id: need.id, priority: state.priority };
 }
 
 function setProfile(venueId: string, definitionId: string) {
@@ -145,9 +139,9 @@ function toggleControl(venueId: string, control: VenueNavigationControl) {
 }
 
 function buildPatch(): PreparationUpdate {
-  const navigationRequirements = props.navigation.personalNeeds.catalog
-    .map(needRequirement)
-    .filter((entry): entry is RoutingRequirement => entry !== null);
+  const personalNeedSelections = props.navigation.personalNeeds.catalog
+    .map(needSelection)
+    .filter((entry): entry is PersonalNavigationNeedSelectionInput => entry !== null);
 
   const routingProfileSelections = props.navigation.venues.flatMap((venue) => {
     const routingProfileDefinitionId = selectedProfiles[String(venue.venueId)] || "";
@@ -174,7 +168,7 @@ function buildPatch(): PreparationUpdate {
 
   return {
     movementPacePreference: movementPacePreference.value,
-    navigationRequirements,
+    personalNeedSelections,
     routingProfileSelections,
     venueControlSelections,
   };
