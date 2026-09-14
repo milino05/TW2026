@@ -213,7 +213,7 @@ async function projectNavigatorMap({ sessionId, userId }) {
   const projectedBaseMap = { ...baseMap, venues };
   const narrativeContextStop = findProjectedStop(projectedBaseMap, execution.contextAnchor?._id);
   return {
-    ...projectedBaseMap,
+    venues,
     knownLocation,
     narrativeContextStop,
     selectableLocations,
