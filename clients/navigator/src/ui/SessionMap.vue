@@ -90,7 +90,8 @@ const currentStop = computed(() => orderedStops.value.find((stop) => stop.visitA
 const nextStop = computed(() => currentStop.value
   ? orderedStops.value.find((stop) => stop.order > currentStop.value!.order) || null
   : orderedStops.value[0] || null);
-const plannedLeg = computed(() => props.map.plannedLegs.find((entry) => entry.fromVisitAnchorId === props.currentVisitAnchorId) || null);
+const plannedLeg = computed(() => props.map.plannedVisitRoute.plannedLegs.find((entry) =>
+  entry.fromVisitAnchorId === props.currentVisitAnchorId) || null);
 const plannedSteps = computed(() => {
   const leg = plannedLeg.value;
   if (!leg) return [];
@@ -102,7 +103,10 @@ const plannedSteps = computed(() => {
     ...(leg.approachStep ? [{ key: "approach", label: "Ultimi passi", instruction: leg.approachStep.instruction }] : []),
   ];
 });
-const plannedOverlays = computed(() => venue.value?.route.overlays.filter((entry) => entry.floorId === selectedFloorId.value) || []);
+const plannedVenueRoute = computed(() => props.map.plannedVisitRoute.venues
+  .find((entry) => entry.venueId === venue.value?.id)?.route || null);
+const plannedOverlays = computed(() => plannedVenueRoute.value?.overlays
+  .filter((entry) => entry.floorId === selectedFloorId.value) || []);
 const navigationOverlays = computed(() => {
   const navigation = effectiveNavigation.value;
   if (!venue.value || navigation?.destination.venueId !== venue.value.id) return [];
