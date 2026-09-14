@@ -18,6 +18,17 @@ function definitionsCompatible(left, right) {
   if (left.dataType === "choice" && !sameOptions(left, right)) return false;
   return true;
 }
+function canonicalScopeCompatible(actual, expected) {
+  if (expected === "both") return actual === "both";
+  return actual === expected || actual === "both";
+}
+function canonicalDefinitionCompatible(actual, expected) {
+  if (!actual || !expected) return false;
+  if (actual.dataType !== expected.dataType) return false;
+  if ((actual.unit || null) !== (expected.unit || null)) return false;
+  if (actual.dataType === "choice" && !sameOptions(actual, expected)) return false;
+  return canonicalScopeCompatible(actual.appliesTo, expected.appliesTo);
+}
 function routingControl(definition, physicalFeatureRef, key) {
   return {
     key,
@@ -121,7 +132,7 @@ function canonicalNeedSupportProjection(revision) {
     const match = index.get(signature);
     return {
       id: need.id,
-      supported: Boolean(match && definitionsCompatible(match.definition, need)),
+      supported: Boolean(match && canonicalDefinitionCompatible(match.definition, need)),
       definitionId: match?.definition?.definitionId || null,
     };
   });
@@ -151,6 +162,7 @@ function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueI
 
 module.exports = {
   definitionsCompatible,
+  canonicalDefinitionCompatible,
   exactAttributeIndex,
   routingControl,
   visitorControlProjection,
