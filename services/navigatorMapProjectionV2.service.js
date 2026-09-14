@@ -111,6 +111,38 @@ function findProjectedStop(baseMap, visitAnchorId) {
   return null;
 }
 
+function experiencedAnchorIds({ personalSession, plan }) {
+  const experiencedEntryIds = new Set((personalSession?.contentEntryExperiences || [])
+    .filter((experience) => Number(experience.completionRatio) > 0)
+    .map((experience) => id(experience.contentEntryId)));
+  const result = new Set();
+  for (const entry of plan?.contentEntries || []) {
+    if (entry.deliveryAnchorId && experiencedEntryIds.has(id(entry._id))) result.add(id(entry.deliveryAnchorId));
+  }
+  return result;
+}
+
+function annotateStops({ baseMap, personalSession, plan, currentAnchor }) {
+  const experienced = experiencedAnchorIds({ personalSession, plan });
+  const currentOrder = currentAnchor
+    ? (plan?.visitAnchors || []).findIndex((anchor) => id(anchor._id) === id(currentAnchor._id)) + 1
+    : null;
+  return (baseMap.venues || []).map((venue) => ({
+    ...venue,
+    stops: (venue.stops || []).map((stop) => ({
+      ...stop,
+      sequencePosition: currentOrder == null
+        ? "after_current"
+        : stop.order < currentOrder
+          ? "before_current"
+          : stop.order === currentOrder
+            ? "current"
+            : "after_current",
+      experienced: experienced.has(id(stop.visitAnchorId)),
+    })),
+  }));
+}
+
 async function projectActiveNavigation({ sessionId, userId, state, execution }) {
   if (![EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.NAVIGATING_DETOUR].includes(execution.phase)) return null;
   const live = await resolveLiveRouteV2({
@@ -172,16 +204,23 @@ async function projectNavigatorMap({ sessionId, userId }) {
     projectSelectableLocations({ routingSession: state.physicalSession, plan: state.plan }),
     projectActiveNavigation({ sessionId, userId, state, execution }),
   ]);
-  const narrativeContextStop = findProjectedStop(baseMap, execution.contextAnchor?._id);
+  const venues = annotateStops({
+    baseMap,
+    personalSession: state.session,
+    plan: state.plan,
+    currentAnchor: execution.contextAnchor,
+  });
+  const projectedBaseMap = { ...baseMap, venues };
+  const narrativeContextStop = findProjectedStop(projectedBaseMap, execution.contextAnchor?._id);
   return {
-    ...baseMap,
+    ...projectedBaseMap,
     knownLocation,
     narrativeContextStop,
     selectableLocations,
     plannedVisitRoute: {
       plannedLegs: baseMap.plannedLegs || [],
       interVenueTransitions: baseMap.interVenueTransitions || [],
-      venues: (baseMap.venues || []).map((venue) => ({ venueId: venue.id, route: venue.route })),
+      venues: venues.map((venue) => ({ venueId: venue.id, route: venue.route })),
     },
     activeNavigation,
   };
@@ -190,6 +229,8 @@ async function projectNavigatorMap({ sessionId, userId }) {
 module.exports = {
   projectKnownLocation,
   projectSelectableLocations,
+  experiencedAnchorIds,
+  annotateStops,
   projectActiveNavigation,
   projectNavigatorMap,
 };
