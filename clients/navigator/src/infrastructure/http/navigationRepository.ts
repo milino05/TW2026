@@ -80,7 +80,7 @@ export interface MapKnownLocationProjection {
 }
 
 export interface SelectableLocationProjection {
-  kind: "place" | "visit_stop" | "facility";
+  kind: "place" | "visit_area" | "facility";
   venueId: string;
   placeId: string;
   visitAnchorId: string | null;
