@@ -508,9 +508,11 @@ async function listenControlledVoice() {
             :map="map"
             :navigation="navigation"
             :current-visit-anchor-id="currentAnchorId"
+            :available-actions="snapshot.availableActions"
             :location-selection-mode="locationSelectionMode"
             :selection-busy="interactionBusy"
             @select-location="selectLocation"
+            @select-action="requestAction"
           />
           <p v-else>La mappa della visita non è disponibile.</p>
         </section>
