@@ -113,7 +113,11 @@ function parseRequirementValue(raw, attribute, operator) {
   const value = String(raw ?? "").trim();
   if (operator === "in") return value.split(",").map((entry) => entry.trim()).filter(Boolean);
   if (attribute?.dataType === "boolean") return value === "true";
-  if (attribute?.dataType === "number") { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : value; }
+  if (attribute?.dataType === "number") {
+    if (value === "") return "";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
   return value;
 }
 function defaultRequirementValue(attribute) {
