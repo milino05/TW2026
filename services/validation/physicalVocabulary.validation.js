@@ -8,6 +8,10 @@ const {
   normalizeStringArrayStrict,
   toNumberIfPresent,
 } = require("./validation.utils");
+const {
+  NAVIGATION_SEMANTIC_SCHEME,
+  navigationNeedById,
+} = require("../../config/navigationNeedCatalog");
 
 const OWNER_TYPES = Object.freeze(["user", "organization"]);
 const MATCH_TYPES = Object.freeze(["exact", "close", "broader", "narrower"]);
@@ -15,6 +19,7 @@ const DATA_TYPES = Object.freeze(["boolean", "number", "string", "choice"]);
 const APPLIES_TO = Object.freeze(["place", "connection", "both"]);
 const REQUIREMENT_OPERATORS = Object.freeze(["eq", "neq", "gte", "lte", "gt", "lt", "in"]);
 const REQUIREMENT_PRIORITIES = Object.freeze(["required", "preferred", "avoid"]);
+const VISITOR_CONTROL_VALUE_MODES = Object.freeze(["fixed", "user"]);
 const DEFINITION_FIELDS = Object.freeze(["placeTypes", "connectionTypes", "physicalAttributes", "routingProfiles"]);
 const REVISION_FIELDS = new Set(DEFINITION_FIELDS);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -65,6 +70,20 @@ function normalizeBaseDefinition(value) {
   };
 }
 
+function normalizeVisitorControl(value) {
+  if (value === undefined || value === null) return { enabled: false };
+  if (!isPlainObject(value)) return value;
+  return {
+    enabled: hasOwn(value, "enabled") ? normalizeBoolean(value.enabled) : false,
+    label: hasOwn(value, "label") ? trimIfString(value.label) : null,
+    description: hasOwn(value, "description") ? trimIfString(value.description) : null,
+    operator: normalizeKey(value.operator || "eq"),
+    valueMode: normalizeKey(value.valueMode || "fixed"),
+    ...(hasOwn(value, "value") ? { value: value.value } : {}),
+    priority: normalizeKey(value.priority || "preferred"),
+  };
+}
+
 function normalizePhysicalAttribute(value) {
   const base = normalizeBaseDefinition(value);
   if (!isPlainObject(base)) return base;
@@ -77,6 +96,7 @@ function normalizePhysicalAttribute(value) {
       label: trimIfString(option.label),
     } : option) : (hasOwn(value, "options") ? value.options : []),
     appliesTo: normalizeKey(value.appliesTo),
+    visitorControl: normalizeVisitorControl(value.visitorControl),
   };
 }
 
@@ -191,8 +211,90 @@ function validateDefinitionCollection(values, field, errors, extraAllowed = []) 
   });
 }
 
+function valueMatchesAttribute(value, attribute, operator) {
+  const multiple = operator === "in";
+  const values = multiple ? value : [value];
+  if (multiple && !Array.isArray(value)) return false;
+  if (attribute.dataType === "boolean") return !multiple && typeof value === "boolean" && ["eq", "neq"].includes(operator);
+  if (attribute.dataType === "number") return !multiple && ["eq", "neq", "gte", "lte", "gt", "lt"].includes(operator) && typeof value === "number" && Number.isFinite(value);
+  if (attribute.dataType === "string") return ["eq", "neq", "in"].includes(operator) && values.every((entry) => typeof entry === "string");
+  if (attribute.dataType === "choice") {
+    const options = new Set((attribute.options || []).map((option) => option.value));
+    return ["eq", "neq", "in"].includes(operator) && values.every((entry) => typeof entry === "string" && options.has(entry));
+  }
+  return false;
+}
+
+function operatorMatchesAttribute(attribute, operator) {
+  if (attribute.dataType === "boolean") return ["eq", "neq"].includes(operator);
+  if (attribute.dataType === "number") return ["eq", "neq", "gte", "lte", "gt", "lt"].includes(operator);
+  if (attribute.dataType === "string" || attribute.dataType === "choice") return ["eq", "neq", "in"].includes(operator);
+  return false;
+}
+
+function appliesToCompatible(actual, expected) {
+  if (expected === "both") return APPLIES_TO.includes(actual);
+  return actual === expected || actual === "both";
+}
+
+function validateCanonicalNavigationSemanticRefs(attribute, path, errors) {
+  for (const [index, semanticRef] of (attribute.semanticRefs || []).entries()) {
+    if (String(semanticRef?.scheme || "").toLowerCase() !== NAVIGATION_SEMANTIC_SCHEME) continue;
+    const semanticPath = `${path}.semanticRefs[${index}]`;
+    const definition = navigationNeedById(semanticRef.id);
+    if (!definition) {
+      pushError(errors, `${semanticPath}.id`, "UNKNOWN_ARTAROUND_PHYSICAL_CONCEPT", `Concetto ${NAVIGATION_SEMANTIC_SCHEME} non supportato: ${semanticRef.id}`);
+      continue;
+    }
+    if ((semanticRef.matchType || "exact") !== "exact") {
+      pushError(errors, `${semanticPath}.matchType`, "CANONICAL_SEMANTIC_REF_MUST_BE_EXACT", "I concetti canonici ArtAround richiedono matchType exact");
+    }
+    if (attribute.dataType !== definition.dataType) {
+      pushError(errors, `${path}.dataType`, "CANONICAL_SEMANTIC_TYPE_MISMATCH", `${definition.id} richiede dataType ${definition.dataType}`);
+    }
+    if ((attribute.unit || null) !== (definition.unit || null)) {
+      pushError(errors, `${path}.unit`, "CANONICAL_SEMANTIC_UNIT_MISMATCH", `${definition.id} richiede unit ${definition.unit || "null"}`);
+    }
+    if (!appliesToCompatible(attribute.appliesTo, definition.appliesTo)) {
+      pushError(errors, `${path}.appliesTo`, "CANONICAL_SEMANTIC_SCOPE_MISMATCH", `${definition.id} non è compatibile con appliesTo ${attribute.appliesTo}`);
+    }
+  }
+}
+
+function validateVisitorControl(attribute, path, errors) {
+  const control = attribute.visitorControl ?? { enabled: false };
+  const field = `${path}.visitorControl`;
+  if (!isPlainObject(control)) {
+    pushError(errors, field, "INVALID_TYPE", "visitorControl deve essere un oggetto");
+    return;
+  }
+  validateUnknownFields(control, new Set(["enabled", "label", "description", "operator", "valueMode", "value", "priority"]), field, errors);
+  if (typeof control.enabled !== "boolean") pushError(errors, `${field}.enabled`, "INVALID_TYPE", "enabled deve essere boolean");
+  if (control.label !== null && control.label !== undefined && typeof control.label !== "string") pushError(errors, `${field}.label`, "INVALID_TYPE", "label deve essere una stringa o null");
+  if (control.description !== null && control.description !== undefined && typeof control.description !== "string") pushError(errors, `${field}.description`, "INVALID_TYPE", "description deve essere una stringa o null");
+  if (!REQUIREMENT_OPERATORS.includes(control.operator || "eq")) pushError(errors, `${field}.operator`, "INVALID_ENUM", "operator non valido", { allowedValues: REQUIREMENT_OPERATORS });
+  if (!VISITOR_CONTROL_VALUE_MODES.includes(control.valueMode || "fixed")) pushError(errors, `${field}.valueMode`, "INVALID_ENUM", "valueMode non valido", { allowedValues: VISITOR_CONTROL_VALUE_MODES });
+  if (!REQUIREMENT_PRIORITIES.includes(control.priority || "preferred")) pushError(errors, `${field}.priority`, "INVALID_ENUM", "priority non valida", { allowedValues: REQUIREMENT_PRIORITIES });
+  if (!control.enabled) return;
+  if (attribute.dataType === "string") {
+    pushError(errors, field, "VISITOR_CONTROL_UNSUPPORTED_DATATYPE", "Gli attributi string non sono esposti come controlli visita nella prima versione");
+    return;
+  }
+  const operator = control.operator || "eq";
+  if (!operatorMatchesAttribute(attribute, operator)) {
+    pushError(errors, `${field}.operator`, "INCOMPATIBLE_OPERATOR", "operator non compatibile con il dataType dell'attributo");
+  }
+  const valueMode = control.valueMode || "fixed";
+  if (valueMode === "fixed") {
+    if (!hasOwn(control, "value")) pushError(errors, `${field}.value`, "REQUIRED", "Un visitorControl fixed richiede value");
+    else if (!valueMatchesAttribute(control.value, attribute, operator)) pushError(errors, `${field}.value`, "INCOMPATIBLE_VALUE", "value non compatibile con datatype, opzioni o operator");
+  } else if (hasOwn(control, "value") && control.value !== null && control.value !== undefined) {
+    pushError(errors, `${field}.value`, "FORBIDDEN_FIELD", "Un visitorControl user non deve fissare value");
+  }
+}
+
 function validatePhysicalAttributes(values, errors) {
-  validateDefinitionCollection(values, "physicalAttributes", errors, ["dataType", "unit", "options", "appliesTo"]);
+  validateDefinitionCollection(values, "physicalAttributes", errors, ["dataType", "unit", "options", "appliesTo", "visitorControl"]);
   if (!Array.isArray(values)) return;
   values.forEach((value, index) => {
     if (!isPlainObject(value)) return;
@@ -217,21 +319,9 @@ function validatePhysicalAttributes(values, errors) {
       if (optionValues.has(option.value)) pushError(errors, `${optionPath}.value`, "DUPLICATE_VALUE", `Opzione duplicata: ${option.value}`);
       optionValues.add(option.value);
     });
+    validateCanonicalNavigationSemanticRefs(value, path, errors);
+    validateVisitorControl(value, path, errors);
   });
-}
-
-function valueMatchesAttribute(value, attribute, operator) {
-  const multiple = operator === "in";
-  const values = multiple ? value : [value];
-  if (multiple && !Array.isArray(value)) return false;
-  if (attribute.dataType === "boolean") return !multiple && typeof value === "boolean" && ["eq", "neq"].includes(operator);
-  if (attribute.dataType === "number") return values.every((entry) => typeof entry === "number" && Number.isFinite(entry));
-  if (attribute.dataType === "string") return ["eq", "neq", "in"].includes(operator) && values.every((entry) => typeof entry === "string");
-  if (attribute.dataType === "choice") {
-    const options = new Set((attribute.options || []).map((option) => option.value));
-    return ["eq", "neq", "in"].includes(operator) && values.every((entry) => typeof entry === "string" && options.has(entry));
-  }
-  return false;
 }
 
 function validateRoutingProfiles(values, physicalAttributes, errors) {
@@ -285,7 +375,7 @@ function validatePhysicalVocabularyRevisionUnknownFields(payload = {}) {
   const allowedByField = {
     placeTypes: new Set(base),
     connectionTypes: new Set(base),
-    physicalAttributes: new Set([...base, "dataType", "unit", "options", "appliesTo"]),
+    physicalAttributes: new Set([...base, "dataType", "unit", "options", "appliesTo", "visitorControl"]),
     routingProfiles: new Set([...base, "requirements"]),
   };
   for (const field of DEFINITION_FIELDS) {
@@ -297,6 +387,7 @@ function validatePhysicalVocabularyRevisionUnknownFields(payload = {}) {
       if (Array.isArray(definition.localizations)) definition.localizations.forEach((localization, localizationIndex) => validateUnknownFields(localization, new Set(["locale", "label", "description", "aliases"]), `${path}.localizations[${localizationIndex}]`, errors));
       if (Array.isArray(definition.semanticRefs)) definition.semanticRefs.forEach((semanticRef, semanticIndex) => validateUnknownFields(semanticRef, new Set(["scheme", "id", "matchType"]), `${path}.semanticRefs[${semanticIndex}]`, errors));
       if (field === "physicalAttributes" && Array.isArray(definition.options)) definition.options.forEach((option, optionIndex) => validateUnknownFields(option, new Set(["value", "label"]), `${path}.options[${optionIndex}]`, errors));
+      if (field === "physicalAttributes" && isPlainObject(definition.visitorControl)) validateUnknownFields(definition.visitorControl, new Set(["enabled", "label", "description", "operator", "valueMode", "value", "priority"]), `${path}.visitorControl`, errors);
       if (field === "routingProfiles" && Array.isArray(definition.requirements)) definition.requirements.forEach((requirement, requirementIndex) => validateUnknownFields(requirement, new Set(["physicalAttributeDefinitionId", "operator", "value", "priority", "weight"]), `${path}.requirements[${requirementIndex}]`, errors));
     });
   }
@@ -379,6 +470,7 @@ module.exports = {
   APPLIES_TO,
   REQUIREMENT_OPERATORS,
   REQUIREMENT_PRIORITIES,
+  VISITOR_CONTROL_VALUE_MODES,
   DEFINITION_FIELDS,
   normalizePhysicalVocabularyMetadataPayload,
   validatePhysicalVocabularyMetadataPayload,
