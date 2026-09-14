@@ -92,10 +92,10 @@ function stopSelectionDefinition(plan) {
     : null;
 }
 
-async function physicalFeatureActions({ session, routingSession, execution, entry }) {
+async function physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }) {
   const knownLocation = execution.knownLocation;
   if (!knownLocation?.venueId || !knownLocation?.placeId) return [];
-  const bundle = await loadPinnedBundle(routingSession, knownLocation.venueId);
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, knownLocation.venueId);
   const definitionsById = new Map((bundle.physicalVocabularyRevision.placeTypes || [])
     .map((definition) => [definition.definitionId, definition]));
   const availableDefinitionIds = new Set();
@@ -113,7 +113,7 @@ async function physicalFeatureActions({ session, routingSession, execution, entr
     };
     try {
       await routeToPhysicalFeatureInSession({
-        session: routingSession,
+        session: routingConfigurationOwner,
         venueId: knownLocation.venueId,
         fromPlaceId: knownLocation.placeId,
         physicalFeatureRef,
@@ -143,14 +143,15 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     synchronizedSession,
     membership,
     effectiveStatus,
-    physicalSession: routingSession,
+    routingConfigurationOwner,
+    physicalRuntimeOwner,
   } = base;
   if (!plan || ["completed", "abandoned", "cancelled"].includes(effectiveStatus)) return base;
   if (synchronizedSession?.status === "lobby" || synchronizedSession?.status === "quiz") return base;
   if (!synchronizedSession && session.status === "paused") return base;
 
   const execution = deriveVisitExecutionState({
-    personalSession: session,
+    personalSession: physicalRuntimeOwner,
     plan,
     currentEntryIndex: base.currentEntryIndex,
     effectiveStatus,
@@ -175,6 +176,10 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
 
   if (execution.knownLocation) {
     actions.push(personalAction(session, ACTION_DEFINITIONS.LOCATION_CORRECT, { context }));
+  } else if ((plan.visitAnchors || []).length) {
+    // Location-independent content remains deliverable, but the user can still
+    // declare a position voluntarily to enable facility routing and orientation.
+    actions.push(personalAction(session, ACTION_DEFINITIONS.LOCATION_CONFIRM, { context }));
   }
 
   if ([EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.APPROACHING_VISIT_TARGET, EXECUTION_PHASES.NAVIGATING_DETOUR].includes(execution.phase)) {
@@ -184,7 +189,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     }));
     if (execution.detour) actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
-    actions.push(...await physicalFeatureActions({ session, routingSession, execution, entry }));
+    actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
     keepLifecycle();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
@@ -192,7 +197,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   if (execution.phase === EXECUTION_PHASES.AT_DETOUR_DESTINATION) {
     actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
-    actions.push(...await physicalFeatureActions({ session, routingSession, execution, entry }));
+    actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
     keepLifecycle();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
@@ -200,7 +205,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   if (execution.phase === EXECUTION_PHASES.ROUTE_COMPLETED) {
     actions.push(...baseActionsByFamilies(base.actions, new Set(["progress", "lifecycle"])));
     if (stopAction) actions.push(stopAction);
-    actions.push(...await physicalFeatureActions({ session, routingSession, execution, entry }));
+    actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
@@ -212,7 +217,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     keepLifecycle();
   }
   if (stopAction) actions.push(stopAction);
-  actions.push(...await physicalFeatureActions({ session, routingSession, execution, entry }));
+  actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
   return { ...base, execution, actions: dedupeActions(actions) };
 }
 
@@ -268,7 +273,7 @@ async function currentNavigatorRuntimeProjection({ sessionId, userId }) {
     return { ...baseProjection, availableActions: derived.actions.filter((action) => !action.hidden).map(publicAction) };
   }
   const {
-    session,
+    physicalRuntimeOwner,
     plan,
     synchronizedSession,
     execution,
@@ -278,8 +283,8 @@ async function currentNavigatorRuntimeProjection({ sessionId, userId }) {
   const liveNavigation = [EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.NAVIGATING_DETOUR]
     .includes(execution.phase)
     ? await resolveLiveRouteV2({
-      personalSession: session,
-      routingSession: derived.physicalSession,
+      personalSession: physicalRuntimeOwner,
+      routingSession: derived.routingConfigurationOwner,
       plan,
       currentEntryIndex: derived.currentEntryIndex,
       effectiveStatus: derived.effectiveStatus,
@@ -322,8 +327,8 @@ async function loadNavigatorState({ sessionId, userId, allowCompleted = false })
 async function confirmNavigatorLocationV2({ sessionId, userId, locationRef }) {
   const state = await loadNavigatorState({ sessionId, userId });
   return confirmPhysicalLocationV2({
-    personalSession: state.session,
-    routingSession: state.physicalSession,
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
     plan: state.plan,
     locationRef,
   });
@@ -332,8 +337,8 @@ async function confirmNavigatorLocationV2({ sessionId, userId, locationRef }) {
 async function correctNavigatorLocationV2({ sessionId, userId, locationRef }) {
   const state = await loadNavigatorState({ sessionId, userId });
   return correctPhysicalLocationV2({
-    personalSession: state.session,
-    routingSession: state.physicalSession,
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
     plan: state.plan,
     locationRef,
   });
@@ -342,8 +347,8 @@ async function correctNavigatorLocationV2({ sessionId, userId, locationRef }) {
 async function advanceNavigatorPhysicalProgressV2({ sessionId, userId }) {
   const state = await loadNavigatorState({ sessionId, userId });
   const result = await advancePhysicalProgressV2({
-    personalSession: state.session,
-    routingSession: state.physicalSession,
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
     plan: state.plan,
     currentEntryIndex: state.currentEntryIndex,
     effectiveStatus: state.effectiveStatus,
@@ -357,15 +362,15 @@ async function advanceNavigatorPhysicalProgressV2({ sessionId, userId }) {
 async function startNavigatorPhysicalDetourV2({ sessionId, userId, physicalFeatureRef }) {
   const state = await loadNavigatorState({ sessionId, userId });
   return startPhysicalDetourV2({
-    personalSession: state.session,
-    routingSession: state.physicalSession,
+    personalSession: state.physicalRuntimeOwner,
+    routingSession: state.routingConfigurationOwner,
     physicalFeatureRef,
   });
 }
 
 async function returnNavigatorToVisitV2({ sessionId, userId }) {
   const state = await loadNavigatorState({ sessionId, userId });
-  await returnToVisitV2({ personalSession: state.session });
+  await returnToVisitV2({ personalSession: state.physicalRuntimeOwner });
 }
 
 async function advanceNavigatorNarrativeProgressV2({ sessionId, userId, direction }) {
@@ -389,26 +394,26 @@ async function selectNavigatorVisitStopV2({ sessionId, userId, visitAnchorId }) 
     throw new AppError("Solo la guida può cambiare la tappa comune", 403, [{ code: "SYNCHRONIZED_HOST_REQUIRED" }]);
   }
 
-  state.session.semanticPresentation = null;
-  clearPhysicalDetour(state.session);
+  state.physicalRuntimeOwner.semanticPresentation = null;
+  clearPhysicalDetour(state.physicalRuntimeOwner);
   if (state.synchronizedSession) {
-    state.synchronizedSession.currentEntryIndex = index;
+    state.progressOwner.currentEntryIndex = index;
     resetSynchronizedPlayback(state.synchronizedSession, { changedBy: userId });
     await Promise.all([
-      state.synchronizedSession.save(),
-      state.session.save(),
+      state.progressOwner.save(),
+      state.physicalRuntimeOwner.save(),
       VisitSessionV2.updateMany(
         { synchronizedSessionId: state.synchronizedSession._id },
         { $set: { semanticPresentation: null } },
       ),
     ]);
   } else {
-    state.session.currentEntryIndex = index;
-    if (state.session.status === "route_completed") {
-      state.session.status = "active";
-      state.session.routeCompletedAt = null;
+    state.progressOwner.currentEntryIndex = index;
+    if (state.physicalRuntimeOwner.status === "route_completed") {
+      state.physicalRuntimeOwner.status = "active";
+      state.physicalRuntimeOwner.routeCompletedAt = null;
     }
-    await state.session.save();
+    await state.physicalRuntimeOwner.save();
   }
   return { visitAnchorId: anchor._id, currentEntryIndex: index };
 }
