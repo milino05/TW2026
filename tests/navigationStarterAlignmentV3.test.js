@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { projectNavigationNeedCatalog } = require("../config/navigationNeedCatalog");
+const { NAVIGATION_NEED_CATALOG } = require("../config/navigationNeedCatalog");
 const { applyPhysicalStarter } = require("../services/physicalVocabularyStarter.service");
 
 function exactSemanticMatch(definition, needId) {
@@ -14,10 +14,9 @@ function exactSemanticMatch(definition, needId) {
 
 test("lo starter fisico crea tutte le caratteristiche canoniche globali e le rende assegnabili ai collegamenti", () => {
   const snapshot = applyPhysicalStarter({}).snapshot;
-  const catalog = projectNavigationNeedCatalog();
 
-  assert.ok(catalog.length > 0);
-  for (const need of catalog) {
+  assert.ok(NAVIGATION_NEED_CATALOG.length > 0);
+  for (const need of NAVIGATION_NEED_CATALOG) {
     const matches = snapshot.physicalAttributes.filter((definition) => exactSemanticMatch(definition, need.id));
     assert.equal(matches.length, 1, `manca o e ambiguo il vincolo starter ${need.id}`);
 
