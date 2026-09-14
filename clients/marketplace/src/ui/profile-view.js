@@ -9,11 +9,6 @@ function number(value, fallback = 0.5) { const parsed = Number(value); return Nu
 function checked(value) { return value === true ? "checked" : ""; }
 function roleLabel(roles = []) { return roles.map((role) => role.name).join(" · ") || "Membro"; }
 function stateLabel(resource, published = "Pubblicata") { const mode = resource.state?.mode; const label = mode === "working" ? "Bozza" : mode === "published" ? published : "Da configurare"; return `${label}${resource.state?.version ? ` · v${resource.state.version}` : ""}`; }
-function semanticId(requirement) {
-  if (requirement?.physicalFeatureRef?.kind !== "semantic") return null;
-  return (requirement.physicalFeatureRef.semanticRefs || []).find((entry) => String(entry.scheme || "").toLowerCase() === "artaround-physical" && String(entry.matchType || "exact").toLowerCase() === "exact")?.id || null;
-}
-function requirementByNeed(requirements = []) { return new Map(requirements.map((entry) => [semanticId(entry), entry]).filter(([key]) => Boolean(key))); }
 
 const ACCOUNT_SECTIONS = [
   { code: "account-overview", label: "Panoramica" },
@@ -154,20 +149,20 @@ export class ArtAroundProfileView extends HTMLElement {
     return `<section class="organization-overview" tabindex="-1"><div class="organization-overview__intro"><span class="eyebrow">Panoramica</span><h2>La tua area personale</h2><p>Qui gestisci soltanto preferenze e risorse personali. Per amministrare un'organizzazione devi prima passare alla sua area di lavoro.</p></div><div class="organization-summary-grid">${cards}</div></section>`;
   }
 
-  renderNavigationNeed(need, currentRequirement) {
-    const active = Boolean(currentRequirement);
-    const priority = currentRequirement?.priority || need.defaultPriority || "preferred";
-    const value = currentRequirement?.value ?? "";
+  renderNavigationNeed(need, currentSelection) {
+    const active = Boolean(currentSelection);
+    const priority = currentSelection?.priority || need.defaultPriority || "preferred";
+    const value = currentSelection?.value ?? "";
     return `<article class="navigation-need-card ${active ? "is-selected" : ""}"><label class="navigation-need-card__toggle"><input type="checkbox" name="need:${escapeHtml(need.id)}:enabled" ${active ? "checked" : ""}><span class="navigation-need-card__mark" aria-hidden="true">${active ? "✓" : "+"}</span><span><strong>${escapeHtml(need.label)}</strong><small>${escapeHtml(need.description || "")}</small></span></label>${need.valueMode === "user" ? `<label class="navigation-need-value">${escapeHtml(need.label)}<span><input type="number" min="0" step="any" name="need:${escapeHtml(need.id)}:value" value="${escapeHtml(value)}" placeholder="0"><em>${escapeHtml(need.unit || "")}</em></span></label>` : ""}<fieldset class="navigation-need-priority"><legend>Quanto conta?</legend><label><input type="radio" name="need:${escapeHtml(need.id)}:priority" value="preferred" ${checked(priority === "preferred")}> <span>Preferisco</span></label><label><input type="radio" name="need:${escapeHtml(need.id)}:priority" value="required" ${checked(priority === "required")}> <span>Necessario</span></label></fieldset></article>`;
   }
 
   renderPreferences() {
     const account = this.workspace.account;
     const presentation = account.defaultPresentationPreference || { depthPreference: 0.5, languageComplexityPreference: 0.5 };
-    const navigation = account.defaultNavigationPreference || { movementPacePreference: 0.5, requirements: [] };
+    const navigation = account.defaultNavigationPreference || { movementPacePreference: 0.5 };
     const learning = account.learningPreferences || {};
     const needs = this.workspace.navigationNeedCatalog || [];
-    const currentByNeed = requirementByNeed(navigation.requirements || []);
+    const currentByNeed = new Map((this.workspace.navigationNeedSelections || []).map((entry) => [entry.id, entry]));
     const commonNeeds = needs.filter((entry) => !entry.advanced).map((need) => this.renderNavigationNeed(need, currentByNeed.get(need.id))).join("");
     const advancedNeeds = needs.filter((entry) => entry.advanced).map((need) => this.renderNavigationNeed(need, currentByNeed.get(need.id))).join("");
     return `<section class="organization-section" tabindex="-1"><div class="section-heading"><div><span class="eyebrow">Preferenze visita</span><h2>Come vuoi vivere le visite</h2><p>Queste impostazioni appartengono al tuo account personale e aiutano il Navigator ad adattare l'esperienza. Potrai sempre modificarle soltanto per una singola visita.</p></div></div><div class="account-preferences"><form class="panel" data-presentation-preference><div class="preference-heading"><span>${icon("book", { size: 20 })}</span><div><h3>Presentazione</h3><p>Regola profondità e linguaggio.</p></div></div><label>Profondità <input type="range" min="0" max="1" step="0.05" name="depthPreference" value="${number(presentation.depthPreference)}"><span class="range-labels"><small>Essenziale</small><small>Approfondita</small></span></label><label>Complessità linguistica <input type="range" min="0" max="1" step="0.05" name="languageComplexityPreference" value="${number(presentation.languageComplexityPreference)}"><span class="range-labels"><small>Semplice</small><small>Specialistica</small></span></label><button>${icon("check", { size: 16 })} Salva presentazione</button></form><form class="panel navigation-preference-panel" data-navigation-preference><div class="preference-heading"><span>${icon("route", { size: 20 })}</span><div><h3>Movimento e percorso</h3><p>Salva soltanto esigenze che hanno senso in musei diversi. Le opzioni specifiche della sede compariranno nel Navigator prima di iniziare.</p></div></div><div class="navigation-pace"><label>Ritmo preferito <input type="range" min="0" max="1" step="0.05" name="movementPacePreference" value="${number(navigation.movementPacePreference)}"><span class="range-labels"><small>Rilassato</small><small>Sostenuto</small></span></label></div><div class="navigation-needs-heading"><div><strong>Le mie esigenze di percorso</strong><p>Attiva più esigenze insieme. “Necessario” può impedire l'avvio quando una sede non può garantirlo.</p></div><span>${currentByNeed.size} attive</span></div><div class="navigation-needs-grid">${commonNeeds || `<p class="muted">Nessuna esigenza disponibile.</p>`}</div>${advancedNeeds ? `<details class="navigation-needs-advanced"><summary>Esigenze avanzate</summary><p>Imposta soglie fisiche precise solo quando ti servono davvero.</p><div class="navigation-needs-grid">${advancedNeeds}</div></details>` : ""}<div class="navigation-preference-actions"><p>Queste preferenze verranno proposte automaticamente nelle nuove visite, ma non vengono mai adattate da un singolo museo.</p><button>${icon("check", { size: 16 })} Salva movimento e percorso</button></div></form><form class="panel" data-learning-preference><div class="preference-heading"><span>${icon("user", { size: 20 })}</span><div><h3>Adattamento</h3><p>Controlla l'uso dei segnali personali.</p></div></div><label class="check"><input type="checkbox" name="personalHistory" ${checked(learning.personalHistory)}> <span>Usa la mia cronologia</span></label><label class="check"><input type="checkbox" name="collectiveContribution" ${checked(learning.collectiveContribution)}> <span>Contribuisci in forma pseudonima</span></label><button>${icon("check", { size: 16 })} Salva adattamento</button></form></div></section>`;
