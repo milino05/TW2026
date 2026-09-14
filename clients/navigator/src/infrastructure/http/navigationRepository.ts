@@ -27,6 +27,72 @@ export interface PlannedNavigationLeg {
   };
 }
 
+export interface NavigationProjection {
+  destination: {
+    kind: "venue_place";
+    venueId: string;
+    label: string;
+    category: string;
+    physicalFeatureRef?: null | { kind: "local"; physicalVocabularyId: string; definitionId: string };
+    floorId: string;
+    position: MapPoint;
+  };
+  route: {
+    estimatedSeconds: number;
+    distanceMeters: number;
+    overlays: RouteOverlay[];
+    floorTransitions: FloorTransition[];
+    instructions: string[];
+    warnings: Array<{ code: string; message: string }>;
+  };
+}
+
+export type ActiveNavigationProjection =
+  | ({ intent: "visit_progression" | "physical_detour"; type: "indoor" } & NavigationProjection)
+  | {
+      intent: "visit_progression";
+      type: "inter_venue";
+      destination: { venueId: string; placeId: string };
+      route: {
+        estimatedSeconds: number;
+        distanceMeters: null;
+        transferInstruction: string | null;
+        overlays: [];
+        floorTransitions: [];
+        instructions: string[];
+        warnings: Array<{ code: string; message: string }>;
+      };
+    };
+
+export interface MapKnownLocationProjection {
+  venueId: string;
+  placeId: string;
+  floorId: string;
+  position: MapPoint;
+  label: string | null;
+  category: string | null;
+  visitAnchorId: string | null;
+  venueTargetId: string | null;
+  exhibitSlotId: string | null;
+  source: "manual_selection" | "navigation_confirmation" | "qr" | "teleport" | "geolocation";
+  providerId: string | null;
+  observedAt: string | null;
+}
+
+export interface SelectableLocationProjection {
+  kind: "place" | "visit_stop" | "facility";
+  venueId: string;
+  placeId: string;
+  visitAnchorId: string | null;
+  label: string;
+  category: string;
+  floorId: string;
+  position: MapPoint;
+  locationRef:
+    | { kind: "place"; venueId: string; placeId: string }
+    | { kind: "visit_anchor"; visitAnchorId: string };
+}
+
 export interface MapProjection {
   venues: Array<{
     id: string;
@@ -69,25 +135,36 @@ export interface MapProjection {
     estimatedSeconds: number;
     instruction: string | null;
   }>;
-}
-
-export interface NavigationProjection {
-  destination: {
-    kind: "venue_place";
+  knownLocation: MapKnownLocationProjection | null;
+  narrativeContextStop: null | {
     venueId: string;
+    visitAnchorId: string;
+    venueTargetId: string;
+    exhibitSlotId: string;
     label: string;
-    category: string;
+    approachInstruction: string | null;
     floorId: string;
     position: MapPoint;
+    order: number;
   };
-  route: {
-    estimatedSeconds: number;
-    distanceMeters: number;
-    overlays: RouteOverlay[];
-    floorTransitions: FloorTransition[];
-    instructions: string[];
-    warnings: Array<{ code: string; message: string }>;
+  selectableLocations: SelectableLocationProjection[];
+  plannedVisitRoute: {
+    plannedLegs: PlannedNavigationLeg[];
+    interVenueTransitions: Array<{
+      fromVisitAnchorId: string;
+      toVisitAnchorId: string;
+      estimatedSeconds: number;
+      instruction: string | null;
+    }>;
+    venues: Array<{
+      venueId: string;
+      route: {
+        overlays: Array<RouteOverlay & { fromVisitAnchorId: string; toVisitAnchorId: string }>;
+        floorTransitions: Array<FloorTransition & { fromVisitAnchorId: string; toVisitAnchorId: string }>;
+      };
+    }>;
   };
+  activeNavigation: ActiveNavigationProjection | null;
 }
 
 export interface ObstacleCheckProjection {
