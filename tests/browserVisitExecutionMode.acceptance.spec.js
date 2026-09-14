@@ -27,8 +27,10 @@ function preparation({ version = 1, mode = "self_guided", alias = null, status =
     },
     navigation: {
       movementPacePreference: 0.5,
+      personalNeeds: { catalog: [], selected: [], supportByVenue: [] },
       routingProfileSelections: [],
-      profilesByVenue: [],
+      venueControlSelections: [],
+      venues: [],
     },
     preVisit: {
       visitNotes: ["Ritrovo all'ingresso."],

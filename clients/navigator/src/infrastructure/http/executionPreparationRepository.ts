@@ -9,6 +9,61 @@ export type RoutingProfileSelection = {
   routingProfileDefinitionId: string;
 };
 
+export type VenueControlSelection = {
+  venueId: string;
+  physicalAttributeDefinitionId: string;
+  value?: unknown;
+};
+
+export type PersonalNavigationNeedDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  dataType: "boolean" | "number" | "choice" | "string";
+  unit: string | null;
+  valueMode: "fixed" | "user";
+  value?: unknown;
+  allowedPriorities: Array<"preferred" | "required">;
+  defaultPriority: "preferred" | "required";
+  advanced: boolean;
+};
+
+export type PersonalNavigationNeedSelection = {
+  id: string;
+  label: string;
+  description: string;
+  priority: "preferred" | "required";
+  value: unknown;
+  unit: string | null;
+  advanced: boolean;
+};
+
+export type PersonalNavigationNeedSelectionInput = {
+  id: string;
+  priority: "preferred" | "required";
+  value?: unknown;
+};
+
+export type RoutingProfileDefinition = {
+  definitionId: string;
+  label: string;
+  description: string;
+  requirements: Array<{
+    label: string;
+  }>;
+};
+
+export type VenueNavigationControl = {
+  definitionId: string;
+  label: string;
+  description: string;
+  dataType: "boolean" | "number" | "choice";
+  unit: string | null;
+  options: Array<{ value: string; label: string }>;
+  valueMode: "fixed" | "user";
+  value?: unknown;
+};
+
 export interface ExecutionPreparationProjection {
   id: string;
   version: number;
@@ -32,21 +87,23 @@ export interface ExecutionPreparationProjection {
   };
   navigation: {
     movementPacePreference: number;
-    routingProfileSelections: RoutingProfileSelection[];
-    profilesByVenue: Array<{
-      venueId: string;
-      physicalVocabularyRevisionId: string;
-      profiles: Array<{
-        definitionId: string;
-        label: string;
-        description: string;
-        requirements: Array<{
-          label: string;
-          operator: string;
-          value: unknown;
-          priority: "required" | "preferred" | "avoid";
-        }>;
+    personalNeeds: {
+      catalog: PersonalNavigationNeedDefinition[];
+      selected: PersonalNavigationNeedSelection[];
+      supportByVenue: Array<{
+        venueId: string;
+        name: string;
+        needs: Array<{ id: string; supported: boolean; definitionId: string | null }>;
       }>;
+    };
+    routingProfileSelections: RoutingProfileSelection[];
+    venueControlSelections: VenueControlSelection[];
+    venues: Array<{
+      venueId: string;
+      name: string;
+      selectedProfileDefinitionId: string | null;
+      profiles: RoutingProfileDefinition[];
+      controls: VenueNavigationControl[];
     }>;
   };
   preVisit: {
@@ -90,6 +147,8 @@ export interface PreparationUpdate {
     locale?: string;
   };
   movementPacePreference?: number;
+  personalNeedSelections?: PersonalNavigationNeedSelectionInput[];
+  venueControlSelections?: VenueControlSelection[];
   routingProfileSelections?: RoutingProfileSelection[];
   executionMode?: ExecutionMode;
   groupSessionSetup?: {

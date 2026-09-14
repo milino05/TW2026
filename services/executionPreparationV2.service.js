@@ -10,6 +10,7 @@ const SynchronizedVisitSession = require("../models/synchronizedVisitSession.mod
 const ExecutionPreparation = require("../models/executionPreparation.model");
 const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
+const { projectNavigationNeedCatalog } = require("../config/navigationNeedCatalog");
 const {
   resolveExecutableVisitRevisionV2,
   assertCanExecuteResolvedVisitRevisionV2,
@@ -28,6 +29,13 @@ const {
 } = require("./synchronizedVisitSession.service");
 const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
 const { normalizeRoutingProfileSelections } = require("./routingProfileSelectionV2.service");
+const {
+  normalizePersonalNavigationNeedSelections,
+  compilePersonalNavigationNeedSelections,
+  projectPersonalNavigationRequirements,
+} = require("./navigationNeedPreference.service");
+const { normalizeVenueControlSelections } = require("./venueRoutingControlSelectionV2.service");
+const { materializeExecutionNavigationSnapshot } = require("./executionNavigationSnapshotV2.service");
 const { projectExecutionNavigationOptions } = require("./executionNavigationOptionsV2.service");
 const { assessPreparedMapReadiness } = require("./navigationProjectionV2.service");
 
@@ -112,9 +120,9 @@ function normalizePresentationPreference(stored = null, override = null) {
   return Object.values(result).some((value) => value !== null) ? result : null;
 }
 function normalizeNavigation(stored = {}, draft = {}) {
-  const rawRequirements = Array.isArray(draft.navigationRequirements)
-    ? draft.navigationRequirements
-    : stored?.requirements;
+  const hasDraftPersonalNeeds = Array.isArray(draft.personalNeedSelections);
+  const hasDraftVenueControls = Array.isArray(draft.venueControlSelections);
+  const storedRequirements = normalizeRoutingRequirements(stored?.requirements || [], { field: "navigationRequirements" });
   const rawProfileSelections = Array.isArray(draft.routingProfileSelections)
     ? draft.routingProfileSelections
     : stored?.routingProfileSelections;
@@ -123,7 +131,17 @@ function normalizeNavigation(stored = {}, draft = {}) {
       ? Number(draft.movementPacePreference)
       : validUnit(stored?.movementPacePreference) ? Number(stored.movementPacePreference) : 0.5,
     routingProfileSelections: normalizeRoutingProfileSelections(rawProfileSelections || [], { field: "routingProfileSelections" }),
-    requirements: normalizeRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
+    requirements: hasDraftPersonalNeeds
+      ? compilePersonalNavigationNeedSelections({
+        selections: draft.personalNeedSelections,
+        existingRequirements: storedRequirements,
+        field: "personalNeedSelections",
+      })
+      : storedRequirements,
+    venueControlSelections: hasDraftVenueControls
+      ? normalizeVenueControlSelections(draft.venueControlSelections, { field: "venueControlSelections" })
+      : [],
+    venueRequirements: hasDraftVenueControls ? [] : (stored?.venueRequirements || []),
   };
 }
 function normalizedDraft(payload = {}) {
@@ -142,7 +160,16 @@ function normalizedDraft(payload = {}) {
     draft.routingProfileSelections = normalizeRoutingProfileSelections(payload.routingProfileSelections, { field: "routingProfileSelections" });
   }
   if (payload.navigationRequirements !== undefined) {
-    draft.navigationRequirements = normalizeRoutingRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
+    throw new AppError("Il client deve inviare personalNeedSelections, non requirement tecnici di navigazione", 400, [{
+      field: "navigationRequirements",
+      code: "TECHNICAL_NAVIGATION_REQUIREMENTS_NOT_ALLOWED",
+    }]);
+  }
+  if (payload.personalNeedSelections !== undefined) {
+    draft.personalNeedSelections = normalizePersonalNavigationNeedSelections(payload.personalNeedSelections, { field: "personalNeedSelections" });
+  }
+  if (payload.venueControlSelections !== undefined) {
+    draft.venueControlSelections = normalizeVenueControlSelections(payload.venueControlSelections, { field: "venueControlSelections" });
   }
   return draft;
 }
@@ -230,7 +257,7 @@ async function loadExactSourceForPreparation(preparation, { revalidateAuthorizat
 function projectWarning(warning) {
   const code = warning?.code || "NAVIGATION_WARNING";
   const messages = {
-    PREFERRED_ATTRIBUTE_UNSUPPORTED: "Una preferenza di percorso non e disponibile in una delle sedi.",
+    PREFERRED_ATTRIBUTE_UNSUPPORTED: "Una preferenza di percorso non è disponibile in una delle sedi.",
   };
   return { code, message: warning?.message || messages[code] || "La preparazione contiene un avviso di navigazione." };
 }
@@ -284,7 +311,7 @@ function readinessFromPlanningError(error) {
     status: "blocked",
     blockers: details.map((detail) => ({
       code: detail.code || "PREPARATION_NOT_READY",
-      message: detail.message || error.message || "La visita non puo essere avviata con la configurazione corrente.",
+      message: detail.message || error.message || "La visita non può essere avviata con la configurazione corrente.",
     })),
     warnings: [],
   };
@@ -324,7 +351,7 @@ async function fallbackPhysicalProjection(sourceSnapshot) {
   } catch {
     return {
       venuePins: [],
-      navigationOptions: { profilesByVenue: [] },
+      navigationOptions: { venues: [] },
       preVisit: { visitNotes: sourceSnapshot.explanation?.preVisitNotes || [], venues: [] },
     };
   }
@@ -343,6 +370,7 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
     return {
       venuePins: prepared.venuePins,
       navigationOptions: await projectExecutionNavigationOptions(prepared.venuePins),
+      navigationSnapshot: await materializeExecutionNavigationSnapshot({ navigation, venuePins: prepared.venuePins }),
       speedMps: prepared.speedMps,
       plan: prepared.plan,
       readiness: await buildReadiness(prepared),
@@ -355,6 +383,7 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
     return {
       venuePins: fallback.venuePins,
       navigationOptions: fallback.navigationOptions,
+      navigationSnapshot: await materializeExecutionNavigationSnapshot({ navigation, venuePins: fallback.venuePins }),
       speedMps: resolveMovementSpeed(navigation.movementPacePreference),
       plan: null,
       readiness: readinessFromPlanningError(error),
@@ -365,6 +394,10 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
 }
 
 function publicProjection(preparation) {
+  const optionVenues = preparation.navigationOptions?.venues || [];
+  const selectedRequirements = projectPersonalNavigationRequirements(preparation.navigationSnapshot?.requirements || []);
+  const selectedProfileByVenue = new Map((preparation.navigationSnapshot?.routingProfileSelections || []).map((selection) => [id(selection.venueId), selection.routingProfileDefinitionId]));
+  const venueControlSelections = preparation.preparationDraft?.venueControlSelections || [];
   return {
     id: preparation._id,
     version: preparation.version,
@@ -385,9 +418,25 @@ function publicProjection(preparation) {
     },
     effectivePresentationPreference: preparation.effectivePresentationPreference || null,
     navigation: {
-      movementPacePreference: preparation.navigationSnapshot.movementPacePreference,
-      routingProfileSelections: preparation.navigationSnapshot.routingProfileSelections || [],
-      profilesByVenue: preparation.navigationOptions?.profilesByVenue || [],
+      movementPacePreference: preparation.navigationSnapshot?.movementPacePreference ?? 0.5,
+      personalNeeds: {
+        catalog: projectNavigationNeedCatalog(),
+        selected: selectedRequirements,
+        supportByVenue: optionVenues.map((venue) => ({
+          venueId: venue.venueId,
+          name: venue.name,
+          needs: venue.personalNeedSupport || [],
+        })),
+      },
+      routingProfileSelections: preparation.navigationSnapshot?.routingProfileSelections || [],
+      venueControlSelections,
+      venues: optionVenues.map((venue) => ({
+        venueId: venue.venueId,
+        name: venue.name,
+        selectedProfileDefinitionId: selectedProfileByVenue.get(id(venue.venueId)) || null,
+        profiles: venue.profiles || [],
+        controls: venue.controls || [],
+      })),
     },
     preVisit: preparation.preVisit || { visitNotes: [], venues: [] },
     readiness: preparation.readiness,
@@ -423,7 +472,7 @@ async function createExecutionPreparation({ userId, payload = {} }) {
     status: "active",
     preparationDraft: draft,
     effectivePresentationPreference: presentation,
-    navigationSnapshot: navigation,
+    navigationSnapshot: state.navigationSnapshot,
     navigationOptions: state.navigationOptions,
     venuePins: state.venuePins,
     sessionMovementSpeedMps: state.speedMps,
@@ -470,7 +519,7 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
       groupSessionSetup,
       preparationDraft: draft,
       effectivePresentationPreference: presentation,
-      navigationSnapshot: navigation,
+      navigationSnapshot: state.navigationSnapshot,
       navigationOptions: state.navigationOptions,
       venuePins: state.venuePins,
       sessionMovementSpeedMps: state.speedMps,

@@ -8,6 +8,8 @@ const commercial = require("../services/marketplaceCommercialV2.service");
 const accountWorkspace = require("../services/marketplaceAccountWorkspaceV2.service");
 const management = require("../services/marketplaceManagementV2.service");
 const itemAuthoring = require("../services/itemAuthoringV2.service");
+const { projectNavigationNeedCatalog } = require("../config/navigationNeedCatalog");
+const { projectPersonalNavigationRequirements } = require("../services/navigationNeedPreference.service");
 const { getNamespaceAuthoringControls } = require("../services/namespaceAuthoringV2.service");
 const { executeWorkspaceOperation } = require("../services/marketplaceWorkspaceOperationsV2.service");
 const { removeOwnedWorkspaceResource } = require("../services/marketplaceResourceRemovalV2.service");
@@ -203,8 +205,14 @@ async function removeCreatorWorkspaceResource(req, res, next) {
   } catch (error) { next(error); }
 }
 async function marketplaceAccountWorkspace(req, res, next) {
-  try { res.status(200).json(await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id })); }
-  catch (error) { next(error); }
+  try {
+    const projection = await accountWorkspace.getMarketplaceAccountWorkspace({ actorUserId: req.user._id });
+    res.status(200).json({
+      ...projection,
+      navigationNeedCatalog: projectNavigationNeedCatalog(),
+      navigationNeedSelections: projectPersonalNavigationRequirements(projection.account?.defaultNavigationPreference?.requirements || []),
+    });
+  } catch (error) { next(error); }
 }
 async function marketplaceOrganizationDetail(req, res, next) {
   try {

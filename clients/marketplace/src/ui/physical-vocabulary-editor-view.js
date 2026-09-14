@@ -31,7 +31,7 @@ const META = {
   physicalAttributes: {
     title: "Caratteristiche fisiche", singular: "caratteristica fisica",
     question: "Quali fatti fisici servono al routing?",
-    description: "Definisci caratteristiche verificabili di luoghi e collegamenti: gradini, larghezza, superficie, accessibilità e altre proprietà.",
+    description: "Definisci caratteristiche verificabili di luoghi e collegamenti. Se una caratteristica ha senso come scelta locale, puoi anche esporla al visitatore prima della visita.",
     example: "Accessibile senza gradini · sì/no/non verificato nel layout.",
   },
   routingProfiles: {
@@ -47,8 +47,8 @@ const TUTORIAL_STEPS = [
   { section: "general", title: "Un passaggio alla volta", body: "Usa queste sezioni come un percorso. I numeri indicano quante definizioni hai già aggiunto; puoi tornare su ogni sezione in qualsiasi momento.", target: '[data-physical-tutorial-anchor="sections"]' },
   { section: "placeTypes", title: "1. Definisci i tipi di luogo", body: "Indica che cosa può rappresentare un punto sulla mappa: sala, ingresso, servizi o ascensore. Sono categorie riutilizzabili, non i luoghi reali di una singola sede.", target: "#physical-placeTypes" },
   { section: "connectionTypes", title: "2. Descrivi i collegamenti", body: "Spiega come possono essere connessi due luoghi: corridoio, porta, rampa o scala. Il collegamento concreto verrà poi disegnato nella sede.", target: "#physical-connectionTypes" },
-  { section: "physicalAttributes", title: "3. Aggiungi le caratteristiche fisiche", body: "Definisci fatti verificabili utili al percorso, come la presenza di gradini o la larghezza di un passaggio. Un valore assente significa non verificato, non falso.", target: "#physical-physicalAttributes" },
-  { section: "routingProfiles", title: "4. Crea profili di percorso", body: "Combina le caratteristiche in requisiti e preferenze riutilizzabili, per esempio un percorso senza gradini o adatto a passaggi larghi.", target: "#physical-routingProfiles" },
+  { section: "physicalAttributes", title: "3. Aggiungi le caratteristiche fisiche", body: "Definisci fatti verificabili utili al percorso. Le caratteristiche specifiche della sede possono anche diventare opzioni della singola visita, senza trasformarsi in preferenze globali dell'utente.", target: "#physical-physicalAttributes" },
+  { section: "routingProfiles", title: "4. Crea profili di percorso", body: "Combina le caratteristiche in preset locali riutilizzabili, per esempio un percorso immersivo o un percorso senza gradini.", target: "#physical-routingProfiles" },
   { section: "mappings", title: "5. Collega concetti esterni", body: "Gli alias aiutano il linguaggio umano; i mapping riconoscono concetti equivalenti in vocabolari esterni senza cambiare l'identità delle definizioni locali.", target: "#physical-mappings" },
   { section: "general", title: "Controlla, poi pubblica", body: "Torna in Generale, controlla la consistenza e pubblica. Le sedi useranno una revisione precisa e stabile del vocabolario.", target: '[data-physical-tutorial-anchor="workflow"]' },
   { section: "general", title: "Vuoi partire da una configurazione pronta?", body: "Puoi aggiungere la configurazione base ArtAround con tipi di luogo, collegamenti, caratteristiche e profili già pronti. Potrai modificarla liberamente e le definizioni già presenti non verranno sovrascritte.", target: null, starter: true },
@@ -113,7 +113,11 @@ function parseRequirementValue(raw, attribute, operator) {
   const value = String(raw ?? "").trim();
   if (operator === "in") return value.split(",").map((entry) => entry.trim()).filter(Boolean);
   if (attribute?.dataType === "boolean") return value === "true";
-  if (attribute?.dataType === "number") { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : value; }
+  if (attribute?.dataType === "number") {
+    if (value === "") return "";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
   return value;
 }
 function defaultRequirementValue(attribute) {
@@ -123,16 +127,37 @@ function defaultRequirementValue(attribute) {
   if (attribute.dataType === "choice") return attribute.options?.[0]?.value || "";
   return "";
 }
+function visitorOperatorEntries(attribute) {
+  const allowed = attribute?.dataType === "boolean" ? ["eq", "neq"]
+    : attribute?.dataType === "number" ? ["eq", "neq", "gte", "lte", "gt", "lt"]
+      : attribute?.dataType === "choice" ? ["eq", "neq", "in"] : [];
+  return allowed.map((operator) => [operator, OPERATOR_LABEL[operator]]);
+}
+function defaultVisitorControl(attribute) {
+  return {
+    enabled: false,
+    label: null,
+    description: null,
+    operator: attribute?.dataType === "number" ? "gte" : "eq",
+    valueMode: "fixed",
+    value: defaultRequirementValue(attribute),
+    priority: "preferred",
+  };
+}
+function ensureVisitorControl(attribute) {
+  attribute.visitorControl ||= defaultVisitorControl(attribute);
+  return attribute.visitorControl;
+}
 function emptyDefinition(field) {
   const base = { definitionId: uuid(), key: null, label: "", description: "", localizations: [], semanticRefs: [], metadata: {} };
-  if (field === "physicalAttributes") return { ...base, dataType: "boolean", unit: null, options: [], appliesTo: "both" };
+  if (field === "physicalAttributes") return { ...base, dataType: "boolean", unit: null, options: [], appliesTo: "both", visitorControl: defaultVisitorControl({ dataType: "boolean" }) };
   if (field === "routingProfiles") return { ...base, requirements: [] };
   if (field === "placeTypes") base.metadata = { navigationTarget: true };
   return base;
 }
 function definitionName(definition) { return definition.label || definition.key || "Nuova definizione"; }
 function starterPreview() {
-  return `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>9 caratteristiche</strong><small>Accessibilità e proprietà utili al percorso</small></div><div><strong>4 profili</strong><small>Preferenze di percorso già configurate</small></div></div>`;
+  return `<div class="physical-starter-preview"><div><strong>13 tipi di luogo</strong><small>Sale, ingressi, servizi e altri spazi</small></div><div><strong>8 collegamenti</strong><small>Porte, corridoi, rampe e scale</small></div><div><strong>7 caratteristiche</strong><small>Proprietà fisiche generiche utili al percorso</small></div><div><strong>2 profili</strong><small>Preset locali di percorso già configurati</small></div></div>`;
 }
 
 export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
@@ -185,6 +210,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
       this.data = await managementRepository.physicalVocabulary(this.id);
       const source = this.data.revision?.definitions || {};
       this.definitions = Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, clone(source[field] || [])]));
+      this.definitions.physicalAttributes.forEach((attribute) => ensureVisitorControl(attribute));
       this.dirty = false;
       if (this.shouldStartTutorial()) this.startTutorial({ remember: true });
     } catch (error) { this.error = error instanceof Error ? error.message : "Vocabolario fisico non disponibile"; }
@@ -289,10 +315,35 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     else if (property === "aliases") replaceAliases(definition, splitAliases(input.value));
     else if (property === "key") definition.key = input.value.trim() || null;
     else if (property === "navigationTarget") definition.metadata = { ...(definition.metadata || {}), navigationTarget: input.checked };
-    else if (property === "dataType") { definition.dataType = input.value; if (input.value !== "choice") definition.options = []; }
+    else if (property === "dataType") {
+      definition.dataType = input.value;
+      if (input.value !== "choice") definition.options = [];
+      const control = ensureVisitorControl(definition);
+      if (input.value === "string") control.enabled = false;
+      control.operator = input.value === "number" ? "gte" : "eq";
+      control.valueMode = "fixed";
+      control.value = defaultRequirementValue(definition);
+    }
     else if (property === "appliesTo") definition.appliesTo = input.value;
     else if (property === "unit") definition.unit = input.value.trim() || null;
-    else if (property === "options") definition.options = parseOptions(input.value);
+    else if (property === "options") {
+      definition.options = parseOptions(input.value);
+      const control = ensureVisitorControl(definition);
+      if (control.valueMode === "fixed" && !definition.options.some((entry) => entry.value === control.value)) control.value = defaultRequirementValue(definition);
+    }
+    else if (property?.startsWith("visitorControl.")) {
+      const control = ensureVisitorControl(definition);
+      const controlProperty = property.split(".")[1];
+      if (controlProperty === "enabled") control.enabled = input.checked;
+      else if (controlProperty === "label" || controlProperty === "description") control[controlProperty] = input.value.trim() || null;
+      else if (controlProperty === "operator" || controlProperty === "priority") control[controlProperty] = input.value;
+      else if (controlProperty === "valueMode") {
+        control.valueMode = input.value;
+        if (input.value === "fixed") control.value = defaultRequirementValue(definition);
+        else control.value = null;
+        this.markDirty(); this.render(); return;
+      } else if (controlProperty === "value") control.value = parseRequirementValue(input.value, definition, control.operator);
+    }
     else if (property?.startsWith("requirement.")) {
       const requirement = definition.requirements?.[Number(input.dataset.requirementIndex)];
       if (!requirement) return;
@@ -310,6 +361,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
       }
     }
     this.markDirty();
+    if (property === "visitorControl.enabled") this.render();
   };
 
   markDirty() {
@@ -531,10 +583,23 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
         : `<input data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.value" value="${escapeHtml(valueForInput(requirement.value))}" ${attribute?.dataType === "number" ? `type="number" step="any"` : ""} ${editable ? "" : "disabled"}>`;
     return `<div class="physical-requirement"><label>Caratteristica<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.physicalAttributeDefinitionId" ${editable ? "" : "disabled"}>${attributes.map((entry) => `<option value="${escapeHtml(entry.definitionId)}" ${selected(entry.definitionId, requirement.physicalAttributeDefinitionId)}>${escapeHtml(definitionName(entry))}</option>`).join("")}</select></label><label>Condizione<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.operator" ${editable ? "" : "disabled"}>${Object.entries(OPERATOR_LABEL).map(([value, label]) => `<option value="${value}" ${selected(value, requirement.operator)}>${escapeHtml(label)}</option>`).join("")}</select></label><label>Valore${valueControl}</label><label>Importanza<select data-collection="routingProfiles" data-index="${profileIndex}" data-requirement-index="${requirementIndex}" data-property="requirement.priority" ${editable ? "" : "disabled"}>${Object.entries(PRIORITY_LABEL).map(([value, label]) => `<option value="${value}" ${selected(value, requirement.priority)}>${escapeHtml(label)}</option>`).join("")}</select></label>${editable ? `<button type="button" class="icon-danger" data-remove-requirement data-index="${profileIndex}" data-requirement-index="${requirementIndex}" aria-label="Rimuovi requisito">×</button>` : ""}</div>`;
   }
+
+  renderVisitorControl(definition, index, editable) {
+    if (definition.dataType === "string") return `<section class="physical-visitor-control physical-visitor-control--disabled"><div><span class="eyebrow">Opzione della visita</span><strong>Non disponibile per valori testuali</strong><p>Nella prima versione il Navigator espone controlli locali solo per valori sì/no, numerici o a scelta.</p></div></section>`;
+    const control = ensureVisitorControl(definition);
+    const operators = visitorOperatorEntries(definition);
+    const valueControl = definition.dataType === "boolean"
+      ? `<select data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.value" ${editable ? "" : "disabled"}><option value="true" ${selected("true", String(control.value))}>Sì</option><option value="false" ${selected("false", String(control.value))}>No</option></select>`
+      : definition.dataType === "choice"
+        ? `<select data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.value" ${editable ? "" : "disabled"}>${(definition.options || []).map((option) => `<option value="${escapeHtml(option.value)}" ${selected(option.value, control.value)}>${escapeHtml(option.label)}</option>`).join("")}</select>`
+        : `<input type="number" step="any" data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.value" value="${escapeHtml(valueForInput(control.value))}" ${editable ? "" : "disabled"}>`;
+    return `<section class="physical-visitor-control ${control.enabled ? "is-enabled" : ""}"><div class="physical-visitor-control__heading"><div><span class="eyebrow">Opzione della visita</span><strong>Mostra questa caratteristica al visitatore</strong><p>La scelta sarà valida soltanto nella preparation della visita e resterà legata a questa Venue.</p></div><label class="physical-visitor-toggle"><input type="checkbox" data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.enabled" ${checked(control.enabled)} ${editable ? "" : "disabled"}><span>${control.enabled ? "Attiva" : "Disattiva"}</span></label></div>${control.enabled ? `<div class="physical-visitor-control__fields"><label>Etichetta per il visitatore<input data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.label" value="${escapeHtml(control.label || "")}" placeholder="${escapeHtml(definition.label || "Es. Evita aree esterne")}" ${editable ? "" : "disabled"}><small>Può essere più orientata all'azione rispetto al nome tecnico della caratteristica.</small></label><label>Importanza<select data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.priority" ${editable ? "" : "disabled"}>${Object.entries(PRIORITY_LABEL).map(([value, label]) => `<option value="${value}" ${selected(value, control.priority)}>${escapeHtml(label)}</option>`).join("")}</select></label><label class="wide">Spiegazione per il visitatore<textarea rows="2" data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.description" placeholder="Spiega in modo chiaro come questa scelta influenza il percorso." ${editable ? "" : "disabled"}>${escapeHtml(control.description || "")}</textarea></label><label>Condizione<select data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.operator" ${editable ? "" : "disabled"}>${operators.map(([value, label]) => `<option value="${value}" ${selected(value, control.operator)}>${escapeHtml(label)}</option>`).join("")}</select></label><label>Valore<select data-collection="physicalAttributes" data-index="${index}" data-property="visitorControl.valueMode" ${editable ? "" : "disabled"}><option value="fixed" ${selected("fixed", control.valueMode)}>Definito dalla sede</option><option value="user" ${selected("user", control.valueMode)}>Scelto dal visitatore</option></select></label>${control.valueMode === "fixed" ? `<label>Valore applicato${valueControl}</label>` : `<div class="physical-visitor-hint"><strong>Valore scelto al momento della visita</strong><small>Il Navigator userà automaticamente ${definition.dataType === "number" ? `un campo numerico${definition.unit ? ` in ${escapeHtml(definition.unit)}` : ""}` : definition.dataType === "choice" ? "le opzioni configurate sopra" : "una scelta sì/no"}.</small></div>`}</div>` : ""}</section>`;
+  }
+
   renderDefinitionCard(field, definition, index, editable) {
     const aliases = localAliases(definition).join(", ");
     const special = field === "physicalAttributes"
-      ? `<div class="physical-definition-special"><label>Tipo di valore<select data-collection="${field}" data-index="${index}" data-property="dataType" ${editable ? "" : "disabled"}><option value="boolean" ${selected("boolean", definition.dataType)}>Sì / No / Non verificato</option><option value="number" ${selected("number", definition.dataType)}>Numero</option><option value="string" ${selected("string", definition.dataType)}>Testo</option><option value="choice" ${selected("choice", definition.dataType)}>Scelta da elenco</option></select></label><label>Si applica a<select data-collection="${field}" data-index="${index}" data-property="appliesTo" ${editable ? "" : "disabled"}><option value="place" ${selected("place", definition.appliesTo)}>Luoghi</option><option value="connection" ${selected("connection", definition.appliesTo)}>Collegamenti</option><option value="both" ${selected("both", definition.appliesTo)}>Entrambi</option></select></label>${definition.dataType === "number" ? `<label>Unità di misura<input data-collection="${field}" data-index="${index}" data-property="unit" value="${escapeHtml(definition.unit || "")}" placeholder="Es. cm" ${editable ? "" : "disabled"}></label>` : ""}${definition.dataType === "choice" ? `<label class="wide">Opzioni<textarea rows="3" data-collection="${field}" data-index="${index}" data-property="options" ${editable ? "" : "disabled"}>${escapeHtml(optionsText(definition.options))}</textarea><small>Una riga per opzione: valore = etichetta visibile.</small></label>` : ""}</div>`
+      ? `<div class="physical-definition-special"><label>Tipo di valore<select data-collection="${field}" data-index="${index}" data-property="dataType" ${editable ? "" : "disabled"}><option value="boolean" ${selected("boolean", definition.dataType)}>Sì / No / Non verificato</option><option value="number" ${selected("number", definition.dataType)}>Numero</option><option value="string" ${selected("string", definition.dataType)}>Testo</option><option value="choice" ${selected("choice", definition.dataType)}>Scelta da elenco</option></select></label><label>Si applica a<select data-collection="${field}" data-index="${index}" data-property="appliesTo" ${editable ? "" : "disabled"}><option value="place" ${selected("place", definition.appliesTo)}>Luoghi</option><option value="connection" ${selected("connection", definition.appliesTo)}>Collegamenti</option><option value="both" ${selected("both", definition.appliesTo)}>Entrambi</option></select></label>${definition.dataType === "number" ? `<label>Unità di misura<input data-collection="${field}" data-index="${index}" data-property="unit" value="${escapeHtml(definition.unit || "")}" placeholder="Es. cm" ${editable ? "" : "disabled"}></label>` : ""}${definition.dataType === "choice" ? `<label class="wide">Opzioni<textarea rows="3" data-collection="${field}" data-index="${index}" data-property="options" ${editable ? "" : "disabled"}>${escapeHtml(optionsText(definition.options))}</textarea><small>Una riga per opzione: valore = etichetta visibile.</small></label>` : ""}</div>${this.renderVisitorControl(definition, index, editable)}`
       : field === "routingProfiles"
         ? `<div class="physical-requirements"><div class="section-heading compact"><div><strong>Regole del profilo</strong><p>Scegli caratteristiche già definite e indica se sono necessarie, preferite o da evitare.</p></div>${editable && this.definitions.physicalAttributes.length ? `<button type="button" class="button-secondary small" data-add-requirement data-index="${index}">${icon("plus", { size: 14 })} Aggiungi regola</button>` : ""}</div>${(definition.requirements || []).map((requirement, requirementIndex) => this.renderRequirement(index, requirement, requirementIndex, editable)).join("") || `<p class="muted">Nessuna regola: il profilo non modifica ancora il routing.</p>`}</div>`
         : field === "placeTypes" ? `<label class="check physical-navigation-target"><input type="checkbox" data-collection="${field}" data-index="${index}" data-property="navigationTarget" ${checked(definition.metadata?.navigationTarget)} ${editable ? "" : "disabled"}><span>Può essere proposto come destinazione logistica al visitatore</span></label>` : "";

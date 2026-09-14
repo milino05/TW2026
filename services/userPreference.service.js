@@ -11,6 +11,7 @@ const { contributorHash } = require("./contributorIdentity.service");
 const { removeUserLearningV2 } = require("./learningV2.service");
 const { getActiveUserOrFail } = require("./userAuthorization.service");
 const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
+const { compilePersonalNavigationNeedSelections } = require("./navigationNeedPreference.service");
 
 function unit(value, field) {
   const number = Number(value);
@@ -28,14 +29,31 @@ function normalizePresentationPreference(payload = {}) {
   };
 }
 
-function normalizeNavigationPreference(payload = {}) {
+function normalizeNavigationPreference(payload = {}, current = {}) {
   const movementPacePreference = payload.movementPacePreference === undefined
-    ? 0.5
+    ? (Number.isFinite(Number(current?.movementPacePreference)) ? Number(current.movementPacePreference) : 0.5)
     : unit(payload.movementPacePreference, "movementPacePreference");
-  return {
-    movementPacePreference,
-    requirements: normalizeRoutingRequirements(payload.requirements, { field: "requirements", semanticOnly: true }),
-  };
+  const hasRequirements = Object.prototype.hasOwnProperty.call(payload, "requirements");
+  const hasPersonalNeedSelections = Object.prototype.hasOwnProperty.call(payload, "personalNeedSelections");
+  if (hasRequirements && hasPersonalNeedSelections) {
+    throw new AppError("Specificare requirements oppure personalNeedSelections, non entrambi", 400, [{
+      field: "personalNeedSelections",
+      code: "MUTUALLY_EXCLUSIVE_FIELDS",
+    }]);
+  }
+  let requirements;
+  if (hasPersonalNeedSelections) {
+    requirements = compilePersonalNavigationNeedSelections({
+      selections: payload.personalNeedSelections,
+      existingRequirements: current?.requirements || [],
+      field: "personalNeedSelections",
+    });
+  } else if (hasRequirements) {
+    requirements = normalizeRoutingRequirements(payload.requirements, { field: "requirements", semanticOnly: true });
+  } else {
+    requirements = normalizeRoutingRequirements(current?.requirements || [], { field: "requirements", semanticOnly: true });
+  }
+  return { movementPacePreference, requirements };
 }
 
 async function setDefaultPresentationPreference({ userId, payload }) {
@@ -50,8 +68,11 @@ async function setDefaultPresentationPreference({ userId, payload }) {
 }
 
 async function setDefaultNavigationPreference({ userId, payload }) {
-  await getActiveUserOrFail(userId);
-  const preference = normalizeNavigationPreference(payload || {});
+  const currentUser = await getActiveUserOrFail(userId);
+  const currentPreference = currentUser.defaultNavigationPreference?.toObject?.()
+    || currentUser.defaultNavigationPreference
+    || {};
+  const preference = normalizeNavigationPreference(payload || {}, currentPreference);
   const user = await User.findByIdAndUpdate(
     userId,
     { $set: { defaultNavigationPreference: preference } },

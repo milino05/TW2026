@@ -31,6 +31,7 @@ function attribute(overrides = {}) {
     unit: null,
     options: [],
     appliesTo: "both",
+    visitorControl: { enabled: false },
     ...overrides,
   };
 }
@@ -40,8 +41,8 @@ test("lo starter fisico e ricco, valido, idempotente e non distruttivo", () => {
   assert.deepEqual(Object.fromEntries(Object.entries(first.snapshot).map(([field, values]) => [field, values.length])), {
     placeTypes: 13,
     connectionTypes: 8,
-    physicalAttributes: 9,
-    routingProfiles: 4,
+    physicalAttributes: 7,
+    routingProfiles: 2,
   });
   assert.deepEqual(first.conflicts, []);
   assert.deepEqual(validatePhysicalVocabularyRevisionSnapshot(first.snapshot), []);
@@ -138,10 +139,84 @@ test("normalizzazione e unknown-field validation mantengono il contratto chiuso"
     physicalAttributes: [{ key: " WIDTH ", label: " Larghezza ", dataType: " NUMBER ", unit: " cm ", appliesTo: " CONNECTION " }],
   });
   assert.deepEqual(normalized.physicalAttributes[0].options, []);
+  assert.deepEqual(normalized.physicalAttributes[0].visitorControl, { enabled: false });
   assert.equal(normalized.physicalAttributes[0].key, "width");
   assert.equal(normalized.physicalAttributes[0].dataType, "number");
   const issues = validatePhysicalVocabularyRevisionUnknownFields({ placeTypes: [{ label: "Sala", userIntents: ["FIND_ROOM"] }] });
   assert.ok(issues.some((issue) => issue.code === "UNKNOWN_FIELD" && issue.field.endsWith("userIntents")));
+});
+
+test("i semantic ref canonici ArtAround richiedono match exact, tipo, unita e scope coerenti", () => {
+  const canonical = attribute({
+    semanticRefs: [{ scheme: "artaround-physical", id: "step_free", matchType: "exact" }],
+  });
+  assert.deepEqual(validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [canonical] }), []);
+
+  const wrongScope = attribute({
+    semanticRefs: [{ scheme: "artaround-physical", id: "step_free", matchType: "exact" }],
+    appliesTo: "connection",
+  });
+  const scopeIssues = validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [wrongScope] });
+  assert.ok(scopeIssues.some((issue) => issue.code === "CANONICAL_SEMANTIC_SCOPE_MISMATCH"));
+
+  const wrongUnit = attribute({
+    key: "minimum_width_cm",
+    label: "Larghezza minima",
+    semanticRefs: [{ scheme: "artaround-physical", id: "minimum_width_cm", matchType: "exact" }],
+    dataType: "number",
+    unit: "m",
+    appliesTo: "connection",
+  });
+  const unitIssues = validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [wrongUnit] });
+  assert.ok(unitIssues.some((issue) => issue.code === "CANONICAL_SEMANTIC_UNIT_MISMATCH"));
+
+  const nonExact = attribute({
+    semanticRefs: [{ scheme: "artaround-physical", id: "step_free", matchType: "close" }],
+  });
+  const exactIssues = validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [nonExact] });
+  assert.ok(exactIssues.some((issue) => issue.code === "CANONICAL_SEMANTIC_REF_MUST_BE_EXACT"));
+});
+
+test("visitorControl espone solo valori compatibili e resta disabilitato di default", () => {
+  const selectable = attribute({
+    visitorControl: {
+      enabled: true,
+      label: "Evita gradini",
+      description: "Usa questa opzione solo per questa sede.",
+      operator: "eq",
+      valueMode: "fixed",
+      value: true,
+      priority: "preferred",
+    },
+  });
+  assert.deepEqual(validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [selectable] }), []);
+
+  const invalidOperator = attribute({
+    visitorControl: {
+      enabled: true,
+      operator: "gte",
+      valueMode: "fixed",
+      value: true,
+      priority: "preferred",
+    },
+  });
+  const operatorIssues = validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [invalidOperator] });
+  assert.ok(operatorIssues.some((issue) => issue.code === "INCOMPATIBLE_OPERATOR"));
+
+  const userValueWithFixedDefault = attribute({
+    dataType: "number",
+    unit: "cm",
+    appliesTo: "connection",
+    visitorControl: {
+      enabled: true,
+      operator: "gte",
+      valueMode: "user",
+      value: 80,
+      priority: "required",
+    },
+  });
+  const userValueIssues = validatePhysicalVocabularyRevisionSnapshot({ physicalAttributes: [userValueWithFixedDefault] });
+  assert.ok(userValueIssues.some((issue) => issue.code === "FORBIDDEN_FIELD"));
 });
 
 test("PhysicalFeatureRef distingue riferimenti locali e semantici", () => {

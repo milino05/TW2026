@@ -38,7 +38,7 @@ test("VenueRelease integrity validates typed attributes against the pinned Physi
     const floorId = new mongoose.Types.ObjectId();
     const placeId = new mongoose.Types.ObjectId();
     const room = physical.placeTypeByKey.get("room");
-    const quietArea = physical.physicalAttributeByKey.get("quiet_area");
+    const stepFree = physical.physicalAttributeByKey.get("step_free");
     const issues = await computeVenueReleaseIssues({
       venue: { _id: venueId },
       release: releaseFixture({ venueId, layoutId }),
@@ -53,8 +53,8 @@ test("VenueRelease integrity validates typed attributes against the pinned Physi
           placeTypeDefinitionId: room.definitionId,
           position: { x: 0.5, y: 0.5 },
           attributeValues: [
-            { physicalAttributeDefinitionId: quietArea.definitionId, value: true },
-            { physicalAttributeDefinitionId: quietArea.definitionId, value: "si" },
+            { physicalAttributeDefinitionId: stepFree.definitionId, value: true },
+            { physicalAttributeDefinitionId: stepFree.definitionId, value: "si" },
           ],
         }],
         exhibitSlots: [],

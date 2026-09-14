@@ -97,7 +97,7 @@ test("lifecycle personale: starter, publish, nuova working revision, fork e cest
     assert.equal(String(working.revision.basedOnRevisionId), String(published.revision._id));
     const starterAgain = await revisionService.applyStarterToPhysicalVocabularyDraft({ physicalVocabularyId: created.physicalVocabulary._id, actorUserId: user._id });
     assert.deepEqual(starterAgain.applied, {
-      starterVersion: 1,
+      starterVersion: 2,
       placeTypesAdded: 0,
       connectionTypesAdded: 0,
       physicalAttributesAdded: 0,

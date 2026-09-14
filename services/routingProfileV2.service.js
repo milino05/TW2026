@@ -1,4 +1,8 @@
 const { semanticSignature, exactSemanticRefs } = require("./physicalVocabularyResolver.service");
+const {
+  NAVIGATION_SEMANTIC_SCHEME,
+  NAVIGATION_NEED_CATALOG,
+} = require("../config/navigationNeedCatalog");
 
 function id(value) { return String(value?._id || value || ""); }
 function optionValues(definition) { return (definition?.options || []).map((option) => String(option.value)).sort(); }
@@ -10,8 +14,20 @@ function definitionsCompatible(left, right) {
   if (!left || !right) return false;
   if (left.dataType !== right.dataType) return false;
   if ((left.unit || null) !== (right.unit || null)) return false;
+  if ((left.appliesTo || null) !== (right.appliesTo || null)) return false;
   if (left.dataType === "choice" && !sameOptions(left, right)) return false;
   return true;
+}
+function canonicalScopeCompatible(actual, expected) {
+  if (expected === "both") return actual === "both";
+  return actual === expected || actual === "both";
+}
+function canonicalDefinitionCompatible(actual, expected) {
+  if (!actual || !expected) return false;
+  if (actual.dataType !== expected.dataType) return false;
+  if ((actual.unit || null) !== (expected.unit || null)) return false;
+  if (actual.dataType === "choice" && !sameOptions(actual, expected)) return false;
+  return canonicalScopeCompatible(actual.appliesTo, expected.appliesTo);
 }
 function routingControl(definition, physicalFeatureRef, key) {
   return {
@@ -25,14 +41,23 @@ function routingControl(definition, physicalFeatureRef, key) {
     physicalFeatureRef,
   };
 }
+function visitorControlProjection(definition) {
+  const control = definition?.visitorControl;
+  if (!control?.enabled) return null;
+  return {
+    definitionId: definition.definitionId,
+    label: control.label || definition.label,
+    description: control.description || definition.description || "",
+    dataType: definition.dataType,
+    unit: definition.unit || null,
+    options: definition.options || [],
+    valueMode: control.valueMode || "fixed",
+    ...(control.valueMode === "fixed" ? { value: control.value } : {}),
+  };
+}
 function profileRequirementSummary(requirement, attributeById) {
   const attribute = attributeById.get(String(requirement.physicalAttributeDefinitionId));
-  return {
-    label: attribute?.label || "Caratteristica fisica",
-    operator: requirement.operator || "eq",
-    value: requirement.value,
-    priority: requirement.priority || "preferred",
-  };
+  return { label: attribute?.label || "Caratteristica fisica" };
 }
 function profileProjection(revision) {
   const attributeById = new Map((revision?.physicalAttributes || []).map((definition) => [definition.definitionId, definition]));
@@ -83,6 +108,23 @@ function projectFederatedControls(selectedRevisions) {
   }
   return controls;
 }
+function visitorControlsProjection(revision) {
+  return (revision?.physicalAttributes || [])
+    .map((definition) => visitorControlProjection(definition))
+    .filter(Boolean);
+}
+function canonicalNeedSupportProjection(revision) {
+  const index = exactAttributeIndex(revision);
+  return NAVIGATION_NEED_CATALOG.map((need) => {
+    const signature = semanticSignature({ scheme: NAVIGATION_SEMANTIC_SCHEME, id: need.id });
+    const match = index.get(signature);
+    return {
+      id: need.id,
+      supported: Boolean(match && canonicalDefinitionCompatible(match.definition, need)),
+      definitionId: match?.definition?.definitionId || null,
+    };
+  });
+}
 function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueId = new Map(), revisionById = new Map() }) {
   const selected = selectedVenueIds.map(String);
   const revisionForVenue = new Map();
@@ -108,7 +150,12 @@ function projectRoutingNavigationOptions({ selectedVenueIds = [], layoutByVenueI
 
 module.exports = {
   definitionsCompatible,
+  canonicalDefinitionCompatible,
   exactAttributeIndex,
+  routingControl,
+  visitorControlProjection,
+  visitorControlsProjection,
+  canonicalNeedSupportProjection,
   profileProjection,
   projectFederatedControls,
   projectRoutingNavigationOptions,

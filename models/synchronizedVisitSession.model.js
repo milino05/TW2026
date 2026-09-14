@@ -1,15 +1,11 @@
 const mongoose = require("mongoose");
+const NavigationSnapshotSchema = require("../schemas/navigationSnapshot.schema");
 const { Schema } = mongoose;
 
 const VenuePinSchema = new Schema({
   venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
   venueReleaseId: { type: Schema.Types.ObjectId, ref: "VenueRelease", required: true },
   layoutRevisionId: { type: Schema.Types.ObjectId, ref: "LayoutRevision", required: true },
-}, { _id: false });
-
-const RoutingProfileSelectionSchema = new Schema({
-  venueId: { type: Schema.Types.ObjectId, ref: "Venue", required: true },
-  routingProfileDefinitionId: { type: String, trim: true, required: true },
 }, { _id: false });
 
 const SynchronizedVisitSessionSchema = new Schema({
@@ -32,11 +28,7 @@ const SynchronizedVisitSessionSchema = new Schema({
   },
   currentPlanRevisionId: { type: Schema.Types.ObjectId, ref: "SessionPlanRevisionV2", default: null, index: true },
   venuePins: { type: [VenuePinSchema], default: [] },
-  navigationSnapshot: {
-    movementPacePreference: { type: Number, min: 0, max: 1, default: 0.5 },
-    routingProfileSelections: { type: [RoutingProfileSelectionSchema], default: [] },
-    requirements: { type: [Schema.Types.Mixed], default: [] },
-  },
+  navigationSnapshot: { type: NavigationSnapshotSchema, default: () => ({}) },
   sessionMovementSpeedMps: { type: Number, min: 0.1, required: true },
   adaptivePolicyVersion: { type: Number, min: 1, required: true },
   startedAt: { type: Date, default: null },
