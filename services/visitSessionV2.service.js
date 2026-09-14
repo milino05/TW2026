@@ -125,9 +125,9 @@ function projectIllustrativeMedia(revision) {
   }));
 }
 
-async function navigationActions({ session, physicalSession, anchor, entry }) {
+async function navigationActions({ session, routingConfigurationOwner, anchor, entry }) {
   if (!anchor) return [];
-  const bundle = await loadPinnedBundle(physicalSession || session, anchor.venueId);
+  const bundle = await loadPinnedBundle(routingConfigurationOwner || session, anchor.venueId);
   const definitionsById = new Map((bundle.physicalVocabularyRevision.placeTypes || []).map((definition) => [definition.definitionId, definition]));
   const availableDefinitionIds = new Set();
   for (const place of bundle.layout.places || []) {
@@ -143,7 +143,7 @@ async function navigationActions({ session, physicalSession, anchor, entry }) {
       definitionId,
     };
     try {
-      await routeToPhysicalFeatureInSession({ session: physicalSession || session, venueId: anchor.venueId, fromPlaceId: anchor.placeId, physicalFeatureRef });
+      await routeToPhysicalFeatureInSession({ session: routingConfigurationOwner || session, venueId: anchor.venueId, fromPlaceId: anchor.placeId, physicalFeatureRef });
       result.push(descriptor(physicalNavigationActionDefinition(definition), {
         serverInput: { physicalFeatureRef },
         context: actionContext(entry, anchor),
@@ -176,7 +176,7 @@ async function semanticActions({ session, plan, entry, anchor, semanticPresentat
 
 async function deriveRuntimeActions({ sessionId, userId }) {
   const state = await getCurrentSessionPlanV2({ sessionId, userId, allowCompleted: true });
-  const { session, plan, synchronizedSession, membership, effectiveStatus, physicalSession } = state;
+  const { session, plan, synchronizedSession, membership, effectiveStatus, routingConfigurationOwner } = state;
   if (["completed", "abandoned", "cancelled"].includes(effectiveStatus)) {
     return { ...state, entry: null, runtime: null, anchor: null, actions: [] };
   }
@@ -209,8 +209,7 @@ async function deriveRuntimeActions({ sessionId, userId }) {
     if (membership?.role === "host") {
       actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_COMPLETE, { context }));
       actions.push(groupAction(ACTION_DEFINITIONS.SYNCHRONIZED_CANCEL, { context }));
-    }
-    else {
+    } else {
       const submitted = await SynchronizedVisitQuizAttempt.exists({ synchronizedSessionId: synchronizedSession._id, userId, attemptNumber: 1 });
       if (!submitted) actions.push(personalAction(ACTION_DEFINITIONS.SYNCHRONIZED_SUBMIT_QUIZ, { context }));
     }
@@ -226,7 +225,7 @@ async function deriveRuntimeActions({ sessionId, userId }) {
       // Il completamento deve restare disponibile anche se l'ultima Representation non e piu risolvibile.
     }
     if (entries.length) actions.push(personalAction(ACTION_DEFINITIONS.PROGRESS_PREVIOUS, { context }));
-    actions.push(...(await navigationActions({ session, physicalSession, anchor, entry })).map((action) => personalAction(action, { serverInput: action.serverInput, context: action.context })));
+    actions.push(...(await navigationActions({ session, routingConfigurationOwner, anchor, entry })).map((action) => personalAction(action, { serverInput: action.serverInput, context: action.context })));
     actions.push(personalAction(ACTION_DEFINITIONS.COMPLETE, { context }));
     return { ...state, entry, runtime: completedRuntime, anchor, actions };
   }
@@ -282,7 +281,7 @@ async function deriveRuntimeActions({ sessionId, userId }) {
     actions.push(...(await semanticActions({ session, plan, entry, anchor, semanticPresentation: activeSemanticPresentation })).map((action) => personalAction(action, { serverInput: action.serverInput, context: action.context })));
     if (!synchronizedSession || membership?.role === "host") {
       if (nextPhysicalLeg(plan, anchor)) actions.push(personalAction(ACTION_DEFINITIONS.CHECK_ROUTE_OBSTACLES, { context }));
-      actions.push(...(await navigationActions({ session, physicalSession, anchor, entry })).map((action) => personalAction(action, { serverInput: action.serverInput, context: action.context })));
+      actions.push(...(await navigationActions({ session, routingConfigurationOwner, anchor, entry })).map((action) => personalAction(action, { serverInput: action.serverInput, context: action.context })));
     }
   }
   if (!synchronizedSession) {
@@ -348,7 +347,7 @@ async function advanceSession({ sessionId, userId, direction }) {
   const entries = plan.contentEntries || [];
   if (!entries.length) throw new AppError("SessionPlan senza contenuti", 409);
   session.semanticPresentation = null;
-  const progress = synchronizedSession || session;
+  const progress = state.progressOwner;
   if (direction === "previous") {
     if (!synchronizedSession && session.status === "route_completed") { session.status = "active"; session.routeCompletedAt = null; }
     else if (progress.currentEntryIndex > 0) progress.currentEntryIndex -= 1;
@@ -488,16 +487,16 @@ async function recordVenueTargetObservationV2({ sessionId, userId, payload = {} 
 
 async function recordTransitionV2({ sessionId, userId, payload = {} }) {
   const state = await getCurrentSessionPlanV2({ sessionId, userId });
-  const { session, plan, physicalSession } = state;
+  const { session, plan, routingConfigurationOwner } = state;
   if (state.effectiveStatus !== "active") throw new AppError("La Session deve essere attiva", 409);
   const currentAnchor = effectiveAnchorForIndex(plan, state.currentEntryIndex);
   const venueId = payload.venueId || currentAnchor?.venueId;
   if (!venueId) throw new AppError("venueId necessario per registrare la transizione", 400);
-  const bundle = await loadPinnedBundle(physicalSession, venueId);
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, venueId);
   const connection = (bundle.layout.connections || []).find((entry) => id(entry._id) === id(payload.connectionId));
   if (!connection) throw new AppError("Connection non appartiene alla LayoutRevision pinzata", 400);
   const observedSeconds = Number(payload.observedSeconds);
-  const predictedSeconds = estimateConnectionSeconds(connection, { speedMps: physicalSession.sessionMovementSpeedMps, learnedResidualSeconds: 0 });
+  const predictedSeconds = estimateConnectionSeconds(connection, { speedMps: routingConfigurationOwner.sessionMovementSpeedMps, learnedResidualSeconds: 0 });
   const observedMovementSeconds = Math.max(0.1, observedSeconds - Math.max(0, Number(connection.additionalDelaySeconds) || 0));
   const speed = Number(connection.distanceMeters) > 0 ? Number(connection.distanceMeters) / observedMovementSeconds : null;
   const reliability = computeTransitionReliability({ distanceMeters: Number(connection.distanceMeters), predictedSeconds, observedSeconds });
@@ -515,14 +514,14 @@ async function recordTransitionV2({ sessionId, userId, payload = {} }) {
     if (!state.synchronizedSession) session.sessionMovementSpeedMps = session.sessionMovementSpeedMps * 0.75 + speed * 0.25;
   }
   await session.save();
-  return { observation: session.transitionObservations.at(-1), sessionMovementSpeedMps: physicalSession.sessionMovementSpeedMps };
+  return { observation: session.transitionObservations.at(-1), sessionMovementSpeedMps: routingConfigurationOwner.sessionMovementSpeedMps };
 }
 
 async function routeToPhysicalFeatureV2({ sessionId, userId, physicalFeatureRef }) {
   const state = await getCurrentSessionPlanV2({ sessionId, userId });
-  const runtimePhysicalSession = { ...state.physicalSession.toObject(), currentEntryIndex: state.currentEntryIndex };
-  const origin = resolveNavigationOrigin({ session: runtimePhysicalSession, plan: state.plan });
-  return routeToPhysicalFeatureInSession({ session: runtimePhysicalSession, venueId: origin.venueId, fromPlaceId: origin.placeId, physicalFeatureRef });
+  const runtimeRoutingContext = { ...state.routingConfigurationOwner.toObject(), currentEntryIndex: state.currentEntryIndex };
+  const origin = resolveNavigationOrigin({ session: runtimeRoutingContext, plan: state.plan });
+  return routeToPhysicalFeatureInSession({ session: runtimeRoutingContext, venueId: origin.venueId, fromPlaceId: origin.placeId, physicalFeatureRef });
 }
 
 async function pauseSessionV2({ sessionId, userId }) {
