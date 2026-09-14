@@ -435,3 +435,18 @@ Decisione approvata per il boundary consumer/commerciale del Marketplace:
 - le offerte espongono principalmente prezzo, diritti user-facing e comportamento degli aggiornamenti. Capability code, resource type, Listing/Offer/Acquisition ID e snapshot reference sono dettagli avanzati, non il linguaggio principale del flusso;
 - il pagamento delle offerte paid resta esplicitamente **simulato** per la demo. Free e paid condividono lo stesso flusso `Per chi → Cosa otterrai → Prezzo → Conferma`, senza introdurre una seconda semantica di acquisizione;
 - **Le mie licenze** e **Vendite** sono due viste della stessa area di navigazione ma con projection differenti: la prima è beneficiary-scoped e consumer-facing, la seconda resta seller/principal-scoped e usa il boundary commerciale creator già esistente.
+
+# Navigator runtime UX refinement — superfici, recognition e timing
+
+Decisione approvata, dettagliata in `docs/navigator-runtime-architecture-decisions.md`:
+
+- **Visita** e **Mappa** sono superfici differenti dello stesso runtime: la prima presenta contenuto, presentation/semantic actions e lifecycle; la seconda presenta KnownLocation, route live, facility, correzione posizione, deviazioni e avanzamento fisico. La voce controllata continua a usare tutte le `AvailableAction` consentite;
+- `progress.next` resta l'unico `actionId` per avanzamento contestuale. La projection pubblica usa `type=PHYSICAL_PROGRESS_NEXT` esclusivamente come discriminatore UI quando `serverInput.executionMode=physical`; l'avanzamento narrativo resta `PROGRESS_NEXT`. Non nasce un secondo comando o dispatcher;
+- nella visita synchronized, progressione narrativa e piano restano di gruppo mentre posizione, deviazioni e progress fisico restano personali. Lo studente non riceve next/previous narrativi; il progress fisico personale rimane disponibile quando necessario;
+- la Mappa operativa visualizza la sola route live residua con KnownLocation e destinazione corrente. Il percorso pianificato completo e i marker permanenti di tutte le tappe non vengono confusi con la navigazione corrente; il tratto superato scompare perché la route viene derivata nuovamente dal backend;
+- una deviazione verso facility può essere sostituita da un'altra facility e può essere interrotta in qualunque momento tramite `Torna alla visita`, senza cambiare il cursore narrativo;
+- la schermata di approach usa **“Trovata!”** come conferma fisica e può mostrare una recognition image. Precedence: recognition specifica della `VenueTarget` pinzata → `Item.recognitionMedia` generica → nessuna immagine;
+- `ItemRevision.illustrativeMedia` è esclusivamente **Immagine del contenuto** e non viene usata come fallback fisico. Una nuova Edition non copia automaticamente `Item.recognitionMedia` dentro `illustrativeMedia`;
+- il Marketplace modifica `Item.recognitionMedia` nel dettaglio Item; la recognition specifica di una Venue resta nel Physical Domain/inventario della Venue; `illustrativeMedia` resta nell'Item authoring della Revision;
+- le preference della `ExecutionPreparation` vengono applicate con debounce ma continuano a essere ricalcolate backend-side. La durata mostrata conserva precisione sufficiente a rendere visibili variazioni sub-minute; i controlli di percorso usano i token tema Navigator anche in dark mode;
+- nella modalità synchronized le preference narrative personali dell'host non modificano la baseline editoriale condivisa, mentre le sue esigenze fisiche e routing option continuano a definire il percorso condiviso secondo il contratto della preparation.
