@@ -19,6 +19,8 @@ export function installReorderableList(root, {
   handles.forEach((handle) => handle.setAttribute("draggable", "true"));
 
   const items = () => [...root.querySelectorAll(itemSelector)].filter((entry) => entry instanceof HTMLElement);
+  const ownsEvent = (target) => target?.closest?.('[data-artaround-reorder-installed="true"]') === root;
+  const itemForTarget = (target) => items().find((item) => item === target || item.contains(target)) || null;
   const announce = (message) => { live.textContent = ""; requestAnimationFrame(() => { live.textContent = message; }); };
   const request = async ({ item, from, to, direction = null, focusTarget = null }) => {
     if (!item || from === to || canReorder({ item, from, to, direction }) === false) return;
@@ -33,8 +35,9 @@ export function installReorderableList(root, {
 
   const dragstart = (event) => {
     const target = event.target instanceof Element ? event.target : null;
+    if (!ownsEvent(target)) return;
     const handle = target?.closest(handleSelector);
-    const item = handle?.closest(itemSelector);
+    const item = itemForTarget(handle);
     if (!(item instanceof HTMLElement) || !root.contains(item)) return;
     dragging = item;
     event.dataTransfer?.setData("text/plain", itemId(item));
@@ -42,12 +45,16 @@ export function installReorderableList(root, {
   };
   const dragover = (event) => {
     if (!dragging) return;
-    const target = event.target instanceof Element ? event.target.closest(itemSelector) : null;
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    if (!ownsEvent(eventTarget)) return;
+    const target = itemForTarget(eventTarget);
     if (target && root.contains(target)) event.preventDefault();
   };
   const drop = (event) => {
     if (!dragging) return;
-    const target = event.target instanceof Element ? event.target.closest(itemSelector) : null;
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    if (!ownsEvent(eventTarget)) return;
+    const target = itemForTarget(eventTarget);
     if (!(target instanceof HTMLElement) || !root.contains(target)) return;
     event.preventDefault();
     const entries = items();
@@ -60,8 +67,9 @@ export function installReorderableList(root, {
   const dragend = () => { dragging = null; };
   const click = (event) => {
     const target = event.target instanceof Element ? event.target : null;
+    if (!ownsEvent(target)) return;
     const move = target?.closest("[data-reorder-move]");
-    const item = move?.closest(itemSelector);
+    const item = itemForTarget(move);
     if (!(item instanceof HTMLElement) || !root.contains(item)) return;
     const entries = items();
     const from = entries.indexOf(item);
@@ -71,7 +79,9 @@ export function installReorderableList(root, {
   };
   const keydown = (event) => {
     if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
-    const item = event.target instanceof Element ? event.target.closest(itemSelector) : null;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!ownsEvent(target)) return;
+    const item = itemForTarget(target);
     if (!(item instanceof HTMLElement) || !root.contains(item)) return;
     const entries = items();
     const from = entries.indexOf(item);

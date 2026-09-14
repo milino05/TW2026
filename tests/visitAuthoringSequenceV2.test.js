@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { canonicalizeContentEntries, reorderWithinDeliveryGroup } = require("../services/visitSequenceV2.service");
+const { canonicalizeContentEntries, reorderWithinDeliveryGroup, moveToDeliveryGroup } = require("../services/visitSequenceV2.service");
 
 function entry(_id, deliveryAnchorId) {
   return {
@@ -41,4 +41,23 @@ test("riordino rifiuta indici fuori dal gruppo di delivery", () => {
     () => reorderWithinDeliveryGroup(entries, "a1", 2),
     (error) => error?.status === 400 && error?.details?.some((detail) => detail.code === "OUT_OF_RANGE"),
   );
+});
+
+test("un contenuto contestuale può essere inserito e ordinato dentro una tappa", () => {
+  const entries = [entry("stop-1", "anchor-a"), entry("context", null), entry("stop-2", "anchor-a")];
+  const result = moveToDeliveryGroup(entries, "context", "anchor-a", 1);
+  const ordered = canonicalizeContentEntries(result.entries, [{ _id: "anchor-a" }]);
+
+  assert.equal(result.deliveryAnchorId, "anchor-a");
+  assert.deepEqual(ordered.map((candidate) => candidate._id), ["stop-1", "context", "stop-2"]);
+  assert.deepEqual(ordered.map((candidate) => candidate.deliveryAnchorId), ["anchor-a", "anchor-a", "anchor-a"]);
+});
+
+test("un contenuto può tornare nel contesto generale", () => {
+  const entries = [entry("stop-1", "anchor-a"), entry("context", null)];
+  const result = moveToDeliveryGroup(entries, "stop-1", null, 0);
+  const ordered = canonicalizeContentEntries(result.entries, [{ _id: "anchor-a" }]);
+
+  assert.deepEqual(ordered.map((candidate) => candidate._id), ["stop-1", "context"]);
+  assert.equal(ordered[0].deliveryAnchorId, null);
 });

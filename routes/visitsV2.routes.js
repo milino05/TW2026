@@ -24,6 +24,7 @@ router.post("/v2/visits/:visitId/commands/content", visitId, controller.addConte
 router.post("/v2/visits/:visitId/commands/stops/:anchorId/reorder", visitId, anchorId, controller.reorderVisitStop);
 router.delete("/v2/visits/:visitId/commands/stops/:anchorId", visitId, anchorId, controller.removeVisitStop);
 router.post("/v2/visits/:visitId/commands/content/:contentEntryId/reorder", visitId, contentEntryId, controller.reorderVisitContent);
+router.post("/v2/visits/:visitId/commands/content/:contentEntryId/move", visitId, contentEntryId, controller.moveVisitContent);
 router.put("/v2/visits/:visitId/commands/content/:contentEntryId/placement", visitId, contentEntryId, controller.setContentPlacement);
 router.put("/v2/visits/:visitId/commands/content/:contentEntryId/role", visitId, contentEntryId, controller.setContentRole);
 router.delete("/v2/visits/:visitId/commands/content/:contentEntryId", visitId, contentEntryId, controller.removeContentFromVisit);

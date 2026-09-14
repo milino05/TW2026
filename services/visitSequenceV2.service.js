@@ -46,4 +46,31 @@ function reorderWithinDeliveryGroup(entries, contentEntryId, toIndex) {
   return { entries: next, selected, fromIndex, toIndex: destination, changed: true };
 }
 
-module.exports = { canonicalizeContentEntries, reorderWithinDeliveryGroup, sameDeliveryGroup };
+function moveToDeliveryGroup(entries, contentEntryId, deliveryAnchorId, toIndex) {
+  const next = entries.map((entry) => ({ ...entry }));
+  const entryIndex = next.findIndex((entry) => id(entry._id) === id(contentEntryId));
+  if (entryIndex < 0) throw new AppError("ContentEntry non trovata", 404);
+
+  const [selected] = next.splice(entryIndex, 1);
+  const destinationAnchorId = deliveryAnchorId ? id(deliveryAnchorId) : null;
+  const destinationEntries = next.filter((entry) => id(entry.deliveryAnchorId) === id(destinationAnchorId));
+  const destination = Number(toIndex);
+  if (!Number.isInteger(destination) || destination < 0 || destination > destinationEntries.length) {
+    throw new AppError("Posizione del contenuto non valida", 400, [{
+      field: "toIndex",
+      code: "OUT_OF_RANGE",
+      context: { minimum: 0, maximum: destinationEntries.length },
+    }]);
+  }
+
+  selected.deliveryAnchorId = destinationAnchorId;
+  destinationEntries.splice(destination, 0, selected);
+  return {
+    entries: [...next.filter((entry) => id(entry.deliveryAnchorId) !== id(destinationAnchorId)), ...destinationEntries],
+    selected,
+    deliveryAnchorId: destinationAnchorId,
+    toIndex: destination,
+  };
+}
+
+module.exports = { canonicalizeContentEntries, reorderWithinDeliveryGroup, moveToDeliveryGroup, sameDeliveryGroup };

@@ -134,8 +134,11 @@ test("drag and drop riordina tappe e contenuti senza confondere il delivery", ()
   assert.match(sequenceCommands, /canonicalizeContentEntries/);
   assert.match(sessionPlan, /canonicalizeContentEntries[\s\S]*orderedContentEntries/);
   assert.match(sequenceRepository, /commands\/content\/\$\{encodeURIComponent\(contentEntryId\)\}\/reorder/);
+  assert.match(sequenceRepository, /commands\/content\/\$\{encodeURIComponent\(contentEntryId\)\}\/move/);
   assert.match(routes, /commands\/content\/:contentEntryId\/reorder/);
+  assert.match(routes, /commands\/content\/:contentEntryId\/move/);
   assert.match(controller, /authoringSequenceCommandService\.reorderVisitContent/);
+  assert.match(controller, /authoringSequenceCommandService\.moveVisitContent/);
 });
 
 test("la collocazione della card è reversibile senza rimuovere il contenuto", () => {

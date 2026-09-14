@@ -9,4 +9,10 @@ export const visitSequenceRepository = {
       { method: "POST", ...body({ toIndex }) },
     );
   },
+  moveContent(visitId, contentEntryId, { deliveryAnchorId = null, toIndex }) {
+    return apiClient.request(
+      `/v2/visits/${encodeURIComponent(visitId)}/commands/content/${encodeURIComponent(contentEntryId)}/move`,
+      { method: "POST", ...body({ deliveryAnchorId, toIndex }) },
+    );
+  },
 };

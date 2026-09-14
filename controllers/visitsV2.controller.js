@@ -36,6 +36,17 @@ async function reorderVisitContent(req, res, next) {
     }));
   } catch (error) { next(error); }
 }
+async function moveVisitContent(req, res, next) {
+  try {
+    res.status(200).json(await authoringSequenceCommandService.moveVisitContent({
+      visitId: req.params.visitId,
+      contentEntryId: req.params.contentEntryId,
+      actorUserId: req.user._id,
+      deliveryAnchorId: req.body?.deliveryAnchorId || null,
+      toIndex: req.body?.toIndex,
+    }));
+  } catch (error) { next(error); }
+}
 async function setContentPlacement(req, res, next) {
   try {
     res.status(200).json(await authoringCommandService.setContentPlacement({
@@ -112,6 +123,7 @@ module.exports = {
   publish,
   addContentToVisit,
   reorderVisitContent,
+  moveVisitContent,
   setContentPlacement,
   setContentRole,
   removeContentFromVisit,

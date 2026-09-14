@@ -10,6 +10,13 @@ function escapeHtml(value = "") {
 }
 function id(value) { return String(value?._id || value?.id || value || ""); }
 function pct(value) { return Math.max(0, Math.min(100, Number(value ?? .5) * 100)); }
+function labelPlacement(point) {
+  if (Number(point?.y) < .16) return "below";
+  if (Number(point?.y) > .84) return "above";
+  if (Number(point?.x) < .12) return "right";
+  if (Number(point?.x) > .88) return "left";
+  return "above";
+}
 
 export class ArtAroundVenueMap extends HTMLElement {
   _data = null;
@@ -131,13 +138,14 @@ export class ArtAroundVenueMap extends HTMLElement {
       const from = placeById.get(id(connection.fromPlaceId));
       const to = placeById.get(id(connection.toPlaceId));
       const points = connection.geometry?.points?.length ? connection.geometry.points : [from.position, to.position];
-      return `<polyline points="${points.map((point) => `${pct(point.x)},${pct(point.y)}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>`;
+      return `<polyline class="connection-line" points="${points.map((point) => `${pct(point.x)},${pct(point.y)}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>`;
     }).join("");
     const nodes = places.map((place, index) => {
       const entries = this.targetsForPlace(place.id);
       const selected = id(selectedPlace?.id) === id(place.id);
       const focus = focusedPlaceId === id(place.id);
-      return `<button type="button" class="venue-map-node" data-map-place="${escapeHtml(id(place.id))}" data-selected="${selected}" data-focused="${focus}" style="left:${pct(place.position?.x)}%;top:${pct(place.position?.y)}%" aria-label="${escapeHtml(`${place.label || `Luogo ${index + 1}`}${entries.length ? `, ${entries.length} entità esposte` : ""}`)}"><span>${index + 1}</span>${entries.length ? `<small>${entries.length}</small>` : ""}</button>`;
+      const label = place.label || `Luogo ${index + 1}`;
+      return `<button type="button" class="map-place-node venue-map-node--readonly${selected ? " selected" : ""}${focus ? " focused" : ""}" data-map-place="${escapeHtml(id(place.id))}" data-label-placement="${labelPlacement(place.position)}" style="left:${pct(place.position?.x)}%;top:${pct(place.position?.y)}%" aria-label="${escapeHtml(`${label}${entries.length ? `, ${entries.length} entità esposte` : ""}`)}" aria-pressed="${selected}"><span class="map-object-label map-place-label" aria-hidden="true">${escapeHtml(label)}</span>${entries.length ? `<small>${entries.length}</small>` : ""}</button>`;
     }).join("");
     const ratio = floor.mapAsset?.width && floor.mapAsset?.height ? `${floor.mapAsset.width}/${floor.mapAsset.height}` : "10/7";
     const focusBanner = focused?.target
@@ -145,12 +153,13 @@ export class ArtAroundVenueMap extends HTMLElement {
       : "";
     this.innerHTML = `<style>
       :host{display:block}.venue-map-shell{display:grid;gap:1rem}.venue-map-toolbar{display:flex;align-items:end;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.venue-map-toolbar label{display:grid;gap:.3rem;min-width:12rem}.venue-map-toolbar small{color:var(--sage-600)}
-      .venue-map-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(15rem,20rem);gap:1rem;align-items:start}.venue-map-canvas{position:relative;overflow:hidden;min-height:22rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--sage-100);aspect-ratio:var(--map-ratio)}.venue-map-canvas>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}.venue-map-canvas>svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.venue-map-canvas polyline{fill:none;stroke:var(--sage-500);stroke-width:.7;opacity:.7}.venue-map-placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;color:var(--sage-600);text-align:center;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:2rem 2rem}
-      .venue-map-node{position:absolute;z-index:2;display:grid;place-items:center;width:2.25rem;height:2.25rem;padding:0;border:2px solid var(--surface);border-radius:999px;background:var(--ink-900);color:#fff;box-shadow:var(--shadow-sm);transform:translate(-50%,-50%)}.venue-map-node small{position:absolute;right:-.45rem;top:-.45rem;display:grid;place-items:center;min-width:1.2rem;height:1.2rem;padding:0 .25rem;border-radius:999px;background:var(--surface);color:var(--ink-900);font-size:.65rem}.venue-map-node[data-selected="true"]{outline:3px solid var(--sage-300);outline-offset:2px}.venue-map-node[data-focused="true"]{outline:4px solid var(--amber-300);outline-offset:3px}
+      .venue-map-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(15rem,20rem);gap:1rem;align-items:start}.venue-map-canvas.map-canvas--authoring{min-height:22rem;cursor:default;background-color:var(--sage-100)}.venue-map-canvas.map-canvas--authoring>img{object-fit:fill}.venue-map-canvas.map-canvas--authoring>svg{pointer-events:none}.venue-map-canvas.map-canvas--authoring .connection-line{fill:none;stroke:var(--ink-800);stroke-width:1.15;opacity:.72}.venue-map-placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;color:var(--sage-600);text-align:center;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:2rem 2rem}
+      .venue-map-node--readonly{cursor:pointer}.venue-map-node--readonly.focused{outline:.25rem solid var(--amber-300);outline-offset:.18rem}.venue-map-node--readonly.focused .map-place-label{opacity:1}.venue-map-node--readonly[aria-pressed="true"]{box-shadow:0 0 0 .22rem var(--sage-300),0 .18rem .7rem rgba(0,0,0,.28)}
       .venue-map-detail{display:grid;gap:.6rem;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}.venue-map-detail h3,.venue-map-detail p{margin:0}.venue-map-detail-targets{display:grid;gap:.55rem}.venue-map-detail-targets article{display:grid;grid-template-columns:minmax(0,1fr) 3.5rem;gap:.6rem;align-items:center;padding:.65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--sage-50)}.venue-map-detail-targets article[data-focused="true"]{border-color:var(--amber-400);background:var(--amber-100)}.venue-map-detail-targets article>div{display:grid;gap:.15rem}.venue-map-detail-targets small{color:var(--sage-600)}.venue-map-detail-targets img{width:3.5rem;height:3.5rem;border-radius:.45rem;object-fit:cover}
       .venue-map-focus{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem;border:1px solid var(--amber-300);border-radius:var(--radius-md);background:var(--amber-100)}.venue-map-focus>span{display:grid}.venue-map-focus small,.venue-map-focus em{color:var(--sage-700);font-size:.75rem;font-style:normal}
-      @media(max-width:48rem){.venue-map-layout{grid-template-columns:1fr}.venue-map-canvas{min-height:18rem}}
-    </style><div class="venue-map-shell">${focusBanner}<div class="venue-map-toolbar"><label>Piano<select data-map-floor>${floorOptions}</select></label><small>Mostra esclusivamente la configurazione fisica pubblicata.</small></div><div class="venue-map-layout"><div class="venue-map-canvas" style="--map-ratio:${ratio}">${floor.mapAsset?.url ? `<img src="${escapeHtml(floor.mapAsset.url)}" alt="Planimetria ${escapeHtml(floor.label || "piano")}" loading="lazy">` : `<div class="venue-map-placeholder">Nessuna planimetria pubblicata per questo piano.</div>`}<svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>${nodes}</div>${this.renderPlaceDetail(selectedPlace)}</div></div>`;
+      @media(max-width:48rem){.venue-map-layout{grid-template-columns:1fr}.venue-map-canvas.map-canvas--authoring{min-height:18rem}}
+      @media(prefers-reduced-motion:reduce){.venue-map-node--readonly{transition:none!important}}
+    </style><div class="venue-map-shell">${focusBanner}<div class="venue-map-toolbar"><label>Piano<select data-map-floor>${floorOptions}</select></label><small>Mostra esclusivamente la configurazione fisica pubblicata.</small></div><div class="venue-map-layout"><div class="map-canvas map-canvas--authoring venue-map-canvas" data-map-surface data-readonly="true" style="--map-ratio:${ratio}">${floor.mapAsset?.url ? `<img src="${escapeHtml(floor.mapAsset.url)}" alt="Planimetria ${escapeHtml(floor.label || "piano")}" loading="lazy" draggable="false">` : `<div class="venue-map-placeholder">Nessuna planimetria pubblicata per questo piano.</div>`}<svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>${nodes}</div>${this.renderPlaceDetail(selectedPlace)}</div></div>`;
   }
 }
 

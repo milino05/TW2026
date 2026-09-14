@@ -41,3 +41,21 @@ test("reorder condiviso mantiene fallback tastiera e annuncio accessibile", () =
   assert.match(adapter, /tabIndex = 0/);
   assert.match(adapter, /Alt\+Freccia/);
 });
+
+test("le frecce sono gestite soltanto dalla lista proprietaria", () => {
+  assert.match(primitive, /ownsEvent/);
+  assert.match(primitive, /data-artaround-reorder-installed/);
+  assert.match(primitive, /itemForTarget/);
+  assert.doesNotMatch(primitive, /move\?\.closest\(itemSelector\)/);
+  assert.doesNotMatch(primitive, /event\.target instanceof Element \? event\.target\.closest\(itemSelector\)/);
+});
+
+test("un contenuto può essere trascinato dentro e fuori dalle tappe", () => {
+  assert.match(adapter, /installContentHierarchy/);
+  assert.match(adapter, /visitSequenceRepository\.moveContent/);
+  assert.match(adapter, /deliveryAnchorId: destinationKey === "contextual" \? null : destinationKey/);
+  assert.match(visit, /data-drop-anchor="\$\{escapeHtml\(stop\.id\)\}"/);
+  assert.match(visit, /data-drop-anchor="contextual"/);
+  assert.match(visit, /data-content-drop-target=true/);
+  assert.match(visit, /Rilascia un contenuto sopra una tappa per inserirlo al suo interno/);
+});

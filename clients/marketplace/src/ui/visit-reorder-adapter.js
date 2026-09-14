@@ -88,6 +88,84 @@ function installContentGroup(editor, root, state) {
   }));
 }
 
+function clearContentDropTargets(editor) {
+  for (const group of editor.querySelectorAll('[data-content-drop-target="true"]')) {
+    group.removeAttribute("data-content-drop-target");
+  }
+}
+
+function installContentHierarchy(editor, state) {
+  if (state.hierarchyCleanup) return;
+  let dragging = null;
+
+  const dragstart = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const entry = target?.closest('.sequence-entry[data-drag-kind="content"]');
+    if (!(entry instanceof HTMLElement) || !target.closest(".drag-handle") || !editor.editable || editor.busy) return;
+    dragging = {
+      id: entry.dataset.contentId || "",
+      anchorKey: entry.dataset.anchorKey || "contextual",
+    };
+  };
+  const dragover = (event) => {
+    if (!dragging) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const group = target?.closest(".sequence-group[data-drop-anchor]");
+    if (!(group instanceof HTMLElement) || !editor.contains(group)) return;
+    const destinationKey = group.dataset.dropAnchor || "contextual";
+    if (destinationKey === dragging.anchorKey) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    clearContentDropTargets(editor);
+    group.dataset.contentDropTarget = "true";
+  };
+  const dragleave = (event) => {
+    const group = event.target instanceof Element ? event.target.closest(".sequence-group[data-drop-anchor]") : null;
+    if (!(group instanceof HTMLElement) || (event.relatedTarget instanceof Node && group.contains(event.relatedTarget))) return;
+    group.removeAttribute("data-content-drop-target");
+  };
+  const drop = (event) => {
+    if (!dragging) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const group = target?.closest(".sequence-group[data-drop-anchor]");
+    if (!(group instanceof HTMLElement) || !editor.contains(group)) return;
+    const destinationKey = group.dataset.dropAnchor || "contextual";
+    if (destinationKey === dragging.anchorKey) return;
+    event.preventDefault();
+    const destinationEntries = [...group.querySelectorAll(':scope > .sequence-entry-list > .sequence-entry[data-drag-kind="content"]')];
+    const targetEntry = target.closest('.sequence-entry[data-drag-kind="content"]');
+    const targetIndex = targetEntry ? destinationEntries.indexOf(targetEntry) : destinationEntries.length;
+    const contentId = dragging.id;
+    dragging = null;
+    clearContentDropTargets(editor);
+    void editor.execute(
+      () => visitSequenceRepository.moveContent(editor.visitId, contentId, {
+        deliveryAnchorId: destinationKey === "contextual" ? null : destinationKey,
+        toIndex: Math.max(0, targetIndex),
+      }),
+      destinationKey === "contextual" ? "Contenuto spostato nel contesto generale" : "Contenuto aggiunto alla tappa",
+    );
+  };
+  const dragend = () => {
+    dragging = null;
+    clearContentDropTargets(editor);
+  };
+
+  editor.addEventListener("dragstart", dragstart);
+  editor.addEventListener("dragover", dragover);
+  editor.addEventListener("dragleave", dragleave);
+  editor.addEventListener("drop", drop);
+  editor.addEventListener("dragend", dragend);
+  state.hierarchyCleanup = () => {
+    editor.removeEventListener("dragstart", dragstart);
+    editor.removeEventListener("dragover", dragover);
+    editor.removeEventListener("dragleave", dragleave);
+    editor.removeEventListener("drop", drop);
+    editor.removeEventListener("dragend", dragend);
+    clearContentDropTargets(editor);
+  };
+}
+
 function synchronizeEditor(editor) {
   disableLegacyDrag(editor);
   let state = installations.get(editor);
@@ -96,6 +174,7 @@ function synchronizeEditor(editor) {
     installations.set(editor, state);
   }
   cleanupDetachedRoots(state);
+  installContentHierarchy(editor, state);
 
   const sequence = editor.querySelector(".visit-sequence");
   installStops(editor, sequence, state);

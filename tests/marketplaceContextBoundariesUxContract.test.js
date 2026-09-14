@@ -154,6 +154,17 @@ test("la mappa pubblica deriva soltanto dalla release e dal layout pubblicati", 
   assert.match(source.venueMap, /focusContext\(\)/);
 });
 
+test("la mappa pubblica riusa il modello visuale corrente dell'editor in sola lettura", () => {
+  assert.match(source.venueMap, /class="map-canvas map-canvas--authoring venue-map-canvas"/);
+  assert.match(source.venueMap, /data-readonly="true"/);
+  assert.match(source.venueMap, /class="map-place-node venue-map-node--readonly/);
+  assert.match(source.venueMap, /map-object-label map-place-label/);
+  assert.match(source.venueMap, /data-label-placement="\$\{labelPlacement\(place\.position\)\}"/);
+  assert.match(source.venueMap, /class="connection-line"/);
+  assert.match(source.venueMap, /@media\(prefers-reduced-motion:reduce\)/);
+  assert.doesNotMatch(source.venueMap, /class="venue-map-node"/);
+});
+
 test("Item Authoring partecipa al navigation-loss guard usando la bozza reale", () => {
   assert.match(source.guardAdapter, /selector: "artaround-item-authoring-view"/);
   assert.match(source.guardAdapter, /editor\.readWorkingDraft\?\.\(\)/);

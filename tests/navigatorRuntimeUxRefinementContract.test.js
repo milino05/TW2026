@@ -132,6 +132,15 @@ test("previsit refinement preserves physical scope, information state and synchr
   assert.match(visit, /collisione il backend assegnerà una variante leggibile/);
 });
 
+test("la testata della visita cresce con titolo e descrizione senza tagliarli", () => {
+  const visit = read("clients/navigator/src/ui/VisitDetailView.vue");
+  assert.match(visit, /\.previsit-hero\{display:grid\}/);
+  assert.match(visit, /\.previsit-hero-overlay\{position:relative;inset:auto;[^}]*min-height:18rem/);
+  assert.match(visit, /\.previsit-hero-overlay h1\{[^}]*overflow-wrap:anywhere/);
+  assert.match(visit, /\.previsit-hero-overlay h1\+p\{[^}]*line-height:1\.5;overflow-wrap:anywhere/);
+  assert.match(visit, /@media\(max-width:30rem\)/);
+});
+
 test("Marketplace keeps recognition and illustrative media distinct and editable", () => {
   const routes = read("routes/itemsV2.routes.js");
   const detail = read("clients/marketplace/src/ui/item-detail-dialog.js");
