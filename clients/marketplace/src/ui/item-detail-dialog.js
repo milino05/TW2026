@@ -2,6 +2,7 @@ import { navigate } from "../application/router.js";
 import { readOperatingContext } from "../application/operating-context.js";
 import { libraryRepository } from "../infrastructure/http/library-repository.js";
 import { editorialRepository } from "../infrastructure/http/editorial-repository.js";
+import { authoringRepository } from "../infrastructure/http/authoring-repository.js";
 import { mountModalInteraction } from "../application/modal-interaction.js";
 import { openActionDialog } from "./feedback-primitives.js";
 import { icon } from "./icons.js";
@@ -18,6 +19,14 @@ function wikidataIdentity(subject) {
   return (subject?.externalIdentities || []).find((entry) => entry.scheme === "wikidata" && entry.role === "canonical")
     || (subject?.externalIdentities || []).find((entry) => entry.scheme === "wikidata")
     || null;
+}
+function fileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "").split(",")[1] || ""), { once: true });
+    reader.addEventListener("error", () => reject(new Error("Non è stato possibile leggere l'immagine")), { once: true });
+    reader.readAsDataURL(file);
+  });
 }
 
 export class ArtAroundItemDetailDialog extends HTMLElement {
@@ -54,7 +63,10 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   }
 
   releaseDialogInteraction({ restoreFocus = false } = {}) {
-    if (this._dialogLayer) this._dialogLayer.removeEventListener("click", this.onClick);
+    if (this._dialogLayer) {
+      this._dialogLayer.removeEventListener("click", this.onClick);
+      this._dialogLayer.removeEventListener("submit", this.onSubmit);
+    }
     this._dialogInteraction?.release?.({ restoreFocus });
     this._dialogInteraction = null;
     this._dialogLayer = null;
@@ -65,6 +77,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (!(layer instanceof HTMLElement)) return;
     this._dialogLayer = layer;
     layer.addEventListener("click", this.onClick);
+    layer.addEventListener("submit", this.onSubmit);
     this._dialogInteraction = mountModalInteraction({
       layer,
       panel: () => layer.querySelector(".item-detail-modal"),
@@ -127,9 +140,52 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     }
   }
 
+  async saveRecognitionMedia(media) {
+    await authoringRepository.updateItemRecognitionMedia(this.itemId, media);
+    await this.load();
+    this.notifyChanged({ action: media ? "recognition_media_updated" : "recognition_media_removed" });
+  }
+
+  onSubmit = async (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form?.matches("[data-item-recognition-media]")) return;
+    event.preventDefault();
+    if (!this.data?.availableOperations?.canEditItem || this.busy) return;
+    const data = new FormData(form);
+    const file = data.get("file");
+    if (!(file instanceof File) || !file.size) { this.error = "Scegli un'immagine da caricare."; this.render(); return; }
+    if (file.size > 700 * 1024) { this.error = "L'immagine supera 700 KB. Riduci il file prima di caricarlo."; this.render(); return; }
+    const altText = String(data.get("altText") || "").trim();
+    if (!altText) { this.error = "Descrivi brevemente l'immagine per renderla accessibile."; this.render(); return; }
+    this.busy = true; this.error = null; this.render();
+    try {
+      const dataBase64 = await fileAsBase64(file);
+      const uploaded = await authoringRepository.uploadItemMedia({ fileName: file.name, mimeType: file.type, dataBase64, altText });
+      await this.saveRecognitionMedia(uploaded);
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "Non è stato possibile aggiornare l'immagine di riconoscimento";
+      this.busy = false;
+      this.render();
+    }
+  };
+
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    if (target.closest("[data-remove-item-recognition-media]")) {
+      if (!this.data?.availableOperations?.canEditItem || this.busy) return;
+      const confirmed = await openActionDialog({
+        title: "Rimuovere l'immagine di riconoscimento dell'oggetto?",
+        message: "Le foto di riconoscimento configurate nelle singole sedi non verranno modificate.",
+        confirmLabel: "Rimuovi immagine",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+      this.busy = true; this.error = null; this.render();
+      try { await this.saveRecognitionMedia(null); }
+      catch (error) { this.error = error instanceof Error ? error.message : "Immagine non rimossa"; this.busy = false; this.render(); }
+      return;
+    }
     const tab = target.closest("[data-item-detail-tab]");
     if (tab) { this.tab = tab.dataset.itemDetailTab; this.view = "tabs"; this.focusedCollectionId = null; this.render(); return; }
     if (target.closest("[data-back-collections]")) { this.tab = "collections"; this.view = "tabs"; this.focusedCollectionId = null; this.render(); return; }
@@ -144,11 +200,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     if (openCollection) { navigate(`/workspace/editorial-studio?editorialContextId=${encodeURIComponent(openCollection.dataset.openCollection)}&section=content`); return; }
     const openGraph = target.closest("[data-open-collection-graph]");
     if (openGraph) {
-      const query = new URLSearchParams({
-        semanticGraphId: openGraph.dataset.openCollectionGraph,
-        editorialContextId: this.focusedCollectionId || "",
-        focusSubjectId: id(this.data?.subject),
-      });
+      const query = new URLSearchParams({ semanticGraphId: openGraph.dataset.openCollectionGraph, editorialContextId: this.focusedCollectionId || "", focusSubjectId: id(this.data?.subject) });
       navigate(`/workspace/semantic-graph?${query.toString()}`);
       return;
     }
@@ -194,9 +246,15 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     return `<header class="artaround-task-modal__header item-detail-header"><div class="item-detail-identity">${media?.url ? `<figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || subject.preferredLabel || "")}"></figure>` : `<div class="item-detail-media-placeholder">${icon("image", { size: 28 })}</div>`}<div><span class="eyebrow">Item</span><h1>${escapeHtml(subject.preferredLabel || "Contenuto")}</h1><p>${escapeHtml(subject.description || "Nessuna descrizione disponibile")}</p><small>${wikidata?.id ? `Wikidata · ${escapeHtml(wikidata.id)}` : "Identità ArtAround"} · Spazio: ${escapeHtml(this.data.space?.name || "-")}</small></div></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header>`;
   }
 
+  renderRecognitionMediaEditor() {
+    const media = this.data?.item?.recognitionMedia || null;
+    const editable = Boolean(this.data?.availableOperations?.canEditItem);
+    return `<section class="panel item-recognition-panel"><div class="section-heading compact"><div><span class="eyebrow">Riconoscimento generico</span><h3>Immagine di riconoscimento dell'oggetto</h3><p>Riferimento venue-neutral usato dal Navigator solo quando la sede non fornisce una propria foto di riconoscimento.</p></div></div>${media?.url ? `<figure class="item-recognition-preview"><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || this.data?.subject?.preferredLabel || "")}"><figcaption>${escapeHtml(media.altText || "Immagine di riconoscimento")}</figcaption></figure>` : `<p class="note">Nessuna immagine generica configurata.</p>`}${editable ? `<form data-item-recognition-media class="item-recognition-form"><label>${media?.url ? "Sostituisci immagine" : "Carica immagine"}<small>JPEG, PNG, WebP o AVIF · massimo 700 KB.</small><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required></label><label>Descrizione accessibile<input name="altText" maxlength="500" required value="${escapeHtml(media?.altText || "")}" placeholder="Es. Vista frontale dell'opera"></label><div class="button-row"><button type="submit" ${this.busy ? "disabled" : ""}>${icon("image", { size: 15 })} ${media?.url ? "Sostituisci" : "Carica"}</button>${media?.url ? `<button type="button" class="button-secondary danger" data-remove-item-recognition-media ${this.busy ? "disabled" : ""}>Rimuovi</button>` : ""}</div></form>` : ""}</section>`;
+  }
+
   renderEditions() {
     const editions = this.data?.editions || [];
-    return `<section class="item-detail-section"><div class="section-heading"><div><span class="eyebrow">Edizioni</span><h2>Versioni editoriali</h2><p>Ogni Edition combina questo Item con un insieme di Regole editoriali.</p></div>${this.data?.availableOperations?.canCreateEdition ? `<button type="button" class="button-secondary" data-create-item-edition>${icon("plus", { size: 15 })} Crea edizione</button>` : ""}</div>${editions.length ? `<div class="asset-grid">${editions.map((edition) => {
+    return `${this.renderRecognitionMediaEditor()}<section class="item-detail-section"><div class="section-heading"><div><span class="eyebrow">Edizioni</span><h2>Versioni editoriali</h2><p>Ogni Edition combina questo Item con un insieme di Regole editoriali.</p></div>${this.data?.availableOperations?.canCreateEdition ? `<button type="button" class="button-secondary" data-create-item-edition>${icon("plus", { size: 15 })} Crea edizione</button>` : ""}</div>${editions.length ? `<div class="asset-grid">${editions.map((edition) => {
       const revision = edition.revision;
       return `<article class="asset owned"><header><span class="asset-icon">${icon("book", { size: 19 })}</span><div><p class="badge">${escapeHtml(edition.namespace?.name || "Regole editoriali")}</p><h3>${escapeHtml(revision?.label || "Edizione da completare")}</h3></div><span class="status">${escapeHtml(statusLabel(revision?.status))}</span></header><div class="asset-copy"><p>${revision ? `v${escapeHtml(revision.version)} · ${Number(revision.presentationCount || 0)} presentazioni` : "Edizione presente, revisione da completare."}</p>${revision?.locales?.length ? `<p class="muted">Lingue: ${escapeHtml(revision.locales.join(", "))}</p>` : ""}</div><footer class="operations">${edition.availableOperations?.canOpen ? `<button type="button" data-open-item-edition="${escapeHtml(id(edition.namespace?.id))}">Apri edizione ${icon("chevron", { size: 14 })}</button>` : ""}</footer></article>`;
     }).join("")}</div>` : `<div class="empty-state compact"><h3>Nessuna edizione</h3><p>L'Item esiste nello spazio ma non ha ancora una versione editoriale.</p>${this.data?.availableOperations?.canCreateEdition ? `<button type="button" data-create-item-edition>${icon("plus", { size: 15 })} Crea la prima edizione</button>` : ""}</div>`}</section>`;
@@ -206,13 +264,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
     const edition = collection.compatibleEdition;
     const graphAvailable = Boolean(collection.semanticGraph?.id);
     const explicit = collection.semanticCoverage === "covered";
-    const semanticLabel = !graphAvailable
-      ? "– Grafo non disponibile"
-      : explicit
-        ? "✓ Subject collegabile nel grafo"
-        : collection.containsItem
-          ? "✓ Subject disponibile nel grafo"
-          : "⚠ Subject non disponibile";
+    const semanticLabel = !graphAvailable ? "– Grafo non disponibile" : explicit ? "✓ Subject collegabile nel grafo" : collection.containsItem ? "✓ Subject disponibile nel grafo" : "⚠ Subject non disponibile";
     return `<div class="collection-diagnostics"><span class="${edition ? "ok" : "warning"}">${edition ? "✓ Edizione disponibile" : "⚠ Edizione da creare"}</span><span class="${graphAvailable && (explicit || collection.containsItem) ? "ok" : "warning"}">${semanticLabel}</span></div>`;
   }
 
@@ -245,21 +297,14 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
   }
 
   renderVenues() {
-    if (this.principal?.type !== "organization") {
-      return `<section class="item-detail-section"><div class="empty-state compact"><p>Seleziona un'area di lavoro organizzazione per gestire la presenza del Subject nelle sedi.</p></div></section>`;
-    }
+    if (this.principal?.type !== "organization") return `<section class="item-detail-section"><div class="empty-state compact"><p>Seleziona un'area di lavoro organizzazione per gestire la presenza del Subject nelle sedi.</p></div></section>`;
     return `<section class="item-detail-section"><artaround-subject-presence data-item-detail-subject-presence subject-id="${escapeHtml(id(this.data?.subject))}" source-item-id="${escapeHtml(this.itemId)}" principal-type="${escapeHtml(this.principal.type)}" principal-id="${escapeHtml(this.principal.id)}"></artaround-subject-presence></section>`;
   }
 
   configureSubjectVenueSurface() {
     const surface = this.querySelector("artaround-subject-presence[data-item-detail-subject-presence]");
     if (!surface || !this.data?.subject || this.principal?.type !== "organization") return;
-    surface.configure({
-      subjectId: id(this.data.subject),
-      sourceItemId: this.itemId,
-      sourcePreviewMedia: this.data?.item?.recognitionMedia || null,
-      principal: this.principal,
-    });
+    surface.configure({ subjectId: id(this.data.subject), sourceItemId: this.itemId, sourcePreviewMedia: this.data?.item?.recognitionMedia || null, principal: this.principal });
   }
 
   renderBody() {
@@ -276,9 +321,7 @@ export class ArtAroundItemDetailDialog extends HTMLElement {
 
   render() {
     this.releaseDialogInteraction({ restoreFocus: false });
-    const header = this.data
-      ? this.renderHeader()
-      : `<header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">Item</span><h1>Dettaglio contenuto</h1></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header>`;
+    const header = this.data ? this.renderHeader() : `<header class="artaround-task-modal__header task-modal-header"><div><span class="eyebrow">Item</span><h1>Dettaglio contenuto</h1></div><button type="button" class="button-secondary small artaround-task-modal__close" data-modal-dismiss aria-label="Chiudi">×</button></header>`;
     const body = `${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.busy && !this.data ? `<div class="empty-state"><p>Caricamento del contenuto…</p></div>` : this.data ? this.renderBody() : ""}`;
     this.innerHTML = `<div class="artaround-modal-layer item-detail-modal-layer" data-modal-backdrop="true" role="presentation"><section class="artaround-task-modal artaround-task-modal--large item-detail-modal" role="dialog" aria-modal="true" aria-label="Dettaglio Item" aria-busy="${this.busy}">${header}<div class="artaround-task-modal__body">${body}</div><footer class="artaround-task-modal__footer"><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Chiudi</button></footer></section></div>`;
     this.syncDialogInteraction();
