@@ -125,10 +125,6 @@ export interface MapProjection {
       floorId: string;
       position: MapPoint;
     }>;
-    route: {
-      overlays: Array<RouteOverlay & { fromVisitAnchorId: string; toVisitAnchorId: string }>;
-      floorTransitions: Array<FloorTransition & { fromVisitAnchorId: string; toVisitAnchorId: string }>;
-    };
     warnings: Array<{ code: string; message: string }>;
   }>;
   knownLocation: MapKnownLocationProjection | null;
