@@ -9,8 +9,10 @@ const ItemEdition = require("../models/itemEdition.model");
 const ItemRevisionV2 = require("../models/itemRevisionV2.model");
 const ItemV2 = require("../models/itemV2.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
+const Namespace = require("../models/namespace.model");
 const AppError = require("../utils/AppError");
 const { resolveEditorialReleaseCollectionProjection } = require("./editorialCollectionConsumerProjectionV2.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function uniqueIds(values = []) { return [...new Set(values.map(id).filter(Boolean))]; }
@@ -145,12 +147,14 @@ async function directSemanticContext({ source, contentEntries }) {
     applicablePairs.has(`${id(context.contentSpaceId)}:${id(context.namespaceId)}`));
   if (!applicableContexts.length) return { pins: [], contexts: [] };
 
-  const [publishedReleases, semanticGraphs] = await Promise.all([
+  const [publishedReleases, semanticGraphs, namespaces] = await Promise.all([
     EditorialRelease.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.publishedReleaseId)) } }).lean(),
     SemanticGraph.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.semanticGraphId)) }, lifecycleStatus: "active" }).lean(),
+    Namespace.find({ _id: { $in: uniqueIds(applicableContexts.map((context) => context.namespaceId)) }, lifecycleStatus: "active" }).lean(),
   ]);
   const releaseById = new Map(publishedReleases.map((release) => [id(release._id), release]));
   const graphById = new Map(semanticGraphs.map((graph) => [id(graph._id), graph]));
+  const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
 
   const selectedGraphRevisionIds = uniqueIds(applicableContexts.map((context) => {
     const semanticGraph = graphById.get(id(context.semanticGraphId));
@@ -172,13 +176,28 @@ async function directSemanticContext({ source, contentEntries }) {
     const graphRevision = graphRevisionById.get(id(graphRevisionId));
     if (!graphRevision) continue;
     if (semanticGraph && id(graphRevision.semanticGraphId) !== id(semanticGraph._id)) continue;
+
+    let namespaceRevisionId = release?.namespaceRevisionId || null;
+    if (semanticGraph?.workingRevisionId && id(semanticGraph.workingRevisionId) === id(graphRevision._id)) {
+      const namespace = namespaceById.get(id(context.namespaceId));
+      if (!namespace) throw new AppError("Namespace del grafo diretto non disponibile", 409, [{ code: "SESSION_SEMANTIC_NAMESPACE_UNAVAILABLE" }]);
+      const effectiveNamespaceRevision = await loadEffectiveNamespaceRevision({
+        namespace,
+        binding: semanticGraph.namespaceDependency,
+        requireValidatedConsumer: true,
+        consumerSnapshotId: graphRevision._id,
+      });
+      namespaceRevisionId = effectiveNamespaceRevision._id;
+    }
+    if (!namespaceRevisionId) continue;
+
     const subjectIds = [...(subjectsByRevision.get(id(graphRevision._id)) || new Set())];
     pins.push({
       sourceType: "direct_item",
       sourceEditorialReleaseId: null,
       editorialContextId: context._id,
       graphRevisionId: graphRevision._id,
-      namespaceRevisionId: graphRevision.authoredAgainstNamespaceRevisionId,
+      namespaceRevisionId,
       subjectIds,
     });
     resolvedContexts.push({
@@ -186,6 +205,7 @@ async function directSemanticContext({ source, contentEntries }) {
       semanticGraph,
       graphRevision,
       namespaceId: context.namespaceId,
+      namespaceRevisionId,
       subjectIds: new Set(subjectIds),
     });
   }
@@ -220,17 +240,21 @@ async function directSemanticContentPins({ source, contexts }) {
   const itemById = new Map(items.map((item) => [id(item._id), item]));
 
   const namespaceIds = uniqueIds(contexts.map((entry) => entry.namespaceId));
-  const editions = await ItemEdition.find({
-    itemId: { $in: items.map((item) => item._id) },
-    namespaceId: { $in: namespaceIds },
-    publishedRevisionId: { $ne: null },
-  }).select("_id itemId namespaceId publishedRevisionId").lean();
+  const [editions, namespaces] = await Promise.all([
+    ItemEdition.find({
+      itemId: { $in: items.map((item) => item._id) },
+      namespaceId: { $in: namespaceIds },
+      publishedRevisionId: { $ne: null },
+    }).lean(),
+    Namespace.find({ _id: { $in: namespaceIds }, lifecycleStatus: "active" }).lean(),
+  ]);
   if (!editions.length) return [];
+  const namespaceById = new Map(namespaces.map((namespace) => [id(namespace._id), namespace]));
   const publishedRevisionIds = uniqueIds(editions.map((edition) => edition.publishedRevisionId));
   const revisions = await ItemRevisionV2.find({
     _id: { $in: publishedRevisionIds },
     status: { $in: ["published", "superseded"] },
-  }).select("_id itemEditionId authoredAgainstNamespaceRevisionId").lean();
+  }).select("_id itemEditionId").lean();
   const revisionById = new Map(revisions.map((revision) => [id(revision._id), revision]));
 
   const pins = [];
@@ -243,12 +267,20 @@ async function directSemanticContentPins({ source, contexts }) {
       && entry.subjectIds.has(id(item.primarySubjectId))
       && subjectIdsByGraph.get(id(entry.graphRevision._id))?.has(id(item.primarySubjectId)));
     if (!relevantContext) continue;
+    const namespace = namespaceById.get(id(edition.namespaceId));
+    if (!namespace) continue;
+    const effectiveNamespaceRevision = await loadEffectiveNamespaceRevision({
+      namespace,
+      binding: edition.namespaceDependency,
+      requireValidatedConsumer: true,
+      consumerSnapshotId: edition.publishedRevisionId,
+    });
     pins.push({
       sourceType: "direct_item",
       itemId: item._id,
       itemEditionId: edition._id,
       itemRevisionId: revision._id,
-      namespaceRevisionId: revision.authoredAgainstNamespaceRevisionId,
+      namespaceRevisionId: effectiveNamespaceRevision._id,
       subjectId: item.primarySubjectId,
     });
   }
