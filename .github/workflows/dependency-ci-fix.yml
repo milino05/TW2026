@@ -1,0 +1,270 @@
+name: Dependency regression fix harness
+
+on:
+  push:
+    branches:
+      - tmp/versioned-dependency-ci-fix
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-test:
+    runs-on: ubuntu-latest
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/artaround_dependency_fix
+      NODE_ENV: test
+      ADAPTIVE_CONTRIBUTOR_SECRET: dependency-fix-stable-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: tmp/versioned-dependency-ci-fix
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --prefix clients/navigator --no-audit --no-fund
+
+      - name: Apply dependency regression fixes
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function read(path) { return fs.readFileSync(path, 'utf8'); }
+          function write(path, value) { fs.writeFileSync(path, value); }
+          function replaceOnce(path, before, after) {
+            const source = read(path);
+            const count = source.split(before).length - 1;
+            if (count !== 1) throw new Error(`${path}: expected one occurrence, found ${count}: ${before.slice(0, 80)}`);
+            write(path, source.replace(before, after));
+          }
+          function replaceCount(path, before, after, expected) {
+            const source = read(path);
+            const count = source.split(before).length - 1;
+            if (count !== expected) throw new Error(`${path}: expected ${expected} occurrences, found ${count}: ${before.slice(0, 80)}`);
+            write(path, source.split(before).join(after));
+          }
+          function replaceRegex(path, pattern, after) {
+            const source = read(path);
+            const matches = source.match(pattern);
+            if (!matches) throw new Error(`${path}: regex did not match ${pattern}`);
+            write(path, source.replace(pattern, after));
+          }
+
+          // Item integrity: Namespace revalidation must not erase Subject-reference blockers.
+          replaceOnce(
+            'services/itemV2.service.js',
+            'const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");\n',
+            'const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");\nconst { validateReferencedSubjects } = require("./itemRevisionSubjectIntegrity.service");\n',
+          );
+          replaceCount(
+            'services/itemV2.service.js',
+            '  const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);',
+            '  const issues = [\n    ...validatePresentationAgainstNamespace(revision, namespaceRevision),\n    ...await validateReferencedSubjects(revision),\n  ];',
+            2,
+          );
+          replaceOnce(
+            'services/itemAuthoringV2.service.js',
+            'const { projectDependencyState } = require("./versionedSchemaDependency.service");\n',
+            'const { projectDependencyState } = require("./versionedSchemaDependency.service");\nconst { collectRevisionSubjectIds, validateReferencedSubjects } = require("./itemRevisionSubjectIntegrity.service");\n',
+          );
+          replaceRegex(
+            'services/itemAuthoringV2.service.js',
+            /function collectRevisionSubjectRefs\(revision\) \{[\s\S]*?\nasync function checkEditionConsistency/,
+            'async function checkEditionConsistency',
+          );
+
+          // Canonical demo seeds materialize the live PhysicalVocabulary binding.
+          for (const path of ['scripts/auroraDatasetV2.js', 'scripts/examDatasetV2.js']) {
+            replaceOnce(
+              path,
+              'const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");\n',
+              'const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");\nconst { buildValidation } = require("../services/versionedSchemaDependency.service");\n',
+            );
+            replaceOnce(
+              path,
+              '  venue.publishedReleaseId = venueRelease._id;\n  await venue.save();',
+              '  venue.physicalVocabularyId = physical.physicalVocabulary._id;\n  venue.physicalVocabularyDependency = {\n    versionPolicy: "follow_current",\n    pinnedRevisionId: null,\n    validation: buildValidation({\n      consumerSnapshotId: venueRelease._id,\n      dependencyRevisionId: physical.revision._id,\n      issues: [],\n    }),\n  };\n  venue.publishedReleaseId = venueRelease._id;\n  await venue.save();',
+            );
+          }
+
+          replaceOnce(
+            'scripts/seedVisitAuthoringPlayground.js',
+            'const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");\n',
+            'const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");\nconst { buildValidation } = require("../services/versionedSchemaDependency.service");\n',
+          );
+          replaceOnce(
+            'scripts/seedVisitAuthoringPlayground.js',
+            '  venue.publishedReleaseId = release._id;\n  venue.workingReleaseId = null;\n  await venue.save();',
+            '  venue.physicalVocabularyId = physicalVocabulary._id;\n  venue.physicalVocabularyDependency = {\n    versionPolicy: "follow_current",\n    pinnedRevisionId: null,\n    validation: buildValidation({\n      consumerSnapshotId: release._id,\n      dependencyRevisionId: vocabularyRevision._id,\n      issues: [],\n    }),\n  };\n  venue.publishedReleaseId = release._id;\n  venue.workingReleaseId = null;\n  await venue.save();',
+          );
+
+          // Generation fixture: real published Namespace + live physical binding.
+          replaceOnce(
+            'tests/generationOptionsV2.test.js',
+            'const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+            'const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+          );
+          replaceOnce(
+            'tests/generationOptionsV2.test.js',
+            '  const ContentSpace = require("../models/contentSpace.model");\n  const EditorialRelease = require("../models/editorialRelease.model");',
+            '  const ContentSpace = require("../models/contentSpace.model");\n  const EditorialRelease = require("../models/editorialRelease.model");\n  const NamespaceRevision = require("../models/namespaceRevision.model");',
+          );
+          replaceOnce(
+            'tests/generationOptionsV2.test.js',
+            '  const namespaceRevisionId = oid();',
+            '  const namespaceRevision = await NamespaceRevision.create({\n    namespaceId: namespace._id,\n    version: 1,\n    durationTypes: [],\n    languageLevels: [],\n    presentationAspects: [],\n    selectionSignals: [],\n    relationTypes: [],\n    subjectClasses: [],\n    status: "published",\n    integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: userId },\n    publication: { publishedAt: new Date(), publishedBy: userId },\n    createdBy: userId,\n    updatedBy: userId,\n  });\n  namespace.publishedRevisionId = namespaceRevision._id;\n  await namespace.save();\n  const namespaceRevisionId = namespaceRevision._id;',
+          );
+          replaceOnce(
+            'tests/generationOptionsV2.test.js',
+            '  const physical = await createPublishedPhysicalVocabulary({ userId });',
+            '  const physical = await createPublishedPhysicalVocabulary({ userId, ownerType: "organization", ownerId: organizationId });',
+          );
+          replaceOnce(
+            'tests/generationOptionsV2.test.js',
+            '  venue.publishedReleaseId = release._id;\n  await venue.save();',
+            '  await bindPublishedVenuePhysicalVocabulary({\n    venue,\n    physicalVocabulary: physical.physicalVocabulary,\n    revision: physical.revision,\n    releaseId: release._id,\n  });',
+          );
+
+          // ExecutionPreparation fixture.
+          replaceOnce(
+            'tests/executionPreparationV2.test.js',
+            '    const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+            '    const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+          );
+          replaceOnce(
+            'tests/executionPreparationV2.test.js',
+            '    const physical = await createPublishedPhysicalVocabulary({ userId: owner._id });',
+            '    const physical = await createPublishedPhysicalVocabulary({ userId: owner._id, ownerType: "organization", ownerId: organization._id });',
+          );
+          replaceOnce(
+            'tests/executionPreparationV2.test.js',
+            '    venue.publishedReleaseId = release._id;\n    await venue.save();',
+            '    await bindPublishedVenuePhysicalVocabulary({\n      venue,\n      physicalVocabulary: physical.physicalVocabulary,\n      revision: physical.revision,\n      releaseId: release._id,\n    });',
+          );
+
+          // Runtime fixture.
+          replaceOnce(
+            'tests/runtimeV2Mongo.test.js',
+            'const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+            'const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");',
+          );
+          replaceOnce(
+            'tests/runtimeV2Mongo.test.js',
+            '    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });',
+            '    const physical = await createPublishedPhysicalVocabulary({ userId: user._id, ownerType: "organization", ownerId: organization._id });',
+          );
+          replaceOnce(
+            'tests/runtimeV2Mongo.test.js',
+            '    venue.publishedReleaseId = releaseR1._id;\n    await venue.save();',
+            '    await bindPublishedVenuePhysicalVocabulary({\n      venue,\n      physicalVocabulary: physical.physicalVocabulary,\n      revision: physical.revision,\n      releaseId: releaseR1._id,\n    });',
+          );
+
+          // Explicit runtime pins now include the effective PhysicalVocabularyRevision.
+          replaceOnce(
+            'tests/navigationPreferencesSynchronizedV3.test.js',
+            '        layoutRevisionId: new mongoose.Types.ObjectId(),\n      }],',
+            '        layoutRevisionId: new mongoose.Types.ObjectId(),\n        physicalVocabularyRevisionId: new mongoose.Types.ObjectId(),\n      }],',
+          );
+          replaceOnce(
+            'tests/navigationProjectionV2.test.js',
+            '      venuePins: [{ venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id }],',
+            '      venuePins: [{ venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id, physicalVocabularyRevisionId: physical.revision._id }],',
+          );
+          replaceOnce(
+            'tests/sessionPublicLocationV2.test.js',
+            '      venuePins: [{ venueId: venue._id, venueReleaseId: release1._id, layoutRevisionId: layout1._id }],',
+            '      venuePins: [{ venueId: venue._id, venueReleaseId: release1._id, layoutRevisionId: layout1._id, physicalVocabularyRevisionId: vocabularyRevisionId }],',
+          );
+          replaceOnce(
+            'tests/visitAuthoringPlaygroundSeed.test.js',
+            '          layoutRevisionId: layout._id,\n        }],',
+            '          layoutRevisionId: layout._id,\n          physicalVocabularyRevisionId: first.venue.physicalVocabularyDependency.validation.dependencyRevisionId,\n        }],',
+          );
+
+          // Venue onboarding tests follow lineage semantics and draft-before-use invariant.
+          replaceOnce(
+            'tests/venueLayoutCommandV2Mongo.test.js',
+            'test("first Venue onboarding can create the starter PhysicalVocabulary and pin it to the Layout",',
+            'test("first Venue onboarding creates a starter PhysicalVocabulary draft that must be published before Venue binding",',
+          );
+          replaceOnce(
+            'tests/venueLayoutCommandV2Mongo.test.js',
+            '    assert.equal(initialized.release.status, "draft");\n    assert.ok(initialized.layout.authoredAgainstPhysicalVocabularyRevisionId);\n    assert.equal(String(initialized.onboarding.createdPhysicalVocabularyRevisionId), String(initialized.layout.authoredAgainstPhysicalVocabularyRevisionId));',
+            '    assert.equal(initialized.release, null);\n    assert.equal(initialized.layout, null);\n    assert.equal(initialized.onboarding.requiresPublication, true);\n    assert.ok(initialized.onboarding.createdPhysicalVocabularyRevisionId);',
+          );
+          replaceOnce(
+            'tests/venueLayoutCommandV2Mongo.test.js',
+            '    assert.equal(vocabulary.ownerType, "organization");\n    assert.equal(String(vocabulary.ownerId), String(organization._id));',
+            '    assert.equal(vocabulary.ownerType, "organization");\n    assert.equal(String(vocabulary.ownerId), String(organization._id));\n    assert.equal(String(vocabulary.workingRevisionId), String(initialized.onboarding.createdPhysicalVocabularyRevisionId));\n    assert.equal(vocabulary.publishedRevisionId, null);',
+          );
+          replaceOnce(
+            'tests/venueLayoutCommandV2Mongo.test.js',
+            '    assert.equal(String(onboarding.choices[0].physicalVocabularyRevisionId), String(physical.revision._id));',
+            '    assert.equal(String(onboarding.choices[0].physicalVocabularyId), String(physical.physicalVocabulary._id));\n    assert.equal(String(onboarding.choices[0].effectiveRevisionId), String(physical.revision._id));\n    assert.equal(onboarding.choices[0].versionPolicy, "pinned");',
+          );
+          replaceOnce(
+            'tests/venueLayoutCommandV2Mongo.test.js',
+            '      payload: { mode: "existing", physicalVocabularyRevisionId: physical.revision._id },',
+            '      payload: { mode: "existing", physicalVocabularyId: physical.physicalVocabulary._id },',
+          );
+
+          // Visit playground seed pin already derives from the live binding.
+
+          console.log('Dependency regression patches applied successfully.');
+          NODE
+
+      - name: Commit patched files to temp branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add services scripts tests
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: align dependency fixtures and Item integrity"
+            git push origin HEAD:tmp/versioned-dependency-ci-fix
+          fi
+
+      - name: Start standalone MongoDB
+        run: |
+          docker run --detach --name artaround-dependency-fix-mongo --publish 27017:27017 mongo:7 --bind_ip_all
+          for attempt in {1..30}; do
+            if docker exec artaround-dependency-fix-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then break; fi
+            sleep 1
+          done
+
+      - name: Run previously failing tests
+        run: |
+          node -r ./config/testMongoEnvironment.js -r ./config/mongoUnitOfWork.js --test --test-concurrency=1 \
+            tests/auroraDatasetV2.test.js \
+            tests/auroraNavigationV2.test.js \
+            tests/examDatasetV2.test.js \
+            tests/examPresentationMatrixMongo.test.js \
+            tests/executionPreparationV2.test.js \
+            tests/generationOptionsV2.test.js \
+            tests/marketplaceItemAuthoringV2.test.js \
+            tests/marketplaceVenueCreationUxContract.test.js \
+            tests/navigationPreferencesSynchronizedV3.test.js \
+            tests/navigationProjectionV2.test.js \
+            tests/runtimeV2Mongo.test.js \
+            tests/sessionPublicLocationV2.test.js \
+            tests/venueCreationV2Mongo.test.js \
+            tests/venueLayoutCommandV2Mongo.test.js \
+            tests/venuePublicationVocabularyFeedback.test.js \
+            tests/visitAuthoringPlaygroundSeed.test.js
+
+      - name: Run backend checks
+        run: npm run check
+
+      - name: Run complete Node and Mongo test suite
+        run: npm test
+
+      - name: Stop MongoDB
+        if: always()
+        run: docker rm --force artaround-dependency-fix-mongo || true
