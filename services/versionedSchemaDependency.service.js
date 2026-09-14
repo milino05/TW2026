@@ -37,6 +37,35 @@ function isValidationFresh({ binding, consumerSnapshotId, dependencyRevisionId }
   );
 }
 
+function assertDependencyReady({
+  binding,
+  consumerSnapshotId,
+  dependencyRevisionId,
+  codePrefix = "DEPENDENCY",
+  field = "dependency",
+}) {
+  if (!consumerSnapshotId) return;
+  if (!isValidationFresh({ binding, consumerSnapshotId, dependencyRevisionId })) {
+    throw new AppError("La dipendenza deve essere rivalidata rispetto alla revisione corrente", 409, [{
+      field,
+      code: `${codePrefix}_REVALIDATION_REQUIRED`,
+      context: { consumerSnapshotId, dependencyRevisionId },
+    }]);
+  }
+  if (binding?.validation?.status !== "valid") {
+    throw new AppError("La dipendenza corrente richiede revisione", 409, [{
+      field,
+      code: `${codePrefix}_REVIEW_REQUIRED`,
+      context: {
+        consumerSnapshotId,
+        dependencyRevisionId,
+        outcome: binding?.validation?.outcome || "requires_review",
+        issues: binding?.validation?.issues || [],
+      },
+    }]);
+  }
+}
+
 function buildValidation({ consumerSnapshotId, dependencyRevisionId, issues = [], outcome = null, checkedAt = new Date() }) {
   const blocking = (issues || []).some((issue) => issue?.severity !== "warning");
   return {
@@ -71,6 +100,7 @@ module.exports = {
   bindingFromAccess,
   effectiveRevisionId,
   isValidationFresh,
+  assertDependencyReady,
   buildValidation,
   projectDependencyState,
 };
