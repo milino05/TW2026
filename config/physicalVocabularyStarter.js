@@ -38,15 +38,13 @@ const CONNECTION_TYPES = Object.freeze([
 ]);
 
 const PHYSICAL_ATTRIBUTES = Object.freeze([
-  { ...base({ key: "has_steps", label: "Presenza di gradini", description: "Indica se il tratto include uno o più gradini.", aliases: ["gradini", "scale"], semanticRefs: [semantic("openstreetmap-tag", "step_count=*")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "connection" },
-  { ...base({ key: "step_free", label: "Accessibile senza gradini", description: "Indica un passaggio percorribile senza superare gradini.", aliases: ["senza gradini", "accesso a raso"], semanticRefs: [semantic("openstreetmap-tag", "wheelchair=yes", "close")], metadata: { obstacleIndicator: true, obstacleWhen: false } }), dataType: "boolean", unit: null, options: [], appliesTo: "both" },
-  { ...base({ key: "minimum_width_cm", label: "Larghezza minima", description: "Larghezza minima utile del passaggio, espressa in centimetri.", aliases: ["larghezza passaggio"], semanticRefs: [semantic("openstreetmap-tag", "width=*")] }), dataType: "number", unit: "cm", options: [], appliesTo: "connection" },
-  { ...base({ key: "narrow_passage", label: "Passaggio stretto", description: "Indica che il tratto presenta una strozzatura significativa.", aliases: ["strettoia", "passaggio angusto"], semanticRefs: [semantic("openstreetmap-tag", "width=limited", "close")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "connection" },
-  { ...base({ key: "tactile_guidance", label: "Guida tattile", description: "Indica la presenza di una guida tattile lungo il percorso.", aliases: ["percorso tattile", "pavimentazione tattile"], semanticRefs: [semantic("openstreetmap-tag", "tactile_paving=yes")] }), dataType: "boolean", unit: null, options: [], appliesTo: "both" },
-  { ...base({ key: "obstacles", label: "Presenza di ostacoli", description: "Indica ostacoli rilevanti per la percorribilità.", aliases: ["ostacoli", "impedimenti"], semanticRefs: [semantic("openstreetmap-tag", "obstacle=*")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "both" },
-  { ...base({ key: "slope_percent", label: "Pendenza", description: "Pendenza longitudinale del tratto in percentuale.", aliases: ["inclinazione", "pendenza percentuale"], semanticRefs: [semantic("openstreetmap-tag", "incline=*")] }), dataType: "number", unit: "%", options: [], appliesTo: "connection" },
-  { ...base({ key: "sensory_load", label: "Carico sensoriale", description: "Livello indicativo di rumore, affollamento e stimoli ambientali.", aliases: ["rumore", "stimoli sensoriali"] }), dataType: "choice", unit: null, options: [{ value: "low", label: "Basso" }, { value: "medium", label: "Medio" }, { value: "high", label: "Alto" }], appliesTo: "both" },
-  { ...base({ key: "quiet_area", label: "Area tranquilla", description: "Indica un luogo adatto a una sosta con ridotto carico sensoriale.", aliases: ["zona tranquilla", "area calma"] }), dataType: "boolean", unit: null, options: [], appliesTo: "place" },
+  { ...base({ key: "has_steps", label: "Presenza di gradini", description: "Indica se il tratto include uno o più gradini.", aliases: ["gradini", "scale"], semanticRefs: [semantic("openstreetmap-tag", "step_count=*")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "connection", visitorControl: { enabled: false } },
+  { ...base({ key: "step_free", label: "Accessibile senza gradini", description: "Indica un passaggio percorribile senza superare gradini.", aliases: ["senza gradini", "accesso a raso"], semanticRefs: [semantic("artaround-physical", "step_free"), semantic("openstreetmap-tag", "wheelchair=yes", "close")], metadata: { obstacleIndicator: true, obstacleWhen: false } }), dataType: "boolean", unit: null, options: [], appliesTo: "both", visitorControl: { enabled: false } },
+  { ...base({ key: "minimum_width_cm", label: "Larghezza minima", description: "Larghezza minima utile del passaggio, espressa in centimetri.", aliases: ["larghezza passaggio"], semanticRefs: [semantic("artaround-physical", "minimum_width_cm"), semantic("openstreetmap-tag", "width=*")] }), dataType: "number", unit: "cm", options: [], appliesTo: "connection", visitorControl: { enabled: false } },
+  { ...base({ key: "narrow_passage", label: "Passaggio stretto", description: "Indica che il tratto presenta una strozzatura significativa.", aliases: ["strettoia", "passaggio angusto"], semanticRefs: [semantic("artaround-physical", "narrow_passage"), semantic("openstreetmap-tag", "width=limited", "close")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "connection", visitorControl: { enabled: false } },
+  { ...base({ key: "tactile_guidance", label: "Guida tattile", description: "Indica la presenza di una guida tattile lungo il percorso.", aliases: ["percorso tattile", "pavimentazione tattile"], semanticRefs: [semantic("artaround-physical", "tactile_guidance"), semantic("openstreetmap-tag", "tactile_paving=yes")] }), dataType: "boolean", unit: null, options: [], appliesTo: "both", visitorControl: { enabled: false } },
+  { ...base({ key: "obstacles", label: "Presenza di ostacoli", description: "Indica ostacoli rilevanti per la percorribilità.", aliases: ["ostacoli", "impedimenti"], semanticRefs: [semantic("artaround-physical", "obstacles_present"), semantic("openstreetmap-tag", "obstacle=*")], metadata: { obstacleIndicator: true, obstacleWhen: true } }), dataType: "boolean", unit: null, options: [], appliesTo: "both", visitorControl: { enabled: false } },
+  { ...base({ key: "slope_percent", label: "Pendenza", description: "Pendenza longitudinale del tratto in percentuale.", aliases: ["inclinazione", "pendenza percentuale"], semanticRefs: [semantic("artaround-physical", "slope_percent"), semantic("openstreetmap-tag", "incline=*")] }), dataType: "number", unit: "%", options: [], appliesTo: "connection", visitorControl: { enabled: false } },
 ]);
 
 const ROUTING_PROFILES = Object.freeze([
@@ -55,19 +53,14 @@ const ROUTING_PROFILES = Object.freeze([
     { attributeKey: "minimum_width_cm", operator: "gte", value: 80, priority: "preferred", weight: 4 },
     { attributeKey: "obstacles", operator: "eq", value: false, priority: "preferred", weight: 4 },
   ] },
-  { ...base({ key: "step_free", label: "Percorso senza scale", description: "Esclude i tratti dichiarati con gradini.", aliases: ["senza scale", "senza gradini"] }), requirements: [
+  { ...base({ key: "step_free", label: "Percorso senza scale", description: "Esclude i tratti dichiarati con gradini e privilegia quelli esplicitamente senza gradini.", aliases: ["senza scale", "senza gradini"] }), requirements: [
     { attributeKey: "has_steps", operator: "eq", value: false, priority: "required", weight: 10 },
     { attributeKey: "step_free", operator: "eq", value: true, priority: "preferred", weight: 5 },
   ] },
-  { ...base({ key: "quiet", label: "Percorso tranquillo", description: "Riduce l'esposizione a zone con elevato carico sensoriale.", aliases: ["tranquillo", "silenzioso"] }), requirements: [
-    { attributeKey: "sensory_load", operator: "eq", value: "low", priority: "preferred", weight: 5 },
-    { attributeKey: "quiet_area", operator: "eq", value: true, priority: "preferred", weight: 3 },
-  ] },
-  { ...base({ key: "shortest", label: "Percorso più breve", description: "Ottimizza la lunghezza geometrica del percorso quando non sono presenti vincoli ulteriori.", aliases: ["rapido", "più breve"], metadata: { optimization: "shortest" } }), requirements: [] },
 ]);
 
 module.exports = {
-  STARTER_VERSION: 1,
+  STARTER_VERSION: 2,
   STARTER_LABEL: "Starter fisico ArtAround",
   PLACE_TYPES,
   CONNECTION_TYPES,
