@@ -14,6 +14,7 @@ const {
 const {
   visitStopIndex,
   synchronizedPlaybackOverridesPhysicalGate,
+  sharedPresentationActions,
 } = require("../services/navigatorRuntimeV2.service");
 const { annotateStops } = require("../services/navigatorMapProjectionV2.service");
 
@@ -188,4 +189,17 @@ test("shared playback can override only the current shared entry physical gate",
     synchronizedSession: { playback: { state: "idle", contentEntryId: entry._id } },
     entry,
   }), false);
+});
+
+test("shared playback preserves presentation and group progress actions but excludes legacy navigation actions", () => {
+  const actions = [
+    { actionId: "progress.next", family: "progress", runtimeScope: "synchronized_visit_session" },
+    { actionId: "presentation.depth.increase", family: "presentation", runtimeScope: "visit_session" },
+    { actionId: "navigation.place.toilet", family: "navigation", runtimeScope: "visit_session" },
+  ];
+  const projected = sharedPresentationActions(actions);
+  assert.deepEqual(projected.map((action) => action.actionId), [
+    "progress.next",
+    "presentation.depth.increase",
+  ]);
 });
