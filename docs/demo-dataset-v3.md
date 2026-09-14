@@ -27,7 +27,35 @@ Il seed crea tre Organization indipendenti, ognuna con una Venue reale di Bologn
 | MAMbo — Museo d'Arte Moderna di Bologna | `autore1` | arte moderna e contemporanea | Via Don Minzoni 14, Bologna |
 | Museo Civico Archeologico di Bologna | `autore2` | archeologia | Via dell'Archiginnasio 2, Bologna |
 
-Le mappe incluse nel Navigator sono schemi ArtAround originali dall'alto. Servono a provare sale, ExhibitSlot, routing e servizi e **non rappresentano planimetrie ufficiali** dei musei.
+Le mappe incluse nel Navigator sono materiale dimostrativo ArtAround e **non rappresentano planimetrie ufficiali** dei musei.
+
+### Snapshot canonica dei layout demo
+
+I layout delle tre Venue possono essere rifiniti tramite l'editor grafico e poi congelati direttamente dal database locale. Il comando:
+
+```bash
+npm run snapshot:demo-layouts
+```
+
+legge per ogni Venue demo la `workingReleaseId`, quando presente, altrimenti la `publishedReleaseId`, e salva esclusivamente lo stato fisico che deve diventare canonico:
+
+- `floors`, incluse calibrazione e metadati della planimetria;
+- `places`, con gli stessi `_id`, tipi, attributi e coordinate;
+- `exhibitSlots`, con gli stessi riferimenti ai luoghi;
+- `connections`, con gli stessi `_id`, estremi, geometrie, metriche, attributi e istruzioni.
+
+Le immagini caricate dall'editor non rimangono dipendenti dalla directory runtime `uploads/venue-floor-plans`: il comando le copia in `scripts/fixtures/demo-venue-layouts/floor-plans/`, assegna URL deterministici per il seed e registra un checksum SHA-256. Il file `scripts/fixtures/demo-venue-layouts/layouts.json` e le immagini della stessa directory devono essere committati insieme.
+
+Quando la fixture esiste, `npm run seed:demo` procede in questo ordine:
+
+1. crea normalmente il dataset V3 deterministico;
+2. sostituisce i soli dati di `LayoutRevision` delle tre Venue con la snapshot versionata;
+3. materializza le planimetrie in `uploads/venue-floor-plans/`;
+4. esegue la normale verifica del dataset.
+
+Se la fixture non è presente, `seed:demo` mantiene il layout demo generato dal V3. Questo permette alla CI di restare funzionante durante la preparazione iniziale della snapshot.
+
+Per aggiornare in futuro i layout demo, modificare nuovamente le Venue tramite l'editor e rieseguire `npm run snapshot:demo-layouts` prima di resettare il database.
 
 ## Regole editoriali
 
