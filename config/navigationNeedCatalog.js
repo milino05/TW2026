@@ -120,14 +120,11 @@ function projectNavigationNeedCatalog() {
     description: entry.description,
     dataType: entry.dataType,
     unit: entry.unit,
-    appliesTo: entry.appliesTo,
-    operator: entry.operator,
     valueMode: entry.valueMode,
     ...(entry.valueMode === "fixed" ? { value: entry.value } : {}),
     allowedPriorities: [...entry.allowedPriorities],
     defaultPriority: entry.defaultPriority,
     advanced: entry.advanced,
-    physicalFeatureRef: canonicalPhysicalFeatureRef(entry.id),
   }));
 }
 
