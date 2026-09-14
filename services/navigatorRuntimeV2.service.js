@@ -78,6 +78,10 @@ function baseActionsByFamilies(actions, allowedFamilies) {
   return (actions || []).filter((action) => allowedFamilies.has(action.family));
 }
 
+function sharedPresentationActions(baseActions = []) {
+  return baseActions.filter((action) => action.family !== "navigation");
+}
+
 function visitStopHasContent(plan, visitAnchorId) {
   return (plan?.contentEntries || []).some((entry) => id(entry.deliveryAnchorId) === id(visitAnchorId));
 }
@@ -160,6 +164,12 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   const context = actionContext(entry, execution.contextAnchor);
   const actions = [];
   const keepLifecycle = () => actions.push(...baseActionsByFamilies(base.actions, new Set(["lifecycle", "synchronization"])));
+  const sharedPresentationAllowed = synchronizedPlaybackOverridesPhysicalGate({ synchronizedSession, entry });
+  const hostSharedPlayback = Boolean(sharedPresentationAllowed && membership?.role === "host");
+  const addSharedPresentationActions = () => {
+    if (sharedPresentationAllowed) actions.push(...sharedPresentationActions(base.actions));
+    else keepLifecycle();
+  };
   const stopDefinition = stopSelectionDefinition(plan);
   const stopAction = stopDefinition
     ? synchronizedSession
@@ -170,7 +180,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   if (execution.phase === EXECUTION_PHASES.LOCATION_REQUIRED) {
     actions.push(personalAction(session, ACTION_DEFINITIONS.LOCATION_CONFIRM, { context }));
     if (stopAction) actions.push(stopAction);
-    keepLifecycle();
+    addSharedPresentationActions();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
@@ -183,14 +193,19 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
   }
 
   if ([EXECUTION_PHASES.NAVIGATING_TO_VISIT_STOP, EXECUTION_PHASES.APPROACHING_VISIT_TARGET, EXECUTION_PHASES.NAVIGATING_DETOUR].includes(execution.phase)) {
-    actions.push(personalAction(session, ACTION_DEFINITIONS.PROGRESS_NEXT, {
-      serverInput: { executionMode: "physical" },
-      context,
-    }));
+    // A host with authoritative shared playback must not receive two actions
+    // named progress.next with different scopes. In that case group narrative
+    // progress wins; personal physical confirmation returns after playback stops.
+    if (!hostSharedPlayback) {
+      actions.push(personalAction(session, ACTION_DEFINITIONS.PROGRESS_NEXT, {
+        serverInput: { executionMode: "physical" },
+        context,
+      }));
+    }
     if (execution.detour) actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
     actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
-    keepLifecycle();
+    addSharedPresentationActions();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
@@ -198,7 +213,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     actions.push(personalAction(session, ACTION_DEFINITIONS.NAVIGATION_RETURN_TO_VISIT, { context }));
     if (stopAction) actions.push(stopAction);
     actions.push(...await physicalFeatureActions({ session, routingConfigurationOwner, execution, entry }));
-    keepLifecycle();
+    addSharedPresentationActions();
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
@@ -209,8 +224,7 @@ async function deriveNavigatorRuntimeActions({ sessionId, userId }) {
     return { ...base, execution, actions: dedupeActions(actions) };
   }
 
-  const presentationAllowed = execution.presentationAvailable
-    || synchronizedPlaybackOverridesPhysicalGate({ synchronizedSession, entry });
+  const presentationAllowed = execution.presentationAvailable || sharedPresentationAllowed;
   if (presentationAllowed) {
     actions.push(...base.actions.filter((action) => action.family !== "navigation"));
   } else {
@@ -429,6 +443,7 @@ module.exports = {
   advanceNavigatorNarrativeProgressV2,
   selectNavigatorVisitStopV2,
   synchronizedPlaybackOverridesPhysicalGate,
+  sharedPresentationActions,
   projectLiveNavigationSummary,
   visitStopIndex,
 };
