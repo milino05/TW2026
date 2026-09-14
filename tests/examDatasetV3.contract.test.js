@@ -82,3 +82,14 @@ test("le regole dei due musei d'arte restano allineate al modello culturale star
   assert.deepEqual(pick(art.relationTypes, ["key", "label"]), pick(starter.relationTypes, ["key", "label"]));
   assert.deepEqual(pick(art.selectionSignals, ["key", "label"]), pick(starter.selectionSignals, ["key", "label"]));
 });
+
+test("il seed V3 persiste e verifica la dependency versionata Venue -> PhysicalVocabulary", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "examDatasetV3.js"), "utf8");
+  assert.match(source, /venue\.physicalVocabularyId = physical\.physicalVocabulary\._id/);
+  assert.match(source, /versionPolicy: "follow_current"/);
+  assert.match(source, /consumerSnapshotId: release\._id/);
+  assert.match(source, /dependencyRevisionId: physical\.revision\._id/);
+  assert.match(source, /buildValidation\(/);
+  assert.match(source, /loadVenuePhysicalVocabulary\(venue, \{ requireStable: true, requireValidatedConsumer: true, consumerSnapshotId: venueRelease\._id \}\)/);
+  assert.match(source, /VENUE_PHYSICAL_DEPENDENCY_INVALID/);
+});
