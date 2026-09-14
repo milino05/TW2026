@@ -187,11 +187,13 @@ function physicalNavigationActionDefinition(definition) {
 }
 
 function publicAction(definition) {
+  const physicalProgress = definition.actionId === ACTION_DEFINITIONS.PROGRESS_NEXT.actionId
+    && definition.serverInput?.executionMode === "physical";
   return {
     actionId: definition.actionId,
-    type: definition.type,
+    type: physicalProgress ? "PHYSICAL_PROGRESS_NEXT" : definition.type,
     family: definition.family,
-    label: definition.label,
+    label: physicalProgress ? "Indicazione completata" : definition.label,
     controlledVoiceAliases: [...(definition.controlledVoiceAliases || [])],
     ...(definition.runtimeScope ? { runtimeScope: definition.runtimeScope } : {}),
     ...(definition.runtimeVersion ? { runtimeVersion: definition.runtimeVersion } : {}),

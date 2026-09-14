@@ -73,10 +73,10 @@ function validMediaUrl(value, { allowLocalUpload = false } = {}) {
   }
 }
 
-function validateMedia(media, base) {
+function validateMedia(media, base, { mediaLabel = "immagine del contenuto" } = {}) {
   const issues = [];
   if (!isPlainObject(media)) {
-    issues.push({ field: base, code: "INVALID_TYPE", message: "L'immagine del contenuto non è valida" });
+    issues.push({ field: base, code: "INVALID_TYPE", message: `L'${mediaLabel} non è valida` });
     return issues;
   }
   if (!validMediaUrl(media.url, { allowLocalUpload: true })) issues.push({ field: `${base}.url`, code: "INVALID_URL", message: "Inserisci un indirizzo valido per l'immagine" });
@@ -95,6 +95,15 @@ function validateMedia(media, base) {
   return issues;
 }
 
+function validateRecognitionMediaPayload(payload = {}) {
+  const issues = [];
+  const allowed = ["recognitionMedia"];
+  for (const key of Object.keys(payload || {})) if (!allowed.includes(key)) issues.push({ field: key, code: "UNKNOWN_FIELD", message: `Campo non supportato: ${key}` });
+  if (!hasOwn(payload, "recognitionMedia")) issues.push({ field: "recognitionMedia", code: "REQUIRED", message: "recognitionMedia è obbligatorio" });
+  else if (payload.recognitionMedia !== null) issues.push(...validateMedia(payload.recognitionMedia, "recognitionMedia", { mediaLabel: "immagine di riconoscimento" }));
+  return issues;
+}
+
 function validateCreateItemPayload(payload = {}) {
   const issues = [];
   const allowed = ["primarySubjectId", "ownerType", "ownerId", "contentSpaceId", "recognitionMedia", "provenance"];
@@ -104,7 +113,7 @@ function validateCreateItemPayload(payload = {}) {
   if (!mongoose.isValidObjectId(payload.ownerId)) issues.push({ field: "ownerId", code: "INVALID_OBJECT_ID", message: "ownerId non valido" });
   if (!payload.contentSpaceId) issues.push({ field: "contentSpaceId", code: "REQUIRED", message: "contentSpaceId è obbligatorio" });
   else if (!mongoose.isValidObjectId(payload.contentSpaceId)) issues.push({ field: "contentSpaceId", code: "INVALID_OBJECT_ID", message: "contentSpaceId non valido" });
-  if (hasOwn(payload, "recognitionMedia") && payload.recognitionMedia !== null) issues.push(...validateMedia(payload.recognitionMedia, "recognitionMedia"));
+  if (hasOwn(payload, "recognitionMedia") && payload.recognitionMedia !== null) issues.push(...validateMedia(payload.recognitionMedia, "recognitionMedia", { mediaLabel: "immagine di riconoscimento" }));
   return issues;
 }
 
@@ -146,6 +155,7 @@ module.exports = {
   normalizeRecognitionMedia,
   normalizeIllustrativeMedia,
   normalizeRevisionPayload,
+  validateRecognitionMediaPayload,
   validateCreateItemPayload,
   validateCreateEditionPayload,
   validateIllustrativeMedia,

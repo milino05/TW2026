@@ -298,7 +298,7 @@ export class ItemAuthoringView extends HTMLElement {
     const identity = this.wikidataIdentity();
     if (!identity) {
       this.mediaSuggestionAttempted = true;
-      this.mediaNotice = "Questo Subject non è collegato a Wikidata: puoi comunque aggiungere un'immagine.";
+      this.mediaNotice = "Questo Subject non è collegato a Wikidata: puoi comunque aggiungere un'immagine editoriale.";
       return;
     }
     this.mediaBusy = true; this.mediaNotice = null; this.render();
@@ -308,7 +308,7 @@ export class ItemAuthoringView extends HTMLElement {
       if (candidate) {
         this.draft.illustrativeMedia = [writableMedia(candidate, { includeId: false })];
         this.mediaEditorOpen = false;
-        this.mediaNotice = "Immagine proposta da Wikidata e Wikimedia Commons.";
+        this.mediaNotice = "Immagine editoriale proposta da Wikidata e Wikimedia Commons.";
       } else this.mediaNotice = "Wikidata non propone immagini per questo Subject. Puoi aggiungerne una manualmente.";
     } catch { this.mediaNotice = "La ricerca automatica dell'immagine non è disponibile. Puoi continuare senza immagine."; }
     finally { this.mediaSuggestionAttempted = true; this.mediaBusy = false; this.persistWorkingDraft(); this.render(); }
@@ -420,16 +420,14 @@ export class ItemAuthoringView extends HTMLElement {
   }
   async prepareNewEdition() {
     if (!this.preflight?.content?.allowed) throw new Error(this.preflight?.content?.blockers?.[0]?.message || "Le regole editoriali richieste non sono disponibili");
-    const recognitionMedia = writableMedia(this.projection?.lineage?.recognitionMedia, { includeId: false });
     const carryDraftMedia = !(this.projection?.editions || []).length ? (this.draft.illustrativeMedia || []) : [];
-    const illustrativeMedia = recognitionMedia ? [recognitionMedia] : carryDraftMedia;
     this.newEditionMode = true;
     this.namespaceControls = null;
-    this.draft = newDraft(this.defaultAuthor(), illustrativeMedia);
+    this.draft = newDraft(this.defaultAuthor(), carryDraftMedia);
     this.activeRepresentationIndex = null;
     this.activeStep = 2;
     this.mediaSuggestionAttempted = Boolean(this.currentMedia());
-    this.mediaNotice = recognitionMedia ? "Immagine di riconoscimento dell'Item proposta come base per questa Edition." : null;
+    this.mediaNotice = null;
     const choices = this.usableNamespaceChoices({ excludeUsed: true });
     const preferred = this.contextNamespaceId && choices.some((entry) => entry.id === id(this.contextNamespaceId)) ? id(this.contextNamespaceId) : null;
     if (preferred) await this.selectNamespace(preferred);
@@ -816,9 +814,9 @@ export class ItemAuthoringView extends HTMLElement {
   renderMediaCard() {
     const media = this.currentMedia();
     if (this.mediaBusy) return `<section class="media-card"><p>Ricerca o caricamento dell'immagine…</p></section>`;
-    if (!media?.url) return `<section class="media-card"><div class="media-placeholder">${icon("image", { size: 24 })}</div><div><span class="eyebrow">Immagine · facoltativa</span><h3>Nessuna immagine</h3><p>${escapeHtml(this.mediaNotice || "Puoi aggiungere un'immagine utile a riconoscere il Subject.")}</p><div class="button-row"><button class="button-secondary" type="button" data-change-media>Aggiungi</button>${this.wikidataIdentity() ? `<button class="button-secondary" type="button" data-suggest-media>Proponi da Wikidata</button>` : ""}</div>${this.renderMediaEditor(media)}</div></section>`;
+    if (!media?.url) return `<section class="media-card"><div class="media-placeholder">${icon("image", { size: 24 })}</div><div><span class="eyebrow">Immagine del contenuto · facoltativa</span><h3>Nessuna immagine editoriale</h3><p>${escapeHtml(this.mediaNotice || "Puoi associare un'immagine editoriale a questa versione. È distinta dall'immagine usata dal Navigator per riconoscere fisicamente l'opera.")}</p><div class="button-row"><button class="button-secondary" type="button" data-change-media>Aggiungi</button>${this.wikidataIdentity() ? `<button class="button-secondary" type="button" data-suggest-media>Proponi da Wikidata</button>` : ""}</div>${this.renderMediaEditor(media)}</div></section>`;
     const sourceUrl = safeExternalHref(media.source?.pageUrl);
-    return `<section class="media-card"><figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || "")}"></figure><div><span class="eyebrow">Immagine · facoltativa</span><h3>${escapeHtml(this.mediaSourceLabel(media))}</h3><p>${escapeHtml(media.altText || "Descrizione da completare")}</p>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Apri fonte</a>` : ""}<div class="button-row"><button class="button-secondary" type="button" data-change-media>Cambia</button><button class="button-secondary" type="button" data-remove-media>Rimuovi</button></div>${this.renderMediaEditor(media)}</div></section>`;
+    return `<section class="media-card"><figure><img src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || "")}"></figure><div><span class="eyebrow">Immagine del contenuto · facoltativa</span><h3>${escapeHtml(this.mediaSourceLabel(media))}</h3><p>${escapeHtml(media.altText || "Descrizione da completare")}</p><p class="note">Questa immagine appartiene alla versione editoriale e non viene usata come foto di riconoscimento fisico.</p>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Apri fonte</a>` : ""}<div class="button-row"><button class="button-secondary" type="button" data-change-media>Cambia</button><button class="button-secondary" type="button" data-remove-media>Rimuovi</button></div>${this.renderMediaEditor(media)}</div></section>`;
   }
 
   renderStepOne() {
@@ -831,7 +829,7 @@ export class ItemAuthoringView extends HTMLElement {
   }
   renderStepTwo() {
     if (this.activeStep !== 2 || !this.itemId) return "";
-    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Informazioni generali</span><h2>Presenta il contenuto</h2><p>Queste informazioni restano comuni ai testi della stessa versione editoriale.</p></div></header><form data-content-details class="editor-form"><label>Titolo<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note">Autore: <strong>${escapeHtml(this.draft.author || this.defaultAuthor())}</strong></p>${this.renderMediaCard()}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">Continua ${icon("chevron", { size: 15 })}</button></div></form></section>`;
+    return `<section class="wizard-step panel"><header class="step-heading"><span class="step-number">2</span><div><span class="eyebrow">Informazioni generali</span><h2>Presenta il contenuto</h2><p>Queste informazioni restano comuni ai testi della stessa versione editoriale. L'immagine configurata qui è illustrativa del contenuto, non una foto di riconoscimento fisico.</p></div></header><form data-content-details class="editor-form"><label>Titolo<input name="label" required value="${escapeHtml(this.draft.label)}"></label><label>Licenza<input name="license" required value="${escapeHtml(this.draft.license)}"></label><p class="note">Autore: <strong>${escapeHtml(this.draft.author || this.defaultAuthor())}</strong></p>${this.renderMediaCard()}<div class="step-actions"><button class="button-secondary" type="button" data-back-step="1">Indietro</button><button type="submit">Continua ${icon("chevron", { size: 15 })}</button></div></form></section>`;
   }
   renderNamespaceSelector() {
     const choices = this.usableNamespaceChoices({ excludeUsed: true });

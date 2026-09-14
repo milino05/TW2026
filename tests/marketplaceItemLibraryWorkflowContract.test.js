@@ -85,9 +85,12 @@ test("lo Studio della Raccolta riusa lo stesso dettaglio Item e quindi eredita a
   assert.match(collectionContent, /openItemDetail\(inspect\.dataset\.inspectContent\)/);
 });
 
-test("Crea versione usa una modalità nuova Edition esplicita e il recognitionMedia come prefill", () => {
+test("Crea versione usa una modalità nuova Edition esplicita senza copiare recognitionMedia nell'Edition", () => {
   assert.match(itemDetail, /query\.set\("newEdition", "1"\)/);
   assert.match(itemAuthoring, /forceNewEdition = params\(\)\.get\("newEdition"\) === "1"/);
-  assert.match(itemAuthoring, /lineage\?\.recognitionMedia/);
-  assert.match(itemAuthoring, /Immagine di riconoscimento dell'Item proposta come base/);
+  const prepareNewEdition = itemAuthoring.match(/async prepareNewEdition\(\)[\s\S]*?\n  async selectNamespace/)?.[0] || "";
+  assert.match(prepareNewEdition, /carryDraftMedia/);
+  assert.match(prepareNewEdition, /loadSuggestedMedia\(\)/);
+  assert.doesNotMatch(prepareNewEdition, /lineage\?\.recognitionMedia/);
+  assert.doesNotMatch(prepareNewEdition, /Immagine di riconoscimento dell'Item proposta come base/);
 });

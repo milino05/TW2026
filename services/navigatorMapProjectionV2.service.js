@@ -1,3 +1,4 @@
+const ItemV2 = require("../models/itemV2.model");
 const { getCurrentSessionPlanV2 } = require("./sessionPlanV2.service");
 const {
   id,
@@ -20,6 +21,35 @@ function placeById(bundle, placeId) {
 function placeTypeMap(bundle) {
   return new Map((bundle?.physicalVocabularyRevision?.placeTypes || [])
     .map((definition) => [definition.definitionId, definition]));
+}
+
+function projectedRecognitionMedia(media, origin) {
+  if (!media?.url) return null;
+  const value = media?.toObject ? media.toObject() : media;
+  return {
+    url: value.url,
+    originalUrl: value.originalUrl || null,
+    altText: value.altText || "",
+    mimeType: value.mimeType || null,
+    width: value.width || null,
+    height: value.height || null,
+    source: value.source || null,
+    rights: value.rights || null,
+    origin,
+  };
+}
+
+async function projectApproachRecognitionMedia({ routingConfigurationOwner, plan, contextAnchor }) {
+  if (!contextAnchor?.venueId || !contextAnchor?.venueTargetId) return null;
+  const bundle = await loadPinnedBundle(routingConfigurationOwner, contextAnchor.venueId);
+  const binding = (bundle.release.targetBindings || []).find((entry) => id(entry.venueTargetId) === id(contextAnchor.venueTargetId));
+  const venueMedia = projectedRecognitionMedia((binding?.recognitionMedia || [])[0], "venue_target");
+  if (venueMedia) return venueMedia;
+
+  const entry = (plan?.contentEntries || []).find((candidate) => id(candidate.deliveryAnchorId) === id(contextAnchor._id));
+  if (!entry?.itemId) return null;
+  const item = await ItemV2.findById(entry.itemId).select("recognitionMedia").lean();
+  return projectedRecognitionMedia(item?.recognitionMedia, "item");
 }
 
 async function projectKnownLocation({ routingConfigurationOwner, location }) {
@@ -199,10 +229,15 @@ async function projectNavigatorMap({ sessionId, userId }) {
     currentEntryIndex: state.currentEntryIndex,
     effectiveStatus: state.effectiveStatus,
   });
-  const [knownLocation, selectableLocations, activeNavigation] = await Promise.all([
+  const [knownLocation, selectableLocations, activeNavigation, recognitionMedia] = await Promise.all([
     projectKnownLocation({ routingConfigurationOwner: state.routingConfigurationOwner, location: execution.knownLocation }),
     projectSelectableLocations({ routingConfigurationOwner: state.routingConfigurationOwner, plan: state.plan }),
     projectActiveNavigation({ sessionId, userId, state, execution }),
+    projectApproachRecognitionMedia({
+      routingConfigurationOwner: state.routingConfigurationOwner,
+      plan: state.plan,
+      contextAnchor: execution.contextAnchor,
+    }),
   ]);
   const annotatedVenues = annotateStops({
     baseMap,
@@ -210,7 +245,8 @@ async function projectNavigatorMap({ sessionId, userId }) {
     plan: state.plan,
     currentAnchor: execution.contextAnchor,
   });
-  const narrativeContextStop = findProjectedStop({ venues: annotatedVenues }, execution.contextAnchor?._id);
+  const projectedContextStop = findProjectedStop({ venues: annotatedVenues }, execution.contextAnchor?._id);
+  const narrativeContextStop = projectedContextStop ? { ...projectedContextStop, recognitionMedia } : null;
   const plannedVenueRoutes = annotatedVenues.map((venue) => ({ venueId: venue.id, route: venue.route }));
   const venues = annotatedVenues.map(({ route, ...venue }) => venue);
   return {
@@ -228,6 +264,8 @@ async function projectNavigatorMap({ sessionId, userId }) {
 }
 
 module.exports = {
+  projectedRecognitionMedia,
+  projectApproachRecognitionMedia,
   projectKnownLocation,
   projectSelectableLocations,
   experiencedAnchorIds,
