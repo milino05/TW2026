@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
+const { isDeepStrictEqual } = require("util");
 
 const Venue = require("../models/venue.model");
 const VenueRelease = require("../models/venueRelease.model");
@@ -18,6 +19,16 @@ const SNAPSHOT_FILE = "layouts.json";
 
 function jsonClone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function layoutSnapshotPayload(value) {
+  const source = value?.toObject ? value.toObject() : value || {};
+  return jsonClone({
+    floors: source.floors || [],
+    places: source.places || [],
+    exhibitSlots: source.exhibitSlots || [],
+    connections: source.connections || [],
+  });
 }
 
 function extensionForMapAsset(mapAsset) {
@@ -87,12 +98,7 @@ async function exportDemoVenueLayoutSnapshots({
     const layout = await LayoutRevision.findById(release.layoutRevisionId).lean();
     if (!layout) throw new Error(`LayoutRevision demo non trovata: ${plan.key}`);
 
-    const snapshot = jsonClone({
-      floors: layout.floors || [],
-      places: layout.places || [],
-      exhibitSlots: layout.exhibitSlots || [],
-      connections: layout.connections || [],
-    });
+    const snapshot = layoutSnapshotPayload(layout);
 
     for (let index = 0; index < snapshot.floors.length; index += 1) {
       const floor = snapshot.floors[index];
@@ -131,12 +137,14 @@ async function materializeLayoutAssets(layout, {
     const fixture = floor.mapAsset.fixture;
     if (!fixture?.file) throw new Error(`Fixture file mancante per la planimetria del piano ${floor.label || floor._id}`);
     const sourcePath = path.join(fixtureRoot, fixture.file);
-    const actualHash = await sha256File(sourcePath);
-    if (fixture.sha256 && actualHash !== fixture.sha256) {
+    const sourceHash = await sha256File(sourcePath);
+    if (fixture.sha256 && sourceHash !== fixture.sha256) {
       throw new Error(`Checksum planimetria non valido per ${fixture.file}`);
     }
     const destinationPath = uploadedFloorPlanPath(floor.mapAsset.url, floorPlanRoot);
     await fs.copyFile(sourcePath, destinationPath);
+    const destinationHash = await sha256File(destinationPath);
+    if (destinationHash !== sourceHash) throw new Error(`Ripristino planimetria non identico per ${fixture.file}`);
     delete floor.mapAsset.fixture;
   }
 
@@ -175,6 +183,11 @@ async function applyDemoVenueLayoutSnapshots({
     layout.exhibitSlots = materialized.exhibitSlots || [];
     layout.connections = materialized.connections || [];
     await layout.save();
+
+    const reloaded = await LayoutRevision.findById(layout._id).lean();
+    if (!isDeepStrictEqual(layoutSnapshotPayload(reloaded), layoutSnapshotPayload(materialized))) {
+      throw new Error(`Il layout ripristinato non coincide con la snapshot per ${plan.key}`);
+    }
     applied.push(plan.key);
   }
 
@@ -185,6 +198,7 @@ module.exports = {
   SNAPSHOT_VERSION,
   PUBLIC_FLOOR_PLAN_PREFIX,
   DEFAULT_FIXTURE_ROOT,
+  layoutSnapshotPayload,
   loadSnapshotDocument,
   exportDemoVenueLayoutSnapshots,
   materializeLayoutAssets,
