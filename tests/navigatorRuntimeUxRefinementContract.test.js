@@ -56,6 +56,14 @@ test("public progress keeps one actionId while exposing physical and narrative U
   assert.equal(physical.label, "Indicazione completata");
 });
 
+test("physical progress remains server-dispatched through the canonical progress.next descriptor", () => {
+  const runtime = read("services/navigatorRuntimeV2.service.js");
+  const dispatcher = read("services/actionDispatcherV2.service.js");
+  assert.match(runtime, /ACTION_DEFINITIONS\.PROGRESS_NEXT[\s\S]*serverInput:\s*\{\s*executionMode:\s*"physical"\s*\}/);
+  assert.match(dispatcher, /derived\.actions\.find\(\(entry\)\s*=>\s*entry\.actionId\s*===\s*actionId\)/);
+  assert.match(dispatcher, /case\s+"PROGRESS_NEXT"[\s\S]*descriptor\.serverInput\?\.executionMode\s*===\s*"physical"/);
+});
+
 test("approach recognition prefers VenueTarget media and falls back to Item media", () => {
   const source = read("services/navigatorMapProjectionV2.service.js");
   assert.match(source, /targetBindings/);
@@ -82,6 +90,9 @@ test("Navigator keeps physical actions on the map and content actions out of the
   assert.match(map, /navigation-route/);
   assert.doesNotMatch(sheet, /Muoviti nel museo/);
   assert.doesNotMatch(sheet, /actions:\s*props\.groups\.navigation/);
+  assert.match(sheet, /mapOnlyMode/);
+  assert.match(sheet, /Azioni sulla mappa/);
+  assert.match(sheet, /azioni disponibili riguardano orientamento o avanzamento fisico/);
 });
 
 test("approach UI exposes recognition media and contextual physical confirmation", () => {
