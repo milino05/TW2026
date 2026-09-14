@@ -176,9 +176,12 @@ async function projectSessionMap({ sessionId, userId }) {
 
     const route = { overlays: [], floorTransitions: [] };
     const anchors = anchorMap(plan);
+    const localRequirements = (session.navigationSnapshot?.venueRequirements || [])
+      .find((entry) => id(entry.venueId) === venueId)?.requirements || [];
     const translated = resolveNavigationRequirementsForVenue({
       bundle,
       globalRequirements: session.navigationSnapshot?.requirements || [],
+      localRequirements,
       routingProfileSelection: profileSelections.get(venueId) || null,
     });
     for (const leg of plan.physicalRoute?.legs || []) {
