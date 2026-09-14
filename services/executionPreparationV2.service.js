@@ -30,7 +30,8 @@ const {
 const { normalizeRoutingRequirements } = require("./routingPreferenceV2.service");
 const { normalizeRoutingProfileSelections } = require("./routingProfileSelectionV2.service");
 const {
-  normalizePersonalNavigationRequirements,
+  normalizePersonalNavigationNeedSelections,
+  compilePersonalNavigationNeedSelections,
   projectPersonalNavigationRequirements,
 } = require("./navigationNeedPreference.service");
 const { normalizeVenueControlSelections } = require("./venueRoutingControlSelectionV2.service");
@@ -119,9 +120,9 @@ function normalizePresentationPreference(stored = null, override = null) {
   return Object.values(result).some((value) => value !== null) ? result : null;
 }
 function normalizeNavigation(stored = {}, draft = {}) {
-  const hasDraftRequirements = Array.isArray(draft.navigationRequirements);
+  const hasDraftPersonalNeeds = Array.isArray(draft.personalNeedSelections);
   const hasDraftVenueControls = Array.isArray(draft.venueControlSelections);
-  const rawRequirements = hasDraftRequirements ? draft.navigationRequirements : stored?.requirements;
+  const storedRequirements = normalizeRoutingRequirements(stored?.requirements || [], { field: "navigationRequirements" });
   const rawProfileSelections = Array.isArray(draft.routingProfileSelections)
     ? draft.routingProfileSelections
     : stored?.routingProfileSelections;
@@ -130,9 +131,13 @@ function normalizeNavigation(stored = {}, draft = {}) {
       ? Number(draft.movementPacePreference)
       : validUnit(stored?.movementPacePreference) ? Number(stored.movementPacePreference) : 0.5,
     routingProfileSelections: normalizeRoutingProfileSelections(rawProfileSelections || [], { field: "routingProfileSelections" }),
-    requirements: hasDraftRequirements
-      ? normalizePersonalNavigationRequirements(rawRequirements, { field: "navigationRequirements" })
-      : normalizeRoutingRequirements(rawRequirements, { field: "navigationRequirements" }),
+    requirements: hasDraftPersonalNeeds
+      ? compilePersonalNavigationNeedSelections({
+        selections: draft.personalNeedSelections,
+        existingRequirements: storedRequirements,
+        field: "personalNeedSelections",
+      })
+      : storedRequirements,
     venueControlSelections: hasDraftVenueControls
       ? normalizeVenueControlSelections(draft.venueControlSelections, { field: "venueControlSelections" })
       : [],
@@ -155,7 +160,13 @@ function normalizedDraft(payload = {}) {
     draft.routingProfileSelections = normalizeRoutingProfileSelections(payload.routingProfileSelections, { field: "routingProfileSelections" });
   }
   if (payload.navigationRequirements !== undefined) {
-    draft.navigationRequirements = normalizePersonalNavigationRequirements(payload.navigationRequirements, { field: "navigationRequirements" });
+    throw new AppError("Il client deve inviare personalNeedSelections, non requirement tecnici di navigazione", 400, [{
+      field: "navigationRequirements",
+      code: "TECHNICAL_NAVIGATION_REQUIREMENTS_NOT_ALLOWED",
+    }]);
+  }
+  if (payload.personalNeedSelections !== undefined) {
+    draft.personalNeedSelections = normalizePersonalNavigationNeedSelections(payload.personalNeedSelections, { field: "personalNeedSelections" });
   }
   if (payload.venueControlSelections !== undefined) {
     draft.venueControlSelections = normalizeVenueControlSelections(payload.venueControlSelections, { field: "venueControlSelections" });
