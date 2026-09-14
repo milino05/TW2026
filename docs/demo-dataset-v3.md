@@ -31,13 +31,19 @@ Le mappe incluse nel Navigator sono materiale dimostrativo ArtAround e **non rap
 
 ### Snapshot canonica dei layout demo
 
-I layout delle tre Venue possono essere rifiniti tramite l'editor grafico e poi congelati direttamente dal database locale. Il comando:
+I layout delle tre Venue possono essere rifiniti tramite l'editor grafico e poi congelati direttamente dal database locale.
+
+Con lo sviluppo locale standard via Docker Compose usare un solo comando:
 
 ```bash
-npm run snapshot:demo-layouts
+npm run snapshot:demo-layouts:docker
 ```
 
-legge per ogni Venue demo la `workingReleaseId`, quando presente, altrimenti la `publishedReleaseId`, e salva esclusivamente lo stato fisico che deve diventare canonico:
+Il wrapper ricostruisce l'immagine backend dal working tree corrente, avvia un container one-shot collegato allo stesso MongoDB e allo stesso volume `venue-floor-plans`, e monta `scripts/fixtures/demo-venue-layouts/` sull'host come destinazione della snapshot. In questo modo legge esattamente il database e le immagini usati dall'applicazione locale senza copiare manualmente file fuori dai volumi Docker.
+
+`npm run snapshot:demo-layouts` resta disponibile per ambienti in cui Node accede direttamente sia al `MONGO_URI` sia alla directory configurata da `VENUE_FLOOR_PLAN_DIR`.
+
+La snapshot legge per ogni Venue demo la `workingReleaseId`, quando presente, altrimenti la `publishedReleaseId`, e salva esclusivamente lo stato fisico che deve diventare canonico:
 
 - `floors`, incluse calibrazione e metadati della planimetria;
 - `places`, con gli stessi `_id`, tipi, attributi e coordinate;
@@ -55,7 +61,7 @@ Quando la fixture esiste, `npm run seed:demo` procede in questo ordine:
 
 Se la fixture non è presente, `seed:demo` mantiene il layout demo generato dal V3. Questo permette alla CI di restare funzionante durante la preparazione iniziale della snapshot.
 
-Per aggiornare in futuro i layout demo, modificare nuovamente le Venue tramite l'editor e rieseguire `npm run snapshot:demo-layouts` prima di resettare il database.
+Per aggiornare in futuro i layout demo, modificare nuovamente le Venue tramite l'editor e rieseguire `npm run snapshot:demo-layouts:docker` prima di resettare il database.
 
 ## Regole editoriali
 
