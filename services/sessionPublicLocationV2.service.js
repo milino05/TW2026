@@ -35,10 +35,10 @@ function locationFromBundle({ slot, release, layout, requireActiveBinding = true
 
 async function resolvePublicCodeLocation({ sessionId, userId, publicCode }) {
   const code = normalizePublicCode(publicCode);
-  const { physicalSession: session } = await getCurrentSessionPlanV2({ sessionId, userId });
+  const { routingConfigurationOwner } = await getCurrentSessionPlanV2({ sessionId, userId });
   const slot = await ExhibitSlot.findOne({ publicCode: code }).select("_id venueId publicCode lifecycleStatus").lean();
   if (!slot) throw new AppError("Riferimento fisico non disponibile", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_NOT_FOUND" }]);
-  const pin = (session.venuePins || []).find((entry) => id(entry.venueId) === id(slot.venueId));
+  const pin = (routingConfigurationOwner.venuePins || []).find((entry) => id(entry.venueId) === id(slot.venueId));
   if (!pin) throw new AppError("Riferimento fisico non disponibile in questa sessione", 404, [{ field: "publicCode", code: "PUBLIC_LOCATION_OUTSIDE_SESSION_SCOPE" }]);
   const [release, layout] = await Promise.all([
     VenueRelease.findOne({ _id: pin.venueReleaseId, venueId: pin.venueId }).lean(),
