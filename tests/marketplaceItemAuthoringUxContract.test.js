@@ -61,7 +61,7 @@ test("titolo, licenza e immagine sono informazioni generali prima della versione
   assert.match(source, /<label>Titolo<input name="label" required/);
   assert.match(source, /<label>Licenza<input name="license" required/);
   assert.match(source, /this\.renderMediaCard\(\)/);
-  assert.match(source, /Immagine · facoltativa/);
+  assert.match(source, /Immagine del contenuto · facoltativa/);
   assert.match(source, /Autore: <strong>/);
   assert.match(source, /defaultAuthor\(\)/);
   assert.doesNotMatch(source, /<label>Autore<input/);
