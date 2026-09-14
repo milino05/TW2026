@@ -7,9 +7,8 @@ const AppError = require("../utils/AppError");
 const policy = require("../config/adaptivePolicy");
 const { resolveRoute } = require("./graphRouting.service");
 const { placesForPhysicalFeature } = require("./venueRouting.service");
-const { loadLayoutPhysicalVocabulary, loadPhysicalVocabularyRevisionBundle } = require("./layoutPhysicalVocabulary.service");
-const { computeVenueReleaseIssues } = require("./venueReleaseIntegrity.service");
-const { buildValidation } = require("./versionedSchemaDependency.service");
+const { loadPhysicalVocabularyRevisionBundle } = require("./layoutPhysicalVocabulary.service");
+const { revalidateVenuePhysicalDependency } = require("./schemaDependencyAudit.service");
 const { translateRoutingRequirements } = require("./physicalVocabularyResolver.service");
 const { selectionMap, resolveVenueRoutingRequirements } = require("./routingProfileSelectionV2.service");
 const { compileVenueControlSelections } = require("./venueRoutingControlSelectionV2.service");
@@ -122,22 +121,6 @@ function resolveNavigationRequirementsForVenue({ bundle, globalRequirements = []
   });
 }
 
-async function validateCurrentVenuePhysicalDependency({ venue, release, layout, physicalVocabularyRevision }) {
-  const issues = await computeVenueReleaseIssues({ venue, release, layout });
-  const validation = buildValidation({
-    consumerSnapshotId: release._id,
-    dependencyRevisionId: physicalVocabularyRevision._id,
-    issues,
-  });
-  await Venue.updateOne(
-    { _id: venue._id, publishedReleaseId: release._id, lifecycleStatus: "active" },
-    { $set: { "physicalVocabularyDependency.validation": validation } },
-  ).catch(() => {});
-  if (validation.status !== "valid") {
-    throw new AppError("La configurazione fisica corrente della Venue richiede revisione", 409, issues.length ? issues : [{ code: "VENUE_PHYSICAL_DEPENDENCY_NEEDS_REVIEW" }]);
-  }
-}
-
 async function resolveSessionVenuePins(sourceAnchors = []) {
   const targetIds = uniqueIds(sourceAnchors.map((entry) => entry.venueTargetId));
   if (!targetIds.length) return { venuePins: [], targetById: new Map(), bundleByVenueId: new Map() };
@@ -156,8 +139,15 @@ async function resolveSessionVenuePins(sourceAnchors = []) {
     if (!release || release.integrity?.status !== "valid") throw new AppError("VenueRelease corrente non utilizzabile", 409, [{ code: "VENUE_RELEASE_INVALID", context: { venueId } }]);
     const layout = await LayoutRevision.findOne({ _id: release.layoutRevisionId, venueId: venue._id, status: { $in: ["published", "superseded"] } }).lean();
     if (!layout) throw new AppError("LayoutRevision della VenueRelease non disponibile", 409);
-    const { physicalVocabulary, revision: physicalVocabularyRevision } = await loadLayoutPhysicalVocabulary(layout, { requireStable: true });
-    await validateCurrentVenuePhysicalDependency({ venue, release, layout, physicalVocabularyRevision });
+    const dependency = await revalidateVenuePhysicalDependency({ venueId: venue._id });
+    if (!dependency?.validation || dependency.validation.status !== "valid") {
+      throw new AppError("La configurazione fisica corrente della Venue richiede revisione", 409, dependency?.validation?.issues?.length
+        ? dependency.validation.issues
+        : [{ code: "VENUE_PHYSICAL_DEPENDENCY_NEEDS_REVIEW", context: { venueId } }]);
+    }
+    const vocabularyBundle = await loadPhysicalVocabularyRevisionBundle(dependency.dependencyRevision._id, { requireStable: true });
+    const physicalVocabulary = vocabularyBundle.physicalVocabulary;
+    const physicalVocabularyRevision = vocabularyBundle.revision;
     const resolutionByTarget = new Map();
     for (const target of targets.filter((entry) => id(entry.venueId) === venueId)) {
       if (target.lifecycleStatus !== "active") throw new AppError("VenueTarget non disponibile nella VenueRelease corrente", 409, [{ code: "VENUE_TARGET_UNAVAILABLE_AT_SESSION_START", context: { venueId, venueTargetId: target._id } }]);
