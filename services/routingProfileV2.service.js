@@ -14,6 +14,7 @@ function definitionsCompatible(left, right) {
   if (!left || !right) return false;
   if (left.dataType !== right.dataType) return false;
   if ((left.unit || null) !== (right.unit || null)) return false;
+  if ((left.appliesTo || null) !== (right.appliesTo || null)) return false;
   if (left.dataType === "choice" && !sameOptions(left, right)) return false;
   return true;
 }
