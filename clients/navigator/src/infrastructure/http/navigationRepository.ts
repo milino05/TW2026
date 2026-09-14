@@ -10,6 +10,18 @@ export interface FloorTransition {
   instruction: string | null;
 }
 
+export interface RecognitionMediaProjection {
+  url: string;
+  originalUrl: string | null;
+  altText: string;
+  mimeType: string | null;
+  width: number | null;
+  height: number | null;
+  source: Record<string, unknown> | null;
+  rights: Record<string, unknown> | null;
+  origin: "venue_target" | "item";
+}
+
 export interface PlannedNavigationLeg {
   type: "indoor" | "inter_venue";
   fromVisitAnchorId: string;
@@ -128,7 +140,7 @@ export interface MapProjection {
     warnings: Array<{ code: string; message: string }>;
   }>;
   knownLocation: MapKnownLocationProjection | null;
-  narrativeContextStop: null | (VisitStopProjection & { venueId: string });
+  narrativeContextStop: null | (VisitStopProjection & { venueId: string; recognitionMedia: RecognitionMediaProjection | null });
   selectableLocations: SelectableLocationProjection[];
   plannedVisitRoute: {
     plannedLegs: PlannedNavigationLeg[];
