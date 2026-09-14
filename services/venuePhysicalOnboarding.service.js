@@ -1,8 +1,5 @@
-const LayoutRevision = require("../models/layoutRevision.model");
 const PhysicalVocabulary = require("../models/physicalVocabulary.model");
-const PhysicalVocabularyRevision = require("../models/physicalVocabularyRevision.model");
 const Venue = require("../models/venue.model");
-const VenueRelease = require("../models/venueRelease.model");
 const AppError = require("../utils/AppError");
 const { createPhysicalVocabulary } = require("./physicalVocabulary.service");
 const { listPhysicalVocabularyAuthoringChoices } = require("./physicalVocabularyAuthoringChoices.service");
@@ -14,7 +11,7 @@ function assertOnboardingPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AppError("Payload onboarding non valido", 400, [{ field: "payload", code: "INVALID_TYPE" }]);
   }
-  const allowed = new Set(["mode", "physicalVocabularyRevisionId", "name", "description"]);
+  const allowed = new Set(["mode", "physicalVocabularyId", "name", "description"]);
   const issues = Object.keys(payload).filter((key) => !allowed.has(key)).map((field) => ({
     field,
     code: "UNKNOWN_FIELD",
@@ -43,62 +40,57 @@ async function getVenuePhysicalOnboarding({ venueId, actorUserId }) {
   };
 }
 
-async function cleanupCreatedOnboarding({ venueId, physicalVocabulary, revision }) {
-  const venue = await Venue.findById(venueId).lean().catch(() => null);
-  if (venue?.workingReleaseId) {
-    const release = await VenueRelease.findById(venue.workingReleaseId).lean().catch(() => null);
-    const layout = release?.layoutRevisionId ? await LayoutRevision.findById(release.layoutRevisionId).lean().catch(() => null) : null;
-    if (layout && id(layout.authoredAgainstPhysicalVocabularyRevisionId) === id(revision?._id)) {
-      await Venue.updateOne({ _id: venueId, workingReleaseId: release._id }, { $set: { workingReleaseId: null } }).catch(() => {});
-      await VenueRelease.deleteOne({ _id: release._id }).catch(() => {});
-      await LayoutRevision.deleteOne({ _id: layout._id }).catch(() => {});
-    }
-  }
-  if (physicalVocabulary?._id) {
-    await PhysicalVocabularyRevision.deleteMany({ physicalVocabularyId: physicalVocabulary._id }).catch(() => {});
-    await PhysicalVocabulary.deleteOne({ _id: physicalVocabulary._id }).catch(() => {});
-  }
-}
-
 async function initializeVenuePhysicalConfiguration({ venueId, actorUserId, payload = {} }) {
   assertOnboardingPayload(payload);
   const { venue, authority } = await assertVenuePermission({ userId: actorUserId, venueId, permissionCode: "venue.physical.edit" });
   if (venue.workingReleaseId || venue.publishedReleaseId) return ensureWorkingVenueRelease({ venueId, actorUserId });
   const mode = String(payload.mode || "existing").trim().toLowerCase();
   if (mode === "existing") {
-    if (!payload.physicalVocabularyRevisionId) throw new AppError("Seleziona un vocabolario fisico", 400, [{ field: "physicalVocabularyRevisionId", code: "REQUIRED" }]);
-    return ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId: payload.physicalVocabularyRevisionId, actorUserId });
+    if (!payload.physicalVocabularyId) throw new AppError("Seleziona un vocabolario fisico", 400, [{ field: "physicalVocabularyId", code: "REQUIRED" }]);
+    const permissions = new Set(authority.effectivePermissions || []);
+    const choices = await listPhysicalVocabularyAuthoringChoices({
+      organizationId: venue.ownerOrganizationId,
+      canViewOwned: permissions.has("physical_vocabulary.view"),
+    });
+    const selected = choices.find((entry) => id(entry.physicalVocabularyId) === id(payload.physicalVocabularyId));
+    if (!selected) {
+      throw new AppError("Vocabolario fisico non utilizzabile", 409, [{ field: "physicalVocabularyId", code: "PHYSICAL_VOCABULARY_NOT_USABLE" }]);
+    }
+    return ensureWorkingVenueRelease({
+      venueId,
+      physicalVocabularyRevisionId: selected.effectiveRevisionId,
+      actorUserId,
+    });
   }
   if (!["starter", "blank"].includes(mode)) throw new AppError("Modalita onboarding non valida", 400, [{ field: "mode", code: "INVALID_ENUM", allowedValues: ["existing", "starter", "blank"] }]);
   if (!(authority.effectivePermissions || []).includes("physical_vocabulary.create")) {
     throw new AppError("Non puoi creare un vocabolario fisico per questa organizzazione", 403, [{ code: "PHYSICAL_VOCABULARY_CREATE_REQUIRED" }]);
   }
 
-  let created = null;
-  try {
-    created = await createPhysicalVocabulary({
-      actorUserId,
-      payload: {
-        ownerType: "organization",
-        ownerId: venue.ownerOrganizationId,
-        name: String(payload.name || `${venue.name} · Vocabolario fisico`).trim(),
-        description: String(payload.description || `Vocabolario fisico creato durante la configurazione iniziale di ${venue.name}.`).trim(),
-        applyStarter: mode === "starter",
-      },
-    });
-    const configured = await ensureWorkingVenueRelease({ venueId, physicalVocabularyRevisionId: created.revision._id, actorUserId });
-    return {
-      ...configured,
-      onboarding: {
-        mode,
-        createdPhysicalVocabularyId: created.physicalVocabulary._id,
-        createdPhysicalVocabularyRevisionId: created.revision._id,
-      },
-    };
-  } catch (error) {
-    if (created) await cleanupCreatedOnboarding({ venueId, ...created });
-    throw error;
-  }
+  const created = await createPhysicalVocabulary({
+    actorUserId,
+    payload: {
+      ownerType: "organization",
+      ownerId: venue.ownerOrganizationId,
+      name: String(payload.name || `${venue.name} · Vocabolario fisico`).trim(),
+      description: String(payload.description || `Vocabolario fisico creato durante la configurazione iniziale di ${venue.name}.`).trim(),
+      applyStarter: mode === "starter",
+    },
+  });
+  const refreshedVenue = await Venue.findById(venue._id);
+  const physicalVocabulary = await PhysicalVocabulary.findById(created.physicalVocabulary._id).lean();
+  return {
+    venue: refreshedVenue,
+    release: null,
+    layout: null,
+    onboarding: {
+      mode,
+      createdPhysicalVocabularyId: created.physicalVocabulary._id,
+      createdPhysicalVocabularyRevisionId: created.revision._id,
+      requiresPublication: true,
+      physicalVocabulary: physicalVocabulary || created.physicalVocabulary,
+    },
+  };
 }
 
 module.exports = {

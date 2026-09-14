@@ -14,7 +14,7 @@ function assertConfiguredCreationPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AppError("Payload creazione sede non valido", 400, [{ field: "payload", code: "INVALID_TYPE" }]);
   }
-  const allowed = new Set(["name", "description", "ownerOrganizationId", "physicalVocabularyRevisionId"]);
+  const allowed = new Set(["name", "description", "ownerOrganizationId", "physicalVocabularyId"]);
   const unknown = Object.keys(payload).filter((key) => !allowed.has(key));
   if (unknown.length) {
     throw new AppError("Payload creazione sede non valido", 400, unknown.map((field) => ({
@@ -26,8 +26,8 @@ function assertConfiguredCreationPayload(payload) {
   if (!mongoose.isValidObjectId(payload.ownerOrganizationId)) {
     throw new AppError("ownerOrganizationId non valido", 400, [{ field: "ownerOrganizationId", code: "INVALID_OBJECT_ID" }]);
   }
-  if (!mongoose.isValidObjectId(payload.physicalVocabularyRevisionId)) {
-    throw new AppError("Seleziona un vocabolario fisico", 400, [{ field: "physicalVocabularyRevisionId", code: "INVALID_OBJECT_ID" }]);
+  if (!mongoose.isValidObjectId(payload.physicalVocabularyId)) {
+    throw new AppError("Seleziona un vocabolario fisico", 400, [{ field: "physicalVocabularyId", code: "INVALID_OBJECT_ID" }]);
   }
 }
 
@@ -55,7 +55,7 @@ async function resolveVenueCreationContext({ organizationId, actorUserId }) {
   if (!choices.length) {
     blockers.push({
       code: "PHYSICAL_VOCABULARY_REQUIRED",
-      message: "Per creare una sede serve almeno un vocabolario fisico utilizzabile.",
+      message: "Per creare una sede serve almeno un vocabolario fisico pubblicato e utilizzabile.",
     });
   }
   return {
@@ -95,10 +95,10 @@ async function createConfiguredVenue({ payload, actorUserId }) {
   if (!context.allowed) {
     throw new AppError("La sede non può ancora essere creata", 409, context.blockers);
   }
-  const selected = context.choices.find((entry) => id(entry.physicalVocabularyRevisionId) === id(payload.physicalVocabularyRevisionId));
+  const selected = context.choices.find((entry) => id(entry.physicalVocabularyId) === id(payload.physicalVocabularyId));
   if (!selected) {
     throw new AppError("Vocabolario fisico non utilizzabile", 409, [{
-      field: "physicalVocabularyRevisionId",
+      field: "physicalVocabularyId",
       code: "PHYSICAL_VOCABULARY_NOT_USABLE",
     }]);
   }
@@ -118,14 +118,15 @@ async function createConfiguredVenue({ payload, actorUserId }) {
       actorUserId,
       payload: {
         mode: "existing",
-        physicalVocabularyRevisionId: selected.physicalVocabularyRevisionId,
+        physicalVocabularyId: selected.physicalVocabularyId,
       },
     });
     return {
       venue: venueService.projectVenue(configured.venue, { includeWorking: true }),
       releaseId: configured.release?._id || null,
       layoutRevisionId: configured.layout?._id || null,
-      physicalVocabularyRevisionId: selected.physicalVocabularyRevisionId,
+      physicalVocabularyId: selected.physicalVocabularyId,
+      effectivePhysicalVocabularyRevisionId: selected.effectiveRevisionId,
     };
   } catch (error) {
     await cleanupCreatedVenue(venue.id);

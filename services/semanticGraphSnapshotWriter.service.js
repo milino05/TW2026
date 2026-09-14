@@ -6,6 +6,7 @@ const SemanticEdgeV2 = require("../models/semanticEdgeV2.model");
 const Subject = require("../models/subject.model");
 const AppError = require("../utils/AppError");
 const { validateGraphSnapshotAgainstNamespace } = require("./semanticGraphV2.service");
+const { buildValidation } = require("./versionedSchemaDependency.service");
 
 function id(value) {
   return String(value?._id || value || "");
@@ -95,6 +96,14 @@ async function persistSnapshot({
 
   lockedGraph.workingRevisionId = revision._id;
   lockedGraph.workingVersion = expectedWorkingVersion + 1;
+  if (!lockedGraph.namespaceDependency) {
+    lockedGraph.namespaceDependency = { versionPolicy: "follow_current", pinnedRevisionId: null, validation: null };
+  }
+  lockedGraph.namespaceDependency.validation = buildValidation({
+    consumerSnapshotId: revision._id,
+    dependencyRevisionId: authoredAgainstNamespaceRevisionId,
+    issues: [],
+  });
   await lockedGraph.save({ session });
 
   if (afterPersist) await afterPersist({ session, revision, semanticGraph: lockedGraph });

@@ -22,6 +22,7 @@ const {
   createInitialSessionPlan,
 } = require("./sessionPlanV2.service");
 const { resolveMovementSpeed, resolveSessionVenuePins } = require("./physicalExecutionV2.service");
+const { loadVenuePhysicalVocabulary } = require("./layoutPhysicalVocabulary.service");
 const { currentSessionProjection } = require("./visitSessionV2.service");
 const {
   createSynchronizedVisitRuntime,
@@ -363,8 +364,6 @@ async function calculatePreparationState({ sourceSnapshot, navigation, presentat
       source: sourceSnapshot,
       navigation,
       userPreference: null,
-      // Il piano strutturale condiviso conserva la baseline editoriale comune.
-      // Le preferenze dell'host vengono applicate soltanto alla sua VisitSession personale.
       explicitPreference: executionMode === "synchronized" ? null : presentation,
     });
     return {
@@ -539,14 +538,25 @@ async function updateExecutionPreparation({ preparationId, userId, expectedVersi
 async function assertPhysicalSnapshotCurrent(preparation) {
   const pins = preparation.venuePins || [];
   if (!pins.length) return;
-  const venues = await Venue.find({ _id: { $in: pins.map((entry) => entry.venueId) }, lifecycleStatus: "active" }).select("_id publishedReleaseId").lean();
-  const current = new Map(venues.map((entry) => [id(entry._id), id(entry.publishedReleaseId)]));
-  const changed = pins.find((pin) => current.get(id(pin.venueId)) !== id(pin.venueReleaseId));
-  if (changed) {
-    throw new AppError("Lo stato fisico della Venue e cambiato dalla preparation", 409, [{
-      code: "PREPARATION_PHYSICAL_STATE_CHANGED",
-      context: { venueId: changed.venueId },
-    }]);
+  const venues = await Venue.find({ _id: { $in: pins.map((entry) => entry.venueId) }, lifecycleStatus: "active" })
+    .select("_id publishedReleaseId physicalVocabularyId physicalVocabularyDependency")
+    .lean();
+  const venueById = new Map(venues.map((entry) => [id(entry._id), entry]));
+  for (const pin of pins) {
+    const venue = venueById.get(id(pin.venueId));
+    if (!venue || id(venue.publishedReleaseId) !== id(pin.venueReleaseId)) {
+      throw new AppError("Lo stato fisico della Venue e cambiato dalla preparation", 409, [{
+        code: "PREPARATION_PHYSICAL_STATE_CHANGED",
+        context: { venueId: pin.venueId, reason: "venue_release_changed" },
+      }]);
+    }
+    const currentVocabulary = await loadVenuePhysicalVocabulary(venue, { requireStable: true });
+    if (id(currentVocabulary.revision._id) !== id(pin.physicalVocabularyRevisionId)) {
+      throw new AppError("Lo stato fisico della Venue e cambiato dalla preparation", 409, [{
+        code: "PREPARATION_PHYSICAL_STATE_CHANGED",
+        context: { venueId: pin.venueId, reason: "physical_vocabulary_changed" },
+      }]);
+    }
   }
 }
 
@@ -649,8 +659,6 @@ async function startExecutionPreparation({ preparationId, userId, expectedVersio
     return result;
   } catch (error) {
     if (synchronizedSession?._id) {
-      // Il service di creazione effettua già il rollback prima di restituire;
-      // qui gestiamo i fallimenti successivi (es. consumo preparation).
       const SynchronizedVisitMembership = require("../models/synchronizedVisitMembership.model");
       await SynchronizedVisitMembership.deleteMany({ synchronizedSessionId: synchronizedSession._id }).catch(() => {});
       await VisitSessionV2.deleteMany({ synchronizedSessionId: synchronizedSession._id }).catch(() => {});

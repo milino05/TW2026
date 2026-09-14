@@ -4,7 +4,6 @@ const CollectionItemMembership = require("../models/collectionItemMembership.mod
 const EditorialContextRevision = require("../models/editorialContextRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const Namespace = require("../models/namespace.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const ItemEdition = require("../models/itemEdition.model");
 const ItemV2 = require("../models/itemV2.model");
 const AppError = require("../utils/AppError");
@@ -12,8 +11,10 @@ const { findContentSpaceOrFail, assertCanManageContentSpace } = require("./conte
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { assertCanUseItemEditionForEditorialRelease } = require("./itemUsageAuthorization.service");
 const { validateEditorialReleaseCoherence } = require("./editorialReleaseIntegrity.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
+function sameId(left, right) { return id(left) === id(right); }
 function reviewConflict() {
   return new AppError("Lo stato della raccolta è cambiato durante l'operazione", 409, [{ code: "EDITORIAL_CONTEXT_WORKING_CONFLICT" }]);
 }
@@ -35,6 +36,26 @@ async function loadContextAndSpace({ editorialContextId, actorUserId, permission
   return { context, contentSpace };
 }
 
+async function resolveAuthorizedEffectiveNamespace({ context, contentSpace, namespace, actorUserId }) {
+  const access = await assertCanUseNamespaceForEditorialContext({
+    namespace,
+    actorUserId,
+    principalType: contentSpace.ownerType,
+    principalId: contentSpace.ownerId,
+  });
+  const revision = await loadEffectiveNamespaceRevision({ namespace, binding: context.namespaceDependency });
+  if (access?.basis === "entitlement") {
+    const ref = access.resolvedSnapshotRef;
+    if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, revision._id)) {
+      throw new AppError("La versione delle regole editoriali usata dalla raccolta non è più autorizzata", 403, [{
+        code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
+        context: { effectiveRevisionId: revision._id, authorizedRevisionId: ref?.resourceId || null },
+      }]);
+    }
+  }
+  return { access, revision };
+}
+
 async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
   const issues = [];
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" });
@@ -44,28 +65,11 @@ async function buildWorkingSnapshot({ context, contentSpace, actorUserId }) {
 
   let namespaceRevisionId = null;
   try {
-    const access = await assertCanUseNamespaceForEditorialContext({
-      namespace,
-      actorUserId,
-      principalType: contentSpace.ownerType,
-      principalId: contentSpace.ownerId,
-    });
-    const ref = access?.resolvedSnapshotRef;
-    if (ref?.resourceType === "namespace_revision") namespaceRevisionId = ref.resourceId;
-    else issues.push(issue("namespaceRevisionId", "AUTHORIZED_NAMESPACE_REVISION_REQUIRED", "Le regole editoriali non hanno una versione pubblicata utilizzabile"));
+    const resolved = await resolveAuthorizedEffectiveNamespace({ context, contentSpace, namespace, actorUserId });
+    namespaceRevisionId = resolved.revision._id;
   } catch (error) {
     if ([403, 404, 409].includes(error?.status)) issues.push(issue("namespaceRevisionId", "NAMESPACE_NOT_AUTHORIZED", error.message));
     else throw error;
-  }
-
-  if (namespaceRevisionId) {
-    const revision = await NamespaceRevision.findOne({
-      _id: namespaceRevisionId,
-      namespaceId: namespace._id,
-      status: { $in: ["published", "superseded"] },
-      "integrity.status": "valid",
-    }).select("_id").lean();
-    if (!revision) issues.push(issue("namespaceRevisionId", "NAMESPACE_REVISION_NOT_RELEASE_READY", "La versione delle regole editoriali non è pronta per una raccolta pubblicabile"));
   }
 
   const semanticGraph = await SemanticGraph.findOne({ _id: context.semanticGraphId, lifecycleStatus: "active" }).lean();

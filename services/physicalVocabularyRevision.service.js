@@ -20,6 +20,8 @@ const {
   validatePhysicalVocabularyRevisionUnknownFields,
   validatePhysicalVocabularyRevisionSnapshot,
 } = require("./validation/physicalVocabulary.validation");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
+const { auditVenuesAgainstPhysicalVocabulary } = require("./schemaDependencyAudit.service");
 
 const EMPTY_DEFINITIONS = Object.freeze(Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, []])));
 
@@ -280,7 +282,18 @@ async function publishPhysicalVocabulary({ physicalVocabularyId, actorUserId }) 
 
   physicalVocabulary.publishedRevisionId = revision._id;
   physicalVocabulary.workingRevisionId = null;
-  return { physicalVocabulary, revision };
+  const auditResult = await runPostCommitAudit({
+    venueDependencyAudit: () => auditVenuesAgainstPhysicalVocabulary({
+      physicalVocabularyId: physicalVocabulary._id,
+      physicalVocabularyRevisionId: revision._id,
+    }),
+  });
+  return {
+    physicalVocabulary,
+    revision,
+    dependencyAudit: auditResult.results.venueDependencyAudit,
+    audit: { status: auditResult.status, failures: auditResult.failures },
+  };
 }
 
 function materializePhysicalVocabularyRevision({ physicalVocabulary, revision }) {

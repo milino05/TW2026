@@ -19,6 +19,12 @@ const {
   validateNamespaceRevisionUnknownFields,
   validateNamespaceRevisionSnapshot,
 } = require("./validation/namespace.validation");
+const { runPostCommitAudit } = require("./postCommitAudit.service");
+const {
+  auditItemEditionsAgainstNamespace,
+  auditSemanticGraphsAgainstNamespace,
+  auditEditorialContextsAgainstNamespace,
+} = require("./schemaDependencyAudit.service");
 
 const EMPTY_DEFINITIONS = Object.freeze(Object.fromEntries(DEFINITION_FIELDS.map((field) => [field, []])));
 
@@ -165,6 +171,18 @@ async function evaluateNamespace({ namespaceId, actorUserId, allowInReview = fal
   return { namespace, revision, issues };
 }
 
+async function runNamespaceDependencyAudits(namespace, revision) {
+  const auditResult = await runPostCommitAudit({
+    itemEditionDependencyAudit: () => auditItemEditionsAgainstNamespace({ namespaceId: namespace._id, namespaceRevisionId: revision._id }),
+    semanticGraphDependencyAudit: () => auditSemanticGraphsAgainstNamespace({ namespaceId: namespace._id, namespaceRevisionId: revision._id }),
+    editorialContextDependencyAudit: () => auditEditorialContextsAgainstNamespace({ namespaceId: namespace._id, namespaceRevisionId: revision._id }),
+  });
+  return {
+    dependencies: auditResult.results,
+    audit: { status: auditResult.status, failures: auditResult.failures },
+  };
+}
+
 async function checkNamespaceConsistency({ namespaceId, actorUserId }) {
   const result = await evaluateNamespace({ namespaceId, actorUserId, allowInReview: true });
   const { namespace, revision, issues } = result;
@@ -221,7 +239,8 @@ async function checkNamespaceConsistency({ namespaceId, actorUserId }) {
 
   namespace.publishedRevisionId = revision._id;
   namespace.workingRevisionId = null;
-  return { namespace, revision, issues: [], finalized: true, visibility: "private" };
+  const dependencyAudit = await runNamespaceDependencyAudits(namespace, revision);
+  return { namespace, revision, issues: [], finalized: true, visibility: "private", ...dependencyAudit };
 }
 
 async function requestNamespaceReview({ namespaceId, actorUserId }) {
@@ -326,7 +345,8 @@ async function publishNamespace({ namespaceId, actorUserId }) {
 
   namespace.publishedRevisionId = revision._id;
   namespace.workingRevisionId = null;
-  return { namespace, revision };
+  const dependencyAudit = await runNamespaceDependencyAudits(namespace, revision);
+  return { namespace, revision, ...dependencyAudit };
 }
 
 function materializeNamespaceRevision({ namespace, revision }) {

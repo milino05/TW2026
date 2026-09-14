@@ -21,6 +21,8 @@ const {
   validateCreateEditionPayload,
   validateRevisionPayloadShape,
 } = require("./validation/itemV2.validation");
+const { bindingFromAccess, buildValidation } = require("./versionedSchemaDependency.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
 
 function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
 function sameId(a, b) { return String(a || "") === String(b || ""); }
@@ -66,41 +68,46 @@ async function getItem({ itemId }) {
 }
 
 async function resolveNamespaceRevision(namespace, requestedRevisionId = null) {
-  const revisionId = requestedRevisionId || namespace.workingRevisionId || namespace.publishedRevisionId;
-  if (!revisionId) throw new AppError("Il Namespace non ha una revisione disponibile", 409);
-  const revision = await NamespaceRevision.findOne({ _id: revisionId, namespaceId: namespace._id });
-  if (!revision) throw new AppError("NamespaceRevision non trovata", 404);
+  const revisionId = requestedRevisionId || namespace.publishedRevisionId;
+  if (!revisionId) throw new AppError("Il Namespace non ha una revisione pubblicata disponibile", 409, [{ code: "PUBLISHED_NAMESPACE_REVISION_REQUIRED" }]);
+  const revision = await NamespaceRevision.findOne({
+    _id: revisionId,
+    namespaceId: namespace._id,
+    status: { $in: ["published", "superseded"] },
+    "integrity.status": "valid",
+  });
+  if (!revision) throw new AppError("NamespaceRevision pubblicata non trovata", 404);
   return revision;
 }
 
 async function resolveNamespaceRevisionForAuthoring({ namespace, requestedRevisionId = null, access }) {
-  if (access?.basis !== "entitlement") return resolveNamespaceRevision(namespace, requestedRevisionId);
-  const ref = access.resolvedSnapshotRef;
-  if (ref?.resourceType !== "namespace_revision") {
-    throw new AppError("Entitlement Namespace senza snapshot di authoring", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_REQUIRED" }]);
+  const ref = access?.resolvedSnapshotRef;
+  if (ref?.resourceType === "namespace_revision") {
+    if (requestedRevisionId && !sameId(requestedRevisionId, ref.resourceId)) {
+      throw new AppError("La NamespaceRevision richiesta non e la revisione effettiva autorizzata", 403, [{
+        code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
+        context: { requestedRevisionId, authorizedRevisionId: ref.resourceId },
+      }]);
+    }
+    const revision = await NamespaceRevision.findOne({
+      _id: ref.resourceId,
+      namespaceId: namespace._id,
+      status: { $in: ["published", "superseded"] },
+      "integrity.status": "valid",
+    });
+    if (!revision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_UNAVAILABLE" }]);
+    return revision;
   }
-  if (requestedRevisionId && !sameId(requestedRevisionId, ref.resourceId)) {
-    throw new AppError("La NamespaceRevision richiesta non e autorizzata", 403, [{
-      code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
-      context: { requestedRevisionId, authorizedRevisionId: ref.resourceId },
-    }]);
-  }
-  const revision = await NamespaceRevision.findOne({
-    _id: ref.resourceId,
-    namespaceId: namespace._id,
-    status: { $in: ["published", "superseded"] },
-  });
-  if (!revision) throw new AppError("NamespaceRevision autorizzata non disponibile", 409, [{ code: "AUTHORIZED_NAMESPACE_REVISION_UNAVAILABLE" }]);
-  return revision;
+  return resolveNamespaceRevision(namespace, requestedRevisionId);
 }
 
-function assertPinnedNamespaceRevisionCompatible(access, authoredAgainstNamespaceRevisionId) {
-  if (access?.basis !== "entitlement" || access.entitlement?.versionPolicy !== "pinned") return;
-  const ref = access.resolvedSnapshotRef;
-  if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, authoredAgainstNamespaceRevisionId)) {
-    throw new AppError("La Edition usa una NamespaceRevision diversa da quella autorizzata", 403, [{
+function assertNamespaceAccessMatchesBinding(access, binding, effectiveRevisionId) {
+  if (binding?.versionPolicy !== "pinned") return;
+  const ref = access?.resolvedSnapshotRef;
+  if (ref?.resourceType !== "namespace_revision" || !sameId(ref.resourceId, effectiveRevisionId)) {
+    throw new AppError("La Edition usa una NamespaceRevision pinned diversa da quella autorizzata", 403, [{
       code: "NAMESPACE_REVISION_NOT_AUTHORIZED",
-      context: { authoredAgainstNamespaceRevisionId, authorizedRevisionId: ref?.resourceId || null },
+      context: { effectiveRevisionId, authorizedRevisionId: ref?.resourceId || null },
     }]);
   }
 }
@@ -141,7 +148,12 @@ async function createEdition({ itemId, payload, actorUserId }) {
   if (shapeIssues.length) throw new AppError("Payload revisione non valido", 400, shapeIssues);
   let edition;
   try {
-    edition = await ItemEdition.create({ itemId: item._id, namespaceId: namespace._id, createdBy: actorUserId });
+    edition = await ItemEdition.create({
+      itemId: item._id,
+      namespaceId: namespace._id,
+      namespaceDependency: bindingFromAccess({ access: namespaceAccess, effectiveRevisionId: namespaceRevision._id }),
+      createdBy: actorUserId,
+    });
     const revision = await ItemRevisionV2.create({
       itemEditionId: edition._id,
       version: 1,
@@ -177,17 +189,24 @@ async function getEditionContext(editionId) {
   return { edition, item, namespace };
 }
 
+async function effectiveNamespaceForEdition({ edition, namespace }) {
+  return loadEffectiveNamespaceRevision({ namespace, binding: edition.namespaceDependency });
+}
+
 async function createWorkingFromPublished({ edition, actorUserId }) {
   if (!edition.publishedRevisionId) throw new AppError("Nessuna revisione pubblicata da clonare", 409);
   const published = await ItemRevisionV2.findById(edition.publishedRevisionId);
   if (!published) throw new AppError("Revisione pubblicata non trovata", 409);
+  const namespace = await Namespace.findOne({ _id: edition.namespaceId, lifecycleStatus: "active" });
+  if (!namespace) throw new AppError("Namespace non disponibile", 409);
+  const effectiveNamespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
   const presentation = clonePresentationForFork(published);
   const payload = revisionPayload(published);
   const revision = await ItemRevisionV2.create({
     itemEditionId: edition._id,
     version: await nextVersion(edition._id),
     basedOnRevisionId: published._id,
-    authoredAgainstNamespaceRevisionId: published.authoredAgainstNamespaceRevisionId,
+    authoredAgainstNamespaceRevisionId: effectiveNamespaceRevision._id,
     ...payload,
     ...presentation,
     status: "draft",
@@ -230,7 +249,8 @@ async function updateEdition({ editionId, payload, actorUserId }) {
   const issues = validateRevisionPayloadShape(payload || {}, { partial: true });
   if (issues.length) throw new AppError("Payload revisione non valido", 400, issues);
   const revision = await getWorkingRevision(edition, actorUserId);
-  assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
+  const effectiveNamespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
+  assertNamespaceAccessMatchesBinding(namespaceAccess, edition.namespaceDependency, effectiveNamespaceRevision._id);
   try { markRevisionEdited(revision, actorUserId); }
   catch (error) { throw new AppError(error.message, 409, [{ code: error.code }]); }
   const normalized = normalizeRevisionPayload(payload || {});
@@ -250,12 +270,8 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
     principalId: item.ownerId,
   });
   const revision = await getWorkingRevision(edition, actorUserId);
-  assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
-  const namespaceRevision = await NamespaceRevision.findOne({
-    _id: revision.authoredAgainstNamespaceRevisionId,
-    namespaceId: edition.namespaceId,
-  });
-  if (!namespaceRevision) throw new AppError("NamespaceRevision di authoring non valida", 409);
+  const namespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
+  assertNamespaceAccessMatchesBinding(namespaceAccess, edition.namespaceDependency, namespaceRevision._id);
   const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);
   revision.integrity = {
     status: issues.length ? "needs_review" : "valid",
@@ -264,7 +280,20 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
     checkedBy: actorUserId,
   };
   await revision.save();
-  return { revision, issues };
+  return { revision, issues, namespaceRevisionId: namespaceRevision._id };
+}
+
+async function validateWorkingAgainstEffectiveNamespace({ edition, namespace, revision }) {
+  const namespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
+  const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);
+  revision.integrity = {
+    status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid",
+    issues,
+    checkedAt: new Date(),
+    checkedBy: revision.updatedBy || revision.createdBy,
+  };
+  await revision.save();
+  return { namespaceRevision, issues };
 }
 
 async function finalizePrivateEdition({ editionId, actorUserId }) {
@@ -277,9 +306,10 @@ async function finalizePrivateEdition({ editionId, actorUserId }) {
     principalId: item.ownerId,
   });
   const revision = await getExistingWorkingRevision(edition);
-  assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
-  if (revision.integrity?.status !== "valid") {
-    throw new AppError("Il contenuto deve superare il controllo prima di diventare privato", 409);
+  const checked = await validateWorkingAgainstEffectiveNamespace({ edition, namespace, revision });
+  assertNamespaceAccessMatchesBinding(namespaceAccess, edition.namespaceDependency, checked.namespaceRevision._id);
+  if (checked.issues.some((issue) => issue.severity !== "warning")) {
+    throw new AppError("Il contenuto deve superare il controllo prima di diventare privato", 409, checked.issues);
   }
   try {
     publishWithoutReview(revision, actorUserId);
@@ -293,6 +323,11 @@ async function finalizePrivateEdition({ editionId, actorUserId }) {
   }
   edition.publishedRevisionId = revision._id;
   edition.workingRevisionId = null;
+  edition.namespaceDependency.validation = buildValidation({
+    consumerSnapshotId: revision._id,
+    dependencyRevisionId: checked.namespaceRevision._id,
+    issues: [],
+  });
   await edition.save();
   return { item, edition, revision, finalized: true, visibility: "private" };
 }
@@ -340,9 +375,10 @@ async function publishEdition({ editionId, actorUserId }) {
     principalId: item.ownerId,
   });
   const revision = await getExistingWorkingRevision(edition);
-  assertPinnedNamespaceRevisionCompatible(namespaceAccess, revision.authoredAgainstNamespaceRevisionId);
-  if (revision.integrity?.status !== "valid") {
-    throw new AppError("La revisione deve superare il controllo di consistenza", 409);
+  const checked = await validateWorkingAgainstEffectiveNamespace({ edition, namespace, revision });
+  assertNamespaceAccessMatchesBinding(namespaceAccess, edition.namespaceDependency, checked.namespaceRevision._id);
+  if (checked.issues.some((issue) => issue.severity !== "warning")) {
+    throw new AppError("La revisione deve superare il controllo di consistenza", 409, checked.issues);
   }
   try {
     if (item.ownerType === "organization") approveReviewAndPublish(revision, actorUserId);
@@ -357,6 +393,11 @@ async function publishEdition({ editionId, actorUserId }) {
   }
   edition.publishedRevisionId = revision._id;
   edition.workingRevisionId = null;
+  edition.namespaceDependency.validation = buildValidation({
+    consumerSnapshotId: revision._id,
+    dependencyRevisionId: checked.namespaceRevision._id,
+    issues: [],
+  });
   await edition.save();
   return { item, edition, revision };
 }
