@@ -3,15 +3,17 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const mongoose = require("mongoose");
 const { seedExamDatasetV3, verifyExamDatasetV3 } = require("./examDatasetV3");
+const { applyDemoVenueLayoutSnapshots } = require("./demoVenueLayoutSnapshots");
 
 async function main() {
   if (!process.env.MONGO_URI) throw new Error("MONGO_URI mancante");
   await mongoose.connect(process.env.MONGO_URI);
   try {
     await seedExamDatasetV3();
+    const layoutSnapshots = await applyDemoVenueLayoutSnapshots();
     const verification = await verifyExamDatasetV3();
     if (!verification.ok) throw new Error(`Verifica dataset demo V3 fallita: ${JSON.stringify(verification.failures)}`);
-    console.log(JSON.stringify({ status: "ok", dataset: "v3", ...verification.summary }, null, 2));
+    console.log(JSON.stringify({ status: "ok", dataset: "v3", layoutSnapshots, ...verification.summary }, null, 2));
   } finally {
     await mongoose.disconnect();
   }
