@@ -70,7 +70,7 @@ test("breaking semantic changes require review and are not silently accepted", (
     consumerSnapshotId: "consumer-r1",
     dependencyRevisionId: "dependency-r2",
     codePrefix: "TEST_DEPENDENCY",
-  }), (error) => error?.statusCode === 409 && error?.details?.some?.((detail) => detail.code === "TEST_DEPENDENCY_REVIEW_REQUIRED"));
+  }), (error) => error?.status === 409 && error?.details?.some?.((detail) => detail.code === "TEST_DEPENDENCY_REVIEW_REQUIRED"));
 });
 
 test("a previously valid audit becomes stale when the live dependency advances", () => {
@@ -80,5 +80,5 @@ test("a previously valid audit becomes stale when the live dependency advances",
     consumerSnapshotId: "consumer-r1",
     dependencyRevisionId: "dependency-r2",
     codePrefix: "TEST_DEPENDENCY",
-  }), (error) => error?.statusCode === 409 && error?.details?.some?.((detail) => detail.code === "TEST_DEPENDENCY_REVALIDATION_REQUIRED"));
+  }), (error) => error?.status === 409 && error?.details?.some?.((detail) => detail.code === "TEST_DEPENDENCY_REVALIDATION_REQUIRED"));
 });
