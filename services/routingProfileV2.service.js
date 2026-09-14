@@ -41,7 +41,7 @@ function routingControl(definition, physicalFeatureRef, key) {
     physicalFeatureRef,
   };
 }
-function visitorControlProjection(definition, physicalVocabularyId) {
+function visitorControlProjection(definition) {
   const control = definition?.visitorControl;
   if (!control?.enabled) return null;
   return {
@@ -51,25 +51,13 @@ function visitorControlProjection(definition, physicalVocabularyId) {
     dataType: definition.dataType,
     unit: definition.unit || null,
     options: definition.options || [],
-    operator: control.operator || "eq",
     valueMode: control.valueMode || "fixed",
     ...(control.valueMode === "fixed" ? { value: control.value } : {}),
-    priority: control.priority || "preferred",
-    physicalFeatureRef: {
-      kind: "local",
-      physicalVocabularyId,
-      definitionId: definition.definitionId,
-    },
   };
 }
 function profileRequirementSummary(requirement, attributeById) {
   const attribute = attributeById.get(String(requirement.physicalAttributeDefinitionId));
-  return {
-    label: attribute?.label || "Caratteristica fisica",
-    operator: requirement.operator || "eq",
-    value: requirement.value,
-    priority: requirement.priority || "preferred",
-  };
+  return { label: attribute?.label || "Caratteristica fisica" };
 }
 function profileProjection(revision) {
   const attributeById = new Map((revision?.physicalAttributes || []).map((definition) => [definition.definitionId, definition]));
@@ -122,7 +110,7 @@ function projectFederatedControls(selectedRevisions) {
 }
 function visitorControlsProjection(revision) {
   return (revision?.physicalAttributes || [])
-    .map((definition) => visitorControlProjection(definition, revision.physicalVocabularyId))
+    .map((definition) => visitorControlProjection(definition))
     .filter(Boolean);
 }
 function canonicalNeedSupportProjection(revision) {
