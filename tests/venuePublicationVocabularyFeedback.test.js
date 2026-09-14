@@ -40,8 +40,10 @@ test("l'onboarding rende esplicito lo stato pubblicabile del vocabolario", () =>
   assert.match(venueSections, /Il nuovo vocabolario nasce come bozza e va pubblicato prima della sede/);
 });
 
-test("la correzione preserva il vincolo di snapshot fisico pubblicato e integro", () => {
+test("la validazione preserva snapshot storici stabili ma usa il vocabolario fisico effettivo", () => {
+  assert.match(integrityService, /resolveVocabularyForValidation/);
   assert.match(integrityService, /PHYSICAL_VOCABULARY_REVISION_NOT_PUBLISHABLE/);
-  assert.match(integrityService, /\["published", "superseded"\]\.includes\(revision\.status\)/);
-  assert.match(integrityService, /revision\.integrity\?\.status !== "valid"/);
+  assert.match(integrityService, /\["published", "superseded"\]\.includes\(physicalVocabularyRevision\.status\)/);
+  assert.match(integrityService, /physicalVocabularyRevision\.integrity\?\.status !== "valid"/);
+  assert.match(integrityService, /loadLayoutPhysicalVocabulary\(layout, \{ requireStable: true \}\)/);
 });

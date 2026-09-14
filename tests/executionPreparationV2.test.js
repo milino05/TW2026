@@ -133,7 +133,7 @@ test("una preparation Navigator compila le opzioni locali nello snapshot anche s
     const VisitRevisionV2 = require("../models/visitRevisionV2.model");
     const ExecutionPreparation = require("../models/executionPreparation.model");
     const { createExecutionPreparation } = require("../services/executionPreparationV2.service");
-    const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+    const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");
 
     const owner = await User.create({ username: "prep-map-owner", passwordHash: "test-hash" });
     const organization = await Organization.create({ name: "Map readiness org", createdBy: owner._id });
@@ -141,7 +141,7 @@ test("una preparation Navigator compila le opzioni locali nello snapshot anche s
     const venue = await Venue.create({ name: "Map readiness Venue", ownerOrganizationId: organization._id, createdBy: owner._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Map target", createdBy: owner._id });
     const slot = await ExhibitSlot.create({ venueId: venue._id, createdBy: owner._id });
-    const physical = await createPublishedPhysicalVocabulary({ userId: owner._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: owner._id, ownerType: "organization", ownerId: organization._id });
     const stepFree = physical.revision.physicalAttributes.find((definition) => definition.key === "step_free");
     stepFree.visitorControl = {
       enabled: true,
@@ -179,8 +179,12 @@ test("una preparation Navigator compila le opzioni locali nello snapshot anche s
       createdBy: owner._id,
       updatedBy: owner._id,
     });
-    venue.publishedReleaseId = release._id;
-    await venue.save();
+    await bindPublishedVenuePhysicalVocabulary({
+      venue,
+      physicalVocabulary: physical.physicalVocabulary,
+      revision: physical.revision,
+      releaseId: release._id,
+    });
 
     const visit = await VisitV2.create({ ownerType: "user", ownerId: owner._id, createdBy: owner._id });
     const revision = await VisitRevisionV2.create({

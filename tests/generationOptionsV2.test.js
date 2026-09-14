@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
-const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");
 const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const mongoUri = process.env.MONGO_URI;
@@ -22,10 +22,28 @@ async function createContext({ userId, name, ownerId = userId }) {
   const Namespace = require("../models/namespace.model");
   const ContentSpace = require("../models/contentSpace.model");
   const EditorialRelease = require("../models/editorialRelease.model");
+  const NamespaceRevision = require("../models/namespaceRevision.model");
 
   const namespace = await Namespace.create({ name: `${name} namespace`, ownerType: "user", ownerId, createdBy: userId });
   const space = await ContentSpace.create({ name: `${name} space`, ownerType: "user", ownerId, createdBy: userId });
-  const namespaceRevisionId = oid();
+  const namespaceRevision = await NamespaceRevision.create({
+    namespaceId: namespace._id,
+    version: 1,
+    durationTypes: [],
+    languageLevels: [],
+    presentationAspects: [],
+    selectionSignals: [],
+    relationTypes: [],
+    subjectClasses: [],
+    status: "published",
+    integrity: { status: "valid", issues: [], checkedAt: new Date(), checkedBy: userId },
+    publication: { publishedAt: new Date(), publishedBy: userId },
+    createdBy: userId,
+    updatedBy: userId,
+  });
+  namespace.publishedRevisionId = namespaceRevision._id;
+  await namespace.save();
+  const namespaceRevisionId = namespaceRevision._id;
   const { context, graphRevision } = await createEditorialContextWithGraph({
     contentSpace: space,
     namespaceId: namespace._id,
@@ -58,7 +76,7 @@ async function createReadyVenue({ userId, organizationId, primaryEditorialContex
     primaryEditorialContextId,
     createdBy: userId,
   });
-  const physical = await createPublishedPhysicalVocabulary({ userId });
+  const physical = await createPublishedPhysicalVocabulary({ userId, ownerType: "organization", ownerId: organizationId });
   const layout = await LayoutRevision.create({
     venueId: venue._id,
     version: 1,
@@ -77,8 +95,12 @@ async function createReadyVenue({ userId, organizationId, primaryEditorialContex
     createdBy: userId,
     updatedBy: userId,
   });
-  venue.publishedReleaseId = release._id;
-  await venue.save();
+  await bindPublishedVenuePhysicalVocabulary({
+    venue,
+    physicalVocabulary: physical.physicalVocabulary,
+    revision: physical.revision,
+    releaseId: release._id,
+  });
   return { venue, layout, release };
 }
 

@@ -78,7 +78,7 @@ test("slot QR resolves current publication while an active Session keeps its pin
       userId: user._id,
       sourceType: "generated_plan",
       generatedVisitPlanId: new mongoose.Types.ObjectId(),
-      venuePins: [{ venueId: venue._id, venueReleaseId: release1._id, layoutRevisionId: layout1._id }],
+      venuePins: [{ venueId: venue._id, venueReleaseId: release1._id, layoutRevisionId: layout1._id, physicalVocabularyRevisionId: vocabularyRevisionId }],
       status: "active",
       sessionMovementSpeedMps: 1.2,
       adaptivePolicyVersion: 1,

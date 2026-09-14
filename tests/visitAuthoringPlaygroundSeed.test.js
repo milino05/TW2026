@@ -73,6 +73,7 @@ test("visit authoring playground crea cinque tappe pubblicate, una mappa ed è i
           venueId: first.venue._id,
           venueReleaseId: release._id,
           layoutRevisionId: layout._id,
+          physicalVocabularyRevisionId: first.venue.physicalVocabularyDependency.validation.dependencyRevisionId,
         }],
       });
       assert.deepEqual(readiness.blockers, []);

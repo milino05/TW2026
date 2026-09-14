@@ -16,6 +16,7 @@ const {
   approveReviewAndPublish,
 } = require("./revisionWorkflow.service");
 const { clonePresentationForFork, validatePresentationAgainstNamespace } = require("./itemV2Presentation.service");
+const { validateReferencedSubjects } = require("./itemRevisionSubjectIntegrity.service");
 const {
   normalizeRevisionPayload,
   validateCreateEditionPayload,
@@ -272,7 +273,10 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
   const revision = await getWorkingRevision(edition, actorUserId);
   const namespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
   assertNamespaceAccessMatchesBinding(namespaceAccess, edition.namespaceDependency, namespaceRevision._id);
-  const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);
+  const issues = [
+    ...validatePresentationAgainstNamespace(revision, namespaceRevision),
+    ...await validateReferencedSubjects(revision),
+  ];
   revision.integrity = {
     status: issues.length ? "needs_review" : "valid",
     issues,
@@ -285,7 +289,10 @@ async function checkEditionConsistency({ editionId, actorUserId }) {
 
 async function validateWorkingAgainstEffectiveNamespace({ edition, namespace, revision }) {
   const namespaceRevision = await effectiveNamespaceForEdition({ edition, namespace });
-  const issues = validatePresentationAgainstNamespace(revision, namespaceRevision);
+  const issues = [
+    ...validatePresentationAgainstNamespace(revision, namespaceRevision),
+    ...await validateReferencedSubjects(revision),
+  ];
   revision.integrity = {
     status: issues.some((issue) => issue.severity !== "warning") ? "needs_review" : "valid",
     issues,
