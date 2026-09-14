@@ -14,6 +14,20 @@ function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function catalogManagedRequirementId(requirement) {
+  const needId = semanticNeedId(requirement?.physicalFeatureRef);
+  const definition = navigationNeedById(needId);
+  if (!definition) return null;
+  if (requirement.operator !== definition.operator) return null;
+  if (!definition.allowedPriorities.includes(requirement.priority)) return null;
+  if (Number(requirement.weight ?? 1) !== 1) return null;
+  if (definition.valueMode === "fixed") return sameValue(requirement.value, definition.value) ? needId : null;
+  if (definition.dataType === "number") {
+    return Number.isFinite(requirement.value) && requirement.value >= 0 ? needId : null;
+  }
+  return needId;
+}
+
 function normalizePersonalNavigationNeedSelections(selections, { field = "personalNeedSelections" } = {}) {
   if (selections === undefined) return [];
   if (!Array.isArray(selections)) invalid(field, "INVALID_TYPE", `${field} deve essere un array`);
@@ -51,7 +65,7 @@ function normalizePersonalNavigationNeedSelections(selections, { field = "person
 function compilePersonalNavigationNeedSelections({ selections = [], existingRequirements = [], field = "personalNeedSelections" } = {}) {
   const normalizedSelections = normalizePersonalNavigationNeedSelections(selections, { field });
   const normalizedExisting = normalizeRoutingRequirements(existingRequirements, { field: "existingNavigationRequirements" });
-  const preserved = normalizedExisting.filter((requirement) => !semanticNeedId(requirement.physicalFeatureRef));
+  const preserved = normalizedExisting.filter((requirement) => !catalogManagedRequirementId(requirement));
   const compiled = normalizedSelections.map((selection) => {
     const definition = navigationNeedById(selection.id);
     return {
@@ -67,14 +81,14 @@ function compilePersonalNavigationNeedSelections({ selections = [], existingRequ
 
 function projectPersonalNavigationRequirements(requirements = []) {
   return (requirements || []).flatMap((requirement) => {
-    const needId = semanticNeedId(requirement?.physicalFeatureRef);
+    const needId = catalogManagedRequirementId(requirement);
     const definition = navigationNeedById(needId);
     if (!definition) return [];
     return [{
       id: definition.id,
       label: definition.label,
       description: definition.description,
-      priority: requirement.priority || definition.defaultPriority,
+      priority: requirement.priority,
       value: requirement.value,
       unit: definition.unit,
       advanced: definition.advanced,
@@ -83,6 +97,7 @@ function projectPersonalNavigationRequirements(requirements = []) {
 }
 
 module.exports = {
+  catalogManagedRequirementId,
   normalizePersonalNavigationNeedSelections,
   compilePersonalNavigationNeedSelections,
   projectPersonalNavigationRequirements,
