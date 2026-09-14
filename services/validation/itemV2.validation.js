@@ -95,6 +95,15 @@ function validateMedia(media, base) {
   return issues;
 }
 
+function validateRecognitionMediaPayload(payload = {}) {
+  const issues = [];
+  const allowed = ["recognitionMedia"];
+  for (const key of Object.keys(payload || {})) if (!allowed.includes(key)) issues.push({ field: key, code: "UNKNOWN_FIELD", message: `Campo non supportato: ${key}` });
+  if (!hasOwn(payload, "recognitionMedia")) issues.push({ field: "recognitionMedia", code: "REQUIRED", message: "recognitionMedia è obbligatorio" });
+  else if (payload.recognitionMedia !== null) issues.push(...validateMedia(payload.recognitionMedia, "recognitionMedia"));
+  return issues;
+}
+
 function validateCreateItemPayload(payload = {}) {
   const issues = [];
   const allowed = ["primarySubjectId", "ownerType", "ownerId", "contentSpaceId", "recognitionMedia", "provenance"];
@@ -146,6 +155,7 @@ module.exports = {
   normalizeRecognitionMedia,
   normalizeIllustrativeMedia,
   normalizeRevisionPayload,
+  validateRecognitionMediaPayload,
   validateCreateItemPayload,
   validateCreateEditionPayload,
   validateIllustrativeMedia,
