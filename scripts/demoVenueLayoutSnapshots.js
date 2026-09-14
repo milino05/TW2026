@@ -11,7 +11,9 @@ const { MUSEUM_PLANS } = require("./examDatasetV3");
 
 const SNAPSHOT_VERSION = 1;
 const PUBLIC_FLOOR_PLAN_PREFIX = "/uploads/venue-floor-plans/";
-const DEFAULT_FIXTURE_ROOT = path.join(__dirname, "fixtures", "demo-venue-layouts");
+const DEFAULT_FIXTURE_ROOT = process.env.DEMO_LAYOUT_FIXTURE_DIR
+  ? path.resolve(process.env.DEMO_LAYOUT_FIXTURE_DIR)
+  : path.join(__dirname, "fixtures", "demo-venue-layouts");
 const SNAPSHOT_FILE = "layouts.json";
 
 function jsonClone(value) {
