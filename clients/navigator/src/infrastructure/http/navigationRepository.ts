@@ -93,6 +93,19 @@ export interface SelectableLocationProjection {
     | { kind: "visit_anchor"; visitAnchorId: string };
 }
 
+export interface VisitStopProjection {
+  visitAnchorId: string;
+  venueTargetId: string;
+  exhibitSlotId: string;
+  label: string;
+  approachInstruction: string | null;
+  floorId: string;
+  position: MapPoint;
+  order: number;
+  sequencePosition: "before_current" | "current" | "after_current";
+  experienced: boolean;
+}
+
 export interface MapProjection {
   venues: Array<{
     id: string;
@@ -103,16 +116,7 @@ export interface MapProjection {
       label: string;
       map: { available: boolean; imageUrl: string | null; width: number | null; height: number | null };
     }>;
-    stops: Array<{
-      visitAnchorId: string;
-      venueTargetId: string;
-      exhibitSlotId: string;
-      label: string;
-      approachInstruction: string | null;
-      floorId: string;
-      position: MapPoint;
-      order: number;
-    }>;
+    stops: VisitStopProjection[];
     facilities: Array<{
       id: string;
       label: string;
@@ -136,17 +140,7 @@ export interface MapProjection {
     instruction: string | null;
   }>;
   knownLocation: MapKnownLocationProjection | null;
-  narrativeContextStop: null | {
-    venueId: string;
-    visitAnchorId: string;
-    venueTargetId: string;
-    exhibitSlotId: string;
-    label: string;
-    approachInstruction: string | null;
-    floorId: string;
-    position: MapPoint;
-    order: number;
-  };
+  narrativeContextStop: null | (VisitStopProjection & { venueId: string });
   selectableLocations: SelectableLocationProjection[];
   plannedVisitRoute: {
     plannedLegs: PlannedNavigationLeg[];
