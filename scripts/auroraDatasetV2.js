@@ -41,6 +41,7 @@ const { validateNamespaceRevisionSnapshot } = require("../services/validation/na
 const { validatePresentationAgainstNamespace } = require("../services/itemV2Presentation.service");
 const { validateEditorialReleaseCoherence } = require("../services/editorialReleaseIntegrity.service");
 const { computeVenueReleaseIssues } = require("../services/venueReleaseIntegrity.service");
+const { buildValidation } = require("../services/versionedSchemaDependency.service");
 const { computeVisitV2Integrity } = require("../services/visitV2Integrity.service");
 const { assertSelfContainedOffer } = require("../services/marketplaceOfferIntegrity.service");
 const { acquireOffer } = require("../services/marketplaceV2.service");
@@ -819,6 +820,16 @@ async function seedAuroraDataset({ pinacotecaVisitRecords = [] } = {}) {
     createdBy: manager._id,
     updatedBy: manager._id,
   });
+  venue.physicalVocabularyId = physical.physicalVocabulary._id;
+  venue.physicalVocabularyDependency = {
+    versionPolicy: "follow_current",
+    pinnedRevisionId: null,
+    validation: buildValidation({
+      consumerSnapshotId: venueRelease._id,
+      dependencyRevisionId: physical.revision._id,
+      issues: [],
+    }),
+  };
   venue.publishedReleaseId = venueRelease._id;
   await venue.save();
   assertNoIssues("VenueRelease Aurora non coerente", await computeVenueReleaseIssues({ venue, release: venueRelease, layout: layoutRevision }));

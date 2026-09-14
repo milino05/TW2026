@@ -43,7 +43,7 @@ async function fixture(prefix) {
   return { user, organization, venue };
 }
 
-test("first Venue onboarding can create the starter PhysicalVocabulary and pin it to the Layout", { skip: !mongoUri }, async () => {
+test("first Venue onboarding creates a starter PhysicalVocabulary draft that must be published before Venue binding", { skip: !mongoUri }, async () => {
   await withFreshDatabase(async () => {
     loadAllModels();
     const PhysicalVocabulary = require("../models/physicalVocabulary.model");
@@ -70,13 +70,16 @@ test("first Venue onboarding can create the starter PhysicalVocabulary and pin i
       actorUserId: user._id,
       payload: { mode: "starter", name: "Vocabolario fisico onboarding" },
     });
-    assert.equal(initialized.release.status, "draft");
-    assert.ok(initialized.layout.authoredAgainstPhysicalVocabularyRevisionId);
-    assert.equal(String(initialized.onboarding.createdPhysicalVocabularyRevisionId), String(initialized.layout.authoredAgainstPhysicalVocabularyRevisionId));
+    assert.equal(initialized.release, null);
+    assert.equal(initialized.layout, null);
+    assert.equal(initialized.onboarding.requiresPublication, true);
+    assert.ok(initialized.onboarding.createdPhysicalVocabularyRevisionId);
 
     const vocabulary = await PhysicalVocabulary.findById(initialized.onboarding.createdPhysicalVocabularyId).lean();
     assert.equal(vocabulary.ownerType, "organization");
     assert.equal(String(vocabulary.ownerId), String(organization._id));
+    assert.equal(String(vocabulary.workingRevisionId), String(initialized.onboarding.createdPhysicalVocabularyRevisionId));
+    assert.equal(vocabulary.publishedRevisionId, null);
   });
 });
 
@@ -235,12 +238,14 @@ test("a Venue può iniziare da una revisione fisica pinned anche dopo il trash d
     const onboarding = await getVenuePhysicalOnboarding({ venueId: venue.id, actorUserId: user._id });
     assert.equal(onboarding.choices.length, 1);
     assert.equal(onboarding.choices[0].basis, "license");
-    assert.equal(String(onboarding.choices[0].physicalVocabularyRevisionId), String(physical.revision._id));
+    assert.equal(String(onboarding.choices[0].physicalVocabularyId), String(physical.physicalVocabulary._id));
+    assert.equal(String(onboarding.choices[0].effectiveRevisionId), String(physical.revision._id));
+    assert.equal(onboarding.choices[0].versionPolicy, "pinned");
 
     const initialized = await initializeVenuePhysicalConfiguration({
       venueId: venue.id,
       actorUserId: user._id,
-      payload: { mode: "existing", physicalVocabularyRevisionId: physical.revision._id },
+      payload: { mode: "existing", physicalVocabularyId: physical.physicalVocabulary._id },
     });
     assert.equal(String(initialized.layout.authoredAgainstPhysicalVocabularyRevisionId), String(physical.revision._id));
   });

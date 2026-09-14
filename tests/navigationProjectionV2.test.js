@@ -152,7 +152,7 @@ test("MapProjection hides routing internals and obstacle Action uses canonical m
       userId: user._id,
       sourceType: "generated_plan",
       generatedVisitPlanId: new mongoose.Types.ObjectId(),
-      venuePins: [{ venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id }],
+      venuePins: [{ venueId: venue._id, venueReleaseId: release._id, layoutRevisionId: layout._id, physicalVocabularyRevisionId: physical.revision._id }],
       status: "active",
       currentEntryIndex: 0,
       runtimeVersion: 1,

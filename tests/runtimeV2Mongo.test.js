@@ -3,7 +3,7 @@ const path = require("path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
-const { createPublishedPhysicalVocabulary } = require("./helpers/physicalVocabulary");
+const { createPublishedPhysicalVocabulary, bindPublishedVenuePhysicalVocabulary } = require("./helpers/physicalVocabulary");
 const { createEditorialContextWithGraph } = require("./helpers/editorialGraphFixture");
 
 const baseMongoUri = process.env.MONGO_URI;
@@ -162,7 +162,7 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
     const venue = await Venue.create({ name: "Runtime Venue", ownerOrganizationId: organization._id, primaryEditorialContextId: context._id, createdBy: user._id });
     const target = await VenueTarget.create({ venueId: venue._id, subjectId: subject._id, displayLabelOverride: "Opera fisica", createdBy: user._id });
     const exhibitSlot = await ExhibitSlot.create({ venueId: venue._id, createdBy: user._id });
-    const physical = await createPublishedPhysicalVocabulary({ userId: user._id });
+    const physical = await createPublishedPhysicalVocabulary({ userId: user._id, ownerType: "organization", ownerId: organization._id });
     const roomType = physical.placeTypeByKey.get("room");
     const toiletsType = physical.placeTypeByKey.get("toilets");
     const toiletsFeatureRef = {
@@ -202,8 +202,12 @@ test("ExecutionPreparation pins physical state and Action runtime keeps the Sess
       createdBy: user._id,
       updatedBy: user._id,
     });
-    venue.publishedReleaseId = releaseR1._id;
-    await venue.save();
+    await bindPublishedVenuePhysicalVocabulary({
+      venue,
+      physicalVocabulary: physical.physicalVocabulary,
+      revision: physical.revision,
+      releaseId: releaseR1._id,
+    });
 
     const visit = await VisitV2.create({ ownerType: "user", ownerId: user._id, createdBy: user._id });
     const sourceId = new mongoose.Types.ObjectId();
