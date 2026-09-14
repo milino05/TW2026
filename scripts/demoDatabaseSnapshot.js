@@ -114,8 +114,6 @@ async function restoreAssetTree({ fixtureRoot, destinationRoot, files = [] }) {
   for (const entry of files) {
     const relativePath = safeRelativePath(entry.path);
     const sourcePath = path.join(fixtureRoot, relativePath);
-    const actualHash = await sha256File(sourcePath);
-    if (actualHash !== entry.sha256) throw new Error(`Checksum asset non valido: ${entry.path}`);
     const destinationPath = path.join(destinationRoot, relativePath);
     await fs.mkdir(path.dirname(destinationPath), { recursive: true });
     await fs.copyFile(sourcePath, destinationPath);
@@ -250,6 +248,25 @@ async function hasDemoDatabaseSnapshot({ fixtureRoot = DEFAULT_FIXTURE_ROOT } = 
   return exists(path.join(fixtureRoot, MANIFEST_FILE));
 }
 
+async function validateSnapshotFiles({ fixtureRoot, manifest }) {
+  for (const entry of manifest.collections) {
+    const filePath = path.join(fixtureRoot, DOCUMENTS_DIRECTORY, safeRelativePath(entry.file));
+    const actualHash = await sha256File(filePath);
+    if (actualHash !== entry.sha256) throw new Error(`Checksum collection non valido: ${entry.name}`);
+  }
+  for (const [assetGroup, entries] of Object.entries(manifest.assets || {})) {
+    const groupRoot = path.join(fixtureRoot, ASSETS_DIRECTORY, assetGroup);
+    for (const entry of entries) {
+      const relativePath = safeRelativePath(entry.path);
+      const filePath = path.join(groupRoot, relativePath);
+      const stat = await fs.stat(filePath);
+      if (stat.size !== entry.size) throw new Error(`Dimensione asset non valida: ${assetGroup}/${entry.path}`);
+      const actualHash = await sha256File(filePath);
+      if (actualHash !== entry.sha256) throw new Error(`Checksum asset non valido: ${assetGroup}/${entry.path}`);
+    }
+  }
+}
+
 async function dropCurrentDatabaseObjects(db) {
   const infos = (await db.listCollections({}, { nameOnly: false }).toArray())
     .filter((entry) => !String(entry.name || "").startsWith("system."))
@@ -265,8 +282,6 @@ async function dropCurrentDatabaseObjects(db) {
 
 async function restoreCollectionDocuments({ db, fixtureRoot, entry }) {
   const filePath = path.join(fixtureRoot, DOCUMENTS_DIRECTORY, safeRelativePath(entry.file));
-  const actualHash = await sha256File(filePath);
-  if (actualHash !== entry.sha256) throw new Error(`Checksum collection non valido: ${entry.name}`);
   const text = await fs.readFile(filePath, "utf8");
   const documents = text
     .split(/\r?\n/)
@@ -293,6 +308,7 @@ async function restoreDemoDatabaseSnapshot({
 } = {}) {
   if (!db) throw new Error("Connessione MongoDB non disponibile");
   const manifest = await loadDemoDatabaseSnapshot({ fixtureRoot, required: true });
+  await validateSnapshotFiles({ fixtureRoot, manifest });
 
   await dropCurrentDatabaseObjects(db);
   for (const entry of manifest.collections) {
