@@ -41,6 +41,14 @@ const description = computed(() => {
   return null;
 });
 const showMapButton = computed(() => ["location_required", "navigating_to_visit_stop", "navigating_detour"].includes(phase.value || ""));
+const knownLocationSourceLabel = computed(() => {
+  const source = props.snapshot.physical?.knownLocation?.source;
+  if (source === "navigation_confirmation") return "aggiornata con il percorso";
+  if (source === "qr") return "confermata tramite QR";
+  if (source === "teleport") return "impostata dal simulatore";
+  if (source === "geolocation") return "rilevata dal provider di localizzazione";
+  return "confermata manualmente";
+});
 </script>
 
 <template>
@@ -74,7 +82,7 @@ const showMapButton = computed(() => ["location_required", "navigating_to_visit_
     </div>
 
     <p v-if="snapshot.physical?.knownLocation" class="known-location-note">
-      Posizione conosciuta: <strong>{{ snapshot.physical.knownLocation.source === 'navigation_confirmation' ? 'aggiornata con il percorso' : 'confermata manualmente' }}</strong>.
+      Posizione conosciuta: <strong>{{ knownLocationSourceLabel }}</strong>.
     </p>
   </section>
 </template>
