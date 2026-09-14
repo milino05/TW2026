@@ -38,6 +38,8 @@ Un trasferimento inter-Venue viene eseguito soltanto se esiste la corrispondente
 
 Essere nel `placeId` corretto significa essere arrivati nell'area e porta ad `approaching_visit_target`. La Representation si sblocca solo quando la KnownLocation identifica il VisitAnchor o l'ExhibitSlot di destinazione. I contenuti della stessa Tappa possono quindi susseguirsi senza nuova macro-navigazione.
 
+Il gate vale fin dalla risposta pubblica di start: `ExecutionPreparation.start` deve restituire la stessa `currentNavigatorRuntimeProjection` usata da `GET /current`, così una nuova sessione non può esporre la Representation prima della conferma fisica soltanto perché è stata appena materializzata.
+
 ## 6. Deviazioni fisiche
 
 Una deviazione verso toilette, uscita, bar, shop o altra facility non modifica `currentEntryIndex`. Viene persistita soltanto la destinazione concreta risolta. `Torna alla visita` elimina la deviazione e il backend ricalcola il percorso dalla KnownLocation al target narrativo corrente. È ammessa una sola deviazione attiva; una nuova destinazione sostituisce la precedente.
@@ -78,6 +80,23 @@ Le mutazioni runtime continuano a passare dal protocollo Action e da `POST /v2/v
 
 Le action che richiedono un parametro concreto (`location.confirm`, `location.correct`, `visit.stop.select`) vengono materializzate dalla UI attraverso Mappa/Tappe e inviate al medesimo ActionDispatcher soltanto dopo la scelta dell'utente.
 
+La `MapProjection` runtime espone un solo contratto canonico:
+
+- `narrativeContextStop` per il contesto narrativo corrente;
+- `knownLocation` per la posizione fisica giustificata;
+- `plannedVisitRoute` per il percorso pinzato/pianificato;
+- `activeNavigation` per la route live derivata.
+
+I vecchi campi top-level `logicalCurrentStop`, `plannedLegs` e `interVenueTransitions` non fanno parte della projection Navigator runtime. I dati pianificati vivono esclusivamente sotto `plannedVisitRoute`.
+
+Le facility mostrate sulla mappa non introducono comandi UI paralleli: il marker diventa azionabile solo quando esiste la corrispondente `AvailableAction navigation.place.*` già autorizzata dal backend e la UI inoltra quella stessa action all'ActionDispatcher. La regola vale sia in self-guided sia in synchronized; in synchronized la deviazione resta `visit_session`-scoped e quindi personale.
+
 ## 10. Principio di riuso
 
 Il runtime deve riusare `PhysicalFeatureRefSchema`, lo snapshot fisico pinzato, `loadPinnedBundle`, la traduzione dei routing requirement e il routing graph esistenti. Non vengono introdotti un secondo routing engine, una seconda action infrastructure o copie persistite della route.
+
+## 11. Tracciabilità rispetto all'architettura client-v2
+
+Questo documento è l'addendum runtime fisico delle decisioni client-v2 raccolte in `docs/client-architecture-decisions.md`: ne specializza il protocollo Action, il runtime server-side e la predisposizione 18–27/18–33 senza riaprire i Punti 1–30. Le decisioni di questo addendum sono quindi parte della stessa architettura approvata, non una linea progettuale parallela.
+
+I contract test dedicati devono impedire regressioni almeno sui seguenti boundary: start fisicamente gated, assenza dei campi MapProjection legacy, azioni facility della mappa instradate tramite `AvailableAction` in entrambe le modalità, separazione progressione/posizione e ownership synchronized.
