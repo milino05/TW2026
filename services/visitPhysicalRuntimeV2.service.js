@@ -14,6 +14,13 @@ const {
   deriveVisitExecutionState,
 } = require("./visitExecutionRuntimeV2.service");
 
+const EXACT_ANCHOR_LOCATION_SOURCES = new Set([
+  "navigation_confirmation",
+  "qr",
+  "teleport",
+  "geolocation",
+]);
+
 function requirePersistableSession(session) {
   if (!session || typeof session.save !== "function") {
     throw new Error("VisitSession persistibile richiesta");
@@ -52,6 +59,25 @@ function knownLocationValue({
     observedAt,
     acceptedAt,
   };
+}
+
+function anchorLocationValue(anchor, {
+  source,
+  providerId = null,
+  observedAt = new Date(),
+} = {}) {
+  if (!anchor) throw new AppError("Tappa non disponibile", 404, [{ code: "VISIT_STOP_NOT_FOUND" }]);
+  const exactAnchorEvidence = EXACT_ANCHOR_LOCATION_SOURCES.has(source);
+  return knownLocationValue({
+    venueId: anchor.venueId,
+    placeId: anchor.placeId,
+    visitAnchorId: exactAnchorEvidence ? anchor._id : null,
+    venueTargetId: exactAnchorEvidence ? anchor.venueTargetId : null,
+    exhibitSlotId: exactAnchorEvidence ? anchor.exhibitSlotId : null,
+    source,
+    providerId,
+    observedAt,
+  });
 }
 
 function assignKnownLocation(personalSession, location) {
@@ -195,16 +221,7 @@ async function resolveLocationReference({ routingSession, plan, locationRef, sou
     if (!findPlace(bundle, anchor.placeId)) {
       throw new AppError("Posizione della tappa non disponibile nello snapshot fisico", 409, [{ code: "PHYSICAL_PLACE_NOT_FOUND" }]);
     }
-    return knownLocationValue({
-      venueId: anchor.venueId,
-      placeId: anchor.placeId,
-      visitAnchorId: anchor._id,
-      venueTargetId: anchor.venueTargetId,
-      exhibitSlotId: anchor.exhibitSlotId,
-      source,
-      providerId,
-      observedAt,
-    });
+    return anchorLocationValue(anchor, { source, providerId, observedAt });
   }
   if (kind === "place") {
     if (!locationRef.venueId || !locationRef.placeId) {
@@ -337,8 +354,10 @@ async function returnToVisitV2({ personalSession }) {
 }
 
 module.exports = {
+  EXACT_ANCHOR_LOCATION_SOURCES,
   ensurePhysicalRuntime,
   knownLocationValue,
+  anchorLocationValue,
   assignKnownLocation,
   clearPhysicalDetour,
   resolvedRoutingRequirements,
