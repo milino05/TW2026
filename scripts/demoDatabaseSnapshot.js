@@ -203,7 +203,9 @@ async function exportDemoDatabaseSnapshot({
       views.push({ name: info.name, options: info.options || {} });
       continue;
     }
-    if (info.type !== "collection") throw new Error(`Tipo MongoDB non supportato nella snapshot: ${info.type} (${info.name})`);
+    if (!["collection", "timeseries"].includes(info.type)) {
+      throw new Error(`Tipo MongoDB non supportato nella snapshot: ${info.type} (${info.name})`);
+    }
     collections.push(await exportCollection({ db, info, collectionsRoot }));
   }
 
@@ -249,8 +251,9 @@ async function hasDemoDatabaseSnapshot({ fixtureRoot = DEFAULT_FIXTURE_ROOT } = 
 }
 
 async function dropCurrentDatabaseObjects(db) {
-  const infos = (await db.listCollections({}, { nameOnly: true }).toArray())
-    .filter((entry) => !String(entry.name || "").startsWith("system."));
+  const infos = (await db.listCollections({}, { nameOnly: false }).toArray())
+    .filter((entry) => !String(entry.name || "").startsWith("system."))
+    .sort((left, right) => Number(right.type === "view") - Number(left.type === "view"));
   for (const info of infos) {
     try {
       await db.dropCollection(info.name);
