@@ -6,7 +6,6 @@ const ContentSpaceItemMembership = require("../models/contentSpaceItemMembership
 const ContentSpaceSubjectMembership = require("../models/contentSpaceSubjectMembership.model");
 const ItemV2 = require("../models/itemV2.model");
 const Namespace = require("../models/namespace.model");
-const NamespaceRevision = require("../models/namespaceRevision.model");
 const SemanticGraph = require("../models/semanticGraph.model");
 const SemanticGraphRevision = require("../models/semanticGraphRevision.model");
 const GraphSubjectBinding = require("../models/graphSubjectBinding.model");
@@ -16,6 +15,8 @@ const { findContentSpaceOrFail, assertCanManageContentSpace, listContentSpaces }
 const { assertCanUseNamespaceForEditorialContext } = require("./namespaceUsageAuthorization.service");
 const { resolveOrganizationAuthority } = require("./organizationAuthorization.service");
 const { checkEditorialContextReadiness } = require("./editorialContextReview.service");
+const { loadEffectiveNamespaceRevision } = require("./namespaceDependency.service");
+const { projectDependencyState } = require("./versionedSchemaDependency.service");
 
 function id(value) { return String(value?._id || value || ""); }
 function hasPermission(contentSpace, authority, code) {
@@ -39,28 +40,20 @@ async function loadContextAndSpace({ editorialContextId, actorUserId, permission
 async function resolveNamespaceProjection({ context, contentSpace, actorUserId, semanticGraph = null }) {
   const namespace = await Namespace.findOne({ _id: context.namespaceId, lifecycleStatus: "active" }).lean();
   if (!namespace) throw new AppError("Regole editoriali non disponibili", 409);
-  const access = await assertCanUseNamespaceForEditorialContext({
+  await assertCanUseNamespaceForEditorialContext({
     namespace,
     actorUserId,
     principalType: contentSpace.ownerType,
     principalId: contentSpace.ownerId,
   });
-  let revisionId = null;
-  if (semanticGraph?.workingRevisionId) {
-    const graphRevision = await SemanticGraphRevision.findById(semanticGraph.workingRevisionId).select("authoredAgainstNamespaceRevisionId").lean();
-    revisionId = graphRevision?.authoredAgainstNamespaceRevisionId || null;
-  }
-  if (!revisionId) {
-    revisionId = access.resolvedSnapshotRef?.resourceType === "namespace_revision"
-      ? access.resolvedSnapshotRef.resourceId
-      : namespace.workingRevisionId || namespace.publishedRevisionId;
-  }
-  const revision = revisionId ? await NamespaceRevision.findOne({ _id: revisionId, namespaceId: namespace._id }).lean() : null;
+  const binding = semanticGraph?.namespaceDependency || context.namespaceDependency;
+  const revision = await loadEffectiveNamespaceRevision({ namespace, binding, requireStable: true });
   return {
     id: namespace._id,
     name: namespace.name,
     description: namespace.description || "",
-    revision: revision ? {
+    dependency: projectDependencyState(binding),
+    revision: {
       id: revision._id,
       version: revision.version,
       status: revision.status,
@@ -86,7 +79,7 @@ async function resolveNamespaceProjection({ context, contentSpace, actorUserId, 
         validationRules: entry.validationRules || {},
       })),
       selectionSignals: (revision.selectionSignals || []).map((entry) => ({ definitionId: entry.definitionId, label: entry.label, description: entry.description || "" })),
-    } : null,
+    },
   };
 }
 
