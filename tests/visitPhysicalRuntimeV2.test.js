@@ -144,8 +144,13 @@ test("un trasferimento inter-Venue usa soltanto una leg pianificata nella direzi
   const toAnchorId = oid();
   const fromVenueId = oid();
   const toVenueId = oid();
+  const sourcePlaceId = oid();
   const destinationPlaceId = oid();
   const plan = {
+    visitAnchors: [
+      { _id: fromAnchorId, venueId: fromVenueId, placeId: sourcePlaceId },
+      { _id: toAnchorId, venueId: toVenueId, placeId: destinationPlaceId },
+    ],
     physicalRoute: {
       legs: [{
         type: "inter_venue",
@@ -156,10 +161,11 @@ test("un trasferimento inter-Venue usa soltanto una leg pianificata nella direzi
       }],
     },
   };
+  const destinationAnchor = { _id: toAnchorId, venueId: toVenueId, placeId: destinationPlaceId };
   const route = resolvePlannedInterVenueRoute({
     plan,
-    knownLocation: { venueId: fromVenueId, placeId: oid(), visitAnchorId: fromAnchorId },
-    destinationAnchor: { _id: toAnchorId, venueId: toVenueId, placeId: destinationPlaceId },
+    knownLocation: { venueId: fromVenueId, placeId: sourcePlaceId, visitAnchorId: fromAnchorId },
+    destinationAnchor,
   });
   assert.equal(route.type, "inter_venue");
   assert.equal(route.transferInstruction, "Raggiungi la seconda sede");
@@ -168,10 +174,18 @@ test("un trasferimento inter-Venue usa soltanto una leg pianificata nella direzi
   assert.equal(String(location.placeId), String(destinationPlaceId));
   assert.equal(location.visitAnchorId, null);
 
+  const placeLevelRoute = resolvePlannedInterVenueRoute({
+    plan,
+    knownLocation: { venueId: fromVenueId, placeId: sourcePlaceId, visitAnchorId: null },
+    destinationAnchor,
+  });
+  assert.equal(placeLevelRoute.type, "inter_venue");
+  assert.equal(String(placeLevelRoute.fromVisitAnchorId), String(fromAnchorId));
+
   assert.throws(() => resolvePlannedInterVenueRoute({
     plan,
-    knownLocation: { venueId: toVenueId, placeId: destinationPlaceId, visitAnchorId: toAnchorId },
-    destinationAnchor: { _id: fromAnchorId, venueId: fromVenueId, placeId: oid() },
+    knownLocation: { venueId: fromVenueId, placeId: oid(), visitAnchorId: null },
+    destinationAnchor,
   }), (error) => error?.details?.[0]?.code === "LIVE_INTER_VENUE_ROUTE_UNAVAILABLE");
 });
 
