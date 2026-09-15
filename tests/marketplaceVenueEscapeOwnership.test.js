@@ -11,6 +11,7 @@ const inventorySearch = read("clients/marketplace/src/ui/venue-editor-inventory-
 const venueView = read("clients/marketplace/src/ui/venue-editor-view.js");
 const modalLifecycle = read("clients/marketplace/src/ui/venue-modal-lifecycle-mixin.js");
 const layerManager = read("clients/marketplace/src/application/layer-manager.js");
+const mapRefinement = read("clients/marketplace/src/ui/venue-editor-map-refinement-base.js");
 
 test("Venue modal Escape appartiene soltanto al LayerManager", () => {
   assert.doesNotMatch(slotInventory, /ensureGlobalEscapeHandler|_venueGlobalEscapeHandler/);
@@ -34,7 +35,12 @@ test("la chiusura Venue resta disponibile anche durante operazioni asincrone", (
   assert.doesNotMatch(modalLifecycle, /canDismiss:\s*\(\)\s*=>\s*!this\.busy/);
 });
 
-test("Escape locale Venue resta limitato allo stato mappa non modale", () => {
-  assert.match(venueView, /event\.key === "Escape" && !event\.defaultPrevented && !this\._venueModalLayers\?\.length && \(this\.pendingMapAction \|\| this\.draggingPlace\)/);
-  assert.match(venueView, /this\.cancelMapAction\(\)/);
+test("Escape globale Venue clicca lo stesso Annulla della mappa", () => {
+  assert.match(venueView, /window\.addEventListener\("keydown", this\.onGlobalMapEscape, true\)/);
+  assert.match(venueView, /window\.removeEventListener\("keydown", this\.onGlobalMapEscape, true\)/);
+  assert.match(venueView, /if \(topUiLayer\(\) \|\| document\.querySelector/);
+  assert.match(venueView, /this\.querySelector\("\[data-cancel-map-action\]"\)/);
+  assert.match(venueView, /cancelButton\.click\(\)/);
+  assert.doesNotMatch(venueView, /this\.cancelMapAction\?\.\(\)/);
+  assert.doesNotMatch(mapRefinement, /ensureGlobalEscapeHandler|_venueGlobalEscapeHandler/);
 });

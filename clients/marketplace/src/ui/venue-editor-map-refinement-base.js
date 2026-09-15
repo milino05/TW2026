@@ -18,64 +18,7 @@ function sameFloor(a, b) { return id(a?.floorId) === id(b?.floorId); }
 function svgPoint(point) { return `${Number(point?.x || 0) * 100},${Number(point?.y || 0) * 100}`; }
 
 export const venueMapRefinementMixin = {
-  ensureGlobalEscapeHandler() {
-    if (this._venueGlobalEscapeHandler) return;
-    this._venueGlobalEscapeHandler = (event) => {
-      if (!this.isConnected) {
-        window.removeEventListener("keydown", this._venueGlobalEscapeHandler);
-        this._venueGlobalEscapeHandler = null;
-        return;
-      }
-      if (event.key !== "Escape" || event.defaultPrevented || this.busy) return;
-      // Escape is cancellation-only: clear transient editor state without
-      // invoking commands, persistence APIs or affirmative actions.
-      let handled = true;
-      if (this.pendingDestructiveAction) {
-        this.pendingDestructiveAction = null;
-        this.error = null;
-        this.render();
-      } else if (this.pendingTargetRemovalId) {
-        this.pendingTargetRemovalId = null;
-        this.error = null;
-        this.render();
-      } else if (this.pendingVenueRemoval) {
-        this.pendingVenueRemoval = false;
-        this.error = null;
-        this.render();
-      } else if (this.pendingWorkflow) {
-        this.pendingWorkflow = null;
-        this.workflowMessage = "";
-        this.render();
-      } else if (this.calibrationOverwritePrompt) {
-        this.calibrationOverwritePrompt = null;
-        this.render();
-      } else if (this.mapCreationDialog) {
-        this.closeMapCreationDialog?.();
-        this.render();
-      } else if (this.floorDialog) {
-        this.floorDialog = null;
-        this.render();
-      } else if (this.spatialEditor) {
-        this.closeSpatialEditor?.();
-      } else if (this.pendingMapAction || this.draggingPlace) {
-        this.cancelMapAction?.();
-      } else handled = false;
-      if (handled) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    };
-    window.addEventListener("keydown", this._venueGlobalEscapeHandler);
-  },
-
-  releaseGlobalEscapeHandler() {
-    if (!this._venueGlobalEscapeHandler) return;
-    window.removeEventListener("keydown", this._venueGlobalEscapeHandler);
-    this._venueGlobalEscapeHandler = null;
-  },
-
   render() {
-    this.ensureGlobalEscapeHandler();
     venueSectionMixin.render.call(this);
     if (!this.data) return;
     this.decorateMapRefinements();

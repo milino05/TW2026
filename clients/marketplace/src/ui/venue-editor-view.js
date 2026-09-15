@@ -1,4 +1,5 @@
 import { notify } from "../application/ui-feedback.js";
+import { topUiLayer } from "../application/layer-manager.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
 import "./semantic-entity-picker.js";
 import { venueActionMixin } from "./venue-editor-action-mixin.js";
@@ -67,7 +68,19 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   pendingProposalDecision = null;
   proposalDecisionMessage = "";
 
+  onGlobalMapEscape = (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (topUiLayer() || document.querySelector("artaround-action-dialog:not([hidden])")) return;
+    const cancelButton = this.querySelector("[data-cancel-map-action]");
+    if (!(cancelButton instanceof HTMLButtonElement) || cancelButton.disabled || cancelButton.closest("[hidden]")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // Keyboard and pointer must invoke the very same safe cancellation command.
+    cancelButton.click();
+  };
+
   connectedCallback() {
+    window.addEventListener("keydown", this.onGlobalMapEscape, true);
     this.addEventListener("click", this.onInventoryProposalClick);
     this.addEventListener("submit", this.onInventoryProposalSubmit);
     this.addEventListener("click", this.onClick);
@@ -85,6 +98,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener("keydown", this.onGlobalMapEscape, true);
     this.removeEventListener("click", this.onInventoryProposalClick);
     this.removeEventListener("submit", this.onInventoryProposalSubmit);
     this.removeEventListener("click", this.onClick);
@@ -98,7 +112,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
-    this.releaseGlobalEscapeHandler?.();
     this.releaseVenueModalLayers?.({ restoreFocus: false });
     this._targetCreateDialog?.close?.({ restoreFocus: false, notify: false });
     this._targetCreateDialog = null;
@@ -203,12 +216,6 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
-    if (event.key === "Escape" && !event.defaultPrevented && !this._venueModalLayers?.length && (this.pendingMapAction || this.draggingPlace)) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.cancelMapAction();
-      return;
-    }
     if (this.onboarding?.required) return;
     const tab = event.target instanceof Element ? event.target.closest("[data-venue-section]") : null;
     if (!tab || !["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;

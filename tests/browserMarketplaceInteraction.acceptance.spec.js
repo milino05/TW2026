@@ -262,3 +262,20 @@ test("portalled custom-element modals retain the original launcher across rerend
   await expect(page.locator("[data-portal-layer]")).toHaveCount(0);
   await expect(page.locator("#portal-modal-origin")).toBeFocused();
 });
+
+test("Escape attiva lo stesso pulsante Annulla della modalità mappa", async ({ page }) => {
+  await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(async () => {
+    const { ArtAroundVenueEditorView } = await import("/marketplace/src/ui/venue-editor-view.js");
+    const editor = new ArtAroundVenueEditorView();
+    editor.load = () => {};
+    editor.innerHTML = `<button type="button" data-cancel-map-action>Annulla · Esc</button>`;
+    const cancel = editor.querySelector("[data-cancel-map-action]");
+    window.__mapCancelClicks = 0;
+    cancel.addEventListener("click", () => { window.__mapCancelClicks += 1; });
+    document.body.append(editor);
+  });
+
+  await page.keyboard.press("Escape");
+  expect(await page.evaluate(() => window.__mapCancelClicks)).toBe(1);
+});

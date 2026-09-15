@@ -175,22 +175,22 @@ test("la macchina a stati della mappa usa soltanto i sette modi canonici", () =>
 test("Escape è sempre una scelta safe: annulla soltanto stato temporaneo e non esegue comandi", () => {
   const viewSource = sources["clients/marketplace/src/ui/venue-editor-view.js"];
   const mapSource = sources["clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js"];
-  const refinementSource = sources["clients/marketplace/src/ui/venue-editor-map-refinement-base.js"];
   const modalSource = sources["clients/marketplace/src/ui/venue-modal-lifecycle-mixin.js"];
-  assert.match(viewSource, /event\.key === "Escape" && !event\.defaultPrevented/);
-  assert.match(viewSource, /this\.cancelMapAction\(\)/);
-  assert.match(viewSource, /releaseGlobalEscapeHandler/);
-  assert.match(refinementSource, /event\.key !== "Escape" \|\| event\.defaultPrevented/);
-  assert.match(refinementSource, /window\.addEventListener\("keydown", this\._venueGlobalEscapeHandler\)/);
-  assert.doesNotMatch(refinementSource, /addEventListener\("keydown", this\._venueGlobalEscapeHandler, true\)/);
+  assert.match(viewSource, /event\.key !== "Escape" \|\| event\.defaultPrevented/);
+  assert.match(viewSource, /window\.addEventListener\("keydown", this\.onGlobalMapEscape, true\)/);
+  assert.match(viewSource, /topUiLayer\(\)/);
+  assert.match(viewSource, /artaround-action-dialog:not\(\[hidden\]\)/);
+  assert.match(viewSource, /this\.querySelector\("\[data-cancel-map-action\]"\)/);
+  assert.match(viewSource, /cancelButton\.click\(\)/);
   assert.match(mapSource, /releasePointerCapture/);
   assert.match(mapSource, /classList\?\.remove\("dragging"\)/);
-  assert.match(refinementSource, /Escape is cancellation-only/);
-  const escapeHandler = refinementSource.slice(
-    refinementSource.indexOf("this._venueGlobalEscapeHandler ="),
-    refinementSource.indexOf("window.addEventListener", refinementSource.indexOf("this._venueGlobalEscapeHandler =")),
+  assert.match(viewSource, /same safe cancellation command/);
+  const escapeHandler = viewSource.slice(
+    viewSource.indexOf("onGlobalMapEscape ="),
+    viewSource.indexOf("connectedCallback()"),
   );
   assert.doesNotMatch(escapeHandler, /managementRepository|\.execute\(|data-confirm|confirmDestructiveAction/);
+  assert.doesNotMatch(escapeHandler, /pendingDestructiveAction\s*=/);
   assert.match(modalSource, /onRequestDismiss: \(\) =>/);
   assert.match(modalSource, /function cancelVenueModal/);
   assert.doesNotMatch(modalSource, /function dismissVenueModal/);
