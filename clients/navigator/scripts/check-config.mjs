@@ -25,7 +25,7 @@ function fail(configPath, message) {
   failures.push(configPath + ": " + message);
 }
 
-function checkAsset(configPath, rootDirectory, label, value) {
+function checkLegacyAsset(configPath, rootDirectory, label, value) {
   if (value === undefined) return;
   if (!isRecord(value) || !isText(value.src) || typeof value.alt !== "string") {
     fail(configPath, label + " deve contenere src e alt");
@@ -39,6 +39,13 @@ function checkAsset(configPath, rootDirectory, label, value) {
   const assetRoot = resolve(rootDirectory, "navigator-assets");
   if (!assetPath.startsWith(assetRoot + "/") || !existsSync(assetPath) || !statSync(assetPath).isFile()) {
     fail(configPath, label + ".src non trova il file " + value.src);
+  }
+}
+
+function checkStableAsset(configPath, label, value) {
+  if (value === undefined) return;
+  if (!isRecord(value) || !objectId.test(String(value.assetId || "")) || /^0{24}$/.test(String(value.assetId || "")) || typeof value.alt !== "string") {
+    fail(configPath, label + " deve contenere assetId ObjectId e alt");
   }
 }
 
@@ -58,10 +65,10 @@ for (const input of directories) {
     continue;
   }
 
-  if (!isRecord(config) || ![1, 2].includes(config.schemaVersion)) {
-    fail(configPath, "schemaVersion deve essere 1 per la piattaforma o 2 per un museo");
+  if (!isRecord(config) || ![1, 2, 3].includes(config.schemaVersion)) {
+    fail(configPath, "schemaVersion deve essere 1 per la piattaforma, 2 legacy o 3 per un museo");
   }
-  if (config?.schemaVersion === 2 && (!objectId.test(String(config.venueId || "")) || /^0{24}$/.test(String(config.venueId || "")))) {
+  if ([2, 3].includes(config?.schemaVersion) && (!objectId.test(String(config.venueId || "")) || /^0{24}$/.test(String(config.venueId || "")))) {
     fail(configPath, "venueId deve essere un ObjectId MongoDB non nullo");
   }
 
@@ -73,8 +80,13 @@ for (const input of directories) {
   if (!isText(branding.productTitle)) fail(configPath, "branding.productTitle è obbligatorio");
   if (!isText(branding.museumTitle)) fail(configPath, "branding.museumTitle è obbligatorio");
   if (branding.subtitle !== undefined && typeof branding.subtitle !== "string") fail(configPath, "branding.subtitle deve essere una stringa");
-  checkAsset(configPath, rootDirectory, "branding.logo", branding.logo);
-  checkAsset(configPath, rootDirectory, "branding.heroImage", branding.heroImage);
+  if (config?.schemaVersion === 3) {
+    checkStableAsset(configPath, "branding.logo", branding.logo);
+    checkStableAsset(configPath, "branding.heroImage", branding.heroImage);
+  } else {
+    checkLegacyAsset(configPath, rootDirectory, "branding.logo", branding.logo);
+    checkLegacyAsset(configPath, rootDirectory, "branding.heroImage", branding.heroImage);
+  }
 
   if (!isRecord(branding.theme)) {
     fail(configPath, "branding.theme deve essere un oggetto");
