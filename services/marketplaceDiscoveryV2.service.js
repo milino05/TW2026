@@ -36,10 +36,20 @@ async function organizationCounts(organizationIds) {
   return result;
 }
 
+async function discoverableOrganizationIds() {
+  const activeListingIds = await MarketplaceOffer.distinct("listingId", { status: "active" });
+  const [venueOwnerIds, listingSellerIds] = await Promise.all([
+    Venue.distinct("ownerOrganizationId", { lifecycleStatus: "active", publishedReleaseId: { $ne: null } }),
+    MarketplaceListing.distinct("sellerId", { _id: { $in: activeListingIds }, sellerType: "organization", status: "published" }),
+  ]);
+  return [...new Set([...venueOwnerIds, ...listingSellerIds].map(id).filter(Boolean))];
+}
+
 async function organizationDirectory({ q = "", page = 1, limit = 12 } = {}) {
   const normalizedPage = clampPage(page);
   const normalizedLimit = clampLimit(limit);
-  const filter = { lifecycleStatus: "active", ...textQuery(q) };
+  const discoverableIds = await discoverableOrganizationIds();
+  const filter = { lifecycleStatus: "active", _id: { $in: discoverableIds }, ...textQuery(q) };
   const [organizations, total] = await Promise.all([
     Organization.find(filter).sort({ name: 1 }).skip((normalizedPage - 1) * normalizedLimit).limit(normalizedLimit).select("name description").lean(),
     Organization.countDocuments(filter),

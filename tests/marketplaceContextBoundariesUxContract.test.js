@@ -165,6 +165,14 @@ test("la mappa pubblica riusa il modello visuale corrente dell'editor in sola le
   assert.doesNotMatch(source.venueMap, /class="venue-map-node"/);
 });
 
+test("ogni oggetto esposto nella mappa pubblica può avviare un Item sullo stesso Subject", () => {
+  assert.match(source.venueMap, /target\.subjectId/);
+  assert.match(source.venueMap, /\/workspace\/item-authoring\?subjectId=/);
+  assert.match(source.venueMap, /Crea contenuto/);
+  assert.match(source.item, /preselectedSubjectId = params\(\)\.get\("subjectId"\)/);
+  assert.match(source.item, /authoringRepository\.getSubject\(this\.preselectedSubjectId\)/);
+});
+
 test("Item Authoring partecipa al navigation-loss guard usando la bozza reale", () => {
   assert.match(source.guardAdapter, /selector: "artaround-item-authoring-view"/);
   assert.match(source.guardAdapter, /editor\.readWorkingDraft\?\.\(\)/);

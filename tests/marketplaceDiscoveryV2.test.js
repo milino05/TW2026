@@ -39,6 +39,11 @@ test("Marketplace discovery projects only published Venue state and keeps publis
       description: "Rete culturale",
       createdBy: actorId,
     });
+    await Organization.create({
+      name: "Organizzazione senza risorse pubbliche",
+      description: "Non deve comparire nella directory",
+      createdBy: actorId,
+    });
     const [publishedVenue, workingVenue] = await Venue.create([
       { name: "Sede pubblica", description: "Visitabile", ownerOrganizationId: organization._id, createdBy: actorId },
       { name: "Sede in preparazione", description: "Non pubblica", ownerOrganizationId: organization._id, createdBy: actorId },
@@ -136,11 +141,13 @@ test("Marketplace discovery projects only published Venue state and keeps publis
     assert.equal(String(publicVenue.map.layoutRevisionId), String(layout._id));
     assert.equal(publicVenue.targets.length, 1);
     assert.equal(publicVenue.targets[0].label, "Opera pubblica");
+    assert.equal(String(publicVenue.targets[0].subjectId), String(activeSubject._id));
     assert.deepEqual(publicVenue.targets[0].recognitionMedia, [{ url: "https://example.test/opera.jpg", altText: "Opera" }]);
     await assert.rejects(() => venuePublicProfile({ venueId: workingVenue._id }), /Sede pubblica non trovata/);
 
     const organizations = await organizationDirectory();
     assert.equal(organizations.total, 1);
+    assert.deepEqual(organizations.results.map((entry) => entry.name), ["Musei Demo"]);
     assert.deepEqual(organizations.results[0].counts, { venues: 1, publications: 1 });
 
     const publicOrganization = await organizationPublicProfile({ organizationId: organization._id });

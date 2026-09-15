@@ -77,7 +77,7 @@ export class ArtAroundDiscoveryVenuesView extends HTMLElement {
     const results = this.data?.results || [];
     const total = Number(this.data?.total || 0);
     const pageSize = Number(this.data?.pageSize || 12);
-    const ready = results.length ? `<div class="discovery-grid">${results.map((entry) => `<button class="discovery-card" type="button" data-public-venue="${escapeHtml(entry.id)}"><span class="resource-mark">${icon("museum", { size: 20 })}</span><span><small>${escapeHtml(entry.organization.name)}</small><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Sede culturale")}</small></span>${icon("chevron", { size: 15 })}</button>`).join("")}</div>` : "";
+    const ready = results.length ? `<div class="discovery-grid">${results.map((entry) => `<article class="discovery-card discovery-card--linked"><a class="discovery-card__main" data-route href="/venues/public?venueId=${encodeURIComponent(entry.id)}"><span class="resource-mark">${icon("museum", { size: 20 })}</span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.description || "Sede culturale")}</small></span>${icon("chevron", { size: 15 })}</a><a class="discovery-card__owner" data-route href="/organizations/public?organizationId=${encodeURIComponent(entry.organization.id)}">Gestita da <strong>${escapeHtml(entry.organization.name)}</strong></a></article>`).join("")}</div>` : "";
     const resultsBoundary = renderAsyncBoundary({
       loading: this.busy && !this.data,
       error: this.error,

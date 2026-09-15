@@ -2,9 +2,10 @@ import { QueryState } from "../application/query-state.js";
 import { ResourceBrowserController } from "../application/resource-browser-controller.js";
 import { operatingPrincipal, readOperatingContext } from "../application/operating-context.js";
 import { replaceCurrentHistoryUrl } from "../application/router.js";
+import { discoveryRepository } from "../infrastructure/http/discovery-repository.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { icon } from "./icons.js";
-import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
+import { escapeHtml, formatPrice, marketplaceResourceLabel, publicOrganizationHref, publicVenueHref } from "./commercial-utils.js";
 import { renderExploreNavigation } from "./explore-navigation.js";
 
 const TYPE_FILTERS = Object.freeze({
@@ -13,6 +14,8 @@ const TYPE_FILTERS = Object.freeze({
   visits: ["visit", "visit_revision"],
   collections: ["editorial_context", "editorial_release"],
   rules: ["namespace", "namespace_revision"],
+  organizations: null,
+  venues: null,
 });
 
 const TYPE_OPTIONS = [
@@ -21,7 +24,10 @@ const TYPE_OPTIONS = [
   ["visits", "Visite"],
   ["collections", "Raccolte editoriali"],
   ["rules", "Regole editoriali"],
+  ["organizations", "Organizzazioni"],
+  ["venues", "Sedi"],
 ];
+const DISCOVERY_TYPES = new Set(["organizations", "venues"]);
 const MIN_VENUE_QUERY_LENGTH = 2;
 
 class CatalogQueryState extends QueryState {
@@ -76,6 +82,14 @@ export class ArtAroundCatalogView extends HTMLElement {
       const principal = operatingPrincipal(readOperatingContext());
       if (!principal) throw new Error("Area di lavoro non selezionata");
       if (!this.venueSelector) this.venueSelector = await marketplaceRepository.venueSelector();
+      if (filters.type === "organizations") {
+        const organizations = await discoveryRepository.organizations({ q: query, page, limit: 20 });
+        return { ...organizations, resultKind: "organizations", items: organizations.results || [] };
+      }
+      if (filters.type === "venues") {
+        const venues = await discoveryRepository.venues({ q: query, page, limit: 20 });
+        return { ...venues, resultKind: "venues", items: venues.results || [] };
+      }
       const catalog = await marketplaceRepository.catalog({
         selectedVenueIds: Array.isArray(filters.selectedVenueIds) ? filters.selectedVenueIds : [],
         page,
@@ -84,7 +98,15 @@ export class ArtAroundCatalogView extends HTMLElement {
         beneficiaryType: principal.principalType,
         beneficiaryId: principal.principalId,
       });
-      return { ...catalog, items: Array.isArray(catalog?.results) ? catalog.results : [] };
+      let relatedDiscovery = null;
+      if (query && filters.type === "all") {
+        const [organizations, venues] = await Promise.all([
+          discoveryRepository.organizations({ q: query, page: 1, limit: 4 }),
+          discoveryRepository.venues({ q: query, page: 1, limit: 4 }),
+        ]);
+        relatedDiscovery = { organizations, venues };
+      }
+      return { ...catalog, resultKind: "catalog", relatedDiscovery, items: Array.isArray(catalog?.results) ? catalog.results : [] };
     },
     onStateChange: (browserState) => {
       this.busy = browserState.loading;
@@ -130,7 +152,7 @@ export class ArtAroundCatalogView extends HTMLElement {
     event.preventDefault();
     const data = new FormData(form);
     const type = Object.hasOwn(TYPE_FILTERS, String(data.get("type") || "")) ? String(data.get("type")) : "all";
-    const selectedVenueIds = [...new Set(data.getAll("selectedVenueIds").map(String).filter(Boolean))];
+    const selectedVenueIds = DISCOVERY_TYPES.has(type) ? [] : [...new Set(data.getAll("selectedVenueIds").map(String).filter(Boolean))];
     this.state.setQuery(String(data.get("q") || "").trim());
     this.state.setFilter("type", type);
     this.state.setFilter("selectedVenueIds", selectedVenueIds);
@@ -182,7 +204,7 @@ export class ArtAroundCatalogView extends HTMLElement {
     if (input?.matches("input[data-venue-search]") && event.key === "Enter") event.preventDefault();
   };
 
-  filterCount() { return (this.state.type === "all" ? 0 : 1) + this.state.selectedVenueIds.length; }
+  filterCount() { return (this.state.type === "all" ? 0 : 1) + (DISCOVERY_TYPES.has(this.state.type) ? 0 : this.state.selectedVenueIds.length); }
 
   selectedVenues() {
     const selected = new Set(this.state.selectedVenueIds);
@@ -246,6 +268,7 @@ export class ArtAroundCatalogView extends HTMLElement {
 
   renderCard(entry) {
     const asset = entry.asset || {};
+    const publisherHref = publicOrganizationHref(asset.publisher);
     const media = asset.illustrativeMedia?.[0] || null;
     const physicalScope = asset.physicalScope || [];
     const offerSummary = firstOfferSummary(entry.offers || []);
@@ -258,7 +281,26 @@ export class ArtAroundCatalogView extends HTMLElement {
     if (this.state.page > 1) returnParams.set("page", String(this.state.page));
     detailParams.set("returnTo", `/catalog${returnParams.toString() ? `?${returnParams.toString()}` : ""}`);
     const alreadyAvailable = Boolean(entry.viewerState?.alreadyUsable);
-    return `<article class="catalog-card consumer-catalog-card"><div class="catalog-card__body" ${media ? "data-has-preview" : ""}>${media ? `<img class="consumer-catalog-card__preview" src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || asset.title || "Immagine del contenuto")}" loading="lazy" decoding="async">` : ""}<div class="catalog-card__meta"><span class="chip">${escapeHtml(marketplaceResourceLabel(asset.type))}</span>${alreadyAvailable ? `<span class="chip" data-tone="success">${icon("check", { size: 13 })} Hai già accesso</span>` : ""}</div><div class="consumer-catalog-card__heading"><h2>${escapeHtml(asset.title || "Risorsa senza titolo")}</h2><p>${escapeHtml(asset.summary || "Nessuna descrizione disponibile.")}</p></div><p class="publisher">Pubblicato da <strong>${escapeHtml(asset.publisher?.name || "Autore")}</strong></p>${physicalScope.length ? `<div class="consumer-scope"><span>${icon("museum", { size: 16 })}</span><span><strong>Sedi coinvolte</strong><small>${escapeHtml(physicalScope.map((venue) => venue.name).join(" · "))}</small></span></div>` : ""}<details class="technical-details"><summary>Dettagli della versione</summary><dl class="definition-list"><div><dt>Tipo tecnico</dt><dd><code>${escapeHtml(asset.type || "")}</code></dd></div>${asset.version ? `<div><dt>Versione</dt><dd>${escapeHtml(asset.version)}</dd></div>` : ""}${asset.editorialLicense ? `<div><dt>Licenza editoriale</dt><dd>${escapeHtml(asset.editorialLicense)}</dd></div>` : ""}</dl></details></div><footer class="catalog-card__footer"><div class="consumer-price"><strong>${escapeHtml(offerSummary.price)}</strong><small>${escapeHtml(offerSummary.suffix)}</small></div><a class="button-link secondary catalog-detail-link" data-route href="/catalog/detail?${detailParams.toString()}">Vedi dettagli ${icon("chevron", { size: 14 })}</a></footer></article>`;
+    const scopeLinks = physicalScope.map((venue) => { const href = publicVenueHref(venue); return href ? `<a data-route href="${href}">${escapeHtml(venue.name)}</a>` : escapeHtml(venue.name); }).join(" · ");
+    return `<article class="catalog-card consumer-catalog-card"><div class="catalog-card__body" ${media ? "data-has-preview" : ""}>${media ? `<img class="consumer-catalog-card__preview" src="${escapeHtml(media.url)}" alt="${escapeHtml(media.altText || asset.title || "Immagine del contenuto")}" loading="lazy" decoding="async">` : ""}<div class="catalog-card__meta"><span class="chip">${escapeHtml(marketplaceResourceLabel(asset.type))}</span>${alreadyAvailable ? `<span class="chip" data-tone="success">${icon("check", { size: 13 })} Hai già accesso</span>` : ""}</div><div class="consumer-catalog-card__heading"><h2>${escapeHtml(asset.title || "Risorsa senza titolo")}</h2><p>${escapeHtml(asset.summary || "Nessuna descrizione disponibile.")}</p></div><p class="publisher">Pubblicato da ${publisherHref ? `<a data-route href="${publisherHref}">${escapeHtml(asset.publisher?.name || "Organizzazione")}</a>` : `<strong>${escapeHtml(asset.publisher?.name || "Autore")}</strong>`}</p>${physicalScope.length ? `<div class="consumer-scope"><span>${icon("museum", { size: 16 })}</span><span><strong>Sedi coinvolte</strong><small>${scopeLinks}</small></span></div>` : ""}<details class="technical-details"><summary>Dettagli della versione</summary><dl class="definition-list"><div><dt>Tipo tecnico</dt><dd><code>${escapeHtml(asset.type || "")}</code></dd></div>${asset.version ? `<div><dt>Versione</dt><dd>${escapeHtml(asset.version)}</dd></div>` : ""}${asset.editorialLicense ? `<div><dt>Licenza editoriale</dt><dd>${escapeHtml(asset.editorialLicense)}</dd></div>` : ""}</dl></details></div><footer class="catalog-card__footer"><div class="consumer-price"><strong>${escapeHtml(offerSummary.price)}</strong><small>${escapeHtml(offerSummary.suffix)}</small></div><a class="button-link secondary catalog-detail-link" data-route href="/catalog/detail?${detailParams.toString()}">Vedi dettagli ${icon("chevron", { size: 14 })}</a></footer></article>`;
+  }
+
+  renderOrganizationCard(entry) {
+    return `<a class="catalog-discovery-card" data-route href="${publicOrganizationHref(entry)}"><span class="resource-mark">${icon("building", { size: 20 })}</span><span><small>Organizzazione</small><strong>${escapeHtml(entry.name)}</strong><em>${escapeHtml(entry.description || "Organizzazione culturale")}</em><span>${entry.counts?.venues || 0} sedi · ${entry.counts?.publications || 0} pubblicazioni</span></span>${icon("chevron", { size: 15 })}</a>`;
+  }
+
+  renderVenueCard(entry) {
+    return `<article class="catalog-discovery-card catalog-discovery-card--venue"><a class="catalog-discovery-card__main" data-route href="${publicVenueHref(entry)}"><span class="resource-mark">${icon("museum", { size: 20 })}</span><span><small>Sede</small><strong>${escapeHtml(entry.name)}</strong><em>${escapeHtml(entry.description || "Sede culturale")}</em></span>${icon("chevron", { size: 15 })}</a><a class="catalog-discovery-card__owner" data-route href="${publicOrganizationHref(entry.organization)}">Gestita da <strong>${escapeHtml(entry.organization?.name || "Organizzazione")}</strong></a></article>`;
+  }
+
+  renderRelatedDiscovery() {
+    const related = this.catalog?.relatedDiscovery;
+    if (!related || this.state.type !== "all" || !this.state.q) return "";
+    const organizations = related.organizations?.results || [];
+    const venues = related.venues?.results || [];
+    if (!organizations.length && !venues.length) return "";
+    const query = encodeURIComponent(this.state.q);
+    return `<section class="catalog-discovery-results" aria-labelledby="related-discovery-title"><div class="results-toolbar"><div><span class="eyebrow">Ricerca trasversale</span><strong id="related-discovery-title">Organizzazioni e sedi</strong></div></div>${organizations.length ? `<section><header><h2>Organizzazioni</h2><a data-route href="/organizations?q=${query}">Vedi tutte</a></header><div class="catalog-discovery-grid">${organizations.map((entry) => this.renderOrganizationCard(entry)).join("")}</div></section>` : ""}${venues.length ? `<section><header><h2>Sedi</h2><a data-route href="/venues?q=${query}">Vedi tutte</a></header><div class="catalog-discovery-grid">${venues.map((entry) => this.renderVenueCard(entry)).join("")}</div></section>` : ""}</section>`;
   }
 
   render() {
@@ -267,15 +309,19 @@ export class ArtAroundCatalogView extends HTMLElement {
     const pageSize = Number(this.catalog?.pageSize) || 20;
     const selectedVenues = this.selectedVenues();
     const matchingVenueCount = this.matchingVenueCount();
-    const cards = (this.catalog?.results || []).map((entry) => this.renderCard(entry)).join("");
+    const resultKind = this.catalog?.resultKind || "catalog";
+    const cards = (this.catalog?.results || []).map((entry) => resultKind === "organizations" ? this.renderOrganizationCard(entry) : resultKind === "venues" ? this.renderVenueCard(entry) : this.renderCard(entry)).join("");
+    const resultLabel = resultKind === "organizations" ? (total === 1 ? "organizzazione" : "organizzazioni") : resultKind === "venues" ? (total === 1 ? "sede" : "sedi") : (total === 1 ? "risorsa" : "risorse");
+    const resultGridClass = resultKind === "catalog" ? "catalog-grid" : "catalog-discovery-grid";
     const typeOptions = TYPE_OPTIONS.map(([value, label]) => `<option value="${value}" ${this.state.type === value ? "selected" : ""}>${label}</option>`).join("");
     const noResults = !this.busy && this.catalog && total === 0;
-    const selectedVenueSummary = selectedVenues.length ? `<aside class="selected-venues" aria-label="Sedi applicate al catalogo"><div class="selected-venues__heading"><span>${icon("museum", { size: 16 })}</span><span><strong>${selectedVenues.length} ${selectedVenues.length === 1 ? "sede selezionata" : "sedi selezionate"}</strong><small>Selezione applicata ai risultati.</small></span></div><div class="selected-venue-chips">${selectedVenues.map((venue) => `<button class="selected-venue-chip" type="button" data-remove-selected-venue="${escapeHtml(venue.id)}" title="Rimuovi ${escapeHtml(venue.name)}"><span>${escapeHtml(venue.name)}</span><span aria-hidden="true">×</span></button>`).join("")}</div></aside>` : "";
+    const selectedVenueSummary = resultKind === "catalog" && selectedVenues.length ? `<aside class="selected-venues" aria-label="Sedi applicate al catalogo"><div class="selected-venues__heading"><span>${icon("museum", { size: 16 })}</span><span><strong>${selectedVenues.length} ${selectedVenues.length === 1 ? "sede selezionata" : "sedi selezionate"}</strong><small>Selezione applicata ai risultati.</small></span></div><div class="selected-venue-chips">${selectedVenues.map((venue) => `<button class="selected-venue-chip" type="button" data-remove-selected-venue="${escapeHtml(venue.id)}" title="Rimuovi ${escapeHtml(venue.name)}"><span>${escapeHtml(venue.name)}</span><span aria-hidden="true">×</span></button>`).join("")}</div></aside>` : "";
     const normalizedVenueQuery = normalizeVenueSearch(this.venueQuery);
     const venueSearchReady = normalizedVenueQuery.length >= MIN_VENUE_QUERY_LENGTH;
     const venueResultLabel = !normalizedVenueQuery ? "I risultati compariranno dopo la ricerca." : !venueSearchReady ? `Scrivi almeno ${MIN_VENUE_QUERY_LENGTH} caratteri.` : `${matchingVenueCount} ${matchingVenueCount === 1 ? "sede trovata" : "sedi trovate"}`;
-    const filterPanel = `<details class="consumer-filters" ${this.filterCount() || this.venueQuery ? "open" : ""}><summary><span>Filtri</span><span class="consumer-filter-count">${this.filterCount()}</span></summary><div class="consumer-filters__body"><section class="consumer-filter-kind" aria-labelledby="catalog-type-title"><div><span class="eyebrow">Formato</span><strong id="catalog-type-title">Che cosa cerchi?</strong><small>Restringi il catalogo a una categoria.</small></div><label for="catalog-type">Tipo di risorsa<select id="catalog-type" name="type">${typeOptions}</select></label></section><section class="consumer-venues" aria-labelledby="catalog-venues-title"><div class="consumer-venues__heading"><div><span class="eyebrow">Luogo</span><strong id="catalog-venues-title">Musei e sedi</strong><small id="venue-filter-help">Le organizzazioni e le sedi vengono mostrate soltanto dopo una ricerca.</small></div><span class="consumer-venue-selection-count">${selectedVenues.length} selezionate</span></div><div class="consumer-venue-search"><label for="catalog-venue-q">Cerca una sede o un'organizzazione</label><div class="consumer-venue-search__control"><span class="input-icon">${icon("search", { size: 16 })}<input id="catalog-venue-q" type="search" data-venue-search value="${escapeHtml(this.venueQuery)}" placeholder="Nome del museo, sede o organizzazione…" autocomplete="off" aria-describedby="venue-filter-help venue-result-count"></span><button class="button-secondary small" type="button" data-clear-venue-search ${normalizedVenueQuery ? "" : "hidden"}>Cancella</button></div><small id="venue-result-count" data-venue-result-count aria-live="polite">${venueResultLabel}</small></div>${this.renderVenueFilters()}</section><div class="consumer-filters__actions"><button type="submit" ${this.busy ? "disabled" : ""}>Applica filtri</button>${this.filterCount() || this.state.q ? `<button class="button-secondary" type="button" data-clear-catalog>Rimuovi tutti i filtri</button>` : ""}</div></div></details>`;
-    this.innerHTML = `<main class="page consumer-catalog" aria-busy="${this.busy}">${renderExploreNavigation("catalog")}<header class="consumer-catalog__intro"><span class="eyebrow">Catalogo ArtAround</span><h1>Trova contenuti e visite da usare.</h1><p>Cerca per titolo o descrizione. Per luogo, puoi trovare rapidamente una sede anche in cataloghi con centinaia di musei.</p></header><form class="consumer-search" data-catalog-search role="search"><div class="consumer-search__bar"><label class="sr-only" for="catalog-q">Cerca nel catalogo</label><span class="input-icon">${icon("search")}<input id="catalog-q" name="q" value="${escapeHtml(this.state.q)}" placeholder="Cerca contenuti, visite o raccolte…"></span><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></div>${filterPanel}</form>${selectedVenueSummary}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}<section class="catalog-results" aria-live="polite"><div class="results-toolbar"><div><span class="eyebrow">Risultati</span><strong>${total} ${total === 1 ? "risorsa" : "risorse"}</strong></div>${total ? `<span class="muted">Pagina ${page}</span>` : ""}</div>${this.busy && !this.catalog ? `<div class="catalog-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : noResults ? `<div class="empty-state"><span>${icon("search", { size: 28 })}</span><h3>Nessun risultato</h3><p>Prova una ricerca più ampia oppure rimuovi alcuni filtri.</p><button type="button" data-clear-catalog>Mostra tutto il catalogo</button></div>` : `<div class="catalog-grid">${cards}</div>`}${total ? `<nav class="pagination" aria-label="Pagine del catalogo"><button type="button" data-catalog-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${page}</span><button type="button" data-catalog-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</section></main>`;
+    const venueFilterPanel = DISCOVERY_TYPES.has(this.state.type) ? "" : `<section class="consumer-venues" aria-labelledby="catalog-venues-title"><div class="consumer-venues__heading"><div><span class="eyebrow">Luogo</span><strong id="catalog-venues-title">Musei e sedi</strong><small id="venue-filter-help">Le sedi vengono mostrate soltanto dopo una ricerca.</small></div><span class="consumer-venue-selection-count">${selectedVenues.length} selezionate</span></div><div class="consumer-venue-search"><label for="catalog-venue-q">Cerca una sede o un'organizzazione</label><div class="consumer-venue-search__control"><span class="input-icon">${icon("search", { size: 16 })}<input id="catalog-venue-q" type="search" data-venue-search value="${escapeHtml(this.venueQuery)}" placeholder="Nome del museo, sede o organizzazione…" autocomplete="off" aria-describedby="venue-filter-help venue-result-count"></span><button class="button-secondary small" type="button" data-clear-venue-search ${normalizedVenueQuery ? "" : "hidden"}>Cancella</button></div><small id="venue-result-count" data-venue-result-count aria-live="polite">${venueResultLabel}</small></div>${this.renderVenueFilters()}</section>`;
+    const filterPanel = `<details class="consumer-filters" ${this.filterCount() || this.venueQuery ? "open" : ""}><summary><span>Filtri</span><span class="consumer-filter-count">${this.filterCount()}</span></summary><div class="consumer-filters__body"><section class="consumer-filter-kind" aria-labelledby="catalog-type-title"><div><span class="eyebrow">Tipo</span><strong id="catalog-type-title">Che cosa cerchi?</strong><small>Cerca risorse, organizzazioni o sedi.</small></div><label for="catalog-type">Tipo di risultato<select id="catalog-type" name="type">${typeOptions}</select></label></section>${venueFilterPanel}<div class="consumer-filters__actions"><button type="submit" ${this.busy ? "disabled" : ""}>Applica filtri</button>${this.filterCount() || this.state.q ? `<button class="button-secondary" type="button" data-clear-catalog>Rimuovi tutti i filtri</button>` : ""}</div></div></details>`;
+    this.innerHTML = `<main class="page consumer-catalog" aria-busy="${this.busy}">${renderExploreNavigation("catalog")}<header class="consumer-catalog__intro"><span class="eyebrow">Catalogo ArtAround</span><h1>Trova risorse, organizzazioni e sedi.</h1><p>Una sola ricerca per scoprire contenuti, visite e luoghi culturali.</p></header><form class="consumer-search" data-catalog-search role="search"><div class="consumer-search__bar"><label class="sr-only" for="catalog-q">Cerca nel catalogo</label><span class="input-icon">${icon("search")}<input id="catalog-q" name="q" value="${escapeHtml(this.state.q)}" placeholder="Cerca risorse, organizzazioni o sedi…"></span><button type="submit" ${this.busy ? "disabled" : ""}>Cerca</button></div>${filterPanel}</form>${selectedVenueSummary}${this.error ? `<p role="alert">${escapeHtml(this.error)}</p>` : ""}${this.renderRelatedDiscovery()}<section class="catalog-results" aria-live="polite"><div class="results-toolbar"><div><span class="eyebrow">Risultati</span><strong>${total} ${resultLabel}</strong></div>${total ? `<span class="muted">Pagina ${page}</span>` : ""}</div>${this.busy && !this.catalog ? `<div class="catalog-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>` : noResults ? `<div class="empty-state"><span>${icon("search", { size: 28 })}</span><h3>Nessun risultato</h3><p>Prova una ricerca più ampia oppure rimuovi alcuni filtri.</p><button type="button" data-clear-catalog>Mostra tutto il catalogo</button></div>` : `<div class="${resultGridClass}">${cards}</div>`}${total ? `<nav class="pagination" aria-label="Pagine dei risultati"><button type="button" data-catalog-page="${page - 1}" ${page <= 1 || this.busy ? "disabled" : ""}>${icon("arrowLeft", { size: 14 })} Precedente</button><span>Pagina ${page}</span><button type="button" data-catalog-page="${page + 1}" ${page * pageSize >= total || this.busy ? "disabled" : ""}>Successiva ${icon("chevron", { size: 14 })}</button></nav>` : ""}</section></main>`;
   }
 }
 

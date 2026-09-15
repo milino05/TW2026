@@ -14,6 +14,9 @@ const files = {
   publicOrganization: "clients/marketplace/src/ui/public-organization-view.js",
   publicVenue: "clients/marketplace/src/ui/public-venue-view.js",
   explore: "clients/marketplace/src/ui/explore-navigation.js",
+  home: "clients/marketplace/src/ui/home-view.js",
+  catalog: "clients/marketplace/src/ui/catalog-view.js",
+  detail: "clients/marketplace/src/ui/listing-detail-view.js",
 };
 const source = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, fs.readFileSync(path.join(root, file), "utf8")]));
 
@@ -52,4 +55,15 @@ test("Esplora usa una sola sott navigazione Catalogo Organizzazioni Sedi", () =>
   assert.match(source.venues, /renderExploreNavigation\("venues"\)/);
   assert.match(source.publicOrganization, /renderExploreNavigation\("organizations"\)/);
   assert.match(source.publicVenue, /renderExploreNavigation\("venues"\)/);
+  assert.match(source.home, /renderExploreNavigation\(null\)/);
+});
+
+test("il catalogo collega discovery e contesto senza confondere editore e sede", () => {
+  assert.match(source.catalog, /discoveryRepository\.organizations/);
+  assert.match(source.catalog, /discoveryRepository\.venues/);
+  assert.match(source.catalog, /publicOrganizationHref\(asset\.publisher\)/);
+  assert.match(source.catalog, /publicVenueHref\(venue\)/);
+  assert.match(source.detail, /publicOrganizationHref\(asset\.publisher\)/);
+  assert.match(source.detail, /publicVenueHref\(venue\)/);
+  assert.match(source.service, /discoverableOrganizationIds/);
 });

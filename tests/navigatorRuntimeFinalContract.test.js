@@ -75,7 +75,14 @@ test("la mappa espone zoom utente e marcatori circolari semitrasparenti per tutt
   assert.match(map, /aria-label="Ingrandisci la mappa"/);
   assert.match(map, /@wheel\.ctrl\.prevent="zoomWithWheel"/);
   assert.match(map, /class="map-viewport"/);
-  assert.match(map, /\.map-viewport \{[^}]*overflow:auto[^}]*touch-action:pan-x pan-y/);
+  assert.match(map, /\.map-viewport \{[^}]*overflow:hidden[^}]*touch-action:none/);
+  assert.match(map, /transform: `translate3d\(\$\{pan\.x\}px, \$\{pan\.y\}px, 0\) scale\(\$\{zoom\}\)`/);
+  assert.match(map, /@pointerdown="startMapGesture"/);
+  assert.match(map, /@pointermove="moveMapGesture"/);
+  assert.match(map, /previousPinchDistance/);
+  assert.match(map, /interactiveTarget.*closest\("button, a, input, select"\)/);
+  assert.match(map, /gestureTravel > 5/);
+  assert.match(map, /draggable="false"/);
   assert.match(map, /\.place-marker \{[^}]*border-radius:50%[^}]*opacity:\.72/);
   assert.match(runtime, /async function physicalPlaceActions/);
   assert.match(runtime, /placeNavigationActionDefinition\(\{ placeId: place\._id, label, aliases \}\)/);

@@ -1,9 +1,10 @@
 import { readOperatingContext, operatingPrincipal } from "../application/operating-context.js";
 import { marketplaceRepository } from "../infrastructure/http/marketplace-repository.js";
 import { managementRepository } from "../infrastructure/http/management-repository.js";
-import { escapeHtml, formatPrice, marketplaceResourceLabel } from "./commercial-utils.js";
+import { escapeHtml, formatPrice, marketplaceResourceLabel, publicOrganizationHref } from "./commercial-utils.js";
 import { icon } from "./icons.js";
 import { resourceStateLabel } from "./presentation.js";
+import { renderExploreNavigation } from "./explore-navigation.js";
 
 function roleLabel(roles = []) { return roles.map((role) => role.name).join(" · ") || "Membro"; }
 
@@ -162,9 +163,10 @@ export class ArtAroundHomeView extends HTMLElement {
 
   renderCatalogCard(entry, selectedVenueIds = []) {
     const asset = entry.asset || {};
+    const publisherHref = publicOrganizationHref(asset.publisher);
     const params = new URLSearchParams({ listingId: String(entry.listingId || ""), returnTo: "/home" });
     if (selectedVenueIds.length) params.set("selectedVenueIds", selectedVenueIds.join(","));
-    return `<article class="home-catalog-card"><div class="home-catalog-card__cover"><span>${icon(resourceIcon(asset.type), { size: 16 })}${escapeHtml(marketplaceResourceLabel(asset.type))}</span></div><div class="home-catalog-card__body"><h3>${escapeHtml(asset.title || "Risorsa senza titolo")}</h3><p>${escapeHtml(asset.summary || "Nessuna descrizione disponibile.")}</p></div><footer><strong>${escapeHtml(firstOffer(entry.offers || []))}</strong><a data-route href="/catalog/detail?${params.toString()}">Dettagli ${icon("chevron", { size: 14 })}</a></footer></article>`;
+    return `<article class="home-catalog-card"><div class="home-catalog-card__cover"><span>${icon(resourceIcon(asset.type), { size: 16 })}${escapeHtml(marketplaceResourceLabel(asset.type))}</span></div><div class="home-catalog-card__body"><h3>${escapeHtml(asset.title || "Risorsa senza titolo")}</h3><p>${escapeHtml(asset.summary || "Nessuna descrizione disponibile.")}</p>${publisherHref ? `<small class="publisher">Pubblicato da <a data-route href="${publisherHref}">${escapeHtml(asset.publisher.name)}</a></small>` : ""}</div><footer><strong>${escapeHtml(firstOffer(entry.offers || []))}</strong><a data-route href="/catalog/detail?${params.toString()}">Dettagli ${icon("chevron", { size: 14 })}</a></footer></article>`;
   }
 
   renderCatalogSection({ organization = false } = {}) {
@@ -213,7 +215,7 @@ export class ArtAroundHomeView extends HTMLElement {
 
   render() {
     const organization = this.context?.type === "organization";
-    this.innerHTML = `<main class="home-page" aria-busy="${this.busy}">${organization ? this.renderOrganization() : this.renderPersonal()}</main>`;
+    this.innerHTML = `<main class="home-page" aria-busy="${this.busy}">${renderExploreNavigation(null)}${organization ? this.renderOrganization() : this.renderPersonal()}</main>`;
   }
 }
 

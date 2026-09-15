@@ -45,7 +45,7 @@ test("il selettore delle sedi resta nascosto finché non si cerca ed è usabile 
   assert.match(catalog, /filterVenueOptions\(\)/);
   assert.match(catalog, /data-venue-search-text/);
   assert.match(catalog, /data-venue-search-prompt/);
-  assert.match(catalog, /Le organizzazioni e le sedi vengono mostrate soltanto dopo una ricerca/);
+  assert.match(catalog, /Le sedi vengono mostrate soltanto dopo una ricerca/);
   assert.match(catalog, /data-venue-result-count/);
   assert.match(catalog, /data-clear-venue-search/);
   assert.match(catalog, /data-remove-selected-venue/);

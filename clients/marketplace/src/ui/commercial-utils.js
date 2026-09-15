@@ -42,3 +42,13 @@ export function marketplaceResourceLabel(resourceType) {
 export function hasOperation(operations = [], code) {
   return operations.some((operation) => operation.code === code);
 }
+
+export function publicOrganizationHref(entity) {
+  if (entity?.type && entity.type !== "organization") return null;
+  const organizationId = entity?.type === "organization" ? entity.id : entity?.organizationId || entity?.id;
+  return organizationId ? `/organizations/public?organizationId=${encodeURIComponent(String(organizationId))}` : null;
+}
+
+export function publicVenueHref(venue) {
+  return venue?.id ? `/venues/public?venueId=${encodeURIComponent(String(venue.id))}` : null;
+}

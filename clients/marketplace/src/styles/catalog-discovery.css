@@ -1,0 +1,102 @@
+.catalog-discovery-results {
+  display: grid;
+  gap: 1.25rem;
+  margin-block: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line, #d9dedb);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.catalog-discovery-results > section {
+  display: grid;
+  gap: .75rem;
+}
+
+.catalog-discovery-results > section > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.catalog-discovery-results h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.catalog-discovery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: .75rem;
+}
+
+.catalog-discovery-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line, #d9dedb);
+  border-radius: .85rem;
+  color: inherit;
+  background: var(--surface, #fff);
+  text-decoration: none;
+}
+
+.catalog-discovery-card:hover,
+.catalog-discovery-card:focus-within {
+  border-color: var(--brand, #146454);
+  box-shadow: 0 6px 20px rgb(18 60 51 / 10%);
+}
+
+.catalog-discovery-card > span:nth-child(2),
+.catalog-discovery-card__main > span:nth-child(2) {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+}
+
+.catalog-discovery-card small,
+.catalog-discovery-card em,
+.catalog-discovery-card span span {
+  color: var(--muted, #58645f);
+  font-style: normal;
+}
+
+.catalog-discovery-card--venue {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 0;
+  overflow: hidden;
+}
+
+.catalog-discovery-card__main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  padding: 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.catalog-discovery-card__owner {
+  padding: .7rem 1rem;
+  border-top: 1px solid var(--line, #d9dedb);
+  color: inherit;
+  background: var(--surface-soft, #f5f7f5);
+  text-decoration: none;
+}
+
+.publisher a,
+.consumer-scope a {
+  color: inherit;
+  text-decoration-thickness: .08em;
+  text-underline-offset: .16em;
+}
+
+@media (max-width: 42rem) {
+  .catalog-discovery-results { padding: 1rem; }
+}

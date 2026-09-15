@@ -24,6 +24,14 @@ const emit = defineEmits<{
 const venueIndex = ref(0);
 const selectedFloorId = ref<string | null>(null);
 const zoom = ref(1);
+const pan = ref({ x: 0, y: 0 });
+const viewportElement = ref<HTMLElement | null>(null);
+const activePointers = new Map<number, { x: number; y: number }>();
+let previousPointer: { x: number; y: number } | null = null;
+let previousPinchDistance = 0;
+let previousPinchCenter: { x: number; y: number } | null = null;
+let suppressNextClick = false;
+let gestureTravel = 0;
 const venue = computed(() => props.map.venues[venueIndex.value] || null);
 const indoorActiveNavigation = computed(() => props.map.activeNavigation?.type === "indoor" ? props.map.activeNavigation : null);
 const interVenueActiveNavigation = computed(() => props.map.activeNavigation?.type === "inter_venue" ? props.map.activeNavigation : null);
@@ -97,15 +105,124 @@ function placeAction(location: SelectableLocationProjection) {
   return props.availableActions.find((action) => action.actionId === `navigation.destination.${location.placeId}`) || null;
 }
 
-function setZoom(value: number) {
-  zoom.value = Math.min(3, Math.max(1, Math.round(value * 4) / 4));
+function clampPan(nextPan: { x: number; y: number }, nextZoom = zoom.value) {
+  const viewport = viewportElement.value;
+  const canvas = viewport?.querySelector<HTMLElement>(".map-canvas");
+  if (!viewport || !canvas || nextZoom <= 1) return { x: 0, y: 0 };
+  return {
+    x: Math.min(0, Math.max(viewport.clientWidth - canvas.offsetWidth * nextZoom, nextPan.x)),
+    y: Math.min(0, Math.max(viewport.clientHeight - canvas.offsetHeight * nextZoom, nextPan.y)),
+  };
+}
+
+function setZoom(value: number, focalPoint?: { x: number; y: number }, snap = true) {
+  const nextZoom = Math.min(3, Math.max(1, snap ? Math.round(value * 4) / 4 : value));
+  const viewport = viewportElement.value;
+  if (!viewport || nextZoom === 1) {
+    zoom.value = nextZoom;
+    pan.value = { x: 0, y: 0 };
+    return;
+  }
+  const focus = focalPoint || { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 };
+  const worldPoint = {
+    x: (focus.x - pan.value.x) / zoom.value,
+    y: (focus.y - pan.value.y) / zoom.value,
+  };
+  zoom.value = nextZoom;
+  pan.value = clampPan({ x: focus.x - worldPoint.x * nextZoom, y: focus.y - worldPoint.y * nextZoom }, nextZoom);
 }
 
 function zoomWithWheel(event: WheelEvent) {
-  setZoom(zoom.value + (event.deltaY < 0 ? .25 : -.25));
+  const bounds = viewportElement.value?.getBoundingClientRect();
+  setZoom(zoom.value + (event.deltaY < 0 ? .25 : -.25), bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : undefined);
 }
 
-watch([venueIndex, selectedFloorId], () => { zoom.value = 1; });
+function zoomWithDoubleClick(event: MouseEvent) {
+  const bounds = viewportElement.value?.getBoundingClientRect();
+  setZoom(zoom.value < 2 ? zoom.value + .5 : 1, bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : undefined);
+}
+
+function pointerDistance(points: { x: number; y: number }[]) {
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function pointerCenter(points: { x: number; y: number }[]) {
+  return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+}
+
+function startMapGesture(event: PointerEvent) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const interactiveTarget = event.target instanceof Element && event.target.closest("button, a, input, select");
+  if (event.pointerType === "mouse" && interactiveTarget) return;
+  const bounds = viewportElement.value?.getBoundingClientRect();
+  if (!bounds) return;
+  if (!activePointers.size) gestureTravel = 0;
+  activePointers.set(event.pointerId, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+  viewportElement.value?.setPointerCapture(event.pointerId);
+  if (event.pointerType === "mouse" && zoom.value > 1) event.preventDefault();
+  const points = [...activePointers.values()];
+  if (points.length === 1) previousPointer = points[0];
+  if (points.length === 2) {
+    previousPinchDistance = pointerDistance(points);
+    previousPinchCenter = pointerCenter(points);
+  }
+}
+
+function moveMapGesture(event: PointerEvent) {
+  if (!activePointers.has(event.pointerId)) return;
+  const bounds = viewportElement.value?.getBoundingClientRect();
+  if (!bounds) return;
+  activePointers.set(event.pointerId, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+  const points = [...activePointers.values()];
+  if (points.length >= 2) {
+    event.preventDefault();
+    const nextDistance = pointerDistance(points);
+    const nextCenter = pointerCenter(points);
+    if (previousPinchDistance && previousPinchCenter) {
+      const previousZoom = zoom.value;
+      setZoom(previousZoom * (nextDistance / previousPinchDistance), previousPinchCenter, false);
+      pan.value = clampPan({
+        x: pan.value.x + nextCenter.x - previousPinchCenter.x,
+        y: pan.value.y + nextCenter.y - previousPinchCenter.y,
+      });
+      suppressNextClick = true;
+    }
+    previousPinchDistance = nextDistance;
+    previousPinchCenter = nextCenter;
+    return;
+  }
+  if (points.length === 1 && previousPointer) {
+    const delta = { x: points[0].x - previousPointer.x, y: points[0].y - previousPointer.y };
+    gestureTravel += Math.hypot(delta.x, delta.y);
+    if (zoom.value > 1) {
+      event.preventDefault();
+      pan.value = clampPan({ x: pan.value.x + delta.x, y: pan.value.y + delta.y });
+      if (gestureTravel > 5) suppressNextClick = true;
+    }
+    previousPointer = points[0];
+  }
+}
+
+function endMapGesture(event: PointerEvent) {
+  activePointers.delete(event.pointerId);
+  const points = [...activePointers.values()];
+  previousPointer = points[0] || null;
+  previousPinchDistance = points.length >= 2 ? pointerDistance(points) : 0;
+  previousPinchCenter = points.length >= 2 ? pointerCenter(points) : null;
+  if (!points.length && suppressNextClick) window.setTimeout(() => { suppressNextClick = false; }, 0);
+}
+
+function guardMapClick(event: MouseEvent) {
+  if (!suppressNextClick) return;
+  event.preventDefault();
+  event.stopPropagation();
+  suppressNextClick = false;
+}
+
+watch([venueIndex, selectedFloorId], () => {
+  zoom.value = 1;
+  pan.value = { x: 0, y: 0 };
+});
 
 function pointStyle(point: { x: number; y: number }) {
   return { left: `${point.x * 100}%`, top: `${point.y * 100}%` };
@@ -138,9 +255,9 @@ function pointStyle(point: { x: number; y: number }) {
         <button type="button" aria-label="Ingrandisci la mappa" :disabled="zoom >= 3" @click="setZoom(zoom + .25)">+</button>
         <button type="button" :disabled="zoom === 1" @click="setZoom(1)">Ripristina</button>
       </div>
-      <div class="map-viewport" @wheel.ctrl.prevent="zoomWithWheel" @dblclick="setZoom(zoom < 2 ? zoom + .5 : 1)">
-        <div class="map-canvas" :style="{ width: `${zoom * 100}%` }">
-          <img :src="floor.map.imageUrl" :alt="`Mappa ${floor.label} — ${venue.name}`">
+      <div ref="viewportElement" class="map-viewport" :class="{ 'is-zoomed': zoom > 1 }" @wheel.ctrl.prevent="zoomWithWheel" @dblclick="zoomWithDoubleClick" @pointerdown="startMapGesture" @pointermove="moveMapGesture" @pointerup="endMapGesture" @pointercancel="endMapGesture" @click.capture="guardMapClick" @dragstart.prevent>
+        <div class="map-canvas" :style="{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }">
+          <img :src="floor.map.imageUrl" :alt="`Mappa ${floor.label} — ${venue.name}`" draggable="false">
           <svg class="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <polyline v-for="(overlay, index) in navigationOverlays" :key="`navigation-${index}`" :points="overlay.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')" fill="none" vector-effect="non-scaling-stroke" class="navigation-route" />
           </svg>
@@ -156,6 +273,7 @@ function pointStyle(point: { x: number; y: number }) {
           <button v-for="location in locationSelectionMode ? selectableLocations : []" :key="`select-${location.kind}-${location.placeId}-${location.visitAnchorId || ''}`" type="button" class="selectable-location-marker" :style="pointStyle(location.position)" :title="`Conferma: ${location.label}`" :aria-label="`Conferma posizione: ${location.label}`" :disabled="selectionBusy" @click="emit('selectLocation', location.locationRef)">⌖</button>
         </div>
       </div>
+      <small class="map-gesture-hint">Su telefono usa due dita per ingrandire o ridurre; quando la mappa è ingrandita trascinala per spostarti.</small>
     </div>
     <p v-else role="status">Per questo piano non è disponibile un asset cartografico.</p>
 
@@ -201,9 +319,12 @@ function pointStyle(point: { x: number; y: number }) {
 .map-zoom-controls { display:flex; justify-content:flex-end; align-items:center; gap:.35rem; margin-bottom:.45rem; }
 .map-zoom-controls button { min-width:2.5rem; min-height:2.5rem; padding:.35rem .55rem; border:1px solid var(--navigator-border); border-radius:.65rem; background:var(--navigator-surface-raised); color:var(--navigator-ink); font-weight:800; }
 .map-zoom-controls output { min-width:3.2rem; color:var(--navigator-muted); font-size:.75rem; font-weight:750; text-align:center; }
-.map-viewport { max-height:65dvh; overflow:auto; border:1px solid var(--navigator-border); border-radius:1.2rem; overscroll-behavior:contain; touch-action:pan-x pan-y; background:var(--navigator-surface-raised); }
-.map-canvas { position:relative; min-width:100%; overflow:hidden; background:var(--navigator-surface-raised); }
+.map-viewport { overflow:hidden; border:1px solid var(--navigator-border); border-radius:1.2rem; overscroll-behavior:contain; touch-action:none; background:var(--navigator-surface-raised); }
+.map-viewport.is-zoomed { cursor:grab; }
+.map-viewport.is-zoomed:active { cursor:grabbing; }
+.map-canvas { position:relative; width:100%; min-width:100%; overflow:hidden; transform-origin:0 0; will-change:transform; user-select:none; background:var(--navigator-surface-raised); }
 .map-canvas img { display:block; width:100%; height:auto; }
+.map-gesture-hint { display:block; margin-top:.4rem; color:var(--navigator-muted); font-size:.7rem; line-height:1.4; }
 .map-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .navigation-route { stroke:var(--navigator-route-active); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1px 1px color-mix(in srgb,var(--navigator-route-active) 35%,transparent)); }
 .map-marker,.selectable-location-marker { position:absolute; transform:translate(-50%,-50%); z-index:2; }
