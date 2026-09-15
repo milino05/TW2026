@@ -1,5 +1,8 @@
 import { navigatorConfigRepository } from "../infrastructure/http/navigator-config-repository.js";
 import { notify } from "../application/ui-feedback.js";
+import { replaceCurrentHistoryUrl } from "../application/router.js";
+import { venueActionMixin } from "./venue-editor-action-mixin.js";
+import { venueMapRefinementMixin } from "./venue-editor-map-refinement-mixin.js";
 
 function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -65,6 +68,81 @@ export const venueNavigatorMixin = {
   navigatorConfig: null,
   navigatorConfigLoading: false,
   navigatorConfigError: null,
+
+  render(...args) {
+    const result = venueMapRefinementMixin.render.apply(this, args);
+    this.decorateNavigatorWorkspace();
+    return result;
+  },
+
+  syncSectionNavigation({ scroll = false } = {}) {
+    if (this.onboarding?.required) return;
+    const tabs = [...this.querySelectorAll("[data-venue-section]")];
+    const available = tabs.map((tab) => tab.dataset.venueSection).filter(Boolean);
+    const navigatorPending = this.activeSection === "navigator" && !available.includes("navigator");
+    if (!available.includes(this.activeSection) && !navigatorPending) this.activeSection = available[0] || "overview";
+    for (const tab of tabs) {
+      const selected = tab.dataset.venueSection === this.activeSection;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    for (const panel of this.querySelectorAll(".venue-section")) {
+      const selected = panel.id === `venue-${this.activeSection}`;
+      panel.hidden = !selected;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", `venue-tab-${panel.id.replace("venue-", "")}`);
+      panel.tabIndex = -1;
+    }
+    const panel = this.querySelector(`#venue-${this.activeSection}`);
+    if (scroll && panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  },
+
+  showSection(section, { scroll = false } = {}) {
+    if (!this.querySelector(`[data-venue-section="${CSS.escape(String(section || ""))}"]`)) return;
+    this.activeSection = section;
+    replaceCurrentHistoryUrl(`${window.location.pathname}${window.location.search}#venue-${section}`);
+    this.syncSectionNavigation({ scroll });
+  },
+
+  decorateNavigatorWorkspace() {
+    if (!this.data || this.onboarding?.required) return;
+    const tabs = this.querySelector(".venue-editor-tabs");
+    const content = this.querySelector(".venue-editor-content");
+    if (!tabs || !content) return;
+    if (!tabs.querySelector('[data-venue-section="navigator"]')) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.id = "venue-tab-navigator";
+      button.setAttribute("role", "tab");
+      button.dataset.venueSection = "navigator";
+      button.setAttribute("aria-controls", "venue-navigator");
+      button.textContent = "Navigator";
+      const publication = tabs.querySelector('[data-venue-section="publication"]');
+      tabs.insertBefore(button, publication || null);
+    }
+    if (!content.querySelector("#venue-navigator")) {
+      const template = document.createElement("template");
+      template.innerHTML = this.renderNavigator().trim();
+      const panel = template.content.firstElementChild;
+      const publication = content.querySelector("#venue-publication");
+      if (panel) content.insertBefore(panel, publication || null);
+    }
+    this.syncSectionNavigation();
+  },
+
+  async onClick(event) {
+    if (await this.handleNavigatorClick(event)) return;
+    return venueActionMixin.onClick.call(this, event);
+  },
+
+  async onSubmit(event) {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (form && form.matches("[data-navigator-config],[data-navigator-asset-upload],[data-navigator-copy],[data-navigator-import]")) {
+      event.preventDefault();
+      if (await this.handleNavigatorSubmit(form, new FormData(form))) return;
+    }
+    return venueActionMixin.onSubmit.call(this, event);
+  },
 
   async loadNavigatorConfig() {
     if (this.navigatorConfigLoading) return;
