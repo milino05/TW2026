@@ -1,5 +1,16 @@
 const service = require("../services/navigatorVenueConfig.service");
 
+function sanitizeConfigPayload(payload = {}) {
+  const cloned = structuredClone(payload || {});
+  const config = cloned.config && typeof cloned.config === "object" ? cloned.config : cloned;
+  const branding = config.branding && typeof config.branding === "object" ? config.branding : config;
+  for (const key of ["logo", "heroImage"]) {
+    const value = branding?.[key];
+    if (value && typeof value === "object" && value.src && !value.assetId) delete branding[key];
+  }
+  return cloned;
+}
+
 async function getVenueConfig(req, res, next) {
   try {
     const projection = await service.getVenueNavigatorConfig({ venueId: req.params.venueId, actorUserId: req.user._id });
@@ -9,7 +20,11 @@ async function getVenueConfig(req, res, next) {
 
 async function updateVenueConfig(req, res, next) {
   try {
-    const config = await service.updateVenueNavigatorConfig({ venueId: req.params.venueId, actorUserId: req.user._id, payload: req.body || {} });
+    const config = await service.updateVenueNavigatorConfig({
+      venueId: req.params.venueId,
+      actorUserId: req.user._id,
+      payload: sanitizeConfigPayload(req.body || {}),
+    });
     res.status(200).json({ config });
   } catch (error) { next(error); }
 }
