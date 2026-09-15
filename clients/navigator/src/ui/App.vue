@@ -89,7 +89,7 @@ async function logout() {
         <a v-if="selectedVenueId" :href="marketplaceHref">Marketplace</a>
         <RouterLink
           v-if="selectedVenueId"
-          :to="{ name: 'museum-generate', params: { venueId: selectedVenueId } }"
+          :to="{ name: 'generator-coming-soon' }"
         >Genera</RouterLink>
         <a v-else href="/marketplace/catalog">Marketplace</a>
         <span class="signed-user">{{ user?.username }}</span>

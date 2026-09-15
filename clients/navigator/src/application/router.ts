@@ -4,8 +4,7 @@ import LoginView from "../ui/LoginView.vue";
 import MuseumSelectorView from "../ui/MuseumSelectorView.vue";
 import LibraryView from "../ui/LibraryView.vue";
 import VisitDetailView from "../ui/VisitDetailView.vue";
-import GenerateView from "../ui/GenerateView.vue";
-import GeneratedPlanView from "../ui/GeneratedPlanView.vue";
+import GeneratorComingSoonView from "../ui/GeneratorComingSoonView.vue";
 import SessionView from "../ui/SessionView.vue";
 import PlaceholderView from "../ui/PlaceholderView.vue";
 import SynchronizedJoinView from "../ui/SynchronizedJoinView.vue";
@@ -38,14 +37,20 @@ export const router = createRouter({
     {
       path: "/museums/:venueId/generate",
       name: "museum-generate",
-      component: GenerateView,
+      component: GeneratorComingSoonView,
       meta: { requiresAuth: true, requiresVenue: true },
     },
     {
       path: "/museums/:venueId/generated-plans/:planId",
       name: "museum-generated-plan",
-      component: GeneratedPlanView,
+      component: GeneratorComingSoonView,
       meta: { requiresAuth: true, requiresVenue: true },
+    },
+    {
+      path: "/coming-soon/generator",
+      name: "generator-coming-soon",
+      component: GeneratorComingSoonView,
+      meta: { requiresAuth: true },
     },
     {
       path: "/museums/:venueId/sessions/:sessionId",
@@ -54,7 +59,7 @@ export const router = createRouter({
       meta: { requiresAuth: true, requiresVenue: true, immersive: true },
     },
     { path: "/library", redirect: { name: "museums" } },
-    { path: "/generate", redirect: { name: "museums" } },
+    { path: "/generate", component: GeneratorComingSoonView, meta: { requiresAuth: true } },
     { path: "/:pathMatch(.*)*", name: "not-found", component: PlaceholderView, props: { title: "Pagina non trovata" } },
   ],
 });

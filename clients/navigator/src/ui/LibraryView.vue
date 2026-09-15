@@ -160,7 +160,7 @@ function confirmSessionRemoval() {
             </div>
             <RouterLink
               class="generate-link"
-              :to="{ name: 'museum-generate', params: { venueId } }"
+              :to="{ name: 'generator-coming-soon' }"
             >+ Genera visita</RouterLink>
           </div>
 
@@ -169,7 +169,7 @@ function confirmSessionRemoval() {
             <p>Genera una visita per aggiungerla alla tua raccolta.</p>
             <RouterLink
               class="generate-link"
-              :to="{ name: 'museum-generate', params: { venueId } }"
+              :to="{ name: 'generator-coming-soon' }"
             >Genera visita</RouterLink>
           </FeedbackEmptyState>
           <ul v-else class="visit-list">

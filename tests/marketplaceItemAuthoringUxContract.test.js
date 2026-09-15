@@ -86,6 +86,10 @@ test("testi multipli restano una proprietà della stessa revisione editoriale", 
   assert.match(source, /this\.draft\.representations\.push\(newRepresentation\(\)\)/);
   assert.match(source, /this\.draft\.representations\.splice\(index, 1\)/);
   assert.match(source, /Completa durata, livello di linguaggio, lingua e testo/);
+  assert.match(source, /representation-card__metadata/);
+  assert.match(source, /<dt>Durata<\/dt>/);
+  assert.match(source, /<dt>Livello linguistico<\/dt>/);
+  assert.match(source, /duration\.targetSeconds/);
 });
 
 test("gli spazi editoriali includono l'Item senza cambiarne owner o semantica", () => {
