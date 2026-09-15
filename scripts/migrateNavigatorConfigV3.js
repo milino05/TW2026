@@ -1,9 +1,12 @@
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+
 const mongoose = require("mongoose");
-const connectDB = require("../config/database");
 const { migrateAllLegacyNavigatorConfigs } = require("../services/navigatorVenueConfig.service");
 
-(async () => {
-  await connectDB();
+async function main() {
+  if (!process.env.MONGO_URI) throw new Error("MONGO_URI mancante");
+  await mongoose.connect(process.env.MONGO_URI);
   try {
     const results = await migrateAllLegacyNavigatorConfigs();
     const migrated = results.filter((entry) => entry.status === "migrated").length;
@@ -15,7 +18,10 @@ const { migrateAllLegacyNavigatorConfigs } = require("../services/navigatorVenue
   } finally {
     await mongoose.disconnect();
   }
-})().catch((error) => {
+}
+
+main().catch(async (error) => {
   console.error(error);
-  process.exitCode = 1;
+  await mongoose.disconnect().catch(() => {});
+  process.exit(1);
 });
