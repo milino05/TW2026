@@ -218,7 +218,22 @@ export class ArtAroundNamespaceEditorView extends HTMLElement {
   onBeforeUnload = (event) => { if (!this.dirty) return; event.preventDefault(); event.returnValue = ""; };
   onSectionKeyDown = (event) => {
     const modal = this.querySelector('[aria-modal="true"]');
-    if (modal && event.key === "Escape") { event.preventDefault(); this.tutorialOpen ? this.finishTutorial() : (this.starterDialogOpen = false, this.render()); return; }
+    if (modal && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.tutorialOpen) this.finishTutorial();
+      else if (this.starterDialogOpen) { this.starterDialogOpen = false; this.render(); }
+      else if (this.privateSuccessOpen) { this.privateSuccessOpen = false; this.render(); }
+      return;
+    }
+    if (modal && event.key === "Enter" && this.starterDialogOpen && !event.defaultPrevented && !event.repeat && !event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.matches('textarea, select, [contenteditable]:not([contenteditable="false"])')) {
+        event.preventDefault();
+        void this.applyStarterTemplate();
+        return;
+      }
+    }
     if (modal && event.key === "Tab") {
       const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
       if (!focusable.length) return;

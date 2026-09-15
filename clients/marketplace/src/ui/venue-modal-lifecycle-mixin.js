@@ -6,6 +6,8 @@ const DISMISS_SELECTOR = [
   "[data-close-map-creation-dialog]",
   "[data-close-spatial-editor]",
   "[data-cancel-calibration-distance]",
+  "[data-cancel-calibration-overwrite]",
+  "[data-cancel-destructive-action]",
   "[data-close-inventory-browser]",
   "[data-close-inventory-subject-picker]",
 ].join(", ");
@@ -51,7 +53,10 @@ function enableVenueDismissControls(layer) {
   }
 }
 
-function dismissVenueModal(editor, layer) {
+// This is the safe exit path shared by Escape, backdrop and explicit Cancel.
+// It must only discard transient UI state: domain commands belong exclusively
+// to the affirmative controls handled by the editor action mixins.
+function cancelVenueModal(editor, layer) {
   if (layer.matches(".venue-inventory-modal-layer")) {
     const targetId = editor.selectedVenueTargetId || editor.inventoryDetailTargetId;
     editor.selectedVenueTargetId = null;
@@ -82,6 +87,12 @@ function dismissVenueModal(editor, layer) {
   }
   if (layer.matches(".venue-calibration-overwrite-backdrop")) {
     editor.calibrationOverwritePrompt = null;
+    editor.render();
+    return;
+  }
+  if (layer.matches(".venue-destructive-confirmation-backdrop")) {
+    editor.pendingDestructiveAction = null;
+    editor.error = null;
     editor.render();
     return;
   }
@@ -166,7 +177,7 @@ export const venueModalLifecycleMixin = {
         backdropSelector: "[data-modal-backdrop]",
         canDismiss: () => true,
         onRequestDismiss: () => {
-          dismissVenueModal(this, layer);
+          cancelVenueModal(this, layer);
           return true;
         },
         lockScroll: true,

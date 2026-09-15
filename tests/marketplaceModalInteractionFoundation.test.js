@@ -34,6 +34,17 @@ test("Escape, backdrop and explicit cancel converge on the same non-destructive 
   assert.doesNotMatch(lifecycle, /\b(?:createOffer|removeWorkspaceResource|trashVenue|deleteResource|confirmSensitiveAction)\b/);
 });
 
+test("Invio attiva soltanto la conferma dichiarata o il submit del form corrente", () => {
+  assert.match(lifecycle, /confirmSelector = "\[data-modal-confirm\]"/);
+  assert.match(lifecycle, /event\.key !== "Enter"/);
+  assert.match(lifecycle, /origin\?\.closest\("form"\)\?\.querySelector\(SUBMIT_SELECTOR\)/);
+  assert.match(lifecycle, /button:not\(\[type="submit"\]\)/);
+  assert.match(lifecycle, /dismissalOrigin/);
+  assert.match(lifecycle, /confirmation\.click\(\)/);
+  assert.match(lifecycle, /textarea, select, \[contenteditable\]/);
+  assert.match(lifecycle, /event\.isComposing/);
+});
+
 test("modal lifecycle traps focus and restores the original opener across portal rerenders", () => {
   assert.match(lifecycle, /event\.key !== "Tab"/);
   assert.match(lifecycle, /document\.activeElement instanceof HTMLElement/);

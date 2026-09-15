@@ -11,6 +11,24 @@ const FOCUSABLE_SELECTOR = [
   "audio[controls]",
 ].join(", ");
 const modalOwnerState = new WeakMap();
+const SUBMIT_SELECTOR = 'button[type="submit"]:not(:disabled), input[type="submit"]:not(:disabled)';
+
+function enterConfirmationTarget(event, panel, confirmSelector, dismissSelector) {
+  if (!(panel instanceof HTMLElement)) return null;
+  if (event.key !== "Enter" || event.defaultPrevented || event.repeat || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  const origin = event.target instanceof Element ? event.target : null;
+  if (origin?.matches('textarea, select, [contenteditable]:not([contenteditable="false"])')) return null;
+  const explicitOrigin = confirmSelector ? origin?.closest(confirmSelector) : null;
+  if (explicitOrigin instanceof HTMLElement && !explicitOrigin.matches(":disabled") && explicitOrigin.getAttribute("aria-disabled") !== "true") return explicitOrigin;
+  const dismissalOrigin = dismissSelector ? origin?.closest(dismissSelector) : null;
+  if (origin?.closest('a[href], summary, button:not([type="submit"]), input[type="button"], input[type="checkbox"], input[type="radio"], input[type="file"]') && !dismissalOrigin) return null;
+  const formSubmit = origin?.closest("form")?.querySelector(SUBMIT_SELECTOR);
+  if (formSubmit instanceof HTMLElement) return formSubmit;
+  const explicit = confirmSelector ? panel.querySelector(confirmSelector) : null;
+  if (explicit instanceof HTMLElement && !explicit.matches(":disabled") && explicit.getAttribute("aria-disabled") !== "true") return explicit;
+  const submits = [...panel.querySelectorAll(SUBMIT_SELECTOR)];
+  return submits.length === 1 && submits[0] instanceof HTMLElement ? submits[0] : null;
+}
 
 function focusableElements(root) {
   if (!(root instanceof HTMLElement)) return [];
@@ -50,7 +68,8 @@ function restoreOwnerFocus(owner, state) {
  *
  * This module deliberately owns only interaction mechanics: global layering,
  * Escape routing, backdrop/explicit dismiss requests, focus trap, scroll lock
- * and focus restoration. Dirty-state policy, validation and domain operations
+ * and focus restoration. Enter activates only the declared affirmative control
+ * (or the submit control of the focused form). Dirty-state policy, validation and domain operations
  * remain with the consumer through onRequestDismiss/canDismiss.
  *
  * `panel` can be an HTMLElement or a resolver returning the current panel. The
@@ -66,6 +85,7 @@ export function mountModalInteraction({
   kind = "modal",
   initialFocus = null,
   dismissSelector = "[data-modal-dismiss]",
+  confirmSelector = "[data-modal-confirm]",
   backdropSelector = "[data-modal-backdrop]",
   canDismiss = () => true,
   onRequestDismiss = () => {},
@@ -114,8 +134,15 @@ export function mountModalInteraction({
   };
 
   const onKeyDown = (event) => {
-    if (event.key !== "Tab") return;
     const currentPanel = resolvePanel();
+    const confirmation = enterConfirmationTarget(event, currentPanel, confirmSelector, dismissSelector);
+    if (confirmation) {
+      event.preventDefault();
+      event.stopPropagation();
+      confirmation.click();
+      return;
+    }
+    if (event.key !== "Tab") return;
     const items = focusableElements(currentPanel);
     if (!items.length) {
       event.preventDefault();

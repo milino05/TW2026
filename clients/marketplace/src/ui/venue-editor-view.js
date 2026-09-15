@@ -98,6 +98,7 @@ export class ArtAroundVenueEditorView extends HTMLElement {
     this.removeEventListener("pointerup", this.onMapPointerUp);
     this.removeEventListener("pointercancel", this.onMapPointerCancel);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
+    this.releaseGlobalEscapeHandler?.();
     this.releaseVenueModalLayers?.({ restoreFocus: false });
     this._targetCreateDialog?.close?.({ restoreFocus: false, notify: false });
     this._targetCreateDialog = null;
@@ -202,8 +203,9 @@ export class ArtAroundVenueEditorView extends HTMLElement {
   }
 
   onSectionKeyDown = (event) => {
-    if (event.key === "Escape" && !this._venueModalLayers?.length && (this.pendingMapAction || this.draggingPlace)) {
+    if (event.key === "Escape" && !event.defaultPrevented && !this._venueModalLayers?.length && (this.pendingMapAction || this.draggingPlace)) {
       event.preventDefault();
+      event.stopPropagation();
       this.cancelMapAction();
       return;
     }

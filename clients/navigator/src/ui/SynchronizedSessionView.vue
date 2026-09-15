@@ -468,10 +468,16 @@ async function listenControlledVoice() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key !== "Escape") return;
+  if (event.key !== "Escape" || event.defaultPrevented) return;
+  let handled = true;
   if (voiceSheetOpen.value) cancelVoice();
   else if (groupPanelOpen.value) groupPanelOpen.value = false;
-  else actionSheetOpen.value = false;
+  else if (actionSheetOpen.value) actionSheetOpen.value = false;
+  else handled = false;
+  if (handled) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
 }
 async function submitQuiz() {
   if (!quiz.value || quiz.value.role !== "participant") return;

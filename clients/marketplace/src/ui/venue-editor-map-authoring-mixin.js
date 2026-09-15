@@ -97,6 +97,9 @@ export const venueMapAuthoringMixin = {
   },
 
   cancelMapAction({ render = true } = {}) {
+    const draggingPlace = this.draggingPlace;
+    draggingPlace?.node?.releasePointerCapture?.(draggingPlace.pointerId);
+    draggingPlace?.node?.classList?.remove("dragging");
     this.pendingMapAction = null;
     this.draggingPlace = null;
     if (render) this.render();

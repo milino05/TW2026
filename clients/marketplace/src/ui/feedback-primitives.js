@@ -244,10 +244,23 @@ export class ArtAroundActionDialog extends ArtAroundToneSurface {
   };
 
   onKeyDown = (event) => {
-    if (event.key === "Escape" && this.config?.dismissible) {
+    if (event.key === "Escape") {
       event.preventDefault();
-      this.finish(false);
+      event.stopPropagation();
+      if (this.config?.dismissible) this.finish(false);
       return;
+    }
+    if (event.key === "Enter" && !event.defaultPrevented && !event.repeat && !event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.matches('textarea, select, [contenteditable]:not([contenteditable="false"])')) {
+        const confirm = this.querySelector("[data-dialog-confirm]:not(:disabled)");
+        if (confirm instanceof HTMLElement) {
+          event.preventDefault();
+          event.stopPropagation();
+          confirm.click();
+          return;
+        }
+      }
     }
     if (event.key !== "Tab") return;
     const focusable = [...this.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
@@ -269,7 +282,7 @@ export class ArtAroundActionDialog extends ArtAroundToneSurface {
         </div>
         <div class="artaround-action-dialog__actions">
           <button class="button-secondary" type="button" data-dialog-cancel>${escapeHtml(this.config.cancelLabel)}</button>
-          <button class="${dangerous ? "danger" : ""}" type="button" data-dialog-confirm>${escapeHtml(this.config.confirmLabel)}</button>
+          <button class="${dangerous ? "danger" : ""}" type="button" data-modal-confirm data-dialog-confirm>${escapeHtml(this.config.confirmLabel)}</button>
         </div>
       </section>`;
   }

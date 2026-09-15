@@ -36,10 +36,20 @@ function cancel() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && props.dismissible) {
+  if (event.key === "Escape") {
     event.preventDefault();
-    emit("cancel");
+    event.stopPropagation();
+    if (props.dismissible) emit("cancel");
     return;
+  }
+  if (event.key === "Enter" && !event.defaultPrevented && !event.repeat && !event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.matches('textarea, select, [contenteditable]:not([contenteditable="false"])')) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit("confirm");
+      return;
+    }
   }
   if (event.key !== "Tab") return;
   const nodes = focusables();
@@ -96,7 +106,7 @@ onBeforeUnmount(() => {
         </header>
         <div class="feedback-dialog__actions">
           <button data-feedback-dialog-cancel type="button" @click="emit('cancel')">{{ cancelLabel }}</button>
-          <button type="button" :class="{ danger: tone === 'danger' }" @click="emit('confirm')">{{ confirmLabel }}</button>
+          <button data-modal-confirm type="button" :class="{ danger: tone === 'danger' }" @click="emit('confirm')">{{ confirmLabel }}</button>
         </div>
       </section>
     </div>

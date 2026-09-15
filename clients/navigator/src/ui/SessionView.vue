@@ -236,11 +236,27 @@ onUnmounted(() => {
 });
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key !== "Escape") return;
-  if (mediaOpen.value) mediaOpen.value = false;
-  else if (voiceSheetOpen.value) cancelVoice();
-  else if (completionConfirmOpen.value) closeCompletionConfirm();
-  else actionSheetOpen.value = false;
+  if (event.key === "Escape") {
+    if (event.defaultPrevented) return;
+    let handled = true;
+    if (mediaOpen.value) mediaOpen.value = false;
+    else if (voiceSheetOpen.value) cancelVoice();
+    else if (completionConfirmOpen.value) closeCompletionConfirm();
+    else if (actionSheetOpen.value) actionSheetOpen.value = false;
+    else handled = false;
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+  if (event.key === "Enter" && completionConfirmOpen.value && !event.defaultPrevented && !event.repeat && !event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.matches('textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void confirmCompletion();
+  }
 }
 
 function closeOverlays() {
@@ -601,7 +617,7 @@ async function listenControlledVoice() {
         <p>La sessione verrà completata e non comparirà più tra quelle da riprendere.</p>
         <div>
           <button ref="completionCancelButton" type="button" @click="closeCompletionConfirm">Continua la visita</button>
-          <button class="confirm-completion" type="button" @click="confirmCompletion">Termina visita</button>
+          <button class="confirm-completion" data-modal-confirm type="button" @click="confirmCompletion">Termina visita</button>
         </div>
       </section>
     </div>

@@ -68,6 +68,10 @@ test("toast e action dialog globali stanno sopra ogni normale scheda applicativa
 test("l'action dialog implementa il comportamento modale riusabile", () => {
   assert.match(primitives, /role=\"dialog\" aria-modal=\"true\"/);
   assert.match(primitives, /event\.key === "Escape"/);
+  assert.match(primitives, /event\.key === "Enter"/);
+  assert.match(primitives, /data-modal-confirm data-dialog-confirm/);
+  assert.match(primitives, /this\.finish\(false\)/);
+  assert.match(primitives, /confirm\.click\(\)/);
   assert.match(primitives, /event\.key !== "Tab"/);
   assert.match(primitives, /this\.returnFocus\?\.focus/);
   assert.match(primitives, /export function openActionDialog/);

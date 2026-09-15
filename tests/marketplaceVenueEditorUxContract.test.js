@@ -17,6 +17,7 @@ const files = [
   "clients/marketplace/src/ui/venue-target-create-dialog.js",
   "clients/marketplace/src/ui/venue-editor-spatial-mixin.js",
   "clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js",
+  "clients/marketplace/src/ui/venue-editor-map-refinement-base.js",
   "clients/marketplace/src/ui/venue-editor-map-refinement-mixin.js",
   "clients/marketplace/src/ui/venue-editor-slot-inventory-mixin.js",
   "clients/marketplace/src/ui/venue-editor-spatial-detail-mixin.js",
@@ -24,6 +25,7 @@ const files = [
   "clients/marketplace/src/ui/venue-editor-spatial-interaction-mixin.js",
   "clients/marketplace/src/ui/venue-editor-spatial-overlay-mixin.js",
   "clients/marketplace/src/ui/venue-editor-section-mixin.js",
+  "clients/marketplace/src/ui/venue-modal-lifecycle-mixin.js",
 ];
 const sources = Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 const source = Object.values(sources).join("\n");
@@ -168,6 +170,34 @@ test("la macchina a stati della mappa usa soltanto i sette modi canonici", () =>
   assert.doesNotMatch(source, /"placing_slot"/);
   assert.doesNotMatch(styleSource, /data-map-mode=placing_slot/);
   assert.doesNotMatch(styleSource, /data-map-mode=(?:create-place|connect|calibrate|geometry)\]/);
+});
+
+test("Escape è sempre una scelta safe: annulla soltanto stato temporaneo e non esegue comandi", () => {
+  const viewSource = sources["clients/marketplace/src/ui/venue-editor-view.js"];
+  const mapSource = sources["clients/marketplace/src/ui/venue-editor-map-authoring-mixin.js"];
+  const refinementSource = sources["clients/marketplace/src/ui/venue-editor-map-refinement-base.js"];
+  const modalSource = sources["clients/marketplace/src/ui/venue-modal-lifecycle-mixin.js"];
+  assert.match(viewSource, /event\.key === "Escape" && !event\.defaultPrevented/);
+  assert.match(viewSource, /this\.cancelMapAction\(\)/);
+  assert.match(viewSource, /releaseGlobalEscapeHandler/);
+  assert.match(refinementSource, /event\.key !== "Escape" \|\| event\.defaultPrevented/);
+  assert.match(refinementSource, /window\.addEventListener\("keydown", this\._venueGlobalEscapeHandler\)/);
+  assert.doesNotMatch(refinementSource, /addEventListener\("keydown", this\._venueGlobalEscapeHandler, true\)/);
+  assert.match(mapSource, /releasePointerCapture/);
+  assert.match(mapSource, /classList\?\.remove\("dragging"\)/);
+  assert.match(refinementSource, /Escape is cancellation-only/);
+  const escapeHandler = refinementSource.slice(
+    refinementSource.indexOf("this._venueGlobalEscapeHandler ="),
+    refinementSource.indexOf("window.addEventListener", refinementSource.indexOf("this._venueGlobalEscapeHandler =")),
+  );
+  assert.doesNotMatch(escapeHandler, /managementRepository|\.execute\(|data-confirm|confirmDestructiveAction/);
+  assert.match(modalSource, /onRequestDismiss: \(\) =>/);
+  assert.match(modalSource, /function cancelVenueModal/);
+  assert.doesNotMatch(modalSource, /function dismissVenueModal/);
+  assert.match(modalSource, /\[data-cancel-calibration-overwrite\]/);
+  assert.match(modalSource, /\[data-cancel-destructive-action\]/);
+  assert.match(modalSource, /venue-destructive-confirmation-backdrop/);
+  assert.match(modalSource, /editor\.pendingDestructiveAction = null/);
 });
 
 test("workflow e comandi distruttivi restano backend-authoritative e senza dialoghi nativi", () => {

@@ -108,6 +108,11 @@ test("l'action dialog Navigator implementa una vera decisione modale", () => {
   assert.match(dialog, /role="dialog"/);
   assert.match(dialog, /aria-modal="true"/);
   assert.match(dialog, /event\.key === "Escape"/);
+  assert.match(dialog, /event\.key === "Enter"/);
+  assert.match(dialog, /emit\("cancel"\)/);
+  assert.match(dialog, /emit\("confirm"\)/);
+  assert.match(dialog, /data-modal-confirm/);
+  assert.match(dialog, /textarea, select, \[contenteditable\]/);
   assert.match(dialog, /event\.key !== "Tab"/);
   assert.match(dialog, /returnFocus\?\.focus/);
   assert.match(dialog, /data-feedback-dialog-cancel/);

@@ -41,7 +41,7 @@ async function installTaskModal(page, { dirty = false } = {}) {
         </div>
         <footer class="artaround-task-modal__footer">
           <button id="acceptance-modal-cancel" class="button-secondary" type="button" data-modal-dismiss>Annulla</button>
-          <button id="acceptance-modal-confirm" type="button">Conferma</button>
+          <button id="acceptance-modal-confirm" type="button" data-modal-confirm>Conferma</button>
         </footer>
       </section>`;
     document.body.append(layer);
@@ -210,6 +210,27 @@ test("Escape always chooses the non-destructive branch and dirty dismissal requi
   }));
   expect(outcome.reason).toBe("escape");
   expect(outcome.confirmCount).toBe(0);
+});
+
+test("Enter chooses the declared affirmative action, including destructive confirmations", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/marketplace/`, { waitUntil: "domcontentloaded" });
+  await installTaskModal(page);
+
+  await expect(page.locator("#acceptance-modal-cancel")).toBeFocused();
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => window.__acceptanceModal.confirmCount)).toBe(1);
+  await expect(page.locator("#acceptance-task-modal")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await installTaskModal(page, { dirty: true });
+  await page.keyboard.press("Escape");
+  const actionDialog = page.locator("artaround-action-dialog:not([hidden])");
+  await expect(actionDialog.locator("[data-dialog-cancel]")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(actionDialog).toHaveCount(0);
+  await expect(page.locator("#acceptance-task-modal")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__acceptanceModal.confirmCount)).toBe(0);
 });
 
 test("backdrop and explicit cancel use the same dismiss contract", async ({ page }) => {

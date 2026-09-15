@@ -22,11 +22,13 @@ export const venueMapRefinementMixin = {
     if (this._venueGlobalEscapeHandler) return;
     this._venueGlobalEscapeHandler = (event) => {
       if (!this.isConnected) {
-        window.removeEventListener("keydown", this._venueGlobalEscapeHandler, true);
+        window.removeEventListener("keydown", this._venueGlobalEscapeHandler);
         this._venueGlobalEscapeHandler = null;
         return;
       }
-      if (event.key !== "Escape" || this.busy) return;
+      if (event.key !== "Escape" || event.defaultPrevented || this.busy) return;
+      // Escape is cancellation-only: clear transient editor state without
+      // invoking commands, persistence APIs or affirmative actions.
       let handled = true;
       if (this.pendingDestructiveAction) {
         this.pendingDestructiveAction = null;
@@ -63,7 +65,13 @@ export const venueMapRefinementMixin = {
         event.stopImmediatePropagation();
       }
     };
-    window.addEventListener("keydown", this._venueGlobalEscapeHandler, true);
+    window.addEventListener("keydown", this._venueGlobalEscapeHandler);
+  },
+
+  releaseGlobalEscapeHandler() {
+    if (!this._venueGlobalEscapeHandler) return;
+    window.removeEventListener("keydown", this._venueGlobalEscapeHandler);
+    this._venueGlobalEscapeHandler = null;
   },
 
   render() {
@@ -301,13 +309,13 @@ export const venueMapRefinementMixin = {
     const prompt = this.calibrationOverwritePrompt;
     if (!editable || !prompt) return base;
     const floor = (this.data.layout?.floors || []).find((entry) => id(entry._id) === id(prompt.floorId));
-    const overwrite = `<div class="venue-modal-backdrop venue-calibration-overwrite-backdrop" data-calibration-overwrite-backdrop role="presentation"><section class="venue-modal-card venue-calibration-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-calibration-overwrite-title"><header><div><span class="eyebrow">Calibrazione · ${escapeHtml(floor?.label || "Piano")}</span><h3 id="venue-calibration-overwrite-title">Il piano è già calibrato</h3></div><button class="button-secondary small" type="button" data-cancel-calibration-overwrite aria-label="Chiudi">×</button></header><p>Il piano è già calibrato, vuoi sovrascrivere la calibratura?</p><div class="button-row"><button type="button" data-confirm-calibration-overwrite>Sì, ricalibra</button><button class="button-secondary" type="button" data-cancel-calibration-overwrite>No</button></div></section></div>`;
+    const overwrite = `<div class="venue-modal-backdrop venue-calibration-overwrite-backdrop" data-calibration-overwrite-backdrop role="presentation"><section class="venue-modal-card venue-calibration-dialog" role="dialog" aria-modal="true" aria-labelledby="venue-calibration-overwrite-title"><header><div><span class="eyebrow">Calibrazione · ${escapeHtml(floor?.label || "Piano")}</span><h3 id="venue-calibration-overwrite-title">Il piano è già calibrato</h3></div><button class="button-secondary small" type="button" data-cancel-calibration-overwrite aria-label="Chiudi">×</button></header><p>Il piano è già calibrato, vuoi sovrascrivere la calibratura?</p><div class="button-row"><button type="button" data-modal-confirm data-confirm-calibration-overwrite>Sì, ricalibra</button><button class="button-secondary" type="button" data-cancel-calibration-overwrite>No</button></div></section></div>`;
     return `${base}${overwrite}`;
   },
 
   renderDestructiveActionConfirmation() {
     const action = this.pendingDestructiveAction;
     if (!action) return "";
-    return `<div class="venue-modal-backdrop venue-destructive-confirmation-backdrop" role="presentation"><section class="venue-modal-card venue-destructive-confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="venue-destructive-confirmation-title"><header><div><span class="eyebrow">Conferma rimozione</span><h3 id="venue-destructive-confirmation-title">${escapeHtml(action.title || "Confermare l’operazione?")}</h3></div><button class="button-secondary small" type="button" data-cancel-destructive-action aria-label="Chiudi">×</button></header><p>${escapeHtml(action.description || "Questa operazione modifica la configurazione fisica di lavoro.")}</p><div class="button-row"><button class="danger" type="button" data-confirm-destructive-action ${this.busy ? "disabled" : ""}>${escapeHtml(action.confirmLabel || "Conferma")}</button><button class="button-secondary" type="button" data-cancel-destructive-action ${this.busy ? "disabled" : ""}>Annulla</button></div></section></div>`;
+    return `<div class="venue-modal-backdrop venue-destructive-confirmation-backdrop" role="presentation"><section class="venue-modal-card venue-destructive-confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="venue-destructive-confirmation-title"><header><div><span class="eyebrow">Conferma rimozione</span><h3 id="venue-destructive-confirmation-title">${escapeHtml(action.title || "Confermare l’operazione?")}</h3></div><button class="button-secondary small" type="button" data-cancel-destructive-action aria-label="Chiudi">×</button></header><p>${escapeHtml(action.description || "Questa operazione modifica la configurazione fisica di lavoro.")}</p><div class="button-row"><button class="danger" type="button" data-modal-confirm data-confirm-destructive-action ${this.busy ? "disabled" : ""}>${escapeHtml(action.confirmLabel || "Conferma")}</button><button class="button-secondary" type="button" data-cancel-destructive-action ${this.busy ? "disabled" : ""}>Annulla</button></div></section></div>`;
   },
 };

@@ -83,6 +83,11 @@ test("la mappa espone zoom utente e marcatori circolari semitrasparenti per tutt
   assert.match(map, /interactiveTarget.*closest\("button, a, input, select"\)/);
   assert.match(map, /gestureTravel > 5/);
   assert.match(map, /draggable="false"/);
+  assert.match(map, /'--map-inverse-zoom': `\$\{1 \/ zoom\}`/);
+  assert.match(map, /scale\(var\(--map-inverse-zoom,1\)\)/);
+  assert.match(map, /\.place-marker \{[^}]*width:1\.15rem[^}]*height:1\.15rem/);
+  assert.match(map, /\.selectable-location-marker \{[^}]*width:1\.4rem[^}]*height:1\.4rem/);
+  assert.match(map, /\.place-action::after,\.selectable-location-marker::after/);
   assert.match(map, /\.place-marker \{[^}]*border-radius:50%[^}]*opacity:\.72/);
   assert.match(runtime, /async function physicalPlaceActions/);
   assert.match(runtime, /placeNavigationActionDefinition\(\{ placeId: place\._id, label, aliases \}\)/);

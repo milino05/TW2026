@@ -35,6 +35,6 @@ test("la chiusura Venue resta disponibile anche durante operazioni asincrone", (
 });
 
 test("Escape locale Venue resta limitato allo stato mappa non modale", () => {
-  assert.match(venueView, /event\.key === "Escape" && !this\._venueModalLayers\?\.length && \(this\.pendingMapAction \|\| this\.draggingPlace\)/);
+  assert.match(venueView, /event\.key === "Escape" && !event\.defaultPrevented && !this\._venueModalLayers\?\.length && \(this\.pendingMapAction \|\| this\.draggingPlace\)/);
   assert.match(venueView, /this\.cancelMapAction\(\)/);
 });

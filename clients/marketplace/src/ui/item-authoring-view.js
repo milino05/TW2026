@@ -183,6 +183,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.addEventListener("click", this.onClick);
     this.addEventListener("input", this.onInput);
     this.addEventListener("change", this.onChange);
+    this.addEventListener("keydown", this.onKeyDown);
     this.addEventListener("invalid", this.onInvalid, true);
     this.addEventListener("subject-selected", this.onSubjectSelected);
     this.bootstrap();
@@ -192,6 +193,7 @@ export class ItemAuthoringView extends HTMLElement {
     this.removeEventListener("click", this.onClick);
     this.removeEventListener("input", this.onInput);
     this.removeEventListener("change", this.onChange);
+    this.removeEventListener("keydown", this.onKeyDown);
     this.removeEventListener("invalid", this.onInvalid, true);
     this.removeEventListener("subject-selected", this.onSubjectSelected);
     this._subjectVenueDialog?.close?.({ restoreFocus: false, notify: false });
@@ -694,6 +696,14 @@ export class ItemAuthoringView extends HTMLElement {
     this.privateSuccessOpen = Boolean(result?.result?.finalized && !issues.length);
     this.notice = issues.length ? `Controllo completato: ${issues.length} problema/i da risolvere.` : null;
   }
+
+  onKeyDown = (event) => {
+    if (event.key !== "Escape" || !this.privateSuccessOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.privateSuccessOpen = false;
+    this.render();
+  };
 
   onClick = async (event) => {
     const target = event.target instanceof Element ? event.target : null; if (!target) return;

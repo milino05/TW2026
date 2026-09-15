@@ -249,7 +249,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
     if (!this.tutorialOpen) return;
     const modal = this.querySelector("[data-physical-tutorial-overlay]");
     if (!modal) return;
-    if (event.key === "Escape") { event.preventDefault(); this.closeTutorial(); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.closeTutorial(); return; }
     if (event.key !== "Tab") return;
     const focusable = [...modal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
     if (!focusable.length) return;
@@ -416,7 +416,7 @@ export class ArtAroundPhysicalVocabularyEditorView extends HTMLElement {
       size: "compact",
       initialFocus: "[data-starter-confirm]",
       renderBody: () => starterPreview(),
-      renderFooter: () => `<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button><button type="button" data-starter-confirm>${icon("check", { size: 16 })} Usa configurazione base</button>`,
+      renderFooter: () => `<button type="button" class="button-secondary" data-modal-dismiss>Annulla</button><button type="button" data-modal-confirm data-starter-confirm>${icon("check", { size: 16 })} Usa configurazione base</button>`,
       isBusy: () => this.busy,
       onDismiss: () => { this.starterDialog = null; },
       onClick: (event) => {

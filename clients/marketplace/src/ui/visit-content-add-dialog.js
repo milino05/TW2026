@@ -325,9 +325,9 @@ export class ArtAroundVisitContentAddDialog extends HTMLElement {
   renderFooter() {
     const count = this.selected.size;
     if (this.step === "placement") {
-      return `<button type="button" class="button-secondary" data-placement-back ${this.busy ? "disabled" : ""}>← Indietro</button><span class="task-modal-footer-spacer"></span><span class="task-selection-summary">${count} ${count === 1 ? "contenuto" : "contenuti"}</span><button type="button" data-add-selected-content ${!count || !this.placementComplete() || this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : `Aggiungi ${count} alla visita`}</button>`;
+      return `<button type="button" class="button-secondary" data-placement-back ${this.busy ? "disabled" : ""}>← Indietro</button><span class="task-modal-footer-spacer"></span><span class="task-selection-summary">${count} ${count === 1 ? "contenuto" : "contenuti"}</span><button type="button" data-modal-confirm data-add-selected-content ${!count || !this.placementComplete() || this.busy ? "disabled" : ""}>${this.busy ? "Aggiunta…" : `Aggiungi ${count} alla visita`}</button>`;
     }
-    return `<span class="task-selection-summary">${count ? `${count} ${count === 1 ? "contenuto selezionato" : "contenuti selezionati"}` : "Nessun contenuto selezionato"}</span><span class="task-modal-footer-spacer"></span><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Annulla</button><button type="button" data-content-continue ${!count || this.busy ? "disabled" : ""}>${this.candidatesNeedingPlacement().length ? "Continua" : `Aggiungi ${count}`}</button>`;
+    return `<span class="task-selection-summary">${count ? `${count} ${count === 1 ? "contenuto selezionato" : "contenuti selezionati"}` : "Nessun contenuto selezionato"}</span><span class="task-modal-footer-spacer"></span><button type="button" class="button-secondary" data-modal-dismiss ${this.busy ? "disabled" : ""}>Annulla</button><button type="button" data-modal-confirm data-content-continue ${!count || this.busy ? "disabled" : ""}>${this.candidatesNeedingPlacement().length ? "Continua" : `Aggiungi ${count}`}</button>`;
   }
 }
 

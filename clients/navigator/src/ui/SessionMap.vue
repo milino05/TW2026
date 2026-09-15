@@ -256,7 +256,7 @@ function pointStyle(point: { x: number; y: number }) {
         <button type="button" :disabled="zoom === 1" @click="setZoom(1)">Ripristina</button>
       </div>
       <div ref="viewportElement" class="map-viewport" :class="{ 'is-zoomed': zoom > 1 }" @wheel.ctrl.prevent="zoomWithWheel" @dblclick="zoomWithDoubleClick" @pointerdown="startMapGesture" @pointermove="moveMapGesture" @pointerup="endMapGesture" @pointercancel="endMapGesture" @click.capture="guardMapClick" @dragstart.prevent>
-        <div class="map-canvas" :style="{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }">
+        <div class="map-canvas" :style="{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`, '--map-inverse-zoom': `${1 / zoom}` }">
           <img :src="floor.map.imageUrl" :alt="`Mappa ${floor.label} — ${venue.name}`" draggable="false">
           <svg class="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <polyline v-for="(overlay, index) in navigationOverlays" :key="`navigation-${index}`" :points="overlay.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')" fill="none" vector-effect="non-scaling-stroke" class="navigation-route" />
@@ -327,14 +327,15 @@ function pointStyle(point: { x: number; y: number }) {
 .map-gesture-hint { display:block; margin-top:.4rem; color:var(--navigator-muted); font-size:.7rem; line-height:1.4; }
 .map-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .navigation-route { stroke:var(--navigator-route-active); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1px 1px color-mix(in srgb,var(--navigator-route-active) 35%,transparent)); }
-.map-marker,.selectable-location-marker { position:absolute; transform:translate(-50%,-50%); z-index:2; }
-.place-marker { display:grid; place-items:center; width:1.65rem; height:1.65rem; padding:0; border:2px solid color-mix(in srgb,var(--navigator-primary) 62%,transparent); border-radius:50%; color:color-mix(in srgb,var(--navigator-primary) 78%,transparent); background:color-mix(in srgb,var(--navigator-surface-raised) 58%,transparent); box-shadow:0 2px 7px rgba(0,0,0,.14); opacity:.72; font-size:.8rem; font-weight:900; }
+.map-marker,.selectable-location-marker { position:absolute; z-index:2; transform:translate(-50%,-50%) scale(var(--map-inverse-zoom,1)); }
+.place-marker { display:grid; place-items:center; width:1.15rem; height:1.15rem; padding:0; border:1.5px solid color-mix(in srgb,var(--navigator-primary) 62%,transparent); border-radius:50%; color:color-mix(in srgb,var(--navigator-primary) 78%,transparent); background:color-mix(in srgb,var(--navigator-surface-raised) 58%,transparent); box-shadow:0 2px 7px rgba(0,0,0,.14); opacity:.72; font-size:.62rem; font-weight:900; }
 .place-action { cursor:pointer; font:inherit; }
+.place-action::after,.selectable-location-marker::after { content:""; position:absolute; inset:-.6rem; border-radius:50%; }
 .place-action:hover,.place-action:focus-visible { opacity:1; }
 .place-action:disabled { cursor:default; opacity:.4; }
-.known-location-marker { width:1rem; height:1rem; border:3px solid var(--navigator-surface-raised); border-radius:50%; background:var(--navigator-ink); box-shadow:0 0 0 2px var(--navigator-primary); }
-.destination-marker { display:grid; place-items:center; width:1.9rem; height:1.9rem; border:2px solid var(--navigator-route-active); border-radius:50%; color:var(--navigator-route-active); background:var(--navigator-surface-raised); font-weight:900; }
-.selectable-location-marker { width:2rem; height:2rem; border:2px solid var(--navigator-primary); border-radius:50%; color:var(--navigator-primary); background:var(--navigator-surface-raised); font-weight:900; }
+.known-location-marker { width:.8rem; height:.8rem; border:2px solid var(--navigator-surface-raised); border-radius:50%; background:var(--navigator-ink); box-shadow:0 0 0 1.5px var(--navigator-primary); }
+.destination-marker { display:grid; place-items:center; width:1.5rem; height:1.5rem; border:1.5px solid var(--navigator-route-active); border-radius:50%; color:var(--navigator-route-active); background:var(--navigator-surface-raised); font-size:.78rem; font-weight:900; }
+.selectable-location-marker { width:1.4rem; height:1.4rem; padding:0; border:1.5px solid var(--navigator-primary); border-radius:50%; color:var(--navigator-primary); background:var(--navigator-surface-raised); font-size:.72rem; font-weight:900; }
 .logical-position-note { margin:.6rem 0 0; line-height:1.45; }
 .destination-summary { display:flex; gap:.65rem; align-items:center; margin-top:.85rem; padding:.8rem; border:1px solid var(--navigator-border); border-radius:.9rem; background:var(--navigator-surface-raised); }
 .destination-summary div { display:grid; gap:.15rem; }
