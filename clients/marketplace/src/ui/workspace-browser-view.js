@@ -340,6 +340,16 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
       this.openItemAddDialog();
       return;
     }
+    const manageContent = target.closest("button[data-manage-content-edition]");
+    if (manageContent) {
+      const query = new URLSearchParams({
+        ownership: "owned",
+        resourceType: "item_edition",
+        resourceId: manageContent.dataset.manageContentEdition,
+      });
+      navigate(`/workspace/resource?${query.toString()}`);
+      return;
+    }
     const item = target.closest("[data-open-item]");
     if (item) {
       this.openItemDetail(item.dataset.openItem);
@@ -450,7 +460,8 @@ export class ArtAroundWorkspaceBrowserView extends HTMLElement {
 
   renderContentCard(row) {
     const subject = row.subject || {};
-    return `<article class="asset owned content-item-card" data-open-item="${escapeHtml(id(row.itemId))}" role="button" tabindex="0"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Item</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "edizione" : "edizioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations"><span class="button-link">Dettagli ${icon("chevron", { size: 14 })}</span></footer></article>`;
+    const managementEditionId = id(row.managementEditionId);
+    return `<article class="asset owned content-item-card"><header><span class="asset-icon">${icon("book", { size: 20 })}</span><div><p class="badge">Item</p><h3>${escapeHtml(subject.label || "Soggetto non disponibile")}</h3></div></header><div class="asset-copy">${subject.description ? `<p>${escapeHtml(subject.description)}</p>` : `<p class="muted">Contenuto disponibile nello spazio editoriale.</p>`}<div class="stats"><span><strong>${Number(row.editionCount || 0)}</strong> ${Number(row.editionCount || 0) === 1 ? "edizione" : "edizioni"}</span><span><strong>${Number(row.collectionUsageCount || 0)}</strong> ${Number(row.collectionUsageCount || 0) === 1 ? "raccolta" : "raccolte"}</span></div></div><footer class="operations"><button type="button" class="button-secondary" data-open-item="${escapeHtml(id(row.itemId))}">Dettagli ${icon("chevron", { size: 14 })}</button>${managementEditionId ? `<button type="button" data-manage-content-edition="${escapeHtml(managementEditionId)}">${icon("settings", { size: 15 })} Gestisci</button>` : ""}</footer></article>`;
   }
 
   renderContents() {

@@ -98,6 +98,8 @@ test("ContentSpace browser projects Subject identity, presentation count, collec
     assert.equal(leonardoSearch.results[0].subject.label, "Leonardo da Vinci");
     assert.equal(String(leonardoSearch.results[0].itemId), String(leonardoItem._id));
     assert.equal(leonardoSearch.results[0].editionCount, 2);
+    assert.ok(leonardoSearch.results[0].managementEditionId);
+    assert.ok([String(leonardoEditionA._id), String(leonardoEditionB._id)].includes(String(leonardoSearch.results[0].managementEditionId)));
     assert.equal(leonardoSearch.results[0].collectionUsageCount, 2);
     assert.equal(leonardoSearch.results[0].membership, undefined);
     assert.equal(leonardoSearch.results[0].item, undefined);
@@ -112,6 +114,7 @@ test("ContentSpace browser projects Subject identity, presentation count, collec
     assert.equal(michelangeloSearch.pagination.total, 1);
     assert.equal(michelangeloSearch.results[0].subject.label, "Michelangelo Buonarroti");
     assert.equal(michelangeloSearch.results[0].editionCount, 1);
+    assert.equal(String(michelangeloSearch.results[0].managementEditionId), String(michelangeloEdition._id));
     assert.equal(michelangeloSearch.results[0].collectionUsageCount, 0);
     assert.equal(String(michelangeloEdition.itemId), String(michelangeloItem._id));
   });

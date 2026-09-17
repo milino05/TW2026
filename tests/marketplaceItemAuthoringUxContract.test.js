@@ -67,6 +67,13 @@ test("titolo, licenza e immagine sono informazioni generali prima della versione
   assert.doesNotMatch(source, /<label>Autore<input/);
 });
 
+test("un nuovo upload non riceve un _id artificiale durante il salvataggio", () => {
+  const writableMedia = source.slice(source.indexOf("function writableMedia"), source.indexOf("function fileAsBase64"));
+  assert.match(writableMedia, /const mediaId = entry\.id \|\| entry\._id \|\| null/);
+  assert.match(writableMedia, /includeId && mediaId \? \{ _id: String\(mediaId\) \} : \{\}/);
+  assert.doesNotMatch(writableMedia, /_id: id\(entry\)/);
+});
+
 test("Namespace, segnali e testi appartengono alla ItemEdition", () => {
   assert.match(source, /Configura la versione editoriale/);
   assert.match(source, /this\.renderNamespaceSelector\(\)/);
@@ -90,6 +97,16 @@ test("testi multipli restano una proprietà della stessa revisione editoriale", 
   assert.match(source, /<dt>Durata<\/dt>/);
   assert.match(source, /<dt>Livello linguistico<\/dt>/);
   assert.match(source, /duration\.targetSeconds/);
+});
+
+test("regole e controllo usano sezioni editoriali e un riepilogo testi compatto", () => {
+  assert.match(source, /authoring-editorial-step/);
+  assert.match(source, /authoring-section text-composer/);
+  assert.match(source, /authoring-review-step/);
+  assert.match(source, /review-text-card__metadata/);
+  assert.match(source, /Nel controllo mostriamo solo le impostazioni essenziali/);
+  const reviewTexts = source.slice(source.indexOf("renderReviewTexts()"), source.indexOf("renderStepFour()"));
+  assert.doesNotMatch(reviewTexts, /<p>\$\{escapeHtml\(representation\.text/);
 });
 
 test("gli spazi editoriali includono l'Item senza cambiarne owner o semantica", () => {

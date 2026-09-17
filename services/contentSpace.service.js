@@ -311,12 +311,20 @@ async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limi
   const results = projection.results || [];
   const itemIds = results.map((entry) => entry.itemId);
   const editions = itemIds.length
-    ? await ItemEdition.find({ itemId: { $in: itemIds } }).select("_id itemId").lean()
+    ? await ItemEdition.find({ itemId: { $in: itemIds } })
+      .sort({ updatedAt: -1, _id: -1 })
+      .select("_id itemId workingRevisionId updatedAt")
+      .lean()
     : [];
   const editionCountByItem = new Map();
+  const managementEditionByItem = new Map();
   for (const edition of editions) {
     const itemKey = id(edition.itemId);
     editionCountByItem.set(itemKey, (editionCountByItem.get(itemKey) || 0) + 1);
+    const selected = managementEditionByItem.get(itemKey);
+    if (!selected || (!selected.workingRevisionId && edition.workingRevisionId)) {
+      managementEditionByItem.set(itemKey, edition);
+    }
   }
   const activeContexts = itemIds.length
     ? await EditorialContext.find({ contentSpaceId: contentSpace._id, lifecycleStatus: "active" }).select("_id").lean()
@@ -338,6 +346,7 @@ async function listItemMemberships({ contentSpaceId, actorUserId, page = 1, limi
     results: results.map((entry) => ({
       ...entry,
       editionCount: editionCountByItem.get(id(entry.itemId)) || 0,
+      managementEditionId: managementEditionByItem.get(id(entry.itemId))?._id || null,
       collectionUsageCount: collectionIdsByItem.get(id(entry.itemId))?.size || 0,
     })),
     pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages: Math.ceil(total / normalizedLimit) },

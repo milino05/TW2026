@@ -8,6 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const library = read("clients/marketplace/src/ui/workspace-browser-view.js");
 const quickAdd = read("clients/marketplace/src/ui/content-space-item-add-dialog.js");
 const itemDetail = read("clients/marketplace/src/ui/item-detail-dialog.js");
+const itemDetailStyles = read("clients/marketplace/src/styles/item-library-dialogs.css");
 const collectionContent = read("clients/marketplace/src/ui/editorial-collection-content-manager.js");
 const itemAuthoring = read("clients/marketplace/src/ui/item-authoring-view.js");
 const itemModel = read("models/itemV2.model.js");
@@ -61,8 +62,20 @@ test("recognitionMedia appartiene all'Item mentre illustrativeMedia resta nella 
 test("le card dello Space restano leggere e l'immagine viene caricata nel dettaglio Item", () => {
   assert.doesNotMatch(library, /recognitionMedia/);
   assert.match(library, /content-item-card/);
+  assert.match(library, /data-open-item=/);
+  assert.match(library, /data-manage-content-edition=/);
+  assert.match(library, /Gestisci<\/button>/);
+  assert.match(library, /resourceType:\s*"item_edition"/);
   assert.match(itemDetail, /recognitionMedia/);
   assert.match(itemDetail, /<figure><img/);
+});
+
+test("l'anteprima dell'immagine di riconoscimento resta contenuta nel popup", () => {
+  assert.match(itemDetail, /class="item-recognition-preview"/);
+  assert.match(itemDetailStyles, /\.item-recognition-preview img\{[^}]*width:100%/);
+  assert.match(itemDetailStyles, /\.item-recognition-preview img\{[^}]*max-height:min\(52dvh,32rem\)/);
+  assert.match(itemDetailStyles, /\.item-recognition-preview img\{[^}]*object-fit:contain/);
+  assert.match(itemDetailStyles, /artaround-item-detail-dialog \.artaround-task-modal__body[^\{]*\{min-width:0;max-width:100%\}/);
 });
 
 test("il dettaglio Item ha Edizioni, Raccolte e Sedi e mantiene il drill-down interno della raccolta", () => {
