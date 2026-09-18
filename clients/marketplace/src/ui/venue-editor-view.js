@@ -7,6 +7,7 @@ import { venueTargetsMixin } from "./venue-editor-targets-mixin.js";
 import { venueInventorySearchMixin } from "./venue-editor-inventory-search-mixin.js";
 import { venueSpatialMixin } from "./venue-editor-spatial-mixin.js";
 import { venueSectionMixin } from "./venue-editor-section-mixin.js";
+import { venueNavigatorMixin } from "./venue-editor-navigator-mixin.js";
 import { venueMapAuthoringMixin } from "./venue-editor-map-authoring-mixin.js";
 import { venueSpatialDetailMixin } from "./venue-editor-spatial-detail-mixin.js";
 import { venueFloorDialogMixin } from "./venue-editor-floor-dialog-mixin.js";
@@ -22,7 +23,7 @@ import { venueSubjectInventoryMixin } from "./venue-editor-subject-inventory-mix
 import { venueInventoryProposalsMixin } from "./venue-editor-inventory-proposals-mixin.js";
 import { venueModalLifecycleMixin } from "./venue-modal-lifecycle-mixin.js";
 
-const SECTIONS = ["overview", "inventory", "map", "visitors", "publication"];
+const SECTIONS = ["overview", "inventory", "map", "visitors", "navigator", "publication"];
 function venueId() { return new URLSearchParams(window.location.search).get("venueId"); }
 function initialVenueSection() {
   const requested = String(window.location.hash || "").replace(/^#venue-/, "");
@@ -237,6 +238,7 @@ Object.assign(
   venueInventorySearchMixin,
   venueSpatialMixin,
   venueSectionMixin,
+  venueNavigatorMixin,
   venueMapAuthoringMixin,
   venueSpatialDetailMixin,
   venueFloorDialogMixin,

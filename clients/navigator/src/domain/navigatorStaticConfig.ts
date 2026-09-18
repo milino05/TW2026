@@ -3,6 +3,11 @@ export interface NavigatorImageAsset {
   alt: string;
 }
 
+export interface NavigatorAssetRef {
+  assetId: string;
+  alt: string;
+}
+
 export interface NavigatorTheme {
   primary: string;
   accent: string;
@@ -18,8 +23,23 @@ export interface NavigatorBranding {
   theme: NavigatorTheme;
 }
 
+interface NavigatorStaticBranding {
+  productTitle: string;
+  museumTitle: string;
+  subtitle?: string;
+  logo?: NavigatorImageAsset | NavigatorAssetRef;
+  heroImage?: NavigatorImageAsset | NavigatorAssetRef;
+  theme: NavigatorTheme;
+}
+
+interface NavigatorStaticConfigDocument {
+  schemaVersion: 2 | 3;
+  venueId: string;
+  branding: NavigatorStaticBranding;
+}
+
 export interface NavigatorStaticConfig {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   venueId: string;
   branding: NavigatorBranding;
 }
@@ -58,6 +78,14 @@ function isImageAsset(value: unknown): value is NavigatorImageAsset {
     && typeof value.alt === "string";
 }
 
+function isAssetRef(value: unknown): value is NavigatorAssetRef {
+  return isRecord(value)
+    && typeof value.assetId === "string"
+    && OBJECT_ID.test(value.assetId)
+    && !/^0{24}$/i.test(value.assetId)
+    && typeof value.alt === "string";
+}
+
 function isTheme(value: unknown): value is NavigatorTheme {
   return isRecord(value)
     && typeof value.primary === "string" && HEX_COLOR.test(value.primary)
@@ -65,7 +93,7 @@ function isTheme(value: unknown): value is NavigatorTheme {
     && typeof value.surface === "string" && HEX_COLOR.test(value.surface);
 }
 
-function isBranding(value: unknown): value is NavigatorBranding {
+function isPlatformBranding(value: unknown): value is NavigatorBranding {
   if (!isRecord(value)) return false;
   return isNonEmptyString(value.productTitle)
     && isNonEmptyString(value.museumTitle)
@@ -75,16 +103,35 @@ function isBranding(value: unknown): value is NavigatorBranding {
     && isTheme(value.theme);
 }
 
+function isMuseumBranding(value: unknown, schemaVersion: 2 | 3): value is NavigatorStaticBranding {
+  if (!isRecord(value)) return false;
+  const isExpectedAsset = schemaVersion === 3 ? isAssetRef : isImageAsset;
+  return isNonEmptyString(value.productTitle)
+    && isNonEmptyString(value.museumTitle)
+    && (value.subtitle === undefined || typeof value.subtitle === "string")
+    && (value.logo === undefined || isExpectedAsset(value.logo))
+    && (value.heroImage === undefined || isExpectedAsset(value.heroImage))
+    && isTheme(value.theme);
+}
+
+function isNavigatorStaticConfigDocument(value: unknown): value is NavigatorStaticConfigDocument {
+  if (!isRecord(value) || (value.schemaVersion !== 2 && value.schemaVersion !== 3)) return false;
+  return typeof value.venueId === "string"
+    && OBJECT_ID.test(value.venueId)
+    && !/^0{24}$/i.test(value.venueId)
+    && isMuseumBranding(value.branding, value.schemaVersion);
+}
+
 export function isNavigatorStaticConfig(value: unknown): value is NavigatorStaticConfig {
   return isRecord(value)
-    && value.schemaVersion === 2
+    && (value.schemaVersion === 2 || value.schemaVersion === 3)
     && typeof value.venueId === "string"
     && OBJECT_ID.test(value.venueId)
-    && isBranding(value.branding);
+    && isPlatformBranding(value.branding);
 }
 
 export function isNavigatorPlatformConfig(value: unknown): value is NavigatorPlatformConfig {
-  return isRecord(value) && value.schemaVersion === 1 && isBranding(value.branding);
+  return isRecord(value) && value.schemaVersion === 1 && isPlatformBranding(value.branding);
 }
 
 function onColor(hex: string) {
@@ -121,19 +168,35 @@ function publicRuntimeUrl(path: string) {
   return import.meta.env.DEV ? import.meta.env.BASE_URL + relative : "/" + relative;
 }
 
-function resolveRuntimeAsset(asset: NavigatorImageAsset | undefined, scope: string) {
+function resolvePlatformAsset(asset: NavigatorImageAsset | undefined, scope: string) {
   if (!asset) return asset;
+  return { ...asset, src: publicRuntimeUrl(scope + asset.src) };
+}
+
+function resolvePlatformBranding(branding: NavigatorBranding, scope: string): NavigatorBranding {
   return {
-    ...asset,
-    src: publicRuntimeUrl(scope + asset.src),
+    ...branding,
+    logo: resolvePlatformAsset(branding.logo, scope),
+    heroImage: resolvePlatformAsset(branding.heroImage, scope),
   };
 }
 
-function resolveBranding(branding: NavigatorBranding, scope: string): NavigatorBranding {
+function resolveMuseumAsset(asset: NavigatorImageAsset | NavigatorAssetRef | undefined, scope: string) {
+  if (!asset) return undefined;
+  if ("assetId" in asset) {
+    return { src: `/api/navigator-assets/${encodeURIComponent(asset.assetId)}`, alt: asset.alt };
+  }
+  return { ...asset, src: publicRuntimeUrl(scope + asset.src) };
+}
+
+function resolveMuseumBranding(branding: NavigatorStaticBranding, scope: string): NavigatorBranding {
   return {
-    ...branding,
-    logo: resolveRuntimeAsset(branding.logo, scope),
-    heroImage: resolveRuntimeAsset(branding.heroImage, scope),
+    productTitle: branding.productTitle,
+    museumTitle: branding.museumTitle,
+    subtitle: branding.subtitle,
+    logo: resolveMuseumAsset(branding.logo, scope),
+    heroImage: resolveMuseumAsset(branding.heroImage, scope),
+    theme: branding.theme,
   };
 }
 
@@ -146,16 +209,16 @@ async function loadConfig(scope: string): Promise<unknown> {
 export async function loadNavigatorPlatformConfig(): Promise<NavigatorPlatformConfig> {
   const value = await loadConfig("navigator-platform");
   if (!isNavigatorPlatformConfig(value)) throw new Error("Configurazione piattaforma Navigator non valida");
-  return { ...value, branding: resolveBranding(value.branding, "navigator-platform") };
+  return { ...value, branding: resolvePlatformBranding(value.branding, "navigator-platform") };
 }
 
 export async function loadNavigatorMuseumConfig(venueId: string): Promise<NavigatorStaticConfig> {
   if (!OBJECT_ID.test(venueId)) throw new Error("venueId della configurazione Navigator non valido");
   const scope = "navigator-configs/" + venueId;
   const value = await loadConfig(scope);
-  if (!isNavigatorStaticConfig(value)) throw new Error("Configurazione museo Navigator v2 non valida");
+  if (!isNavigatorStaticConfigDocument(value)) throw new Error("Configurazione museo Navigator non valida");
   if (value.venueId !== venueId) throw new Error("La configurazione Navigator non corrisponde al museo selezionato");
-  return { ...value, branding: resolveBranding(value.branding, scope) };
+  return { schemaVersion: value.schemaVersion, venueId: value.venueId, branding: resolveMuseumBranding(value.branding, scope) };
 }
 
 export function createFallbackMuseumConfig(
@@ -164,7 +227,7 @@ export function createFallbackMuseumConfig(
   platform: NavigatorPlatformConfig,
 ): NavigatorStaticConfig {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     venueId,
     branding: {
       ...platform.branding,

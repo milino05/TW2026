@@ -105,12 +105,14 @@ function mountBuiltSpa({ mountPath, distDir }) {
 }
 
 const navigatorDist = path.join(__dirname, "clients", "navigator", "dist");
+const navigatorSourceConfigRoot = path.join(__dirname, "clients", "navigator", "public");
 const marketplaceDist = path.join(__dirname, "clients", "marketplace", "dist");
 const externalNavigatorConfigRoot = process.env.NAVIGATOR_CONFIG_DIR
   ? path.resolve(process.env.NAVIGATOR_CONFIG_DIR)
   : null;
 const navigatorConfigRoots = [
   ...(externalNavigatorConfigRoot ? [externalNavigatorConfigRoot] : []),
+  navigatorSourceConfigRoot,
   navigatorDist,
 ].filter((entry, index, entries) => entries.indexOf(entry) === index);
 

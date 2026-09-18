@@ -2,7 +2,7 @@
 
 Navigator separa il software dalle identità museali. Prima della selezione usa il branding neutrale ArtAround; quando l’utente sceglie un museo carica titoli, immagini e colori della Venue selezionata, senza ricompilare il client.
 
-La pagina `/navigator/museums` deriva l’elenco dai musei per cui l’utente possiede almeno una visita eseguibile. Ogni configurazione museale è associata a una Venue tramite `venueId`. Opere, tappe, visite, mappe logiche e azioni restano dati di dominio serviti dalle API e non vanno duplicati nei file statici.
+La pagina `/navigator/museums` deriva l’elenco dai musei per cui l’utente possiede almeno una visita eseguibile. Ogni configurazione museale resta associata a una singola Venue tramite `venueId`. Opere, tappe, visite, mappe logiche e azioni restano dati di dominio serviti dalle API e non vanno duplicati nel file di configurazione.
 
 ## Struttura della directory
 
@@ -17,37 +17,34 @@ navigator-runtime/
 │       └── artaround-hero.svg
 └── navigator-configs/
     ├── <venueId-a>/
-    │   ├── navigator.config.json
-    │   └── navigator-assets/
-    │       ├── museum-mark.svg
-    │       └── museum-hero.webp
+    │   └── navigator.config.json
     └── <venueId-b>/
-        └── ...
+        └── navigator.config.json
 ```
 
-I nomi degli asset sono liberi. Nel JSON i riferimenti iniziano sempre con `/navigator-assets/`: il client li risolve automaticamente rispetto alla cartella piattaforma o alla cartella del museo.
+Gli asset della piattaforma restano file statici. Gli asset dei musei in schema v3 sono invece memorizzati in MongoDB e il JSON li identifica tramite `assetId` stabile. Più Venue della stessa organizzazione possono quindi condividere logo e hero senza duplicare i file.
 
 ## Schema piattaforma v1
 
-Il file `navigator-platform/navigator.config.json` usa `schemaVersion: 1` e lo stesso oggetto `branding` mostrato sotto, ma non contiene `venueId`. Viene usato per login e selezione museo.
+Il file `navigator-platform/navigator.config.json` usa `schemaVersion: 1`, non contiene `venueId` e continua a usare `src` sotto `/navigator-assets/`. Viene usato per login e selezione museo.
 
-## Schema v2
+## Schema museo v3
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "venueId": "496f78e51b8861a9800749a7",
   "branding": {
     "productTitle": "ArtAround",
     "museumTitle": "Pinacoteca Nazionale di Bologna",
     "subtitle": "Demo TW2026",
     "logo": {
-      "src": "/navigator-assets/pinacoteca-mark.svg",
-      "alt": "Marchio dimostrativo della Pinacoteca"
+      "assetId": "68c000000000000000000001",
+      "alt": "Marchio della Pinacoteca"
     },
     "heroImage": {
-      "src": "/navigator-assets/pinacoteca-hero.svg",
-      "alt": "Illustrazione dimostrativa di una sala"
+      "assetId": "68c000000000000000000002",
+      "alt": "Sala della Pinacoteca"
     },
     "theme": {
       "primary": "#84333E",
@@ -60,23 +57,33 @@ Il file `navigator-platform/navigator.config.json` usa `schemaVersion: 1` e lo s
 
 Campi:
 
-- `schemaVersion`: deve valere `2`;
-- `venueId`: ObjectId MongoDB della Venue pubblicata per il museo;
-- `productTitle`: nome del prodotto mostrato nell’interfaccia e nel titolo della pagina;
-- `museumTitle`: nome del museo;
+- `schemaVersion`: `3` per una configurazione museo corrente;
+- `venueId`: ObjectId MongoDB della Venue a cui appartiene il file;
+- `productTitle`: nome del prodotto;
+- `museumTitle`: nome mostrato nel Navigator;
 - `subtitle`: testo breve facoltativo;
-- `logo` e `heroImage`: asset facoltativi con testo alternativo;
+- `logo` e `heroImage`: riferimenti facoltativi a `NavigatorAsset` MongoDB con testo alternativo;
 - `theme`: colori esadecimali `#RRGGBB` per identità principale, accento e superficie.
 
-Logo, immagine hero e palette del museo vengono applicati a Library, generazione, shell dell’app e schermata immersiva di esecuzione. Login e selettore musei usano invece la configurazione neutrale di piattaforma. Il colore del testo sui pulsanti principali viene calcolato automaticamente per mantenere il contrasto.
+Logo, immagine hero e palette vengono applicati a Library, generazione, shell dell’app e schermata immersiva di esecuzione. Login e selettore musei usano invece la configurazione neutrale di piattaforma.
 
-## Configurazione inclusa e secondo esempio
+## Modifica dal Marketplace
 
-La configurazione neutrale è in `clients/navigator/public/navigator-platform/`. La Pinacoteca è in `clients/navigator/public/navigator-configs/496f78e51b8861a9800749a7/`.
+Nel workspace della Venue è disponibile la sezione **Navigator**. Un utente con `venue.profile.manage` può modificare titoli e colori, caricare logo/hero, copiare la configurazione da un’altra Venue della stessa organizzazione e importare/esportare il JSON.
 
-Un secondo pacchetto museale completo e indipendente è disponibile in `docs/examples/navigator-museo-aurora/`. Il museo Aurora è un esempio di configurazione e non viene mostrato finché nel database non esiste la Venue corrispondente e l’utente non possiede una sua visita.
+Il file `navigator.config.json` resta la fonte di verità della personalizzazione. MongoDB conserva soltanto gli asset identificati dal file. Durante import o copia il `venueId` di destinazione non viene mai preso dal JSON sorgente: è sempre imposto dal backend in base alla Venue che si sta modificando.
 
-Gli asset inclusi sono illustrazioni schematiche dimostrative, non marchi, fotografie o planimetrie ufficiali.
+Gli `assetId` sono riutilizzabili soltanto all’interno della stessa installazione e organizzazione. L’export JSON è quindi adatto a conservare e riapplicare una configurazione tra Venue dello stesso database; non è un backup autonomo dei byte delle immagini.
+
+## Migrazione da v2
+
+Lo schema v2 con `logo.src` e `heroImage.src` resta leggibile durante la transizione. Il primo salvataggio/copia importa gli asset legacy nel database e scrive il file in v3. Per migrare in modo esplicito tutte le configurazioni presenti nella directory configurata:
+
+```bash
+npm run migrate:navigator-config-v3
+```
+
+La migrazione usa ID deterministici per gli asset legacy, quindi può essere rieseguita senza creare duplicati per la stessa Venue/ruolo/contenuto.
 
 ## Verifica
 
@@ -86,13 +93,7 @@ Prima del deploy eseguire:
 npm --prefix clients/navigator run check:config
 ```
 
-Il controllo verifica configurazione di piattaforma, configurazioni museali incluse, schemi, colori, sicurezza dei percorsi ed esistenza degli asset.
-
-Per validare una directory esterna:
-
-```bash
-node clients/navigator/scripts/check-config.mjs /percorso/alla/configurazione
-```
+Il controllo verifica la configurazione di piattaforma, le configurazioni museali incluse, schemi, colori e riferimenti asset. Per i config v2 controlla ancora anche sicurezza dei percorsi ed esistenza dei file legacy.
 
 ## Uso senza ricompilazione
 
@@ -102,19 +103,19 @@ Dopo aver costruito il client, impostare `NAVIGATOR_CONFIG_DIR` sulla directory 
 NAVIGATOR_CONFIG_DIR=/srv/artaround/navigator-runtime
 ```
 
-Express serve la piattaforma su `/navigator-platform/...`, ogni museo su `/navigator-configs/:venueId/...` e l’app invariata su `/navigator/`. I JSON sono senza cache; gli asset sono cacheabili. La vecchia route `/navigator.config.json` resta disponibile per compatibilità.
+Express serve la piattaforma su `/navigator-platform/...`, ogni museo su `/navigator-configs/:venueId/...` e l’app invariata su `/navigator/`. I JSON sono senza cache; gli asset Mongo vengono serviti su `/api/navigator-assets/:assetId` con cache immutabile.
 
-Se nella directory esterna manca un file, il server usa la configurazione inclusa nella build. Se manca la configurazione di un museo posseduto, l’interfaccia crea un’identità di fallback neutrale con il nome della Venue; la Library resta comunque accessibile.
+Se nella directory esterna manca un file, il server cerca la configurazione inclusa nel repository/build. Se manca la configurazione di un museo posseduto, l’interfaccia mantiene il fallback neutrale con il nome della Venue.
 
-Per Docker Compose, montare la directory nel container con un override locale:
+Per permettere la modifica dal Marketplace la directory esterna deve essere scrivibile dal processo backend. In Docker Compose non montarla `:ro`:
 
 ```yaml
 services:
   backend:
     volumes:
-      - ./navigator-runtime:/app/runtime/navigator:ro
+      - ./navigator-runtime:/app/runtime/navigator
     environment:
       NAVIGATOR_CONFIG_DIR: /app/runtime/navigator
 ```
 
-Riavviare il processo Node quando cambia il percorso configurato. La modifica di JSON o asset non richiede una nuova build: un refresh ricarica l’identità. Ogni cartella e il relativo `venueId` devono corrispondere alla Venue pubblicata nel database.
+Riavviare il processo Node soltanto quando cambia il percorso configurato. La modifica di un JSON dal Marketplace non richiede una nuova build: un refresh del Navigator ricarica la configurazione.
